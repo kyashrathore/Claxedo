@@ -87,6 +87,31 @@ test("10 session list: the project's rows, live status and rename, read back fro
   await expect.poll(() => rowTitles(app)).toEqual(await serverOrder(stack.url))
 })
 
+test("10 opening a session from the rail selects only its row, a pointer that leaves takes the row's Settle action with it, and the keyboard still reaches it", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("select", "Select")
+  const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
+  const alpha = await create("Alpha")
+  const bravo = await create("Bravo")
+  await create("Charlie")
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  const composer = app.getByRole("textbox", { name: UI.composer })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, alpha.id)}`)
+  await expect(composer).toBeVisible()
+  await rail.getByRole("button", { name: "Alpha", exact: true }).click()
+  await rail.getByRole("button", { name: "Bravo", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(bravo.id))
+  await composer.hover()
+  await expect(rail.locator('[aria-current="page"]')).toHaveAccessibleName("Bravo")
+  await expect(rail.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(rail.getByRole("button", { name: /^Settle / })).toHaveCount(0)
+
+  await app.keyboard.press("ArrowDown")
+  await expect(rail.getByRole("button", { name: "Settle Alpha" })).toBeVisible()
+  await expect(rail.getByRole("button", { name: /^Settle / })).toHaveCount(1)
+  await expect.poll(() => rowTitles(app)).toEqual(await serverOrder(stack.url))
+})
+
 test("10 a background turn, in a session visited before, changes only its own rail row, wakes no animation frame, and leaves a finished dot until the reader opens it", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("isolation", "Isolation")
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })

@@ -1,3 +1,4 @@
+import type { WorkspaceName } from "@/cloud"
 import type { DomainTranslate } from "@/i18n"
 import { machineOfPlacement, type Machine, type Placement } from "@/server"
 import type { RailKey } from "./i18n"
@@ -15,6 +16,10 @@ export function sessionMarker(placement: Placement | undefined, machines: readon
   const machine = placement.onThisMachine ? undefined : machineOfPlacement(machines, placement)
   if (machine) return { kind: "machine", name: machine.name, folder: placement.label }
   return placement.kind === "worktree" ? { kind: "worktree", name: placement.label, path: placement.path } : undefined
+}
+
+export function markerName(named: WorkspaceName, marker: SessionMarker): string {
+  return marker.kind === "cloud" ? named(marker.name, marker.branch) : marker.name
 }
 
 export function markerLabel(t: DomainTranslate<RailKey>, marker: SessionMarker, projectLabel: string): string {

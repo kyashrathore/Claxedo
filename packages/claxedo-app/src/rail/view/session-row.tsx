@@ -1,4 +1,5 @@
 import { createMemo, createSignal, Show, type JSX } from "solid-js"
+import { useWorkspaceName } from "@/cloud"
 import { useTranslator } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
 import { canSettle, type SessionRowView } from "@/session"
@@ -6,7 +7,7 @@ import { useShellLayout } from "@/shell"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
 import { navigationStatus, sessionAge, sessionAgeSince } from "../model"
-import { markerLabel, type SessionMarker } from "../session-marker"
+import { markerLabel, markerName, type SessionMarker } from "../session-marker"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
 import "../session-navigation.css"
@@ -43,6 +44,7 @@ const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } 
 
 function SessionRowMeta(props: { readonly row: SessionRowView; readonly marker: SessionMarker | undefined; readonly projectLabel: string; readonly caption?: string }): JSX.Element {
   const t = useTranslator(railDictionary)
+  const named = useWorkspaceName()
   const now = useAgeClock(() => sessionAgeSince(props.row))
   return (
     <span class="ui-session-navigation-meta flex min-w-0 items-center gap-1 text-xs leading-4">
@@ -54,7 +56,7 @@ function SessionRowMeta(props: { readonly row: SessionRowView; readonly marker: 
           <span role="img" aria-label={markerLabel(t, marker(), props.projectLabel)} title={markerLabel(t, marker(), props.projectLabel)} class="flex min-w-0 shrink items-center gap-1">
             <Show when={props.caption}><span aria-hidden="true">·</span></Show>
             <Icon name={MARKER_ICON[marker().kind]} size="small" class="size-3 shrink-0" />
-            <span class="min-w-0 truncate" aria-hidden="true">{marker().name}</span>
+            <span class="min-w-0 truncate" aria-hidden="true">{markerName(named, marker())}</span>
           </span>
         )}
       </Show>

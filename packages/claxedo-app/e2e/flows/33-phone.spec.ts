@@ -91,6 +91,8 @@ test("33 phone: the drawer stays open on a session while another project gains s
   await open.tap()
   const close = app.getByRole("button", { name: "Close navigation sidebar" })
   await expect(close).toBeVisible()
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1)
+  await expect(nav.locator('[aria-current="page"]')).toHaveAccessibleName("First")
   for (const title of ["Arrived 1", "Arrived 2"]) {
     await api.createSession(other.directory, { title, harness: SCRIPTED_ACP_HARNESS })
     await expect(nav.getByRole("button", { name: title, exact: true })).toBeVisible()

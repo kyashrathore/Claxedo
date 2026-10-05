@@ -8,7 +8,7 @@ export type HoverEngagement = {
   readonly handlers: {
     readonly onPointerEnter: () => void
     readonly onPointerLeave: () => void
-    readonly onFocusIn: () => void
+    readonly onFocusIn: (event: FocusEvent) => void
     readonly onFocusOut: (event: FocusEvent) => void
   }
 }
@@ -54,7 +54,9 @@ function engagementHandlers(set: (reason: Reason, value: boolean) => void): Hove
   return {
     onPointerEnter: () => set("hovered", true),
     onPointerLeave: () => set("hovered", false),
-    onFocusIn: () => set("focused", true),
+    onFocusIn: (event) => {
+      if (event.target instanceof Element && event.target.matches(":focus-visible")) set("focused", true)
+    },
     onFocusOut: (event) => {
       const next = event.relatedTarget
       const host = event.currentTarget
