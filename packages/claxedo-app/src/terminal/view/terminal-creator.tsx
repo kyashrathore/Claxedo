@@ -8,6 +8,7 @@ import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { useTerminalRuntime } from "../context"
 import { terminalCreatorPaneKind } from "../creator-pane"
+import { agentsNote } from "../agents"
 import { terminalDictionary } from "../i18n"
 import { terminalLaunchers, type TerminalLauncher } from "../launchers"
 import "./terminal-creator.css"
@@ -56,14 +57,11 @@ function LauncherGrid(props: {
 }): JSX.Element {
   const t = useTranslator(terminalDictionary)
   const server = useServer()
-  const runtime = () => server.cloud.runtime(props.placementId).kind
-  const agents = useQuery(() => ({ ...server.queries.terminals.agents(props.placementId), enabled: runtime() === "live" }))
-  const launchers = () => terminalLaunchers(t("terminal.creator.shell"), runtime() === "live" ? (agents.data ?? []) : [])
-  const note = () => {
-    if (runtime() === "asleep") return t("terminal.creator.agentsAsleep", { name: server.placements.byId(props.placementId)?.label ?? "" })
-    if (runtime() === "live" && agents.isError) return t("terminal.creator.agentsFailed")
-    return runtime() !== "live" || agents.isPending ? t("terminal.creator.agentsLoading") : undefined
-  }
+  const runtime = () => server.cloud.runtime(props.placementId)
+  const live = () => runtime().kind === "live"
+  const agents = useQuery(() => ({ ...server.queries.terminals.agents(props.placementId), enabled: live() }))
+  const launchers = () => terminalLaunchers(t("terminal.creator.shell"), live() ? (agents.data ?? []) : [])
+  const note = () => agentsNote(t, runtime(), server.placements.byId(props.placementId)?.label ?? "", agents)
   return (
     <>
       <div class="grid gap-2 p-3" style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}>

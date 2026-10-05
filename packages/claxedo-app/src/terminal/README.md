@@ -27,7 +27,7 @@ Owns: terminal panes, the one attach path to a runtime PTY, terminal links, the 
 
 ## Creating terminals
 
-The terminal creator (`creator-pane.ts`, `view/terminal-creator.tsx`) is v1's "Start a terminal" card in a workbench pane titled "New Terminal": a tile for the login shell and one per agent CLI the runtime has installed (`agents.ts`, `launchers.ts`: Claude, Codex, Cursor) from the launcher catalog; the placement's shell runs the chosen command and shows its outcome. A tile creates the terminal with its command, titled "<name> N", and replaces the creator with it.
+The terminal creator (`creator-pane.ts`, `view/terminal-creator.tsx`) is v1's "Start a terminal" card in a workbench pane titled "New Terminal": a tile for the login shell and one per agent CLI the runtime has installed (`agents.ts`, `launchers.ts`: Claude, Codex, Cursor) from the launcher catalog; the placement's shell runs the chosen command and shows its outcome. A tile creates the terminal with its command, titled "<name> N", and replaces the creator with it. The agents are read only while the workspace runs; otherwise the note under the tiles says why they are missing (`agentsNote` in `agents.ts`): asleep, waking, an older version that needs Restart to update, or a failed wake with its reason.
 
 `useTerminals()` (`public.ts`) is the domain's public API: `items(placementId)` (id, title, agent status), `retain(placementId)` while a list is on screen, `createTerminal(placementId, launch?)`, `open`, `close` (closes its pane, which ends the shell, or ends it directly) and `startNew(placementId)`, which opens the creator.
 

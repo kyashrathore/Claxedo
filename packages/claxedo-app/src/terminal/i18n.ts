@@ -33,6 +33,8 @@ const en = {
   "terminal.creator.agentsLoading": "Checking which agents this workspace has…",
   "terminal.creator.agentsFailed": "Couldn't check which agents this workspace has.",
   "terminal.creator.agentsAsleep": "{{name}} is asleep. Its agents show here once it wakes.",
+  "terminal.creator.agentsOutdated": "{{name}} runs an older version. Its agents show here once it restarts to update.",
+  "terminal.creator.agentsWakeFailed": "Couldn't wake {{name}}: {{reason}}",
   "terminal.creator.starting": "Starting…",
   "terminal.command.new.description": "Create a new terminal tab",
   "terminal.command.toggle": "Toggle terminal",
