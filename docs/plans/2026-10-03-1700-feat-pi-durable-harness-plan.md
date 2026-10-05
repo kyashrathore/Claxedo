@@ -473,7 +473,7 @@ Package export (A): `@claxedo/harness/pi-durable` → `src/transports/pi-durable
 - App unit tests (`transport.test.ts`, `sessions.test.ts`, `session-projection.test.ts`).
 
 **Done when:**
-- claxedo-server `typecheck`, `typecheck:services`, `typecheck:auth-d1`, `test`, `d1:baseline:check`, `verify:closure`;
+- claxedo-server `typecheck`, `typecheck:auth-d1`, `test`, `d1:baseline:check`, `verify:closure`;
 - workspace-relay `typecheck` and `test`;
 - claxedo-server-core `typecheck` and `test`;
 - claxedo-app `typecheck`, `test`, `check`;

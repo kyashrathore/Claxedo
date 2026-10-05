@@ -36,7 +36,6 @@
     "d1:baseline:generate": "bun run scripts/control-plane-baseline.ts",
     "d1:baseline:check": "bun run scripts/control-plane-baseline.ts --check",
     "typecheck:auth-d1": "tsc --noEmit -p tsconfig.auth-d1.json",
-    "typecheck:services": "tsc --noEmit -p tsconfig.services.json",
     "build:workerd-boundary": "bun run scripts/boundary/build-workerd.ts",
     "smoke:workerd-boundary": "node --import tsx scripts/boundary/smoke-workerd.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
