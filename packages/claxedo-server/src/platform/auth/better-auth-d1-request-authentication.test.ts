@@ -136,6 +136,28 @@ function setup(overrides: {
 }
 
 describe("Better Auth D1 request authentication", () => {
+  test("names the subject before the evidence row is read, so the identity mapping runs beside it for cookies and tokens alike", async () => {
+    const order: string[] = []
+    const configured = setup({
+      resolveIdentity: async () => {
+        order.push("identity")
+        return activeIdentity()
+      },
+    })
+    configured.resolveAuthenticationEvidence.mockImplementation(async (input: { kind: string }) => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      order.push(`evidence:${input.kind}`)
+      return { sessionId: input.kind === "browser" ? "browser_session_1" : "native_session_1", authenticatedAt: NOW - 60_000, methods: ["oauth:google"] as const, assurance: "single-factor" as const }
+    })
+    await configured.adapter.authenticate(new Request("https://api.example.test/bootstrap", {
+      headers: { cookie: "__Secure-claxedo.session_token=opaque-session", origin: "https://app.example.test" },
+    }))
+    await configured.adapter.authenticate(new Request("https://api.example.test/bootstrap", {
+      headers: { authorization: "Bearer clx_at_native-token" },
+    }))
+    expect(order).toEqual(["identity", "evidence:browser", "identity", "evidence:cli"])
+  })
+
   test("verifies the exact browser session cookie through Better Auth and delegates identity mapping", async () => {
     const configured = setup()
     const request = new Request("https://api.example.test/bootstrap", {

@@ -5,6 +5,7 @@ import {
   createControlPlaneAuthenticationAdapter,
   type ApplicationIdentityResolver,
   type AuthAssurance,
+  type AuthIdentity,
   type AuthenticationEvidenceMethod,
   type RequestAuthenticationAdapter,
   type RequestIdentityVerificationAdapter,
@@ -195,6 +196,7 @@ function nativeClient(
 async function verifyBrowser(
   input: BetterAuthD1RequestAuthenticationInput,
   request: Request,
+  identified: (identity: AuthIdentity) => void,
 ): Promise<VerifiedAuthSession> {
   const providerResult = await input.auth.api.getSession({
     headers: request.headers,
@@ -204,6 +206,7 @@ async function verifyBrowser(
   const user = record(result.user)
   const session = record(result.session)
   if (!isNonBlankString(user.id) || !isNonBlankString(session.id)) throw invalidCredentials()
+  identified({ adapter: "better-auth", issuer: input.descriptor.issuer, subject: user.id })
   const createdAt = timestamp(session.createdAt)
   const evidence = await input.resolveAuthenticationEvidence({
     kind: "browser",
@@ -218,6 +221,7 @@ async function verifyBrowser(
 async function verifyNative(
   input: BetterAuthD1RequestAuthenticationInput,
   accessToken: string,
+  identified: (identity: AuthIdentity) => void,
 ): Promise<VerifiedAuthSession> {
   const providerResult = await introspectAccessToken(input, accessToken)
   const result = record(providerResult)
@@ -235,6 +239,7 @@ async function verifyNative(
     : isNonBlankString(result.sid)
       ? result.sid
       : (() => { throw invalidCredentials() })()
+  identified({ adapter: "better-auth", issuer: input.descriptor.issuer, subject: result.sub })
 
   const evidence = await input.resolveAuthenticationEvidence({
     kind: selected.kind,
@@ -314,11 +319,11 @@ export function createBetterAuthD1RequestAuthenticationAdapter(
       resolveIdentity: input.resolveIdentity,
       now: input.now,
       maxFutureSkewMs: input.maxFutureSkewMs,
-      async verify(request) {
+      async verify(request, identified) {
         const cookie = exactCookiePresent(request, input.descriptor.browser.cookie.name)
         const bearer = opaqueBearer(request)
-        if (cookie) return verifyBrowser(input, request)
-        if (bearer) return verifyNative(input, bearer)
+        if (cookie) return verifyBrowser(input, request, identified)
+        if (bearer) return verifyNative(input, bearer, identified)
         throw invalidCredentials()
       },
     }),

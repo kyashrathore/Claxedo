@@ -473,6 +473,18 @@ function assertUnambiguousCredential(request: Request, descriptor: AuthAdapterDe
   }
 }
 
+/**
+ * A cookie from an untrusted origin is refused before the verifier runs, so
+ * a cross-site request never names a subject and the identity mapping, which
+ * may create the subject's rows, never starts for it. The parsed session's
+ * origin is checked again with the rest of the client binding.
+ */
+function assertTrustedCookieOrigin(request: Request, descriptor: AuthAdapterDescriptor) {
+  if (descriptor.browser.transport !== "cookie" || !requestHasCookie(request, descriptor.browser.cookie.name)) return
+  const origin = request.headers.get("origin") ?? new URL(request.url).origin
+  if (!descriptor.browser.trustedOrigins.includes(origin)) throw invalidCredentials()
+}
+
 function resolveApplicationIdentity(
   result: ApplicationIdentityResolution,
 ): Extract<ApplicationIdentityResolution, { state: "active" }> {
@@ -499,9 +511,23 @@ function resolveApplicationIdentity(
   }
 }
 
+/**
+ * The verifier may name the credential's subject (`identified`) as soon as
+ * the provider confirms it, before it finishes attesting the session; the
+ * application identity is then resolved while the attestation completes,
+ * and the two subjects must agree.
+ */
+export type CredentialVerifier = (request: Request, identified: (identity: AuthIdentity) => void) => Promise<unknown>
+
+type SettledResolution = { resolution: ApplicationIdentityResolution } | { failed: true }
+
+function sameIdentity(left: AuthIdentity, right: AuthIdentity) {
+  return left.adapter === right.adapter && left.issuer === right.issuer && left.subject === right.subject
+}
+
 export function createControlPlaneAuthenticationAdapter(input: {
   descriptor: AuthAdapterDescriptor
-  verify(request: Request): Promise<unknown>
+  verify: CredentialVerifier
   resolveIdentity: ApplicationIdentityResolver
   now?: () => number
   maxFutureSkewMs?: number
@@ -510,12 +536,13 @@ export function createControlPlaneAuthenticationAdapter(input: {
   const maxFutureSkewMs = input.maxFutureSkewMs ?? 60_000
   assertDescriptor(input.descriptor, now())
 
-  const verify = async (request: Request) => {
+  const verify = async (request: Request, identified: (identity: AuthIdentity) => void = () => {}) => {
     assertUnambiguousCredential(request, input.descriptor)
+    assertTrustedCookieOrigin(request, input.descriptor)
 
     let verified: unknown
     try {
-      verified = await input.verify(request)
+      verified = await input.verify(request, identified)
     } catch (error) {
       if (error instanceof AuthenticationError) throw error
       throw new AuthenticationError(503, "auth_unavailable", "Authentication verifier is unavailable")
@@ -529,17 +556,20 @@ export function createControlPlaneAuthenticationAdapter(input: {
     return { identity, session }
   }
 
+  const resolve = (identity: AuthIdentity, request: Request): Promise<SettledResolution> =>
+    input.resolveIdentity(identity, request).then((resolution) => ({ resolution }), () => ({ failed: true as const }))
+
   const authenticated = new WeakMap<Request, Promise<ControlPlanePrincipal>>()
   const authenticate = async (request: Request): Promise<ControlPlanePrincipal> => {
-    const { identity, session } = await verify(request)
+    let early: { identity: AuthIdentity; settled: Promise<SettledResolution> } | undefined
+    const { identity, session } = await verify(request, (named) => {
+      early ??= { identity: named, settled: resolve(named, request) }
+    })
+    if (early && !sameIdentity(early.identity, identity)) throw invalidCredentials()
 
-    let resolution: ApplicationIdentityResolution
-    try {
-      resolution = await input.resolveIdentity(identity, request)
-    } catch {
-      throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
-    }
-    const mapped = resolveApplicationIdentity(resolution)
+    const settled = await (early?.settled ?? resolve(identity, request))
+    if ("failed" in settled) throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
+    const mapped = resolveApplicationIdentity(settled.resolution)
     return {
       userId: mapped.userId,
       actorId: mapped.actorId,

@@ -3,8 +3,10 @@ import { describe, expect, test, vi } from "vitest"
 import { type AuthAdapterDescriptor } from "@claxedo/account-contract/auth"
 import {
   AuthenticationError,
+  type AuthIdentity,
   authenticateControlPlaneRequest,
   createControlPlaneAuthenticationAdapter,
+  type CredentialVerifier,
   type ApplicationIdentityResolution,
   type AuthAccountLifecycle,
   type AuthAccountOperationStatus,
@@ -119,7 +121,7 @@ const activeIdentity = async (): Promise<ApplicationIdentityResolution> => ({
 })
 
 function adapter(input: {
-  verify?: () => Promise<unknown>
+  verify?: CredentialVerifier
   resolveIdentity?: () => Promise<ApplicationIdentityResolution>
   descriptor?: AuthAdapterDescriptor
 } = {}) {
@@ -138,7 +140,7 @@ describe("provider-neutral control-plane authentication", () => {
     const selected = adapter({ verify, resolveIdentity })
 
     await expect(authenticateControlPlaneRequest(new Request("https://api.example.test", {
-      headers: { cookie: "better-auth.session_token=opaque" },
+      headers: { cookie: "better-auth.session_token=opaque", origin: "https://app.example.test" },
     }), selected)).resolves.toMatchObject({
       userId: "user_1",
       actorId: "actor_human_1",
@@ -166,7 +168,7 @@ describe("provider-neutral control-plane authentication", () => {
     const verify = vi.fn(async () => browserSession())
     const resolveIdentity = vi.fn(activeIdentity)
     const selected = adapter({ verify, resolveIdentity })
-    const request = () => new Request("https://api.example.test", { headers: { cookie: "better-auth.session_token=opaque" } })
+    const request = () => new Request("https://api.example.test", { headers: { cookie: "better-auth.session_token=opaque", origin: "https://app.example.test" } })
     const first = request()
     const [one, two] = await Promise.all([selected.authenticate(first), selected.authenticate(first)])
     expect(two).toBe(one)
@@ -177,13 +179,40 @@ describe("provider-neutral control-plane authentication", () => {
     expect(verify).toHaveBeenCalledTimes(2)
   })
 
+  test("an identity the verifier names early is resolved while the session is still attested, and a final subject that differs is refused", async () => {
+    const order: string[] = []
+    let attest: () => void = () => {}
+    const verify = vi.fn(async (_request: Request, identified: (identity: AuthIdentity) => void) => {
+      identified({ adapter: "better-auth", issuer: "https://auth.example.test", subject: "provider_subject_1" })
+      await new Promise<void>((resolve) => { attest = resolve })
+      order.push("attested")
+      return browserSession()
+    })
+    const resolveIdentity = vi.fn(async () => {
+      order.push("resolved")
+      return activeIdentity()
+    })
+    const pending = adapter({ verify, resolveIdentity }).authenticate(new Request("https://api.example.test", { headers: { cookie: "better-auth.session_token=opaque", origin: "https://app.example.test" } }))
+    await vi.waitFor(() => expect(order).toEqual(["resolved"]))
+    attest()
+    await expect(pending).resolves.toMatchObject({ userId: "user_1" })
+    expect(order).toEqual(["resolved", "attested"])
+
+    const renamed = vi.fn(async (_request: Request, identified: (identity: AuthIdentity) => void) => {
+      identified({ adapter: "better-auth", issuer: "https://auth.example.test", subject: "someone_else" })
+      return browserSession()
+    })
+    await expect(adapter({ verify: renamed, resolveIdentity }).authenticate(new Request("https://api.example.test", { headers: { cookie: "better-auth.session_token=opaque", origin: "https://app.example.test" } })))
+      .rejects.toMatchObject({ status: 401, code: "invalid_credentials" })
+  })
+
   test("verifies an enrollment identity without creating or resolving an application account", async () => {
     const verify = vi.fn(async () => browserSession())
     const resolveIdentity = vi.fn(activeIdentity)
     const selected = adapter({ verify, resolveIdentity })
 
     await expect(selected.verifyIdentity(new Request("https://api.example.test", {
-      headers: { cookie: "better-auth.session_token=opaque" },
+      headers: { cookie: "better-auth.session_token=opaque", origin: "https://app.example.test" },
     }))).resolves.toEqual({
       adapter: "better-auth",
       issuer: "https://auth.example.test",
@@ -239,6 +268,7 @@ describe("provider-neutral control-plane authentication", () => {
     await expect(selected.authenticate(new Request("https://api.example.test", {
       headers: {
         cookie: "unrelated=ok; better-auth.session_token=opaque",
+        origin: "https://app.example.test",
         authorization: "Bearer other",
       },
     }))).rejects.toMatchObject({ status: 401, code: "ambiguous_credentials" })
