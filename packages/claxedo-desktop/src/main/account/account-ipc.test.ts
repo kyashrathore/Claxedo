@@ -532,6 +532,7 @@ test("the renderer-visible operation set stays pinned", async () => {
   const expected = [
     "account.compatibility",
     "account.mode",
+    "agentConfig.harness.options",
     "agentPlugins.activation",
     "agentPlugins.catalog",
     "agentPlugins.catalog.project",

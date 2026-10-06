@@ -1,3 +1,4 @@
+import type { HostedAccount } from "./account"
 import { responseError } from "./errors"
 import type { PlacementId } from "./ids"
 import { readPermissionModes, writePermissionMode, type PermissionModesRequest } from "./permission-modes"
@@ -21,7 +22,7 @@ export type HarnessConfigApi = {
   readonly setPermissionMode: (ref: SessionLocation, modeId: string) => Promise<void>
 }
 
-export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces): HarnessConfigApi {
+export function createHarnessConfigApi(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined): HarnessConfigApi {
   const workspaceId = async (placementId: PlacementId) => (await workspaces.route(placementId)).workspaceId
   return {
     serverUrl: transport.serverUrl,
@@ -30,7 +31,7 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
       if (!response.ok) throw await responseError(response, "Harness status")
       return harnessStateFromWire(await response.json())
     },
-    options: (request) => readHarnessOptions(transport, workspaces, request),
+    options: (request) => readHarnessOptions(transport, workspaces, account, request),
     updateSessionConfig: (ref, patch) => writeSessionConfig(transport, workspaces, ref, patch),
     permissionModes: (request) => readPermissionModes(transport, workspaces, request),
     setPermissionMode: (ref, modeId) => writePermissionMode(transport, workspaces, ref, modeId),

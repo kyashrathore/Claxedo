@@ -7,7 +7,7 @@ import {
   MissingOperationParameter, UnknownHostedOperation,
 } from "./operation-definition"
 import { operationInput } from "./operation-input"
-import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, connection, statusResult } from "./hosted-output"
+import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, optional, connection, statusResult } from "./hosted-output"
 
 export const HOSTED_OPERATIONS = {
   "session.shared.list": defineOperation({
@@ -497,6 +497,12 @@ export const HOSTED_OPERATIONS = {
     method: "DELETE", path: operationPath("/api/claxedo/projects/:projectId/environment/:name"),
     input: operationInput({ projectId: requiredParameter, name: requiredParameter }),
     output: withArrays("names"), retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
+  "agentConfig.harness.options": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/agent-config/harness/options", { query: ["nativeHarness", "workspaceId"], optionalQuery: ["model"] }),
+    input: operationInput({ nativeHarness: requiredParameter, workspaceId: requiredParameter, model: optionalParameter }),
+    output: optional(withArrays("options")), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
   "connections.list": defineOperation({

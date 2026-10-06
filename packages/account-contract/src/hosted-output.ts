@@ -68,6 +68,10 @@ export function nullable<T>(decode: (raw: unknown) => DecodeResult<T>) {
   return (raw: unknown): DecodeResult<T | null> => (raw === null ? { ok: true, value: null } : decode(raw))
 }
 
+export function optional<T>(decode: (raw: unknown) => DecodeResult<T>) {
+  return (raw: unknown): DecodeResult<T | undefined> => (raw === undefined ? { ok: true, value: undefined } : decode(raw))
+}
+
 export function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
   const shape = object(raw)
   if (!shape.ok) return shape

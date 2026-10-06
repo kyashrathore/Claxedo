@@ -342,6 +342,10 @@ describe("resolveHostedOperation", () => {
       method: "GET",
       path: "/api/control/projects/proj_1/access",
     })
+    expect(resolveHostedOperation("agentConfig.harness.options", { nativeHarness: "claude", workspaceId: "ws_1", model: "claude-sonnet-5-5" })).toEqual({
+      method: "GET",
+      path: "/api/claxedo/agent-config/harness/options?nativeHarness=claude&workspaceId=ws_1&model=claude-sonnet-5-5",
+    })
     expect(resolveHostedOperation("project.environment.list", { projectId: "proj_1" })).toEqual({
       method: "GET",
       path: "/api/claxedo/projects/proj_1/environment",

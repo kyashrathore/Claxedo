@@ -1,3 +1,4 @@
+import type { HostedAccount } from "./account"
 import { fetchQuery } from "./fetch-query"
 import { sessionId, type PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
@@ -21,8 +22,16 @@ export type HarnessOptionsRequest = {
   readonly model?: string
 }
 
-function draftServedByControlPlane(workspaces: Workspaces, request: HarnessOptionsRequest) {
-  return !request.sessionId && "nativeHarness" in harnessSelectionQuery(request.harness) && workspaces.byId(request.placementId)?.kind === "cloud"
+type DraftQuery = { readonly nativeHarness: string; readonly workspaceId: string; readonly model?: string }
+type DraftReader = (query: DraftQuery) => Promise<HarnessOptions | undefined>
+
+function controlPlaneDraftReader(transport: Transport, account: HostedAccount | undefined): DraftReader | undefined {
+  if (account) return async (query) => {
+    const answer = await account.run("agentConfig.harness.options", query)
+    return answer && harnessOptionsFromWire(answer)
+  }
+  if (transport.loopback) return undefined
+  return (query) => readOptionsRoute(transport, query)
 }
 
 async function readOptionsRoute(transport: Transport, query: Record<string, string | undefined>): Promise<HarnessOptions | undefined> {
@@ -32,21 +41,26 @@ async function readOptionsRoute(transport: Transport, query: Record<string, stri
   return harnessOptionsFromWire(await response.json())
 }
 
-export async function readHarnessOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
+export async function readHarnessOptions(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined, request: HarnessOptionsRequest): Promise<HarnessOptions> {
   try {
-    return await readOptions(transport, workspaces, request)
+    return await readOptions(transport, workspaces, account, request)
   } catch (error) {
     if (error instanceof ServerError && error.code === HARNESS_NEEDS_BROKERING) return unavailableHereOptionsFromWire(error.details)
     throw error
   }
 }
 
-async function readOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
+function cloudDraft(workspaces: Workspaces, request: HarnessOptionsRequest, selection: ReturnType<typeof harnessSelectionQuery>): DraftQuery | undefined {
+  const nativeHarness = selection.nativeHarness
+  if (request.sessionId || !nativeHarness || workspaces.byId(request.placementId)?.kind !== "cloud") return undefined
+  return { nativeHarness, workspaceId: request.placementId, ...(request.model ? { model: request.model } : {}) }
+}
+
+async function readOptions(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined, request: HarnessOptionsRequest): Promise<HarnessOptions> {
   const selection = harnessSelectionQuery(request.harness)
-  if (draftServedByControlPlane(workspaces, request)) {
-    const answered = await readOptionsRoute(transport, { ...selection, workspaceId: request.placementId, model: request.model })
-    if (answered) return answered
-  }
+  const draft = cloudDraft(workspaces, request, selection)
+  const answered = draft && await controlPlaneDraftReader(transport, account)?.(draft)
+  if (answered) return answered
   const route = await workspaces.route(request.sessionId ? { placementId: request.placementId, sessionId: sessionId(request.sessionId) } : request.placementId)
   if (route.remote) {
     const path = request.sessionId ? `/session/${encodeURIComponent(request.sessionId)}/config-options` : "/api/wr/harness-config-options"
@@ -55,10 +69,10 @@ async function readOptions(transport: Transport, workspaces: Workspaces, request
   return (await readOptionsRoute(transport, { workspaceId: route.workspaceId, ...selection, sessionId: request.sessionId, model: request.model })) ?? harnessOptionsFromWire(undefined)
 }
 
-export function harnessQueries(transport: Transport, workspaces: Workspaces) {
+export function harnessQueries(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined) {
   return {
     options: (placementId: PlacementId, harness: string): FetchQuery<HarnessOptions> =>
-      fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), () => readHarnessOptions(transport, workspaces, { placementId, harness })),
+      fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), () => readHarnessOptions(transport, workspaces, account, { placementId, harness })),
     commands: harnessCommandQuery(transport, workspaces),
     stopsBackgroundTasks: (ref: SessionLocation): FetchQuery<boolean> =>
       fetchQuery(queryKeys.stopsBackgroundTasks(transport.serverUrl, ref.placementId, ref.sessionId), async () => readStopsBackgroundTasks(transport, await workspaces.route(ref), ref)),

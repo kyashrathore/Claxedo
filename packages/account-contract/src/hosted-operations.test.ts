@@ -123,6 +123,12 @@ describe("decodeHostedResult", () => {
     expect(decodeHostedResult("workspace.resolve", { workspaceId: "ws_1" })).toEqual({ workspaceId: "ws_1" })
     expect(() => decodeHostedResult("workspace.resolve", [])).toThrow(/expected an object/)
   })
+
+  test("a cloud draft's options are absent when the control plane leaves the runtime to answer", () => {
+    expect(decodeHostedResult("agentConfig.harness.options", undefined)).toBeUndefined()
+    expect(decodeHostedResult("agentConfig.harness.options", { options: [] })).toEqual({ options: [] })
+    expect(() => decodeHostedResult("agentConfig.harness.options", null)).toThrow(/expected an object/)
+  })
 })
 
 describe("the signed desktop's session sources", () => {

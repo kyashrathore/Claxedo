@@ -96,7 +96,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     providerConnect: createProviderConnectApi(transport, queryClient),
     providerCatalogs: createProviderCatalogsApi(transport, workspaces, queryClient),
     livePlugins: createLivePluginsApi(transport),
-    harnessConfig: createHarnessConfigApi(transport, workspaces),
+    harnessConfig: createHarnessConfigApi(transport, workspaces, account),
     request: transport.request,
     operation: operations.run,
     acceptOrgInvitation: (token: string) => operations.run("org.invitations.accept", { token }),
