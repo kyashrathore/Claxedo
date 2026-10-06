@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "中斷連線",
   "settings.providers.catalog.empty": "{{harness}} 未回報 {{workspace}} 的任何供應商。",
   "settings.providers.catalog.error": "{{harness}} 無法為 {{workspace}} 作答：{{reason}}",
+  "settings.providers.catalog.retry": "重試",
   "settings.providers.search.placeholder": "搜尋供應商…",
   "settings.providers.tag.environment": "環境",
   "settings.providers.tag.config": "配置",

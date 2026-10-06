@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "Rozłącz",
   "settings.providers.catalog.empty": "{{harness}} nie zgłasza żadnych dostawców dla {{workspace}}.",
   "settings.providers.catalog.error": "{{harness}} nie mógł odpowiedzieć dla {{workspace}}: {{reason}}",
+  "settings.providers.catalog.retry": "Spróbuj ponownie",
   "settings.providers.search.placeholder": "Szukaj dostawców…",
   "settings.providers.tag.environment": "Środowisko",
   "settings.providers.tag.config": "Konfiguracja",

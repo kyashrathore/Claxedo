@@ -65,13 +65,20 @@ function ConnectedProvider(props: { readonly provider: CatalogProvider; readonly
   )
 }
 
-function CatalogNote(props: { readonly harness: string; readonly machine: string; readonly error: string | undefined }) {
+function CatalogNote(props: { readonly harness: string; readonly machine: string; readonly error: string | undefined; readonly onRetry: () => void }) {
   const t = useAccountsText()
   const vars = () => ({ harness: harnessDisplayLabel(props.harness), workspace: props.machine })
   return (
     <SettingsEmpty>
       <Show when={props.error} fallback={<span>{t("settings.providers.catalog.empty", vars())}</span>}>
-        {(reason) => <span>{t("settings.providers.catalog.error", { ...vars(), reason: reason() })}</span>}
+        {(reason) => (
+          <span role="alert">
+            {t("settings.providers.catalog.error", { ...vars(), reason: reason() })}{" "}
+            <button type="button" class="text-text-interactive-base" data-action="settings-providers-catalog-retry" onClick={() => props.onRetry()}>
+              {t("settings.providers.catalog.retry")}
+            </button>
+          </span>
+        )}
       </Show>
     </SettingsEmpty>
   )
@@ -99,7 +106,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
   return (
     <div class="flex flex-col gap-3">
       <Show when={catalog().error() || (!catalog().loading() && catalog().resolved() && items().length === 0)}>
-        <CatalogNote harness={harness()} machine={props.providers.machine()} error={catalog().error()} />
+        <CatalogNote harness={harness()} machine={props.providers.machine()} error={catalog().error()} onRetry={() => void catalog().refresh()} />
       </Show>
       <Show when={props.providers.sources.error()}>
         {(message) => (

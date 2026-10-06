@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "Отключить",
   "settings.providers.catalog.empty": "{{harness}} не сообщает о провайдерах для {{workspace}}.",
   "settings.providers.catalog.error": "{{harness}} не смог ответить для {{workspace}}: {{reason}}",
+  "settings.providers.catalog.retry": "Повторить",
   "settings.providers.search.placeholder": "Поиск провайдеров…",
   "settings.providers.tag.environment": "Среда",
   "settings.providers.tag.config": "Конфигурация",

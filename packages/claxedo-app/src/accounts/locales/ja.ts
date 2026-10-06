@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "切断",
   "settings.providers.catalog.empty": "{{harness}} は {{workspace}} のプロバイダーを報告していません。",
   "settings.providers.catalog.error": "{{harness}} は {{workspace}} に応答できませんでした: {{reason}}",
+  "settings.providers.catalog.retry": "再試行",
   "settings.providers.search.placeholder": "プロバイダーを検索…",
   "settings.providers.tag.environment": "環境",
   "settings.providers.tag.config": "設定",

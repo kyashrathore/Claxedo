@@ -160,6 +160,7 @@ export default {
   "common.disconnect": "Disconnect",
   "settings.providers.catalog.empty": "{{harness}} reports no providers for {{workspace}}.",
   "settings.providers.catalog.error": "{{harness}} could not answer for {{workspace}}: {{reason}}",
+  "settings.providers.catalog.retry": "Try again",
   "settings.providers.search.placeholder": "Search providers…",
   "settings.providers.tag.environment": "Environment",
   "settings.providers.tag.config": "Config",

@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "Bağlantı Kes",
   "settings.providers.catalog.empty": "{{harness}}, {{workspace}} için sağlayıcı bildirmiyor.",
   "settings.providers.catalog.error": "{{harness}}, {{workspace}} için yanıt veremedi: {{reason}}",
+  "settings.providers.catalog.retry": "Yeniden dene",
   "settings.providers.search.placeholder": "Sağlayıcı ara…",
   "settings.providers.tag.environment": "Ortam",
   "settings.providers.tag.config": "Yapılandırma",

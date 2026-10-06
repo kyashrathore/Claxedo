@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "قطع الاتصال",
   "settings.providers.catalog.empty": "لا يبلّغ {{harness}} عن أي مزودين لـ {{workspace}}.",
   "settings.providers.catalog.error": "تعذّر على {{harness}} الإجابة لـ {{workspace}}: {{reason}}",
+  "settings.providers.catalog.retry": "إعادة المحاولة",
   "settings.providers.search.placeholder": "ابحث عن المزودين…",
   "settings.providers.tag.environment": "البيئة",
   "settings.providers.tag.config": "التكوين",

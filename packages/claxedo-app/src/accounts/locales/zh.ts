@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "断开连接",
   "settings.providers.catalog.empty": "{{harness}} 未报告 {{workspace}} 的任何提供商。",
   "settings.providers.catalog.error": "{{harness}} 无法为 {{workspace}} 作答：{{reason}}",
+  "settings.providers.catalog.retry": "重试",
   "settings.providers.search.placeholder": "搜索提供商…",
   "settings.providers.tag.environment": "环境",
   "settings.providers.tag.config": "配置",

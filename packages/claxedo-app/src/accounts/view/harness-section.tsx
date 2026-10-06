@@ -2,7 +2,7 @@ import { ProviderIcon } from "@/ui"
 import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
 import { createProviderCatalog, useModelVisibility } from "@/composer"
 import type { HarnessSelection } from "@/lib/harness-selection"
-import { SettingsEmpty } from "@/settings"
+import { SettingsEmpty, SettingsListSkeleton } from "@/settings"
 import { useServer } from "@/server"
 import { useAccountsText } from "../i18n"
 import { useModelSource, groupContext, modelKeyOf, type SettingsPlacement } from "../model-sources"
@@ -122,8 +122,7 @@ function CatalogHarnessSection(props: SectionProps) {
   const catalog = createProviderCatalog({ server, harness: () => props.harness.slug, eager: true })
   const [addAccount, setAddAccount] = createSignal<() => void>()
   return (
-    <Show
-      when={catalog.connected().length > 0}
+    <Switch
       fallback={
         <section class="flex flex-col gap-2" data-harness-accountless={props.harness.slug}>
           <HarnessTitle harness={props.harness} actions={<AddAccountAction slug={props.harness.slug} open={addAccount()} />} />
@@ -131,8 +130,16 @@ function CatalogHarnessSection(props: SectionProps) {
         </section>
       }
     >
-      <HarnessWithTabs {...props} />
-    </Show>
+      <Match when={!catalog.resolved()}>
+        <section class="flex flex-col gap-2">
+          <HarnessTitle harness={props.harness} />
+          <SettingsListSkeleton />
+        </section>
+      </Match>
+      <Match when={catalog.connected().length > 0}>
+        <HarnessWithTabs {...props} />
+      </Match>
+    </Switch>
   )
 }
 

@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "Koble fra",
   "settings.providers.catalog.empty": "{{harness}} rapporterer ingen leverandører for {{workspace}}.",
   "settings.providers.catalog.error": "{{harness}} kunne ikke svare for {{workspace}}: {{reason}}",
+  "settings.providers.catalog.retry": "Prøv igjen",
   "settings.providers.search.placeholder": "Søk etter leverandører…",
   "settings.providers.tag.environment": "Miljø",
   "settings.providers.tag.config": "Konfigurasjon",

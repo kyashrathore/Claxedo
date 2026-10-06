@@ -120,6 +120,7 @@ export default {
   "common.disconnect": "Prekini vezu",
   "settings.providers.catalog.empty": "{{harness}} ne prijavljuje nijednog provajdera za {{workspace}}.",
   "settings.providers.catalog.error": "{{harness}} nije mogao odgovoriti za {{workspace}}: {{reason}}",
+  "settings.providers.catalog.retry": "Pokušaj ponovo",
   "settings.providers.search.placeholder": "Pretraži provajdere…",
   "settings.providers.tag.environment": "Okruženje",
   "settings.providers.tag.config": "Konfiguracija",

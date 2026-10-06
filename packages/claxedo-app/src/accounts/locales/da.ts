@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "Frakobl",
   "settings.providers.catalog.empty": "{{harness}} rapporterer ingen udbydere for {{workspace}}.",
   "settings.providers.catalog.error": "{{harness}} kunne ikke svare for {{workspace}}: {{reason}}",
+  "settings.providers.catalog.retry": "Prøv igen",
   "settings.providers.search.placeholder": "Søg efter udbydere…",
   "settings.providers.tag.environment": "Miljø",
   "settings.providers.tag.config": "Konfiguration",

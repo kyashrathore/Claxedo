@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "연결 해제",
   "settings.providers.catalog.empty": "{{harness}}이(가) {{workspace}}에 대한 제공자를 보고하지 않습니다.",
   "settings.providers.catalog.error": "{{harness}}이(가) {{workspace}}에 응답하지 못했습니다: {{reason}}",
+  "settings.providers.catalog.retry": "다시 시도",
   "settings.providers.search.placeholder": "제공자 검색…",
   "settings.providers.tag.environment": "환경",
   "settings.providers.tag.config": "구성",

@@ -121,6 +121,7 @@ export default {
   "common.disconnect": "ยกเลิกการเชื่อมต่อ",
   "settings.providers.catalog.empty": "{{harness}} ไม่รายงานผู้ให้บริการสำหรับ {{workspace}}",
   "settings.providers.catalog.error": "{{harness}} ไม่สามารถตอบสำหรับ {{workspace}} ได้: {{reason}}",
+  "settings.providers.catalog.retry": "ลองอีกครั้ง",
   "settings.providers.search.placeholder": "ค้นหาผู้ให้บริการ…",
   "settings.providers.tag.environment": "สภาพแวดล้อม",
   "settings.providers.tag.config": "กำหนดค่า",
