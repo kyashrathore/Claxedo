@@ -387,7 +387,7 @@ open deployment states that with `gate: () => null`.
 
 | Route | Policy | Purpose |
 | --- | --- | --- |
-| `GET /` | `authenticated` | List integrations and the caller's connections |
+| `GET /` | `authenticated` | List integrations and the caller's connections; `?capability=<name>` keeps only those that serve it (422 for an unknown name) |
 | `POST /:id/connect` | `org-write` | Key connect, or start an OAuth/device flow |
 | `GET /callback` | `public` | OAuth redirect landing; renders success/failure |
 | `GET /attempts/:state` | `authenticated` | Poll an attempt — **and advance a device grant** |

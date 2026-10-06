@@ -46,7 +46,7 @@ function FolderField(props: { machine: string; folder: string; onChoose: () => v
 function createRepositoryChoice(active: Accessor<boolean>) {
   const server = useServer()
   const connectionsServed = () => server.capabilities()?.features.connections === true
-  const offered = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: active() && connectionsServed() }))
+  const offered = useQuery(() => ({ ...server.queries.integrations.codeHosts(), enabled: active() && connectionsServed() }))
   const integration = () => codeHostIntegrations(offered.data)[0]
   const usable = createMemo(() => codeHostConnections(offered.data).filter((connection) => connection.status !== "broken"))
   const [chosenId, setChosenId] = createSignal<string>()

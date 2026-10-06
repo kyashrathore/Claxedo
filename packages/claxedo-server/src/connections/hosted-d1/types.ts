@@ -16,4 +16,6 @@ export type HostedDynamicConnectionIntegrations = (context: {
   connectionFields?: Readonly<Record<string, string>>
   /** Present for authenticated management requests; callbacks reconstruct from the frozen attempt instead. */
   request?: Request
+  /** A listing narrowed to one capability; a provider whose integrations cannot serve it builds none. */
+  capability?: string
 }) => Promise<ReadonlyArray<{ decl: IntegrationDeclaration; impl: IntegrationImpl }>>

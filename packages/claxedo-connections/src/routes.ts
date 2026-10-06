@@ -187,9 +187,11 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
               ...(keys.personal !== undefined ? { owner: keys.personal } : {}),
               ...(keys.org !== undefined ? { orgOwner: keys.org } : {}),
             })
+      const capability = c.req.query("capability")
+      if (capability !== undefined && !isCapability(capability)) return c.json({ code: "unknown_capability" }, 422)
       return c.json({
-        integrations: service.listIntegrations(),
-        connections,
+        integrations: capability ? service.listIntegrations().filter((integration) => integration.capabilities.includes(capability)) : service.listIntegrations(),
+        connections: capability ? connections.filter((connection) => connection.grantedCapabilities.includes(capability)) : connections,
         personalScopeEnabled: keys.personal !== undefined,
       })
     } catch (error) {

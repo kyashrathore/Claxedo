@@ -262,6 +262,21 @@ const listed = async (app: ReturnType<typeof createHostedD1ConnectionsSetup>) =>
   (await (await app.request("/")).json()) as { connections: Array<{ id: string; integrationId: string; scope: string; status: string }> }
 
 describe("hosted D1 Connections setup", () => {
+  test("a listing narrowed to one capability asks the dynamic provider for that capability alone", async () => {
+    const test = await rig()
+    const asked: Array<string | undefined> = []
+    const app = createHostedD1ConnectionsSetup({
+      ...test.input,
+      dynamicIntegrations: async (context) => {
+        asked.push(context.capability)
+        return []
+      },
+    })
+    expect((await app.request("/?capability=code-host")).status).toBe(200)
+    expect((await app.request("/")).status).toBe(200)
+    expect(asked).toEqual(["code-host", undefined])
+  })
+
   test("a personal connection belongs to the user who made it and to no one else", async () => {
     const test = await rig()
 

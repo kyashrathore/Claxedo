@@ -167,11 +167,13 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
     }
 
     const integrationId = /^\/([^/]+)\/connect$/.exec(subpath)?.[1]
+    const capability = c.req.method === "GET" && subpath === "/" ? c.req.query("capability") : undefined
     const service = await hostedConnectionsService(input, {
       ownerUserId: membership.userId,
       orgId: membership.orgId,
       attempts,
       ...(integrationId ? { integrationId } : {}),
+      ...(capability ? { capability } : {}),
       auth,
       request: c.req.raw,
     })
@@ -459,13 +461,14 @@ type HostedConnectionsServiceRequest = Readonly<{
   attempts?: HostedConnectionAttempts
   /** The partition an attempt froze. Absent for runtime resolution, which selects it below. */
   owner?: string
+  capability?: string
 }>
 
 async function hostedConnectionsService(
   input: HostedD1ConnectionsSetupInput,
   request: HostedConnectionsServiceRequest,
 ) {
-  const { ownerUserId, orgId, integrationId, auth, attemptContext, owner } = request
+  const { ownerUserId, orgId, integrationId, auth, attemptContext, owner, capability } = request
   const connections = createD1ConnectionStore({ database: input.database, orgId, ownerUserId })
   // A callback and a runtime resolution arrive with no caller context, so the
   // dynamic provider rebuilds its refresh behavior from the stored row's public
@@ -498,6 +501,7 @@ async function hostedConnectionsService(
     ...(attemptContext ? { attemptContext } : {}),
     ...(existing ? { connectionFields: existing.fields } : {}),
     ...(request.request ? { request: request.request } : {}),
+    ...(capability ? { capability } : {}),
   }) ?? []) {
     registry.register(integration.decl, integration.impl)
   }

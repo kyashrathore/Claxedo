@@ -59,6 +59,20 @@ describe("hosted Agent Plugin Connections adapter", () => {
     }
     expect(fetch).not.toHaveBeenCalled()
   })
+  test("a listing narrowed to another capability reads no plugin and discovers nothing", async () => {
+    const fetch = oauthFetch()
+    const artifacts = { get: vi.fn(async () => artifact()) }
+    const activations = { listKnown: vi.fn(async () => [{ pluginInstanceId: "collection:docs", pins: { claxedo: { digest: "sha256:user", sourceId: "claxedo", relativePath: "docs", sourceRevision: "a" } } }]) }
+    const provider = hostedAgentPluginConnectionIntegrations({
+      activations: activations as never,
+      artifacts: artifacts as never,
+      oauth: { callbackUrl: "https://claxedo.example/callback", fetch, resolve: resolvePublic, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
+    })
+    expect(await provider({ ownerUserId: "user-1", orgId: "org-1", auth, capability: "code-host" })).toEqual([])
+    expect(activations.listKnown).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(await provider({ ownerUserId: "user-1", orgId: "org-1", auth, capability: "mcp" })).toHaveLength(1)
+  })
   test("lists only retained streamable-http servers whose OAuth path is supported", async () => {
     const fetch = oauthFetch()
     const artifacts = { get: vi.fn(async (digest: string) => digest === "sha256:user" ? artifact() : undefined) }

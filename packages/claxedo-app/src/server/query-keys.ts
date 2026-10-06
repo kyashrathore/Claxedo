@@ -36,6 +36,7 @@ export const queryKeys = {
   stopsBackgroundTasks: (server: string, placementId: PlacementId, sessionId: string) => ["server", server, "stops-background-tasks", placementId, sessionId] as const,
   codeHostAll: (server: string) => ["server", server, "codeHost"] as const,
   integrations: (server: string) => ["server", server, "integrations"] as const,
+  codeHostIntegrations: (server: string) => ["server", server, "integrations", "code-host"] as const,
   agentConnections: (server: string) => ["server", server, "agent-connections"] as const,
   providerAuth: (server: string, harness: string) => ["server", server, "providerAuth", harness] as const,
   providerCatalogs: (server: string) => ["server", server, "providerCatalog"] as const,

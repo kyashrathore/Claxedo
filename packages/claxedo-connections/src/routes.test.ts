@@ -258,6 +258,16 @@ describe("integrations routes", () => {
     })
   })
 
+  test("a capability narrows the listing to the integrations and connections that serve it", async () => {
+    const { app } = harness({ codeHost: true })
+    await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const codeHost = await (await app.request("/?capability=code-host")).json() as { integrations: Array<{ id: string }>; connections: Array<{ integrationId: string }> }
+    expect(codeHost.integrations.map((integration) => integration.id)).toEqual(["github"])
+    expect(codeHost.connections.map((connection) => connection.integrationId)).toEqual(["github"])
+    expect(await (await app.request("/?capability=docs")).json()).toMatchObject({ integrations: [], connections: [] })
+    expect((await app.request("/?capability=nonsense")).status).toBe(422)
+  })
+
   test("lists visible code-host repositories without exposing the connection token", async () => {
     const { app } = harness({ codeHost: true })
     await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })

@@ -123,7 +123,7 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
         ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
       })]
     }
-    if (!context.auth) return []
+    if (!context.auth || (context.capability !== undefined && context.capability !== MCP_BROKERED_PORT.mcp.capability)) return []
     const servers = await retainedServers(input.activations, input.artifacts, context.auth)
     const declarations = (await Promise.all(servers.map(async (server) => {
       const auth = await authentication(server)

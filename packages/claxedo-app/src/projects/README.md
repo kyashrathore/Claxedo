@@ -22,7 +22,7 @@ Owns: the project as the app sees it, its placements, the create-project form (t
 
 `useProjectCommands()` gives `remove` and `reclone`, which call `server.projects`. `reclone` is Settings → Projects' "Clone at this location": the server clones the recorded remote into the recorded folder (`POST /api/claxedo/projects/:id/reclone`) and refuses while anything is at that path. The Edit dialog saves the name, icon and colour in one `server.projects.update`; an empty name drops a name set by hand, as v1 did for the folder's own name. These configuration actions are daemon operations; on hosted the adapter refuses them before any HTTP request. The adapter updates the project queries from each answer; this domain never writes the query cache.
 
-The repository picker reads the integrations catalog (`queries.integrations.catalog()`, with `codeHostConnections` picking the code-host connections from it) and `queries.codeHost.repositories(connectionId)`, only where the bootstrap declares Connections (`features.connections`); elsewhere a repository is entered by URL. Failures become `AppError`s through the adapter's `toAppError`.
+The repository picker reads the code-host part of the integrations catalog (`queries.integrations.codeHosts()`, `?capability=code-host`, which skips the hosted plane's discovery of every retained plugin MCP server that the full catalog runs; `codeHostConnections` picks the usable connections from it) and `queries.codeHost.repositories(connectionId)`, only where the bootstrap declares Connections (`features.connections`); elsewhere a repository is entered by URL. Failures become `AppError`s through the adapter's `toAppError`.
 
 ## Routes
 

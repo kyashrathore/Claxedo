@@ -62,7 +62,10 @@ export type IntegrationConnectInput =
   | (ConnectOptions & { readonly method: "oauth" })
   | (ConnectOptions & { readonly method: "key"; readonly secret: string; readonly fields?: Readonly<Record<string, string>> })
 
-export type IntegrationQueries = { readonly catalog: () => FetchQuery<IntegrationsCatalog> }
+export type IntegrationQueries = {
+  readonly catalog: () => FetchQuery<IntegrationsCatalog>
+  readonly codeHosts: () => FetchQuery<IntegrationsCatalog>
+}
 
 export type IntegrationsApi = {
   readonly connect: (integrationId: string, input: IntegrationConnectInput) => Promise<IntegrationConnectOutcome>
@@ -120,17 +123,20 @@ function connectionOf(value: unknown): Connection[] {
   }]
 }
 
+async function readCatalog(transport: Transport, path: string): Promise<IntegrationsCatalog> {
+  const body = await transport.json(path)
+  return {
+    integrations: (readArray(body, "integrations") ?? []).flatMap(integrationOf),
+    connections: (readArray(body, "connections") ?? []).flatMap(connectionOf),
+    personalScopeEnabled: readBoolean(body, "personalScopeEnabled") === true,
+  }
+}
+
 export function integrationQueries(transport: Transport): IntegrationQueries {
   return {
-    catalog: () =>
-      fetchQuery(queryKeys.integrations(transport.serverUrl), async () => {
-        const body = await transport.json(INTEGRATIONS_PATH)
-        return {
-          integrations: (readArray(body, "integrations") ?? []).flatMap(integrationOf),
-          connections: (readArray(body, "connections") ?? []).flatMap(connectionOf),
-          personalScopeEnabled: readBoolean(body, "personalScopeEnabled") === true,
-        }
-      }),
+    catalog: () => fetchQuery(queryKeys.integrations(transport.serverUrl), () => readCatalog(transport, INTEGRATIONS_PATH)),
+    codeHosts: () =>
+      fetchQuery(queryKeys.codeHostIntegrations(transport.serverUrl), () => readCatalog(transport, `${INTEGRATIONS_PATH}?capability=${CODE_HOST_CAPABILITY}`)),
   }
 }
 
