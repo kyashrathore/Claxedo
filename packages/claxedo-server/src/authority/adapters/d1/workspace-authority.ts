@@ -39,6 +39,7 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "createRuntimeCloudWorkspace",
   "deleteWorkspace",
   "deleteRuntimeWorkspace",
+  "setWorkspaceMachineClass",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export type D1WorkspaceAuthorityCore = Pick<WorkspaceAuthority, (typeof D1_WORKSPACE_AUTHORITY_METHODS)[number]>
@@ -481,6 +482,18 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   async deleteRuntimeWorkspace(principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) {
     return await this.deleteWorkspaceAs(await this.requireRuntimeActor(principal), args)
+  }
+
+  async setWorkspaceMachineClass(auth: SignedControlPlaneAuth, args: { workspaceId: string; machineClass: SandboxMachineClass | null }) {
+    const who = await this.requirePrincipal(auth)
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    if (!(await may(this.database, who, "administer", { kind: "workspace", workspaceId }))) throw denied()
+    const row = await this.database
+      .prepare("update workspaces set machine_class = ?, updated_at = ? where workspace_id = ? and backing = 'cloud-vm' and deleted_at is null returning machine_class")
+      .bind(args.machineClass, this.now(), workspaceId)
+      .first<{ machine_class: SandboxMachineClass | null }>()
+    if (!row) throw new D1WorkspaceAuthorityError("invalid_input", "Only a cloud workspace names the machine its sandboxes run on")
+    return { machine_class: row.machine_class }
   }
 
   private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {

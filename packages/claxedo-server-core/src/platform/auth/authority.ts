@@ -2,6 +2,7 @@ import { isRecord } from "@claxedo/helpers/guards"
 import type { HostDevice } from "./host-devices"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
+import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
 import type { CloudWorkspaceCreateArgs, RuntimeCloudWorkspaceCreateArgs } from "./cloud-workspace-create"
 import type {
   AuthorizeRuntimePrivateSessionInput,
@@ -382,6 +383,11 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
   /** What `verifyMachineRequest` reads and consumes; absent, no route can admit a machine caller. */
   machineAuth?: MachineAuthAdapter
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
+  /** The machine a cloud workspace's next sandbox is created on; `null` returns it to the provider's default. */
+  setWorkspaceMachineClass: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string; machineClass: SandboxMachineClass | null },
+  ) => Promise<{ machine_class: SandboxMachineClass | null }>
   createCloudWorkspace: (auth: SignedControlPlaneAuth, args: CloudWorkspaceCreateArgs) => Promise<unknown>
   /**
    * A cloud workspace created for a person who did not sign the request: the

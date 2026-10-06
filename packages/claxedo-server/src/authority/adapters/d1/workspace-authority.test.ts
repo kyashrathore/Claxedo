@@ -787,3 +787,37 @@ describe("workspace creation admission", () => {
     })
   })
 })
+
+describe("the machine a cloud workspace runs on", () => {
+  test("an administrator changes or clears it; a member and a machine-placed workspace are refused", async () => {
+    const { authority, identities, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
+    const bob = await signed(identities, identity("bob"))
+    const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
+    await inviteOrgMember(database, alice, { orgId: team.org_id, userPublicId: bob.principal!.userId, role: "member" })
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_sized",
+      orgId: team.org_id,
+      displayName: "sized",
+      repoUrl: "https://github.com/Acme/Widgets.git",
+      backing: "cloud-vm",
+      machineClass: "large",
+    })
+    const stored = () => database.prepare("select machine_class from workspaces where workspace_id = 'ws_sized'").first()
+    expect(await stored()).toEqual({ machine_class: "large" })
+
+    await expect(authority.setWorkspaceMachineClass(bob, { workspaceId: "ws_sized", machineClass: null })).rejects.toMatchObject({ status: 403 })
+    expect(await authority.setWorkspaceMachineClass(alice, { workspaceId: "ws_sized", machineClass: null })).toEqual({ machine_class: null })
+    expect(await authority.setWorkspaceMachineClass(alice, { workspaceId: "ws_sized", machineClass: "small" })).toEqual({ machine_class: "small" })
+    expect(await stored()).toEqual({ machine_class: "small" })
+
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_machine",
+      orgId: team.org_id,
+      displayName: "machine",
+      repoUrl: "https://github.com/Acme/Widgets.git",
+      backing: "local-worktree",
+    })
+    await expect(authority.setWorkspaceMachineClass(alice, { workspaceId: "ws_machine", machineClass: "small" })).rejects.toMatchObject({ code: "invalid_input" })
+  })
+})

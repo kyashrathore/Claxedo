@@ -15,13 +15,13 @@ import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/pla
 import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
-import { admittedRepoUrl, sandboxMachineClasses, type RepoAddressResolver } from "@claxedo/sandbox-contract"
+import { admittedRepoUrl, sandboxMachineClasses, type RepoAddressResolver, type SandboxMachineClass } from "@claxedo/sandbox-contract"
 import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
 } from "@claxedo/server-core/platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServices, SandboxKeyedDriver } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
@@ -130,6 +130,12 @@ const createCloudBody = z
     message: "connectionId and repo must be provided together",
   })
 
+const machineClassBody = z.object({ machineClass: z.enum(sandboxMachineClasses).nullable() }).strict()
+
+function machineClassUnsupported(placed: SandboxKeyedDriver | undefined, machineClass: SandboxMachineClass) {
+  if (placed?.driver.metadata.machineClasses?.includes(machineClass)) return undefined
+  return { error: apiError("machine_class_unsupported", `${placed?.driver.id ?? "This sandbox provider"} has no ${machineClass} machines`) }
+}
 
 export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: HostedWorkspaceRouteOptions = {}) {
   const connectionRateLimiter = options.connectionRateLimiter ?? createFixedWindowConnectionRateLimiter()
@@ -381,13 +387,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // any row exists, so no project is left standing for a workspace that
         // never was.
         if (body.machineClass) {
-          const placed = await services.sandbox.orgDriver?.(admitted.orgId)
-          if (!placed?.driver.metadata.machineClasses?.includes(body.machineClass)) {
-            return c.json(
-              { error: apiError("machine_class_unsupported", `${placed?.driver.id ?? "This sandbox provider"} has no ${body.machineClass} machines`) },
-              400,
-            )
-          }
+          const unsupported = machineClassUnsupported(await services.sandbox.orgDriver?.(admitted.orgId), body.machineClass)
+          if (unsupported) return c.json(unsupported, 400)
         }
 
         // A bare timestamp id is guessable inside any plausible creation window
@@ -439,6 +440,33 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const body = parsedBody(refreshConnectionBody, await c.req.json().catch(() => ({})))
         if (!body.ok) return c.json({ error: body.error }, body.status)
         return connectionResponse(c, { previousJti: body.body.previousJti })
+      })
+      .put("/:id/machine-class", async (c) => {
+        const workspaceId = routeParam(c, "id")
+        const authResult = await signedOrError(c.req.raw, authOptions(), services)
+        if ("error" in authResult) return c.json(authResult.error, authResult.status)
+        const auth = authResult.auth
+        if (!auth) return c.json(missingBearerBody(), 401)
+        const body = parsedBody(machineClassBody, await c.req.json().catch(() => ({})))
+        if (!body.ok) return c.json({ error: body.error }, body.status)
+        try {
+          const authority = requireAuthority(services)
+          const opened = await authority.openWorkspace(auth, { workspaceId })
+          if (opened.workspace?.backing !== "cloud-vm") {
+            return c.json({ error: apiError("workspace_not_cloud", "Only a cloud workspace names the machine its sandboxes run on") }, 409)
+          }
+          // The class the next sandbox is created on; a sleeping sandbox keeps the machine its lease has until it is destroyed.
+          if (body.body.machineClass) {
+            const unsupported = machineClassUnsupported(await services?.sandbox.workspaceDriver?.(workspaceId), body.body.machineClass)
+            if (unsupported) return c.json(unsupported, 400)
+          }
+          const updated = await authority.setWorkspaceMachineClass(auth, { workspaceId, machineClass: body.body.machineClass })
+          return c.json({ workspaceId, machineClass: updated.machine_class })
+        } catch (err) {
+          if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+          if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
+          throw err
+        }
       })
       .post("/:id/host-assignment", hostAssignment.assign)
       .delete("/:id/host-assignment", hostAssignment.unassign)

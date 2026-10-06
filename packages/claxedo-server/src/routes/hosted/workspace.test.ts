@@ -179,6 +179,50 @@ function del(path: string, token = "user_1") {
   })
 }
 
+function put(path: string, body: unknown, token = "user_1") {
+  return new Request(`http://cp.test${path}`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+describe("the machine a cloud workspace runs on (PUT /:id/machine-class)", () => {
+  const setMachineClass = vi.fn(async (_auth: unknown, args: { machineClass: string | null }) => ({ machine_class: args.machineClass }))
+  const cloud = (backing = "cloud-vm") => fakeAuthority({
+    openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace: { workspace_id: "ws_1", backing } })),
+    setWorkspaceMachineClass: setMachineClass,
+  })
+  const sized = vi.fn(async () => ({ driver: { id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver, key: "operator" as const }))
+
+  test("a class the workspace's driver has is recorded for its next sandbox, and null returns it to the provider's default", async () => {
+    const { app } = buildApp({ authority: cloud(), workspaceDriver: sized })
+    const res = await app.fetch(put("/ws_1/machine-class", { machineClass: "large" }))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ workspaceId: "ws_1", machineClass: "large" })
+    expect(setMachineClass).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_1", machineClass: "large" })
+
+    const cleared = await app.fetch(put("/ws_1/machine-class", { machineClass: null }))
+    expect(await cleared.json()).toEqual({ workspaceId: "ws_1", machineClass: null })
+  })
+
+  test("a class the driver has no grade for, a class that is not one, and a machine-placed workspace are refused unrecorded", async () => {
+    setMachineClass.mockClear()
+    const unsized = vi.fn(async () => ({ driver: { id: "vercel", metadata: {} } as unknown as SandboxDriver, key: "operator" as const }))
+    const { app } = buildApp({ authority: cloud(), workspaceDriver: unsized })
+    const res = await app.fetch(put("/ws_1/machine-class", { machineClass: "large" }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "machine_class_unsupported", message: "vercel has no large machines" } })
+    expect((await app.fetch(put("/ws_1/machine-class", { machineClass: "gpu" }))).status).toBe(400)
+    expect(setMachineClass).not.toHaveBeenCalled()
+    expect((await app.fetch(put("/ws_1/machine-class", { machineClass: null }))).status).toBe(200)
+
+    const machine = buildApp({ authority: cloud("local-worktree"), workspaceDriver: sized }).app
+    expect((await machine.fetch(put("/ws_1/machine-class", { machineClass: "large" }))).status).toBe(409)
+    expect(setMachineClass).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe("host assignment (POST /:id/host-assignment)", () => {
   test("records the owner assignment without issuing a tunnel credential", async () => {
     const { app, authority, capture } = buildApp({
