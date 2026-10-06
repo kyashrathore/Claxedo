@@ -95,3 +95,62 @@ test("first send: Retry before any failure does nothing", async () => {
   send.retry()
   expect(send.state()).toEqual({ kind: "idle" })
 })
+
+test("first send: Edit message after an answer that was lost opens the session the send created instead of sending a second prompt to it", async () => {
+  const { send } = firstSend()
+  const checks: string[] = []
+  const result = send.run(async () => {
+    throw new ServerError({ class: "network", status: 502, message: "Bad gateway" })
+  }, { landed: async () => (checks.push("read"), "session") })
+  await settle()
+  send.edit()
+  expect(await result).toBe("session")
+  expect(checks).toEqual(["read"])
+})
+
+test("first send: Edit message after a lost answer whose session never landed returns to editing", async () => {
+  const { send } = firstSend()
+  let reads = 0
+  const result = send.run(async () => {
+    throw new ServerError({ class: "internal", status: 500, message: "boom" })
+  }, { landed: async () => (reads += 1, undefined) })
+  await settle()
+  send.edit()
+  expect(await result).toBeUndefined()
+  expect(reads).toBe(1)
+  expect(send.state()).toEqual({ kind: "idle" })
+})
+
+test("first send: Edit message after a definite refusal never asks whether the send landed", async () => {
+  const { send } = firstSend()
+  let reads = 0
+  const result = send.run(async () => {
+    throw new ServerError({ class: "invalid", message: "The model is not available" })
+  }, { landed: async () => (reads += 1, "session") })
+  await settle()
+  send.edit()
+  expect(await result).toBeUndefined()
+  expect(reads).toBe(0)
+})
+
+test("first send: a failed landed check shows its error and asks again on the next Edit", async () => {
+  const { send } = firstSend()
+  let reads = 0
+  const result = send.run(async () => {
+    throw new ServerError({ class: "network", message: "The server could not be reached" })
+  }, {
+    landed: async () => {
+      reads += 1
+      if (reads === 1) throw new ServerError({ class: "auth", message: "Sign in again" })
+      return undefined
+    },
+  })
+  await settle()
+  send.edit()
+  await settle()
+  const state = send.state()
+  expect(state.kind === "failed" && state.error.message).toBe("Sign in again")
+  send.edit()
+  expect(await result).toBeUndefined()
+  expect(reads).toBe(2)
+})

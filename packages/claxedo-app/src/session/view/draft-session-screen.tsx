@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, useComposerStore, type Draft, type Submission } from "@/composer"
 import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
-import { useServer, type PlacementId, type ProjectId, type PromptInput, type ReservationHold, type SessionReservation } from "@/server"
+import { sessionId, useServer, type PlacementId, type ProjectId, type PromptInput, type ReservationHold, type SessionReservation } from "@/server"
 import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
 import type { PaneProps } from "@/shell"
 import { useWorkbench } from "@/workbench"
@@ -60,6 +60,15 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
     view.showSent(prompt)
     return view
   }
+  const landed = async () => {
+    const held = props.state.reservation
+    if (!held) return undefined
+    const page = await server.sessions.list({ every: true, sessionId: sessionId(held.sessionId), limit: 1, settled: "all" })
+    const row = page.rows[0]
+    if (!row) return undefined
+    composers.take(key())
+    return stores.open(row.ref)
+  }
   const thinking = () => {
     const state = firstSend.state()
     return state.kind === "sending" && server.cloud.runtime(state.placementId).kind === "live"
@@ -67,7 +76,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const startSession = async (submission: Submission, input: PromptInput, taken: Draft): Promise<SessionView | undefined> => {
     const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
     setSent(prompt)
-    const view = await firstSend.run(attempt(submission, prompt), { failed: () => composers.restore(key(), taken), retried: () => void composers.take(key()) })
+    const view = await firstSend.run(attempt(submission, prompt), { failed: () => composers.restore(key(), taken), retried: () => void composers.take(key()), landed })
     if (!view) setSent(undefined)
     return view
   }

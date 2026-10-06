@@ -172,6 +172,10 @@ export function contractMismatch(what: string): ServerError {
   return new ServerError({ class: "internal", message: `The ${what} answer does not match its contract` })
 }
 
+export function isOutcomeUnknown(error: AppError): boolean {
+  return error.class === "network" || error.class === "internal"
+}
+
 export function isRetryableServerError(error: unknown): boolean {
   return error instanceof ServerError ? error.retryable : false
 }

@@ -1,7 +1,7 @@
 import { onCleanup } from "solid-js"
 import { machine, unreachable } from "@/lib/machine"
 import type { WhereNew } from "@/projects"
-import { ServerError, toAppError, type AppError, type PlacementId } from "@/server"
+import { isOutcomeUnknown, ServerError, toAppError, type AppError, type PlacementId } from "@/server"
 
 export type FirstSendState =
   | { readonly kind: "idle" }
@@ -32,7 +32,11 @@ export function firstSendTransition(_state: FirstSendState, event: FirstSendEven
 
 export type FirstSendAttempt<Result> = (report: (event: FirstSendEvent) => void) => Promise<Result>
 
-export type FirstSendHooks = { readonly failed?: () => void; readonly retried?: () => void }
+export type FirstSendHooks<Result> = {
+  readonly failed?: () => void
+  readonly retried?: () => void
+  readonly landed?: () => Promise<Result | undefined>
+}
 
 type Decision = "retry" | "edit"
 
@@ -42,19 +46,30 @@ export function createFirstSend() {
   const state = machine<FirstSendState, FirstSendEvent>({ kind: "idle" }, firstSendTransition)
   let waiting: Waiting | undefined
   const decided = () => new Promise<Decision>((decide, abandon) => (waiting = { decide, abandon }))
-  const run = async <Result>(attempt: FirstSendAttempt<Result>, hooks: FirstSendHooks = {}): Promise<Result | undefined> => {
+  const run = async <Result>(attempt: FirstSendAttempt<Result>, hooks: FirstSendHooks<Result> = {}): Promise<Result | undefined> => {
     try {
       return await attempt(state.send)
     } catch (error) {
-      state.send({ type: "sendFailed", error: toAppError(error) })
-      hooks.failed?.()
-      if ((await decided()) === "edit") {
-        state.send({ type: "editRequested" })
-        return undefined
-      }
+      const failure = toAppError(error)
+      return settle(attempt, hooks, failure, isOutcomeUnknown(failure))
+    }
+  }
+  const settle = async <Result>(attempt: FirstSendAttempt<Result>, hooks: FirstSendHooks<Result>, error: AppError, mayHaveLanded: boolean): Promise<Result | undefined> => {
+    state.send({ type: "sendFailed", error })
+    hooks.failed?.()
+    if ((await decided()) === "retry") {
       hooks.retried?.()
       return run(attempt, hooks)
     }
+    let landed: Result | undefined
+    try {
+      landed = mayHaveLanded ? await hooks.landed?.() : undefined
+    } catch (checkError) {
+      return settle(attempt, hooks, toAppError(checkError), true)
+    }
+    if (landed !== undefined) return landed
+    state.send({ type: "editRequested" })
+    return undefined
   }
   const take = () => {
     const current = waiting
