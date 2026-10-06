@@ -22,6 +22,28 @@ export function workspaceRuntimeMcpToolGroups(env: Record<string, string | undef
   return declared.split(",").map((group) => group.trim()).filter(Boolean)
 }
 
+export const WORKSPACE_RUNTIME_PROJECT_ENV_NAMES = "WORKSPACE_RUNTIME_PROJECT_ENV_NAMES"
+
+/**
+ * A project's own variables, as the sandbox receives them beside everything
+ * else in its process environment. The names ride along because the runtime
+ * cannot otherwise tell a project's `DATABASE_URL` from the control plane's
+ * grants and tokens in the same environment, and only the former may reach
+ * the repository's `.claxedo` scripts.
+ */
+export function workspaceRuntimeProjectEnv(values: Record<string, string>): Record<string, string> {
+  return { ...values, [WORKSPACE_RUNTIME_PROJECT_ENV_NAMES]: Object.keys(values).sort().join(",") }
+}
+
+export function workspaceRuntimeProjectEnvValues(env: Record<string, string | undefined>): Record<string, string> {
+  const values: Record<string, string> = {}
+  for (const name of env[WORKSPACE_RUNTIME_PROJECT_ENV_NAMES]?.split(",") ?? []) {
+    const value = env[name]
+    if (name && value !== undefined) values[name] = value
+  }
+  return values
+}
+
 export const WORKSPACE_RUNTIME_TASKS_CAPABILITY = "WORKSPACE_RUNTIME_TASKS_CAPABILITY"
 export const WORKSPACE_RUNTIME_TASKS_OPERATIONS = "WORKSPACE_RUNTIME_TASKS_OPERATIONS"
 export const WORKSPACE_RUNTIME_TASKS_PROJECT = "WORKSPACE_RUNTIME_TASKS_PROJECT"

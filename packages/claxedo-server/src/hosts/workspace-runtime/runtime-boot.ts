@@ -9,7 +9,7 @@ import {
 import { remoteWorkspaceSessionAccessPolicyFromEnv, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/session-core"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import { storeBackedSessionPlacement, workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
+import { buildSafeEnv, storeBackedSessionPlacement, workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,
@@ -33,6 +33,7 @@ import {
   sandboxLeaseEnv,
   workspaceRuntimeMcpToolGroups,
   workspaceRuntimeConfigTokenEnv,
+  workspaceRuntimeProjectEnvValues,
   workspaceRuntimeTargetEnv,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
 
@@ -148,9 +149,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   if (checkout) {
     const size = await repositorySizeBytes(targetDirectory).catch(() => undefined)
     if (size !== undefined) startPhases.repositorySize(size)
-    const setup = checkout.fresh ? await repositoryScript(targetDirectory, "setup.sh", env) : undefined
+    const scriptEnv = { ...buildSafeEnv(env), ...workspaceRuntimeProjectEnvValues(env) }
+    const setup = checkout.fresh ? await repositoryScript(targetDirectory, "setup.sh", scriptEnv) : undefined
     if (setup) await startPhases.measure("setup_script", setup)
-    const start = await repositoryScript(targetDirectory, "start.sh", env)
+    const start = await repositoryScript(targetDirectory, "start.sh", scriptEnv)
     if (start) await startPhases.measure("start_script", start)
   }
   const history = checkout?.branch ? repositoryHistory(targetDirectory, checkout.branch) : undefined

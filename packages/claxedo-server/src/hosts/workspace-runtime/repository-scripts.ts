@@ -12,16 +12,18 @@ export type RepositoryScriptOutput = { stdout: NodeJS.WritableStream; stderr: No
 
 /**
  * The repository's own `.claxedo/<script>` as a step of this boot, or nothing
- * when the checkout has none. The script runs in the checkout with the boot's
- * environment and writes through to the runtime's own output, so the
- * container log carries it. A non-zero exit fails the boot with the script's
- * name, its code and the tail of what it wrote, and a script still running at
- * the preparation deadline is ended and fails the same way.
+ * when the checkout has none. The script is the repository's code running
+ * before any prompt, so `env` is the caller's agent-safe projection, never
+ * the boot's own environment. It runs in the checkout and writes through to
+ * the runtime's own output, so the container log carries it. A non-zero exit
+ * fails the boot with the script's name, its code and the tail of what it
+ * wrote, and a script still running at the preparation deadline is ended and
+ * fails the same way.
  */
 export async function repositoryScript(
   directory: string,
   script: RepositoryScript,
-  env: NodeJS.ProcessEnv,
+  env: Record<string, string>,
   output: RepositoryScriptOutput = process,
 ): Promise<(() => Promise<void>) | undefined> {
   const file = path.join(directory, SCRIPTS_DIRECTORY, script)

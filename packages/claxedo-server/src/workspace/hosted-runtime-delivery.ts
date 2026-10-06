@@ -12,6 +12,7 @@ import {
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { projectEnvironment } from "@claxedo/server-core/projects/environment"
+import { workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import { storeRenewal } from "../credentials/store-renewal"
@@ -104,7 +105,7 @@ export function createHostedRuntimeDelivery(input: {
     const person = await owner(workspaceId)
     return {
       secrets: nativeProviderSecrets((await deliveries(workspaceId, person)).delivered),
-      env: await projectEnvironment(input.credentials(person.orgId), person.orgId).values(person.projectId),
+      env: workspaceRuntimeProjectEnv(await projectEnvironment(input.credentials(person.orgId), person.orgId).values(person.projectId)),
     }
   }
   const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {

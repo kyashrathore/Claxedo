@@ -13,7 +13,7 @@ import { mintOwnerGrant } from "../../session/owner-grant"
 import { serveGitOrigin } from "../../test-support/git-origin"
 import { usageReportPlane, USAGE_REPORT_URL } from "../../test-support/usage-report-plane"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
-import { RUNTIME_START_PHASES_PATH } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { RUNTIME_START_PHASES_PATH, workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import {
   claxedoCorsOrigin,
   claxedoRuntimeHarnessFromEnv,
@@ -299,35 +299,48 @@ describe("claxedo workspace-runtime boot policy", () => {
     }
   })
 
-  test("a checkout's .claxedo/setup.sh runs once, on the boot that made it, and start.sh on every boot, each timed; a failing script fails the boot with its reason", async () => {
+  test("a checkout's .claxedo/setup.sh runs once, on the boot that made it, and start.sh on every boot, each timed, with the project's variables and none of the runtime's; a failing script fails the boot with its reason", async () => {
     const origin = await serveGitOrigin()
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const scripts = path.join(origin.directory, "origin.git", ".claxedo")
     await mkdir(scripts, { recursive: true })
     await writeFile(path.join(scripts, "setup.sh"), "echo prepared >> .claxedo-setup-runs\n")
-    await writeFile(path.join(scripts, "start.sh"), "echo \"started on $WORKSPACE_RUNTIME_WORKSPACE_ID\" >> .claxedo-start-runs\n")
+    await writeFile(path.join(scripts, "start.sh"), "echo \"started with $DATABASE_URL\" >> .claxedo-start-runs\nenv | sort > .claxedo-start-env\n")
     origin.git(["add", "."])
     origin.git(["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "scripts"])
+    // The repository's script runs before any prompt, so the bootstrap
+    // credential, the grants and the control plane's own CLAXEDO_ values in
+    // the runtime's environment are what a malicious checkout would exfiltrate.
     const env = {
+      PATH: process.env.PATH,
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-scripts",
       WORKSPACE_RUNTIME_DIRECTORY: path.join(origin.directory, "workspace"),
       WORKSPACE_RUNTIME_SOURCE_KIND: "git",
       WORKSPACE_RUNTIME_GIT_REPO_URL: origin.repoUrl,
       WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
       WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+      WORKSPACE_RUNTIME_CONFIG_TOKEN: "bootstrap-secret",
+      WORKSPACE_RUNTIME_OWNER_GRANT: "owner-grant-secret",
+      CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret",
+      ...workspaceRuntimeProjectEnv({ DATABASE_URL: "postgres://db/app" }),
     }
     try {
       const first = await claxedoWorkspaceRuntimeBootFromEnv(env)
       const phases = await (await takeStartPhases(first)).json() as { phases: { phase: string }[] }
       expect(phases.phases.map((phase) => phase.phase)).toEqual(["repository_checkout", "setup_script", "start_script"])
       expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-setup-runs"), "utf8")).toBe("prepared\n")
-      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-start-runs"), "utf8")).toBe("started on ws-scripts\n")
+      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-start-runs"), "utf8")).toBe("started with postgres://db/app\n")
+      const seen = (await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-start-env"), "utf8")).split("\n")
+      expect(seen).toContain(`PATH=${process.env.PATH}`)
+      expect(seen).toContain("DATABASE_URL=postgres://db/app")
+      expect(seen.filter((line) => /^(WORKSPACE_RUNTIME_|CLAXEDO_)/.test(line))).toEqual([])
+      expect(seen.join("\n")).not.toMatch(/secret/)
 
       const second = await claxedoWorkspaceRuntimeBootFromEnv(env)
       const again = await (await takeStartPhases(second)).json() as { phases: { phase: string }[] }
       expect(again.phases.map((phase) => phase.phase)).toEqual(["repository_checkout", "start_script"])
       expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-setup-runs"), "utf8")).toBe("prepared\n")
-      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-start-runs"), "utf8")).toBe("started on ws-scripts\nstarted on ws-scripts\n")
+      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-start-runs"), "utf8")).toBe("started with postgres://db/app\nstarted with postgres://db/app\n")
 
       await writeFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo", "start.sh"), "echo installing\necho 'bun install failed' >&2\nexit 7\n")
       await expect(claxedoWorkspaceRuntimeBootFromEnv(env)).rejects.toThrow(".claxedo/start.sh exited 7: installing\nbun install failed")

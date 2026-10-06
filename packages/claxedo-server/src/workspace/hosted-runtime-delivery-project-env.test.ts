@@ -44,7 +44,11 @@ test("a cloud workspace starts with its project's variables, read from ciphertex
   await projectEnvironment(credentials("org_elsewhere"), "org_elsewhere").set("project", "FOREIGN", "not-this-org")
 
   expect((await delivery.prepareRuntime({ workspaceId: "ws_cloud" })).env)
-    .toEqual({ DATABASE_URL: "postgres://secret@db/app", API_URL: "https://api.example.test" })
+    .toEqual({
+      DATABASE_URL: "postgres://secret@db/app",
+      API_URL: "https://api.example.test",
+      WORKSPACE_RUNTIME_PROJECT_ENV_NAMES: "API_URL,DATABASE_URL",
+    })
   const stored = await instance.database
     .prepare("select secret_envelope from hosted_provider_credentials where provider_id like 'project-env:%'")
     .all<{ secret_envelope: string }>()
@@ -57,6 +61,6 @@ test("a removed variable is gone from the next start, and a machine-placed works
   await environment.set("project", "TOKEN", "t")
   await environment.set("project", "KEEP", "k")
   await environment.remove("project", "TOKEN")
-  expect((await delivery.prepareRuntime({ workspaceId: "ws_cloud" })).env).toEqual({ KEEP: "k" })
+  expect((await delivery.prepareRuntime({ workspaceId: "ws_cloud" })).env).toEqual({ KEEP: "k", WORKSPACE_RUNTIME_PROJECT_ENV_NAMES: "KEEP" })
   expect(await delivery.prepareRuntime({ workspaceId: "ws_machine" })).toEqual({})
 })
