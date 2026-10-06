@@ -44,6 +44,10 @@ export function environmentChanges(stored: readonly string[], rows: readonly Env
   }
 }
 
+export function markStored(rows: readonly EnvironmentRow[], name: string): EnvironmentRow[] {
+  return rows.map((row) => (row.name.trim() === name ? { ...row, name, value: "", stored: true } : row))
+}
+
 export function environmentProblemText(t: ProjectsText, problem: EnvironmentProblem): string {
   if (problem.kind === "unnamed") return t("projects.environment.unnamed")
   if (problem.kind === "invalid") return t("projects.environment.invalid", { name: problem.name })

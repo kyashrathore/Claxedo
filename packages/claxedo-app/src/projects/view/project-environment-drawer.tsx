@@ -2,25 +2,37 @@ import { createSignal, type JSX } from "solid-js"
 import { toAppError, useServer, type Project } from "@/server"
 import { FormDrawer, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { EnvironmentEditor, environmentChanges, environmentProblem, environmentRows } from "./environment-editor"
+import { EnvironmentEditor, environmentChanges, environmentProblem, environmentRows, markStored, type EnvironmentChanges } from "./environment-editor"
 
 export function DrawerProjectEnvironment(props: { readonly project: Project; readonly names: readonly string[] }): JSX.Element {
   const t = useProjectsText()
   const server = useServer()
   const dialog = useDialog()
   const [rows, setRows] = createSignal(environmentRows(props.names))
+  const [stored, setStored] = createSignal(props.names)
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal<string>()
+  const apply = async (changes: EnvironmentChanges, saved: string[]) => {
+    for (const name of changes.remove) {
+      setStored((await server.projects.removeVariable(props.project.id, name)).names)
+      saved.push(name)
+    }
+    for (const [name, value] of changes.set) {
+      setStored((await server.projects.setVariable(props.project.id, name, value)).names)
+      setRows((current) => markStored(current, name))
+      saved.push(name)
+    }
+  }
   const save = async () => {
-    const changes = environmentChanges(props.names, rows())
+    const saved: string[] = []
     setSaving(true)
     setError(undefined)
     try {
-      for (const name of changes.remove) await server.projects.removeVariable(props.project.id, name)
-      for (const [name, value] of changes.set) await server.projects.setVariable(props.project.id, name, value)
+      await apply(environmentChanges(stored(), rows()), saved)
       dialog.close()
     } catch (cause) {
-      setError(toAppError(cause).message)
+      const reason = toAppError(cause).message
+      setError(saved.length > 0 ? t("projects.environment.partial", { saved: saved.join(", "), reason }) : reason)
     } finally {
       setSaving(false)
     }

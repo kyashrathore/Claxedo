@@ -112,6 +112,7 @@ export default {
   "projects.where.setup": "Cloud workspaces run the repository's .claxedo/setup.sh when they are prepared and .claxedo/start.sh every time they start.",
   "projects.environment.description": "Set inside every cloud workspace of this project when it starts, the way a .env file would. The agent can read them; keep secrets it must not see in Connections.",
   "projects.environment.failed": "The environment could not be read",
+  "projects.environment.partial": "Saved {{saved}}; the rest was not saved: {{reason}}",
   "projects.environment.edit": "Edit…",
   "projects.placement.open": "Open",
   "projects.placement.openFailed": "The session could not be started",
