@@ -21,21 +21,28 @@ describe("module load failures", () => {
 })
 
 describe("chunk load recovery", () => {
-  test("the first failure on a build reloads the page", () => {
-    expect(chunkLoadRecovery({ error: new SyntaxError("Unexpected token '<'"), buildId: BUILD, reloadedFor: null })).toBe("reload")
-    expect(chunkLoadRecovery({ error: new SyntaxError("Unexpected token '<'"), buildId: BUILD, reloadedFor: "https://app.example/assets/main-OLD.js" })).toBe("reload")
+  const OLD = "https://app.example/assets/main-OLD.js"
+  const failure = new TypeError("Failed to fetch dynamically imported module: https://app.example/assets/x.js")
+
+  test("a failure while the server serves a newer build reloads the page once for that build", () => {
+    expect(chunkLoadRecovery({ error: new SyntaxError("Unexpected token '<'"), loadedBuild: OLD, servedBuild: BUILD, reloadedFor: null })).toBe("reload")
+    expect(chunkLoadRecovery({ error: failure, loadedBuild: OLD, servedBuild: BUILD, reloadedFor: OLD })).toBe("reload")
   })
 
-  test("a failure on the build the page already reloaded for reports a stale build instead of looping", () => {
-    expect(chunkLoadRecovery({ error: new TypeError("Importing a module script failed."), buildId: BUILD, reloadedFor: BUILD })).toBe("stale")
+  test("a page that reloaded for the served build and still runs the old one reports a stale build instead of looping", () => {
+    expect(chunkLoadRecovery({ error: failure, loadedBuild: OLD, servedBuild: BUILD, reloadedFor: BUILD })).toBe("stale")
   })
 
-  test("a document with no hashed entry cannot tell builds apart, so it reports rather than reloads", () => {
-    expect(chunkLoadRecovery({ error: new SyntaxError("Unexpected token '<'"), buildId: undefined, reloadedFor: null })).toBe("stale")
+  test("a failure while the server serves this very build is the view's own error, never a reload", () => {
+    expect(chunkLoadRecovery({ error: failure, loadedBuild: BUILD, servedBuild: BUILD, reloadedFor: null })).toBe("rethrow")
+  })
+
+  test("a build that cannot be told apart, on either side, is reported rather than reloaded", () => {
+    expect(chunkLoadRecovery({ error: failure, loadedBuild: undefined, servedBuild: BUILD, reloadedFor: null })).toBe("rethrow")
+    expect(chunkLoadRecovery({ error: failure, loadedBuild: OLD, servedBuild: undefined, reloadedFor: null })).toBe("rethrow")
   })
 
   test("other errors pass through untouched", () => {
-    const error = new Error("view threw")
-    expect(chunkLoadRecovery({ error, buildId: BUILD, reloadedFor: null })).toBe("rethrow")
+    expect(chunkLoadRecovery({ error: new Error("view threw"), loadedBuild: OLD, servedBuild: BUILD, reloadedFor: null })).toBe("rethrow")
   })
 })

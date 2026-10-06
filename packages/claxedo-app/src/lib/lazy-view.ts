@@ -11,26 +11,51 @@ export function isModuleLoadFailure(error: unknown): boolean {
 
 export type ChunkLoadRecovery = "reload" | "stale" | "rethrow"
 
-export function chunkLoadRecovery(input: { error: unknown; buildId: string | undefined; reloadedFor: string | null }): ChunkLoadRecovery {
-  if (!isModuleLoadFailure(input.error)) return "rethrow"
-  if (input.buildId === undefined || input.reloadedFor === input.buildId) return "stale"
-  return "reload"
+export type ChunkLoadFacts = {
+  readonly error: unknown
+  readonly loadedBuild: string | undefined
+  readonly servedBuild: string | undefined
+  readonly reloadedFor: string | null
+}
+
+export function chunkLoadRecovery(input: ChunkLoadFacts): ChunkLoadRecovery {
+  if (!isModuleLoadFailure(input.error) || !input.loadedBuild || !input.servedBuild || input.servedBuild === input.loadedBuild) return "rethrow"
+  return input.reloadedFor === input.servedBuild ? "stale" : "reload"
 }
 
 export function documentBuildId(doc: Document): string | undefined {
-  return doc.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src || undefined
+  const source = doc.querySelector<HTMLScriptElement>('script[type="module"][src]')?.getAttribute("src")
+  return source ? new URL(source, document.baseURI).href : undefined
+}
+
+async function servedBuildId(failure: unknown): Promise<string | undefined> {
+  let response: Response
+  try {
+    response = await fetch(new URL("/", document.baseURI), { cache: "no-store" })
+  } catch (error) {
+    console.warn("A view failed to load, and the server could not be reached to check for a newer app", { error })
+    throw failure
+  }
+  if (!response.ok) return undefined
+  return documentBuildId(new DOMParser().parseFromString(await response.text(), "text/html"))
+}
+
+async function recoverChunk(error: unknown): Promise<ChunkLoadRecovery> {
+  if (!isModuleLoadFailure(error)) return "rethrow"
+  const storage = tabStorage()
+  const facts = { error, loadedBuild: documentBuildId(document), servedBuild: await servedBuildId(error), reloadedFor: storage?.getItem(RELOADED_FOR_BUILD) ?? null }
+  const recovery = chunkLoadRecovery(facts)
+  if (recovery === "reload") storage?.setItem(RELOADED_FOR_BUILD, facts.servedBuild!)
+  return recovery
 }
 
 async function loadChunk<T>(load: () => Promise<T>): Promise<T> {
   try {
     return await load()
   } catch (error) {
-    const buildId = documentBuildId(document)
-    const storage = tabStorage()
-    const recovery = chunkLoadRecovery({ error, buildId, reloadedFor: storage?.getItem(RELOADED_FOR_BUILD) ?? null })
+    const recovery = await recoverChunk(error)
     if (recovery === "rethrow") throw error
     if (recovery === "stale") throw new Error(STALE_BUILD_MESSAGE, { cause: error })
-    storage?.setItem(RELOADED_FOR_BUILD, buildId!)
     window.location.reload()
     return new Promise<T>(() => {})
   }
