@@ -29,6 +29,7 @@ export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"
 export const IMAGE_SMOKE_FILENAME = "workspace-runtime-image-smoke.mjs"
 export const WORKSPACE_RUNTIME_VERSION_FILENAME = "workspace-runtime-version"
 export const LAUNCH_GATE_CHILD_FILENAME = "launch-gate-child.mjs"
+const SANDBOX_DOCKERFILE = path.resolve(import.meta.dirname, "Dockerfile")
 
 function defaultExec(cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
   execFileSync(cmd, args, {
@@ -342,11 +343,12 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   if (!fs.existsSync(gateChildSource)) throw new Error(`${gateChildSource} does not exist; @claxedo/process-ownership did not build it`)
   const gateChildPath = path.join(outDir, LAUNCH_GATE_CHILD_FILENAME)
   fs.copyFileSync(gateChildSource, gateChildPath)
-  // Content build-id: sha256 over the emitted bundle + generated package.json,
-  // truncated to 10 hex chars. Distinguishes two builds at the same core
-  // version (the npm-publish immutability gate is gone), so a rebuilt image
-  // gets a distinct tag and actually reaches sandboxes.
+  // Content build-id: sha256 over everything the image is built from (the
+  // Dockerfile and the emitted .build/ context), truncated to 10 hex chars.
+  // A registry holding the tag therefore holds this exact image, which
+  // --push-if-missing relies on to skip the build.
   const buildId = createHash("sha256")
+    .update(fs.readFileSync(SANDBOX_DOCKERFILE))
     .update(fs.readFileSync(bundlePath))
     .update(fs.readFileSync(versionFile))
     .update(packageJson)
@@ -381,7 +383,7 @@ export function sandboxImageBuildArgs(input: {
     ...input.tags.flatMap((tag) => ["-t", tag]),
     input.push ? "--push" : "--load",
     "-f",
-    input.dockerfile ?? path.resolve(import.meta.dirname, "Dockerfile"),
+    input.dockerfile ?? SANDBOX_DOCKERFILE,
     // The image consumes only the bundled host in .build/, so the build
     // context is this directory — not the repo root.
     input.context ?? path.resolve(import.meta.dirname),
@@ -401,7 +403,10 @@ async function runDocker(args: string[]) {
  * `--bundle-only` would silently build the image from a stale/unrelated
  * directory. Reject it instead.
  */
-export function validateBuildFlags(input: { bundleOnly: boolean; outFlag?: string }): { ok: true } | { ok: false; message: string } {
+export function validateBuildFlags(input: { bundleOnly: boolean; outFlag?: string; pushIfMissing?: boolean; push?: boolean; latest?: boolean }): { ok: true } | { ok: false; message: string } {
+  if (input.pushIfMissing && (input.bundleOnly || input.push || input.latest)) {
+    return { ok: false, message: "--push-if-missing publishes the content-addressed tag alone; it takes no --bundle-only, --push or --latest." }
+  }
   if (input.outFlag && !input.bundleOnly) {
     return {
       ok: false,
@@ -411,15 +416,31 @@ export function validateBuildFlags(input: { bundleOnly: boolean; outFlag?: strin
   return { ok: true }
 }
 
+/**
+ * What a build does with its content-addressed tag. `--push-if-missing` is the
+ * deploy's mode: the tag names the bundle's content, so a registry that already
+ * holds it holds this build, and only a missing tag is built and pushed.
+ */
+export async function imagePublishPlan(input: { push: boolean; pushIfMissing: boolean; tag: string; published: (tag: string) => Promise<boolean> }): Promise<"load" | "push" | "published"> {
+  if (input.pushIfMissing) return (await input.published(input.tag)) ? "published" : "push"
+  return input.push ? "push" : "load"
+}
+
+async function registryHolds(tag: string) {
+  const child = spawn("docker", ["buildx", "imagetools", "inspect", tag], { stdio: "ignore" })
+  return (await new Promise<number | null>((resolve) => child.on("exit", resolve))) === 0
+}
+
 async function main() {
   const push = process.argv.includes("--push")
+  const pushIfMissing = process.argv.includes("--push-if-missing")
   const latest = process.argv.includes("--latest")
   const bundleOnly = process.argv.includes("--bundle-only")
   const agentPlugins = process.argv.includes("--agent-plugins")
   const outFlag = process.argv.find((arg) => arg.startsWith("--out="))?.slice("--out=".length)
   const version = process.env.WORKSPACE_RUNTIME_VERSION?.trim() || workspaceRuntimeVersion()
 
-  const flags = validateBuildFlags({ bundleOnly, outFlag })
+  const flags = validateBuildFlags({ bundleOnly, outFlag, pushIfMissing, push, latest })
   if (!flags.ok) {
     console.error(`[build-sandbox-image] ${flags.message}`)
     process.exit(1)
@@ -456,13 +477,18 @@ async function main() {
 
   if (bundleOnly) return
 
+  const plan = await imagePublishPlan({ push, pushIfMissing, tag: imageTag, published: registryHolds })
+  if (plan === "published") {
+    console.log(`sandbox image already published: ${imageTag}`)
+    return
+  }
   const tags = [imageTag, ...(latest ? [`${SANDBOX_IMAGE_REPOSITORY}:latest`] : [])]
   console.log(`building sandbox image for claxedo workspace-runtime host ${version}`)
   console.log(tags.map((tag) => `  ${tag}`).join("\n"))
 
-  await runDocker(sandboxImageBuildArgs({ tags, push }))
+  await runDocker(sandboxImageBuildArgs({ tags, push: plan === "push" }))
 
-  console.log(push ? `sandbox image pushed: ${imageTag}` : `sandbox image build succeeded: ${imageTag}`)
+  console.log(plan === "push" ? `sandbox image pushed: ${imageTag}` : `sandbox image build succeeded: ${imageTag}`)
 }
 
 if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) {

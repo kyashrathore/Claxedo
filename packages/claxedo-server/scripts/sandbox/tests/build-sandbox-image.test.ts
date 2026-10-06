@@ -13,6 +13,7 @@ import {
   hostBundlePackageRoots,
   sandboxImageBuildArgs,
   validateBuildFlags,
+  imagePublishPlan,
   writeWorkspaceRuntimeVersion,
   workspacePackageBuildOrder,
   assertHostBundleDependencies,
@@ -332,6 +333,23 @@ describe("build-sandbox-image", () => {
       .toThrow("Host bundle has undeclared external dependencies: drizzle-orm/node-postgres")
     expect(() => assertHostBundleDependencies(result.metafile!, { "@example/runtime": "1.0.0", "drizzle-orm": "0.44.0" }))
       .not.toThrow()
+  })
+
+  test("a deploy build pushes its content-addressed tag only when the registry lacks it", async () => {
+    const asked: string[] = []
+    const registry = (held: boolean) => async (tag: string) => {
+      asked.push(tag)
+      return held
+    }
+    expect(await imagePublishPlan({ push: false, pushIfMissing: true, tag: "ghcr.io/x/sandbox:1-abc", published: registry(true) })).toBe("published")
+    expect(await imagePublishPlan({ push: false, pushIfMissing: true, tag: "ghcr.io/x/sandbox:1-def", published: registry(false) })).toBe("push")
+    expect(await imagePublishPlan({ push: true, pushIfMissing: false, tag: "ghcr.io/x/sandbox:1-ghi", published: registry(true) })).toBe("push")
+    expect(await imagePublishPlan({ push: false, pushIfMissing: false, tag: "ghcr.io/x/sandbox:1-jkl", published: registry(true) })).toBe("load")
+    expect(asked).toEqual(["ghcr.io/x/sandbox:1-abc", "ghcr.io/x/sandbox:1-def"])
+    for (const flags of [{ bundleOnly: true }, { bundleOnly: false, push: true }, { bundleOnly: false, latest: true }]) {
+      expect(validateBuildFlags({ ...flags, pushIfMissing: true }).ok).toBe(false)
+    }
+    expect(validateBuildFlags({ bundleOnly: false, pushIfMissing: true }).ok).toBe(true)
   })
 
   test("validateBuildFlags rejects --out without --bundle-only", () => {

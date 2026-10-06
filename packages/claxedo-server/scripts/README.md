@@ -19,8 +19,10 @@ A control plane deployed with `--agent-plugins` requires an image built with
 `--agent-plugins`, whose host mounts the runtime apply route. The
 `claxedo-sandbox-image` workflow accepts `agent_plugins=true` for this variant,
 whose tag ends `-agent-plugins-v<schema>`; a Boat deploy with `--agent-plugins`
-refuses a `CLAXEDO_SANDBOX_IMAGE` without that tag. It publishes the content-addressed image without changing `latest`; pin the
-matching staging or production deployment explicitly to the emitted image tag.
+refuses a `CLAXEDO_SANDBOX_IMAGE` without that tag. It publishes the content-addressed image without changing `latest`; pin a
+production deployment explicitly to the emitted image tag. `--push-if-missing`
+publishes the checkout's tag only when the registry lacks it; the staging deploy
+runs it for a Boat control plane and deploys with that tag (`docs/deploy/staging-branch.md`).
 
 ## `deploy/`
 
