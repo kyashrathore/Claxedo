@@ -29,10 +29,10 @@ import {
   resolveHostedOperation,
   type HostedOperationName,
 } from "@claxedo/account-contract"
-import { fetchHosted } from "./hosted-transport"
+import { connectionRetryResult, fetchHosted, hostedError, operationFailure } from "./hosted-transport"
 import { identityFromAccessToken } from "./identity"
 import type { CliCredentialFilePort } from "./cli-credential-file"
-import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
+import { readString } from "@claxedo/helpers/readers"
 
 export type { RefreshOutcome } from "./desktop-native-auth"
 
@@ -73,43 +73,6 @@ type Credential = { ok: true; token: string } | { ok: false; detail: string }
 const REFRESH_FAILURE_COOLDOWN_SECONDS = 20
 /** Backoff for the profile lookup after a failure: quick, then patient, then stop asking. */
 const IDENTITY_RETRY_DELAYS_MS = [15_000, 60_000, 5 * 60_000] as const
-
-/**
- * The control plane's error envelope, read in one place.
- *
- * Every failing hosted response carries `{ error: { code, message, ... } }`.
- * The three readers below used to re-derive that nesting by hand — and the two
- * call sites asserted `response.json()` into it — so the same shape had four
- * spellings.
- */
-function hostedError(value: unknown): Record<string, unknown> | undefined {
-  return readRecord(value, "error")
-}
-
-function connectionRetryResult(
-  name: HostedOperationName,
-  response: Response,
-  value: unknown,
-): { status: "provisioning"; retryAfterMs: number } | undefined {
-  if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return undefined
-  if (response.status !== 409 && response.status !== 429) return undefined
-  const bodyDelay = readFiniteNumber(hostedError(value), "retryAfterMs")
-  if (bodyDelay !== undefined) return { status: "provisioning", retryAfterMs: bodyDelay }
-  const header = response.headers.get("Retry-After")?.trim()
-  if (header && /^\d+$/.test(header)) {
-    return { status: "provisioning", retryAfterMs: Number(header) * 1_000 }
-  }
-  return undefined
-}
-
-function operationFailure(name: HostedOperationName, status: number, value: unknown) {
-  const error = hostedError(value)
-  if (!error) return new Error(`operation "${name}" failed: ${status}`)
-  const detail = [readString(error, "code")?.trim() ?? "", readString(error, "message")?.trim() ?? ""]
-    .filter(Boolean)
-    .join(": ")
-  return new Error(`operation "${name}" failed: ${status}${detail ? ` (${detail})` : ""}`)
-}
 
 export type AccountServiceOptions = {
   auth: DesktopNativeAuth

@@ -5,7 +5,6 @@
   "packages/claxedo-app/src/transcript/markdown.tsx": 821,
   "packages/claxedo-app/src/transcript/message-part.tsx": 2192,
   "packages/claxedo-desktop/src/browser-preload/index.ts": 949,
-  "packages/claxedo-desktop/src/main/account/account-service.ts": 815,
   "packages/claxedo-desktop/src/main/index.ts": 952,
   "packages/claxedo-local-server/src/app/local-daemon-lifecycle.ts": 1339,
   "packages/claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts": 847,

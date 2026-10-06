@@ -1,6 +1,10 @@
+import type { HostedOperationName } from "@claxedo/account-contract"
+import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
+
 /**
  * One HTTP attempt, bounded by a single deadline — and the hosted
- * control-plane request built on top of it.
+ * control-plane request built on top of it, with the reading of its failing
+ * answers.
  *
  * `fetchWithDeadline` is shared by every request the account modules make:
  * hosted control-plane calls here, and the OAuth token endpoint in
@@ -108,4 +112,34 @@ export async function fetchHosted(
   deadlineMs: number = HOSTED_REQUEST_DEADLINE_MS,
 ): Promise<Response> {
   return fetchWithDeadline(fetchImpl, url, init, deadlineMs, { parentSignal, track })
+}
+
+/** Every failing hosted answer carries the control plane's envelope, `{ error: { code, message, ... } }`. */
+export function hostedError(value: unknown): Record<string, unknown> | undefined {
+  return readRecord(value, "error")
+}
+
+export function connectionRetryResult(
+  name: HostedOperationName,
+  response: Response,
+  value: unknown,
+): { status: "provisioning"; retryAfterMs: number } | undefined {
+  if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return undefined
+  if (response.status !== 409 && response.status !== 429) return undefined
+  const bodyDelay = readFiniteNumber(hostedError(value), "retryAfterMs")
+  if (bodyDelay !== undefined) return { status: "provisioning", retryAfterMs: bodyDelay }
+  const header = response.headers.get("Retry-After")?.trim()
+  if (header && /^\d+$/.test(header)) {
+    return { status: "provisioning", retryAfterMs: Number(header) * 1_000 }
+  }
+  return undefined
+}
+
+export function operationFailure(name: HostedOperationName, status: number, value: unknown) {
+  const error = hostedError(value)
+  if (!error) return new Error(`operation "${name}" failed: ${status}`)
+  const detail = [readString(error, "code")?.trim() ?? "", readString(error, "message")?.trim() ?? ""]
+    .filter(Boolean)
+    .join(": ")
+  return new Error(`operation "${name}" failed: ${status}${detail ? ` (${detail})` : ""}`)
 }
