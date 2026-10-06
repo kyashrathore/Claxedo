@@ -7,6 +7,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
+import { responseTiming } from "../../platform/http/server-timing"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
@@ -258,6 +259,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const ownership = createRouteOwnership()
   const app = withRouteOwnership(new Hono(), ownership, "hosted-core")
 
+  app.use(responseTiming())
   app.use(securityHeaders())
   const flushTelemetry = services.telemetry.flush
   if (flushTelemetry) {

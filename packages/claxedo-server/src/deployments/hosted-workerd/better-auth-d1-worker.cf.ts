@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
+import { timedD1 } from "../../platform/http/server-timing"
 import type { ExecutionContext } from "hono"
 import {
   requestIsHttps,
@@ -69,8 +70,8 @@ export function betterAuthD1CompositionInput(env: BetterAuthD1WorkerEnv): Better
   return {
     env: stringEnvironment(env),
     emailSender: cloudflareAuthEmailSender(env),
-    authDatabase: env.AUTH_DB,
-    controlPlaneDatabase: env.CONTROL_PLANE_DB,
+    authDatabase: timedD1(env.AUTH_DB),
+    controlPlaneDatabase: timedD1(env.CONTROL_PLANE_DB),
     descriptorExpiresAt: Date.now() + AUTH_DESCRIPTOR_TTL_MS,
     product: {
       kind: "user-deployed",

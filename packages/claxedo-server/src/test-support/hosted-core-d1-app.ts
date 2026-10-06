@@ -52,7 +52,15 @@ async function authDatabase(disposers: Array<() => Promise<void>>) {
  * person whose identity the D1 authority minted, so every role a route decides
  * on is the one the database holds.
  */
-export async function hostedCoreD1App(disposers: Array<() => Promise<void>>, options: { database?: (database: D1Database) => D1Database } = {}) {
+export async function hostedCoreD1App(
+  disposers: Array<() => Promise<void>>,
+  options: {
+    database?: (database: D1Database) => D1Database
+    /** Service ports a test supplies over the plane's bare ones, such as a sandbox manager and a token signer. */
+    services?: Partial<Pick<ControlPlaneServices, "relay" | "sandbox">>
+    routes?: Partial<Pick<Parameters<typeof createHostedCoreApp>[1], "productWorkspace">>
+  } = {},
+) {
   const migrated = await miniflareControlPlaneDatabase()
   const controlPlane = { ...migrated, database: options.database?.(migrated.database) ?? migrated.database }
   disposers.push(() => controlPlane.dispose())
@@ -81,8 +89,8 @@ export async function hostedCoreD1App(disposers: Array<() => Promise<void>>, opt
   }
   const services = {
     auth: { config: { enabled: true, issuer: "https://auth.test", jwksUrl: "https://auth.test/jwks" } },
-    relay: {},
-    sandbox: {},
+    relay: options.services?.relay ?? {},
+    sandbox: options.services?.sandbox ?? {},
     authority,
     telemetry: { capture: vi.fn() },
     localExecution: { enabled: false },
@@ -116,6 +124,7 @@ export async function hostedCoreD1App(disposers: Array<() => Promise<void>>, opt
     cloudWorkspaceAdmission: async () => undefined,
     product: STATIC_PRODUCT_DESCRIPTORS["claxedo-hosted"],
     requestGuardExemptions: [],
+    ...options.routes,
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as Hono
 
   const person = async (subject: string) => {

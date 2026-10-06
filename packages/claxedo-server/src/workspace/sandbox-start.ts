@@ -1,4 +1,5 @@
 import type { SandboxEnsureResult, SandboxTargetResult } from "@claxedo/sandbox-manager"
+import { timed } from "../platform/http/server-timing"
 
 /**
  * What a cloud workspace's start answers. The sandbox manager's own answers
@@ -37,7 +38,11 @@ export interface SandboxProvisionerNamespace {
   get(id: unknown): SandboxProvisionerStub
 }
 
-/** The one provisioner a workspace's sandbox starts run under. */
+/** The one provisioner a workspace's sandbox starts run under; its calls are the request's Durable Object time. */
 export function sandboxProvisioner(namespace: SandboxProvisionerNamespace, workspaceId: string): SandboxProvisionerStub {
-  return namespace.get(namespace.idFromName(`workspace:${workspaceId}`))
+  const stub = namespace.get(namespace.idFromName(`workspace:${workspaceId}`))
+  return {
+    start: (id) => timed("do", () => stub.start(id)),
+    refresh: (id) => timed("do", () => stub.refresh(id)),
+  }
 }

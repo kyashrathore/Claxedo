@@ -141,8 +141,13 @@ export const serverWorkerd: Policy = {
   // and listing a session's shares is its own module
   // (`authority/adapters/d1/session-shares.ts`), split from the session
   // authority, lent its database, clocks and access checks.
-  // 155/20, no headroom.
-  ceilings: { modules: 155, packages: 20 },
+  // +2 modules, +1 package (owner: the hosted core app): every response names
+  // the request's database and Durable Object time in Server-Timing
+  // (`platform/http/server-timing.ts`) over the observed databases
+  // (`platform/db/observed-d1.ts`); the ledger follows the request through
+  // `node:async_hooks`, under the Worker's nodejs_compat.
+  // 157/21, no headroom.
+  ceilings: { modules: 157, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -1,4 +1,5 @@
-import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
+import type { D1Database } from "@cloudflare/workers-types"
+import { observedD1 } from "../platform/db/observed-d1"
 
 export type D1Rounds = {
   readonly database: D1Database
@@ -9,8 +10,6 @@ export type D1Rounds = {
   trace(): readonly { round: number; sql: string }[]
   reset(): void
 }
-
-const EXECUTIONS = new Set<string | symbol>(["first", "all", "run", "raw"])
 
 /**
  * Counts the statements a database answers and how many of them ran alone.
@@ -23,7 +22,7 @@ export function countD1Rounds(database: D1Database): D1Rounds {
   let rounds = 0
   let statements = 0
   let trace: { round: number; sql: string }[] = []
-  const track = async <T>(sql: string[], run: () => Promise<T>) => {
+  const counted = observedD1(database, async (sql, run) => {
     if (inFlight === 0) rounds += 1
     statements += sql.length
     trace.push(...sql.map((text) => ({ round: rounds, sql: text.replace(/\s+/g, " ").trim().slice(0, 90) })))
@@ -33,26 +32,6 @@ export function countD1Rounds(database: D1Database): D1Rounds {
     } finally {
       inFlight -= 1
     }
-  }
-  const texts = new WeakMap<D1PreparedStatement, string>()
-  const statement = (prepared: D1PreparedStatement, sql: string): D1PreparedStatement => {
-    texts.set(prepared, sql)
-    return new Proxy(prepared, {
-      get(target, key, receiver) {
-        const value: unknown = Reflect.get(target, key, receiver)
-        if (key === "bind") return (...values: unknown[]) => statement(target.bind(...values), sql)
-        if (EXECUTIONS.has(key)) return (...args: unknown[]) => track([sql], () => (value as (...input: unknown[]) => Promise<unknown>).apply(target, args))
-        return typeof value === "function" ? value.bind(target) : value
-      },
-    })
-  }
-  const counted = new Proxy(database, {
-    get(target, key, receiver) {
-      const value: unknown = Reflect.get(target, key, receiver)
-      if (key === "prepare") return (sql: string) => statement(target.prepare(sql), sql)
-      if (key === "batch") return (prepared: D1PreparedStatement[]) => track(prepared.map((item) => texts.get(item) ?? "?"), () => target.batch(prepared))
-      return typeof value === "function" ? value.bind(target) : value
-    },
   })
   return {
     database: counted,
