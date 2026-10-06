@@ -5,6 +5,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import { hostedWorkerCompatibility, wranglerBundle } from "../test-support/hosted-worker-bundle"
 import type { SandboxStartAnswer } from "../workspace/sandbox-start"
+import { FIXTURE_OUTCOME_HELD_MS } from "./fixtures/provisioner-outcome-held"
 
 const FIXTURE_WORKER = fileURLToPath(new URL("./fixtures/provisioner-worker.fixture.ts", import.meta.url))
 const ORIGIN = "https://api.test"
@@ -78,6 +79,18 @@ describe("a sandbox start on workerd", () => {
     expect(resumed).not.toHaveProperty("opened")
     expect(await until(() => start("ws_slow_1"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
     expect(await driverCalls("ws_slow_1")).toBe(2)
+  })
+
+  test("an outcome nobody collected while it was held is not the answer to a later start, which begins its own run", async () => {
+    await start("ws_slow_1_left")
+    await until(() => target("ws_slow_1_left"), (lease) => lease.status === "ready")
+    await new Promise((resolve) => setTimeout(resolve, FIXTURE_OUTCOME_HELD_MS + 200))
+
+    const later = await start("ws_slow_1_left")
+    expect(later).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(later).not.toHaveProperty("opened")
+    expect(await until(() => start("ws_slow_1_left"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await driverCalls("ws_slow_1_left")).toBe(2)
   })
 
   test("polls a driver that asks to be polled, from the alarm, until it is ready", async () => {

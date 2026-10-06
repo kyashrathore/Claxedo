@@ -2,6 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { createSandboxManager, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createD1SandboxLeaseStore } from "../stores/d1"
 import { sandboxProvisionerClass } from "../provisioner.cf"
+import { FIXTURE_OUTCOME_HELD_MS } from "./provisioner-outcome-held"
 import { sandboxProvisioner, type SandboxProvisionerNamespace, type SandboxStartDrive } from "../../workspace/sandbox-start"
 
 type Env = { CONTROL_PLANE_DB: D1Database; SANDBOX_PROVISIONER: SandboxProvisionerNamespace }
@@ -87,7 +88,7 @@ function drive(env: Env): SandboxStartDrive {
   }
 }
 
-export class SandboxProvisioner extends sandboxProvisionerClass(drive) {}
+export class SandboxProvisioner extends sandboxProvisionerClass(drive, FIXTURE_OUTCOME_HELD_MS) {}
 
 export default {
   async fetch(request: Request, env: Env) {

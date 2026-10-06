@@ -3,10 +3,19 @@ import { sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
 import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox-start"
 
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number }
-type Outcome = { epoch: number; answer: SandboxStartAnswer }
+type Outcome = { epoch: number; answer: SandboxStartAnswer; settledAt: number }
 
 /** A start still not settled this long after it began ends with that as its reason. */
 const START_WALL_MS = 15 * 60_000
+
+/**
+ * How long a settled outcome waits for the poller whose start began the run.
+ * A poller comes back within its retryAfterMs (2 s in production, a minute
+ * from a throttled background tab); an outcome older than this belongs to a
+ * poller that left, and a `ready` one would soon describe a sandbox that has
+ * since stopped on its own.
+ */
+const OUTCOME_HELD_MS = 2 * 60_000
 
 /** How long the start waits before its next driver step; nothing when this answer ends it. */
 function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
@@ -21,10 +30,13 @@ function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
  * request died with a closed tab and left the lease `acquiring` until the
  * stale window let the next start take it over. Here `start` takes the lease
  * and answers at once; the alarm drives the driver, step by step, until the
- * lease is ready or the start has failed, and the first `start` after that
- * settles reports the outcome.
+ * lease is ready or the start has failed, and the first `start` within
+ * `outcomeHeldMs` of that settling reports the outcome. A later start begins
+ * its own run: a refresh or a closed tab leaves its outcome uncollected, and
+ * answering it hours on would report a stopped sandbox ready or a start the
+ * person never asked for refused.
  */
-export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive) {
+export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, outcomeHeldMs = OUTCOME_HELD_MS) {
   return class SandboxProvisioner extends DurableObject<Env> {
     #driving = false
 
@@ -38,9 +50,11 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       const outcome = await storage.get<Outcome>("outcome")
       if (outcome) {
         await storage.delete("outcome")
-        if (outcome.answer.status !== "ready") return outcome.answer
-        const current = await drive(this.env).target(workspaceId)
-        if (current.status === "ready" && current.epoch === outcome.epoch) return current
+        if (Date.now() - outcome.settledAt <= outcomeHeldMs) {
+          if (outcome.answer.status !== "ready") return outcome.answer
+          const current = await drive(this.env).target(workspaceId)
+          if (current.status === "ready" && current.epoch === outcome.epoch) return current
+        }
       }
       const admitted = await drive(this.env).acquire(workspaceId)
       if (admitted.status !== "provisioning") return admitted
@@ -77,7 +91,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
           return
         }
         await storage.delete("run")
-        const outcome: Outcome = { epoch: run.epoch, answer }
+        const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }
         await storage.put("outcome", outcome)
       } finally {
         this.#driving = false
