@@ -70,7 +70,7 @@ test("a hosted control plane reports each cloud start phase as an ops event tagg
   const workspace = await pseudonymousId("ws_1")
   const project = await pseudonymousId("prj_1")
   const phases = telemetry.captured.filter((entry) => entry.event === "sandbox.start_phase")
-  expect(phases.map((entry) => entry.properties.phase).toSorted()).toEqual(["image_ready", "lease_decision", "provider_ready", "runtime_ready"])
+  expect(phases.map((entry) => String(entry.properties.phase)).toSorted((a, b) => a.localeCompare(b))).toEqual(["image_ready", "lease_decision", "provider_ready", "runtime_ready"])
   for (const entry of phases) {
     expect(Number.isNaN(Date.parse(entry.timestamp))).toBe(false)
     expect(entry.distinct_id).toBe("system")
