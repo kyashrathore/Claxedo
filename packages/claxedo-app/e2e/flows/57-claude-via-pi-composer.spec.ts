@@ -14,7 +14,7 @@ test("57 composer: Claude Code on a cloud workspace whose provider cannot keep t
   await showHarnesses(picker)
   await picker.getByRole("button", { name: "Claude Code", exact: true }).click()
 
-  await expect(picker.getByText("Claude Code runs inside the workspace, and this cloud provider can't keep your key out of it.", { exact: true })).toBeVisible()
+  await expect(picker.getByText("Claude Code runs inside the workspace, and your organization's cloud provider can't keep your key out of it.", { exact: true })).toBeVisible()
   await expect(picker.getByText(/^Use Claude .+ through Pi — same account\.$/)).toBeVisible()
   await expect(picker.getByText(/secret_brokering_unsupported|harness_needs_brokering/)).toHaveCount(0)
 

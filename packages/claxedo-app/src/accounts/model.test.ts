@@ -109,7 +109,7 @@ test("accounts: an account the org's cloud provider cannot hand a harness says w
   expect(storedAccountWords(words, claudeKey, undefined).cloudNote).toBe("Works on your machines and through Pi in cloud workspaces")
   const cursorHarness = harnesses.find((harness) => harness.id === "cursor")!
   const [cursorKey] = harnessAccounts(cursorHarness, [account("b", "cursor-sdk", { delivery: refused })])
-  expect(storedAccountWords(words, cursorKey, undefined).cloudNote).toBe("Works on your machines; this cloud provider can't run it")
+  expect(storedAccountWords(words, cursorKey, undefined).cloudNote).toBe("Works on your machines; your organization's cloud provider can't run it")
   const [usable] = harnessAccounts(claude, [account("c", "claude-sdk", { delivery: brokered })])
   expect(storedAccountWords(words, usable, undefined).cloudNote).toBeUndefined()
 })
