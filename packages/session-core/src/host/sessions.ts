@@ -273,7 +273,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       attachments.register(sessionId, { handle, session, broker, context, owner })
       const persisted = store.getSession(sessionId)
       if (!persisted) throw new Error(`Session ${sessionId} was not persisted`)
-      await input.settled(sessionId)
+      if (!create.turnFollows) await input.settled(sessionId)
       return persisted
     },
     async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory,

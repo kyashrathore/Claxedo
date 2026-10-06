@@ -31,6 +31,18 @@ describe("releasing a quiescent session's harness", () => {
     await until(() => f.transport.releases.length === 2, "the settled turn releases the session")
   })
 
+  test("a create whose turn follows keeps its harness, which that turn runs on without attaching again", async () => {
+    const f = releasing()
+    const { id } = await f.runtime.sessions.create({ ...sessionCreate({ id: "ses_first_turn", harness: PI }), turnFollows: true })
+    expect(f.transport.releases).toHaveLength(0)
+
+    await f.runtime.turns.start({ sessionId: id, parts: [{ type: "text", text: "Hello" }], origin: LOOPBACK_ORIGIN })
+    await f.runtime.turns.whenIdle(id)
+    expect(f.transport.attaches).toHaveLength(0)
+    expect(f.transport.turns).toHaveLength(1)
+    await until(() => f.transport.releases.length === 1, "the settled first turn releases the session")
+  })
+
   test("a turn that is still running keeps its harness; the release follows its settling", async () => {
     const control = controlledTurn("ses_running")
     const f = releasing({ turn: () => control.events })

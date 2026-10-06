@@ -116,6 +116,8 @@ export type AgentRuntimeSessionCreateInput = {
   origin: TurnOrigin
   /** The reservation this create runs under, when the caller holds one. */
   start?: AgentSessionStartBinding
+  /** A turn is admitted on the session as soon as the create answers, so its harness stays attached for it instead of being released and launched again. */
+  turnFollows?: true
   parentID?: string
   model?: PromptModel
   variant?: string | null

@@ -1017,6 +1017,7 @@ export function createSessionRoutes(opts: Opts) {
             owner,
             origin: turnOriginOf(sessionTurnOrigin(c), c),
             ...(start ? { start } : {}),
+            ...(first ? { turnFollows: true as const } : {}),
             ...(body.parentID ? { parentID: body.parentID } : {}),
             ...(createModel ? { model: createModel } : {}),
             ...(createVariant !== undefined ? { variant: createVariant } : {}),
