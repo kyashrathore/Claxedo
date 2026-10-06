@@ -587,8 +587,12 @@ export const desktopRenderer: Policy = {
   // A project's Environment section in its own file, with its loading and
   // failure states (owner: the app's projects domain,
   // `projects/view/project-environment-section.tsx`). It adds no package edge.
-  // 1350/36, no headroom.
-  ceilings: { modules: 1350, packages: 36 },
+  // Panes restored for a workspace the account no longer has, closed once the
+  // catalog answers (owner: the app's shell, `shell/gone-placements.tsx`), and
+  // a new cloud workspace's machine size choice (owner: the app's cloud
+  // domain, `cloud/view/machine-size.tsx`). They add no package edge.
+  // 1352/36, no headroom.
+  ceilings: { modules: 1352, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

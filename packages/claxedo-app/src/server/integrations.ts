@@ -123,7 +123,7 @@ function connectionOf(value: unknown): Connection[] {
   }]
 }
 
-async function readCatalog(transport: Transport, path: string): Promise<IntegrationsCatalog> {
+async function readIntegrationsCatalog(transport: Transport, path: string): Promise<IntegrationsCatalog> {
   const body = await transport.json(path)
   return {
     integrations: (readArray(body, "integrations") ?? []).flatMap(integrationOf),
@@ -134,9 +134,9 @@ async function readCatalog(transport: Transport, path: string): Promise<Integrat
 
 export function integrationQueries(transport: Transport): IntegrationQueries {
   return {
-    catalog: () => fetchQuery(queryKeys.integrations(transport.serverUrl), () => readCatalog(transport, INTEGRATIONS_PATH)),
+    catalog: () => fetchQuery(queryKeys.integrations(transport.serverUrl), () => readIntegrationsCatalog(transport, INTEGRATIONS_PATH)),
     codeHosts: () =>
-      fetchQuery(queryKeys.codeHostIntegrations(transport.serverUrl), () => readCatalog(transport, `${INTEGRATIONS_PATH}?capability=${CODE_HOST_CAPABILITY}`)),
+      fetchQuery(queryKeys.codeHostIntegrations(transport.serverUrl), () => readIntegrationsCatalog(transport, `${INTEGRATIONS_PATH}?capability=${CODE_HOST_CAPABILITY}`)),
   }
 }
 
