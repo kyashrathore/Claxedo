@@ -25,6 +25,18 @@ function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
 }
 
 /**
+ * A step that threw, as the run's answer. An exception out of the alarm would
+ * leave `run` in storage, and `start` answers `provisioning` for as long as a
+ * run exists: the lease can be ready in D1 while the person waits on a start
+ * nothing will settle.
+ */
+function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
+  const code = typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string" ? cause.code : undefined
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return { status: "unavailable", error: code ? `${code}: ${message}` : message, epoch: run.epoch, homeRegion: run.homeRegion }
+}
+
+/**
  * One per workspace, named `workspace:<workspaceId>`. A Worker cuts work held
  * past a response about 30 s after it, so a cold start driven from the start
  * request died with a closed tab and left the lease `acquiring` until the
@@ -83,7 +95,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
               epoch: run.epoch,
               homeRegion: run.homeRegion,
             }
-          : await drive(this.env).provision(run.workspaceId, run.epoch)
+          : await drive(this.env).provision(run.workspaceId, run.epoch).catch((cause: unknown) => stepThrew(run, cause))
         const retryAfterMs = nextStepAfter(answer)
         if (retryAfterMs !== undefined) {
           await storage.put("run", { ...run, retryAfterMs })

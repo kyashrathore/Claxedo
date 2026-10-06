@@ -93,6 +93,17 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_slow_1_left")).toBe(2)
   })
 
+  test("a step that throws after the lease went ready ends the run with that error, and the next start runs its own", async () => {
+    expect(await start("ws_step_throws")).toMatchObject({ status: "provisioning", epoch: 1 })
+    const thrown = await until(() => start("ws_step_throws"), (answer) => answer.status !== "provisioning")
+    expect(thrown).toMatchObject({ status: "unavailable", error: "runtime_provision_failed: the runtime refused its settings", epoch: 1 })
+    expect(await target("ws_step_throws")).toMatchObject({ status: "ready", epoch: 1 })
+
+    expect(await start("ws_step_throws")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => start("ws_step_throws"), (answer) => answer.status !== "provisioning")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await driverCalls("ws_step_throws")).toBe(2)
+  })
+
   test("polls a driver that asks to be polled, from the alarm, until it is ready", async () => {
     expect(await start("ws_poll_2")).toMatchObject({ status: "provisioning", epoch: 1 })
     await until(() => target("ws_poll_2"), (lease) => lease.status === "ready")

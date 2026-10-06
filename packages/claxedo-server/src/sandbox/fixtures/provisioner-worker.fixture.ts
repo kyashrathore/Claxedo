@@ -29,7 +29,8 @@ async function driverCalls(database: D1Database, workspaceId: string) {
 /**
  * A driver scripted by the workspace id: `ws_slow_<ms>` becomes ready after
  * that long, `ws_poll_<n>` asks to be polled n times first, `ws_boot_fail`
- * exits before it is ready, and `ws_flaky` fails once at the provider.
+ * exits before it is ready, `ws_flaky` fails once at the provider, and
+ * `ws_step_throws` throws out of the start step once the lease is ready.
  */
 function scriptedDriver(database: D1Database): SandboxDriver {
   const ready = (input: SandboxDriverEnsureInput) => ({
@@ -83,7 +84,13 @@ function drive(env: Env): SandboxStartDrive {
   const input = { homeRegion: "us-east", labels: {} }
   return {
     acquire: (workspaceId) => sandboxes.acquire(workspaceId, input),
-    provision: (workspaceId, epoch) => sandboxes.provision(workspaceId, epoch, input),
+    provision: async (workspaceId, epoch) => {
+      const answer = await sandboxes.provision(workspaceId, epoch, input)
+      if (workspaceId.startsWith("ws_step_throws") && answer.status === "ready" && await driverCalls(env.CONTROL_PLANE_DB, workspaceId) === 1) {
+        throw Object.assign(new Error("the runtime refused its settings"), { code: "runtime_provision_failed" })
+      }
+      return answer
+    },
     target: (workspaceId) => sandboxes.target(workspaceId),
   }
 }
