@@ -13,6 +13,7 @@ export type ShellRouting = {
   readonly resolveSessions: (resolver: SessionPlacementResolver) => () => void
   readonly pathname: Accessor<string>
   readonly navigate: (path: string, options?: { readonly replace?: boolean }) => void
+  readonly chosen: Accessor<number>
 }
 
 const ShellRoutingContext = createContext<ShellRouting>()
@@ -23,6 +24,7 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
   const registries = useShellRegistries()
   const parsed = createMemo(() => parseRoute(location.pathname, registries.pages.list(), registries.routes.list()))
   const [resolver, setResolver] = createSignal<SessionPlacementResolver>()
+  const [chosen, setChosen] = createSignal(0)
   const localPlacement = createMemo(() => {
     const current = parsed()
     return current.kind === "localSession" ? resolver()?.(current.sessionId) : undefined
@@ -41,7 +43,11 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
       return () => setResolver((current) => (current === next ? undefined : current))
     },
     pathname: () => location.pathname,
-    navigate: (path, options) => navigate(path, { replace: options?.replace ?? false }),
+    navigate: (path, options) => {
+      if (!options?.replace) setChosen((count) => count + 1)
+      navigate(path, { replace: options?.replace ?? false })
+    },
+    chosen,
   }
   return <ShellRoutingContext.Provider value={routing}>{props.children}</ShellRoutingContext.Provider>
 }

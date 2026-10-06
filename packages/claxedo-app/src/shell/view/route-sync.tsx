@@ -52,8 +52,7 @@ export function RouteSync(): JSX.Element {
   const stores = useSessionStores()
   onCleanup(routing.resolveSessions((id) => stores.list.rowOf(id)?.ref.placementId))
 
-  createEffect(on(routing.route, () => layout.send({ type: "navigated" }), { defer: true }))
-  createEffect(on(workbench.selectors.focusedContent, () => layout.send({ type: "navigated" }), { defer: true }))
+  createEffect(on([routing.route, routing.chosen, workbench.selectors.focusedContent], () => layout.send({ type: "navigated" }), { defer: true }))
 
   createEffect(() => {
     const target = paneRouteOf(routing.route(), routing.pathname(), (route) => route.kind === "session"

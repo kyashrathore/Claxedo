@@ -75,20 +75,18 @@ type CloudSessionInput = {
 export async function createCloudSession(signed: SignedStack, workspace: CloudWorkspace, input: CloudSessionInput) {
   const sessionId = `ses_${randomUUID().replaceAll("-", "")}`
   const operationId = `session_registration_${randomUUID().replaceAll("-", "")}`
-  await asOwner(signed)("POST", "/api/control/session-registrations/reserve",
+  const reserved = await asOwner(signed)("POST", "/api/control/session-registrations/reserve",
     { operationId, sessionId, workspaceId: workspace.id, kind: "create", title: input.title, harness: input.harness })
+  const root = (JSON.parse(reserved.body) as { sessionHostRoot?: string }).sessionHostRoot
   const query = input.harness.access === "native" ? `nativeHarness=${input.harness.id}` : `connectionId=${input.harness.id}`
-  await runtimeCall(signed, workspace,
-    "POST",
-    `/session?${query}`,
-    {
-      id: sessionId,
-      title: input.title,
-      harness: input.harness,
-      ...(input.model ? { model: { providerID: input.model.providerId, id: input.model.modelId } } : {}),
-    },
-    { "x-claxedo-session-registration-operation": operationId },
-  )
+  const body = {
+    title: input.title,
+    harness: input.harness,
+    ...(input.model ? { model: { providerID: input.model.providerId, id: input.model.modelId } } : {}),
+  }
+  const headers = { "x-claxedo-session-registration-operation": operationId }
+  if (root) await (await sessionConnection(signed, workspace, root)).call("POST", `/session/${root}?${query}`, body, headers)
+  else await runtimeCall(signed, workspace, "POST", `/session?${query}`, { id: sessionId, ...body }, headers)
   return sessionId
 }
 
@@ -130,8 +128,12 @@ export async function sessionConnection(signed: SignedStack, workspace: CloudWor
   const transport = hostedRuntimeTransport(signed.hosted, { id: workspace.id, runtimeAccessToken: connection.runtimeAccessToken })
   return {
     ...connection,
-    call: async (method: string, route: string) => {
-      const reply = await transport({ method, url: new URL(route, signed.hosted.relayUrl).toString(), headers: {} })
+    call: async (method: string, route: string, body?: unknown, headers: Record<string, string> = {}) => {
+      const reply = await transport({
+        method, url: new URL(route, signed.hosted.relayUrl).toString(),
+        headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
       if (reply.status < 200 || reply.status >= 300) throw new Error(`${method} ${route} answered ${reply.status}: ${reply.body}`)
       return reply.body ? JSON.parse(reply.body) as unknown : undefined
     },

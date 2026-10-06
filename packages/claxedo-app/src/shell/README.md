@@ -104,7 +104,7 @@ Kept from the old app: registrations with owners, keybinding parsing and display
 
 ## Phone
 
-Below 768 px the rail itself becomes a drawer that fills the viewport (an owner ruling over today's 280 px drawer beside a scrim), sliding in from the left over 300 ms, opened and closed by the fixed "Open navigation sidebar" button over the header's left end. The header there holds New Session and New Terminal, each with a 44 px touch target. The frame never scrolls horizontally.
+Below 768 px the rail itself becomes a drawer that fills the viewport (an owner ruling over today's 280 px drawer beside a scrim), sliding in from the left over 300 ms, opened and closed by the fixed "Open navigation sidebar" button over the header's left end. The header there holds New Session and New Terminal, each with a 44 px touch target. The frame never scrolls horizontally. Every navigation a person chooses (`navigate` without `replace`, counted by `useShellRoute().chosen`) closes the drawer and the sheet, so tapping the session that is already open returns to it; replaced URLs (redirects, mirroring the focused pane) do not count.
 
 ## Flows
 

@@ -254,7 +254,7 @@ test("12 going back to a session whose first read found it missing reveals it as
   const workspace = await stack.daemon.makeWorkspace("missing", "Missing")
   await seedTurns(stack, api, workspace.directory, "Present", 1)
   await app.goto(`${stack.url}${sessionRoute(workspace.id, "ses_missing")}`)
-  const unavailable = app.getByTestId("session-unavailable")
+  const unavailable = app.getByTestId("session-unavailable").filter({ hasText: "That session no longer exists." })
   await expect(unavailable).toBeVisible()
   await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Present", exact: true }).click()
   const left = app.getByText("Present reply line 6.").first()

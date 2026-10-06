@@ -51,8 +51,8 @@ test("47 shared sessions: follow sees live turns, send reaches the owner, revoke
   await share("DELETE")
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
   await expect(row).toHaveCount(0)
-  if (isMobile) await page.getByRole("button", { name: UI.hideSidebar }).click()
-  await expect(page.getByTestId("session-unavailable")).toBeVisible()
+  if (isMobile) await page.getByRole("button", { name: "Close navigation sidebar" }).click()
+  await expect(page.getByTestId("session-unavailable")).toHaveText("This session is no longer shared with you.")
 })
 
 test("47 a send share's turn spends the session owner's account, never the sender's", async ({ signedCloud: signed, page, isMobile }) => {
