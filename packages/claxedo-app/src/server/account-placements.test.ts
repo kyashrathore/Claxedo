@@ -34,7 +34,9 @@ function world(run: (operation: string) => Promise<unknown>, gcTime?: number) {
 test("signed desktop catalog: the account's cloud workspace joins the local project it shares a workspace with", async () => {
   await createRoot(async (dispose) => {
     const { calls, workspaces } = world(async (operation) => (operation === "workspace.list.machine" ? machines : provisioned))
+    expect(workspaces.complete()).toBe(false)
     await workspaces.load()
+    expect(workspaces.complete()).toBe(true)
     expect(calls.toSorted()).toEqual(["session.shared.list", "workspace.list.machine", "workspace.list.provisioner"])
     expect(workspaces.list().map((placement) => [String(placement.id), String(placement.projectId), placement.kind])).toEqual([
       ["ws_shared", "local_app", "folder"],
@@ -88,6 +90,7 @@ test("signed desktop catalog: an account that cannot answer leaves this machine'
       console.error = original
     }
     expect(workspaces.list().map((placement) => String(placement.id))).toEqual(["ws_shared"])
+    expect(workspaces.complete(), "a cloud workspace missing from this catalog may still exist").toBe(false)
     expect(errors).toHaveLength(1)
     dispose()
   })

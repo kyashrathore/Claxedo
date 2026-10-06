@@ -21,7 +21,7 @@ export type SessionHome = {
   readonly live: boolean
 }
 
-export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
+export type Workspaces = Pick<PlacementsApi, "byId" | "list" | "complete"> & {
   readonly shared: SharedSessions
   readonly streamRoute: (ref: Pick<SessionLocation, "placementId" | "sessionId">) => RuntimeRoute | undefined
   readonly workspaceStreamRoute: (id: PlacementId) => RuntimeRoute | undefined
@@ -202,17 +202,22 @@ function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accoun
     return last.merged
   }
   const local = () => queryClient.getQueryData<BootstrapCatalog>(key)
+  const catalog = () => {
+    for (const watch of watched) watch.revision()
+    const current = local()
+    return current && merge(current)
+  }
+  const linked = () => {
+    const current = local()
+    return current && accountPlacements?.link(current.placements)
+  }
   return {
     merge,
-    catalog: () => {
-      for (const watch of watched) watch.revision()
-      const current = local()
-      return current && merge(current)
-    },
-    linked: () => {
-      const current = local()
-      return current && accountPlacements?.link(current.placements)
-    },
+    linked,
+    published: {
+      catalog,
+      complete: () => catalog() !== undefined && (accountPlacements === undefined || linked() !== undefined),
+    } satisfies Pick<Workspaces, "catalog" | "complete">,
     dispose: () => watched.forEach((watch) => watch.dispose()),
   }
 }
@@ -256,7 +261,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const load = async () => {
     return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }
-  const reads = placementReads(() => merged.catalog()?.placements ?? [])
+  const reads = placementReads(() => merged.published.catalog()?.placements ?? [])
   const { recordOf, hosts } = reads
   const forgetSessionHosts = transport.onSessionHost(reads.learnSessionHost)
   return {
@@ -273,7 +278,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
       await reread()
       relearned.add(directory)
     },
-    catalog: merged.catalog,
+    ...merged.published,
     load,
     refresh: async () => {
       relearned.clear()

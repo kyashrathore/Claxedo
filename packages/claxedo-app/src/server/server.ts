@@ -78,6 +78,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     placements: {
       byId: workspaces.byId,
       list: workspaces.list,
+      complete: workspaces.complete,
       load: async () => {
         await workspaces.load()
         return workspaces.list()

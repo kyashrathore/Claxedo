@@ -32,7 +32,8 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const key = () => draftComposerKey(props.state.draftId)
   const where = () => {
     const chosen = props.state.where
-    return chosen && server.placements.byId(chosen) ? chosen : props.state.placementId
+    if (!chosen) return props.state.placementId
+    return server.placements.byId(chosen) || !server.placements.complete() ? chosen : props.state.placementId
   }
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
