@@ -25,9 +25,9 @@ type StreamsInput = {
   readonly onGap: () => void
 }
 
-type Refusal = { readonly kind: "outdated" } | { readonly kind: "unavailable"; readonly row: string }
+type Refusal = { readonly kind: "outdated"; readonly current: boolean } | { readonly kind: "unavailable"; readonly row: string }
 
-type OpenStream = { readonly stream: Stream; readonly route: string; readonly placement: PlacementId; refused?: Refusal }
+type OpenStream = { readonly stream: Stream; readonly route: string; readonly workspaceId: string; readonly placement: PlacementId; refused?: Refusal }
 
 type StreamsState = {
   readonly input: StreamsInput
@@ -69,13 +69,13 @@ function placementRow(input: StreamsInput, placement: PlacementId) {
 }
 
 function reopens(input: StreamsInput, open: OpenStream) {
-  if (open.refused?.kind === "outdated") return true
+  if (open.refused?.kind === "outdated") return open.refused.current
   return open.refused?.kind === "unavailable" && open.refused.row !== placementRow(input, open.placement)
 }
 
 function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: RuntimeRoute, path: string, rerouted: boolean): OpenStream {
   let missed = rerouted
-  const open: OpenStream = { route: routeKey(route), placement, stream: openEventStream({
+  const open: OpenStream = { route: routeKey(route), workspaceId: route.workspaceId, placement, stream: openEventStream({
     open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
     onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
     onGap: input.onGap,
@@ -87,7 +87,7 @@ function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: R
       if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
     },
     onRefused: (error) => {
-      if (isImageOutdated(error)) open.refused = { kind: "outdated" }
+      if (isImageOutdated(error)) open.refused = { kind: "outdated", current: false }
       else if (isRuntimeUnavailable(error)) {
         open.refused = { kind: "unavailable", row: placementRow(input, placement) }
         refreshCatalog(input)
@@ -134,6 +134,12 @@ function retain<K>(counts: Map<K, number>, key: K): () => void {
   }
 }
 
+function markImageCurrent(state: StreamsState, workspaceId: string): boolean {
+  const outdated = [...state.sessions.values(), ...state.workspaces.values()].filter((open) => open.workspaceId === workspaceId && open.refused?.kind === "outdated")
+  for (const open of outdated) open.refused = { kind: "outdated", current: true }
+  return outdated.length > 0
+}
+
 function followCatalog(state: StreamsState): () => void {
   const { input } = state
   const catalogKeys = new Set([queryKeys.bootstrap(input.transport.serverUrl), queryKeys.accountCatalog(input.transport.serverUrl), queryKeys.sharedSessions(input.transport.serverUrl)].map(hashKey))
@@ -141,9 +147,13 @@ function followCatalog(state: StreamsState): () => void {
     if (catalogKeys.has(event.query.queryHash) && event.type === "updated") reconcileStreams(state)
   })
   const unsubscribeHosts = input.workspaces.onSessionHostLearned(() => reconcileStreams(state))
+  const unsubscribeImage = input.transport.onRuntimeImage((workspaceId, outdated) => {
+    if (!outdated && markImageCurrent(state, workspaceId)) reconcileStreams(state)
+  })
   return () => {
     unsubscribeCatalog()
     unsubscribeHosts()
+    unsubscribeImage()
   }
 }
 

@@ -1,4 +1,5 @@
 import { placementId, projectId, sessionId } from "../ids"
+import type { Transport } from "../transport"
 import type { Workspaces } from "../workspaces"
 
 export async function settle() {
@@ -19,4 +20,8 @@ export const workspaces = { streamRoute: () => record.route, home, refresh: asyn
 
 export function ref(id: string) {
   return { projectId: projectId("prj"), placementId: placement, sessionId: sessionId(id) }
+}
+
+export function streamTransport(fields: object): Transport {
+  return { onRuntimeImage: () => () => undefined, ...fields } as unknown as Transport
 }

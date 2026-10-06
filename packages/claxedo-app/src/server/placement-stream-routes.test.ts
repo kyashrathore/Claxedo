@@ -4,9 +4,9 @@ import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
 import { placementId, projectId, sessionId } from "./ids"
 import { createPlacementStreams } from "./placement-streams"
-import { openBody, record, ref, settle, workspaces } from "./test-support/placement-streams"
+import { openBody, record, ref, settle, streamTransport, workspaces } from "./test-support/placement-streams"
 import { queryKeys } from "./query-keys"
-import type { RuntimeRoute, SessionHostListener, Transport } from "./transport"
+import type { RuntimeRoute, SessionHostListener } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
 
 test("a cloud session's stream opens only once its host is known, on the host that serves it", async () => {
@@ -23,7 +23,7 @@ test("a cloud session's stream opens only once its host is known, on the host th
       return { route: hosted, central: false, live: true }
     },
   } as unknown as Workspaces
-  const transport = { serverUrl: "http://127.0.0.1:1", runtime: async (route: unknown) => (routes.push(route), openBody()) } as unknown as Transport
+  const transport = streamTransport({ serverUrl: "http://127.0.0.1:1", runtime: async (route: unknown) => (routes.push(route), openBody()) })
   const streams = createPlacementStreams({ transport, workspaces, queryClient: new QueryClient(), onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_pi"))
   await settle()
@@ -38,7 +38,7 @@ test("a cloud session's stream opens only once its host is known, on the host th
 function hostLearningTransport(seen: string[]) {
   const opened: { route: RuntimeRoute; signal: AbortSignal }[] = []
   let announce: SessionHostListener | undefined
-  const transport = {
+  const transport = streamTransport({
     serverUrl: "https://claxedo.test",
     loopback: false,
     json: async () => ({
@@ -56,7 +56,7 @@ function hostLearningTransport(seen: string[]) {
       seen.push(`opened ${route.sessionHost?.sessionId ?? "workspace"}`)
       return openBody()
     },
-  } as unknown as Transport
+  })
   return { transport, opened, announce: (sessionHost: string) => announce?.("ws_cloud", "ses_pi", sessionHost) }
 }
 
@@ -83,23 +83,38 @@ test("a session whose stream opened against its workspace moves to its own host 
   })
 })
 
-test("a session stream refused because its workspace runs an older image stays closed, and reopens with a re-read once the catalog changes after a restart", async () => {
+test("a session stream refused because its workspace runs an older image stays closed across catalog reads and reopens with a re-read once its workspace's image reads current", async () => {
   const serverUrl = "http://127.0.0.1:1"
   const queryClient = new QueryClient()
   let restarted = false
   const seen: string[] = []
-  const transport = { serverUrl, runtime: async () => {
-    seen.push(restarted ? "opened" : "refused")
-    return restarted ? openBody() : Response.json({ error: { code: "cloud_runtime_image_outdated" } }, { status: 409 })
-  } } as unknown as Transport
+  let announce: (workspaceId: string, outdated: boolean) => void = () => undefined
+  const transport = streamTransport({
+    serverUrl,
+    runtime: async () => {
+      seen.push(restarted ? "opened" : "refused")
+      return restarted ? openBody() : Response.json({ error: { code: "cloud_runtime_image_outdated" } }, { status: 409 })
+    },
+    onRuntimeImage: (listener: typeof announce) => {
+      announce = listener
+      return () => undefined
+    },
+  })
   const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => seen.push("re-read") })
   const detach = streams.attach(ref("ses_outdated"))
   try {
     await settle()
     await Bun.sleep(600)
     expect(seen).toEqual(["refused"])
-    restarted = true
     queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 1 })
+    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 2 })
+    await settle()
+    expect(seen).toEqual(["refused"])
+    restarted = true
+    announce("ws_other", false)
+    await settle()
+    expect(seen).toEqual(["refused"])
+    announce(record.route.workspaceId, false)
     await settle()
     expect(seen).toEqual(["refused", "opened", "re-read"])
   } finally { detach(); streams.close(); queryClient.clear() }

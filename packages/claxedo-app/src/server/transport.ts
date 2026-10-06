@@ -147,6 +147,9 @@ function runtimeImageSignals() {
       if (!sessionId && answer.kind === "ready") for (const listener of listeners) listener(workspaceId, false)
       return answer
     },
+    started: (workspaceId: string) => {
+      for (const listener of listeners) listener(workspaceId, false)
+    },
     refused: (workspaceId: string, error: unknown) => {
       if (isImageOutdated(error)) for (const listener of listeners) listener(workspaceId, true)
     },
@@ -228,6 +231,7 @@ export function createTransport(config: ServerConfig): Transport {
     startRuntime: async (workspaceId, options) => {
       const link = await startWorkspace(connections.start, workspaceId, options)
       if (!daemonProxy) relay.adopt(link)
+      image.started(workspaceId)
     },
     connectSession: sessionHostConnector(connections, relay, hosts),
     findSessionHost: daemonProxy ? async () => undefined : sessionRowHost(json, loopback ? account : undefined),

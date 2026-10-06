@@ -3,9 +3,8 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { placementId } from "./ids"
 import { createPlacementStreams } from "./placement-streams"
-import { home, openBody, placement, record, ref, settle, workspaces } from "./test-support/placement-streams"
+import { home, openBody, placement, record, ref, settle, streamTransport, workspaces } from "./test-support/placement-streams"
 import { queryKeys } from "./query-keys"
-import type { Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
 
 function stoppingWorkspaces(queryClient: QueryClient, serverUrl: string) {
@@ -31,10 +30,10 @@ test("a refused owned runtime rereads the catalog, and the stopped placement's s
   const serverUrl = "https://account.test"
   const catalog = stoppingWorkspaces(queryClient, serverUrl)
   let opened = 0
-  const transport = { serverUrl, runtime: async () => {
+  const transport = streamTransport({ serverUrl, runtime: async () => {
     opened += 1
     return Response.json({ error: { code: "runtime_access_token_invalid" } }, { status: 401 })
-  } } as unknown as Transport
+  } })
   const streams = createPlacementStreams({ transport, workspaces: catalog.workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_idle"))
   try {
@@ -52,10 +51,10 @@ test("a dropped stream rereads the catalog before it reconnects, so a stopped sa
   const catalog = stoppingWorkspaces(queryClient, serverUrl)
   let opened = 0
   let body: ReadableStreamDefaultController<Uint8Array> | undefined
-  const transport = { serverUrl, runtime: async () => {
+  const transport = streamTransport({ serverUrl, runtime: async () => {
     opened += 1
     return new Response(new ReadableStream<Uint8Array>({ start: (controller) => { body = controller } }), { headers: { "content-type": "text/event-stream" } })
-  } } as unknown as Transport
+  } })
   const streams = createPlacementStreams({ transport, workspaces: catalog.workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_idle"))
   try {
@@ -74,9 +73,9 @@ test("a shared placement streams with session scope and a revoked share closes t
   let signal: AbortSignal | undefined
   const routes: unknown[] = []
   const queryClient = new QueryClient()
-  const transport = { serverUrl: "https://account.test", runtime: async (route: unknown, _path: string, init: RequestInit) => {
+  const transport = streamTransport({ serverUrl: "https://account.test", runtime: async (route: unknown, _path: string, init: RequestInit) => {
     routes.push(route); signal = init.signal ?? undefined; return openBody()
-  } } as unknown as Transport
+  } })
   const scoped = { ...record.route, sharedSession: { sessionId: "ses_shared", level: "follow" } }
   const workspaces = { catalog: () => ({ placements: [] }), streamRoute: () => listed ? scoped : undefined, home, onSessionHostLearned: () => () => undefined } as unknown as Workspaces
   const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
@@ -93,7 +92,7 @@ test("a shared placement streams with session scope and a revoked share closes t
 
 test("remote streams request only attached session scopes, and a revoked session stream stays closed", async () => {
   const paths: string[] = []
-  const transport = {
+  const transport = streamTransport({
     serverUrl: "http://127.0.0.1:1",
     runtime: async (_route: unknown, path: string) => {
       paths.push(path)
@@ -101,7 +100,7 @@ test("remote streams request only attached session scopes, and a revoked session
       if (path === "/api/wr/events?sessionID=ses_revoked") return Response.json({ error: { code: "session_event_stream_denied" } }, { status: 403 })
       return openBody()
     },
-  } as unknown as Transport
+  })
   const streams = createPlacementStreams({ transport, workspaces, queryClient: new QueryClient(), onFrame: () => undefined, onGap: () => undefined })
 
   const detachShared = streams.attach(ref("ses_shared"))
@@ -124,11 +123,11 @@ for (const catalog of ["bootstrap", "accountCatalog"] as const) test(`a ${catalo
   const serverUrl = "http://127.0.0.1:1"
   const queryClient = new QueryClient()
   const workspaces = { streamRoute: () => reachable ? record.route : undefined, home, onSessionHostLearned: () => () => undefined } as unknown as Workspaces
-  const transport = { serverUrl, runtime: async (_route: unknown, path: string, init: RequestInit) => {
+  const transport = streamTransport({ serverUrl, runtime: async (_route: unknown, path: string, init: RequestInit) => {
     paths.push(path)
     signal = init.signal ?? undefined
     return openBody()
-  } } as unknown as Transport
+  } })
   const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_shared"))
   await settle()
@@ -149,10 +148,10 @@ for (const catalog of ["bootstrap", "accountCatalog"] as const) test(`a ${catalo
 
 test("a placement stream's frames name that placement's workspace, whatever directory the runtime reports", async () => {
   const frame = { directory: "/sandbox/workspaces/claxedo-ws_shared", payload: { type: "runtime-frame", properties: { sessionID: "ses_shared" } } }
-  const transport = {
+  const transport = streamTransport({
     serverUrl: "http://127.0.0.1:1",
     runtime: async () => new Response(new ReadableStream<Uint8Array>({ start: (controller) => controller.enqueue(new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(frame)}\n\n`)) }), { headers: { "content-type": "text/event-stream" } }),
-  } as unknown as Transport
+  })
   const frames: unknown[] = []
   const streams = createPlacementStreams({ transport, workspaces, queryClient: new QueryClient(), onFrame: (received) => frames.push(received), onGap: () => undefined })
   const detach = streams.attach(ref("ses_shared"))
@@ -167,10 +166,10 @@ test("a watched remote placement streams its terminals once, with no session's f
   const serverUrl = "https://account.test"
   let reachable = true
   const opened: Array<{ route: unknown; path: string; signal: AbortSignal | undefined }> = []
-  const transport = { serverUrl, runtime: async (route: unknown, path: string, init: RequestInit) => {
+  const transport = streamTransport({ serverUrl, runtime: async (route: unknown, path: string, init: RequestInit) => {
     opened.push({ route, path, signal: init.signal ?? undefined })
     return openBody()
-  } } as unknown as Transport
+  } })
   const watching = { ...workspaces, workspaceStreamRoute: (id: string) => id === placement && reachable ? record.route : undefined } as unknown as Workspaces
   const streams = createPlacementStreams({ transport, workspaces: watching, queryClient, onFrame: () => undefined, onGap: () => undefined })
   try {
@@ -214,10 +213,10 @@ test("a stream to a runtime that is not running stays closed across catalog read
       queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: refreshed })
     },
   } as unknown as Workspaces
-  const transport = { serverUrl, runtime: async () => {
+  const transport = streamTransport({ serverUrl, runtime: async () => {
     opened += 1
     return running ? openBody() : Response.json({ error: { code: "workspace_stopped", message: "The cloud workspace ws_shared is not running" } }, { status: 409 })
-  } } as unknown as Transport
+  } })
   const streams = createPlacementStreams({ transport, workspaces: catalog, queryClient, onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_asleep"))
   try {
