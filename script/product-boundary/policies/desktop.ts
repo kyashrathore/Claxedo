@@ -584,8 +584,11 @@ export const desktopRenderer: Policy = {
   // A project's environment, write-only values listed by name through the
   // hosted or local route (owner: the app's server adapter,
   // `server/project-environment.ts`). It adds no package edge.
-  // 1349/36, no headroom.
-  ceilings: { modules: 1349, packages: 36 },
+  // A project's Environment section in its own file, with its loading and
+  // failure states (owner: the app's projects domain,
+  // `projects/view/project-environment-section.tsx`). It adds no package edge.
+  // 1350/36, no headroom.
+  ceilings: { modules: 1350, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

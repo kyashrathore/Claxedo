@@ -38,10 +38,10 @@ export function useProject(id: Accessor<ProjectId>): Accessor<ProjectView> {
   })
 }
 
-export function useProjectEnvironment(projectId: Accessor<ProjectId>): Accessor<Loaded<ProjectEnvironment>> {
+export function useProjectEnvironment(projectId: Accessor<ProjectId>): { readonly state: Accessor<Loaded<ProjectEnvironment>>; readonly retry: () => void } {
   const server = useServer()
   const query = useQuery(() => server.queries.projects.environment(projectId()))
-  return createMemo(() => loaded(query))
+  return { state: createMemo(() => loaded(query)), retry: () => void query.refetch() }
 }
 
 export function useProjectPlacements(projectId: Accessor<ProjectId>): { readonly state: Accessor<Loaded<readonly Placement[]>>; readonly retry: () => void } {
