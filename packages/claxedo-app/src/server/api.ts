@@ -122,6 +122,7 @@ export type PlacementsApi = {
   readonly byId: (id: PlacementId) => Placement | undefined
   readonly list: () => readonly Placement[]
   readonly complete: () => boolean
+  readonly openable: () => ReadonlySet<PlacementId> | undefined
   readonly load: () => Promise<readonly Placement[]>
   readonly createWorktree: (root: PlacementId, input: WorktreeCreateInput) => Promise<Placement>
 }

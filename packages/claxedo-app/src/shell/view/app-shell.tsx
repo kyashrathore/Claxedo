@@ -7,6 +7,7 @@ import { PluginHostProvider } from "@/plugins"
 import { useServer } from "@/server"
 import { Toast } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
+import { ForgetGonePlacements } from "../gone-placements"
 import { HomeRedirect } from "../home-redirect"
 import { principalScope } from "../principal-scope"
 import { signInGate } from "../sign-in-gate"
@@ -47,6 +48,7 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
             <PlacementProviders>
               <PluginHostProvider scope={props.scope}>
                 <RegisteredAppearance>
+                  <ForgetGonePlacements />
                   <HomeRedirect />
                   <RouteSync />
                   <ShellCommands />

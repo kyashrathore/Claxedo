@@ -21,7 +21,7 @@ export type SessionHome = {
   readonly live: boolean
 }
 
-export type Workspaces = Pick<PlacementsApi, "byId" | "list" | "complete"> & {
+export type Workspaces = Pick<PlacementsApi, "byId" | "list" | "complete" | "openable"> & {
   readonly shared: SharedSessions
   readonly streamRoute: (ref: Pick<SessionLocation, "placementId" | "sessionId">) => RuntimeRoute | undefined
   readonly workspaceStreamRoute: (id: PlacementId) => RuntimeRoute | undefined
@@ -170,8 +170,12 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   }
 }
 
-function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts): Pick<Workspaces, "address" | "streamRoute" | "workspaceStreamRoute" | "servedHere"> {
+function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts, complete: () => boolean): Pick<Workspaces, "address" | "streamRoute" | "workspaceStreamRoute" | "servedHere" | "openable"> {
   return {
+    openable: () => {
+      if (!complete() || shared.count() === undefined || shared.error()) return undefined
+      return new Set([...reads.published.list().map((placement) => placement.id), ...shared.list().map((row) => row.ref.placementId)])
+    },
     address: {
       placementFor: (directory, workspaceId, sessionId) => {
         const owned = reads.address.placementFor(directory, workspaceId)
@@ -268,7 +272,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     shared,
     ...reads.published,
     onSessionHostLearned: reads.onSessionHostLearned,
-    ...sharedAware(reads, shared, hosts),
+    ...sharedAware(reads, shared, hosts, merged.published.complete),
     ...placementRoutes(async (id) => {
       await load()
       return recordOf(id)

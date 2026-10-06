@@ -39,6 +39,13 @@ export type SignedStack = {
 
 export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; distDir: string }
 
+export function sessionCookie(url: string, account: Account) {
+  const separator = account.person.cookie.indexOf("=")
+  const name = account.person.cookie.slice(0, separator)
+  const value = account.person.cookie.slice(separator + 1)
+  return { name, value, url, secure: true, httpOnly: true, sameSite: "Lax" as const }
+}
+
 export function signedOrigin(frontPort: number) {
   return `https://${HOSTED_E2E_PUBLIC_HOSTNAME}:${frontPort}`
 }

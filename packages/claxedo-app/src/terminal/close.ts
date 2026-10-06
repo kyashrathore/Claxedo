@@ -16,7 +16,9 @@ export function useEndTerminal(terminals: Terminals): (state: TerminalPaneState)
       .store(state.placementId)
       .close(state.terminalId)
       .catch((cause: unknown) => {
-        console.error("Terminal could not be ended", { terminalId: state.terminalId, error: toAppError(cause) })
+        const error = toAppError(cause)
+        if (error.class === "not_found") return
+        console.error("Terminal could not be ended", { terminalId: state.terminalId, error })
         showToast({ title: t("terminal.closeFailed") })
       })
 }

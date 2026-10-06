@@ -59,6 +59,7 @@ export default {
   "shell.retry": "Try again",
   "shell.home.noPlacement": "Your projects don't run anywhere yet. Choose a machine or start a cloud workspace for one.",
   "shell.home.choosePlacement": "Choose where it runs…",
+  "shell.home.placementGone": "That workspace no longer exists.",
   "shell.regionFailed": "{{region}} failed",
   "shell.region.sidebar": "The sidebar",
   "shell.region.center": "The workbench",

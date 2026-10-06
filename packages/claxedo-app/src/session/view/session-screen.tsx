@@ -225,12 +225,14 @@ export function SessionSurface(props: SessionSurfaceProps) {
       </Show>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
         <Switch fallback={<SessionBody view={view()} active={props.active} readOnly={props.readOnly === true} floating={floating()} controls={controls()} />}>
-          <Match when={view().state().kind === "missing" || unshared() || (!controls().owner && failure()?.error.status === 403)}>
-            <div class="flex h-full items-center justify-center px-4 text-text-weak">
-              <div data-testid="session-unavailable" data-session-id={props.sessionRef.sessionId}>
-                Session unavailable
+          <Match when={unshared() || (!controls().owner && failure()?.error.status === 403) ? "unshared" : view().state().kind === "missing" ? "missing" : undefined}>
+            {(reason) => (
+              <div class="flex h-full items-center justify-center px-4 text-text-weak">
+                <p data-testid="session-unavailable" data-session-id={props.sessionRef.sessionId}>
+                  {t(reason() === "unshared" ? "sessionScreen.unshared" : "sessionScreen.missing")}
+                </p>
               </div>
-            </div>
+            )}
           </Match>
           <Match when={failure()}>
             {(state) => (

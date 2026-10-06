@@ -27,7 +27,7 @@ export { pageTransport } from "./page-transport"
 export { listLivePlugins, registerLivePlugin, writeLivePlugin, type LivePluginFolder, type LivePluginRow } from "./live-plugins"
 export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } from "./app-plugins"
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
-export { type Account, type SignedStack } from "./signed-stack"
+export { sessionCookie, type Account, type SignedStack } from "./signed-stack"
 export { ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
 export {
   chooseOrgSandboxProvider, cloudMessages, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, deleteCloudWorkspace, listedSessions, makeCloudWorkspace, relayedTerminalOutput, sessionConnection, sessionHostTables, startCloudWorkspace, stopCloudWorkspace,

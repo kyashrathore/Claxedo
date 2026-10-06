@@ -12,6 +12,8 @@ export type SessionScreenTextKey =
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
   | "sessionScreen.failed"
+  | "sessionScreen.missing"
+  | "sessionScreen.unshared"
   | "sessionScreen.requests.loadFailed"
   | "sessionScreen.runtime.missing"
   | "sessionScreen.runtime.newSession"
@@ -103,6 +105,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.draft.title": "New Session",
   "sessionScreen.action.retry": "Retry",
   "sessionScreen.failed": "Could not load this session.",
+  "sessionScreen.missing": "That session no longer exists.",
+  "sessionScreen.unshared": "This session is no longer shared with you.",
   "sessionScreen.requests.loadFailed": "Could not load pending permissions or questions. Retry to continue.",
   "sessionScreen.runtime.missing": "This session is no longer on the running environment. Your saved history is still available.",
   "sessionScreen.runtime.newSession": "Start new session",

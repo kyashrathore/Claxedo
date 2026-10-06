@@ -79,6 +79,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
       byId: workspaces.byId,
       list: workspaces.list,
       complete: workspaces.complete,
+      openable: workspaces.openable,
       load: async () => {
         await workspaces.load()
         return workspaces.list()

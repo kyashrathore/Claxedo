@@ -1,6 +1,6 @@
 import { expect, type ElectronApplication, type Page } from "@playwright/test"
 import type { Desktop } from "./desktop"
-import type { Account, SignedStack } from "./signed-stack"
+import { sessionCookie, type Account, type SignedStack } from "./signed-stack"
 
 export type SystemBrowser = { opened(): Promise<string[]> }
 
@@ -13,13 +13,6 @@ export async function interceptSystemBrowser(electron: ElectronApplication): Pro
   return {
     opened: () => electron.evaluate(() => [...((globalThis as { __claxedoSystemBrowser?: string[] }).__claxedoSystemBrowser ?? [])]),
   }
-}
-
-function sessionCookie(url: string, account: Account) {
-  const separator = account.person.cookie.indexOf("=")
-  const name = account.person.cookie.slice(0, separator)
-  const value = account.person.cookie.slice(separator + 1)
-  return { name, value, url, secure: true, httpOnly: true, sameSite: "Lax" as const }
 }
 
 export async function signInDesktop(signed: SignedStack, desktop: Desktop, page: Page, account: Account = signed.owner): Promise<string> {

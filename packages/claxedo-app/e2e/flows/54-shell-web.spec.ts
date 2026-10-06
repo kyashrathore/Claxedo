@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test, UI, type SignedStack } from "../harness"
+import { acpScriptToken, expect, ownersColleague, SCRIPTED_ACP_HARNESS, sessionCookie, test, UI, type SignedStack } from "../harness"
 
 async function held(page: Page, pattern: RegExp) {
   const waiting: Route[] = []
@@ -112,4 +112,29 @@ test("54 shell: a slow session shows the composer and says what it waits for; a 
   await expect(page.getByText("Hello from the agent")).toBeVisible()
   expect(await page.evaluate(() => (window as unknown as { railLoadingSeen: { loading: boolean } }).railLoadingSeen.loading)).toBe(false)
   expect(JSON.stringify(await signed.owner.api.messages(workspace.directory, ids[1]))).toContain("Hello from the agent")
+})
+
+test("54 shell: panes kept for a workspace the account does not have are dropped once the catalog answers, and an account with no projects lands in onboarding", async ({ signed, page, isMobile }) => {
+  const { workspace } = await sessionsIn(signed, ["Someone else's work"])
+  await signed.signIn(page, signed.owner)
+  const rail = await showRail(page, isMobile)
+  await rail.getByRole("button", { name: "Someone else's work", exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/w/${workspace.id}/session/`))
+  const kept = await page.evaluate((key) => localStorage.getItem(key), `claxedo:workbench:user:${signed.owner.person.id}`)
+  expect(kept, "the owner's persisted panes").toContain(workspace.id)
+
+  const fresh = await ownersColleague(signed, "Bea Fresh")
+  await page.evaluate(([user, value]) => {
+    localStorage.clear()
+    localStorage.setItem("claxedo:auth:lastUserId", user)
+    localStorage.setItem(`claxedo:workbench:user:${user}`, value)
+  }, [fresh.person.id, kept ?? ""] as const)
+  await page.context().clearCookies()
+  await page.context().addCookies([sessionCookie(signed.url, fresh)])
+  await page.goto(`${signed.url}/`)
+  await expect(page.getByText("That workspace no longer exists.")).toBeVisible()
+  await expect(page.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
+  await expect(page.getByTestId("session-unavailable")).toHaveCount(0)
+  expect(await page.evaluate((key) => localStorage.getItem(key), `claxedo:workbench:user:${fresh.person.id}`)).not.toContain(workspace.id)
+  expect(((await (await page.request.get(`${signed.url}/api/workspace`)).json()) as { workspaces: unknown[] }).workspaces).toEqual([])
 })
