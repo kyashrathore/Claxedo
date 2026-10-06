@@ -1079,7 +1079,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
     expect(json.workspaces).toEqual([{ workspace_id: "ws_user", backing: "local-worktree", reachable: false }])
-    expect(authority!.usersMe).toHaveBeenCalledTimes(1)
+    expect(authority!.usersMe).not.toHaveBeenCalled()
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 

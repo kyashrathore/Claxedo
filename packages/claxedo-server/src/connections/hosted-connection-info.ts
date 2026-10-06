@@ -17,7 +17,7 @@ import {
   runtimeTokenOrgId,
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import { sandboxRuntimeBootFailure, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
@@ -112,7 +112,28 @@ async function cloudConnectionIngress(
   return { authority, result, workspace: result.workspace, hostManager, homeRegion, relayUrl }
 }
 
-/** The mint tail both paths share once a ready sandbox target exists. */
+type SettledActor = { actor: RuntimeActor } | { failed: unknown }
+
+/**
+ * The caller's actor, read while the sandbox is asked and held until the
+ * answer says a token is minted: a sandbox that is still provisioning never
+ * fails on the actor read, and a start in flight is never abandoned by it.
+ */
+function settledActor(authority: WorkspaceAuthority, auth: SignedControlPlaneAuth): Promise<SettledActor> {
+  return resolveRuntimeActor(authority, auth).then((actor) => ({ actor }), (failed: unknown) => ({ failed }))
+}
+
+function resolvedActor(settled: SettledActor): RuntimeActor {
+  if ("failed" in settled) throw settled.failed
+  return settled.actor
+}
+
+/**
+ * The mint tail both paths share once a ready sandbox target exists. The
+ * actor was resolved while the sandbox was asked, and the token's record and
+ * its audit row are independent writes, so the tail costs the store two
+ * round trips after the signature rather than four.
+ */
 async function mintCloudConnection(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
@@ -124,10 +145,11 @@ async function mintCloudConnection(
     homeRegion: ClaxedoRegion
     relayUrl: string
     target: { hostId: string; epoch: number; routingId?: string; driverResourceId?: string }
+    actor: RuntimeActor
     previousJti?: string
   },
 ) {
-  const { authority, result, workspaceId, homeRegion, relayUrl, target, previousJti } = input
+  const { authority, result, workspaceId, homeRegion, relayUrl, target, actor, previousJti } = input
   const previousToken = await previousRuntimeAccessTokenError(services, auth, {
     previousJti,
     workspaceId,
@@ -136,7 +158,6 @@ async function mintCloudConnection(
   if (previousToken) return previousToken
 
   const role = relayRole(result.role)
-  const actor = await resolveRuntimeActor(authority, auth)
   const signer = configuredRuntimeAccessTokenSigner(options)
   const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
   const token = await signer({
@@ -148,30 +169,32 @@ async function mintCloudConnection(
     routingId: target.routingId,
     role,
   })
-  await authority.recordRuntimeAccessToken(auth, {
-    jti: token.jti,
-    workspaceId,
-    hostId: target.hostId,
-    actorId: actor.actorId,
-    actorKind: actor.actorKind,
-    role,
-    expiresAt: token.tokenExpiresAt,
-  })
-  await authority.auditAllow(auth, {
-    action: "runtime_access_token.minted",
-    workspaceId,
-    metadata: {
+  await Promise.all([
+    authority.recordRuntimeAccessToken(auth, {
       jti: token.jti,
+      workspaceId,
       hostId: target.hostId,
+      actorId: actor.actorId,
+      actorKind: actor.actorKind,
+      role,
       expiresAt: token.tokenExpiresAt,
-      backing: "cloud-vm",
-      homeRegion,
-      leaseEpoch: target.epoch,
-      ...(target.driverResourceId ? { driverResourceId: target.driverResourceId } : {}),
-      relayRoom: workspaceId,
-      relayUrl,
-    },
-  })
+    }),
+    authority.auditAllow(auth, {
+      action: "runtime_access_token.minted",
+      workspaceId,
+      metadata: {
+        jti: token.jti,
+        hostId: target.hostId,
+        expiresAt: token.tokenExpiresAt,
+        backing: "cloud-vm",
+        homeRegion,
+        leaseEpoch: target.epoch,
+        ...(target.driverResourceId ? { driverResourceId: target.driverResourceId } : {}),
+        relayRoom: workspaceId,
+        relayUrl,
+      },
+    }),
+  ])
   captureWorkspaceTelemetry({
     services,
     auth,
@@ -260,7 +283,7 @@ export async function hostedConnectionInfo(
 
   const meter = await firstLeaseMeter(services, lease, auth, { workspaceId, hostManager })
   if (meter && typeof meter !== "function") return meter
-  const started = await options.sandboxStart(workspaceId)
+  const [started, actor] = await Promise.all([options.sandboxStart(workspaceId), settledActor(authority, auth)])
   if (started.status === "provisioning" && started.opened) {
     meter?.()
     await Promise.resolve(lease.usage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId }))
@@ -335,6 +358,7 @@ export async function hostedConnectionInfo(
     homeRegion,
     relayUrl,
     target: started,
+    actor: resolvedActor(actor),
     previousJti,
   })
 }
@@ -385,7 +409,7 @@ export async function hostedConnectionStatus(
   }
   const { authority, result, hostManager, homeRegion, relayUrl } = ingress
 
-  const target = await hostManager.target(workspaceId)
+  const [target, actor] = await Promise.all([hostManager.target(workspaceId), settledActor(authority, auth)])
   captureWorkspaceTelemetry({
     services,
     auth,
@@ -426,6 +450,7 @@ export async function hostedConnectionStatus(
     homeRegion,
     relayUrl,
     target,
+    actor: resolvedActor(actor),
   })
 }
 

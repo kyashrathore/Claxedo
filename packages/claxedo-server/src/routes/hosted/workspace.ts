@@ -256,7 +256,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           const auth = authResult.auth
           try {
             const authority = requireAuthority(services)
-            await authority.usersMe(auth)
             const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
               key: `workspaces.list:${host}`,
               action: "workspaces.list.denied",

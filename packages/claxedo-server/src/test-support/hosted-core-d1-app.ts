@@ -17,6 +17,7 @@ import { readdirSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { Miniflare } from "miniflare"
+import type { D1Database } from "@cloudflare/workers-types"
 import { betterAuthAccount } from "../platform/auth/better-auth-d1-authentication-evidence"
 import { orgInvitationEmailDelivery } from "../platform/auth/auth-email-delivery"
 import { testRequestAuthenticationAdapter } from "./request-authentication"
@@ -51,8 +52,9 @@ async function authDatabase(disposers: Array<() => Promise<void>>) {
  * person whose identity the D1 authority minted, so every role a route decides
  * on is the one the database holds.
  */
-export async function hostedCoreD1App(disposers: Array<() => Promise<void>>) {
-  const controlPlane = await miniflareControlPlaneDatabase()
+export async function hostedCoreD1App(disposers: Array<() => Promise<void>>, options: { database?: (database: D1Database) => D1Database } = {}) {
+  const migrated = await miniflareControlPlaneDatabase()
+  const controlPlane = { ...migrated, database: options.database?.(migrated.database) ?? migrated.database }
   disposers.push(() => controlPlane.dispose())
   const accounts = await authDatabase(disposers)
   const sent: Array<{ recipient: string; token: string }> = []
