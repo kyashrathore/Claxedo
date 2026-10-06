@@ -53,9 +53,12 @@ function loadedDecision(patch: HarnessOptionsStatePatch): HarnessOptionsDecision
   return { patch: { ...patch, optionsLoading: false } }
 }
 
+function heldModel(input: OptionsResponseInput): string {
+  return input.preserveSelectedModel || input.sessionModel ? input.selectedModel ?? "" : ""
+}
+
 function unresolvedDecision(input: OptionsResponseInput, base: HarnessOptionsStatePatch, dynamicModels: HarnessOptionsStatePatch["dynamicModels"]): HarnessOptionsDecision {
-  const held = input.preserveSelectedModel || input.sessionModel ? input.selectedModel ?? "" : ""
-  return loadedDecision({ ...base, dynamicModels, selectedModel: held, configError: modelOptionsUnavailableMessage({ stale: input.payload.stale }) })
+  return loadedDecision({ ...base, dynamicModels, selectedModel: heldModel(input), configError: modelOptionsUnavailableMessage({ stale: input.payload.stale }) })
 }
 
 function modellessDecision(input: OptionsResponseInput, base: HarnessOptionsStatePatch): HarnessOptionsDecision {
@@ -89,7 +92,7 @@ function listedModelsDecision(input: OptionsResponseInput, base: HarnessOptionsS
 
 export function applyHarnessOptionsResponse(input: OptionsResponseInput): HarnessOptionsDecision {
   const base = optionsBase(input)
-  if (input.payload.unavailableHere) return loadedDecision({ ...base, dynamicModels: [], selectedModel: "", configError: undefined })
+  if (input.payload.unavailableHere) return loadedDecision({ ...base, dynamicModels: [], selectedModel: heldModel(input), configError: undefined })
   const models = input.payload.models
   return models ? listedModelsDecision(input, base, models) : modellessDecision(input, base)
 }
