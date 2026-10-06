@@ -113,7 +113,7 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
     authority: {
       usersMe: vi.fn(async () => ({ subject: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_1", actor_name: "User One" })),
       recordRuntimeAccessToken: vi.fn(async () => ({})),
-      authorizeWorkspaceCreate: vi.fn(async () => {}),
+      authorizeWorkspaceCreate: vi.fn(async () => ({ orgId: "org_1" })),
       createCloudWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string; projectId?: string; repoUrl?: string }) => {
         rows.set(args.workspaceId, { workspace_id: args.workspaceId, project_id: args.projectId, backing: "cloud-vm", repo_url: args.repoUrl })
         await backing.database.prepare(`insert into workspaces

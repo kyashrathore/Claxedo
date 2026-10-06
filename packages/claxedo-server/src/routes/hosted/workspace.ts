@@ -315,11 +315,11 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // concurrent-lease cap — the same object the Tasks cloud-root
         // allocation is subject to, so no door reaches a billable sandbox
         // around it.
-        const createDenied = await createAdmission.admit(
+        const admitted = await createAdmission.admit(
           { kind: "signed", auth },
           { orgId: body.orgId, projectId: body.projectId },
         )
-        if (createDenied) return c.json(createDenied.body, createDenied.status)
+        if ("status" in admitted) return c.json(admitted.body, admitted.status)
 
         if (!services?.sandbox.sandboxManager) {
           // No sandbox driver composed (no native driver credentials, or the
@@ -376,6 +376,19 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             400,
           )
         }
+        // The driver that places this workspace is its organization's, known
+        // from the admission; a machine it has no grade for is refused before
+        // any row exists, so no project is left standing for a workspace that
+        // never was.
+        if (body.machineClass) {
+          const placed = await services.sandbox.orgDriver?.(admitted.orgId)
+          if (!placed?.driver.metadata.machineClasses?.includes(body.machineClass)) {
+            return c.json(
+              { error: apiError("machine_class_unsupported", `${placed?.driver.id ?? "This sandbox provider"} has no ${body.machineClass} machines`) },
+              400,
+            )
+          }
+        }
 
         // A bare timestamp id is guessable inside any plausible creation window
         // and publishes its own creation time; the random suffix is what makes
@@ -412,19 +425,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // about the world, which the caller can act on.
           if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
           throw err
-        }
-        // The driver that places this workspace is its organization's, known
-        // once the row exists; a machine it has no grade for is refused here,
-        // before a start could be billed for it, and the row goes with it.
-        if (body.machineClass) {
-          const placed = await services.sandbox.workspaceDriver?.(workspaceId)
-          if (!placed?.driver.metadata.machineClasses?.includes(body.machineClass)) {
-            await requireAuthority(services).deleteWorkspace(auth, { workspaceId })
-            return c.json(
-              { error: apiError("machine_class_unsupported", `${placed?.driver.id ?? "This sandbox provider"} has no ${body.machineClass} machines`) },
-              400,
-            )
-          }
         }
         captureWorkspaceTelemetry({ services, auth, event: "workspace_created", workspaceId, properties: { kind: "cloud", private_repository: repoConnectionId !== undefined } })
         return c.json({ workspaceId, directory })

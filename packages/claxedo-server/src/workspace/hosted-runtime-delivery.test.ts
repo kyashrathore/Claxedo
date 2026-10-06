@@ -78,7 +78,7 @@ async function composition() {
   const rows = new Map<string, Record<string, unknown>>()
   const authority = {
     usersMe: async () => ({ subject: "owner" }),
-    authorizeWorkspaceCreate: async () => {},
+    authorizeWorkspaceCreate: async () => ({ orgId: "org" }),
     createCloudWorkspace: async (_auth: unknown, args: {
       workspaceId: string
       projectId?: string
@@ -113,7 +113,12 @@ async function composition() {
   }
   const services = {
     authority,
-    sandbox: { sandboxManager, defaultDriver: driver.id, workspaceDriver: async () => ({ driver, key: "operator" }) },
+    sandbox: {
+      sandboxManager,
+      defaultDriver: driver.id,
+      workspaceDriver: async () => ({ driver, key: "operator" }),
+      orgDriver: async () => ({ driver, key: "operator" }),
+    },
     telemetry: { capture: vi.fn() },
   } as unknown as ControlPlaneServices
   const egress = { relayUrl: RELAY_URL, sandboxControlPlaneOrigin: CONTROL_PLANE_ORIGIN }

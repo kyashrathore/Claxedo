@@ -693,8 +693,8 @@ describe("workspace creation admission", () => {
     // One organization each: the caller names nothing and is still admitted
     // against the organization their workspace would land in.
     const alone = await authority.resolveOrgId(alice)
-    await expect(authority.authorizeWorkspaceCreate(alice, {})).resolves.toBeUndefined()
-    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: alone })).resolves.toBeUndefined()
+    await expect(authority.authorizeWorkspaceCreate(alice, {})).resolves.toEqual({ orgId: alone })
+    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: alone })).resolves.toEqual({ orgId: alone })
     await expect(authority.authorizeWorkspaceCreate(bob, { orgId: alone })).rejects.toMatchObject({
       status: 403,
       code: "workspace_authorization_denied",
@@ -727,13 +727,13 @@ describe("workspace creation admission", () => {
     // The project is the selector creation reads, and admission reads the same
     // one: its organization, and whether this caller may administer it.
     await expect(authority.authorizeWorkspaceCreate(alice, { projectId: created.project_id }))
-      .resolves.toBeUndefined()
+      .resolves.toEqual({ orgId: team.org_id })
     // Both selectors, as the hosted create route sends them. Creation derives
     // the organization from the project and ignores the named one, so a name
     // that disagrees is refused here rather than served in a tenant the caller
     // did not ask for.
     await expect(authority.authorizeWorkspaceCreate(alice, { orgId: team.org_id, projectId: created.project_id }))
-      .resolves.toBeUndefined()
+      .resolves.toEqual({ orgId: team.org_id })
     await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_elsewhere", projectId: created.project_id }))
       .rejects.toMatchObject({ status: 403 })
     await expect(authority.authorizeWorkspaceCreate(bob, { projectId: created.project_id }))
@@ -752,7 +752,7 @@ describe("workspace creation admission", () => {
       role: "admin",
     })
     await expect(authority.authorizeWorkspaceCreate(bob, { projectId: created.project_id }))
-      .resolves.toBeUndefined()
+      .resolves.toEqual({ orgId: team.org_id })
   })
 
   test("a signed-in owner is resolved by reads alone; only the first sign-in writes the bootstrap", async () => {
@@ -780,8 +780,8 @@ describe("workspace creation admission", () => {
     })
     const alice = await signed(identities, identity("alice"))
 
-    await expect(authority.authorizeWorkspaceCreate(alice, {})).resolves.toBeUndefined()
-    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_house" })).resolves.toBeUndefined()
+    await expect(authority.authorizeWorkspaceCreate(alice, {})).resolves.toEqual({ orgId: "org_house" })
+    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_house" })).resolves.toEqual({ orgId: "org_house" })
     await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_elsewhere" })).rejects.toMatchObject({
       status: 403,
     })

@@ -190,7 +190,8 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
    * they named any; with neither, the adapter resolves the tenant its own
    * creation path would resolve and admits against that. An omitted selector
    * is a tenant the adapter derives, never an admission it skips, so a caller
-   * cannot drop `orgId` to reach an unchecked create.
+   * cannot drop `orgId` to reach an unchecked create. Answers the organization
+   * admitted against, which is the one the workspace will be placed for.
    *
    * Optional because an adapter that cannot answer it must not appear to: a
    * caller of a creation route refuses a signed create where this is absent
@@ -199,7 +200,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
   authorizeWorkspaceCreate?: (
     auth: SignedControlPlaneAuth,
     args: { orgId?: string; projectId?: string },
-  ) => Promise<void>
+  ) => Promise<{ orgId: string }>
   openWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<WorkspaceOpenResult>
   listWorkspaces: (auth: SignedControlPlaneAuth) => Promise<unknown>
   // --- machine-wide enrollment ---------------------------------------------

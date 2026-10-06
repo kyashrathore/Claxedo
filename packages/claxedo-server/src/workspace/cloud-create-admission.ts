@@ -126,6 +126,7 @@ export type CloudCreateAdmission = {
    * The authority half of create admission, in the order `POST
    * /api/workspace/create` applies it: the authority's own create admission,
    * then the deployment's cloud-workspace admission, then the concurrent-lease cap.
+   * An admitted create names the organization the workspace is placed for.
    *
    * `selectors` are the caller's tenant selectors, normalized here: blank
    * strings are absent, so a caller cannot name `""` to reach a different
@@ -135,7 +136,7 @@ export type CloudCreateAdmission = {
     caller: CloudCreateCaller,
     selectors: { orgId?: string; projectId?: string },
     options?: { existing?: boolean },
-  ): Promise<CloudCreateAdmissionDenial | undefined>
+  ): Promise<CloudCreateAdmissionDenial | { orgId: string }>
   /**
    * The concurrent-lease cap alone, for the start that opens a cloud
    * workspace's first lease: a route-created workspace opens none until its
@@ -202,6 +203,7 @@ export function createCloudCreateAdmission(
       }),
 
     admit: async (caller, selectors, options) => {
+      let orgId: string
       if (caller.kind === "signed") {
         try {
           const authority = requireAuthority(input.services)
@@ -212,16 +214,18 @@ export function createCloudCreateAdmission(
               "Workspace creation authorization is unavailable",
             )
           }
-          await authority.authorizeWorkspaceCreate(caller.auth, {
+          ;({ orgId } = await authority.authorizeWorkspaceCreate(caller.auth, {
             ...(selectors.orgId?.trim() ? { orgId: selectors.orgId.trim() } : {}),
             ...(selectors.projectId?.trim() ? { projectId: selectors.projectId.trim() } : {}),
-          })
+          }))
         } catch (err) {
           if (err instanceof ControlPlaneAuthError) {
             return { status: err.status, body: controlPlaneAuthErrorBody(err) }
           }
           throw err
         }
+      } else {
+        orgId = caller.owner.orgId
       }
       if (input.entitlement) {
         const denied = await input.entitlement(
@@ -234,8 +238,8 @@ export function createCloudCreateAdmission(
       // already counted, so counting it again would refuse the retry for the
       // very spend it is resuming — the same reason the route's wake path does
       // not re-cap an existing workspace.
-      if (options?.existing) return undefined
-      return await capLease(caller)
+      if (options?.existing) return { orgId }
+      return (await capLease(caller)) ?? { orgId }
     },
     capLease,
   }

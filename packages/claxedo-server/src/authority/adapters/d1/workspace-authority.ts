@@ -274,6 +274,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const selected = args.orgId?.trim()
     if (selected && selected !== orgId) throw denied("Workspace creation authority was denied")
     await this.admitCreationOrganization(who, orgId)
+    return { orgId }
   }
 
   /**

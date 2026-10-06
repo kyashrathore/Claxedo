@@ -123,7 +123,7 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
         if (input.actorId !== "actor:alice" || registry.placed.get(input.sessionId) !== input.workspaceId) throw new Error("denied")
       }),
       resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => registry.owners.get(workspaceId)),
-      authorizeWorkspaceCreate: vi.fn(async () => undefined),
+      authorizeWorkspaceCreate: vi.fn(async (auth: { user: { subject: string } }) => ({ orgId: ORGS[auth.user.subject] ?? "org-unknown" })),
       createCloudWorkspace: vi.fn(async (auth: { user: { subject: string } }, args: { workspaceId: string; projectId: string }) =>
         createdRoot(args.workspaceId, ORGS[auth.user.subject] ?? "org-unknown", args.projectId),
       ),

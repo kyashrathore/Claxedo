@@ -62,7 +62,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
   const createCloudWorkspace = overrides.createCloudWorkspace as ((auth: unknown, args: CloudCreateArgs) => Promise<unknown>) | undefined
   return {
     usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
-    authorizeWorkspaceCreate: vi.fn(async () => {}),
+    authorizeWorkspaceCreate: vi.fn(async () => ({ orgId: "org_1" })),
     openWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => ({
       allowed: true,
       role: "owner",
@@ -134,12 +134,14 @@ function buildApp(opts: {
   options?: Partial<HostedWorkspaceRouteOptions>
   sandboxManager?: SandboxManager
   workspaceDriver?: ControlPlaneServices["sandbox"]["workspaceDriver"]
+  orgDriver?: ControlPlaneServices["sandbox"]["orgDriver"]
   verifier?: ControlPlaneTokenVerifier
 }) {
   const authority = "authority" in opts ? opts.authority : fakeAuthority()
   const { services, capture } = fakeServices(authority)
   services.sandbox.sandboxManager = opts.sandboxManager
   services.sandbox.workspaceDriver = opts.workspaceDriver
+  services.sandbox.orgDriver = opts.orgDriver
   const app = HostedWorkspaceRoutes(services, {
     authConfig,
     verifier: opts.verifier ?? verifier,
@@ -1150,24 +1152,25 @@ describe("hosted cloud workspace create (POST /create)", () => {
   test("a create names the machine its sandboxes run on when the organization's driver has that grade", async () => {
     const createCloudWorkspace = vi.fn(async () => ({}))
     const authority = fakeAuthority({ createCloudWorkspace })
-    const workspaceDriver = vi.fn(async () => ({ driver: { id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver, key: "operator" as const }))
-    const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, workspaceDriver })
+    const orgDriver = vi.fn(async () => ({ driver: { id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver, key: "operator" as const }))
+    const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, orgDriver })
     const res = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "large" }))
     expect(res.status).toBe(200)
     expect(createCloudWorkspace).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ machineClass: "large" }))
-    const { workspaceId } = await res.json() as { workspaceId: string }
-    expect(workspaceDriver).toHaveBeenCalledWith(workspaceId)
+    expect(orgDriver).toHaveBeenCalledWith("org_1")
   })
 
-  test("a machine the organization's driver has no grade for is refused, and the row it would have placed is removed", async () => {
+  test("a machine the organization's driver has no grade for is refused before any row or project exists", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({}))
     const deleteWorkspace = vi.fn(async () => ({ deleted: true }))
-    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({})), deleteWorkspace })
-    const workspaceDriver = vi.fn(async () => ({ driver: { id: "vercel", metadata: {} } as unknown as SandboxDriver, key: "operator" as const }))
-    const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, workspaceDriver })
+    const authority = fakeAuthority({ createCloudWorkspace, deleteWorkspace })
+    const orgDriver = vi.fn(async () => ({ driver: { id: "vercel", metadata: {} } as unknown as SandboxDriver, key: "operator" as const }))
+    const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, orgDriver })
     const res = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "large" }))
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: "machine_class_unsupported", message: "vercel has no large machines" } })
-    expect(deleteWorkspace).toHaveBeenCalledWith(expect.anything(), { workspaceId: expect.any(String) })
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+    expect(deleteWorkspace).not.toHaveBeenCalled()
 
     const unknown = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "gpu" }))
     expect(unknown.status).toBe(400)

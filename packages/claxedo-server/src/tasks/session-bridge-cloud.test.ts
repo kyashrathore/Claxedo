@@ -158,7 +158,7 @@ function services(
     })),
     beginSessionCompensation: vi.fn(async () => ({})),
     completeSessionCompensation: vi.fn(async () => ({})),
-    authorizeWorkspaceCreate: vi.fn(async () => undefined),
+    authorizeWorkspaceCreate: vi.fn(async () => ({ orgId: "org" })),
     auditDeny: vi.fn(async () => undefined),
     createCloudWorkspace: vi.fn(
       async (_auth: unknown, args: { workspaceId: string; projectId?: string; displayName: string }) => {

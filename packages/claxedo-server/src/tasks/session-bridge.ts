@@ -185,11 +185,11 @@ function createTasksCloudTarget(
           ),
         ).catch(() => undefined),
       )
-      const denied =
+      const admitted =
         await admission.preflight(creator.caller) ??
         await admission.admit(creator.caller, { projectId: origin.task.projectId }, { existing })
-      if (denied) {
-        return { blocker: { code: "source_unavailable", detail: denied.body.error.message } }
+      if ("status" in admitted) {
+        return { blocker: { code: "source_unavailable", detail: admitted.body.error.message } }
       }
     }
     let projected: (() => Promise<void>) | undefined
