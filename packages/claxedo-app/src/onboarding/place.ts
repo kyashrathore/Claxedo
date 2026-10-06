@@ -1,4 +1,4 @@
-import { createOrOpenFolderProject, ServerError, toAppError, type PlacementId, type ProjectId, type Server } from "@/server"
+import { createOrOpenFolderProject, ServerError, toAppError, type PlacementId, type ProjectId, type Server, type WorkspaceRuntime } from "@/server"
 import type { OnboardingText } from "./i18n"
 import type { Created, ExecutionPlan, OnboardingDraft } from "./model"
 
@@ -20,6 +20,13 @@ export async function createOnboardingTarget(server: Server, t: OnboardingText, 
 
 export async function startCreated(server: Server, created: Created): Promise<void> {
   if (created.kind === "workspace") await server.cloud.start(created.placementId)
+}
+
+export function openingDetail(t: OnboardingText, runtime: WorkspaceRuntime): string | undefined {
+  if (runtime.kind !== "waking") return undefined
+  if (runtime.bootMode === "restore") return t("onboarding.opening.restoring")
+  if (runtime.bootMode === "resume") return t("onboarding.opening.resuming")
+  return t("onboarding.opening.starting")
 }
 
 export function openedPlacement(t: OnboardingText, created: Created, placementOf: (project: ProjectId) => PlacementId | undefined): PlacementId {

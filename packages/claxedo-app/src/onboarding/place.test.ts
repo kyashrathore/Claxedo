@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { placementId, projectId, ServerError, type CloudCreateInput, type PlacementId, type Project, type ProjectId, type ProjectSource, type Server } from "@/server"
 import type { OnboardingText } from "./i18n"
 import type { Created } from "./model"
-import { createOnboardingTarget, finishFailure, openedPlacement, startCreated } from "./place"
+import { createOnboardingTarget, finishFailure, openedPlacement, openingDetail, startCreated } from "./place"
 
 const t = ((key: string, params?: Readonly<Record<string, string>>) => (params ? `${key} ${JSON.stringify(params)}` : key)) as OnboardingText
 const repository: ProjectSource = { kind: "repository", url: "https://github.com/acme/widgets" }
@@ -79,4 +79,13 @@ test("a created cloud workspace is started before it opens, so its first screen 
   expect(calls).toEqual([])
   await startCreated(server, { kind: "workspace", placementId: placementId("ws_created") })
   expect(calls).toEqual([{ call: "cloud.start", input: placementId("ws_created") }])
+})
+
+test("the opening detail names the boot a waking workspace is on, and nothing once it is live or failed", () => {
+  expect(openingDetail(t, { kind: "waking" })).toBe("onboarding.opening.starting")
+  expect(openingDetail(t, { kind: "waking", bootMode: "cold-start" })).toBe("onboarding.opening.starting")
+  expect(openingDetail(t, { kind: "waking", bootMode: "resume" })).toBe("onboarding.opening.resuming")
+  expect(openingDetail(t, { kind: "waking", bootMode: "restore" })).toBe("onboarding.opening.restoring")
+  expect(openingDetail(t, { kind: "live" })).toBeUndefined()
+  expect(openingDetail(t, { kind: "wakeFailed", error: { class: "network", retryable: true, message: "offline" } })).toBeUndefined()
 })

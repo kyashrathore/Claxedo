@@ -6,7 +6,7 @@ import { draftPath } from "@/shell"
 import { createFinish } from "./finish"
 import { useOnboardingText } from "./i18n"
 import { executionBlock, executionPlan, type ExecutionChoice, type ExecutionFacts, type OnboardingDraft } from "./model"
-import { createOnboardingTarget, finishFailure, openedPlacement, startCreated, type Placing } from "./place"
+import { createOnboardingTarget, finishFailure, openedPlacement, openingDetail, startCreated, type Placing } from "./place"
 import { createOnboardingFunnel, type OnboardingFunnel } from "./funnel"
 import { onboardingSteps, type OnboardingStepId } from "./steps"
 
@@ -35,7 +35,7 @@ function useOnboardingFinish(placing: Accessor<Placing | undefined>, funnel: Onb
     if (!current) throw new Error("Finish ran before the project step chose a source")
     return current
   }
-  return createFinish({
+  const finish = createFinish({
     create: (hold) => createOnboardingTarget(server, t, held(), hold),
     open: async (created) => {
       await startCreated(server, created)
@@ -44,6 +44,11 @@ function useOnboardingFinish(placing: Accessor<Placing | undefined>, funnel: Onb
     },
     describe: (error, created) => finishFailure(t, error, created),
   })
+  const progress = () => {
+    const created = finish.created()
+    return created?.kind === "workspace" && finish.working() ? openingDetail(t, server.cloud.runtime(created.placementId)) : undefined
+  }
+  return { finish, progress }
 }
 
 function createExecution(facts: Accessor<ExecutionFacts>) {
@@ -63,7 +68,7 @@ export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
     return held && { draft: held, plan: plan() }
   }
   const funnel = createOnboardingFunnel(useServer().telemetry, stepper.step())
-  const finish = useOnboardingFinish(placing, funnel)
+  const { finish, progress } = useOnboardingFinish(placing, funnel)
   const blocked = createMemo(() => executionBlock(plan(), facts(), draft()?.source))
   const move = (index: number) => {
     finish.moved()
@@ -75,6 +80,7 @@ export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
   return {
     ...stepper,
     finish,
+    progress,
     draft,
     aiReady,
     setAiReady,

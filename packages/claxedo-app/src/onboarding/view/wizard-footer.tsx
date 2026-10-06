@@ -13,6 +13,8 @@ const BLOCK_TEXT: Record<ExecutionBlock, OnboardingKey> = {
 function blockedReason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {
   const failure = wizard.finish.failure()
   if (failure) return failure
+  const progress = wizard.progress()
+  if (progress) return progress
   if (wizard.step() === "ai" && !wizard.aiReady()) return t(localExecution ? "onboarding.reason.ai.local" : "onboarding.reason.ai.hosted")
   const blocked = wizard.blocked()
   if (wizard.step() === "execution" && blocked && !wizard.finish.created()) return t(BLOCK_TEXT[blocked])

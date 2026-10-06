@@ -28,7 +28,8 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 `createFinish` (`finish.ts`) runs Finish as an `@/lib/flow` flow, `creating` then `opening`, beside `created`: what Finish has made so far, a `project` or a `workspace` (`model.ts`). A failure keeps `created`, and the next click runs the flow again.
 
 - A retry continues from `created`: it never creates what already exists, and with a project or workspace in hand it only opens it. A cloud workspace is held the moment the account's create answers (`create(hold)`, through `cloud.create`'s `onCreated`), before the catalog read that can still fail, so a failure there is retried by opening it.
-- A failure after the project or workspace exists reads "Created successfully, but could not open it: …" and the button reads Open created project / Open created workspace.
+- While a created cloud workspace opens, the reason line reads what its start waits for (`openingDetail` over `server.cloud.runtime`: "Starting the machine, about a minute", "Resuming the machine", "Restoring files"), so Opening… is never a bare spinner.
+- A failure after the project or workspace exists reads "Created successfully, but could not open it: …" and the button reads Open created project / Open created workspace, which runs the open again.
 - Once anything is created, Back is disabled and step 3's panel is inert; after `finished` the button stays disabled.
 - A move (Back, Next) clears a failure only while nothing is created.
 
