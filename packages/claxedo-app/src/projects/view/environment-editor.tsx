@@ -1,4 +1,4 @@
-import { Index, Show } from "solid-js"
+import { createSignal, Index, Show } from "solid-js"
 import { useProjectsText, type ProjectsText } from "../i18n"
 
 export type EnvironmentRow = { id: number; name: string; value: string; stored: boolean }
@@ -55,6 +55,35 @@ export function environmentProblemText(t: ProjectsText, problem: EnvironmentProb
   return t("projects.environment.duplicate", { name: problem.name })
 }
 
+function EnvironmentValue(props: { readonly row: EnvironmentRow; readonly field: string; readonly onInput: (value: string) => void }) {
+  const t = useProjectsText()
+  const [revealed, setRevealed] = createSignal(false)
+  return (
+    <>
+      <input
+        type="text"
+        autocomplete="off"
+        value={props.row.value}
+        onInput={(event) => props.onInput(event.currentTarget.value)}
+        placeholder={props.row.stored ? t("projects.environment.value.stored") : t("projects.environment.value.placeholder")}
+        aria-label={t("projects.environment.value")}
+        spellcheck={false}
+        style={{ "-webkit-text-security": revealed() ? "none" : "disc" }}
+        class={`flex-1 min-w-0 ${props.field}`}
+      />
+      <button
+        type="button"
+        aria-pressed={revealed()}
+        aria-label={t("projects.environment.value.reveal")}
+        class="px-1 text-12-regular text-text-weak hover:text-text-strong"
+        onClick={() => setRevealed((shown) => !shown)}
+      >
+        {revealed() ? t("projects.environment.value.hide") : t("projects.environment.value.show")}
+      </button>
+    </>
+  )
+}
+
 export function EnvironmentEditor(props: { rows: EnvironmentRow[]; onChange: (rows: EnvironmentRow[]) => void }) {
   const t = useProjectsText()
   let nextId = Math.max(0, ...props.rows.map((row) => row.id)) + 1
@@ -84,16 +113,7 @@ export function EnvironmentEditor(props: { rows: EnvironmentRow[]; onChange: (ro
               spellcheck={false}
               class={`w-2/5 min-w-0 ${field}`}
             />
-            <input
-              type="password"
-              autocomplete="off"
-              value={row().value}
-              onInput={(event) => update(row().id, { value: event.currentTarget.value })}
-              placeholder={row().stored ? t("projects.environment.value.stored") : t("projects.environment.value.placeholder")}
-              aria-label={t("projects.environment.value")}
-              spellcheck={false}
-              class={`flex-1 min-w-0 ${field}`}
-            />
+            <EnvironmentValue row={row()} field={field} onInput={(value) => update(row().id, { value })} />
             <button
               type="button"
               aria-label={t("projects.environment.remove")}
