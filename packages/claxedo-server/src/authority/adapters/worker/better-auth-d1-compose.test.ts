@@ -208,7 +208,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
         ownerBootstrap: "one-use-claim" as const,
       },
     }
-    const sandbox = { driver, leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart }
+    const sandbox = { driver, leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart, refresh: unusedSandboxStart }
     const composed = composeBetterAuthD1UserDeployedControlPlane({
       ...input,
       env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "cloudflare" }),
@@ -240,7 +240,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     const bridged = composeBetterAuthD1UserDeployedControlPlane({
       ...input,
       env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "fetch" }),
-      sandbox: { driver: sandboxDriver("fetch"), leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart },
+      sandbox: { driver: sandboxDriver("fetch"), leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart, refresh: unusedSandboxStart },
     })
     expect(bridged.plane.services.sandbox.sandboxManager).toBeDefined()
     expect(bridged.plane.services.sandbox.defaultDriver).toBe("fetch")

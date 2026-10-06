@@ -256,7 +256,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         signingEnv: input.env,
         provisionedRunner: provisionedRunner(input.env),
         ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
-        sandboxStart: sandbox.start,
+        sandboxRefresh: sandbox.refresh,
       })
     : undefined
 

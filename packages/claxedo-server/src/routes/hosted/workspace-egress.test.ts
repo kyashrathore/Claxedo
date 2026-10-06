@@ -137,7 +137,7 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
   // The production drive over this test's rows: what the route's start hands
   // the manager is what `hostedSandboxInput` rebuilds from the workspace row.
   const delivery = createHostedRuntimeDelivery({
-      sandboxStart: unusedSandboxStart,
+      sandboxRefresh: unusedSandboxStart,
     authority: services.authority as unknown as WorkspaceAuthority,
     database: backing.database,
     services,

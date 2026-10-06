@@ -40,34 +40,55 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * One per workspace, named `workspace:<workspaceId>`. A Worker cuts work held
  * past a response about 30 s after it, so a cold start driven from the start
  * request died with a closed tab and left the lease `acquiring` until the
- * stale window let the next start take it over. Here `start` takes the lease
+ * stale window let the next start take it over. Here a start takes the lease
  * and answers at once; the alarm drives the driver, step by step, until the
  * lease is ready or the start has failed, and the first `start` within
- * `outcomeHeldMs` of that settling reports the outcome. A later start begins
- * its own run: a refresh or a closed tab leaves its outcome uncollected, and
- * answering it hours on would report a stopped sandbox ready or a start the
- * person never asked for refused.
+ * `outcomeHeldMs` of that settling reports the outcome.
+ *
+ * Every other `start` on a ready lease asks the runtime itself: one that
+ * answers is reported ready with no driver step, so concurrent pollers and a
+ * reconnect never begin a resume of a sandbox that is serving. One that does
+ * not answer (asleep, gone, or a settle nobody collected within the window)
+ * begins the run the lease needs; `refresh` begins that run even for a live
+ * sandbox, because its settings must be delivered again.
  */
 export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, outcomeHeldMs = OUTCOME_HELD_MS) {
   return class SandboxProvisioner extends DurableObject<Env> {
     #driving = false
 
     async start(workspaceId: string): Promise<SandboxStartAnswer> {
-      const storage = this.ctx.storage
-      const run = await storage.get<Run>("run")
-      if (run) {
-        if (!this.#driving && (await storage.getAlarm()) === null) await storage.setAlarm(Date.now())
-        return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion }
-      }
-      const outcome = await storage.get<Outcome>("outcome")
+      const joined = await this.#inFlight()
+      if (joined) return joined
+      const outcome = await this.ctx.storage.get<Outcome>("outcome")
       if (outcome) {
-        await storage.delete("outcome")
+        await this.ctx.storage.delete("outcome")
         if (Date.now() - outcome.settledAt <= outcomeHeldMs) {
           if (outcome.answer.status !== "ready") return outcome.answer
           const current = await drive(this.env).target(workspaceId)
           if (current.status === "ready" && current.epoch === outcome.epoch) return current
         }
       }
+      const live = await drive(this.env).live(workspaceId)
+      if (live) return live
+      return this.#begin(workspaceId)
+    }
+
+    async refresh(workspaceId: string): Promise<SandboxStartAnswer> {
+      const joined = await this.#inFlight()
+      if (joined) return joined
+      await this.ctx.storage.delete("outcome")
+      return this.#begin(workspaceId)
+    }
+
+    async #inFlight(): Promise<SandboxStartAnswer | undefined> {
+      const storage = this.ctx.storage
+      const run = await storage.get<Run>("run")
+      if (!run) return undefined
+      if (!this.#driving && (await storage.getAlarm()) === null) await storage.setAlarm(Date.now())
+      return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion }
+    }
+
+    async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
       const admitted = await drive(this.env).acquire(workspaceId)
       if (admitted.status !== "provisioning") return admitted
       const begun: Run = {
@@ -77,8 +98,8 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         startedAt: Date.now(),
         retryAfterMs: admitted.retryAfterMs,
       }
-      await storage.put("run", begun)
-      await storage.setAlarm(Date.now())
+      await this.ctx.storage.put("run", begun)
+      await this.ctx.storage.setAlarm(Date.now())
       return admitted
     }
 

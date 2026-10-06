@@ -16,5 +16,5 @@ export const unusedSandboxStart: SandboxStart = async () => {
 /** The provisioner namespace a Node test composes the full-hosted sandbox with; its starts run inline over `drive`. */
 export function inlineSandboxProvisioner(drive?: SandboxStartDrive): SandboxProvisionerNamespace {
   const start = drive ? inlineSandboxStart(drive) : unusedSandboxStart
-  return { idFromName: (name) => name, get: () => ({ start }) }
+  return { idFromName: (name) => name, get: () => ({ start, refresh: start }) }
 }

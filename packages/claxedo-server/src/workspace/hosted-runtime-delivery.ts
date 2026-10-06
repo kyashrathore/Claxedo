@@ -18,15 +18,32 @@ import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import { storeRenewal } from "../credentials/store-renewal"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
+import { createWorkspaceRuntimeClient, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { cloudRootBacking } from "./cloud-root-backing"
 import { createHostedRuntimeFetch } from "./relay-runtime-client"
+import { withTimeout } from "../platform/runtime/timeout"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
-import type { SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { ReadySandboxTarget, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
+
+/**
+ * How long a ready lease's runtime gets to answer before the start treats the
+ * sandbox as asleep and resumes it. A serving runtime answers its config
+ * status in well under a second from any colo; a Boat sandbox that stopped
+ * on its own answers nothing until a resume brings it back.
+ */
+const LIVE_ANSWER_MS = 3_000
+
+async function supervisorClientFor(workspaceId: string, target: ReadySandboxTarget, signingEnv: Record<string, string | undefined>) {
+  const token = await mintSupervisorBackplaneToken({ workspaceId, hostId: target.hostId, subject: "workspace-supervisor" }, signingEnv)
+  return { client: createWorkspaceRuntimeClient({ baseUrl: target.url }), options: { token: token.supervisorBackplaneToken } }
+}
+
+/** Whether the runtime holds the settings a push delivered; a revision past the first is being replaced, not still awaited. */
+const provisioned = (status: Awaited<ReturnType<WorkspaceRuntimeClient["configStatus"]>>) => status.state === "applied" || (status.state === "applying" && status.revision > 1)
 
 async function supervisorClient(
   services: ControlPlaneServices,
@@ -37,8 +54,7 @@ async function supervisorClient(
   if (!manager) throw new Error("hosted sandbox manager is unavailable")
   const target = await manager.target(workspaceId)
   if (target.status !== "ready") throw new Error(`hosted sandbox ${workspaceId} is unavailable`)
-  const token = await mintSupervisorBackplaneToken({ workspaceId, hostId: target.hostId, subject: "workspace-supervisor" }, signingEnv)
-  return { client: createWorkspaceRuntimeClient({ baseUrl: target.url }), options: { token: token.supervisorBackplaneToken } }
+  return supervisorClientFor(workspaceId, target, signingEnv)
 }
 
 /**
@@ -68,8 +84,8 @@ export function createHostedRuntimeDelivery(input: {
   provisionedRunner: RuntimeNativeHarnessId | undefined
   /** Hands a ready runtime its session rows pass after its settings land; a failure costs its rows until the next push. */
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
-  /** The workspace's provisioner, which a refresh of a running sandbox goes through so it never races a start on the same epoch. */
-  sandboxStart: SandboxStart
+  /** The workspace's provisioner's refresh, which re-delivers a running sandbox's settings without racing a start on the same epoch. */
+  sandboxRefresh: SandboxStart
 }) {
   const owner = async (workspaceId: string) => {
     const person = await input.authority.resolveWorkspaceOwner?.(workspaceId)
@@ -170,6 +186,13 @@ export function createHostedRuntimeDelivery(input: {
     },
     provision: (workspaceId, epoch) => step(workspaceId, (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, sandboxInput)),
     target: (workspaceId) => input.sandboxManager.target(workspaceId),
+    live: async (workspaceId) => {
+      const target = await input.sandboxManager.target(workspaceId)
+      if (target.status !== "ready") return undefined
+      const { client, options } = await supervisorClientFor(workspaceId, target, input.signingEnv)
+      const status = await withTimeout(client.configStatus(options), LIVE_ANSWER_MS).catch(() => undefined)
+      return status && provisioned(status) ? target : undefined
+    },
   }
   const running = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
     const leases = await input.sandboxManager.list()
@@ -181,7 +204,7 @@ export function createHostedRuntimeDelivery(input: {
   }
   const refresh = async (workspaceId: string) => {
     if ((await input.sandboxManager.target(workspaceId)).status !== "ready") return
-    const answer = await input.sandboxStart(workspaceId)
+    const answer = await input.sandboxRefresh(workspaceId)
     if (answer.status === "failed") throw new Error(answer.message)
     if (answer.status === "unavailable") throw new Error(`hosted runtime refresh failed: ${answer.error}`)
   }
@@ -202,7 +225,7 @@ export function createHostedRuntimeDelivery(input: {
       const { client, options } = await supervisorClient(input.services, workspaceId, input.signingEnv)
       const status = await client.configStatus(options)
       if (status.state === "failed") throw new Error(status.error?.message ?? "Runtime settings application failed")
-      return status.state === "applied" || (status.state === "applying" && status.revision > 1)
+      return provisioned(status)
     },
     /** Installs the composed stack; the base hooks alone run until a feature entry calls this. */
     composeRuntime(next: HostedRuntimeHooks) {

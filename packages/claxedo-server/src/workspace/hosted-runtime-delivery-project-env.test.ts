@@ -19,7 +19,7 @@ async function setup() {
   active.push(instance)
   const credentials = (orgId: string) => hostedOrgCredentials(orgId, { database: instance.database, env: ENV })
   const delivery = createHostedRuntimeDelivery({
-      sandboxStart: unusedSandboxStart,
+      sandboxRefresh: unusedSandboxStart,
     authority: {
       resolveWorkspaceOwner: async () => ({ userId: "owner", actorId: "act_owner", orgId: "org", projectId: "project" }),
     } as unknown as Input["authority"],

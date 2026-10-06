@@ -19,7 +19,7 @@ async function createDelivery(config: UserAgentConfig, backing: "cloud-vm" | "lo
   const instance = await workspaceBackingDatabase([{ id: "ws", backing }])
   active.push(instance)
   return createHostedRuntimeDelivery({
-      sandboxStart: unusedSandboxStart,
+      sandboxRefresh: unusedSandboxStart,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database: instance.database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],

@@ -11,6 +11,8 @@ export type SandboxStartAnswer =
   | (Extract<SandboxEnsureResult, { status: "provisioning" }> & { opened?: true })
   | { status: "failed"; code: "runtime_prepare_failed" | "runtime_provision_failed"; message: string }
 
+export type ReadySandboxTarget = Extract<SandboxTargetResult, { status: "ready" }>
+
 /** Begins or joins the start of a workspace's sandbox and answers at once; the work itself runs elsewhere. */
 export type SandboxStart = (workspaceId: string) => Promise<SandboxStartAnswer>
 
@@ -19,9 +21,16 @@ export type SandboxStartDrive = {
   acquire(workspaceId: string): Promise<SandboxStartAnswer>
   provision(workspaceId: string, epoch: number): Promise<SandboxStartAnswer>
   target(workspaceId: string): Promise<SandboxTargetResult>
+  /** The ready target whose runtime answers right now; nothing while the lease is ready in the store but its sandbox sleeps or is gone. */
+  live(workspaceId: string): Promise<ReadySandboxTarget | undefined>
 }
 
-export type SandboxProvisionerStub = { start(workspaceId: string): Promise<SandboxStartAnswer> }
+export type SandboxProvisionerStub = {
+  /** A connect: answers a live sandbox at once, joins the run in flight, or begins the run the lease needs. */
+  start(workspaceId: string): Promise<SandboxStartAnswer>
+  /** A re-delivery of what the sandbox runs with: begins or joins a run even for a sandbox that is live. */
+  refresh(workspaceId: string): Promise<SandboxStartAnswer>
+}
 
 export interface SandboxProvisionerNamespace {
   idFromName(name: string): unknown

@@ -29,8 +29,10 @@ async function driverCalls(database: D1Database, workspaceId: string) {
 /**
  * A driver scripted by the workspace id: `ws_slow_<ms>` becomes ready after
  * that long, `ws_poll_<n>` asks to be polled n times first, `ws_boot_fail`
- * exits before it is ready, `ws_flaky` fails once at the provider, and
- * `ws_step_throws` throws out of the start step once the lease is ready.
+ * exits before it is ready, `ws_flaky` fails once at the provider,
+ * `ws_step_throws` throws out of the start step once the lease is ready (its
+ * runtime is not provisioned until a second step), and a workspace named
+ * `asleep` has a runtime that never answers a ready lease.
  */
 function scriptedDriver(database: D1Database): SandboxDriver {
   const ready = (input: SandboxDriverEnsureInput) => ({
@@ -39,18 +41,20 @@ function scriptedDriver(database: D1Database): SandboxDriver {
     hostId: `host_${input.workspaceId}`,
     labels: input.labels,
   })
+  const ensureHost = async (input: SandboxDriverEnsureInput) => {
+    const calls = await recordCall(database, input.workspaceId)
+    const slow = /^ws_slow_(\d+)/.exec(input.workspaceId)
+    if (slow) await new Promise((resolve) => setTimeout(resolve, Number(slow[1])))
+    const poll = /^ws_poll_(\d+)/.exec(input.workspaceId)
+    if (poll && calls <= Number(poll[1])) return { provisioning: true as const, retryAfterMs: 100 }
+    if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
+    if (input.workspaceId.startsWith("ws_flaky") && calls === 1) throw new Error("provider hiccup")
+    return ready(input)
+  }
   return {
     id: "scripted",
-    async ensureHost(input) {
-      const calls = await recordCall(database, input.workspaceId)
-      const slow = /^ws_slow_(\d+)/.exec(input.workspaceId)
-      if (slow) await new Promise((resolve) => setTimeout(resolve, Number(slow[1])))
-      const poll = /^ws_poll_(\d+)/.exec(input.workspaceId)
-      if (poll && calls <= Number(poll[1])) return { provisioning: true as const, retryAfterMs: 100 }
-      if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
-      if (input.workspaceId.startsWith("ws_flaky") && calls === 1) throw new Error("provider hiccup")
-      return ready(input)
-    },
+    ensureHost,
+    resumeHost: (input) => ensureHost(input.ensure),
     metadata: {
       driverRunsIn: ["worker"],
       hostStopBehavior: "suspends-host",
@@ -92,6 +96,12 @@ function drive(env: Env): SandboxStartDrive {
       return answer
     },
     target: (workspaceId) => sandboxes.target(workspaceId),
+    live: async (workspaceId) => {
+      const target = await sandboxes.target(workspaceId)
+      if (target.status !== "ready" || workspaceId.includes("asleep")) return undefined
+      if (workspaceId.startsWith("ws_step_throws") && await driverCalls(env.CONTROL_PLANE_DB, workspaceId) === 1) return undefined
+      return target
+    },
   }
 }
 
@@ -102,6 +112,7 @@ export default {
     const url = new URL(request.url)
     const workspaceId = url.searchParams.get("ws") ?? ""
     if (url.pathname === "/start") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId))
+    if (url.pathname === "/refresh") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).refresh(workspaceId))
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })
     return new Response("not found", { status: 404 })

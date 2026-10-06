@@ -57,7 +57,7 @@ test("a hosted control plane reports each cloud start phase as an ops event tagg
     auth: { config: { enabled: true, mode: "signed" } } as never,
     authority: {} as never,
     hostTunnelResolver: (async () => undefined) as never,
-    sandbox: { driver, leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart },
+    sandbox: { driver, leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart, refresh: unusedSandboxStart },
   })
 
   await services.sandbox.sandboxManager!.ensure("ws_1", {

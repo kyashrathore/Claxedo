@@ -162,6 +162,7 @@ export type HostedSandboxBinding = {
   driver: SandboxDriver
   leaseStore: SandboxLeaseStore
   start: SandboxStart
+  refresh: SandboxStart
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** Organization keys this deployment can provision with; absent, every workspace runs on `driver`. */
   keys?: HostedSandboxKeys

@@ -32,6 +32,12 @@ async function start(workspaceId: string): Promise<SandboxStartAnswer> {
   return (await response.json()) as SandboxStartAnswer
 }
 
+async function refresh(workspaceId: string): Promise<SandboxStartAnswer> {
+  const response = await miniflare.dispatchFetch(`${ORIGIN}/refresh?ws=${workspaceId}`, { method: "POST" })
+  expect(response.status).toBe(200)
+  return (await response.json()) as SandboxStartAnswer
+}
+
 async function target(workspaceId: string) {
   return (await (await miniflare.dispatchFetch(`${ORIGIN}/target?ws=${workspaceId}`)).json()) as Record<string, unknown>
 }
@@ -68,29 +74,59 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_slow_1500")).toBe(1)
   })
 
-  test("the start after the lease settled reports the ready target once; the next one resumes it on the same epoch", async () => {
+  test("every start on a lease whose runtime answers reports the ready target, with no driver step", async () => {
     await start("ws_slow_1")
     await until(() => target("ws_slow_1"), (lease) => lease.status === "ready")
 
     expect(await until(() => start("ws_slow_1"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await start("ws_slow_1")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await start("ws_slow_1")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await driverCalls("ws_slow_1")).toBe(1)
+  })
 
-    const resumed = await start("ws_slow_1")
-    expect(resumed).toMatchObject({ status: "provisioning", epoch: 1 })
+  test("a start on a ready lease whose runtime does not answer resumes it on the same epoch", async () => {
+    await start("ws_slow_1_asleep")
+    await until(() => target("ws_slow_1_asleep"), (lease) => lease.status === "ready")
+    expect(await until(() => start("ws_slow_1_asleep"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
+
+    const resumed = await start("ws_slow_1_asleep")
+    expect(resumed).toMatchObject({ status: "provisioning", epoch: 1, bootMode: "resume" })
     expect(resumed).not.toHaveProperty("opened")
-    expect(await until(() => start("ws_slow_1"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
-    expect(await driverCalls("ws_slow_1")).toBe(2)
+    expect(await until(() => start("ws_slow_1_asleep"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await driverCalls("ws_slow_1_asleep")).toBe(2)
+  })
+
+  test("concurrent polls share one run, and both read it ready once it settles", async () => {
+    const [first, second] = await Promise.all([start("ws_slow_300_pair"), start("ws_slow_300_pair")])
+    expect(first).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(second).toMatchObject({ status: "provisioning", epoch: 1 })
+
+    await until(() => target("ws_slow_300_pair"), (lease) => lease.status === "ready")
+    const settled = await until(() => Promise.all([start("ws_slow_300_pair"), start("ws_slow_300_pair")]), (answers) => answers.every((answer) => answer.status === "ready"))
+    expect(settled).toHaveLength(2)
+    expect(await driverCalls("ws_slow_300_pair")).toBe(1)
+  })
+
+  test("a refresh runs the driver for a live sandbox again, and a start meanwhile joins that run", async () => {
+    await start("ws_slow_300_refreshed")
+    await until(() => start("ws_slow_300_refreshed"), (answer) => answer.status === "ready")
+
+    expect(await refresh("ws_slow_300_refreshed")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await start("ws_slow_300_refreshed")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => start("ws_slow_300_refreshed"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await driverCalls("ws_slow_300_refreshed")).toBe(2)
   })
 
   test("an outcome nobody collected while it was held is not the answer to a later start, which begins its own run", async () => {
-    await start("ws_slow_1_left")
-    await until(() => target("ws_slow_1_left"), (lease) => lease.status === "ready")
+    await start("ws_slow_1_left_asleep")
+    await until(() => target("ws_slow_1_left_asleep"), (lease) => lease.status === "ready")
     await new Promise((resolve) => setTimeout(resolve, FIXTURE_OUTCOME_HELD_MS + 200))
 
-    const later = await start("ws_slow_1_left")
+    const later = await start("ws_slow_1_left_asleep")
     expect(later).toMatchObject({ status: "provisioning", epoch: 1 })
     expect(later).not.toHaveProperty("opened")
-    expect(await until(() => start("ws_slow_1_left"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
-    expect(await driverCalls("ws_slow_1_left")).toBe(2)
+    expect(await until(() => start("ws_slow_1_left_asleep"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await driverCalls("ws_slow_1_left_asleep")).toBe(2)
   })
 
   test("a step that throws after the lease went ready ends the run with that error, and the next start runs its own", async () => {
