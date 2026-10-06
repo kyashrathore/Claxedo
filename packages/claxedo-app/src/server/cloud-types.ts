@@ -28,15 +28,19 @@ export type WorkspaceRuntime =
   | { readonly kind: "wakeFailed"; readonly error: AppError }
   | { readonly kind: "outdated" }
 
+export type MachineClass = "small" | "default" | "large"
+
 export type CloudProjectCreateInput = {
   readonly projectId: ProjectId
   readonly name: string
   readonly branch?: string
+  readonly machineClass?: MachineClass
 }
 
 export type CloudSourceCreateInput = {
   readonly source: Exclude<ProjectSource, { readonly kind: "folder" }>
   readonly name: string
+  readonly machineClass?: MachineClass
   readonly onCreated?: (id: PlacementId) => void
 }
 

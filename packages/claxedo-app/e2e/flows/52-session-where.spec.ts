@@ -39,7 +39,7 @@ async function choosePi(page: Page) {
   await page.keyboard.press("Escape")
 }
 
-test("52 the Where chip lists cloud workspaces by name with their status in words, and a new one needs a name and starts at once", async ({ signedCloud: signed, page }, testInfo) => {
+test("52 the Where chip lists cloud workspaces by name with their status in words, and a new one needs a name, offers no machine size its provider lacks, and starts at once", async ({ signedCloud: signed, page }, testInfo) => {
   const workspace = await makeCloudWorkspace(signed, "payments")
   await signed.signIn(page, signed.owner)
   await page.goto(`${signed.url}${sessionRoute(workspace.id)}`)
@@ -57,6 +57,9 @@ test("52 the Where chip lists cloud workspaces by name with their status in word
 
   const dialog = page.getByRole("dialog", { name: "New cloud workspace" })
   await expect(dialog.getByText("It starts right away.", { exact: false })).toBeVisible()
+  const sandbox = await (await page.request.get(`${signed.url}/api/claxedo/credentials/sandbox-drivers`)).json() as { machine_classes: string[] }
+  expect(sandbox.machine_classes, "the stack's sandbox provider offers one machine size").toEqual([])
+  await expect(dialog.getByText("Machine size", { exact: true })).toHaveCount(0)
   const create = dialog.getByRole("button", { name: "Create", exact: true })
   await expect(create).toBeDisabled()
   await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("   ")

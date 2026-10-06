@@ -367,16 +367,18 @@ describe("resolveHostedOperation", () => {
     )
   })
 
-  test("carries the selected source branch through cloud workspace creation", () => {
+  test("carries the selected source branch and machine size through cloud workspace creation", () => {
     expect(resolveHostedOperation("workspace.create", {
       projectId: "project-1",
       gitBranch: "release/next",
+      machineClass: "large",
     })).toEqual({
       method: "POST",
       path: "/api/workspace/create",
       body: {
         projectId: "project-1",
         gitBranch: "release/next",
+        machineClass: "large",
       },
     })
   })

@@ -165,7 +165,7 @@ export const HOSTED_OPERATIONS = {
   }),
   "workspace.create": defineOperation({
     method: "POST", path: operationPath("/api/workspace/create"),
-    input: operationInput({ projectId: bodyField, workspaceName: bodyField, repoUrl: bodyField, gitBranch: bodyField, driver: bodyField, connectionId: bodyField, repoFullName: bodyField }),
+    input: operationInput({ projectId: bodyField, workspaceName: bodyField, repoUrl: bodyField, gitBranch: bodyField, driver: bodyField, machineClass: bodyField, connectionId: bodyField, repoFullName: bodyField }),
     output: withStrings("workspaceId", "directory"), retry: "never",
     exposure: { renderer: true, app: false },
     body: connectedRepositoryBody,

@@ -54,7 +54,7 @@ function app() {
       authority: fixture.authority,
       drivers: ["cloudflare", "boat"],
       managed: "fetch",
-      managedBrokering: "none",
+      managedMetadata: { secretBrokering: "none" },
     }),
   })
 }
@@ -70,8 +70,8 @@ const boatKey = { provider_id: "boat", kind: "sandbox_driver", secret: JSON.stri
 const listing = async (person: keyof typeof people) => await (await call(person, "/sandbox-drivers")).json()
 
 describe("organization sandbox provider keys on the hosted plane", () => {
-  test("an admin adds, checks, lists, chooses and removes the organization's keys; a member only sees which driver is in use", async () => {
-    expect(await listing("member")).toMatchObject({ default_driver: "fetch", managed_driver: "fetch", keys: [], can_manage: false })
+  test("an admin adds, checks, lists, chooses and removes the organization's keys; a member only sees which driver is in use and its machine sizes", async () => {
+    expect(await listing("member")).toMatchObject({ default_driver: "fetch", machine_classes: [], managed_driver: "fetch", keys: [], can_manage: false })
     expect((await call("member", "", "PUT", boatKey)).status).toBe(403)
     expect((await call("owner", "", "PUT", { ...boatKey, provider_id: "vercel" })).status).toBe(400)
 
@@ -86,7 +86,7 @@ describe("organization sandbox provider keys on the hosted plane", () => {
     const admin = await listing("owner")
     expect(admin).toMatchObject({ default_driver: "boat", can_manage: true, keys: [{ id: row.id, provider_id: "boat" }] })
     expect(admin.drivers.map((driver: { id: string }) => driver.id)).toEqual(["cloudflare", "boat"])
-    expect(await listing("member")).toMatchObject({ default_driver: "boat", keys: [] })
+    expect(await listing("member")).toMatchObject({ default_driver: "boat", machine_classes: ["small", "default", "large"], keys: [] })
 
     expect((await call("member", `/${row.id}/verify`, "POST", {})).status).toBe(404)
     expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "ok" })
@@ -110,7 +110,7 @@ describe("organization sandbox provider keys on the hosted plane", () => {
     expect((await call("member", "/sandbox-drivers/default", "PUT", { driver: "cloudflare" })).status).toBe(403)
     expect((await call("owner", "/sandbox-drivers/default", "PUT", { driver: "cloudflare" })).status).toBe(200)
     expect(await d1OrgSandboxDriver(fixture.database).chosen(orgId)).toBe("cloudflare")
-    expect((await listing("member")).default_driver).toBe("cloudflare")
+    expect(await listing("member")).toMatchObject({ default_driver: "cloudflare", machine_classes: [] })
 
     expect(await (await call("member", `/${row.id}`, "DELETE")).json()).toEqual({ deleted: false })
     expect(await (await call("owner", `/${row.id}`, "DELETE")).json()).toEqual({ deleted: true })

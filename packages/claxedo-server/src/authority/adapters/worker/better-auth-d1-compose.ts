@@ -284,7 +284,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
                   authority,
                   drivers: input.sandbox.keys.drivers,
                   managed: input.sandbox.driver.id,
-                  managedBrokering: input.sandbox.driver.metadata.secretBrokering,
+                  managedMetadata: input.sandbox.driver.metadata,
                   ...(input.now ? { now: input.now } : {}),
                 }),
               }

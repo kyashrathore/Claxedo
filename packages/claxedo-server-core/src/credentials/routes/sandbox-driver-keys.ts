@@ -4,6 +4,7 @@ import {
   sandboxDriverLabels,
   sandboxDriverSecret,
   type SandboxDriverID,
+  type SandboxMachineClass,
   type SandboxProvisionerID,
   type SandboxSecretBrokering,
 } from "@claxedo/sandbox-contract"
@@ -37,6 +38,8 @@ export type SandboxDriverKeys = {
   removeKey?: (request: Request, context: SandboxDriverKeyContext, keyId: string) => Promise<SandboxKeyRemoval>
   /** Whether a driver keeps a delivered secret out of its sandbox; absent where the host cannot tell. */
   brokering?: (driver: SandboxProvisionerID) => SandboxSecretBrokering | undefined
+  /** The machine sizes a driver lets a new workspace choose; absent or empty, the provider's one size. */
+  machineClasses?: (driver: SandboxProvisionerID) => readonly SandboxMachineClass[] | undefined
 }
 
 function keyOwner(keys: SandboxDriverKeys, context: SandboxDriverKeyContext) {
@@ -102,9 +105,11 @@ export async function sandboxKeyListing<Row>(
   options: { canManage: boolean; redact: (row: CredentialMetadata) => Row },
 ) {
   const stored = storedSandboxKeys(keys, rows, context)
+  const driver = await newWorkspaceDriver(keys, rows, context)
   return {
     drivers: keys.drivers.map((id) => ({ id, label: sandboxDriverLabels[id], fields: sandboxDriverCredentialFields[id] })),
-    default_driver: await newWorkspaceDriver(keys, rows, context) ?? null,
+    default_driver: driver ?? null,
+    machine_classes: (driver && keys.machineClasses?.(driver)) || [],
     managed_driver: keys.managed ?? null,
     keys: options.canManage ? stored.map(options.redact) : [],
     can_manage: options.canManage,

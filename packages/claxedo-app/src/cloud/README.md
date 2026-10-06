@@ -23,6 +23,10 @@ A create failure is shown by the create form; the workspace does not exist yet, 
 
 `useRunningCloudWorkspaces(enabled)` returns the same list machine and Start/Stop/Delete for every running workspace across projects (Settings → Usage → Cloud). `useCloudStatusText()` says a status in words; a provisioning step the server names (`acquiring_sandbox`, `cloning`, `starting_runtime`, `waiting_health`) is said as what it does, never as the step id. `useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. The first run places a new project in the cloud through `server.cloud.create({ source, name })` directly, on a hosted plane and on a signed desktop alike: the signed account creates it, and its control plane derives the project. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
 
+## Machine size
+
+`createMachineSizeChoice()` and `MachineSizeField` (`view/machine-size.tsx`) are the one machine-size choice for a new cloud workspace, used by New cloud workspace and meant for any other create surface. The sizes are the `machine_classes` of the driver new workspaces get, read from the sandbox listing (`server.queries.accounts.sandbox()`, `GET /api/claxedo/credentials/sandbox-drivers`), in size order. With none (the driver has one size, the listing is loading, failed or unsupported) the field draws nothing and `chosen()` is undefined, so the create sends no `machineClass` and the provider uses its own size. Otherwise Default is chosen until the reader picks another; a driver without Default starts at its first size. The create sends the choice as `machineClass` on both paths (`/api/workspace/create` for a project, the account's `workspace.create` for a repository), and the control plane refuses a size its driver lacks (`machine_class_unsupported`).
+
 ## Flows
 
 - Flow 24: create, start, turn, stop, delete, and the failure shown (Worker + local sandbox driver).

@@ -1,5 +1,6 @@
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import type { SandboxDriverField, SandboxDriverOption, SandboxKeys } from "../account-types"
+import type { MachineClass } from "../cloud-types"
 import { accountFromWire, rowsFromWire } from "./accounts"
 
 function fieldFromWire(value: unknown): SandboxDriverField | undefined {
@@ -17,6 +18,12 @@ function driverFromWire(value: unknown): SandboxDriverOption | undefined {
   return id && label && fields ? { id, label, fields } : undefined
 }
 
+const MACHINE_CLASSES: readonly MachineClass[] = ["small", "default", "large"]
+
+function machineClassesFromWire(value: unknown): readonly MachineClass[] {
+  return Array.isArray(value) ? MACHINE_CLASSES.filter((machineClass) => value.includes(machineClass)) : []
+}
+
 export function sandboxKeysFromWire(value: unknown): SandboxKeys | undefined {
   const row = asRecord(value)
   const drivers = rowsFromWire(value, "drivers", driverFromWire)
@@ -29,6 +36,7 @@ export function sandboxKeysFromWire(value: unknown): SandboxKeys | undefined {
     drivers,
     keys,
     canManage: row.can_manage,
+    machineClasses: machineClassesFromWire(row.machine_classes),
     ...(defaultDriver ? { defaultDriver } : {}),
     ...(managedDriver ? { managedDriver } : {}),
   }

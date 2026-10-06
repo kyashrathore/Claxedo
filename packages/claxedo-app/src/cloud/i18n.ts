@@ -15,6 +15,13 @@ const en = {
   "cloud.command.stop.failed": "Couldn't stop: {{reason}}",
   "cloud.command.remove.failed": "Couldn't delete: {{reason}}",
   "cloud.unnamed": "Cloud workspace",
+  "cloud.size.label": "Machine size",
+  "cloud.size.small": "Small",
+  "cloud.size.small.description": "Uses the least. Enough for reading code and small edits.",
+  "cloud.size.default": "Default",
+  "cloud.size.default.description": "Fits most projects.",
+  "cloud.size.large": "Large",
+  "cloud.size.large.description": "More room for big builds and test suites. Uses more.",
 }
 
 export type CloudKey = keyof typeof en

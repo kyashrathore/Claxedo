@@ -1,5 +1,6 @@
 import type { AccountScope, AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { QuotaWindow } from "@claxedo/usage-contract"
+import type { MachineClass } from "./cloud-types"
 
 export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean; readonly reason?: string; readonly cloudHarness?: boolean }
 
@@ -58,6 +59,7 @@ export type SandboxKeys =
     readonly drivers: readonly SandboxDriverOption[]
     readonly keys: readonly Account[]
     readonly defaultDriver?: string
+    readonly machineClasses: readonly MachineClass[]
     readonly managedDriver?: string
     readonly canManage: boolean
   }
