@@ -1,13 +1,12 @@
 import { Show } from "solid-js"
 import { useOnboardingText, type OnboardingKey, type OnboardingText } from "../i18n"
-import type { ExecutionBlock } from "../model"
-import type { OnboardingWizard } from "../wizard"
+import type { FinishBlock, OnboardingWizard } from "../wizard"
 import { Button } from "@/ui"
 
-const BLOCK_TEXT: Record<ExecutionBlock, OnboardingKey> = {
+const BLOCK_TEXT: Record<FinishBlock, OnboardingKey> = {
   signIn: "onboarding.reason.execution.signIn",
   folder: "onboarding.reason.execution.folder",
-  name: "onboarding.reason.execution.name",
+  ai: "onboarding.reason.ai.hosted",
 }
 
 function blockedReason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {
@@ -17,7 +16,7 @@ function blockedReason(t: OnboardingText, wizard: OnboardingWizard, localExecuti
   if (progress) return progress
   if (wizard.step() === "ai" && !wizard.aiReady()) return t(localExecution ? "onboarding.reason.ai.local" : "onboarding.reason.ai.hosted")
   const blocked = wizard.blocked()
-  if (wizard.step() === "execution" && blocked && !wizard.finish.created()) return t(BLOCK_TEXT[blocked])
+  if (wizard.last() && blocked && !wizard.finish.created()) return t(BLOCK_TEXT[blocked])
   return undefined
 }
 
@@ -55,23 +54,27 @@ export function WizardFooter(props: { readonly wizard: OnboardingWizard; readonl
         {blockedReason(t, wizard(), props.localExecution) ?? ""}
       </p>
       <div class="flex shrink-0 items-center gap-2">
-        <Button type="button" variant="ghost" size="normal" onClick={() => wizard().back()} disabled={committed()}>
-          {t("onboarding.back")}
-        </Button>
+        <Show when={wizard().index() > 0}>
+          <Button type="button" variant="ghost" size="normal" onClick={() => wizard().back()} disabled={committed()}>
+            {t("onboarding.back")}
+          </Button>
+        </Show>
         <Show when={wizard().step() === "ai" && props.localExecution && !wizard().aiReady()}>
           <Button type="button" variant="ghost" size="normal" onClick={() => wizard().advance()}>
             {t("onboarding.skip")}
           </Button>
         </Show>
-        <Show
-          when={wizard().step() === "execution"}
-          fallback={
-            <Button type="button" variant="contrast" size="normal" disabled={wizard().step() === "ai" && !wizard().aiReady()} onClick={() => wizard().advance()}>
-              {t("onboarding.next")}
-            </Button>
-          }
-        >
-          <FinishButton wizard={wizard()} localExecution={props.localExecution} />
+        <Show when={wizard().step() !== "project"}>
+          <Show
+            when={wizard().last()}
+            fallback={
+              <Button type="button" variant="contrast" size="normal" disabled={wizard().step() === "ai" && !wizard().aiReady()} onClick={() => wizard().advance()}>
+                {t("onboarding.next")}
+              </Button>
+            }
+          >
+            <FinishButton wizard={wizard()} localExecution={props.localExecution} />
+          </Show>
         </Show>
       </div>
     </div>

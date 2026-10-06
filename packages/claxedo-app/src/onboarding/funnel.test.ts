@@ -3,11 +3,12 @@ import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import type { ProductEvent } from "@/server"
 import { createOnboardingFunnel, type OnboardingFunnel } from "./funnel"
+import { onboardingSteps } from "./steps"
 
 function walk(steps: (funnel: OnboardingFunnel) => void) {
   const recorded: ProductEvent[] = []
   createRoot((dispose) => {
-    steps(createOnboardingFunnel({ record: (event) => void recorded.push(event) }, "project"))
+    steps(createOnboardingFunnel({ record: (event) => void recorded.push(event) }, onboardingSteps(true)))
     dispose()
   })
   return recorded.map((event) => [event.event, Object.values(event.properties)[0]])

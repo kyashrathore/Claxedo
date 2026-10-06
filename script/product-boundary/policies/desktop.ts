@@ -591,8 +591,12 @@ export const desktopRenderer: Policy = {
   // catalog answers (owner: the app's shell, `shell/gone-placements.tsx`), and
   // a new cloud workspace's machine size choice (owner: the app's cloud
   // domain, `cloud/view/machine-size.tsx`). They add no package edge.
-  // 1352/36, no headroom.
-  ceilings: { modules: 1352, packages: 36 },
+  // Onboarding's first step on a hosted plane, where cloud workspaces run
+  // (owner: the app's onboarding domain: `onboarding/cloud-provider.ts`,
+  // `onboarding/view/choice-row.tsx`, `onboarding/view/cloud-placement.tsx`).
+  // They add no package edge.
+  // 1355/36, no headroom.
+  ceilings: { modules: 1355, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

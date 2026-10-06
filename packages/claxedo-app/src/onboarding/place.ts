@@ -4,16 +4,16 @@ import type { Created, ExecutionPlan, OnboardingDraft } from "./model"
 
 export type Placing = { readonly draft: OnboardingDraft; readonly plan: ExecutionPlan }
 
-async function accountCloudWorkspace(server: Server, draft: OnboardingDraft, name: string, t: OnboardingText, hold: (created: Created) => void): Promise<Created> {
+async function accountCloudWorkspace(server: Server, draft: OnboardingDraft, plan: Extract<ExecutionPlan, { kind: "cloud" }>, t: OnboardingText, hold: (created: Created) => void): Promise<Created> {
   const source = draft.source
   if (source.kind === "folder") throw new ServerError({ class: "invalid", message: t("onboarding.reason.execution.folder") })
   const onCreated = (id: PlacementId) => hold({ kind: "workspace", placementId: id })
-  const workspace = await server.cloud.create({ source, name, onCreated })
+  const workspace = await server.cloud.create({ source, name: plan.name, onCreated, ...(plan.machineClass ? { machineClass: plan.machineClass } : {}) })
   return { kind: "workspace", placementId: workspace.id }
 }
 
 export async function createOnboardingTarget(server: Server, t: OnboardingText, placing: Placing, hold: (created: Created) => void): Promise<Created> {
-  if (placing.plan.kind === "cloud") return accountCloudWorkspace(server, placing.draft, placing.plan.name, t, hold)
+  if (placing.plan.kind === "cloud") return accountCloudWorkspace(server, placing.draft, placing.plan, t, hold)
   const input = { source: placing.draft.source, ...(placing.draft.name ? { name: placing.draft.name } : {}) }
   return { kind: "project", project: await createOrOpenFolderProject(server, input) }
 }

@@ -30,7 +30,7 @@ test("55 a hosted reader's onboarding, cloud workspace and session reach the ana
   test.setTimeout(180_000)
   await signed.signIn(page, signed.owner)
   await expect(page).toHaveURL(/\/welcome$/)
-  await expect.poll(async () => (await recorded(signed, "onboarding_step_viewed")).map((entry) => entry.properties.step)).toEqual(["project"])
+  await expect.poll(async () => (await recorded(signed, "onboarding_step_viewed")).map((entry) => entry.properties.step)).toEqual(["execution"])
 
   await storeOwnerKey(signed, "openai", "telemetry-owner-key")
   const workspace = await makeCloudWorkspace(signed, "payments")

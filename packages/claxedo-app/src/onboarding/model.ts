@@ -1,10 +1,10 @@
-import type { PlacementId, Project, ProjectSource } from "@/server"
+import type { MachineClass, PlacementId, Project, ProjectSource } from "@/server"
 
 export type OnboardingDraft = { readonly source: ProjectSource; readonly name?: string }
 
 export type ExecutionChoice = "local" | "cloud"
 
-export type ExecutionPlan = { readonly kind: "local" } | { readonly kind: "cloud"; readonly name: string }
+export type ExecutionPlan = { readonly kind: "local" } | { readonly kind: "cloud"; readonly name: string; readonly machineClass?: MachineClass }
 
 export type ExecutionFacts = {
   readonly localExecution: boolean
@@ -13,7 +13,7 @@ export type ExecutionFacts = {
   readonly machineConnected: boolean | undefined
 }
 
-export type ExecutionBlock = "signIn" | "folder" | "name"
+export type ExecutionBlock = "signIn" | "folder"
 
 export function executionChoices(facts: ExecutionFacts): readonly ExecutionChoice[] {
   return [...(facts.localExecution ? (["local"] as const) : []), ...(facts.cloudAvailable ? (["cloud"] as const) : [])]
@@ -23,15 +23,14 @@ export function offersConnectMachine(facts: ExecutionFacts): boolean {
   return !facts.localExecution && facts.machineConnected === false
 }
 
-export function executionPlan(choice: ExecutionChoice, workspaceName: string): ExecutionPlan {
-  return choice === "cloud" ? { kind: "cloud", name: workspaceName.trim() } : { kind: "local" }
+export function executionPlan(choice: ExecutionChoice, name: string, machineClass: MachineClass | undefined): ExecutionPlan {
+  return choice === "cloud" ? { kind: "cloud", name, ...(machineClass ? { machineClass } : {}) } : { kind: "local" }
 }
 
 export function executionBlock(plan: ExecutionPlan, facts: ExecutionFacts, source: ProjectSource | undefined): ExecutionBlock | undefined {
   if (plan.kind === "local") return undefined
   if (!facts.cloudAvailable) return "signIn"
-  if (source?.kind === "folder") return "folder"
-  return plan.name ? undefined : "name"
+  return source?.kind === "folder" ? "folder" : undefined
 }
 
 export type Created =

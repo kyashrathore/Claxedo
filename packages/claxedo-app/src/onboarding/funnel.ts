@@ -1,15 +1,15 @@
 import { onCleanup } from "solid-js"
 import type { ProductTelemetry } from "@/server"
-import { onboardingSteps, type OnboardingStepId } from "./steps"
+import type { OnboardingStep, OnboardingStepId } from "./steps"
 
 export type OnboardingFunnel = {
   readonly moved: (from: OnboardingStepId, to: OnboardingStepId) => void
   readonly finished: () => void
 }
 
-const stepIndex = (step: OnboardingStepId) => onboardingSteps.findIndex((item) => item.id === step)
-
-export function createOnboardingFunnel(telemetry: ProductTelemetry, first: OnboardingStepId): OnboardingFunnel {
+export function createOnboardingFunnel(telemetry: ProductTelemetry, steps: readonly OnboardingStep[]): OnboardingFunnel {
+  const stepIndex = (step: OnboardingStepId) => steps.findIndex((item) => item.id === step)
+  const first = steps[0]?.id ?? "project"
   let current = first
   let done = false
   const viewed = (step: OnboardingStepId) => telemetry.record({ event: "onboarding_step_viewed", properties: { step } })

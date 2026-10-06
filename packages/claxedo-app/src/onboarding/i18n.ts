@@ -13,7 +13,7 @@ const en = {
   "onboarding.ai.lede.hosted": "Connect an account or provider for the agent you want to run. Accounts are stored on this deployment and can be changed later in Settings → Models.",
   "onboarding.execution.headline": "Where it runs",
   "onboarding.execution.lede.local": "Choose where sessions run. You can add more places later.",
-  "onboarding.execution.lede.hosted": "Sessions run in a cloud workspace Claxedo starts for you, or on a machine you connect.",
+  "onboarding.execution.lede.hosted": "Cloud workspaces run on Claxedo's machines or on a provider account you add. You can also connect a machine of your own.",
   "onboarding.continue": "Continue",
   "onboarding.back": "Back",
   "onboarding.skip": "Skip for now",
@@ -32,7 +32,6 @@ const en = {
   "onboarding.reason.ai.hosted": "Connect an agent account or provider to continue.",
   "onboarding.reason.execution.signIn": "Sign in to Claxedo to create a cloud workspace.",
   "onboarding.reason.execution.folder": "Choose a repository instead of a folder to create a cloud workspace.",
-  "onboarding.reason.execution.name": "Name the cloud workspace to create it.",
   "onboarding.failed.noPlacement": "{{project}} has no folder here to open.",
   "onboarding.failed.open": "Created successfully, but could not open it: {{error}}",
   "onboarding.ai.accounts": "Agent accounts",
@@ -45,8 +44,15 @@ const en = {
   "onboarding.execution.local.detail": "Sessions run in the folder you chose.",
   "onboarding.execution.cloud.title": "A cloud workspace",
   "onboarding.execution.cloud.detail": "Sessions run in a cloud workspace Claxedo starts for you.",
-  "onboarding.execution.cloud.name": "Cloud workspace name",
   "onboarding.execution.connect": "Connect a machine…",
+  "onboarding.cloud.loading": "Checking cloud providers…",
+  "onboarding.cloud.loadFailed": "Couldn't load cloud providers: {{reason}}",
+  "onboarding.cloud.managed": "Claxedo's machines",
+  "onboarding.cloud.managed.detail": "Starts on the deployment's {{provider}} account. Nothing to set up.",
+  "onboarding.cloud.key": "Your {{provider}} account",
+  "onboarding.cloud.key.detail": "Starts on the key you added.",
+  "onboarding.cloud.add": "Add your provider key…",
+  "onboarding.cloud.fixed": "Cloud workspaces run on {{provider}}.",
 }
 
 export type OnboardingKey = keyof typeof en

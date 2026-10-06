@@ -6,26 +6,12 @@ export type OnboardingStep = {
   readonly id: OnboardingStepId
   readonly label: OnboardingKey
   readonly headline: OnboardingKey
-  readonly lede: { readonly local: OnboardingKey; readonly hosted: OnboardingKey }
+  readonly lede: OnboardingKey
 }
 
-export const onboardingSteps: readonly OnboardingStep[] = [
-  {
-    id: "project",
-    label: "onboarding.step.project",
-    headline: "onboarding.project.headline",
-    lede: { local: "onboarding.project.lede.local", hosted: "onboarding.project.lede.hosted" },
-  },
-  {
-    id: "ai",
-    label: "onboarding.step.ai",
-    headline: "onboarding.ai.headline",
-    lede: { local: "onboarding.ai.lede.local", hosted: "onboarding.ai.lede.hosted" },
-  },
-  {
-    id: "execution",
-    label: "onboarding.step.execution",
-    headline: "onboarding.execution.headline",
-    lede: { local: "onboarding.execution.lede.local", hosted: "onboarding.execution.lede.hosted" },
-  },
-]
+const wizardStep = (id: OnboardingStepId, lede: OnboardingKey): OnboardingStep => ({ id, label: `onboarding.step.${id}`, headline: `onboarding.${id}.headline`, lede })
+
+export function onboardingSteps(localExecution: boolean): readonly OnboardingStep[] {
+  if (localExecution) return [wizardStep("project", "onboarding.project.lede.local"), wizardStep("ai", "onboarding.ai.lede.local"), wizardStep("execution", "onboarding.execution.lede.local")]
+  return [wizardStep("execution", "onboarding.execution.lede.hosted"), wizardStep("project", "onboarding.project.lede.hosted"), wizardStep("ai", "onboarding.ai.lede.hosted")]
+}

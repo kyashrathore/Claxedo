@@ -4,6 +4,8 @@ import { useAccountsText } from "./i18n"
 
 export { harnesses } from "./model"
 export { useAccounts } from "./store"
+export { useSandboxKeys, type SandboxKeysLoad, type SandboxKeysStore, type SandboxListing } from "./sandbox-store"
+export { DrawerSandboxKey } from "./view/sandbox-key-form"
 export { AgentHarnessAccounts } from "./view/harness-accounts"
 export { createHarnessProviders, HarnessProvidersSection, type HarnessProviders } from "./view/harness-providers"
 

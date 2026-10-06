@@ -21,16 +21,17 @@ test("the web offers to connect a machine only once it knows no machine is conne
   expect(offersConnectMachine({ ...desktop, machineConnected: false })).toBe(false)
 })
 
-test("this machine is always ready; the cloud workspace needs a signed control plane, a repository and a name", () => {
-  expect(executionBlock(executionPlan("local", ""), desktop, folder)).toBeUndefined()
-  expect(executionBlock(executionPlan("cloud", "Widgets"), desktop, repository)).toBe("signIn")
-  expect(executionBlock(executionPlan("cloud", "Widgets"), signedDesktop, folder)).toBe("folder")
-  expect(executionBlock(executionPlan("cloud", "   "), signedDesktop, repository)).toBe("name")
-  expect(executionBlock(executionPlan("cloud", " Widgets "), signedDesktop, repository)).toBeUndefined()
-  expect(executionBlock(executionPlan("cloud", "Widgets"), hosted, { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" })).toBeUndefined()
+test("this machine is always ready; the cloud workspace needs a signed control plane and a repository", () => {
+  expect(executionBlock(executionPlan("local", "", undefined), desktop, folder)).toBeUndefined()
+  expect(executionBlock(executionPlan("cloud", "widgets", undefined), desktop, repository)).toBe("signIn")
+  expect(executionBlock(executionPlan("cloud", "widgets", undefined), signedDesktop, folder)).toBe("folder")
+  expect(executionBlock(executionPlan("cloud", "widgets", undefined), signedDesktop, repository)).toBeUndefined()
+  expect(executionBlock(executionPlan("cloud", "", undefined), hosted, undefined)).toBeUndefined()
+  expect(executionBlock(executionPlan("cloud", "widgets", "large"), hosted, { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" })).toBeUndefined()
 })
 
-test("the cloud plan carries the trimmed name", () => {
-  expect(executionPlan("cloud", " Payments ")).toEqual({ kind: "cloud", name: "Payments" })
-  expect(executionPlan("local", "ignored")).toEqual({ kind: "local" })
+test("the cloud plan carries the workspace name and the chosen machine size, and no size when the provider has one", () => {
+  expect(executionPlan("cloud", "widgets", "large")).toEqual({ kind: "cloud", name: "widgets", machineClass: "large" })
+  expect(executionPlan("cloud", "widgets", undefined)).toEqual({ kind: "cloud", name: "widgets" })
+  expect(executionPlan("local", "widgets", "large")).toEqual({ kind: "local" })
 })
