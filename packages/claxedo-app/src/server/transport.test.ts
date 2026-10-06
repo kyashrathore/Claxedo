@@ -165,3 +165,16 @@ test("a workspace read as outdated reads live again once a connection answers re
   await transport.runtime(cloud, "/api/wr/health")
   expect(wakes.runtime(id)).toEqual({ kind: "live" })
 })
+
+test("a session's own connection answering ready leaves a workspace outdated, because a session host is minted without checking the image", async () => {
+  const outdated = new Error(`HOSTED_HTTP 409 ${JSON.stringify({ body: { error: { code: "cloud_runtime_image_outdated", message: "The workspace runs an older image" } } })}`)
+  const { transport, calls } = signed(outdated, { ...link, sessionId: "ses_pi", sessionHostRoot: "ses_pi" })
+  fetcher.mockResolvedValue(Response.json({}))
+  const workspaces = { byId: () => ({ kind: "cloud", reachable: true }) } as unknown as Workspaces
+  const wakes = createWorkspaceWakes(transport, workspaces)
+  const id = placementId("ws_cloud")
+  await expect(transport.runtime(cloud, "/api/wr/health")).rejects.toMatchObject({ code: "cloud_runtime_image_outdated" })
+  await transport.runtime({ ...cloud, sessionHost: { sessionId: "ses_pi" } }, "/session/ses_pi/config-options")
+  expect(calls.map((call) => call.operation)).toEqual(["workspace.connection.read", "session.connection.read"])
+  expect(wakes.runtime(id)).toEqual({ kind: "outdated" })
+})

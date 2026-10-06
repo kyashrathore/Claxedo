@@ -143,8 +143,8 @@ function sessionHostSignals() {
 function runtimeImageSignals() {
   const listeners = new Set<(workspaceId: string, outdated: boolean) => void>()
   return {
-    answered: (workspaceId: string, answer: ConnectionAnswer) => {
-      if (answer.kind === "ready") for (const listener of listeners) listener(workspaceId, false)
+    answered: (workspaceId: string, sessionId: string | undefined, answer: ConnectionAnswer) => {
+      if (!sessionId && answer.kind === "ready") for (const listener of listeners) listener(workspaceId, false)
       return answer
     },
     refused: (workspaceId: string, error: unknown) => {
@@ -160,7 +160,7 @@ function runtimeImageSignals() {
 function connectionReader(connections: WorkspaceConnections, hosts: ReturnType<typeof sessionHostSignals>, image: ReturnType<typeof runtimeImageSignals>): WorkspaceConnections["read"] {
   return async (workspaceId, sessionId) => {
     try {
-      return hosts.learned(workspaceId, sessionId, image.answered(workspaceId, await connections.read(workspaceId, sessionId)))
+      return hosts.learned(workspaceId, sessionId, image.answered(workspaceId, sessionId, await connections.read(workspaceId, sessionId)))
     } catch (error) {
       image.refused(workspaceId, error)
       throw error
