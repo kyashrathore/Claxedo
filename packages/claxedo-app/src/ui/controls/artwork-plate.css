@@ -1,6 +1,9 @@
 .ui-artwork-plate {
   --dot: 2px;
   --plate-ink: color-mix(in oklab, var(--text-base) 42%, transparent);
+  --plate-image: url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
+  --plate-thinning: url("../assets/plate-thinning-dots.png") 0 0 / calc(128 * var(--dot)) calc(128 * var(--dot)) repeat;
+  --plate-clear: radial-gradient(ellipse min(52rem, 100vw) min(36rem, 72vh) at 50% calc(100% - 50vh), transparent 60%, #000);
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -10,7 +13,8 @@
   mask-image: var(--plate-mask, radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%));
 }
 
-.ui-artwork-plate::before {
+.ui-artwork-plate::before,
+.ui-artwork-plate[data-thinned]::after {
   content: "";
   position: absolute;
   left: 50%;
@@ -20,8 +24,20 @@
   translate: -50% 0;
   background-color: var(--plate-ink);
   image-rendering: pixelated;
-  -webkit-mask: url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
-  mask: url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
+  -webkit-mask: var(--plate-image);
+  mask: var(--plate-image);
+}
+
+.ui-artwork-plate[data-thinned]::before {
+  -webkit-mask: var(--plate-clear), var(--plate-image);
+  -webkit-mask-composite: source-in;
+  mask: var(--plate-clear) intersect, var(--plate-image);
+}
+
+.ui-artwork-plate[data-thinned]::after {
+  -webkit-mask: var(--plate-thinning), var(--plate-image);
+  -webkit-mask-composite: source-in;
+  mask: var(--plate-thinning) intersect, var(--plate-image);
 }
 
 html[data-color-scheme="dark"] .ui-artwork-plate {
@@ -29,11 +45,19 @@ html[data-color-scheme="dark"] .ui-artwork-plate {
 }
 
 html[data-color-scheme="dark"] .ui-artwork-plate::before {
-  -webkit-mask:
-    url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat,
-    linear-gradient(#000 0 0);
+  -webkit-mask: var(--plate-image), linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
-  mask:
-    url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat exclude,
-    linear-gradient(#000 0 0);
+  mask: var(--plate-image) exclude, linear-gradient(#000 0 0);
+}
+
+html[data-color-scheme="dark"] .ui-artwork-plate[data-thinned]::before {
+  -webkit-mask: var(--plate-clear), var(--plate-image), linear-gradient(#000 0 0);
+  -webkit-mask-composite: source-in, xor;
+  mask: var(--plate-clear) intersect, var(--plate-image) exclude, linear-gradient(#000 0 0);
+}
+
+html[data-color-scheme="dark"] .ui-artwork-plate[data-thinned]::after {
+  -webkit-mask: var(--plate-thinning), var(--plate-image), linear-gradient(#000 0 0);
+  -webkit-mask-composite: source-in, xor;
+  mask: var(--plate-thinning) intersect, var(--plate-image) exclude, linear-gradient(#000 0 0);
 }

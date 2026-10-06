@@ -16,7 +16,7 @@ export function FirstProjectCanvas(_props: PageProps) {
   const machines = useQuery(() => server.queries.machines.list())
   return (
     <main class="first-project" data-testid="first-project-canvas">
-      <ArtworkPlate />
+      <ArtworkPlate thinned />
       <div class="first-project-content">
         <Show when={capabilities()}>
           {(known) => (
