@@ -13,7 +13,7 @@ type Submit =
 
 export type ProjectCreateFormProps = {
   folderMachine?: string
-  connectedRepositoryOnly?: boolean
+  namedByRepository?: boolean
   pickFolder?: () => Promise<string | undefined>
   onCancel?: () => void
 } & Submit
@@ -43,7 +43,7 @@ function FolderField(props: { machine: string; folder: string; onChoose: () => v
   )
 }
 
-function createRepositoryChoice(active: Accessor<boolean>, connectedOnly: Accessor<boolean>) {
+function createRepositoryChoice(active: Accessor<boolean>) {
   const server = useServer()
   const connectionsServed = () => server.capabilities()?.features.connections === true
   const offered = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: active() && connectionsServed() }))
@@ -57,14 +57,14 @@ function createRepositoryChoice(active: Accessor<boolean>, connectedOnly: Access
     if (offered.isPending) return "checking"
     if (offered.error) return "failed"
     if (!integration()) return "url"
-    if (!connectedOnly() && entry() === "url") return "url"
+    if (entry() === "url") return "url"
     return connection() ? "list" : "connect"
   }
   const repositories = useQuery(() => {
     const id = connection()?.id ?? ""
     return { ...server.queries.codeHost.repositories(id), enabled: active() && view() === "list" && id !== "" }
   })
-  const switchable = () => !connectedOnly() && integration() !== undefined
+  const switchable = () => integration() !== undefined
   return { integration, usable, connection, setChosenId, entry, setEntry, view, repositories, switchable, error: () => offered.error, retry: () => offered.refetch() }
 }
 
@@ -115,7 +115,7 @@ function RepositorySection(props: { choice: RepositoryChoice; url: string; onUrl
       <Show when={props.choice.view() === "url"}>
         <TextField
           label={t("projects.add.url")}
-          description={host() ? t("projects.create.url.hint.host", { host: host() ?? "" }) : t("projects.create.url.hint.none")}
+          description={host() && props.choice.connection() ? t("projects.create.url.hint.host", { host: host() ?? "" }) : t("projects.create.url.hint.none")}
           placeholder={t("projects.create.url.placeholder")}
           value={props.url}
           onChange={props.onUrl}
@@ -137,7 +137,7 @@ function createFormState(props: ProjectCreateFormProps) {
   const [selected, setSelected] = createSignal<string>()
   const offersFolder = () => props.folderMachine !== undefined && Boolean(props.pickFolder)
   const mode = (): SourceMode => (offersFolder() ? source() : "repository")
-  const choice = createRepositoryChoice(() => mode() === "repository", () => props.connectedRepositoryOnly === true)
+  const choice = createRepositoryChoice(() => mode() === "repository")
   const chosen = (): ProjectSource | undefined => {
     if (mode() === "folder") return folder() ? { kind: "folder", path: folder() } : undefined
     const connection = choice.connection()
@@ -215,7 +215,7 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
       >
         {(machine) => <FolderField machine={machine()} folder={form.folder()} onChoose={() => void chooseFolder()} />}
       </Show>
-      <Show when={!props.connectedRepositoryOnly}>
+      <Show when={!props.namedByRepository}>
         <TextField label={t("projects.add.name")} placeholder={namePlaceholder()} value={form.name()} onChange={form.setName} spellcheck={false} />
       </Show>
       <Show when={form.error()}>

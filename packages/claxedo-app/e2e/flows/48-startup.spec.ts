@@ -10,14 +10,21 @@ test("48 startup: web onboarding asks for sign-in before it reads repository con
   expect(reads.filter((path) => path.startsWith("/api/claxedo/integrations") || path.startsWith("/api/claxedo/credentials"))).toEqual([])
 })
 
-test("48 startup: web onboarding starts from a connected GitHub repository, never a pasted URL", async ({ signed, page }) => {
+test("48 startup: web onboarding starts from a connected GitHub repository or a pasted public repository URL", async ({ signed, page }) => {
   await signed.signIn(page, signed.owner)
   await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Fine-grained personal access token" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Connect with token", exact: true })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Repository URL" })).toHaveCount(0)
-  await expect(page.getByRole("button", { name: "Paste URL" })).toHaveCount(0)
-  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled()
+  const next = page.getByRole("button", { name: "Continue", exact: true })
+  await expect(next).toBeDisabled()
+  await page.getByRole("button", { name: "Paste URL", exact: true }).click()
+  await expect(page.getByText("Claxedo clones a public repository by its URL.")).toBeVisible()
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveCount(0)
+  await page.getByRole("textbox", { name: "Repository URL" }).fill("https://github.com/octo/hello-world")
+  await next.click()
+  await expect(page.getByRole("heading", { level: 1, name: "Connect an AI" })).toBeVisible()
+  expect(((await (await page.request.get(`${signed.url}/api/workspace?host=provisioner`)).json()) as { workspaces: unknown[] }).workspaces).toEqual([])
 })
 
 test("48 startup: a signed account without admission sees the failure and retries after the owner invites it", async ({ signed, page }) => {

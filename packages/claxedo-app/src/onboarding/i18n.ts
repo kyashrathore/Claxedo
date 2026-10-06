@@ -7,7 +7,7 @@ const en = {
   "onboarding.step.execution": "Where it runs",
   "onboarding.project.headline": "Start with a project",
   "onboarding.project.lede.local": "Point Claxedo at a folder, or at a repository to clone. Where the work runs is a later question.",
-  "onboarding.project.lede.hosted": "Connect GitHub and choose the repository you want to work on.",
+  "onboarding.project.lede.hosted": "Choose a repository from GitHub, or paste a public repository's URL.",
   "onboarding.ai.headline": "Connect an AI",
   "onboarding.ai.lede.local": "The agent runs on a login of yours. Anything found here can be changed later in Settings → Models.",
   "onboarding.ai.lede.hosted": "Connect an account or provider for the agent you want to run. Accounts are stored on this deployment and can be changed later in Settings → Models.",
