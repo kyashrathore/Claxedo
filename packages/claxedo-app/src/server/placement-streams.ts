@@ -185,7 +185,10 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
         reconcileStreams(state)
       }
     },
-    streams: (ref) => state.sessions.has(sessionKey(String(ref.placementId), String(ref.sessionId))),
+    streams: (ref) => {
+      const open = state.sessions.get(sessionKey(String(ref.placementId), String(ref.sessionId)))
+      return open !== undefined && open.refused === undefined
+    },
     close: () => {
       unfollow()
       state.attached.clear()

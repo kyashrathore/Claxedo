@@ -83,7 +83,7 @@ test("a session whose stream opened against its workspace moves to its own host 
   })
 })
 
-test("a session stream refused because its workspace runs an older image stays closed across catalog reads and reopens with a re-read once its workspace's image reads current", async () => {
+test("a session stream refused because its workspace runs an older image stays closed across catalog reads, claims no status, and reopens with a re-read once its workspace's image reads current", async () => {
   const serverUrl = "http://127.0.0.1:1"
   const queryClient = new QueryClient()
   let restarted = false
@@ -106,6 +106,7 @@ test("a session stream refused because its workspace runs an older image stays c
     await settle()
     await Bun.sleep(600)
     expect(seen).toEqual(["refused"])
+    expect(streams.streams(ref("ses_outdated")), "a refused stream delivers no status, so the hosted notices must").toBe(false)
     queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 1 })
     queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 2 })
     await settle()
@@ -117,5 +118,6 @@ test("a session stream refused because its workspace runs an older image stays c
     announce(record.route.workspaceId, false)
     await settle()
     expect(seen).toEqual(["refused", "opened", "re-read"])
+    expect(streams.streams(ref("ses_outdated"))).toBe(true)
   } finally { detach(); streams.close(); queryClient.clear() }
 })
