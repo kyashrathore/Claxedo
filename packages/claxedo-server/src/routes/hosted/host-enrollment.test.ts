@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
-import type { MachineEnrollmentRow } from "@claxedo/server-core/platform/auth/authority"
+import type { MachineEnrollmentRow } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { MACHINE_REQUEST_HEADERS, decodeMachineSeal, machineRequestPayload, machineSealAad } from "@claxedo/account-contract/machine"
 import { machineSealContentKey } from "@claxedo/account-contract/machine-seal"
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"

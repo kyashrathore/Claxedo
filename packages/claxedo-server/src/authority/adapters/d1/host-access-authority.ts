@@ -9,35 +9,9 @@ import {
 } from "@claxedo/account-contract/machine"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import {
-  hostEnrollmentScope,
-  hostProviderConfigRekeyed,
-  hostSessionAuthority,
-  nextHostProviderConfigRevision,
-  pendingHostProviderConfig,
-  storedHostProviderIds,
-} from "@claxedo/server-core/platform/auth/authority"
-import type {
-  HostAssignmentAck,
-  HostAssignmentDescription,
-  HostEnrollment,
-  HostEnrollmentListRow,
-  HostEnrollmentState,
-  HostInvitationCreateInput,
-  HostInvitationCreateResult,
-  HostInvitationRedeemInput,
-  HostInvitationRedeemResult,
-  HostInvitationRow,
-  HostMachineHeartbeatInput,
-  HostMachineHeartbeatResult,
-  HostProviderConfigPushInput,
-  HostProviderConfigTarget,
-  HostScopeDefinition,
-  HostScopeUpdateResult,
-  MachineAuthAdapter,
-  MachinePrincipal,
-  WorkspaceAuthority,
-} from "@claxedo/server-core/platform/auth/authority"
+import { hostEnrollmentScope, hostProviderConfigRekeyed, hostSessionAuthority, nextHostProviderConfigRevision, pendingHostProviderConfig, storedHostProviderIds } from "@claxedo/server-core/platform/auth/host-connect-contract"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostAssignmentAck, HostAssignmentDescription, HostEnrollment, HostEnrollmentListRow, HostEnrollmentState, HostInvitationCreateInput, HostInvitationCreateResult, HostInvitationRedeemInput, HostInvitationRedeemResult, HostInvitationRow, HostMachineHeartbeatInput, HostMachineHeartbeatResult, HostProviderConfigPushInput, HostProviderConfigTarget, HostScopeDefinition, HostScopeUpdateResult, MachineAuthAdapter, MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import {
   directoryWithinRoots,
   normalizePosixDirectory,

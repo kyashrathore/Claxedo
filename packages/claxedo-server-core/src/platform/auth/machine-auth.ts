@@ -1,6 +1,6 @@
 import { base64UrlDecode, sha256Hex } from "@claxedo/helpers/crypto"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { MachineAuthAdapter, MachinePrincipal } from "./authority"
+import type { MachineAuthAdapter, MachinePrincipal } from "./host-connect-contract"
 import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_SKEW_MS, isMachineNonce } from "./host-connect-contract"
 import { MACHINE_REQUEST_HEADERS, isBase64Url, machineRequestPayload } from "@claxedo/account-contract/machine"
 

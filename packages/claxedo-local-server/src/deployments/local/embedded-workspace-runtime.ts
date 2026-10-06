@@ -29,7 +29,7 @@ import { localConnectionSecretScope } from "./connection-secret-scope"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { credentialById, resolveSecretById } from "@claxedo/server-core/credentials/registry"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/host-connect-contract"
 
 const log = Log.create({ service: "embedded-workspace-runtime" })
 

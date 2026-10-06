@@ -1,5 +1,5 @@
 import { publicApiErrorShape } from "@claxedo/helpers/api-error"
-import type { HostConnectErrorCode } from "@claxedo/server-core/platform/auth/authority"
+import type { HostConnectErrorCode } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 

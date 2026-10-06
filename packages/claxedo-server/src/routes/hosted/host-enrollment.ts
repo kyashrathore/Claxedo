@@ -41,7 +41,8 @@ import {
   controlPlaneAuthErrorBody,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority, type MachinePrincipal, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { verifyMachineRequest } from "@claxedo/server-core/platform/auth/machine-auth"
 import { machineSealAad } from "@claxedo/account-contract/machine"
 import { sealForMachine } from "@claxedo/account-contract/machine-seal"

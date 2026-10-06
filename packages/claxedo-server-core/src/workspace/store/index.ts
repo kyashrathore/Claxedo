@@ -9,7 +9,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dockerSandboxDriverEnabled, isSandboxProvisionerID, type SandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { isJsonRecord, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
 
 const execFileAsync = promisify(execFile)

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from "vitest"
 import { base64UrlEncode, sha256Hex } from "@claxedo/helpers/crypto"
 import { MACHINE_NONCE_TTL_MS, MACHINE_REQUEST_SKEW_MS } from "./host-connect-contract"
 import { MACHINE_REQUEST_HEADERS, machineRequestPayload } from "@claxedo/account-contract/machine"
-import type { MachineEnrollmentRow } from "./authority"
+import type { MachineEnrollmentRow } from "./host-connect-contract"
 import { type MachineAuthDeps, type MachineRequest, verifyMachineRequest } from "./machine-auth"
 
 const NOW = 1_726_000_000_000

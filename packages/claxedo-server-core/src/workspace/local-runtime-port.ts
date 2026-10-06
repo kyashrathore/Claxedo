@@ -1,4 +1,4 @@
-import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { Workspace } from "./store/index"
 
 /**

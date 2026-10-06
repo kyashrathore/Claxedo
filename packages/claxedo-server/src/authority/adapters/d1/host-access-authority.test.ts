@@ -5,7 +5,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 
 import type { D1PreparedStatement } from "@cloudflare/workers-types"
-import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/authority"
+import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import {
   invitationRedeemPayload,
   decodeInvitationToken,
