@@ -61,10 +61,16 @@ describe("project environment on the local product", () => {
     expect(await projectEnvironment(credentials, SINGLE_TENANT_ORG).values("prj_one")).toEqual({ ONLY_ONE: "1" })
   })
 
-  test("a name that is not a variable name, an empty value and a variable past the cap are refused", async () => {
+  test("a name that is not a variable name or is the runtime's own, an empty value and a variable past the cap are refused", async () => {
     const badName = await unsigned.request("/prj_bad/environment/not-a-name", put({ value: "x" }))
     expect(badName.status).toBe(400)
     expect(await badName.json()).toMatchObject({ error: { code: "project_env_invalid" } })
+    for (const reserved of ["WORKSPACE_RUNTIME_WORKSPACE_ID", "WORKSPACE_RUNTIME_PROJECT_ENV_NAMES", "claxedo_server_url"]) {
+      const refused = await unsigned.request(`/prj_bad/environment/${reserved}`, put({ value: "x" }))
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toMatchObject({ error: { code: "project_env_invalid", message: expect.stringContaining("reserved") } })
+    }
+    expect(await (await unsigned.request("/prj_bad/environment")).json()).toEqual({ names: [], editable: true })
     expect((await unsigned.request("/prj_bad/environment/EMPTY", put({ value: "" }))).status).toBe(400)
     expect((await unsigned.request("/prj_bad/environment/EXTRA", put({ value: "x", leak: true }))).status).toBe(400)
 

@@ -8,6 +8,12 @@ import { ClaxedoError } from "../platform/errors/base"
 export const PROJECT_ENV_MAX_ENTRIES = 64
 export const PROJECT_ENV_MAX_BYTES = 32 * 1024
 const PROJECT_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+/**
+ * The runtime's own namespaces. A project variable in either would restate
+ * what the sandbox composition writes (its identity, source, grants), and the
+ * manager refuses such a start as unavailable with no hint which variable did it.
+ */
+const RUNTIME_NAMESPACE = /^(WORKSPACE_RUNTIME|CLAXEDO)_/i
 
 export class ProjectEnvironmentError extends ClaxedoError {
   constructor(message: string) {
@@ -55,6 +61,7 @@ export function projectEnvironment(credentials: ControlPlaneCredentials, org: st
     values,
     async set(projectId: string, name: string, value: string) {
       if (!isProjectEnvName(name)) throw new ProjectEnvironmentError(`"${name}" is not a valid variable name`)
+      if (RUNTIME_NAMESPACE.test(name)) throw new ProjectEnvironmentError(`"${name}" is reserved for the workspace runtime`)
       if (!value) throw new ProjectEnvironmentError(`${name} needs a value`)
       const next = { ...(await values(projectId)), [name]: value }
       const entries = Object.entries(next)
