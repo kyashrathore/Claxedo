@@ -60,6 +60,21 @@ export function identityFromUserInfo(body: unknown): AccountIdentity {
 export type ResolveIdentity = (accessToken: string) => Promise<AccountIdentity>
 
 /**
+ * The subject the control plane authenticates this bearer as, read from the
+ * held JWT without a network call. An opaque token names no one, so its
+ * identity waits for userinfo.
+ */
+export function identityFromAccessToken(accessToken: string): AccountIdentity {
+  const [, payload, signature] = accessToken.split(".")
+  if (!payload || !signature) return { userId: "" }
+  try {
+    return { userId: trimToUndefined(asRecord(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))?.sub) ?? "" }
+  } catch {
+    return { userId: "" }
+  }
+}
+
+/**
  * Wide enough for an edge that stalls, because nothing waits on this.
  *
  * Identity is best-effort enrichment resolved off the sign-in path, so the

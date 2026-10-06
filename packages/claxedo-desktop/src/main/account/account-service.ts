@@ -30,6 +30,7 @@ import {
   type HostedOperationName,
 } from "@claxedo/account-contract"
 import { fetchHosted } from "./hosted-transport"
+import { identityFromAccessToken } from "./identity"
 import type { CliCredentialFilePort } from "./cli-credential-file"
 import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
@@ -431,10 +432,11 @@ export function createAccountService(options: AccountServiceOptions) {
    */
   const publishSigned = (accessToken: string, startedIn: number) => {
     if (startedIn !== era) return
-    // Credentials are authoritative as soon as `adopt` persists them. Profile
-    // lookup is display enrichment only: waiting on it turns a slow or hung
-    // /userinfo endpoint into a sign-in that never completes.
-    setState({ status: "signed", identity: { userId: "" } })
+    // Credentials are authoritative as soon as `adopt` persists them, and the
+    // bearer already names its subject, which the renderer scopes its shell
+    // by. Profile lookup is display enrichment only: waiting on it turns a
+    // slow or hung /userinfo endpoint into a launch that never completes.
+    setState({ status: "signed", identity: identityFromAccessToken(accessToken) })
     if (!options.resolveIdentity) return
     resolveIdentityInto(accessToken, startedIn, 0)
   }

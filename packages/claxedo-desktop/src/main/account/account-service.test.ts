@@ -310,6 +310,20 @@ describe("bound desktop account lifecycle", () => {
     expect(attempts).toBe(2)
   })
 
+  test("a restored JWT bearer publishes its subject at once, before userinfo answers", async () => {
+    const payload = Buffer.from(JSON.stringify({ sub: "user-1", exp: 1 })).toString("base64url")
+    const h = harness({ store: memoryStore({ ...CREDENTIAL, tokens: { ...CREDENTIAL.tokens, accessToken: `e30.${payload}.sig` } }) })
+    const service = createAccountService({
+      auth: h.auth.auth,
+      store: h.store,
+      now: () => 1_000,
+      fetch: async () => Response.json({ ok: true }),
+      resolveIdentity: () => new Promise(() => {}),
+    })
+    await service.restore()
+    expect(service.state()).toEqual({ status: "signed", identity: { userId: "user-1" } })
+  })
+
   test("a userinfo retry cannot republish identity after sign-out", async () => {
     const h = harness({ store: memoryStore(CREDENTIAL) })
     let entered!: () => void
