@@ -17,6 +17,8 @@ export type WorkerWranglerConfigInput = Readonly<{
   requestLimiterNamespaceId: string
   documentsBucket: string
   agentPluginsBucket?: string
+  /** A cloud region in Wrangler's `placement.region` form; absent, placement is smart. */
+  placementRegion?: string
   variables: Readonly<Record<string, string>>
 }>
 
@@ -97,13 +99,15 @@ binding = "CF_VERSION_METADATA"
 [observability]
 enabled = true
 
-# Run beside the data. Every request performs several sequential D1 reads
-# (session, then the route's own) and the plugin routes read R2; with the
-# databases and bucket in APAC and the isolate at the caller's colo, each
-# await was a cross-region hop and a signed catalog read measured 4 s with
-# under 100 ms of CPU.
+# Run beside the data. Every signed request performs several sequential D1
+# reads (session, evidence, identity, then the route's own), and each one is
+# a cross-region round trip when the isolate runs away from the database:
+# staging answered with cf-placement remote-LHR against databases in ENAM, and
+# a signed request from India measured 1.5–3 s with under 40 ms of CPU. Smart
+# placement weighs fetch subrequests from enough traffic, not D1, so a
+# deployment may pin the Worker to the databases' region instead.
 [placement]
-mode = "smart"
+${input.placementRegion ? `region = ${quote(input.placementRegion)}` : 'mode = "smart"'}
 
 [vars]
 ${variables}
@@ -153,6 +157,8 @@ export function renderSessionHostWranglerConfig(input: Readonly<{
   workerName: string
   controlPlaneWorkerName: string
   configDirectory: string
+  /** The control-plane Worker's pinned region, so a session's host and the plane it calls over the service binding share one. */
+  placementRegion?: string
   variables: Readonly<Record<string, string>>
 }>) {
   const main = path.relative(input.configDirectory, path.resolve(SERVER_ROOT, "../session-host/src/worker.ts")).split(path.sep).join("/")
@@ -169,7 +175,10 @@ preview_urls = false
 
 [observability]
 enabled = true
-
+${input.placementRegion ? `
+[placement]
+region = ${quote(input.placementRegion)}
+` : ""}
 [vars]
 ${variables}
 

@@ -26,6 +26,10 @@ export const DEPLOY_READ_SECRETS = ["BETTER_AUTH_SECRET", "CLAXEDO_AUTH_INTROSPE
 
 export type D1DatabaseBinding = "AUTH_DB" | "CONTROL_PLANE_DB"
 
+/** The location hints `wrangler d1 create --location` accepts; a database stays where it was created. */
+export const D1_LOCATIONS = ["wnam", "enam", "weur", "eeur", "apac", "oc"] as const
+export type D1Location = (typeof D1_LOCATIONS)[number]
+
 /** One deployment of the user-deployed Worker, derived from the environment the deploy command runs in. */
 export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   relayUrl: string
@@ -39,6 +43,10 @@ export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   artifact: CertifiedHostedWorkerArtifact
   documentsBucket: string
   agentPluginsBucket?: string
+  /** Where a database this deploy creates is placed; an existing one is reported against it. */
+  d1Location?: D1Location
+  /** A cloud region the Worker is pinned to, in Wrangler's `placement.region` form (`aws:us-east-1`). */
+  workerPlacementRegion?: string
   sandbox?: Readonly<{ driver: SandboxDriver; variables: Readonly<Record<string, string>> }>
   /** Present only when the deploy says `CLAXEDO_TELEMETRY_MODE=on`; the Worker's PostHog key is then a required secret. */
   telemetryVariables: Readonly<Record<string, string>>
@@ -79,6 +87,22 @@ function customDomainOrigin(env: NodeJS.ProcessEnv, name: string) {
     throw new Error(`${name} must be a custom domain on your Cloudflare zone, not ${hostname}`)
   }
   return origin
+}
+
+const isD1Location = (value: string): value is D1Location => (D1_LOCATIONS as readonly string[]).includes(value)
+
+function d1Location(env: NodeJS.ProcessEnv): D1Location | undefined {
+  const value = env.CLAXEDO_D1_LOCATION?.trim().toLowerCase()
+  if (!value) return undefined
+  if (!isD1Location(value)) throw new Error(`CLAXEDO_D1_LOCATION must be one of ${D1_LOCATIONS.join(", ")}`)
+  return value
+}
+
+function workerPlacementRegion(env: NodeJS.ProcessEnv) {
+  const value = env.CLAXEDO_WORKER_PLACEMENT_REGION?.trim()
+  if (!value) return undefined
+  if (!/^(aws|gcp|azure):[a-z0-9-]+$/.test(value)) throw new Error("CLAXEDO_WORKER_PLACEMENT_REGION must name a cloud region such as aws:us-east-1")
+  return value
 }
 
 /** Deterministic per Worker, so a re-deploy keeps the limiter namespace the first deploy chose. */
@@ -175,6 +199,8 @@ export function userCloudflareDeployment(
   const integrationClientIds: Record<string, string> = githubAppClientId ? { CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID: githubAppClientId } : {}
 
   const telemetryVariables = productTelemetryVariables(env)
+  const location = d1Location(env)
+  const placementRegion = workerPlacementRegion(env)
 
   const driver = profile.sandboxPosture === "full-hosted" ? profile.sandboxDriver : undefined
   const sandbox = driver
@@ -208,6 +234,8 @@ export function userCloudflareDeployment(
     ...(artifact.agentPlugins
       ? { agentPluginsBucket: setting(env, "CLAXEDO_AGENT_PLUGINS_BUCKET", `${target.workerName}-agent-plugins`) }
       : {}),
+    ...(location ? { d1Location: location } : {}),
+    ...(placementRegion ? { workerPlacementRegion: placementRegion } : {}),
     ...(sandbox ? { sandbox } : {}),
     telemetryVariables,
     requiredSecrets: [

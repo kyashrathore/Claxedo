@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 import { BROWSER_BUILD_ATTESTATION, BROWSER_DIRECTORY, buildBrowserApp } from "./browser-app"
-import { ensureD1Database, prepareD1Databases } from "./d1-databases"
+import { d1RegionReport, ensureD1Database, prepareD1Databases } from "./d1-databases"
 import { waitForProbe, type ProbeOptions } from "./release-probe"
 import { stageWorkerControlPlaneMigrations } from "./staged-control-plane-migrations"
 import {
@@ -189,6 +189,7 @@ async function main() {
           requestLimiterNamespaceId: deployment.requestLimiterNamespaceId,
           documentsBucket: deployment.documentsBucket,
           ...(deployment.agentPluginsBucket ? { agentPluginsBucket: deployment.agentPluginsBucket } : {}),
+          ...(deployment.workerPlacementRegion ? { placementRegion: deployment.workerPlacementRegion } : {}),
           variables,
         }),
       )
@@ -199,6 +200,7 @@ async function main() {
       workerName: deployment.sessionHostWorkerName,
       controlPlaneWorkerName: deployment.workerName,
       configDirectory: temporary,
+      ...(deployment.workerPlacementRegion ? { placementRegion: deployment.workerPlacementRegion } : {}),
       variables: sessionHostVariables(deployment),
     }))
     const sessionHostArgs = ["deploy", "--config", sessionHostConfig, "--tsconfig", SESSION_HOST_TSCONFIG]
@@ -214,10 +216,13 @@ async function main() {
       return
     }
 
-    const auth = await ensureD1Database(deployment.databases.AUTH_DB)
-    const controlPlane = await ensureD1Database(deployment.databases.CONTROL_PLANE_DB)
+    const auth = await ensureD1Database(deployment.databases.AUTH_DB, deployment.d1Location)
+    const controlPlane = await ensureD1Database(deployment.databases.CONTROL_PLANE_DB, deployment.d1Location)
     await writeWorkerConfig({ AUTH_DB: auth.id, CONTROL_PLANE_DB: controlPlane.id })
     console.log(`✓ D1 databases ready (${auth.created || controlPlane.created ? "created" : "found"})`)
+    for (const [name, database] of [[deployment.databases.AUTH_DB, auth], [deployment.databases.CONTROL_PLANE_DB, controlPlane]] as const) {
+      console.log(`  ${d1RegionReport(name, database.region, deployment.d1Location)}`)
+    }
 
     await prepareD1Databases({ configArgs, apiOrigin: deployment.apiOrigin, betterAuthSecret, introspectionSecret })
     console.log("✓ Migrations applied and native OAuth clients provisioned")

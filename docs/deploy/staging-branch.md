@@ -100,7 +100,13 @@ switches traffic.
 The deploy refuses a control-plane D1 that does not hold exactly the current
 baseline; rows are never converted. To reset staging, delete that database
 (wrangler asks to confirm) and rerun the `control-plane` job, which recreates
-it empty by name and applies the baseline. `AUTH_DB` is untouched. Claim the
+it empty by name and applies the baseline. The recreated database is placed
+at `CLAXEDO_STAGING_D1_LOCATION` (the 2026-10-05 reset created it in ENAM with
+no location), and the job prints where each database runs.
+`CLAXEDO_STAGING_WORKER_PLACEMENT_REGION` pins the Worker beside the databases
+(`aws:us-east-1` for ENAM): smart placement left the staging Worker in LHR
+(`cf-placement: remote-LHR`) with both databases in ENAM, and every signed
+request from India then took 1.5–3 s. `AUTH_DB` is untouched. Claim the
 deployment's owner again afterwards (`bun run deploy:user-cloudflare:claim-owner`):
 
 ```sh

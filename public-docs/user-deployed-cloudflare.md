@@ -130,6 +130,8 @@ are forward-only; restore data to a point in time with
 | `CLAXEDO_APP_WORKER_NAME` | `<worker>-app` | The web app Worker. |
 | `CLAXEDO_DEPLOYMENT_ID`, `CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID` | the Worker name | Stable identities stored with your data; never change them after the first deploy. |
 | `CLAXEDO_AUTH_D1_DATABASE_NAME`, `CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME` | `<worker>-auth`, `<worker>-control-plane` | The two D1 databases. |
+| `CLAXEDO_D1_LOCATION` | Cloudflare's choice | Where a database the deploy creates is placed: `wnam`, `enam`, `weur`, `eeur`, `apac` or `oc`. Pick the region your people work from; a database stays where it was created, and the deploy prints where each one runs. |
+| `CLAXEDO_WORKER_PLACEMENT_REGION` | smart placement | Pins the control plane Worker to a cloud region in Wrangler's form, for example `aws:us-east-1`. Set it to the region your databases run in: a signed request performs several D1 reads in sequence, and a Worker in another region pays a round trip for each. |
 | `CLAXEDO_DOCUMENTS_BUCKET` | `<worker>-documents` | The R2 bucket Pages are stored in; create it with `wrangler r2 bucket create`. |
 | `CLAXEDO_TELEMETRY_MODE` | off | `on` sends product events and unhandled route errors to your PostHog project, with ids hashed; it then requires the `CLAXEDO_POSTHOG_KEY` secret. Unset or `off`, nothing is sent. |
 | `CLAXEDO_POSTHOG_HOST` | `https://us.i.posthog.com` | Your PostHog ingest origin, for example `https://eu.i.posthog.com`. |

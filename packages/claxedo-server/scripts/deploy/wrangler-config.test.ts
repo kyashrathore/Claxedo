@@ -39,6 +39,13 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(config).toContain('[vars]\nBETTER_AUTH_URL = "https://api.example.com"\nCLAXEDO_DEPLOYMENT_ID = "claxedo"')
   })
 
+  test("places the Worker smartly unless the deployment pins it to a cloud region", () => {
+    expect(render()).toContain('[placement]\nmode = "smart"')
+    const pinned = render({ placementRegion: "aws:us-east-1" })
+    expect(pinned).toContain('[placement]\nregion = "aws:us-east-1"')
+    expect(pinned).not.toContain('mode = "smart"')
+  })
+
   test("binds the documents bucket on every Worker profile", () => {
     expect(render()).toContain('binding = "CLAXEDO_DOCUMENTS"\nbucket_name = "claxedo-documents"')
   })
@@ -123,5 +130,13 @@ describe("the session-host Worker Wrangler config", () => {
     expect(config).toContain('[[durable_objects.bindings]]\nname = "SESSION_HOST"\nclass_name = "SessionDO"')
     expect(config).toContain('[[migrations]]\ntag = "v1"\nnew_sqlite_classes = ["SessionDO"]')
     expect(config).toContain('[vars]\nWORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "https://api.example.com/api/runtime-authority/session-authorize"')
+    expect(config).not.toContain("[placement]")
+  })
+
+  test("is pinned beside the control-plane Worker when the deployment pins a region", () => {
+    const config = renderSessionHostWranglerConfig({
+      workerName: "claxedo-session-host", controlPlaneWorkerName: "claxedo", configDirectory, placementRegion: "aws:us-east-1", variables: {},
+    })
+    expect(config).toContain('[placement]\nregion = "aws:us-east-1"')
   })
 })

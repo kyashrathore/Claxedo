@@ -6,7 +6,7 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 
 import { browserArtifactBuildId, prepareBrowserArtifactsForWorkers } from "./browser-app"
-import { d1DatabaseIdByName, nativeClientVerificationSql, verifyNativeClientProvisioning } from "./d1-databases"
+import { d1DatabaseIdByName, d1RegionReport, d1RunningRegion, nativeClientVerificationSql, verifyNativeClientProvisioning } from "./d1-databases"
 import {
   deployPlan,
   missingSecrets,
@@ -169,6 +169,23 @@ describe("D1 provisioning", () => {
     expect(d1DatabaseIdByName(list, "claxedo-auth")).toBe("11111111-1111-4111-8111-111111111111")
     expect(d1DatabaseIdByName(list, "claxedo-control-plane")).toBeUndefined()
     expect(() => d1DatabaseIdByName(JSON.stringify({}), "claxedo-auth")).toThrow(/array of databases/)
+  })
+
+  test("reads where a database runs and reports a database the deployment would have placed elsewhere", () => {
+    expect(d1RunningRegion(JSON.stringify({ uuid: "1", running_in_region: "ENAM" }), "claxedo-control-plane")).toBe("ENAM")
+    expect(() => d1RunningRegion(JSON.stringify({ uuid: "1" }), "claxedo-control-plane")).toThrow(/running_in_region/)
+    expect(d1RegionReport("claxedo-control-plane", "ENAM", undefined)).toBe("claxedo-control-plane runs in ENAM")
+    expect(d1RegionReport("claxedo-control-plane", "APAC", "apac")).toBe("claxedo-control-plane runs in APAC")
+    expect(d1RegionReport("claxedo-control-plane", "ENAM", "apac")).toMatch(/runs in ENAM; CLAXEDO_D1_LOCATION asks for APAC.*recreate it/)
+  })
+
+  test("takes a D1 location and a Worker placement region only in the forms Wrangler accepts", () => {
+    expect(userCloudflareDeployment(env, { agentPlugins: false })).not.toHaveProperty("d1Location")
+    const placed = userCloudflareDeployment({ ...env, CLAXEDO_D1_LOCATION: "APAC", CLAXEDO_WORKER_PLACEMENT_REGION: "aws:ap-southeast-1" }, { agentPlugins: false })
+    expect(placed.d1Location).toBe("apac")
+    expect(placed.workerPlacementRegion).toBe("aws:ap-southeast-1")
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_D1_LOCATION: "asia" }, { agentPlugins: false })).toThrow(/CLAXEDO_D1_LOCATION must be one of/)
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_WORKER_PLACEMENT_REGION: "us-east-1" }, { agentPlugins: false })).toThrow(/CLAXEDO_WORKER_PLACEMENT_REGION/)
   })
 
   test("verifies the three native OAuth clients and their resource links", () => {
