@@ -91,10 +91,7 @@ else void describe("real pty spawn (no mocks)", () => {
     await fs.rm(tmpDir, { recursive: true, force: true })
   })
 
-  void test("output written while the launch is still being recorded reaches the terminal's reader", {
-    timeout: 30_000,
-    skip: windows && "node-pty's ConPTY pipes stay open after Pty.dispose and keep the node runner alive (open)",
-  }, async () => {
+  void test("output written while the launch is still being recorded reaches the terminal's reader", { timeout: 30_000 }, async () => {
     const { Pty } = await import("./index")
     const launcher = path.join(tmpDir, "early-writer.cjs")
     const written = path.join(tmpDir, "written")

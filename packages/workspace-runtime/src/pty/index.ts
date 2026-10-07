@@ -289,6 +289,11 @@ export namespace Pty {
     // additional cleanup only when a real pid is available.
     const closeNative = () => { try { session.process.kill() } catch {} }
     const result = await retireSession(id, session, closeNative)
+    // node-pty frees its ConPTY conout worker and pipe only from kill(), and a
+    // retirement whose taskkill ended every process inside the TERM grace never
+    // reached closeNative. Its inner pid is verified gone, so this kill signals
+    // nothing and only releases the handles.
+    if (process.platform === "win32" && result.leader === "exited") closeNative()
     session.cleanupResult = result
     await session.history.close()
     if (!retirementSettled(result) || session.persistence === "unavailable") {
