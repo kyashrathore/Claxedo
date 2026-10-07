@@ -72,6 +72,10 @@ function pidAlive(pid: number) {
   try { process.kill(pid, 0); return true } catch { return false }
 }
 
+/** A bash command that records its own OS pid, then runs until retired. Node's pid is the OS pid on every platform; Git Bash's `$$` is an MSYS pid. */
+const holdCommand = (pidFile: string) =>
+  `exec '${process.execPath}' -e 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setTimeout(() => {}, 60_000)' '${pidFile}'`
+
 void describe("SessionDO under workerd with PiHarness", () => {
   let script: string
   let directory: string
@@ -201,7 +205,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const root = "ses_stop"
     const host = await session(root)
     const pidFile = path.join(directory, "stop.pid")
-    model.scriptTool({ name: "bash", input: { command: `echo $$ > ${pidFile}; exec sleep 60` }, whenPromptIncludes: "PISTOP" })
+    model.scriptTool({ name: "bash", input: { command: holdCommand(pidFile) }, whenPromptIncludes: "PISTOP" })
     await host.prompt("msg_stop", "Run it, then reply with exactly this one token: PISTOP")
     const pid = await pidFrom(pidFile)
     assert.equal(pidAlive(pid), true)
@@ -209,7 +213,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await host.json(`/session/${root}/recovery`, { method: "POST", body: {
       requestId: "stop_1", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
     } })
-    await eventually(`bash ${pid} retired`, async () => pidAlive(pid) ? undefined : true, 15_000)
+    await eventually(`the held command ${pid} retired`, async () => pidAlive(pid) ? undefined : true, 15_000)
     assert.equal(assistantText(await host.messages()).includes("PISTOP"), false)
   })
 
@@ -217,12 +221,12 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const root = "ses_evict"
     const host = await session(root)
     const pidFile = path.join(directory, "evict.pid")
-    model.scriptTool({ name: "bash", input: { command: `echo $$ > ${pidFile}; exec sleep 60` }, whenPromptIncludes: "PIEVICT" })
+    model.scriptTool({ name: "bash", input: { command: holdCommand(pidFile) }, whenPromptIncludes: "PIEVICT" })
     await host.prompt("msg_evict", "Run it, then reply with exactly this one token: PIEVICT")
     const pid = await pidFrom(pidFile)
     const answeredBefore = model.requests.length
     await host.crash()
-    await eventually(`bash ${pid} retired with the lost object`, async () => pidAlive(pid) ? undefined : true, 15_000)
+    await eventually(`the held command ${pid} retired with the lost object`, async () => pidAlive(pid) ? undefined : true, 15_000)
     await eventually("the alarm restarting the object and Pi asking the model again", async () => host.controlPlane.calls.deliveries.length === 2 && model.requests.length > answeredBefore ? true : undefined, 60_000)
     const messages = await host.settled("PIEVICT")
     assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_evict", "msg_evict"])
@@ -235,7 +239,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const root = "ses_refused"
     const host = await session(root, { leaseTtlMs: 8_000 })
     const pidFile = path.join(directory, "refused.pid")
-    model.scriptTool({ name: "bash", input: { command: `echo $$ > ${pidFile}; exec sleep 60` }, whenPromptIncludes: "PIREFUSED" })
+    model.scriptTool({ name: "bash", input: { command: holdCommand(pidFile) }, whenPromptIncludes: "PIREFUSED" })
     await host.prompt("msg_refused", "Run it, then reply with exactly this one token: PIREFUSED")
     await pidFrom(pidFile)
     const release = model.holdTextReplies("PIREFUSED")
@@ -268,7 +272,8 @@ void describe("SessionDO under workerd with PiHarness", () => {
     model.scriptTool({ name: "mcp__machine__proof", input: { marker: "M1" }, whenPromptIncludes: "PIMCP" })
     await host.prompt("msg_mcp", "Call it, then reply with exactly this one token: PIMCP")
     const messages = await host.settled("PIMCP")
-    assert.ok(JSON.stringify(messages).includes(`MACHINE_MCP:M1:${directory}`), JSON.stringify(messages))
+    const proof = messages.flatMap((message) => message.parts).find((part) => part.tool === "mcp__machine__proof")
+    assert.equal(proof?.state?.output, `MACHINE_MCP:M1:${directory}`, JSON.stringify(messages))
   })
 
   void it("initializes an HTTP MCP server's session again after the server lost it, and the call goes through", { timeout: 120_000 }, async () => {
