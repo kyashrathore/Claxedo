@@ -11,6 +11,10 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
+# The Cursor SDK stores an agent's SQLite database under the home at a path that repeats the workspace path,
+# which passes MAX_PATH under this box's %TEMP%; Windows opens such paths only with this policy on.
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1 -Type DWord
+
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $manifest = Get-Content (Join-Path $root "package.json") -Raw | ConvertFrom-Json
 $bunVersion = $manifest.packageManager -replace '^bun@', ''
