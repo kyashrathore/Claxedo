@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { beforeAll, describe, expect, test } from "bun:test"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -57,7 +57,14 @@ function isSelfReference(line: string): boolean {
   )
 }
 
+const COLD_REPOSITORY_READ_MS = 60_000
+
+function readEveryRepositorySource(): void {
+  for (const file of sourceFiles(repoRoot, new Set(PENDING_DELETION))) readLines(path.join(repoRoot, file))
+}
+
 describe("public SDK boundary", () => {
+  beforeAll(readEveryRepositorySource, COLD_REPOSITORY_READ_MS)
   test("the scan reports a planted deep import and stays out of build output", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "sdk-boundary-scan-"))
     try {
