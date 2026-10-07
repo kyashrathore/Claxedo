@@ -56,7 +56,7 @@ test("a Codex app-server that exits at startup fails with its exit status and th
     const rpc = new CodexRpc(owned, services.clock)
     const failure = await rpc.request("initialize", { clientInfo: { name: "claxedo", title: null, version: "0" }, capabilities: null }).then(() => undefined, (error: Error) => error)
     expect(failure?.message).toStartWith("Codex app-server exited with code 1: ")
-    expect(failure?.message).toContain(`Error: CODEX_HOME points to "${missing}", but that path does not exist`)
+    expect(failure?.message).toContain(`Error: CODEX_HOME points to ${JSON.stringify(missing)}, but that path does not exist`)
   } finally { await removeTempRoot(root) }
 }, 30_000)
 

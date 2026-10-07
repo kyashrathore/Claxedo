@@ -217,8 +217,8 @@ test("Codex materializes every attachment into the workspace with a path line, a
     expect((await fs.readFile(path.join(folder, png!))).equals(Buffer.from(PNG, "base64"))).toBe(true)
     expect(await fs.readFile(path.join(folder, ".gitignore"), "utf8")).toBe("*\n")
     const request = state.server.requests.find((row) => row.prompt.includes("CODEXATTACH"))
-    expect(request?.prompt).toContain(`Attached file (image/png): ${path.join(folder, png!)}`)
-    expect(request?.prompt).toContain(`Attached file (text/plain): ${path.join(folder, txt!)}`)
+    expect(request?.prompt).toContain(JSON.stringify(`Attached file (image/png): ${path.join(folder, png!)}`).slice(1, -1))
+    expect(request?.prompt).toContain(JSON.stringify(`Attached file (text/plain): ${path.join(folder, txt!)}`).slice(1, -1))
     const input = recorder.frames.find((frame) => frame.method === "turn/start")?.params?.input as { type: string; path?: string }[]
     expect(input.some((part) => part.type === "localImage" && part.path === path.join(folder, png!))).toBe(true)
   } finally { await context.close() }

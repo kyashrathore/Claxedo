@@ -11,6 +11,7 @@ import { ClaudeSdkTransport } from "../transports/claude-sdk"
 import { authority, MemoryPorts } from "./test-support/memory-ports"
 import { pollUntil } from "./test-support/poll"
 import { createTestServices } from "./test-support/services"
+import { shellPath } from "./test-support/shell-path"
 import { removeTempRoot } from "../test-support/temp-root"
 
 const BACKGROUND_SECONDS = 8
@@ -29,7 +30,7 @@ test.each([false, true])("a Claude background task survives follow-ups and model
   const port = await reservePort()
   const server = await startScriptedModelServer({ port, red: false })
   const marker = path.join(directory, "background-finished.txt")
-  server.scriptTool({ name: "Bash", input: { command: `sleep ${BACKGROUND_SECONDS}; echo done > ${marker}`, run_in_background: true, description: "background sleep" } })
+  server.scriptTool({ name: "Bash", input: { command: `sleep ${BACKGROUND_SECONDS}; echo done > ${shellPath(marker)}`, run_in_background: true, description: "background sleep" } })
   const env = { ...process.env, HTTPS_PROXY: "http://127.0.0.1:9", HTTP_PROXY: "http://127.0.0.1:9", ALL_PROXY: "http://127.0.0.1:9", NO_PROXY: "127.0.0.1,localhost",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_GROWTHBOOK: "1", DISABLE_UPDATES: "1", CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: "1" }
   const services = createTestServices()

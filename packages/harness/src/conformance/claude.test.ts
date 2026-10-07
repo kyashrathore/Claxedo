@@ -25,6 +25,9 @@ import { ClaudeQueryLauncher } from "../transports/claude-sdk/query-options"
 import { askClaudePermission } from "../transports/claude-sdk/requests"
 import { sdkModes } from "../transports/claude-sdk/permissions"
 import { pollUntil } from "./test-support/poll"
+import { shellPath } from "./test-support/shell-path"
+
+const POSIX_FILE_MODES = process.platform !== "win32"
 
 type ClaudeBackend = SuiteBackend & {
   root: string
@@ -237,7 +240,7 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     const committed = () => ({ ...session, binding: ports.bindings.get("s1") ?? session.binding })
     const target = path.join(state.directory, "permission-result.txt")
     const originalSettings = await fs.readFile(path.join(state.userConfigRoot, "settings.json"))
-    state.scriptTool?.("Bash", { command: `printf approved > ${target}` })
+    state.scriptTool?.("Bash", { command: `printf approved > ${shellPath(target)}` })
     const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin, model: state.model,
       prompt: { agent: "claude", assistantMessageId: "a1", parts: [{ type: "text" as const, text: "Run the scripted Bash tool" }] }, todos: [] }
     const turnBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
@@ -428,12 +431,12 @@ test.each([...sdkModes])("the Claude profile's deny floor holds in %s mode, visi
     const events = await context.collect("t1", "Run the scripted Bash tool")
     expect(context.owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
     expect(context.ports.saved).toHaveLength(0)
-    expect(await fileMode(floor)).toBe(0o700)
+    if (POSIX_FILE_MODES) expect(await fileMode(floor)).toBe(0o700)
     expect(events.some((row) => row.event.type === "tool-error" && /has been denied/.test(row.event.error))).toBe(true)
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
-test("a command outside the floor runs unprompted in bypassPermissions mode", async () => {
+test.skipIf(!POSIX_FILE_MODES)("a command outside the floor runs unprompted in bypassPermissions mode", async () => {
   const state = await backend()
   state.config.permissionMode = "bypassPermissions"
   const context = await attachedClaude(state)
@@ -447,7 +450,7 @@ test("a command outside the floor runs unprompted in bypassPermissions mode", as
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
-test("Claude applies permission changes before the active turn's next tool", async () => {
+test.skipIf(!POSIX_FILE_MODES)("Claude applies permission changes before the active turn's next tool", async () => {
   const state = await backend()
   const context = await attachedClaude(state)
   const outside = path.join(state.root, "live-outside")
@@ -475,7 +478,7 @@ test("a permission mode set in the runtime's config reaches the next Claude laun
   try {
     state.config.permissionMode = "bypassPermissions"
     expect((await context.transport.config.permissionModes({ session: context.session() })).currentModeId).toBe("bypassPermissions")
-    state.server.scriptTool({ name: "Bash", input: { command: `printf hi > ${out}` } })
+    state.server.scriptTool({ name: "Bash", input: { command: `printf hi > ${shellPath(out)}` } })
     await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
     expect(await fs.readFile(out, "utf8")).toBe("hi")
   } finally { await context.close(); await state.close() }
@@ -499,7 +502,7 @@ test("Claude tightens permissions during the active turn before its next tool", 
     const asked = await context.awaitPending()
     await context.owner.broker.answer(asked.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })
     await running
-    expect(await fileMode(outside)).toBe(0o700)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o700)
     expect(state.sampledPids).toHaveLength(1)
   } finally { release(); await context.close(); await running.then(() => undefined, () => undefined); await state.close() }
 }, 60_000)
@@ -547,7 +550,7 @@ test.each(["api-key", "bearer"] as const)("a live Claude %s projection authentic
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
-test("Always allow persists Claude's suggested rules through the broker's grants and replays them on the next launch", async () => {
+test.skipIf(!POSIX_FILE_MODES)("Always allow persists Claude's suggested rules through the broker's grants and replays them on the next launch", async () => {
   const state = await backend()
   const first = await attachedClaude(state)
   const outside = path.join(state.root, "outside")

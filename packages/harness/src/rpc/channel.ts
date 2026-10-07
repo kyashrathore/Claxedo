@@ -1,5 +1,7 @@
 import type { Clock, Deadline, OwnedProcess } from "../contract"
 
+const STDERR_CLOSE_MS = 1_000
+
 export class NdjsonOwnedProcess {
   private buffer = ""
   private failure?: Error
@@ -13,8 +15,16 @@ export class NdjsonOwnedProcess {
     process.stdout.setEncoding("utf8")
     process.stdout.on("data", (chunk: string) => this.read(chunk))
     process.stdout.on("error", (cause: unknown) => this.fail(this.error("stdout", cause)))
-    void process.exited.then((exit) => this.fail(this.error("exit", exit), false),
+    void process.exited.then((exit) => this.stderrClosed().then(() => this.fail(this.error("exit", exit), false)),
       (cause: unknown) => this.fail(this.error("exit", cause)))
+  }
+
+  private stderrClosed(): Promise<void> {
+    if (this.process.stderr.destroyed) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = this.clock.setTimeout(resolve, STDERR_CLOSE_MS)
+      this.process.stderr.once("close", () => { this.clock.clearTimeout(timer); resolve() })
+    })
   }
 
   get alive(): boolean { return this.failure === undefined }

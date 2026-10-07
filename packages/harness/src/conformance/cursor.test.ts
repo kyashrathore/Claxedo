@@ -684,7 +684,7 @@ test("non-image attachments are materialized in the workspace and images travel 
     expect(files.some((name) => name.endsWith("-shot.png"))).toBe(true)
     expect(await fs.readFile(path.join(folder, written!), "utf8")).toBe("notes")
     const run = runText(state)
-    expect(run).toContain(`Attached file (text/plain): ${path.join(folder, written!)}`)
+    expect(run).toContain(JSON.stringify(`Attached file (text/plain): ${path.join(folder, written!)}`).slice(1, -1))
     expect(run).toContain(`"data":"${image}"`)
     expect(await refusal(collect(context, { ...base, prompt: { ...base.prompt, parts: [{ type: "file", mime: "text/plain", url: "https://example.invalid/notes.txt" }] } })))
       .toBe("CursorTransportError: Cursor cannot deliver the file URL https://example.invalid/notes.txt")

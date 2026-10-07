@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { runConformance, setupConformance, type ConformanceBackend, type SuiteBackend } from "./test-support/run"
 import { filterMcpServers } from "../capabilities/mcp-filter"
 import { AcpTransport } from "../transports/acp"
@@ -15,6 +16,7 @@ import { expect, test } from "bun:test"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
+import { removeTempRoot } from "../test-support/temp-root"
 import { assertListedCommandsRun } from "./test-support/commands"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 
@@ -111,7 +113,7 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
       return acpScriptToken("thinking")
     },
     unrunnableTurn: (turn) => ({ ...turn, prompt: { ...turn.prompt, parts: [{ type: "text", text: acpScriptToken("refused") }] } }),
-    close: async () => { await server?.close(); await fs.rm(root, { recursive: true, force: true }) },
+    close: async () => { await server?.close(); await removeTempRoot(root) },
   }
 }
 
@@ -1369,7 +1371,7 @@ async function parityBackend(env: Record<string, string> = {}, connection: { sha
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""
       throw error
     })).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as ParityRequest),
-    close: async () => { await fs.rm(root, { recursive: true, force: true }) },
+    close: async () => { await removeTempRoot(root) },
   }
 }
 
@@ -1573,7 +1575,7 @@ test("an ACP agent sharing the workspace receives attachments as files and links
     const prompt = (await (context.backend as ParityBackend).requests()).find((row) => row.method === "session/prompt")?.params.prompt as Record<string, unknown>[]
     const link = prompt.find((block) => block.type === "resource_link") as { uri: string; name: string; mimeType: string } | undefined
     expect(link).toMatchObject({ name: "parity.txt", mimeType: "text/plain" })
-    const written = new URL(link!.uri).pathname
+    const written = fileURLToPath(link!.uri)
     expect(written.startsWith(path.join(context.backend.directory, ".claxedo", "attachments"))).toBe(true)
     expect(await fs.readFile(written, "utf8")).toBe("ACP parity text attachment\n")
     expect((prompt[0] as { text: string }).text).toBe(`Read the file. Reply with exactly this one token: PARITY_OK\nAttached file (text/plain): ${written}`)
