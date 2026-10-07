@@ -72,10 +72,11 @@ export function serviceKind(platform: NodeJS.Platform): ServiceKind {
   throw new Error(`--install-service supports Linux (systemd --user) and macOS (launchd); this is ${platform}`)
 }
 
+/** A path on the platform `deps` names, so it is POSIX wherever it is computed. */
 export function serviceUnitPath(deps: Pick<ServiceDeps, "platform" | "homedir">) {
   return serviceKind(deps.platform) === "systemd-user"
-    ? path.join(deps.homedir, ".config", "systemd", "user", SYSTEMD_UNIT)
-    : path.join(deps.homedir, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
+    ? path.posix.join(deps.homedir, ".config", "systemd", "user", SYSTEMD_UNIT)
+    : path.posix.join(deps.homedir, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`)
 }
 
 // systemd expands % specifiers and $ variables even inside double quotes;
