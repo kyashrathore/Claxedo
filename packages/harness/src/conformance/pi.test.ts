@@ -8,6 +8,8 @@ import { pollUntil } from "./test-support/poll"
 import { piBackend, piTransport, type PiBackend } from "../../e2e/harness/pi-conformance"
 import { runConformance, setupConformance } from "./test-support/run"
 
+const POSIX_PROCESS_GROUPS = process.platform !== "win32"
+
 runConformance({ name: "pi-durable", backend: () => piBackend(), makeTransport: (services, backend) => piTransport(services, backend as PiBackend) })
 
 async function collect(events: AsyncIterable<RoutedEvent>): Promise<RoutedEvent[]> {
@@ -37,7 +39,7 @@ test("a Pi turn writes a real file through its own tools, streams usage, spends 
   } finally { await context.close() }
 }, 60_000)
 
-test("stopping a Pi turn mid-bash kills the command's process and settles the turn cancelled", async () => {
+test.skipIf(!POSIX_PROCESS_GROUPS)("stopping a Pi turn mid-bash kills the command's process and settles the turn cancelled", async () => {
   const context = await piContext("pi-stop")
   const backend = context.backend as PiBackend
   try {
