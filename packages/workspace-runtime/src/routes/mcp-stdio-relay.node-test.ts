@@ -47,14 +47,20 @@ function openRelaySocket(url: string, headers: Record<string, string>, options: 
 }
 
 function rpc(socket: WebSocket, id: number, method: string, params: unknown = {}) {
-  return new Promise<{ result: Record<string, any> }>((resolve) => {
+  return new Promise<{ result: Record<string, any> }>((resolve, reject) => {
     const onMessage = (data: WebSocket.RawData) => {
       const message = JSON.parse(Buffer.isBuffer(data) ? data.toString("utf8") : "{}")
       if (message.id !== id) return
       socket.off("message", onMessage)
+      socket.off("close", onClose)
       resolve(message)
     }
+    const onClose = (code: number, reason: Buffer) => {
+      socket.off("message", onMessage)
+      reject(new Error(`socket closed (${code} ${reason.toString()}) before ${method} #${id} was answered`))
+    }
     socket.on("message", onMessage)
+    socket.once("close", onClose)
     socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }))
   })
 }
@@ -81,28 +87,40 @@ void test("an unknown name, a non-plugin server, a viewer and a share holder are
   assert.deepEqual(await openRelaySocket(url("tools"), await server.headers({ sessionId: "ses_1", share: true })), { status: 403 })
 })
 
-async function openedServer(url: string, headers: Record<string, string>, options: { autoPong?: boolean } = {}) {
-  const opened = await openRelaySocket(url, headers, options)
+async function openedServer(url: string, headers: Record<string, string>, options: { autoPong?: boolean; onPing?: (socket: WebSocket) => void } = {}) {
+  const { onPing, ...socketOptions } = options
+  const opened = await openRelaySocket(url, headers, socketOptions)
   assert.ok("socket" in opened)
+  if (onPing) opened.socket.on("ping", () => onPing(opened.socket))
   const initialized = await rpc(opened.socket, 1, "initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "do", version: "1" } })
   return { socket: opened.socket, pid: Number(String(initialized.result.serverInfo.name).slice("pid:".length)) }
 }
 
 void test("a plugin stdio server gets the minimal inherited env plus its own, never the runtime's", async () => {
-  const { server, url } = await relay({ env: { PATH: process.env.PATH, HOME: "/home/test", RUNTIME_ONLY: "leak", CLAXEDO_RELAY_PRIVATE_KEY: "secret" } })
+  // The inherited set names the platform's own home variable.
+  const home = process.platform === "win32" ? "USERPROFILE" : "HOME"
+  const { server, url } = await relay({ env: { PATH: process.env.PATH, [home]: "/home/test", RUNTIME_ONLY: "leak", CLAXEDO_RELAY_PRIVATE_KEY: "secret" } })
   const { socket } = await openedServer(url("tools"), await server.headers({ sessionId: "ses_1" }))
   const { env } = (await rpc(socket, 2, "debug/env")).result
   socket.close()
   assert.equal(env.SERVER_VAR, "from-projection")
-  assert.equal(env.HOME, "/home/test")
+  assert.equal(env[home], "/home/test")
   assert.equal(env.RUNTIME_ONLY, undefined)
   assert.equal(env.CLAXEDO_RELAY_PRIVATE_KEY, undefined)
 })
 
 void test("a socket that stops answering pings is closed and its server retired", async () => {
   const { server, url } = await relay({ mcpHeartbeatMs: 50 })
-  const { pid } = await openedServer(url("tools"), await server.headers({ sessionId: "ses_1" }), { autoPong: false })
+  // Answer pings by hand until the server is up: spawning it takes longer than
+  // two heartbeats on Windows, and a socket terminated before `initialize` is
+  // answered proves nothing about a server that went silent.
+  let answering = true
+  const { pid } = await openedServer(url("tools"), await server.headers({ sessionId: "ses_1" }), {
+    autoPong: false,
+    onPing: (socket) => { if (answering) socket.pong() },
+  })
   assert.equal(pidRunning(pid), true)
+  answering = false
   assert.equal(await waitForPidExit(pid, 10_000), true, `MCP server ${pid} outlived a silent socket`)
 })
 
