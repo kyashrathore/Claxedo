@@ -436,7 +436,7 @@ test.each([...sdkModes])("the Claude profile's deny floor holds in %s mode, visi
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
-test.skipIf(!POSIX_FILE_MODES)("a command outside the floor runs unprompted in bypassPermissions mode", async () => {
+test("a command outside the floor runs unprompted in bypassPermissions mode", async () => {
   const state = await backend()
   state.config.permissionMode = "bypassPermissions"
   const context = await attachedClaude(state)
@@ -445,12 +445,12 @@ test.skipIf(!POSIX_FILE_MODES)("a command outside the floor runs unprompted in b
   try {
     state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 755 ${outside}` } })
     const events = await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
-    expect(await fileMode(outside)).toBe(0o755)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o755)
     expect(events.some((row) => row.event.type === "tool-error")).toBe(false)
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
-test.skipIf(!POSIX_FILE_MODES)("Claude applies permission changes before the active turn's next tool", async () => {
+test("Claude applies permission changes before the active turn's next tool", async () => {
   const state = await backend()
   const context = await attachedClaude(state)
   const outside = path.join(state.root, "live-outside")
@@ -466,7 +466,7 @@ test.skipIf(!POSIX_FILE_MODES)("Claude applies permission changes before the act
     state.config.permissionMode = "bypassPermissions"
     release()
     await running
-    expect(await fileMode(outside)).toBe(0o755)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o755)
     expect(state.sampledPids).toHaveLength(1)
   } finally { release(); await running.then(() => undefined, () => undefined); await context.close(); await state.close() }
 }, 60_000)
@@ -550,7 +550,7 @@ test.each(["api-key", "bearer"] as const)("a live Claude %s projection authentic
   } finally { await context.close(); await state.close() }
 }, 60_000)
 
-test.skipIf(!POSIX_FILE_MODES)("Always allow persists Claude's suggested rules through the broker's grants and replays them on the next launch", async () => {
+test("Always allow persists Claude's suggested rules through the broker's grants and replays them on the next launch", async () => {
   const state = await backend()
   const first = await attachedClaude(state)
   const outside = path.join(state.root, "outside")
@@ -568,7 +568,7 @@ test.skipIf(!POSIX_FILE_MODES)("Always allow persists Claude's suggested rules t
     expect(await first.owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" }))
       .toMatchObject({ ok: true })
     await running
-    expect(await fileMode(outside)).toBe(0o750)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o750)
     expect(first.ports.states.get("s1")?.brokerGrants).toHaveLength(1)
     expect(first.ports.saved).toHaveLength(1)
     expect(await fs.readFile(path.join(state.userConfigRoot, "settings.json"))).toEqual(originalSettings)
@@ -580,7 +580,7 @@ test.skipIf(!POSIX_FILE_MODES)("Always allow persists Claude's suggested rules t
     state.server.scriptToolSequence("AGAIN", [{ name: "Bash", input: { command } }])
     await second.collectWithoutAsk("t2", "AGAIN: run the scripted Bash tool")
     expect(second.ports.saved).toHaveLength(1)
-    expect(await fileMode(outside)).toBe(0o750)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o750)
   } finally { await second?.close(); await first.close(); await state.close() }
 }, 90_000)
 
