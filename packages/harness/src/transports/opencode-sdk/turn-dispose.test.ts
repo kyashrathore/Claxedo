@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import os from "node:os"
+import path from "node:path"
 import type { HarnessServices, HarnessSession, TurnBroker, TurnInput } from "../../contract"
 import type { Entry } from "./entry"
 import type { OpenCodeRuntime } from "./runtime"
@@ -7,14 +9,14 @@ import { OpenCodeSdkTransport } from "./transport"
 
 test("disposing the transport ends a turn that is waiting on engine events", async () => {
   const transport = new OpenCodeSdkTransport({} as HarnessServices, {
-    databasePath: `/tmp/opencode-turn-dispose-${crypto.randomUUID()}.db`,
+    databasePath: path.join(os.tmpdir(), `opencode-turn-dispose-${crypto.randomUUID()}.db`),
   })
   const state = transport as unknown as { entries: Map<string, Entry>; runtime: OpenCodeRuntime }
-  const session: HarnessSession = { directory: "/tmp", locality: "local", binding: {
-    sessionId: "session", workspaceId: "workspace", upstreamSessionId: "upstream", directory: "/tmp", connectionId: "opencode",
+  const session: HarnessSession = { directory: os.tmpdir(), locality: "local", binding: {
+    sessionId: "session", workspaceId: "workspace", upstreamSessionId: "upstream", directory: os.tmpdir(), connectionId: "opencode",
   } }
   state.entries.set("session", { session, start: { workspaceId: "workspace", credentials: { providers: { fake: { kind: "api" } } } },
-    scope: WorkspaceScope.authorize({ workspaceID: "workspace", directory: "/tmp" }),
+    scope: WorkspaceScope.authorize({ workspaceID: "workspace", directory: os.tmpdir() }),
     upstream: "upstream", active: false, steers: new Set() } as unknown as Entry)
   let admitted!: () => void
   const submitted = new Promise<void>((resolve) => { admitted = resolve })

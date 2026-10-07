@@ -9,6 +9,7 @@ import path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { runConformance, type ConformanceBackend, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { PINNED_CLAUDE } from "../../e2e/harness/pinned-claude"
@@ -42,16 +43,24 @@ type ClaudeBackend = SuiteBackend & {
 
 const runFile = promisify(execFile)
 
-async function sampleSockets(pid: number, sockets: string[]): Promise<void> {
+async function socketRows(pid: number): Promise<{ line: string; peer: string | undefined }[]> {
+  if (process.platform === "win32") {
+    const { stdout } = await runFile("netstat", ["-ano", "-p", "tcp"])
+    return stdout.split(/\r?\n/).map((line) => line.trim().split(/\s+/)).filter((columns) => columns[0] === "TCP" && columns.at(-1) === String(pid))
+      .map((columns) => ({ line: columns.join(" "), peer: columns[2] === "0.0.0.0:0" ? undefined : columns[2] }))
+  }
   let output: string
   try { output = (await runFile("lsof", ["-a", "-i", "-p", String(pid), "-n", "-P"])).stdout }
   catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === 1)) throw error
     output = ""
   }
-  for (const line of output.split("\n").slice(1).filter(Boolean)) {
+  return output.split("\n").slice(1).filter(Boolean).map((line) => ({ line, peer: line.split("->")[1]?.split(" ")[0] }))
+}
+
+async function sampleSockets(pid: number, sockets: string[]): Promise<void> {
+  for (const { line, peer } of await socketRows(pid)) {
     sockets.push(`${pid} ${line}`)
-    const peer = line.split("->")[1]?.split(" ")[0]
     if (peer && !/^127\.|^\[::1\]:|^\[::ffff:127\./.test(peer)) throw new Error(`Claude connected beyond loopback: ${line}`)
   }
 }
@@ -192,7 +201,7 @@ async function backend(): Promise<ClaudeBackend> {
         await server.close()
         releasePort(proxyPort)
         releasePort(port)
-        await fs.rm(root, { recursive: true, force: true })
+        await removeTempRoot(root)
       }
       expect(attempts).toEqual([])
     },

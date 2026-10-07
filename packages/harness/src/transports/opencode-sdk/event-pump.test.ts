@@ -6,6 +6,7 @@ import { createEventPump, type ProjectedEvent } from "./event-pump"
 import { createOpenCodeHost, type OpenCodeHost } from "./host"
 import { WorkspaceScope } from "./scope"
 import { createSessionPort } from "./session-port"
+import { removeTempRoot } from "../../test-support/temp-root"
 
 const hosts: OpenCodeHost[] = []
 const roots: string[] = []
@@ -33,7 +34,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 8_000) {
 
 afterEach(async () => {
   await Promise.all(hosts.splice(0).map((host) => host.close()))
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) await removeTempRoot(root)
 })
 
 test("projects real SDK events and marks durability correctly", async () => {

@@ -85,12 +85,32 @@ function dropLease(port: number) {
   if (holder === String(process.pid)) rmSync(file, { force: true })
 }
 
+function connectionRefused(port: number) {
+  return new Promise<boolean>((resolve) => {
+    const socket = net.connect(port, "127.0.0.1")
+    socket.once("connect", () => { socket.destroy(); resolve(false) })
+    socket.once("error", (error: NodeJS.ErrnoException) => resolve(error.code === "ECONNREFUSED"))
+  })
+}
+
+/**
+ * The probe listener's close callback can run before the kernel has released
+ * the port (observed on Windows), so a port only counts as free once a connect
+ * to it is refused.
+ */
 async function portIsFree(port: number) {
   const server = net.createServer()
-  return await new Promise<boolean>((resolve) => {
+  const probed = await new Promise<boolean>((resolve) => {
     server.once("error", () => resolve(false))
     server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)))
   })
+  if (!probed) return false
+  const deadline = Date.now() + 2_000
+  while (!(await connectionRefused(port))) {
+    if (Date.now() > deadline) return false
+    await sleep(20)
+  }
+  return true
 }
 
 export async function reservePort(): Promise<number> {

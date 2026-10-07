@@ -8,6 +8,7 @@ import { MCP_PROOF_TOOL, startMcpProofEndpoint, type McpProofEndpoint } from "..
 import { authority, origin } from "./test-support/memory-ports"
 import { piCredentials, piTransport } from "../../e2e/harness/pi-conformance"
 import { setupConformance, withUndeliverableFile } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 
@@ -39,7 +40,7 @@ async function mcpTurn(root: string, input: McpCase) {
         const spawn = services.spawn.bind(services)
         services.spawn = (command, options) => { commands.push(command); return spawn(command, options) }
       },
-      close: async () => { input.endpoint.stop(); await fs.rm(root, { recursive: true, force: true }) } }),
+      close: async () => { input.endpoint.stop(); await removeTempRoot(root) } }),
     makeTransport: (services) => piTransport(services, { root }),
   })
   try {
@@ -107,7 +108,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     expect(env.CLAXEDO_SERVER_TOKEN).toBeUndefined()
     expect(turn.commands.some((command) => command.args.includes(server))).toBe(true)
     expect(JSON.stringify(turn.events)).toContain("MCP proof complete")
-  } finally { await fs.rm(outside, { recursive: true, force: true }) }
+  } finally { await removeTempRoot(outside) }
 }, 60_000)
 
 test("two Pi sessions in one process see only their own MCP tools and spend only their own credential", async () => {
@@ -121,7 +122,7 @@ test("two Pi sessions in one process see only their own MCP tools and spend only
       model: { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" }, unrunnableTurn: withUndeliverableFile,
       credentials: proofCredentials(alpha, "alpha-secret"),
       projection: { generation: "alpha", pluginRoots: [], notApplied: [], mcpServers: [{ kind: "http", name: "alpha", url: `${alpha.baseURL}/mcp`, origin: "plugin" }] },
-      close: async () => { alpha.stop(); beta.stop(); await scripted.close(); releasePort(port); await fs.rm(root, { recursive: true, force: true }) } }),
+      close: async () => { alpha.stop(); beta.stop(); await scripted.close(); releasePort(port); await removeTempRoot(root) } }),
     makeTransport: (services) => piTransport(services, { root }) })
   try {
     context.ports.current.set("s2", { ...authority, sessionId: "s2", directory: root })
@@ -171,7 +172,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       credentials: proofCredentials(endpoint, "proof-secret"),
       projection: { generation: "g1", pluginRoots: [], notApplied: [],
         mcpServers: [{ kind: "stdio", name: "local", command: process.execPath, args: [server], env: {}, origin: "configured" }] },
-      close: async () => { endpoint.stop(); await fs.rm(root, { recursive: true, force: true }); await fs.rm(outside, { recursive: true, force: true }) } }),
+      close: async () => { endpoint.stop(); await removeTempRoot(root); await removeTempRoot(outside) } }),
     makeTransport: (services) => piTransport(services, { root }) })
   try {
     await collect(context.transport.send(context.session, context.turn("Read the app plugin guide"), context.turnBroker()))

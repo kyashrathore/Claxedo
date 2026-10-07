@@ -11,6 +11,7 @@ import { ClaudeSdkTransport } from "../transports/claude-sdk"
 import { authority, MemoryPorts } from "./test-support/memory-ports"
 import { pollUntil } from "./test-support/poll"
 import { createTestServices } from "./test-support/services"
+import { removeTempRoot } from "../test-support/temp-root"
 
 const BACKGROUND_SECONDS = 8
 
@@ -102,6 +103,6 @@ test.each([false, true])("a Claude background task survives follow-ups and model
     await transport.dispose()
     await server.close()
     releasePort(port)
-    await fs.rm(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   }
 }, 60_000)

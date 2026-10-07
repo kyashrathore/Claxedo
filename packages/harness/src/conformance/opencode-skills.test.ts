@@ -10,6 +10,7 @@ import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { OpenCodeSdkTransport } from "../transports/opencode-sdk"
 import { setupConformance } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 
 test("catalog-approved skills admit an OpenCode session across generation reload", async () => {
   const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), "opencode-approved-skills-"))
@@ -61,6 +62,6 @@ test("catalog-approved skills admit an OpenCode session across generation reload
     await context?.close()
     await server.close()
     releasePort(port)
-    await fs.rm(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   }
 }, 60_000)

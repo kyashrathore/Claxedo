@@ -4,6 +4,7 @@ import path from "node:path"
 import { expect, test } from "bun:test"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { runConformance, setupConformance, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedCursorBackend } from "../../e2e/harness/cursor/backend"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
@@ -56,7 +57,7 @@ async function backend(): Promise<CursorBackend> {
       await server.close()
       releasePort(serverPort)
       releasePort(guardPort)
-      await fs.rm(root, { recursive: true, force: true })
+      await removeTempRoot(root)
       expect(unexpected).toEqual([])
     },
   }
@@ -797,6 +798,6 @@ test("a plugin root whose link escapes it is refused before Cursor starts", asyn
     }
   } finally {
     await transport.dispose()
-    await fs.rm(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   }
 })

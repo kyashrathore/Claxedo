@@ -10,6 +10,7 @@ import { egressProxyEnv, startEgressGuard, unexpectedEgress, type EgressGuard } 
 import { OpenCodeSdkTransport } from "../transports/opencode-sdk"
 import type { CredentialRefreshRequest, RoutedEvent } from "../contract"
 import { setupConformance, type ConformanceBackend } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
 type PlanBackend = ConformanceBackend & { root: string; server: ScriptedServer; guard: EgressGuard }
@@ -63,7 +64,7 @@ async function planBackend(secret: string, renewed: (server: ScriptedServer) => 
       const attempts = guard.attempts.slice(attemptsBefore)
       await server.close()
       releasePort(port)
-      await fs.rm(root, { recursive: true, force: true })
+      await removeTempRoot(root)
       expect(attempts.filter((attempt) => attempt.target.includes("auth.openai.com"))).toEqual([])
       expect(unexpectedEgress(attempts)).toEqual([])
     },

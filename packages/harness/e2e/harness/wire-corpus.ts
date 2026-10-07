@@ -212,6 +212,7 @@ function normalize(value: unknown, ids: Map<string, string>, specials: Map<strin
   }
   let result = value.includes("%2F") ? decodeURIComponent(value) : value
   result = result.replaceAll(REPO_ROOT, "<repo>").replaceAll(process.execPath, "<bun>")
+  result = result.replace(/<repo>(?:\\[^\\\s"?]+)+/g, (inside) => inside.replaceAll("\\", "/"))
   result = result.replace(/(?:(?:\/private)?\/var\/folders\/[^/]+\/[^/]+\/T|\/tmp)\/(?:claxedo-e2e|claxedo-hosted|h19-product-host)-[^/\s"?]+/g, "<data-dir>")
   result = result.replace(/<data-dir>\/workspaces\/[^/\s"?]+/g, (directory) => {
     return scopedId(ids, directory, "workspace", scope)

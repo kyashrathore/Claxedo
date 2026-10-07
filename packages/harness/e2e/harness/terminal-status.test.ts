@@ -20,6 +20,8 @@ import { startScriptedModelServer } from "./scripted-model-server"
 
 type Observation = { terminalId: string; event: string; agentId?: string; state?: string }
 
+const POSIX_SHELL_HOOKS = process.platform !== "win32"
+
 const terminals = new Set<string>()
 const pty = spyOn(Pty, "get").mockImplementation((id) => id && terminals.has(id)
   ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 4_194_305 }
@@ -102,7 +104,7 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-test("a real Codex run in a tab reports busy, waiting and done through session-flag hooks, a subagent never settles it, and personal config is unchanged", async () => {
+test.skipIf(!POSIX_SHELL_HOOKS)("a real Codex run in a tab reports busy, waiting and done through session-flag hooks, a subagent never settles it, and personal config is unchanged", async () => {
   const modelPort = await reservePort()
   const model = await startScriptedModelServer({ port: modelPort, red: false })
   const home = path.join(root, "codex-person")
@@ -160,7 +162,7 @@ test("a real Codex run in a tab reports busy, waiting and done through session-f
   }
 }, 120_000)
 
-test("a real Cursor agent in a tab reaches the lifecycle route through Claxedo's merged ~/.cursor/hooks.json entries", async () => {
+test.skipIf(!POSIX_SHELL_HOOKS)("a real Cursor agent in a tab reaches the lifecycle route through Claxedo's merged ~/.cursor/hooks.json entries", async () => {
   const backendPort = await reservePort()
   const backend = await startScriptedCursorBackend(backendPort)
   const home = path.join(root, "cursor-person")

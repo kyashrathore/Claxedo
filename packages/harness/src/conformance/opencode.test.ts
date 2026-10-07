@@ -14,6 +14,7 @@ import { WorkspaceScope } from "../transports/opencode-sdk/scope"
 import { terminal } from "../transports/opencode-sdk/translate/event"
 import type { RoutedEvent, TurnInput } from "../contract"
 import { runConformance, setupConformance, type SuiteBackend } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 import { createTestServices } from "./test-support/services"
 
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
@@ -79,7 +80,7 @@ async function backend(): Promise<OpenCodeBackend> {
       await Promise.all(rotated.map(async (item) => { await item.server.close(); releasePort(item.port) }))
       await server.close()
       releasePort(modelPort)
-      await fs.rm(root, { recursive: true, force: true })
+      await removeTempRoot(root)
       expect(unexpected).toEqual([])
     },
   }

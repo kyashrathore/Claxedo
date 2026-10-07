@@ -5,6 +5,7 @@ import { createServer } from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { setupConformance } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 import { codexBackend, codexEntry, codexOptions, makeCodexTransport, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
 import { createTestServices } from "./test-support/services"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
@@ -56,7 +57,7 @@ test("a Codex app-server that exits at startup fails with its exit status and th
     const failure = await rpc.request("initialize", { clientInfo: { name: "claxedo", title: null, version: "0" }, capabilities: null }).then(() => undefined, (error: Error) => error)
     expect(failure?.message).toStartWith("Codex app-server exited with code 1: ")
     expect(failure?.message).toContain(`Error: CODEX_HOME points to "${missing}", but that path does not exist`)
-  } finally { await fs.rm(root, { recursive: true, force: true }) }
+  } finally { await removeTempRoot(root) }
 }, 30_000)
 
 test("a killed Codex app-server reads lost, and the next turn resumes the same thread from the same home with its history", async () => {

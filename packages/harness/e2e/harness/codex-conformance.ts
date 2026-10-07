@@ -7,6 +7,7 @@ import { expect } from "bun:test"
 import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { Frame } from "../../src/transports/codex-app-server/test-support/transport"
 import { setupConformance, withUndeliverableFile, type ConformanceBackend, type SuiteBackend } from "../../src/conformance/test-support/run"
+import { removeTempRoot } from "../../src/test-support/temp-root"
 import type { TestServices } from "../../src/conformance/test-support/services"
 import { PINNED_CODEX } from "./pinned-codex"
 import { listenOnLoopback, reservePort, releasePort } from "./ports"
@@ -67,7 +68,7 @@ export async function codexBackend(): Promise<CodexBackend> {
       await server.close()
       releasePort(modelPort)
       releasePort(guardPort)
-      await fs.rm(root, { recursive: true, force: true })
+      await removeTempRoot(root)
       expect(unexpected).toEqual([])
     },
   }
