@@ -15,8 +15,17 @@ export class NdjsonOwnedProcess {
     process.stdout.setEncoding("utf8")
     process.stdout.on("data", (chunk: string) => this.read(chunk))
     process.stdout.on("error", (cause: unknown) => this.fail(this.error("stdout", cause)))
-    void process.exited.then((exit) => this.stderrClosed().then(() => this.fail(this.error("exit", exit), false)),
+    void process.exited.then((exit) => this.exited(() => this.error("exit", exit)),
       (cause: unknown) => this.fail(this.error("exit", cause)))
+  }
+
+  private exited(error: () => Error): void {
+    if (this.failure) return
+    this.failure = error()
+    void this.stderrClosed().then(() => {
+      this.failure = error()
+      for (const listener of this.failures) listener(this.failure)
+    })
   }
 
   private stderrClosed(): Promise<void> {

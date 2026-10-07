@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { createOpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
+import { removeTempRoot } from "../../test-support/temp-root"
 
 test("provider policy updates the real SDK catalog, is workspace-scoped, and survives reopening", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-provider-policy-"))
@@ -45,7 +46,7 @@ test("provider policy updates the real SDK catalog, is workspace-scoped, and sur
     expect(await reopened.read()).toEqual({ disabled_providers: [] })
   } finally {
     await runtime.close()
-    fs.rmSync(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   }
 }, 20_000)
 
@@ -65,6 +66,6 @@ test("a provider the workspace policy disabled stays disabled when a binding nam
     expect(await openai()).toBe(false)
   } finally {
     await runtime.close()
-    fs.rmSync(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   }
 }, 30_000)

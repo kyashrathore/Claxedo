@@ -5,7 +5,6 @@ import { processAlive } from "../../e2e/harness/process-alive"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import type { RoutedEvent } from "../contract"
 import { pollUntil } from "./test-support/poll"
-import { shellPath } from "./test-support/shell-path"
 import { piBackend, piTransport, type PiBackend } from "../../e2e/harness/pi-conformance"
 import { runConformance, setupConformance } from "./test-support/run"
 
@@ -45,7 +44,7 @@ test.skipIf(!POSIX_PROCESS_GROUPS)("stopping a Pi turn mid-bash kills the comman
   const backend = context.backend as PiBackend
   try {
     const pidFile = path.join(backend.directory, "sleep.pid")
-    backend.server.scriptTool({ name: "bash", input: { command: `echo $$ > ${shellPath(pidFile)}; exec sleep 60` }, whenPromptIncludes: "PISLEEP" })
+    backend.server.scriptTool({ name: "bash", input: { command: "echo $$ > sleep.pid; exec sleep 60" }, whenPromptIncludes: "PISLEEP" })
     const controller = new AbortController()
     const running = collect(context.transport.send(context.session, context.turn("Run it PISLEEP"), context.turnBroker(controller.signal)))
     const pid = await pollUntil(async () => await Bun.file(pidFile).exists() ? Number(await Bun.file(pidFile).text()) || undefined : undefined, Date.now() + 10_000)
@@ -121,7 +120,7 @@ test.skipIf(!POSIX_PROCESS_GROUPS)("a background job outlives its Pi bash call a
   const backend = context.backend as PiBackend
   try {
     const pidFile = path.join(backend.directory, "background.pid")
-    backend.server.scriptTool({ name: "bash", input: { command: `sleep 30 & echo $! > ${shellPath(pidFile)}; echo started` }, whenPromptIncludes: "PIBACKGROUND" })
+    backend.server.scriptTool({ name: "bash", input: { command: "sleep 30 & echo $! > background.pid; echo started" }, whenPromptIncludes: "PIBACKGROUND" })
     const started = Date.now()
     const events = await collect(context.transport.send(context.session, context.turn("Reply with exactly this one token: PIBACKGROUND"), context.turnBroker()))
     expect(Date.now() - started).toBeLessThan(10_000)
