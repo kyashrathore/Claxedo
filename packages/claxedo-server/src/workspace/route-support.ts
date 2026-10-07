@@ -16,7 +16,7 @@ import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/s
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
-import type { SandboxStart } from "./sandbox-start"
+import type { SandboxInFlight, SandboxStart } from "./sandbox-start"
 
 export type WorkspaceRuntimeContext = {
   workspaceId: string
@@ -82,6 +82,8 @@ export type WorkspaceRouteOptions = {
   controlPlaneRateLimiter?: ConnectionRateLimiter
   /** The start of a cloud workspace's sandbox, which the hosted connect begins and polls but never drives itself. */
   sandboxStart?: SandboxStart
+  /** The sandbox start's run in flight, which a read reports before it asks a runtime that run is replacing. */
+  sandboxInFlight?: SandboxInFlight
   /** Resolve feature state before ensure, including brokered secrets needed by the driver. */
   prepareRuntime?: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   /** Build-composed feature provisioning that must settle before a signed runtime is handed to the caller. */

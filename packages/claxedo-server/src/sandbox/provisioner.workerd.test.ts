@@ -38,6 +38,10 @@ async function refresh(workspaceId: string): Promise<SandboxStartAnswer> {
   return (await response.json()) as SandboxStartAnswer
 }
 
+async function inFlight(workspaceId: string): Promise<SandboxStartAnswer | null> {
+  return (await (await miniflare.dispatchFetch(`${ORIGIN}/in-flight?ws=${workspaceId}`)).json()) as SandboxStartAnswer | null
+}
+
 async function target(workspaceId: string) {
   return (await (await miniflare.dispatchFetch(`${ORIGIN}/target?ws=${workspaceId}`)).json()) as Record<string, unknown>
 }
@@ -84,16 +88,25 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_slow_1")).toBe(1)
   })
 
-  test("a start on a ready lease whose runtime does not answer resumes it on the same epoch", async () => {
+  test("a start on a ready lease whose runtime does not answer resumes it on the same epoch, a held ready outcome notwithstanding", async () => {
     await start("ws_slow_1_asleep")
     await until(() => target("ws_slow_1_asleep"), (lease) => lease.status === "ready")
-    expect(await until(() => start("ws_slow_1_asleep"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
 
     const resumed = await start("ws_slow_1_asleep")
     expect(resumed).toMatchObject({ status: "provisioning", epoch: 1, bootMode: "resume" })
     expect(resumed).not.toHaveProperty("opened")
     expect(await until(() => start("ws_slow_1_asleep"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 1 })
     expect(await driverCalls("ws_slow_1_asleep")).toBe(2)
+  })
+
+  test("a read sees the run in flight while it runs, and nothing once the lease settled", async () => {
+    expect(await inFlight("ws_slow_1500_read")).toBeNull()
+    expect(await start("ws_slow_1500_read")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await inFlight("ws_slow_1500_read")).toMatchObject({ status: "provisioning", epoch: 1 })
+
+    await until(() => target("ws_slow_1500_read"), (lease) => lease.status === "ready")
+    expect(await until(() => inFlight("ws_slow_1500_read"), (answer) => answer === null)).toBeNull()
+    expect(await driverCalls("ws_slow_1500_read")).toBe(1)
   })
 
   test("concurrent polls share one run, and both read it ready once it settles", async () => {

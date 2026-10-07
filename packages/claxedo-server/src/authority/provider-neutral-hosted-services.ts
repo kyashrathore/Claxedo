@@ -47,7 +47,7 @@ import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
-import type { SandboxStart } from "../workspace/sandbox-start"
+import type { SandboxInFlight, SandboxStart } from "../workspace/sandbox-start"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -163,6 +163,7 @@ export type HostedSandboxBinding = {
   leaseStore: SandboxLeaseStore
   start: SandboxStart
   refresh: SandboxStart
+  inFlight: SandboxInFlight
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** Organization keys this deployment can provision with; absent, every workspace runs on `driver`. */
   keys?: HostedSandboxKeys

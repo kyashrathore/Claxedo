@@ -409,7 +409,20 @@ export async function hostedConnectionStatus(
   }
   const { authority, result, hostManager, homeRegion, relayUrl } = ingress
 
-  const [target, actor] = await Promise.all([hostManager.target(workspaceId), settledActor(authority, auth)])
+  const [running, target, actor] = await Promise.all([options.sandboxInFlight?.(workspaceId), hostManager.target(workspaceId), settledActor(authority, auth)])
+  // A lease reads ready through the run that replaces its sandbox; the run,
+  // not the runtime it is replacing, is what this read reports.
+  if (running?.status === "provisioning") {
+    return {
+      connection: {
+        status: "provisioning" as const,
+        workspaceId,
+        homeRegion,
+        retryAfterMs: running.retryAfterMs,
+        ...(running.bootMode ? { bootMode: running.bootMode } : {}),
+      },
+    } as const
+  }
   captureWorkspaceTelemetry({
     services,
     auth,

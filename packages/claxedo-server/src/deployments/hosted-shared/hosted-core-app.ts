@@ -103,6 +103,7 @@ export type HostedCoreProductWorkspaceOptions = Pick<
   | "countActiveOrgSandboxLeases"
   | "sandboxUsage"
   | "sandboxStart"
+  | "sandboxInFlight"
   | "prepareRuntime"
   | "provisionRuntime"
   | "runtimeProvisioned"

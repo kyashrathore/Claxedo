@@ -13,8 +13,11 @@ export const unusedSandboxStart: SandboxStart = async () => {
   throw new Error("this test composed no sandbox start drive")
 }
 
+/** The sandbox binding a composition test hands over when it never starts a sandbox. */
+export const unusedSandboxStarts = { start: unusedSandboxStart, refresh: unusedSandboxStart, inFlight: async () => undefined } as const
+
 /** The provisioner namespace a Node test composes the full-hosted sandbox with; its starts run inline over `drive`. */
 export function inlineSandboxProvisioner(drive?: SandboxStartDrive): SandboxProvisionerNamespace {
   const start = drive ? inlineSandboxStart(drive) : unusedSandboxStart
-  return { idFromName: (name) => name, get: () => ({ start, refresh: start }) }
+  return { idFromName: (name) => name, get: () => ({ start, refresh: start, inFlight: async () => undefined }) }
 }

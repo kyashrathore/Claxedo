@@ -17,6 +17,9 @@ export type ReadySandboxTarget = Extract<SandboxTargetResult, { status: "ready" 
 /** Begins or joins the start of a workspace's sandbox and answers at once; the work itself runs elsewhere. */
 export type SandboxStart = (workspaceId: string) => Promise<SandboxStartAnswer>
 
+/** The run a workspace's sandbox start has in flight, as its pollers see it, or nothing when no run is in flight. */
+export type SandboxInFlight = (workspaceId: string) => Promise<SandboxStartAnswer | undefined>
+
 /** The steps of a start, for whoever owns its schedule: the lease, then the driver until the lease settles. */
 export type SandboxStartDrive = {
   acquire(workspaceId: string): Promise<SandboxStartAnswer>
@@ -31,6 +34,8 @@ export type SandboxProvisionerStub = {
   start(workspaceId: string): Promise<SandboxStartAnswer>
   /** A re-delivery of what the sandbox runs with: begins or joins a run even for a sandbox that is live. */
   refresh(workspaceId: string): Promise<SandboxStartAnswer>
+  /** The run in flight, which a read answers instead of asking a runtime the run is replacing; begins nothing. */
+  inFlight(): Promise<SandboxStartAnswer | undefined>
 }
 
 export interface SandboxProvisionerNamespace {
@@ -44,5 +49,6 @@ export function sandboxProvisioner(namespace: SandboxProvisionerNamespace, works
   return {
     start: (id) => timed("do", () => stub.start(id)),
     refresh: (id) => timed("do", () => stub.refresh(id)),
+    inFlight: () => timed("do", () => stub.inFlight()),
   }
 }

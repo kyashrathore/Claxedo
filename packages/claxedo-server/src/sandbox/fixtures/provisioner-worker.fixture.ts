@@ -98,7 +98,8 @@ function drive(env: Env): SandboxStartDrive {
     target: (workspaceId) => sandboxes.target(workspaceId),
     live: async (workspaceId) => {
       const target = await sandboxes.target(workspaceId)
-      if (target.status !== "ready" || workspaceId.includes("asleep")) return undefined
+      if (target.status !== "ready") return undefined
+      if (workspaceId.includes("asleep") && await driverCalls(env.CONTROL_PLANE_DB, workspaceId) < 2) return undefined
       if (workspaceId.startsWith("ws_step_throws") && await driverCalls(env.CONTROL_PLANE_DB, workspaceId) === 1) return undefined
       return target
     },
@@ -113,6 +114,7 @@ export default {
     const workspaceId = url.searchParams.get("ws") ?? ""
     if (url.pathname === "/start") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId))
     if (url.pathname === "/refresh") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).refresh(workspaceId))
+    if (url.pathname === "/in-flight") return Response.json((await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).inFlight()) ?? null)
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })
     return new Response("not found", { status: 404 })

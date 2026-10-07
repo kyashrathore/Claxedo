@@ -54,6 +54,10 @@ function desktopWakes(signed: SignedStack, workspace: CloudWorkspace, from: numb
   return signed.controlPlaneRequests().slice(from).filter((request) => request === `POST /api/workspace/${workspace.id}/connection`)
 }
 
+async function bootsServed(signed: SignedStack) {
+  return (await signed.hosted.telemetryEvents()).filter((entry) => entry.event === "workspace_ready" || entry.event === "workspace_woken").length
+}
+
 async function openSession(page: Page, signed: SignedStack, workspace: CloudWorkspace, sessionId: string) {
   await signed.signIn(page, signed.owner)
   await page.goto(`${signed.url}${sessionRoute(workspace.id, sessionId)}`)
@@ -73,10 +77,12 @@ test("24 a gone sandbox: its session reads from the control plane with the aslee
   await expect(page.getByText("Stored in the cloud")).toBeVisible()
   await expect(page.getByText(ASLEEP)).toBeVisible()
   expect(wakes).toEqual([])
+  const boots = await bootsServed(signedCloud)
 
   await page.getByRole("button", { name: "Wake now", exact: true }).click()
   await expect(page.getByText(ASLEEP)).toHaveCount(0, { timeout: 60_000 })
-  expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(1)
+  expect(wakes.filter((request) => request.startsWith("POST /api/workspace/")).length).toBeGreaterThanOrEqual(1)
+  await expect.poll(() => bootsServed(signedCloud)).toBe(boots + 1)
 })
 
 test("24 a draft on an asleep cloud workspace with no known branch shows no branch chip, and nothing wakes it", async ({ signedCloud, page }) => {
@@ -97,13 +103,15 @@ test("24 sending to a gone sandbox wakes it, shows the dock waking up, then send
   await openSession(page, signedCloud, workspace, sessionId)
   await expect(page.getByText(ASLEEP)).toBeVisible()
   await signedCloud.local.acp.write("awake", { steps: [{ kind: "text", text: "Awake again" }] })
+  const boots = await bootsServed(signedCloud)
 
   await sendPrompt(page, `Are you there? ${acpScriptToken("awake")}`, { waitForSend: false })
   await expect(page.getByText(WAKING)).toBeVisible()
   await expect(page.getByText("Awake again")).toBeVisible({ timeout: 60_000 })
   await expect(page.getByText(ASLEEP)).toHaveCount(0)
   await expect(page.getByText(WAKING)).toHaveCount(0)
-  expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(1)
+  expect(wakes.filter((request) => request.startsWith("POST /api/workspace/")).length).toBeGreaterThanOrEqual(1)
+  await expect.poll(() => bootsServed(signedCloud)).toBe(boots + 1)
   await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
 })
 
@@ -162,13 +170,15 @@ test("24 desktop: sending to a gone sandbox wakes it, shows the dock waking up, 
   const window = await openOnDesktop(signedCloud, signedDesktop, page, "Cloud turn")
   await expect(window.getByText(ASLEEP)).toBeVisible()
   await signedCloud.local.acp.write("awake", { steps: [{ kind: "text", text: "Awake again" }] })
+  const boots = await bootsServed(signedCloud)
 
   await sendPrompt(window, `Are you there? ${acpScriptToken("awake")}`, { waitForSend: false })
   await expect(window.getByText(WAKING)).toBeVisible()
   await expect(window.getByText("Awake again")).toBeVisible({ timeout: 60_000 })
   await expect(window.getByText(ASLEEP)).toHaveCount(0)
   await expect(window.getByText(WAKING)).toHaveCount(0)
-  expect(desktopWakes(signedCloud, workspace, mark)).toHaveLength(1)
+  expect(desktopWakes(signedCloud, workspace, mark).length).toBeGreaterThanOrEqual(1)
+  await expect.poll(() => bootsServed(signedCloud)).toBe(boots + 1)
   await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
 })
 

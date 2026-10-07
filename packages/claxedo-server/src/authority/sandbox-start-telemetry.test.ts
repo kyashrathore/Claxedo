@@ -6,7 +6,7 @@ import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { composeProviderNeutralHostedControlPlane } from "./provider-neutral-hosted-services"
 import { pseudonymousId } from "../platform/auth/worker-telemetry"
-import { unusedSandboxStart } from "../test-support/inline-sandbox-start"
+import { unusedSandboxStarts } from "../test-support/inline-sandbox-start"
 
 const servers: Server[] = []
 afterEach(async () => {
@@ -57,7 +57,7 @@ test("a hosted control plane reports each cloud start phase as an ops event tagg
     auth: { config: { enabled: true, mode: "signed" } } as never,
     authority: {} as never,
     hostTunnelResolver: (async () => undefined) as never,
-    sandbox: { driver, leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart, refresh: unusedSandboxStart },
+    sandbox: { driver, leaseStore: createMemoryLeaseStore(), ...unusedSandboxStarts },
   })
 
   await services.sandbox.sandboxManager!.ensure("ws_1", {

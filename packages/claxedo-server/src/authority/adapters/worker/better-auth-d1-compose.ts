@@ -292,6 +292,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         },
         productWorkspace: {
           sandboxStart: sandbox.start,
+          sandboxInFlight: sandbox.inFlight,
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,
           runtimeProvisioned: delivery.runtimeProvisioned,

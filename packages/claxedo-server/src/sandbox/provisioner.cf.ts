@@ -43,14 +43,16 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * stale window let the next start take it over. Here a start takes the lease
  * and answers at once; the alarm drives the driver, step by step, until the
  * lease is ready or the start has failed, and the first `start` within
- * `outcomeHeldMs` of that settling reports the outcome.
+ * `outcomeHeldMs` of a failed settling reports that failure.
  *
- * Every other `start` on a ready lease asks the runtime itself: one that
- * answers is reported ready with no driver step, so concurrent pollers and a
- * reconnect never begin a resume of a sandbox that is serving. One that does
- * not answer (asleep, gone, or a settle nobody collected within the window)
- * begins the run the lease needs; `refresh` begins that run even for a live
- * sandbox, because its settings must be delivered again.
+ * A `start` on a ready lease, a held ready outcome included, asks the runtime
+ * itself: one that answers is reported ready with no driver step, so
+ * concurrent pollers and a reconnect never begin a resume of a sandbox that
+ * is serving. One that does not answer (asleep, replaced since it settled, or
+ * a settle nobody collected within the window) begins the run the lease
+ * needs; a ready outcome believed on the lease alone minted tokens for a
+ * sandbox that had been deleted underneath it. `refresh` begins the run even
+ * for a live sandbox, because its settings must be delivered again.
  */
 export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, outcomeHeldMs = OUTCOME_HELD_MS) {
   return class SandboxProvisioner extends DurableObject<Env> {
@@ -62,11 +64,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       const outcome = await this.ctx.storage.get<Outcome>("outcome")
       if (outcome) {
         await this.ctx.storage.delete("outcome")
-        if (Date.now() - outcome.settledAt <= outcomeHeldMs) {
-          if (outcome.answer.status !== "ready") return outcome.answer
-          const current = await drive(this.env).target(workspaceId)
-          if (current.status === "ready" && current.epoch === outcome.epoch) return current
-        }
+        if (Date.now() - outcome.settledAt <= outcomeHeldMs && outcome.answer.status !== "ready") return outcome.answer
       }
       const live = await drive(this.env).live(workspaceId)
       if (live) return live
@@ -78,6 +76,10 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       if (joined) return joined
       await this.ctx.storage.delete("outcome")
       return this.#begin(workspaceId)
+    }
+
+    async inFlight(): Promise<SandboxStartAnswer | undefined> {
+      return this.#inFlight()
     }
 
     async #inFlight(): Promise<SandboxStartAnswer | undefined> {
