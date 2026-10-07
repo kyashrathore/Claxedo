@@ -48,7 +48,7 @@ export const firstPartyStatusHooks = readStatusHookTemplates([
   {
     command: "claude",
     provider: "claude",
-    install: { type: "wrapper-flags", args: ["--settings", "{{hooks}}/claude-settings.json"] },
+    install: { type: "wrapper-flags", args: ["--settings", "{{claude-settings.json}}"] },
     events,
     subagent: ["agent_id", "agentId"],
     wrapper:
@@ -106,12 +106,12 @@ export const firstPartyStatusHooks = readStatusHookTemplates([
       shape: "flat",
       base: ["hooks"],
       entries: {
-        beforeSubmitPrompt: { command: "{{hooks}}/cursor-hook.sh Start" },
-        stop: { command: "{{hooks}}/cursor-hook.sh Stop" },
-        beforeShellExecution: { command: "{{hooks}}/cursor-hook.sh PermissionRequest" },
-        beforeMCPExecution: { command: "{{hooks}}/cursor-hook.sh PermissionRequest" },
-        postToolUse: { command: "{{hooks}}/cursor-hook.sh PostToolUse", matcher: "^(Shell|MCP:.+)$" },
-        postToolUseFailure: { command: "{{hooks}}/cursor-hook.sh PostToolUse", matcher: "^(Shell|MCP:.+)$" },
+        beforeSubmitPrompt: { command: "{{cursor-hook.sh}} Start" },
+        stop: { command: "{{cursor-hook.sh}} Stop" },
+        beforeShellExecution: { command: "{{cursor-hook.sh}} PermissionRequest" },
+        beforeMCPExecution: { command: "{{cursor-hook.sh}} PermissionRequest" },
+        postToolUse: { command: "{{cursor-hook.sh}} PostToolUse", matcher: "^(Shell|MCP:.+)$" },
+        postToolUseFailure: { command: "{{cursor-hook.sh}} PostToolUse", matcher: "^(Shell|MCP:.+)$" },
       },
       managedScript: "cursor-hook.sh",
       defaults: { version: 1 },
