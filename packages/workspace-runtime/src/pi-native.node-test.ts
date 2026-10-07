@@ -5,6 +5,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
+import { existsSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { createServer, type ServerResponse } from "node:http"
@@ -130,13 +131,17 @@ void test("a background job a Pi command starts survives the command and ends wi
   const model = await provider([])
   const paths = await roots("pi-machine-background-", model.url)
   const pidFile = path.join(paths.directory, "background.pid")
-  model.replies.push({ tool: { name: "bash", arguments: { command: `sleep 30 & echo $! > ${pidFile}; echo started` } } }, { text: "Background started" })
+  // The job records its own pid: `$!` under Git Bash is an MSYS pid the kernel does not know.
+  const job = `'${process.execPath}' -e 'require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 30_000)'`
+  model.replies.push({ tool: { name: "bash", arguments: { command: `${job} & echo started` } } }, { text: "Background started" })
   const runtime = piNativeRuntime(paths)
   try {
     await runtime.host.apply(piNativeSnapshot(model.url))
     const call = caller(runtime)
     const session = await call("session?nativeHarness=pi", { title: "Background proof", model: PI_NATIVE_MODEL })
     await call(`session/${session.id}/message`, { messageID: "first", model: PI_NATIVE_MODEL, parts: [{ type: "text", text: "Start it" }] })
+    const started = Date.now() + 10_000
+    while (!existsSync(pidFile) && Date.now() < started) await new Promise((resolve) => setTimeout(resolve, 50))
     const pid = Number(await fs.readFile(pidFile, "utf8"))
     assert.doesNotThrow(() => process.kill(pid, 0))
     await runtime.dispose()
