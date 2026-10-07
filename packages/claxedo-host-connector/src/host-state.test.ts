@@ -436,7 +436,8 @@ describe("root pinning", () => {
   })
 })
 
-describe("node adapter", () => {
+// POSIX file modes; Windows reports 0o666 whatever was asked.
+describe.skipIf(process.platform === "win32")("node adapter", () => {
   const dirs: string[] = []
   afterEach(async () => {
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })

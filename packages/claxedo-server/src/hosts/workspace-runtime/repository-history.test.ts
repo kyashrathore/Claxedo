@@ -34,7 +34,8 @@ async function prepared(commits?: number) {
 
 const shallowLock = (checkout: string) => path.join(checkout, ".git", "shallow.lock")
 
-describe("repository history after the runtime serves", () => {
+// The runtime boot runs only inside the Linux sandbox image, so its git, sh and ps behaviour has no Windows host.
+describe.skipIf(process.platform === "win32")("repository history after the runtime serves", () => {
   test("deepens the selected branch alone until the checkout is complete", async () => {
     const f = await prepared(12)
     await f.history().start()
@@ -117,7 +118,8 @@ describe("repository history after the runtime serves", () => {
   })
 })
 
-describe("a stale shallow.lock at boot", () => {
+// The runtime boot runs only inside the Linux sandbox image, so its git, sh and ps behaviour has no Windows host.
+describe.skipIf(process.platform === "win32")("a stale shallow.lock at boot", () => {
   async function withPs(listing: string, run: () => Promise<void>) {
     const shim = path.join(active[0].directory, "ps-shim")
     await mkdir(shim, { recursive: true })

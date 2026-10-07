@@ -896,7 +896,8 @@ describe("consent, withdrawal and drain", () => {
   })
 })
 
-describe("with a real filesystem", () => {
+// Machine roots are POSIX absolute paths (normalizeAbsolutePath), which a Windows path never is.
+describe.skipIf(process.platform === "win32")("with a real filesystem", () => {
   const dirs: string[] = []
   afterEach(async () => {
     for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })

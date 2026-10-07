@@ -17,10 +17,10 @@ import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import { publishD1HostSessionRows } from "../../authority/adapters/d1/host-session-rows"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
-import { SANDBOX_PASS_DEFAULT_TTL_SECONDS } from "../../platform/auth/sandbox-pass"
 import { createSessionRowsPasses } from "../../session/session-rows-pass"
 import { d1Authority } from "../../test-support/d1-authority"
 import { cloudSessionRows, type CloudSessionRows } from "./cloud-session-rows"
+import type { RenewalTimers } from "./half-life-renewal"
 
 const ROWS_URL = "https://core.test/api/claxedo/host/session-rows"
 const DIRECTORY = "/workspace"
@@ -130,14 +130,14 @@ function runtimeStore() {
 function bootRuntime(
   fetch: typeof globalThis.fetch,
   store: ReturnType<typeof runtimeStore>,
-  options: { now?: () => number; backgroundWork?: (sessionId: string) => BackgroundWork | undefined; caller?: object } = {},
+  options: { timers?: RenewalTimers; backgroundWork?: (sessionId: string) => BackgroundWork | undefined; caller?: object } = {},
 ): Runtime {
   const rows = cloudSessionRows({
     WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://core.test/api/runtime-authority/session-authorize",
     WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_cloud",
     WORKSPACE_RUNTIME_DIRECTORY: DIRECTORY,
     WORKSPACE_RUNTIME_HOST_ID: "host-cloud",
-  }, { fetch, ...(options.now ? { now: options.now } : {}) })
+  }, { fetch, ...(options.timers ? { timers: options.timers } : {}) })
   if (!rows) throw new Error("a runtime that knows its control plane composes a publisher")
   cleanup.push(() => rows.stop())
   rows.bindSessionReads({ store: () => store, sessionStatus: () => sessionStatusSnapshot(store.listEverySession(), options.backgroundWork) })
@@ -239,11 +239,22 @@ describe("a cloud runtime's session rows", () => {
       sent.push({ token: new Headers(init?.headers).get("authorization")!.slice("Bearer ".length), rows: body.rows.length })
       return await fetch(input, init)
     }) as typeof globalThis.fetch
-    const runtime = bootRuntime(recording, runtimeStore(), { now: () => Date.now() + SANDBOX_PASS_DEFAULT_TTL_SECONDS * 1_000 - 2_000 })
+    const pending = new Map<number, () => void>()
+    let handles = 0
+    const timers: RenewalTimers = {
+      setTimeout: (handler) => (pending.set(++handles, handler), handles),
+      clearTimeout: (handle) => void pending.delete(handle),
+    }
+    const runtime = bootRuntime(recording, runtimeStore(), { timers })
     attach(runtime)
     await passes.deliver("ws_cloud")
+    await vi.waitFor(() => expect(sent).toHaveLength(1), { timeout: 5_000 })
     const first = await (await runtime.relay.request(SESSION_ROWS_PASS_PATH)).json() as { held: { issuedAt: number; expiresAt: number } }
     setClock((first.held.issuedAt + first.held.expiresAt) / 2 + 1)
+    for (const [handle, renew] of pending) {
+      pending.delete(handle)
+      renew()
+    }
 
     await vi.waitFor(() => expect(sent.some((call) => call.rows === 0)).toBe(true), { timeout: 5_000 })
     busy(runtime.rows)

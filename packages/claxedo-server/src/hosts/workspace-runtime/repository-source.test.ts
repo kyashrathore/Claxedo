@@ -20,7 +20,8 @@ async function origin(commits?: number) {
   }
 }
 
-describe("sandbox repository preparation", () => {
+// The runtime boot runs only inside the Linux sandbox image, so its git, sh and ps behaviour has no Windows host.
+describe.skipIf(process.platform === "win32")("sandbox repository preparation", () => {
   test("checks out the selected branch before boot, then keeps the person's work on every later boot", async () => {
     const f = await origin()
     await prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_BRANCH: "feature" })

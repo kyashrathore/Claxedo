@@ -45,7 +45,8 @@ async function takeStartPhases(boot: ClaxedoWorkspaceRuntimeBoot, caller: object
   return await relay.request(RUNTIME_START_PHASES_PATH, { method: "POST" })
 }
 
-describe("claxedo workspace-runtime boot policy", () => {
+// The runtime boot runs only inside the Linux sandbox image, so its git, sh and ps behaviour has no Windows host.
+describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot policy", () => {
   test("installs the clone placeholder as an authorization header for the workspace repository alone before boot returns", async () => {
     // Outside the repository: a checkout on CI carries its own github.com
     // extraheader in the local config, which git reads ahead of the global
