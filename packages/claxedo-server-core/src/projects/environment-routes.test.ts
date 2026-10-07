@@ -14,10 +14,12 @@ const { fanoutEligible } = await import("../credentials/account-kinds")
 const { SINGLE_TENANT_ORG } = await import("../credentials/partition")
 const { projectEnvironment, PROJECT_ENV_MAX_ENTRIES } = await import("./environment")
 const { ProjectEnvironmentRoutes } = await import("./environment-routes")
+const { ClaxedoDB } = await import("../platform/db/index")
 
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
 })
 

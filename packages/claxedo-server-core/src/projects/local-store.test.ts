@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process"
 import os from "node:os"
 import path from "node:path"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import { ClaxedoDB } from "../platform/db/index"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import { ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
 import { defaultControlPlaneCredentials } from "../authority/default-credentials"
@@ -50,6 +51,7 @@ function signedBy(verifier: (token: string) => Promise<SignedControlPlaneAuth>):
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
 })
 
@@ -135,16 +137,17 @@ describe("local project routes", () => {
 
   test("reads a folder written with ~ from the server's home, and refuses a relative path", async () => {
     const directory = await gitRepository("tilde-")
-    const previousHome = process.env.HOME
-    process.env.HOME = path.dirname(directory)
+    const homeVariable = process.platform === "win32" ? "USERPROFILE" : "HOME"
+    const previousHome = process.env[homeVariable]
+    process.env[homeVariable] = path.dirname(directory)
     try {
       const res = await app.request("http://localhost/", json({ name: "Tilde Project", source: { kind: "directory", directory: `~/${path.basename(directory)}` } }))
       expect(res.status).toBe(201)
       const { project } = await res.json() as { project: { directory: string } }
       expect(project.directory).toBe(directory)
     } finally {
-      if (previousHome === undefined) delete process.env.HOME
-      else process.env.HOME = previousHome
+      if (previousHome === undefined) delete process.env[homeVariable]
+      else process.env[homeVariable] = previousHome
     }
     const relative = await app.request("http://localhost/", json({ name: "Relative", source: { kind: "directory", directory: "code/app" } }))
     expect(relative.status).toBe(400)
