@@ -96,7 +96,7 @@ jobs:
 
       - name: Unit-test the release tooling
         working-directory: packages/claxedo-server
-        run: node ./node_modules/vitest/vitest.mjs run scripts/release/tests
+        run: node ../../script/test-home/run.mjs node ./node_modules/vitest/vitest.mjs run scripts/release/tests
 
       - name: Build, pack and inspect every tarball
         working-directory: packages/claxedo-server
