@@ -6,7 +6,16 @@ import path from "node:path"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createSpawnService } from "./spawn-service"
 
+/** A zombie is not a running process; `ps` is the only POSIX read that tells the two apart, and Windows has neither. */
 function processExists(pid: number) {
+  if (process.platform === "win32") {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
   try {
     const state = execFileSync("ps", ["-p", String(pid), "-o", "stat="], { encoding: "utf8" }).trim()
     return state.length > 0 && !state.startsWith("Z")
@@ -15,6 +24,9 @@ function processExists(pid: number) {
     throw error
   }
 }
+
+/** The payloads are this runtime's own executable, which every platform can spawn without a shell. */
+const script = (source: string) => ({ file: process.execPath, args: ["-e", source] })
 
 async function waitForOutput(stream: NodeJS.ReadableStream, pattern: RegExp): Promise<string> {
   return await new Promise((resolve, reject) => {
@@ -40,8 +52,7 @@ test("spawn refuses an already-aborted signal and leaves no launch unresolved", 
   controller.abort()
   try {
     await expect(createSpawnService(ownership)({
-      file: "/bin/sh",
-      args: ["-c", "exit 0"],
+      ...script("process.exit(0)"),
       cwd,
       env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
     }, { role: "harness", label: "aborted proof", sessionId: "spawn-abort", signal: controller.signal })).rejects.toThrow("aborted")
@@ -57,8 +68,7 @@ test("spawn observes output and retires the child and its descendant", async () 
   let owned: Awaited<ReturnType<ReturnType<typeof createSpawnService>>> | undefined
   try {
     owned = await createSpawnService(ownership)({
-      file: "/bin/sh",
-      args: ["-c", "sleep 30 & child=$!; printf 'CHILD:%s\\n' \"$child\"; wait"],
+      ...script(`const child = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 30_000)"]); console.log("CHILD:" + child.pid); child.exited.then((code) => process.exit(code))`),
       cwd,
       env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
     }, { role: "harness", label: "descendant proof", signal: new AbortController().signal, sessionId: "spawn-test" })
@@ -90,8 +100,7 @@ test("a retirement refused for an expired deadline can be retried and stops the 
   let owned: Awaited<ReturnType<ReturnType<typeof createSpawnService>>> | undefined
   try {
     owned = await createSpawnService(ownership)({
-      file: "/bin/sh",
-      args: ["-c", "printf 'READY\\n'; sleep 30"],
+      ...script(`console.log("READY"); setTimeout(() => {}, 30_000)`),
       cwd,
       env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
     }, { role: "harness", label: "retry proof", signal: new AbortController().signal, sessionId: "spawn-retry" })
@@ -114,8 +123,7 @@ test("spawn scrubs the runtime's internal secrets from every harness environment
   let owned: Awaited<ReturnType<ReturnType<typeof createSpawnService>>> | undefined
   try {
     owned = await createSpawnService(ownership)({
-      file: "/bin/sh",
-      args: ["-c", "printf 'ENV:%s|%s|%s\\n' \"${CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM-unset}\" \"${CLAXEDO_SERVER_URL-unset}\" \"${HARNESS_PLAIN-unset}\""],
+      ...script(`console.log("ENV:" + ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", "CLAXEDO_SERVER_URL", "HARNESS_PLAIN"].map((name) => process.env[name] ?? "unset").join("|"))`),
       cwd,
       env: {
         PATH: process.env.PATH ?? "/usr/bin:/bin",

@@ -11,6 +11,8 @@ import { agentHookConfigPaths, materializeAgentHooks } from "./materialize-statu
 const root = path.join(os.tmpdir(), `agent-hooks-materializer-${randomUUID().slice(0, 8)}`)
 const notifyPath = path.join(root, ".claxedo", "hooks", "notify.sh")
 const cursorHookPath = path.join(root, ".claxedo", "hooks", "cursor-hook.sh")
+// Windows has no POSIX modes: a writable file reads 0o666 whatever it was written with.
+const writtenMode = (mode: number) => (process.platform === "win32" ? 0o666 : mode)
 
 async function readJson(file: string) {
   return JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>
@@ -107,7 +109,7 @@ describe("materializeAgentHooks", () => {
     ])
     expect(hooks.afterFileEdit).toEqual([{ command: "./scripts/format.sh" }])
     expect(hooks.stop).toEqual([{ command: `${cursorHookPath} Stop` }])
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+    expect((await fs.stat(file)).mode & 0o777).toBe(writtenMode(0o600))
 
     const before = await fs.stat(file)
     await materializeAgentHooks(input)
@@ -144,7 +146,7 @@ describe("materializeAgentHooks", () => {
     const first = await fs.readFile(file, "utf8")
     expect(first).not.toBe(person)
     expect(first).toContain(kept)
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o640)
+    expect((await fs.stat(file)).mode & 0o777).toBe(writtenMode(0o640))
     const before = await fs.stat(file)
     await materializeAgentHooks(input)
     expect(await fs.readFile(file, "utf8")).toBe(first)

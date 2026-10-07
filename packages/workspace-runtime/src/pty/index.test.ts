@@ -22,17 +22,31 @@ let nextSpawnExit = false
 const nativeKills: number[] = []
 const disposableChildren: ChildProcess[] = []
 
+const windows = process.platform === "win32"
+
 /**
  * The PTY library is faked, but the process it reports must be real: retirement
  * refuses to signal anything whose creation identity it cannot read, so a made
  * up pid would make every one of these removals unresolved for the wrong
  * reason. `detached` reproduces the session leadership `forkpty` gives a shell.
  */
-function disposablePid() {
-  const child = spawnChild("/bin/sh", ["-c", "sleep 30"], { detached: true, stdio: "ignore" })
+function disposableChild(script = "setTimeout(() => {}, 30_000)") {
+  const child = spawnChild(process.execPath, ["-e", script], { detached: true, stdio: "ignore", windowsHide: true })
   disposableChildren.push(child)
-  return child.pid!
+  return child
 }
+
+function disposablePid() {
+  return disposableChild().pid!
+}
+
+/**
+ * A pid that is alive and readable but belongs to nobody this runtime launched.
+ * POSIX init leads process group 1, which `kill(-1)` would turn into every
+ * process of this user; Windows has no init, so the kernel's own System
+ * process stands in.
+ */
+const FOREIGN_PID = windows ? 4 : 1
 
 /** EPERM means the process is there and belongs to someone else, not that it is gone. */
 /** These tests assert PTY lifecycle, not recovery: the records die with the test. */
@@ -99,7 +113,10 @@ afterEach(async () => {
   const { Pty } = await import("./index")
   await Pty.dispose()
   for (const child of disposableChildren.splice(0)) {
-    try { process.kill(-child.pid!, "SIGKILL") } catch {}
+    try {
+      if (windows) child.kill()
+      else process.kill(-child.pid!, "SIGKILL")
+    } catch {}
   }
   fakeProcesses.clear()
   if (previousOrphanTimeout === undefined) {
@@ -392,12 +409,12 @@ async function waitFor(predicate: () => boolean) {
 }
 
 describe("Pty unresolved retirement", () => {
-  test("a terminal that ignores TERM is escalated to KILL and only then reported stopped", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+  // POSIX signal delivery: on Windows both retirement steps are TerminateProcess, which nothing can ignore.
+  test.skipIf(windows)("a terminal that ignores TERM is escalated to KILL and only then reported stopped", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     let stubborn!: ChildProcess
     nextSpawnPid = () => {
-      stubborn = spawnChild("/bin/sh", ["-c", "trap '' TERM; while true; do sleep 0.05; done"], { detached: true, stdio: "ignore" })
-      disposableChildren.push(stubborn)
+      stubborn = disposableChild("process.on('SIGTERM', () => {}); setInterval(() => {}, 50)")
       return stubborn.pid!
     }
 
@@ -418,7 +435,7 @@ describe("Pty unresolved retirement", () => {
 
   test("a payload that exited before its identity was read is reported exited, not unverifiable", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
-    const brief = spawnChild("/bin/sh", ["-c", "exit 0"], { detached: true, stdio: "ignore" })
+    const brief = disposableChild("process.exit(0)")
     await new Promise<void>((resolve) => brief.once("exit", () => resolve()))
     nextSpawnPid = brief.pid!
 
@@ -431,16 +448,14 @@ describe("Pty unresolved retirement", () => {
 
   test("a pid the runtime did not spawn records no identity and never becomes a signal target", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
-    // init: alive, readable, and emphatically not ours. Recording its identity
-    // would make the next removal signal the whole machine's process group 1.
-    nextSpawnPid = 1
+    nextSpawnPid = FOREIGN_PID
 
     const info = await Pty.create({ cwd: tmpDir, title: "foreign" }, ownership)
     const result = await Pty.remove(info.id)
 
     expect(result?.error?.code).toBe("ownership_unverified")
     expect(result?.signals).toEqual([])
-    expect(alive(1)).toBe(true)
+    expect(alive(FOREIGN_PID)).toBe(true)
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
     // A second remove retries rather than reporting a terminal already claimed stopped.
     expect((await Pty.remove(info.id))?.error?.code).toBe("ownership_unverified")
@@ -463,7 +478,8 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.list().length).toBe(before)
   }))
 
-  test("a terminal whose group still holds a process stays addressable and keeps pinning the runtime", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+  // POSIX process groups: Windows retirement resolves a taskkill tree, not a group a leader leaves behind.
+  test.skipIf(windows)("a terminal whose group still holds a process stays addressable and keeps pinning the runtime", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     // A leader with a member of its own. Killing only the leader leaves the
     // group populated, which is the one outcome that is honestly reportable

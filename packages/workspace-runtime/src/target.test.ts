@@ -26,8 +26,7 @@ describe("workspaceDir", () => {
   }))
 
   it("resolves a single configured directory", () => withSessionCore(testSessionCore(TEST_ROOT, "ws_test"), () => {
-    expect(workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "./tmp/demo" } as NodeJS.ProcessEnv)).toContain("/tmp/demo")
-    expect(workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "./tmp/demo" } as NodeJS.ProcessEnv)).toContain("/tmp/demo")
+    expect(workspaceDir({ WORKSPACE_RUNTIME_DIRECTORY: "./tmp/demo" } as NodeJS.ProcessEnv)).toBe(path.resolve("tmp", "demo"))
   }))
 })
 

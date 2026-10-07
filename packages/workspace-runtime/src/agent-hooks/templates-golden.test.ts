@@ -19,6 +19,19 @@ function withoutComments(script: string) {
     .join("\n")
 }
 
+/**
+ * The fixture spells every `{{root}}` path with `/`. A Windows run writes the
+ * same paths with `\`, doubled where they sit inside JSON, so both the raw and
+ * the JSON-escaped root are replaced and the separators that follow are folded
+ * back to `/`. On POSIX nothing matches and the text is unchanged.
+ */
+function withFixtureRoot(content: string, root: string) {
+  return content
+    .replaceAll(JSON.stringify(root).slice(1, -1), "{{root}}")
+    .replaceAll(root, "{{root}}")
+    .replace(/\{\{root\}\}(?:\\{1,2}[^\s'"\\]+)+/g, (spelled) => spelled.replace(/\\{1,2}/g, "/"))
+}
+
 test("eight first-party templates reproduce the base wrappers, configs, hook artifacts and project file", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-hooks-golden-"))
   try {
@@ -42,16 +55,17 @@ test("eight first-party templates reproduce the base wrappers, configs, hook art
       for (const name of await fs.readdir(path.join(root, dir), { recursive: true })) {
         const file = path.join(root, dir, name)
         if (!(await fs.stat(file)).isFile()) continue
-        actual[`${dir}/${name}`] = (await fs.readFile(file, "utf8"))
-          .replaceAll(BIN_DIR, "{{bin}}")
-          .replaceAll(root, "{{root}}")
+        actual[`${dir}/${name.replaceAll(path.sep, "/")}`] = withFixtureRoot(
+          (await fs.readFile(file, "utf8")).replaceAll(BIN_DIR, "{{bin}}"),
+          root,
+        )
       }
     }
     const project = defaultStatusHooks.find((template) => template.install.type === "project-file")!
-    actual[`project/${project.install.type === "project-file" ? project.install.path : ""}`] = projectHookContent(
-      project,
-      manifest.files.notify,
-    ).replaceAll(root, "{{root}}")
+    actual[`project/${project.install.type === "project-file" ? project.install.path : ""}`] = withFixtureRoot(
+      projectHookContent(project, manifest.files.notify),
+      root,
+    )
     expect(defaultStatusHooks).toHaveLength(8)
     const notify = "data/hooks/notify.sh"
     expect(withoutComments(actual[notify])).toBe(withoutComments(files[notify]))

@@ -17,6 +17,9 @@ afterEach(() => {
   rmSync(TEST_ROOT, { recursive: true, force: true })
 })
 
+// POSIX shebang execution: a wrapper is a bare bash script a POSIX shell finds on PATH, which cmd.exe never does.
+const posixShebang = process.platform !== "win32"
+
 describe("buildWrapperScript", () => {
   it("includes marker, find_real_binary, binary name, and exec block", () => {
     const script = buildWrapperScript("myagent", `exec "$REAL_BIN" "$@"`)
@@ -81,7 +84,7 @@ describe("Copilot template wrapper", () => {
   })
 })
 
-describe("copilot wrapper integration", () => {
+describe.skipIf(!posixShebang)("copilot wrapper integration", () => {
   it("rewrites stale hook file with current hook path", () => {
     const projectDir = path.join(TEST_ROOT, "project")
     const hooksDir = path.join(projectDir, ".github", "hooks")
@@ -127,7 +130,7 @@ describe("copilot wrapper integration", () => {
   })
 })
 
-describe("copilot project hooks", () => {
+describe.skipIf(!posixShebang)("copilot project hooks", () => {
   function copilotProject() {
     const projectDir = path.join(TEST_ROOT, "copilot-project")
     const realBinDir = path.join(TEST_ROOT, "copilot-real-bin")
@@ -171,7 +174,7 @@ describe("copilot project hooks", () => {
   })
 })
 
-describe("codex wrapper integration", () => {
+describe.skipIf(!posixShebang)("codex wrapper integration", () => {
   function run(args: string[], env: Record<string, string>) {
     const realBinDir = path.join(TEST_ROOT, "real-bin")
     const wrapperPath = path.join(TEST_ROOT, "bin", "codex")

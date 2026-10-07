@@ -92,7 +92,9 @@ describe("execution-env exec", () => {
 
   test("a background job outlives its command and is retired when the runtime stops", async () => {
     const { post, dispose } = await served()
-    const events = parseSse(await (await post("exec", { command: "sleep 60 & echo $!" })).text())
+    // The job prints its own pid: `$!` under Git Bash is an MSYS pid the kernel does not know.
+    const job = `'${process.execPath}' -e 'console.log(process.pid); setTimeout(() => {}, 60_000)' &`
+    const events = parseSse(await (await post("exec", { command: job })).text())
     expect(events.at(-1)).toEqual({ event: "result", data: { ok: true, value: { exitCode: 0 } } })
     const pid = Number(events.filter((event) => event.event === "output").map((event) => event.data.text).join("").trim())
     expect(pidRunning(pid)).toBe(true)

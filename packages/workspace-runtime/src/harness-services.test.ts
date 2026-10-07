@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import os from "node:os"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createRuntimeCredentialIssuer } from "./first-party-mcp"
 import { createHarnessServices } from "./harness-services"
@@ -26,7 +27,7 @@ test("host services use the owned spawn, clock and logger", async () => {
   expect(services.log).toBe(log)
   services.log.info("created")
   expect(calls).toEqual([["info", "created"]])
-  const child = await services.spawn({ file: "/bin/sh", args: ["-c", "printf ready"], cwd: "/tmp", env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
+  const child = await services.spawn({ file: process.execPath, args: ["-e", "process.stdout.write('ready')"], cwd: os.tmpdir(), env: { PATH: process.env.PATH ?? "" } },
     { role: "probe", label: "service boundary", signal: new AbortController().signal })
   expect((await child.exited).code).toBe(0)
   expect(await child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })).toEqual({ stopped: true })

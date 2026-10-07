@@ -18,11 +18,10 @@ function makeExecutable(dir: string, name: string): string {
 describe("resolveClaudeExecutable", () => {
   test("finds `claude` on PATH", () => {
     const dir = path.join(root, "onpath")
-    makeExecutable(dir, "claude")
-    // The resolver joins with the SIMULATED platform's separator (posix for
-    // darwin), so on a Windows host the candidate is `<win-dir>/claude`, not
-    // the host path.join. Build the expectation the same way.
-    expect(resolveClaudeExecutable({ PATH: dir }, "darwin", root)).toBe(path.posix.join(dir, "claude"))
+    // npm installs a `claude.cmd` launcher on Windows and a bare `claude` elsewhere.
+    const name = process.platform === "win32" ? "claude.cmd" : "claude"
+    const installed = makeExecutable(dir, name)
+    expect(resolveClaudeExecutable({ PATH: dir }, process.platform, root)).toBe(installed)
   })
 
   test("uses the native-installer location when PATH misses it", () => {

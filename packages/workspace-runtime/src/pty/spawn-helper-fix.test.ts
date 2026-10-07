@@ -19,7 +19,8 @@ async function helper(mode: number) {
   return file
 }
 
-describe("spawn-helper permission fix", () => {
+// POSIX execute bits: the spawn-helper is node-pty's macOS binary, and Windows ConPTY has none.
+describe.skipIf(process.platform === "win32")("spawn-helper permission fix", () => {
   test("restores missing execute permission", async () => {
     const file = await helper(0o644)
 
@@ -61,17 +62,17 @@ describe("spawn-helper permission fix", () => {
 
 describe("spawnHelperCandidates", () => {
   test("maps an asar path to its unpacked counterpart", () => {
-    const asarPath = "/app/Claxedo Dev.app/Contents/Resources/app.asar/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper"
+    const asarPath = path.join("/app/Claxedo Dev.app/Contents/Resources/app.asar/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper")
     expect(spawnHelperCandidates(asarPath)).toEqual([
       asarPath,
-      "/app/Claxedo Dev.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper",
+      path.join("/app/Claxedo Dev.app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper"),
     ])
   })
 
   test("leaves plain and already-unpacked paths alone", () => {
-    const plain = "/repo/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper"
+    const plain = path.join("/repo/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper")
     expect(spawnHelperCandidates(plain)).toEqual([plain])
-    const unpacked = "/app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper"
+    const unpacked = path.join("/app/Contents/Resources/app.asar.unpacked/node_modules/@lydell/node-pty-darwin-arm64/prebuilds/darwin-arm64/spawn-helper")
     expect(spawnHelperCandidates(unpacked)).toEqual([unpacked])
   })
 })
