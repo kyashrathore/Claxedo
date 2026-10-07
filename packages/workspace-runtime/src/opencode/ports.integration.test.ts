@@ -24,6 +24,7 @@ import {
   type OpenCodeSessionPort,
 } from "@claxedo/harness/opencode-sdk"
 import { wakeMessageId } from "@claxedo/session-core"
+import { removeTempRoot } from "@claxedo/harness/testing"
 
 let root: string
 let host: OpenCodeHost
@@ -53,7 +54,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await host?.close()
-  if (root) fs.rmSync(root, { recursive: true, force: true })
+  if (root) await removeTempRoot(root)
 })
 
 describe("session port against a real host", () => {

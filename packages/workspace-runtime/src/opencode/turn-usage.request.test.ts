@@ -12,7 +12,7 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "@claxedo/harness/broker"
 import type { HarnessServices, StartInput, TurnInput } from "@claxedo/harness/contract"
 import { OpenCodeSdkTransport } from "@claxedo/harness/opencode-sdk"
-import { MemoryPorts, authority, origin } from "@claxedo/harness/testing"
+import { MemoryPorts, authority, origin, removeTempRoot } from "@claxedo/harness/testing"
 
 type ChatRequest = { messages?: Array<{ role?: string }> }
 type UsageEvent = Extract<AgentRuntimeEvent, { type: "usage" }>
@@ -181,6 +181,6 @@ test("a two-step turn meters each step in disjoint categories and closes on thei
   } finally {
     await transport.dispose()
     await endpoint.close()
-    fs.rmSync(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   }
 }, 60_000)
