@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { runConformance, setupConformance } from "./test-support/run"
-import { type CodexBackend, codexBackend as backend, codexEntry, codexOptions, commandResult, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend } from "../../e2e/harness/codex-conformance"
+import { allowCommandApprovals, type CodexBackend, codexBackend as backend, codexEntry, codexOptions, commandResult, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend } from "../../e2e/harness/codex-conformance"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
@@ -20,6 +20,7 @@ runConformance({ name: "codex-app-server", backend, makeTransport })
 test("Codex Stop on a turn that ran a command terminates its background terminals and verifies them clear", async () => {
   const recorder = recordingBackend()
   const context = await setupConformance({ name: "codex-stop-command", backend: recorder.backend, makeTransport })
+  const approvals = allowCommandApprovals(context)
   try {
     const state = context.backend as CodexBackend
     state.server.scriptTool({ name: "exec_command", input: { cmd: "sleep 120", yield_time_ms: 1000 } })
@@ -38,11 +39,12 @@ test("Codex Stop on a turn that ran a command terminates its background terminal
     expect(recorder.frames.some((frame) => frame.method === "turn/interrupt")).toBe(true)
     expect(recorder.frames.filter((frame) => frame.method === "thread/backgroundTerminals/list").length).toBeGreaterThanOrEqual(2)
     expect(recorder.frames.some((frame) => frame.method === "thread/backgroundTerminals/terminate")).toBe(true)
-  } finally { await context.close() }
+  } finally { approvals(); await context.close() }
 }, 60_000)
 
 test("Codex goal pause and stop proceed after a goal turn ran a command, once its terminals verify clear", async () => {
   const context = await setupConformance({ name: "codex-goal-command", backend, makeTransport })
+  const approvals = allowCommandApprovals(context)
   try {
     const state = context.backend as CodexBackend
     state.server.scriptTool({ name: "exec_command", input: { cmd: "sleep 120", yield_time_ms: 1000 } })
@@ -55,11 +57,12 @@ test("Codex goal pause and stop proceed after a goal turn ran a command, once it
     expect((await context.transport.goals!.stop(context.session)).ok).toBe(true)
     expect(await context.transport.goals!.read(context.session)).toBeNull()
     release()
-  } finally { await context.close() }
+  } finally { approvals(); await context.close() }
 }, 60_000)
 
 test("Codex command-result gate exposes a failed goal command before another goal iteration", async () => {
   const context = await setupConformance({ name: "codex-goal-command-failure", backend, makeTransport })
+  const approvals = allowCommandApprovals(context)
   const state = context.backend as CodexBackend
   const marker = "CODEXFAILEDCOMMAND"
   const release = context.backend.hold!(marker)
@@ -74,6 +77,7 @@ test("Codex command-result gate exposes a failed goal command before another goa
     expect((await context.transport.goals!.stop(context.session)).ok).toBe(true)
   } finally {
     release()
+    approvals()
     await context.close()
   }
 }, 60_000)

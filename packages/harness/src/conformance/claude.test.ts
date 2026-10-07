@@ -274,7 +274,7 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     if (decision === "allow_always") {
       expect(ports.states.get("s1")?.brokerGrants).toHaveLength(1)
       await fs.rm(target)
-      state.server.scriptToolSequence("again", [{ name: "Bash", input: { command: `printf approved > ${target}` } }])
+      state.server.scriptToolSequence("again", [{ name: "Bash", input: { command: `printf approved > ${shellPath(target)}` } }])
       const next = { ...turn, turnId: "t2", userMessageId: "u2", assistantMessageId: "a2",
         prompt: { ...turn.prompt, assistantMessageId: "a2", parts: [{ type: "text" as const, text: "Run the scripted Bash tool again" }] } }
       ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: committed().binding.upstreamSessionId, turnId: "t2" })

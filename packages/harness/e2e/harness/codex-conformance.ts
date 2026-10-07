@@ -101,6 +101,35 @@ export function recordingBackend(): { backend: () => Promise<CodexBackend>; fram
   } }
 }
 
+// Codex has no sandbox on Windows, so under workspace-write every exec_command asks for approval;
+// a Windows user answers it, and so do the fixtures that run commands.
+const WINDOWS_WITHOUT_CODEX_SANDBOX = process.platform === "win32"
+
+type ApprovalContext = Pick<Awaited<ReturnType<typeof setupConformance>>, "owner" | "session">
+
+export function allowCommandApprovals(context: ApprovalContext): () => void {
+  if (!WINDOWS_WITHOUT_CODEX_SANDBOX) return () => {}
+  const sessionId = context.session.binding.sessionId
+  const stopped = new AbortController()
+  void (async () => {
+    while (!stopped.signal.aborted) {
+      for (const row of context.owner.broker.list({ sessionId })) {
+        if (row.request.kind !== "permission" || row.request.permission.permission !== "item/commandExecution/requestApproval") continue
+        await context.owner.broker.answer(row.request.requestId, { kind: "permission", decision: "allow_once" }, { sessionId })
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  })()
+  return () => stopped.abort()
+}
+
+// Windows PowerShell 5.1, which Codex runs commands through on Windows, writes `>` redirects as UTF-16LE with a BOM and CRLF.
+export async function readMarker(file: string): Promise<string> {
+  const bytes = await fs.readFile(file)
+  const text = bytes[0] === 0xff && bytes[1] === 0xfe ? bytes.subarray(2).toString("utf16le") : bytes.toString("utf8")
+  return text.replaceAll("\r\n", "\n")
+}
+
 export function makeCodexTransport(services: TestServices, state: ConformanceBackend) {
   return new CodexAppServerTransport(services, codexOptions(state))
 }
