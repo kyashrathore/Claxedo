@@ -7,6 +7,7 @@ import path from "node:path"
 import { exportJWK, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import { projectRuntimeAuth } from "@claxedo/server-core/agent-config/index"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 
 import { adoptConnectedHostOwner, createHostRuntimeListener, HostRuntimeRetirementUnresolvedError, installHostProviderConfigAuthority, setHostProviderConfig, type HostRuntimeListener } from "./runtime"
@@ -86,6 +87,7 @@ describe("host workspace runtime behind the loopback listener", () => {
     if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
     else process.env.CLAXEDO_DATA_DIR = previousDataDir
     await listener?.close()
+    ClaxedoDB.close()
     await new Promise<void>((resolve) => jwks?.close(() => resolve()))
     await new Promise<void>((resolve) => authority?.close(() => resolve()))
     await fs.rm(root, { recursive: true, force: true })
