@@ -13,7 +13,7 @@ import { createTestServices } from "./test-support/services"
 test("a Pi run killed mid-tool resumes on attach as a continuation turn that answers with the interrupted result", async () => {
   const backend = await piBackend("pi-resume")
   const pidFile = path.join(backend.directory, "sleep.pid")
-  backend.server.scriptTool({ name: "bash", input: { command: `echo $$ > ${pidFile}; exec sleep 60` }, whenPromptIncludes: "PICRASH" })
+  backend.server.scriptTool({ name: "bash", input: { command: `echo $$ > '${pidFile}'; exec sleep 60` }, whenPromptIncludes: "PICRASH" })
   const child = spawn(process.execPath, [path.join(import.meta.dirname, "../../e2e/harness/pi-crash-child.ts"), backend.root, backend.directory, backend.server.url],
     { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, HOME: path.join(backend.root, "home") } })
   let output = ""
