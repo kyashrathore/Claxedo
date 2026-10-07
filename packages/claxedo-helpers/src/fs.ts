@@ -127,17 +127,18 @@ export async function isOwnerOnlyFile(file: string): Promise<boolean> {
   return isOwnerOnlyDescriptor(descriptor, user)
 }
 
-/**
- * A reader that has the target open can block the replacement on Windows,
- * depending on the share mask its runtime chose. Readers hold these files for
- * one read, so a bounded wait turns a collision into a pause; past it the error
- * is the caller's, with the staging file removed.
- */
 const REPLACE_TIMEOUT_MS = 2_000
 const REPLACE_POLL_MS = 25
 const SHARING_VIOLATION = new Set(["EPERM", "EACCES", "EBUSY"])
 
-async function replaceWithRetry(temp: string, file: string): Promise<void> {
+/**
+ * `rename(temp, file)` that waits out a reader. On Windows the rename fails
+ * with EPERM while a reader has the target open, under Node and Bun readers
+ * alike; readers hold these files for one read, so a bounded wait turns the
+ * collision into a pause. Past the wait the error is the caller's; the staging
+ * file is the caller's too.
+ */
+export async function renameReplacing(temp: string, file: string): Promise<void> {
   const deadline = Date.now() + REPLACE_TIMEOUT_MS
   for (;;) {
     try {
@@ -174,7 +175,7 @@ async function stageAndReplace(
     await handle.writeFile(contents)
     if (options.fsync !== false) await handle.sync()
     await handle.close()
-    await replaceWithRetry(temp, file)
+    await renameReplacing(temp, file)
   } catch (error) {
     // Every failure after the exclusive create owns the temp, not just a failed
     // rename: a staging file left behind holds the secret at a name no one will
