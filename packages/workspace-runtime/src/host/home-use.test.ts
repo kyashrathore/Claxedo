@@ -127,7 +127,8 @@ test("a removal that fails is retried by the next sweep", async () => {
   expect(await fs.readdir(path.join(f.homes, ".collected"))).toEqual([])
 })
 
-test("a harness that outlives its runtime keeps its home until its launch is proven retired", async () => {
+// libuv puts a non-detached Windows child in a kill-on-close job, so no harness outlives the runtime that launched it there.
+test.skipIf(process.platform === "win32")("a harness that outlives its runtime keeps its home until its launch is proven retired", async () => {
   const f = await fixture()
   const ledger = path.join(f.root, "launches.sqlite")
   const runtime = Bun.spawn([process.execPath, path.join(import.meta.dirname, "../test-support/home-runtime.ts"), f.home, ledger],

@@ -46,7 +46,7 @@ describe("Claude template wrapper", () => {
     expect(script).toContain('hook_event_name":"Idle"')
     expect(script).toContain('hook_event_name":"Error"')
     expect(script).toContain('find_real_binary "claude"')
-    expect(script).toContain(`"$REAL_BIN" --settings '/tmp/hooks/claude-settings.json' "$@"`)
+    expect(script).toContain(`"$REAL_BIN" --settings '${path.join("/tmp/hooks", "claude-settings.json")}' "$@"`)
   })
 })
 

@@ -7,6 +7,7 @@ import { createHarnessComposer } from "@claxedo/harness/compose"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createHarnessServices } from "./harness-services"
 import { requireCursorWorker } from "./host/executables/cursor"
+import { removeTempRoot } from "@claxedo/harness/testing"
 
 const peerSource = `#!/usr/bin/env node
 const { createInterface } = require("node:readline");
@@ -85,5 +86,5 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
       expectedRevision: 2, secrets: { token: "resolved" } })).toThrow("disabled or stale")
     expect(() => composer.connection({ descriptor: acpDescriptor, directory: root,
       expectedRevision: 1, secrets: {} })).toThrow("Secret lease")
-  } finally { await fs.rm(root, { recursive: true, force: true }) }
+  } finally { await removeTempRoot(root) }
 }, 30_000)

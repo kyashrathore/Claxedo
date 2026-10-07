@@ -15,6 +15,7 @@ import { GitWorktreeRoutes, type GitWorktreeRoutesOptions } from "../routes/git-
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
 import type { DiffRoutesDeps } from "../workspace-files/diff"
 import { mountWorkspaceFiles } from "./core"
+import { removeTempRoot } from "@claxedo/harness/testing"
 
 const WORKSPACE_ID = "ws_1"
 const SECRET = "private-secret-contents"
@@ -764,7 +765,7 @@ describe("the base a reported path is named against", () => {
   test("a directory-based listing keeps working outside a Git repository", async () => {
     const f = await fixture()
     const plain = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-p64-plain-"))
-    cleanups.push(() => fs.rm(plain, { recursive: true, force: true }))
+    cleanups.push(() => removeTempRoot(plain))
     await fs.writeFile(path.join(plain, "note.txt"), "not a repository\n")
     const hidden = path.join(plain, "hidden")
     await fs.mkdir(hidden)

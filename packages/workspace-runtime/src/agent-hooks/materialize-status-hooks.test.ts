@@ -186,7 +186,7 @@ describe("materializeAgentHooks", () => {
     await fs.symlink(target, file)
     await materializeAgentHooks({ templates: defaultStatusHooks, homeDir: root, notifyPath })
     expect((await fs.lstat(file)).isSymbolicLink()).toBe(true)
-    expect(await fs.readFile(target, "utf8")).toContain(`${cursorHookPath} Stop`)
+    expect(await fs.readFile(target, "utf8")).toContain(JSON.stringify(`${cursorHookPath} Stop`).slice(1, -1))
   })
 
   test("Droid uses standalone hooks and retires only its owned settings entries", async () => {

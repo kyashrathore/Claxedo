@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
@@ -11,12 +11,13 @@ import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import type { WorkspaceHostOptions } from "./host-options"
 import { WorkspaceHarnessUnavailableError } from "@claxedo/session-core"
+import { removeTempRoot } from "@claxedo/harness/testing"
 
 const roots: string[] = []
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map((root) => removeTempRoot(root)))
 })
 
 const capabilities: HarnessConnectionCapabilities = {

@@ -1,6 +1,6 @@
 import type { AgentExecutionBinding, AgentRuntimeHealth, AgentTurnOutcome, SessionConfig } from "@claxedo/agent-runtime-contract"
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -24,6 +24,7 @@ import {
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import { createRuntimeEventHub } from "@claxedo/session-core"
+import { removeTempRoot } from "@claxedo/harness/testing"
 import type { RuntimeSnapshot } from "../routes/config"
 
 
@@ -31,7 +32,7 @@ const cleanups: Array<() => void | Promise<void>> = []
 const roots: string[] = []
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map((root) => removeTempRoot(root)))
 })
 
 type FixtureOptions = {

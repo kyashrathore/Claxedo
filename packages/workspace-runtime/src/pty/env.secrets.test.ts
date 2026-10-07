@@ -48,7 +48,8 @@ describe("agent-facing env never carries prefixed secrets", () => {
     const env = Object.fromEntries(names.map((name) => [name, "leaked-value"]))
     const safe = buildSafeEnv(env, { platform: "linux", customPrefix: "CLAXEDO" })
     expect(Object.keys(safe)).toEqual([])
-  })
+    // Reading every source file took 32 s on a freshly provisioned Windows box with a cold NTFS cache.
+  }, 120_000)
 
   test("the specific keys-to-the-kingdom names are denied", () => {
     // Called out individually so a regression names the actual consequence.

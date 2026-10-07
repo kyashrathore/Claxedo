@@ -216,7 +216,8 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, subscribers: 0, unrecorded: 0, unresolved: 0 })
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(true)
 
-    await waitFor(() => Pty.get(info.id) === undefined)
+    // Each identity read of the retirement is a PowerShell CIM query on Windows, 250 ms to 2 s apiece.
+    await waitFor(() => Pty.get(info.id) === undefined, 10_000)
 
     expect(Pty.get(info.id)).toBeUndefined()
     expect(alive(info.pid)).toBe(false)
@@ -400,8 +401,8 @@ function socket() {
   return Object.assign(ws, { tracker })
 }
 
-async function waitFor(predicate: () => boolean) {
-  const deadline = Date.now() + 1000
+async function waitFor(predicate: () => boolean, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (predicate()) return
     await new Promise((resolve) => setTimeout(resolve, 10))
