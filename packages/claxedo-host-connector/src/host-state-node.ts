@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
+import { renameReplacing } from "@claxedo/helpers/fs"
 
 import type { HostStateFs } from "./host-state"
 
@@ -24,9 +25,7 @@ export function nodeHostStateFs(): HostStateFs {
     writeFile: async (path, text, options) => {
       await writeFile(path, text, { encoding: "utf8", mode: options.mode, flag: "wx" })
     },
-    rename: async (from, to) => {
-      await rename(from, to)
-    },
+    rename: renameReplacing,
     mkdir: async (path, options) => {
       await mkdir(path, options)
     },
