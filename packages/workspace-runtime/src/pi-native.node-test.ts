@@ -131,8 +131,9 @@ void test("a background job a Pi command starts survives the command and ends wi
   const model = await provider([])
   const paths = await roots("pi-machine-background-", model.url)
   const pidFile = path.join(paths.directory, "background.pid")
-  // The job records its own pid: `$!` under Git Bash is an MSYS pid the kernel does not know.
-  const job = `'${process.execPath}' -e 'require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 30_000)'`
+  // The job records its own pid, since `$!` under Git Bash is an MSYS pid the kernel does not know, and names
+  // the file relative to the command's cwd, since a backslash path does not survive Git Bash's argument passing.
+  const job = `'${process.execPath}' -e 'require("node:fs").writeFileSync(${JSON.stringify(path.basename(pidFile))}, String(process.pid)); setTimeout(() => {}, 30_000)'`
   model.replies.push({ tool: { name: "bash", arguments: { command: `${job} & echo started` } } }, { text: "Background started" })
   const runtime = piNativeRuntime(paths)
   try {
