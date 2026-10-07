@@ -19,6 +19,7 @@ beforeAll(() => {
   writeFileSync(at("run.ps1"), "Write-Host pwned\n")
   writeFileSync(at("tool"), "#!/bin/sh\necho pwned\n")
   chmodSync(at("tool"), 0o755)
+  writeFileSync(at("plain"), "#!/bin/sh\necho pwned\n", { mode: 0o644 })
   mkdirSync(at("Evil.app"))
   symlinkSync(at("run.command"), at("link-to-script"))
   symlinkSync(at("run.command"), at("decoy.md"))
@@ -65,7 +66,10 @@ describe("open-path without an app", () => {
     expect(calls).toEqual([{ effect: "reveal", args: [at("project")] }])
   })
 
-  test.each(["run.command", "run.ps1", "tool", "link-to-script", "decoy.md", "link-to-tool", "Evil.app"])(
+  // An execute bit exists only on POSIX; on Windows the extension set is the
+  // whole test, so an extensionless file there is a document.
+  const byExecuteBit = platform === "win32" ? [] : ["tool", "link-to-tool"]
+  test.each(["run.command", "run.ps1", "link-to-script", "decoy.md", "Evil.app", ...byExecuteBit])(
     "%s asks the user first and opens nothing when they decline",
     async (name) => {
       const { calls, effects } = recorder(false)
@@ -73,6 +77,12 @@ describe("open-path without an app", () => {
       expect(calls).toEqual([{ effect: "confirmOpenExecutable", args: [at(name)] }])
     },
   )
+
+  test.each(platform === "win32" ? ["tool", "link-to-tool", "plain"] : ["plain"])("%s, with no execute bit the platform reports, opens through the OS handler", async (name) => {
+    const { calls, effects } = recorder(false)
+    await openIn({ path: at(name) }, deps, effects)
+    expect(calls).toEqual([{ effect: "openWithOsHandler", args: [at(name)] }])
+  })
 
   test("a confirmed executable opens through the OS handler", async () => {
     const { calls, effects } = recorder(true)

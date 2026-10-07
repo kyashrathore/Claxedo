@@ -15,13 +15,12 @@ afterEach(() => {
 async function orphan(build: string) {
   const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" })
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()))
-  children.push(() => {
-    try {
-      process.kill(-child.pid!, "SIGKILL")
-    } catch {
-      // Already gone, which is what the stop tests expect.
-    }
-  })
+  // The stand-in leads a process group of one, so the child itself is the
+  // whole group; `kill(-pid)` would address a POSIX group that Windows has not.
+  const kill = () => {
+    child.kill("SIGKILL")
+  }
+  children.push(kill)
   const identity = await readCreationIdentity(child.pid!)
   if (!identity) throw new Error("the stand-in daemon reported no creation identity")
   const discovery: ClaxedoDaemonDiscovery = {
@@ -35,7 +34,7 @@ async function orphan(build: string) {
     build,
     identity,
   }
-  return { discovery, exited, alive: () => child.exitCode === null && child.signalCode === null }
+  return { discovery, exited, kill, alive: () => child.exitCode === null && child.signalCode === null }
 }
 
 /** A daemon answering its identity as `record`, and its state with `leases` held by other apps. */
@@ -93,7 +92,7 @@ describe("launching over a published daemon", () => {
 
   test("a published daemon whose process is gone is replaced", async () => {
     const daemon = await orphan("1.4.0")
-    process.kill(-daemon.discovery.pid, "SIGKILL")
+    daemon.kill()
     await daemon.exited
 
     expect(await verdict(daemon.discovery, "1.4.0", silent)).toEqual({ kind: "replace" })

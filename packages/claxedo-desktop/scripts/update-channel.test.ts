@@ -121,7 +121,9 @@ function finalize(feed: string | undefined, ymlName: string) {
   return { proc, tmp, ghLog }
 }
 
-describe("finalize-latest-yml", () => {
+// release-claxedo.yml runs finalize-latest-yml on ubuntu-latest only, and the
+// stub `gh` is a /bin/sh script.
+describe.skipIf(process.platform === "win32")("finalize-latest-yml", () => {
   test("stable feed stays on latest.yml", () => {
     const { proc, tmp, ghLog } = finalize(undefined, "latest.yml")
     expect(proc.stderr.toString()).toBe("")
