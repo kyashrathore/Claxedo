@@ -38,7 +38,17 @@ function checkToolchain(): CheckToolchain {
   }
 }
 
+/**
+ * tsconfig paths and globs are written with `/` whatever the platform: the
+ * compiler's `include` matcher treats `\` as a literal, so a Windows-joined
+ * glob selects nothing and the check passes with no file compiled.
+ */
+function configPath(file: string): string {
+  return file.split(path.sep).join("/")
+}
+
 function typecheckConfig(rootDir: string, hostDeclarations: string, paths: CheckToolchain["paths"]) {
+  const root = configPath(rootDir)
   return {
     compilerOptions: {
       target: "ES2022",
@@ -52,11 +62,11 @@ function typecheckConfig(rootDir: string, hostDeclarations: string, paths: Check
       isolatedModules: true,
       types: [],
       lib: ["ES2022", "DOM", "DOM.Iterable"],
-      paths,
+      paths: Object.fromEntries(Object.entries(paths).map(([name, files]) => [name, files.map(configPath)])),
     },
-    files: [hostDeclarations],
-    include: [path.join(rootDir, "**/*.ts"), path.join(rootDir, "**/*.tsx")],
-    exclude: [path.join(rootDir, "node_modules"), path.join(rootDir, "dist")],
+    files: [configPath(hostDeclarations)],
+    include: [`${root}/**/*.ts`, `${root}/**/*.tsx`],
+    exclude: [`${root}/node_modules`, `${root}/dist`],
   }
 }
 
