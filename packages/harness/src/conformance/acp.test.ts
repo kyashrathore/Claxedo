@@ -13,6 +13,7 @@ import { startScriptedAcpHttp } from "../../e2e/harness/acp/http"
 import { acpScriptToken, writeAcpScript } from "../../e2e/harness/acp/script"
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { expect, test } from "bun:test"
+import { errorMessage } from "@claxedo/helpers"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
@@ -426,7 +427,9 @@ test("the targeted red ACP agent fails at session/prompt", async () => {
       for await (const _event of context.transport.send(context.session,
         context.turn("This must fail in the scripted ACP agent"), context.turnBroker())) {}
     }
-    await expect(running()).rejects.toThrow("Scripted ACP red run")
+    const failure = await running().then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(Error)
+    expect(errorMessage(failure)).toContain("Scripted ACP red run")
     expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/prompt")).toBe(true)
   } finally { await context.close() }
 })
