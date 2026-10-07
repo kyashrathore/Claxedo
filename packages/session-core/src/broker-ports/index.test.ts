@@ -58,10 +58,9 @@ function setup(options: Partial<StoreBrokerPortOptions> = {}) {
 }
 
 afterEach(() => {
-  for (const entry of opened.splice(0)) {
-    entry.store.close()
-    fs.rmSync(entry.root, { recursive: true, force: true })
-  }
+  const entries = opened.splice(0)
+  for (const entry of entries) entry.store.close()
+  for (const root of new Set(entries.map((entry) => entry.root))) fs.rmSync(root, { recursive: true, force: true })
 })
 
 const tick = async () => { for (let index = 0; index < 12; index++) await Promise.resolve() }
