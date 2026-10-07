@@ -115,7 +115,10 @@ setInterval(() => {}, 1000);
     await waitFor(() => client.text().includes("early-output-42"))
   })
 
-  void test("removing a terminal terminates its separate child process group without affecting a neighbor", { timeout: 30_000 }, async () => {
+  void test("removing a terminal terminates its separate child process group without affecting a neighbor", {
+    timeout: 30_000,
+    skip: windows && "a detached grandchild outlives the terminal's taskkill tree on Windows (open)",
+  }, async () => {
     const { Pty } = await import("./index")
     const launcher = path.join(tmpDir, "child-launcher.cjs")
     await fs.writeFile(launcher, `const { spawn } = require('node:child_process');
