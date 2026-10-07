@@ -149,6 +149,23 @@ async function terminal(cwd: string) {
   return info
 }
 
+/** The terminal's screen as rows of plain text, from the checkpoint a fresh attach receives. */
+function terminalScreenRows(id: string): string[] {
+  const frames: string[] = []
+  Pty.connect(id, {
+    readyState: 1,
+    bufferedAmount: 0,
+    send: (data) => {
+      frames.push(typeof data === "string" ? data : new TextDecoder().decode(data as ArrayBuffer))
+    },
+    close: () => {},
+  })
+  const meta = frames.find((frame) => frame.startsWith("\u0000"))
+  const { checkpoint } = meta ? JSON.parse(meta.slice(1)) as { checkpoint?: { screen: string } } : {}
+  if (!checkpoint) throw new Error("the attach sent no checkpoint")
+  return checkpoint.screen.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").split(/\r?\n/).map((row) => row.trimEnd())
+}
+
 describe("embedded workspace runtime", () => {
   test.each(["directory", "release", "shutdown", "shutdown-waiter"] as const)("%s retirement drains the old producer before the same store root is reopened", async (mode) => {
     const { root, project } = await makeWorkspaceRoot("embedded-runtime-drain-")
@@ -1170,12 +1187,18 @@ describe("attaching to an embedded workspace terminal", () => {
       })
       await new Promise((resolve) => setTimeout(resolve, 50))
       attach.connection.onMessage("echo member-typed\r")
+      // The shell echoes the typed command, then prints its output: the member
+      // has read both once the text has streamed twice.
+      const streamedOutput = () => received.join("").split("member-typed").length > 2
       const deadline = Date.now() + 5_000
-      while (!/\nmember-typed\r?\n/.test(received.join("")) && Date.now() < deadline) {
+      while (!streamedOutput() && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 25))
       }
 
-      expect(received.join("")).toMatch(/\nmember-typed\r?\n/)
+      expect(streamedOutput()).toBe(true)
+      // ConPTY repaints with cursor moves rather than CRLF, so the line is
+      // asserted on the emulator's screen rather than in the byte stream.
+      expect(terminalScreenRows(pty.id)).toContain("member-typed")
       expect(live.asked).toEqual(["read"])
     } finally {
       configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })

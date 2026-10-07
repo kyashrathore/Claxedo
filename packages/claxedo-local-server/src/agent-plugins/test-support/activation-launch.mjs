@@ -45,10 +45,12 @@ async function activationLaunchFixture(home, mode) {
   await fs.mkdir(path.join(source, "skills/review"), { recursive: true })
   await fs.writeFile(path.join(source, "plugin.json"), JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "review" }))
   await fs.writeFile(path.join(source, "skills/review/SKILL.md"), "---\nname: review\ndescription: Review code\n---\nReview\n")
-  await fs.writeFile(path.join(source, "server"), '#!/bin/sh\nprintf "%s" "$PWD"\n', { mode: 0o755 })
+  // The stub server prints the directory it was started in.
+  const server = process.platform === "win32" ? { name: "server.cmd", body: "@echo %CD%\r\n" } : { name: "server", body: '#!/bin/sh\nprintf "%s" "$PWD"\n' }
+  await fs.writeFile(path.join(source, server.name), server.body, { mode: 0o755 })
   await fs.writeFile(path.join(source, "mcp.json"), JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", mcpServers: {
     docs: { type: "streamable-http", url: "https://plugin.example/mcp", headers: { Authorization: "fixture-plugin-token" } },
-    local: { type: "stdio", command: "./server", cwd: "./skills", args: ["${PLUGIN_DATA}/state"] },
+    local: { type: "stdio", command: `./${server.name}`, cwd: "./skills", args: ["${PLUGIN_DATA}/state"] },
   } }))
   const artifacts = new LocalAgentPluginArtifactStore(path.join(home, "artifacts"))
   const retained = await artifacts.put(await inspectPluginDirectory(source))
@@ -98,7 +100,7 @@ async function activationLaunchFixture(home, mode) {
     const { mcpServers } = JSON.parse(await fs.readFile(path.join(codex.home, "plugins/cache/claxedo-agent-plugins/review/1.0.0/.mcp.json"), "utf8"))
     assert.ok(path.isAbsolute(mcpServers.local.command))
     const result = await promisify(execFile)(mcpServers.local.command, mcpServers.local.args, { cwd: mcpServers.local.cwd })
-    assert.equal(await fs.realpath(result.stdout), await fs.realpath(mcpServers.local.cwd))
+    assert.equal(await fs.realpath(result.stdout.trim()), await fs.realpath(mcpServers.local.cwd))
     assert.ok((await fs.readdir(path.join(cursor.home, ".cursor/plugins/local"))).some((name) => name.startsWith("claxedo--")))
     const projection = session("codex").projection
     await assert.rejects(prepareCodexProfile({ homeRoot: path.join(home, "shared/codex"),

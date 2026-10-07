@@ -351,7 +351,7 @@ describe("local Agent Plugins composition", () => {
     })
     const local = contribution.mcp[names[1]]
     expect(local).toMatchObject({ source: "plugin", transport: "stdio", command: "docs-local" })
-    expect(local?.transport === "stdio" ? local.args[0] : undefined).toMatch(/runtime-signed\/agent-plugins\/generations\/generation-3-.*index\.js$/)
+    expect(local?.transport === "stdio" ? local.args[0] : undefined).toMatch(/runtime-signed[\\/]agent-plugins[\\/]generations[\\/]generation-3-.*index\.js$/)
 
     // A daemon restart keeps the pushed world until the desktop withdraws it.
     ClaxedoDB.close()

@@ -8,11 +8,10 @@ import { git } from "./git"
 
 const scratch: string[] = []
 
-test("preserves whitespace, unicode and newlines in Git filenames on listing and search handlers", async () => {
+async function expectGitFilenamePreserved(name: string) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-git-filenames-"))
   scratch.push(directory)
   await git(directory, ["init"])
-  const name = " 雪 furniture\nnotes.txt "
   await fs.promises.writeFile(path.join(directory, name), "")
   expect(await allFilesBody(ctx(directory, "."))).toEqual({ paths: [name] })
   expect(await findFilesBody({
@@ -21,6 +20,15 @@ test("preserves whitespace, unicode and newlines in Git filenames on listing and
       header: () => undefined,
     },
   })).toEqual([name])
+}
+
+test("preserves whitespace and unicode in Git filenames on listing and search handlers", async () => {
+  await expectGitFilenamePreserved(" 雪 furniture notes.txt")
+})
+
+// NTFS refuses a newline in a name and drops a trailing space.
+test.skipIf(process.platform === "win32")("preserves newlines and trailing whitespace in Git filenames on listing and search handlers", async () => {
+  await expectGitFilenamePreserved(" 雪 furniture\nnotes.txt ")
 })
 
 afterEach(async () => {
