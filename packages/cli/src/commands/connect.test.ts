@@ -590,7 +590,7 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.service).toBeUndefined()
   })
 
-  test("--install-service on a box without a user manager writes and records the unit, prints the linger command and exits 78", async () => {
+  posixHost("--install-service on a box without a user manager writes and records the unit, prints the linger command and exits 78", async () => {
     const { file } = await invitationFile(h, [h.root])
     const service = serviceDeps(h.home, h.serviceCalls)
     h.deps.service = () => ({
