@@ -31,7 +31,9 @@ function secretNamesInRepo(): string[] {
   const root = path.join(repoRoot, "packages")
   if (!fs.existsSync(root)) return []
   for (const file of sourceFiles(root)) {
-    for (const match of fs.readFileSync(file, "utf8").matchAll(SECRET_SUFFIXED)) names.add(match[0])
+    // Under Bun on Windows readFileSync with an encoding costs about 6 ms per file
+    // (30 s for the tree); the Buffer read costs 0.03 ms and decodes in-process.
+    for (const match of fs.readFileSync(file).toString("utf8").matchAll(SECRET_SUFFIXED)) names.add(match[0])
   }
   return [...names].sort()
 }
