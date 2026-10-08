@@ -1,12 +1,13 @@
 import { expect, test } from "bun:test"
+import os from "node:os"
 import type { DraftLaunch, HarnessSession } from "../../contract"
 import type { Entry } from "./entry"
 import { openCodeConfigOperations } from "./session-config"
 import { WorkspaceScope } from "./scope"
 
-const scope = WorkspaceScope.authorize({ workspaceID: "preview", directory: "/tmp" })
+const scope = WorkspaceScope.authorize({ workspaceID: "preview", directory: os.tmpdir() })
 const draft: DraftLaunch = {
-  workspaceId: "preview", directory: "/tmp", locality: "local", owner: { kind: "machine-owner" },
+  workspaceId: "preview", directory: os.tmpdir(), locality: "local", owner: { kind: "machine-owner" },
   model: { providerID: "proof", modelID: "current" },
   config: { harness: { id: "opencode", access: "native" }, model: { providerID: "proof", modelID: "old" } },
   credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" },
