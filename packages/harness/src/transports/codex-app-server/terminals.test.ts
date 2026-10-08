@@ -36,6 +36,28 @@ test("Codex stop waits for this turn's completion, pages the inventory, and term
   })
 })
 
+test("a command Codex started without naming its process id terminates every terminal the thread lists", async () => {
+  const calls: { method: string; params: unknown }[] = []
+  let terminated = false
+  let terminals!: CodexTerminals
+  const rpc = { request: async (method: string, params: unknown) => {
+    calls.push({ method, params })
+    if (method === "turn/interrupt") {
+      queueMicrotask(() => terminals.observe({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1" } } }))
+      return {}
+    }
+    if (method === "thread/backgroundTerminals/terminate") { terminated = true; return {} }
+    return { data: terminated ? [] : [{ processId: "terminal-unnamed" }] }
+  } } as CodexRpc
+  terminals = new CodexTerminals(rpc, "thread-1")
+  terminals.observe({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { type: "commandExecution", processId: null } } })
+  expect(terminals.ranCommand("turn-1")).toBe(true)
+  expect(await terminals.stop("turn-1", deadline())).toEqual({ execution: "terminal", cleanup: "verified_clear" })
+  expect(calls.map((call) => call.method)).toEqual(["turn/interrupt", "thread/backgroundTerminals/list",
+    "thread/backgroundTerminals/terminate", "thread/backgroundTerminals/list"])
+  expect(calls.find((call) => call.method === "thread/backgroundTerminals/terminate")?.params).toEqual({ threadId: "thread-1", processId: "terminal-unnamed" })
+})
+
 test("an inventory the app-server refuses leaves cleanup unknown instead of failing the stop", async () => {
   let terminals!: CodexTerminals
   const rpc = { request: async (method: string) => {

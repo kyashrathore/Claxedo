@@ -37,15 +37,15 @@ export class CodexTerminals {
     const item = asRecordOrEmpty(params.item)
     if (item.type !== "commandExecution") return
     const turnId = asString(params.turnId)
-    const processId = asString(item.processId)
-    if (!turnId || !processId) return
+    if (!turnId) return
     const ids = this.byTurn.get(turnId) ?? new Set<string>()
-    ids.add(processId)
+    const processId = asString(item.processId)
+    if (processId) ids.add(processId)
     this.byTurn.set(turnId, ids)
   }
 
   ranCommand(turnId: string): boolean {
-    return (this.byTurn.get(turnId)?.size ?? 0) > 0
+    return this.byTurn.has(turnId)
   }
 
   async hasBackgroundTasks(deadline: Deadline): Promise<boolean> {
@@ -71,7 +71,7 @@ export class CodexTerminals {
     }
     const execution = noActive || await this.completion(turnId, deadline) ? "terminal" as const : "unknown" as const
     const ours = this.byTurn.get(turnId)
-    if (!ours?.size) return { execution, cleanup: execution === "terminal" ? "verified_clear" : "unknown" }
+    if (!ours) return { execution, cleanup: execution === "terminal" ? "verified_clear" : "unknown" }
     try { return { execution, cleanup: await this.release(turnId, ours, deadline) } }
     catch (error) { return { execution, cleanup: "unknown", error: cleanupFailure(error) } }
   }
@@ -109,7 +109,7 @@ export class CodexTerminals {
   }
 
   private async survivors(ours: Set<string>, deadline: Deadline): Promise<string[]> {
-    return (await this.inventory(deadline)).filter((id) => ours.has(id))
+    return (await this.inventory(deadline)).filter((id) => !ours.size || ours.has(id))
   }
 
   private async inventory(deadline: Deadline): Promise<string[]> {
