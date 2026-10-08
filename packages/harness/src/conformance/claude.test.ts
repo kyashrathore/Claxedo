@@ -427,7 +427,7 @@ test.each([...sdkModes])("the Claude profile's deny floor holds in %s mode, visi
   const floor = path.join(state.root, "floor")
   await fs.mkdir(floor, { mode: 0o700 })
   try {
-    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 777 ${floor}` } })
+    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 777 ${shellPath(floor)}` } })
     const events = await context.collect("t1", "Run the scripted Bash tool")
     expect(context.owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
     expect(context.ports.saved).toHaveLength(0)
@@ -443,7 +443,7 @@ test("a command outside the floor runs unprompted in bypassPermissions mode", as
   const outside = path.join(state.root, "outside")
   await fs.mkdir(outside, { mode: 0o700 })
   try {
-    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 755 ${outside}` } })
+    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 755 ${shellPath(outside)}` } })
     const events = await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
     if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o755)
     expect(events.some((row) => row.event.type === "tool-error")).toBe(false)
@@ -457,7 +457,7 @@ test("Claude applies permission changes before the active turn's next tool", asy
   await fs.mkdir(outside, { mode: 0o700 })
   const release = state.server.holdOpeningReplies("CLAUDELIVEPERMISSIONS")
   state.server.scriptTool({ name: "Bash", whenPromptIncludes: "CLAUDELIVEPERMISSIONS",
-    input: { command: `chmod -R 755 ${outside}` } })
+    input: { command: `chmod -R 755 ${shellPath(outside)}` } })
   const running = context.collectWithoutAsk("t1", "Run the scripted Bash tool CLAUDELIVEPERMISSIONS")
   try {
     await state.server.textGateReached("CLAUDELIVEPERMISSIONS")
@@ -492,7 +492,7 @@ test("Claude tightens permissions during the active turn before its next tool", 
   await fs.mkdir(outside, { mode: 0o700 })
   const release = state.server.holdOpeningReplies("CLAUDETIGHTENPERMISSIONS")
   state.server.scriptTool({ name: "Bash", whenPromptIncludes: "CLAUDETIGHTENPERMISSIONS",
-    input: { command: `chmod -R 755 ${outside}` } })
+    input: { command: `chmod -R 755 ${shellPath(outside)}` } })
   const running = context.collect("t1", "Run the scripted Bash tool CLAUDETIGHTENPERMISSIONS")
   try {
     await state.server.textGateReached("CLAUDETIGHTENPERMISSIONS")
@@ -555,7 +555,7 @@ test("Always allow persists Claude's suggested rules through the broker's grants
   const first = await attachedClaude(state)
   const outside = path.join(state.root, "outside")
   await fs.mkdir(outside, { mode: 0o700 })
-  const command = `chmod -R 750 ${outside}`
+  const command = `chmod -R 750 ${shellPath(outside)}`
   const originalSettings = await fs.readFile(path.join(state.userConfigRoot, "settings.json"))
   let second: Awaited<ReturnType<typeof attachedClaude>> | undefined
   try {
