@@ -13,19 +13,13 @@ import { startScriptedAcpHttp } from "../../e2e/harness/acp/http"
 import { acpScriptToken, writeAcpScript } from "../../e2e/harness/acp/script"
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { expect, test } from "bun:test"
-import { errorMessage } from "@claxedo/helpers"
+import { rejectionMessage } from "./test-support/rejection"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
 import { removeTempRoot } from "../test-support/temp-root"
 import { assertListedCommandsRun } from "./test-support/commands"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
-
-async function rejectionMessage(run: () => Promise<unknown>): Promise<string> {
-  const failure = await run().then(() => undefined, (error: unknown) => error)
-  expect(failure).toBeInstanceOf(Error)
-  return errorMessage(failure)
-}
 
 type AcpBackend = ConformanceBackend & {
   root: string

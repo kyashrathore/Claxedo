@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { join } from "node:path"
 import { setupConformance } from "./test-support/run"
 import { pollUntil } from "./test-support/poll"
+import { rejectionMessage } from "./test-support/rejection"
 import { allowCommandApprovals, codexEntry, makeCodexTransport, readMarker, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
 
 const BACKGROUND_SECONDS = 12
@@ -18,7 +19,7 @@ test("a real Codex background shell survives a configuration replacement request
     for await (const _event of context.transport.send(context.session, context.turn("Run the scripted command CODEXCONFIGJOB"), context.turnBroker())) {}
     expect(await Bun.file(marker).exists()).toBe(false)
     const projection = { ...context.start.projection, generation: "changed-plugins" }
-    await expect(context.transport.configure(context.session, { projection })).rejects.toThrow("background tasks are running")
+    expect(await rejectionMessage(() => context.transport.configure(context.session, { projection }))).toContain("background tasks are running")
     expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(1)
     expect(recorder.frames.some((frame) => frame.method === "thread/backgroundTerminals/terminate")).toBe(false)
     expect(await pollUntil(async () => await Bun.file(marker).exists() ? true : undefined, Date.now() + MARKER_WAIT_MS)).toBe(true)
