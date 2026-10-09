@@ -33,8 +33,8 @@ own track because it is an application, not a library: it moves when a
 command changes, which has nothing to do with the runtime's API. Its only
 runtime dependency is `workspace-runtime` (the embedded OpenCode host cannot be
 bundled — `dist/opencode-node` ships a native lock binding); `helpers`,
-`host-connector` and `host-serving` are `devDependencies` folded into
-`dist/index.mjs` by esbuild. `install.sh` in the package directory is the
+`account-contract`, `host-connector`, `host-serving` and `process-ownership`
+are `devDependencies` folded into `dist/index.mjs` by esbuild. `install.sh` in the package directory is the
 one-line installer documented in `packages/cli/README.md`. 0.1.0 is its first
 release.
 

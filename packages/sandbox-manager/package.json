@@ -165,7 +165,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@vercel/sandbox": "3.3.0",
@@ -179,6 +178,7 @@
     "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "devDependencies": {
+    "@claxedo/egress-broker": "workspace:*",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",
     "@types/node": "24.12.2",
