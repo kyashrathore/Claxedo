@@ -1,6 +1,7 @@
 /**
  * A published version is immutable. This gate fails when a public package's
- * directory changed after its `version` field was last set and that version is
+ * directory, or the directory of an unpublished workspace sibling its dist
+ * bundles, changed after its `version` field was last set and that version is
  * already on npm: the bump is missing, and the next publish would be skipped
  * as "already published" while consumers keep receiving the old bytes.
  *
@@ -13,9 +14,11 @@
  *   bun run scripts/release/check-published-versions.ts   # every package in claxedoPackages
  */
 import { execFileSync } from "node:child_process"
+import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
+import { readPackageJson, type PackageJson } from "./package-json"
 
 export type PublishedVersionPackage = { readonly name: string; readonly dir: string }
 export type CommandRunner = (cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) => string
@@ -53,14 +56,54 @@ export function versionSetCommit(root: string, dir: string, version: string, run
 }
 
 /** Tracked changes since `commit` (committed or not) plus untracked files: everything a publish would ship that the version does not cover. */
-export function directoryChangedSince(root: string, dir: string, commit: string, run: CommandRunner) {
-  if (run("git", ["ls-files", "--others", "--exclude-standard", "--", dir], root) !== "") return true
+export function directoriesChangedSince(root: string, dirs: readonly string[], commit: string, run: CommandRunner) {
+  if (run("git", ["ls-files", "--others", "--exclude-standard", "--", ...dirs], root) !== "") return true
   try {
-    run("git", ["diff", "--quiet", commit, "--", dir], root)
+    run("git", ["diff", "--quiet", commit, "--", ...dirs], root)
     return false
   } catch {
     return true
   }
+}
+
+function workspaceDirs(root: string) {
+  const dirs = new Map<string, string>()
+  const packagesRoot = path.join(root, "packages")
+  if (!fs.existsSync(packagesRoot)) return dirs
+  for (const entry of fs.readdirSync(packagesRoot)) {
+    const manifest = path.join(packagesRoot, entry, "package.json")
+    if (!fs.existsSync(manifest)) continue
+    const name = readPackageJson(manifest).name
+    if (name) dirs.set(name, `packages/${entry}`)
+  }
+  return dirs
+}
+
+function unpublishedWorkspaceDependencies(deps: PackageJson["dependencies"], published: ReadonlySet<string>) {
+  return Object.entries(deps ?? {})
+    .filter(([name, spec]) => spec.startsWith("workspace:") && !published.has(name))
+    .map(([name]) => name)
+}
+
+/**
+ * Directories of the unpublished workspace siblings `dir`'s tarball carries
+ * inside its dist: its `workspace:` devDependencies that are not published
+ * (a published package cannot name them at runtime, so its build inlines
+ * them), and, transitively, their own unpublished runtime dependencies.
+ */
+export function bundledSiblingDirs(root: string, dir: string, published: ReadonlySet<string>) {
+  const dirs = workspaceDirs(root)
+  const found = new Set<string>()
+  const visit = (names: readonly string[]) => {
+    for (const name of names) {
+      const siblingDir = dirs.get(name)
+      if (!siblingDir || found.has(siblingDir)) continue
+      found.add(siblingDir)
+      visit(unpublishedWorkspaceDependencies(readPackageJson(path.join(root, siblingDir, "package.json")).dependencies, published))
+    }
+  }
+  visit(unpublishedWorkspaceDependencies(readPackageJson(path.join(root, dir, "package.json")).devDependencies, published))
+  return [...found].sort()
 }
 
 export function versionOnNpm(name: string, version: string, run: CommandRunner, root: string) {
@@ -93,6 +136,7 @@ export function publishedVersionDrift(
   publishedBytesMatch?: PublishedBytesMatch,
 ) {
   const violations: string[] = []
+  const published = new Set(packages.map((item) => item.name))
   for (const item of packages) {
     const version = readVersion(root, item.dir, run)
     // A bump that is still uncommitted is newer than every change in the
@@ -102,10 +146,11 @@ export function publishedVersionDrift(
     if (commit === null) {
       throw new Error(`${item.name}: cannot find the commit that set version ${version} — run with full git history (fetch-depth: 0)`)
     }
-    if (!directoryChangedSince(root, item.dir, commit, run)) continue
+    const covered = [item.dir, ...bundledSiblingDirs(root, item.dir, published)]
+    if (!directoriesChangedSince(root, covered, commit, run)) continue
     if (!versionOnNpm(item.name, version, run, root)) continue
     if (publishedBytesMatch?.(item, version)) continue
-    violations.push(`${item.name}@${version} is already on npm but ${item.dir} changed after ${commit.slice(0, 10)} set that version`)
+    violations.push(`${item.name}@${version} is already on npm but ${covered.join(" or ")} changed after ${commit.slice(0, 10)} set that version`)
   }
   return violations
 }

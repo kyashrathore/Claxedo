@@ -48,7 +48,10 @@ version only inside the packed tarball and restores the repo manifest after.
 
 `check-published-versions.ts` (run by the publisher and by the dry-run job)
 fails when a package directory changed after its `version` was last set and
-that version is already on npm. Bump the track before merging such a change.
+that version is already on npm. A package's directory includes the unpublished
+`workspace:` siblings its dist bundles (its unpublished devDependencies and
+their unpublished dependencies, so `egress-broker` for `sandbox-manager`).
+Bump the track before merging such a change.
 
 Each track moves a **minor** when at least one package on it added public
 API since the previous publish. For 0.1.0 / 0.8.0 / 0.5.0 (2026-09-06):

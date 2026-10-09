@@ -9,8 +9,8 @@ name: claxedo-packages-release
 # tarball, and refuses to run while any already-published version has
 # unreleased changes behind it (check-published-versions.ts).
 #
-# On every push to `dev` and every PR that touches a public package or the
-# release tooling, the dry-run job builds, packs and inspects every tarball —
+# On every push to `dev` and every PR that touches a public package, a sibling
+# one bundles, or the release tooling, the dry-run job builds, packs and inspects every tarball —
 # the same gates the publish runs — without publishing anything.
 
 on:
@@ -22,6 +22,7 @@ on:
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
+      - "packages/egress-broker/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/workspace-relay-protocol/**"
@@ -34,6 +35,7 @@ on:
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
+      - "packages/egress-broker/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/workspace-relay-protocol/**"
