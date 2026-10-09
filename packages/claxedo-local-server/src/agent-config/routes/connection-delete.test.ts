@@ -12,9 +12,11 @@ vi.mock("../fanout", () => ({ fanOutConfig: vi.fn() }))
 const { fanOutConfig } = await import("../fanout")
 const { agentConfigConnectionRoutes } = await import("./connection-routes")
 const { loadUserConfig, saveUserConfig } = await import("@claxedo/server-core/agent-config/index")
+const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const published: string[][] = []
 
 beforeEach(async () => {
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
   published.length = 0
   vi.mocked(fanOutConfig).mockReset().mockImplementation(async () => {
@@ -22,6 +24,7 @@ beforeEach(async () => {
   })
 })
 afterAll(async () => {
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous

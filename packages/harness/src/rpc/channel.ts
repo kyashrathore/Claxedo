@@ -1,8 +1,11 @@
 import type { Clock, Deadline, OwnedProcess } from "../contract"
 
+const STDERR_CLOSE_MS = 1_000
+
 export class NdjsonOwnedProcess {
   private buffer = ""
   private failure?: Error
+  private settling = false
   private readonly failures = new Set<(error: Error) => void>()
 
   constructor(readonly process: OwnedProcess, private readonly clock: Clock,
@@ -13,14 +16,33 @@ export class NdjsonOwnedProcess {
     process.stdout.setEncoding("utf8")
     process.stdout.on("data", (chunk: string) => this.read(chunk))
     process.stdout.on("error", (cause: unknown) => this.fail(this.error("stdout", cause)))
-    void process.exited.then((exit) => this.fail(this.error("exit", exit), false),
+    void process.exited.then((exit) => this.exited(() => this.error("exit", exit)),
       (cause: unknown) => this.fail(this.error("exit", cause)))
+  }
+
+  private exited(error: () => Error): void {
+    if (this.failure) return
+    this.failure = error()
+    this.settling = true
+    void this.stderrClosed().then(() => {
+      this.settling = false
+      this.failure = error()
+      for (const listener of this.failures) listener(this.failure)
+    })
+  }
+
+  private stderrClosed(): Promise<void> {
+    if (this.process.stderr.destroyed) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = this.clock.setTimeout(resolve, STDERR_CLOSE_MS)
+      this.process.stderr.once("close", () => { this.clock.clearTimeout(timer); resolve() })
+    })
   }
 
   get alive(): boolean { return this.failure === undefined }
 
   onFailure(listener: (error: Error) => void): () => void {
-    if (this.failure) listener(this.failure)
+    if (this.failure && !this.settling) listener(this.failure)
     else this.failures.add(listener)
     return () => this.failures.delete(listener)
   }

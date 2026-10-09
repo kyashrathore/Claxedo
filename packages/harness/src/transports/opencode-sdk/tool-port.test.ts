@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import os from "node:os"
 import { createToolPort } from "./tool-port"
 import { WorkspaceScope } from "./scope"
 
@@ -19,7 +20,7 @@ test("tool catalogs stay location-scoped and reload every instance of the direct
     } } as never)
   }
   const alpha = WorkspaceScope.authorize({ workspaceID: "alpha", directory: process.cwd() })
-  const beta = WorkspaceScope.authorize({ workspaceID: "beta", directory: "/tmp" })
+  const beta = WorkspaceScope.authorize({ workspaceID: "beta", directory: os.tmpdir() })
   await instance(alpha.directory, 0)
   await instance(alpha.directory, 1)
   await instance(beta.directory, 0)

@@ -7,6 +7,7 @@ import { createHarnessComposer } from "@claxedo/harness/compose"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createHarnessServices } from "./harness-services"
 import { requireCursorWorker } from "./host/executables/cursor"
+import { removeTempRoot } from "@claxedo/harness/testing"
 
 const peerSource = `#!/usr/bin/env node
 const { createInterface } = require("node:readline");
@@ -36,12 +37,15 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "harness-compose-"))
   const peer = path.join(root, "peer.cjs")
   await fs.writeFile(peer, peerSource, { mode: 0o755 })
+  // Codex is spawned as a binary; Windows has no shebang, so a batch launcher stands in for codex.exe.
+  const codexBinary = process.platform === "win32" ? path.join(root, "peer.cmd") : peer
+  if (codexBinary !== peer) await fs.writeFile(codexBinary, `@"${process.execPath}" "%~dp0peer.cjs" %*\r\n`)
   const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
   const clock = { now: () => Date.now(), setTimeout, clearTimeout }
   const services = createHarnessServices({ ownership: volatileLaunchOwnership(), log, clock, patternEvaluator: async () => {}, healthChanged: () => {} })
   const composer = createHarnessComposer(services, {
     pi: () => ({ stateRoot: path.join(root, "pi-state"), env: process.env }),
-    codex: () => ({ binary: peer, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
+    codex: () => ({ binary: codexBinary, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
       env: { ...process.env, COMPOSE_PEER_KIND: "codex" } }),
     claude: () => ({ executable: "claude", configRoot: path.join(root, "claude-homes"),
       userConfigRoot: path.join(root, "claude-owner"), env: process.env }),
@@ -82,5 +86,5 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
       expectedRevision: 2, secrets: { token: "resolved" } })).toThrow("disabled or stale")
     expect(() => composer.connection({ descriptor: acpDescriptor, directory: root,
       expectedRevision: 1, secrets: {} })).toThrow("Secret lease")
-  } finally { await fs.rm(root, { recursive: true, force: true }) }
+  } finally { await removeTempRoot(root) }
 }, 30_000)

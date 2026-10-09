@@ -90,7 +90,8 @@ export function resolveClaudeExecutable(
     return undefined
   }
 
-  const onPath = resolveOnPath(platform === "win32" ? "claude.exe" : "claude", platform, env)
+  // A bare name, so a Windows PATH answers with `claude.exe` or an npm `claude.cmd` shim, in PATHEXT order.
+  const onPath = resolveOnPath("claude", platform, env)
   if (onPath) return normalizeForSdkSpawn(onPath, platform)
 
   for (const candidate of standardInstallCandidates(platform, home)) {

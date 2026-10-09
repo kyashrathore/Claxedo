@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { acpSessionMcpServers, flatMcpServerName, pluginMcpProjection, projectedMcpServers, runtimeMcpServers, type ProjectedPlugin } from "./mcp-projection"
@@ -31,7 +32,7 @@ describe("runtime MCP projections", () => {
       { name: "local", type: "stdio" as const, command: "./bin/server", cwd: "./work", args: ["${PLUGIN_DATA}/state"] },
     ] } } }
     const { servers } = await acpSessionMcpServers([relative], [])
-    expect(Object.values(servers)[0]).toMatchObject({ command: "/gen/plugins/docs/bin/server", cwd: "/gen/plugins/docs/work", args: ["/data/docs/state"] })
+    expect(Object.values(servers)[0]).toMatchObject({ command: path.join(plugin.root, "bin", "server"), cwd: path.join(plugin.root, "work"), args: ["/data/docs/state"] })
   })
   test("a server the runtime marked unavailable is left out whatever its transport", () => {
     expect(projectedMcpServers(plugin, rows.filter((row) => row.harnessId === "acp")).map((server) => server.name)).toEqual(["docs", "local"])

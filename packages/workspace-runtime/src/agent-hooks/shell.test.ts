@@ -322,7 +322,8 @@ describe("zsh integration", () => {
 
 // ── Bash integration test ───────────────────────────────────────────────────
 
-describe("bash integration", () => {
+// POSIX shebang execution: a wrapper is a bare bash script a POSIX shell finds on PATH, which cmd.exe never does.
+describe.skipIf(process.platform === "win32")("bash integration", () => {
   it("wrapper wins over system binary when BIN_DIR is first in PATH", () => {
     const realBinDir = path.join(TEST_ROOT, "real-bin")
     const wrapperBinDir = path.join(TEST_ROOT, "wrapper-bin")
@@ -393,7 +394,7 @@ echo "$CLAXEDO_TAB_ID"
     )
     chmodSync(testScript, 0o755)
 
-    const output = execFileSync(testScript, [], { encoding: "utf-8" })
+    const output = execFileSync("bash", [testScript], { encoding: "utf-8" })
     expect(output.trim()).toBe("original-tab")
   })
 })

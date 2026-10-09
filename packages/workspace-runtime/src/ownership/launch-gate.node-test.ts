@@ -59,7 +59,7 @@ void test("a launch into a directory that knows nothing runs its payload", async
     ownership,
     role: "harness",
     scope: { directory: cwd },
-    payload: { command: "/bin/sh", args: ["-c", "sleep 30"] },
+    payload: { command: process.execPath, args: ["-e", "setTimeout(() => {}, 30_000)"] },
     cwd,
     env: process.env,
   })
@@ -84,7 +84,7 @@ void test("a gate that cannot start refuses with what the child actually said", 
       ownership: volatileLaunchOwnership(),
       role: "harness",
       scope: { directory: cwd },
-      payload: { command: "/bin/sh", args: ["-c", "sleep 30"] },
+      payload: { command: process.execPath, args: ["-e", "setTimeout(() => {}, 30_000)"] },
       cwd,
       env: process.env,
     }).catch((error: unknown) => error)

@@ -4,3 +4,4 @@ export { registerChildRequestCases } from "../broker/test-support/child-request-
 export { registerChildOwnedRequestCases } from "../broker/test-support/child-owned-request-cases"
 export { MemoryPorts, authority, origin } from "../conformance/test-support/memory-ports"
 export { registerTranslatorPresentationCases } from "../conformance/test-support/presentation/index"
+export { removeTempRoot } from "./temp-root"

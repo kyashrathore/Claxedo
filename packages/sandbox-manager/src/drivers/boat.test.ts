@@ -106,6 +106,9 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
  * answers the slot's image, and `run` fills the slot unless Boat's own
  * recreation (`recreatedDuringRun`) fills it first and the create conflicts.
  */
+// The start command is the sh script Boat runs on its Linux VM.
+const onVm = test.skipIf(process.platform === "win32")
+
 function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number; recreatedDuringRun?: string }) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
@@ -374,7 +377,7 @@ describe("boat sandbox driver", () => {
     expect(failure?.message).not.toContain("synthetic-host-token")
   })
 
-  test("a fresh VM waits for the Docker daemon, then creates the runtime container, leaving its bind sources for Docker to create", async () => {
+  onVm("a fresh VM waits for the Docker daemon, then creates the runtime container, leaving its bind sources for Docker to create", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
@@ -398,25 +401,25 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")).toHaveLength(1)
   })
 
-  test("a repeated start finds the container the first one created and only starts it", async () => {
+  onVm("a repeated start finds the container the first one created and only starts it", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
   })
 
-  test("a container of another image is replaced by one of the image this boot names", async () => {
+  onVm("a container of another image is replaced by one of the image this boot names", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
   })
 
-  test("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {
+  onVm("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {
     const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
   })
 
-  test("a create that fails for any other reason fails the start", async () => {
+  onVm("a create that fails for any other reason fails the start", async () => {
     const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0" })
     expect(run.status).not.toBe(0)
     expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format"])

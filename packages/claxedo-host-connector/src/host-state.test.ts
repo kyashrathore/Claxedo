@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdtemp, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
@@ -461,5 +461,27 @@ describe.skipIf(process.platform === "win32")("node adapter", () => {
     await writeFile(path.join(base, "token"), "t")
     await store.fs.unlink(path.join(base, "token"))
     expect(await store.fs.readFile(path.join(base, "token"))).toBeNull()
+  })
+})
+
+describe("node adapter under a concurrent reader", () => {
+  const dirs: string[] = []
+  afterEach(async () => {
+    for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
+  })
+
+  test("a save while a reader holds the state file open completes once the reader lets go", async () => {
+    const base = await mkdtemp(path.join(tmpdir(), "host-state-"))
+    dirs.push(base)
+    const file = path.join(base, "state.json")
+    const store = createHostStateStore({ file, fs: nodeHostStateFs() })
+    await store.save(state())
+
+    const held = await open(file, "r")
+    setTimeout(() => void held.close(), 200)
+    await store.save(state({ cli_roots: ["/srv"] }))
+
+    expect((await store.load())?.cli_roots).toEqual(["/srv"])
+    expect(await readdir(base)).toEqual(["state.json"])
   })
 })

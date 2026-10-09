@@ -50,11 +50,17 @@ export async function startLiveFirstPartyMcp(options: Pick<Parameters<typeof sta
   const previousDataDir = process.env.CLAXEDO_DATA_DIR
   process.env.CLAXEDO_DATA_DIR = dataDir
   // The runtime offers the claude harness only where it resolves Claude Code,
-  // and nothing these suites drive launches it, so the fixture names an
-  // executable that refuses to run instead of depending on this machine's install.
+  // so the fixture names a placeholder that runs and exits instead of depending
+  // on this machine's install. It must launch: a transport whose process never
+  // spawned fails its retirement, and the runtime then keeps its store open.
+  // Windows cannot spawn a shell script, so there the placeholder is a `.js`
+  // entry the SDK runs with its JavaScript runtime.
   const claudeDir = mkdtempSync(path.join(tmpdir(), "claxedo-first-party-mcp-claude-"))
-  const claude = path.join(claudeDir, "claude")
-  writeFileSync(claude, "#!/bin/sh\necho 'the live MCP fixture launched its Claude Code placeholder' >&2\nexit 1\n", { mode: 0o755 })
+  const message = "the live MCP fixture launched its Claude Code placeholder"
+  const claude = process.platform === "win32" ? path.join(claudeDir, "claude.js") : path.join(claudeDir, "claude")
+  writeFileSync(claude, process.platform === "win32"
+    ? `process.stderr.write(${JSON.stringify(`${message}\n`)})\nprocess.exit(1)\n`
+    : `#!/bin/sh\necho '${message}' >&2\nexit 1\n`, { mode: 0o755 })
   const previousClaude = process.env.CLAUDE_CODE_EXECUTABLE
   process.env.CLAUDE_CODE_EXECUTABLE = claude
   const git = (args: readonly string[]) => execFileSync("git", [...args], { cwd: workspaceRoot, stdio: "pipe" })

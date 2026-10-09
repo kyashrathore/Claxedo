@@ -33,9 +33,9 @@ export function codexHomeKey(accountOwner: string, account: CodexAccount | undef
 }
 
 async function linkTo(link: string, target: string): Promise<void> {
-  const current = await lstatIfExists(link)
-  if (current?.isSymbolicLink() && await fs.readlink(link) === target) return
-  await replaceAtomically(link, (temporary) => fs.symlink(target, temporary))
+  const linked = async () => (await lstatIfExists(link))?.isSymbolicLink() === true && await fs.readlink(link) === target
+  if (await linked()) return
+  await replaceAtomically(link, (temporary) => fs.symlink(target, temporary)).catch(async (error: unknown) => { if (!(await linked())) throw error })
 }
 
 async function linkOwnerAuth(ownerHome: string, home: string): Promise<void> {

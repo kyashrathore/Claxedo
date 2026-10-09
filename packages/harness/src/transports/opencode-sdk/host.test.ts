@@ -5,6 +5,7 @@ import * as path from "node:path"
 import { createOpenCodeHost, OpenCodeUnavailableError, type OpenCodeHost } from "./host"
 import { WorkspaceScope, WorkspaceScopeError } from "./scope"
 import { createSessionPort } from "./session-port"
+import { removeTempRoot } from "../../test-support/temp-root"
 
 const hosts: OpenCodeHost[] = []
 const roots: string[] = []
@@ -23,7 +24,7 @@ function hostAt(root: string) {
 
 afterEach(async () => {
   await Promise.all(hosts.splice(0).map((host) => host.close()))
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) await removeTempRoot(root)
 })
 
 test("rejects a relative database path instead of silently using :memory:", () => {

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { runConformance, setupConformance, type ConformanceBackend, type SuiteBackend } from "./test-support/run"
 import { filterMcpServers } from "../capabilities/mcp-filter"
 import { AcpTransport } from "../transports/acp"
@@ -12,9 +13,11 @@ import { startScriptedAcpHttp } from "../../e2e/harness/acp/http"
 import { acpScriptToken, writeAcpScript } from "../../e2e/harness/acp/script"
 import { readAcpRequests } from "../../e2e/harness/acp/requests"
 import { expect, test } from "bun:test"
+import { rejectionMessage } from "./test-support/rejection"
 import { createRequestBroker, createSessionBroker, createTurnBroker } from "../broker"
 import { MemoryPorts, authority, origin } from "./test-support/memory-ports"
 import { createTestServices } from "./test-support/services"
+import { removeTempRoot } from "../test-support/temp-root"
 import { assertListedCommandsRun } from "./test-support/commands"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 
@@ -111,7 +114,7 @@ async function backend(kind: "process" | "websocket" | "streamable-http", restor
       return acpScriptToken("thinking")
     },
     unrunnableTurn: (turn) => ({ ...turn, prompt: { ...turn.prompt, parts: [{ type: "text", text: acpScriptToken("refused") }] } }),
-    close: async () => { await server?.close(); await fs.rm(root, { recursive: true, force: true }) },
+    close: async () => { await server?.close(); await removeTempRoot(root) },
   }
 }
 
@@ -424,7 +427,7 @@ test("the targeted red ACP agent fails at session/prompt", async () => {
       for await (const _event of context.transport.send(context.session,
         context.turn("This must fail in the scripted ACP agent"), context.turnBroker())) {}
     }
-    await expect(running()).rejects.toThrow("Scripted ACP red run")
+    expect(await rejectionMessage(running)).toContain("Scripted ACP red run")
     expect((await readAcpRequests(context.backend.directory)).some((row) => row.method === "session/prompt")).toBe(true)
   } finally { await context.close() }
 })
@@ -828,8 +831,8 @@ test("silence cancels the ACP prompt and fences its uncertain session", async ()
     const run = async (message: string) => {
       for await (const _event of context.transport.send(context.session, context.turn(message), context.turnBroker())) {}
     }
-    await expect(run(acpScriptToken("silence"))).rejects.toThrow("outcome is uncertain")
-    await expect(run("next prompt")).rejects.toThrow("outcome is uncertain")
+    expect(await rejectionMessage(() => run(acpScriptToken("silence")))).toContain("outcome is uncertain")
+    expect(await rejectionMessage(() => run("next prompt"))).toContain("outcome is uncertain")
     let requests = await readAcpRequests(context.backend.directory)
     for (let attempt = 0; !requests.some((row) => row.method === "session/cancel") && attempt < 500; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -1369,7 +1372,7 @@ async function parityBackend(env: Record<string, string> = {}, connection: { sha
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""
       throw error
     })).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as ParityRequest),
-    close: async () => { await fs.rm(root, { recursive: true, force: true }) },
+    close: async () => { await removeTempRoot(root) },
   }
 }
 
@@ -1436,7 +1439,7 @@ test("ACP refuses an effort or model the agent does not offer or keep, without p
     const context = await setupConformance({ name: "acp refused option", backend: () => parityBackend(env), makeTransport: parityTransport })
     try {
       const run = async () => { for await (const _event of context.transport.send(context.session, turn(context.turn("never sent")), context.turnBroker())) {} }
-      await expect(run()).rejects.toThrow(message)
+      expect(await rejectionMessage(run)).toContain(message)
       expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/prompt")).toBe(false)
     } finally { await context.close() }
   }
@@ -1522,7 +1525,7 @@ test("a turn whose permission mode the agent clamps through the modes channel is
     const turn = context.turn("never sent")
     turn.prompt = { ...turn.prompt, permissionMode: "review" }
     const run = async () => { for await (const _event of context.transport.send(context.session, turn, context.turnBroker())) {} }
-    await expect(run()).rejects.toThrow("ACP kept permission mode default instead of review")
+    expect(await rejectionMessage(run)).toContain("ACP kept permission mode default instead of review")
     expect((await (context.backend as ParityBackend).requests()).some((row) => row.method === "session/prompt")).toBe(false)
   } finally { await context.close() }
 }, 30_000)
@@ -1573,7 +1576,7 @@ test("an ACP agent sharing the workspace receives attachments as files and links
     const prompt = (await (context.backend as ParityBackend).requests()).find((row) => row.method === "session/prompt")?.params.prompt as Record<string, unknown>[]
     const link = prompt.find((block) => block.type === "resource_link") as { uri: string; name: string; mimeType: string } | undefined
     expect(link).toMatchObject({ name: "parity.txt", mimeType: "text/plain" })
-    const written = new URL(link!.uri).pathname
+    const written = fileURLToPath(link!.uri)
     expect(written.startsWith(path.join(context.backend.directory, ".claxedo", "attachments"))).toBe(true)
     expect(await fs.readFile(written, "utf8")).toBe("ACP parity text attachment\n")
     expect((prompt[0] as { text: string }).text).toBe(`Read the file. Reply with exactly this one token: PARITY_OK\nAttached file (text/plain): ${written}`)

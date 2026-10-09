@@ -43,7 +43,8 @@ describe("machine file index", () => {
     await fs.writeFile(path.join(dir, "ignored", "secret.txt"), "")
     await fs.writeFile(path.join(dir, "tracked.txt"), "")
     await runGit(["add", "-f", "tracked.txt"], dir)
-    const special = " 雪 furniture\nnotes.txt "
+    // NTFS refuses a newline in a name and Win32 strips a trailing space.
+    const special = process.platform === "win32" ? " 雪 furniture notes.txt" : " 雪 furniture\nnotes.txt "
     await fs.writeFile(path.join(dir, special), "")
     const git = mock(runGit)
     const index = machineFiles.createFileIndex({ git })

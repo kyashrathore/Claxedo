@@ -7,7 +7,13 @@ import { promisify } from "node:util"
 const execFileAsync = promisify(execFile)
 const ARTIFACTS = path.resolve(import.meta.dirname, "../.artifacts")
 
-export type PinnedPackage = { label: string; npmPackage: string; bin: string; version: string }
+/**
+ * `windowsExecutable` names the binary inside `node_modules` that the npm
+ * `.cmd` shim would launch. CreateProcess cannot run the shim itself, and a
+ * shim run through cmd.exe leaves that binary orphaned when the shim is
+ * killed, so on Windows the tests spawn the binary the product resolves.
+ */
+export type PinnedPackage = { label: string; npmPackage: string; bin: string; version: string; windowsExecutable: (nodeModules: string) => string }
 
 export type TestedRange = { readonly min: string; readonly max: string }
 
@@ -22,7 +28,8 @@ function prefix(pinned: PinnedPackage): string {
 }
 
 export function pinnedBin(pinned: PinnedPackage): string {
-  return path.join(prefix(pinned), "node_modules/.bin", process.platform === "win32" ? `${pinned.bin}.cmd` : pinned.bin)
+  const nodeModules = path.join(prefix(pinned), "node_modules")
+  return process.platform === "win32" ? pinned.windowsExecutable(nodeModules) : path.join(nodeModules, ".bin", pinned.bin)
 }
 
 function installedVersion(pinned: PinnedPackage): string | undefined {

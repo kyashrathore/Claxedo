@@ -11,13 +11,15 @@ const root = path.join(os.tmpdir(), `agent-config-connections-${randomUUID().sli
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const [{ agentConfigConnectionRoutes }, { createAgentConfigRoutes }, { loadUserConfig, saveUserConfig }] = await Promise.all([
+const [{ agentConfigConnectionRoutes }, { createAgentConfigRoutes }, { loadUserConfig, saveUserConfig }, { ClaxedoDB }] = await Promise.all([
   import("./connection-routes"),
   import("./index"),
   import("@claxedo/server-core/agent-config/index"),
+  import("@claxedo/server-core/platform/db/index"),
 ])
 
 afterEach(async () => {
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
 })
 

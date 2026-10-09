@@ -1,3 +1,4 @@
+import path from "node:path"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import type { ArtifactDigest } from "../activation/types"
 import type { AgentPluginMcpServer, ValidatedAgentPlugin } from "../catalog/types"
@@ -121,7 +122,7 @@ function expandRoots(value: string, roots: { root?: string; dataRoot?: string })
 }
 
 function pluginPath(value: string, plugin: ProjectedPlugin) {
-  return value.startsWith("./") ? `${plugin.root}/${value.slice(2)}` : expandRoots(value, plugin)
+  return value.startsWith("./") ? path.join(plugin.root ?? "", value.slice(2)) : expandRoots(value, plugin)
 }
 
 function resolveServer(server: AgentPluginMcpServer, plugin: ProjectedPlugin): AgentPluginMcpServer {

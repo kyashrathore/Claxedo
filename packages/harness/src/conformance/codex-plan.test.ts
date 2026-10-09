@@ -55,6 +55,7 @@ test("a ChatGPT plan handed over directly signs the real Codex in with its token
     expect(model.at(-1)).toMatchObject({ authorization: `Bearer ${renewed}`, account: "acct-member" })
     expect(recorder.frames.filter((frame) => frame.method === "account/login/start").map((frame) => frame.params))
       .toEqual([{ type: "chatgptAuthTokens", accessToken: first, chatgptAccountId: "acct-member" }])
+    await context.transport.close(context.session)
     const files = (await fs.readdir(path.join(state.root, "homes"), { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile())
     expect(files.some((entry) => entry.name === "auth.json")).toBe(false)
     for (const entry of files) {

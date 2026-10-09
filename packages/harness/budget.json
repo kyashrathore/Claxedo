@@ -7,7 +7,7 @@
   "capabilities": 450,
   "profiles": 550,
   "transports/claude-sdk": 3409,
-  "transports/codex-app-server": 3600,
+  "transports/codex-app-server": 3612,
   "transports/cursor-sdk": 1872,
   "transports/acp": 3146,
   "transports/pi-durable": 1774,

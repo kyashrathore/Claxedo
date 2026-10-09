@@ -14,10 +14,12 @@ const { fanoutEligible } = await import("../credentials/account-kinds")
 const { SINGLE_TENANT_ORG } = await import("../credentials/partition")
 const { projectEnvironment, PROJECT_ENV_MAX_ENTRIES } = await import("./environment")
 const { ProjectEnvironmentRoutes } = await import("./environment-routes")
+const { ClaxedoDB } = await import("../platform/db/index")
 
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
 })
 
@@ -61,7 +63,9 @@ describe("project environment on the local product", () => {
     expect(await projectEnvironment(credentials, SINGLE_TENANT_ORG).values("prj_one")).toEqual({ ONLY_ONE: "1" })
   })
 
-  test("a name that is not a variable name or is the runtime's own, an empty value and a variable past the cap are refused", async () => {
+  // Filling the cap stores PROJECT_ENV_MAX_ENTRIES credentials; on Windows each
+  // private credential file costs about 360 ms (a PowerShell run writes its DACL).
+  test("a name that is not a variable name or is the runtime's own, an empty value and a variable past the cap are refused", { timeout: 90_000 }, async () => {
     const badName = await unsigned.request("/prj_bad/environment/not-a-name", put({ value: "x" }))
     expect(badName.status).toBe(400)
     expect(await badName.json()).toMatchObject({ error: { code: "project_env_invalid" } })

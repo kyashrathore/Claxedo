@@ -201,6 +201,11 @@ async function invitationFile(h: Harness, roots: string[]) {
 
 const enrollmentIdOf = (h: Harness) => [...h.cp.enrollments.keys()][0]
 
+// Machine roots are POSIX absolute paths (the control plane's directoryWithinRoots
+// admits nothing else), so a served folder, and the systemd unit that serves it,
+// exist on Linux and macOS only.
+const posixHost = test.skipIf(process.platform === "win32")
+
 describe("claxedo connect", () => {
   let h: Harness
   beforeEach(async () => {
@@ -213,7 +218,7 @@ describe("claxedo connect", () => {
     await fs.rm(h.root, { recursive: true, force: true })
   })
 
-  test("token-file boot enrolls, acquires, beats, then serves an assignment and the credential covers it", async () => {
+  posixHost("token-file boot enrolls, acquires, beats, then serves an assignment and the credential covers it", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file, "--root", h.root], h.deps)
     await until(() => h.cp.beats().length >= 1, "first beat")
@@ -427,7 +432,7 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.run).toBeUndefined()
   })
 
-  test("a re-pointed assignment withdraws the old tunnel and acks the new revision; outside-root folders are never acked", async () => {
+  posixHost("a re-pointed assignment withdraws the old tunnel and acks the new revision; outside-root folders are never acked", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
     await until(() => h.cp.beats().length >= 1, "first beat")
@@ -466,7 +471,7 @@ describe("claxedo connect", () => {
     expect(await running).toBe(0)
   })
 
-  test("SIGTERM during a preparation: the workspace is refused, never acked, and the final beat withdraws everything", async () => {
+  posixHost("SIGTERM during a preparation: the workspace is refused, never acked, and the final beat withdraws everything", async () => {
     const { file } = await invitationFile(h, [h.root])
     const slow = path.join(h.root, "slow")
     const fast = path.join(h.root, "fast")
@@ -507,7 +512,7 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.run).toBeUndefined()
   })
 
-  test("a preparation that never finishes cannot hold the exit past the drain bound", async () => {
+  posixHost("a preparation that never finishes cannot hold the exit past the drain bound", async () => {
     const { file } = await invitationFile(h, [h.root])
     const stuck = path.join(h.root, "stuck")
     await fs.mkdir(stuck)
@@ -539,7 +544,7 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.run).toBeUndefined()
   })
 
-  test("a folder assigned before it exists is served once it appears, without a restart", async () => {
+  posixHost("a folder assigned before it exists is served once it appears, without a restart", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
     await until(() => h.cp.beats().length >= 1, "first beat")
@@ -561,7 +566,7 @@ describe("claxedo connect", () => {
     expect(await running).toBe(0)
   })
 
-  test("--install-service enrolls, writes the unit and records it; --uninstall-service removes it", async () => {
+  posixHost("--install-service enrolls, writes the unit and records it; --uninstall-service removes it", async () => {
     const { file } = await invitationFile(h, [h.root])
     expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(0)
     const unit = path.join(h.home, ".config", "systemd", "user", "claxedo-connect.service")
@@ -585,7 +590,7 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.service).toBeUndefined()
   })
 
-  test("--install-service on a box without a user manager writes and records the unit, prints the linger command and exits 78", async () => {
+  posixHost("--install-service on a box without a user manager writes and records the unit, prints the linger command and exits 78", async () => {
     const { file } = await invitationFile(h, [h.root])
     const service = serviceDeps(h.home, h.serviceCalls)
     h.deps.service = () => ({
@@ -705,7 +710,7 @@ describe("claxedo connect", () => {
     }
   })
 
-  test("a root created as a symlink after it was first resolved serves nothing until --reset-roots or a new scope re-records it", async () => {
+  posixHost("a root created as a symlink after it was first resolved serves nothing until --reset-roots or a new scope re-records it", async () => {
     // The owner scopes a folder that does not exist yet; the host pins it
     // where it resolves lexically. Someone on the box then creates it as a
     // symlink into a directory the owner never scoped.
@@ -785,7 +790,7 @@ describe("claxedo connect", () => {
     expect(await rescoped).toBe(0)
   })
 
-  test("a scope replayed from before a restart does not re-widen the roots", async () => {
+  posixHost("a scope replayed from before a restart does not re-widen the roots", async () => {
     const narrowed = path.join(h.root, "narrowed")
     await fs.mkdir(narrowed)
     const { file } = await invitationFile(h, [h.root])
@@ -859,18 +864,12 @@ describe("desktop daemon discovery", () => {
     JSON.stringify({ service: "claxedo-local-daemon", protocol: 3, generation: "g", token: "t", pid: 7, port: 8, startedAt: "now", ...overrides })
 
   test("every channel's data dir is probed, CLAXEDO_DATA_DIR first", () => {
-    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "/data" }, "/home/u")).toEqual([
-      "/data/local-daemon.json",
-      "/home/u/.claxedo/local-daemon.json",
-      "/home/u/.claxedo-dev/local-daemon.json",
-      "/home/u/.claxedo-beta/local-daemon.json",
-    ])
-    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "  " }, "/home/u")).toEqual([
-      "/home/u/.claxedo/local-daemon.json",
-      "/home/u/.claxedo-dev/local-daemon.json",
-      "/home/u/.claxedo-beta/local-daemon.json",
-    ])
-    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "/home/u/.claxedo-dev" }, "/home/u")).toHaveLength(3)
+    const home = path.resolve("/home/u")
+    const data = path.resolve("/data")
+    const channels = [".claxedo", ".claxedo-dev", ".claxedo-beta"].map((dir) => path.join(home, dir, "local-daemon.json"))
+    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: data }, home)).toEqual([path.join(data, "local-daemon.json"), ...channels])
+    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: "  " }, home)).toEqual(channels)
+    expect(desktopDaemonDiscoveryFiles({ CLAXEDO_DATA_DIR: path.join(home, ".claxedo-dev") }, home)).toHaveLength(3)
   })
 
   test("only the daemon's own record, with a positive-integer pid and port and its token, parses", () => {
@@ -963,8 +962,8 @@ describe("desktop daemon discovery", () => {
 describe("connect argument parsing", () => {
   test("reads every flag in both spellings and resolves paths", () => {
     expect(parseConnectArgs(["--token-file=/etc/x", "--root", "/srv", "--root=/opt", "--name", "box", "--foreground", "--alongside-desktop"])).toEqual({
-      tokenFile: "/etc/x",
-      roots: ["/srv", "/opt"],
+      tokenFile: path.resolve("/etc/x"),
+      roots: [path.resolve("/srv"), path.resolve("/opt")],
       name: "box",
       installService: false,
       uninstallService: false,

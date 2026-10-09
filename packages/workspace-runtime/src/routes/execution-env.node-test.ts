@@ -14,8 +14,9 @@ void test("a client disconnect from exec retires the running command", async () 
   const server = await serveExecutionEnv({ directory })
   cleanups.push(server.close)
   const controller = new AbortController()
+  // The command prints its own pid: `$$` under Git Bash is an MSYS pid the kernel does not know.
   const response = await fetch(`${server.origin}/api/wr/execution-env/exec`, {
-    method: "POST", signal: controller.signal, body: JSON.stringify({ command: "echo $$; exec sleep 60" }),
+    method: "POST", signal: controller.signal, body: JSON.stringify({ command: `exec '${process.execPath}' -e 'console.log(process.pid); setTimeout(() => {}, 60_000)'` }),
     headers: { ...await server.headers({ sessionId: "ses_1" }), "content-type": "application/json" },
   })
   const reader = response.body!.getReader()

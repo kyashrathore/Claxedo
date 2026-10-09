@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import os from "node:os"
+import path from "node:path"
 import type { HarnessServices, HarnessSession } from "../../contract"
 import type { Entry } from "./entry"
 import type { OpenCodeRuntime } from "./runtime"
@@ -7,14 +9,14 @@ import { OpenCodeSdkTransport } from "./transport"
 
 function stalledInterrupt() {
   const transport = new OpenCodeSdkTransport({} as HarnessServices, {
-    databasePath: `/tmp/opencode-cancel-${crypto.randomUUID()}.db`,
+    databasePath: path.join(os.tmpdir(), `opencode-cancel-${crypto.randomUUID()}.db`),
   })
   const state = transport as unknown as { entries: Map<string, Entry>; runtime: OpenCodeRuntime }
-  const session: HarnessSession = { directory: "/tmp", locality: "local", binding: {
-    sessionId: "session", workspaceId: "workspace", upstreamSessionId: "upstream", directory: "/tmp", connectionId: "opencode",
+  const session: HarnessSession = { directory: os.tmpdir(), locality: "local", binding: {
+    sessionId: "session", workspaceId: "workspace", upstreamSessionId: "upstream", directory: os.tmpdir(), connectionId: "opencode",
   } }
   state.entries.set("session", { session, start: { workspaceId: "workspace" },
-    scope: WorkspaceScope.authorize({ workspaceID: "workspace", directory: "/tmp" }),
+    scope: WorkspaceScope.authorize({ workspaceID: "workspace", directory: os.tmpdir() }),
     assistantMessageID: "assistant", upstream: "upstream", active: true } as Entry)
   let subscriptions = 0
   let release!: () => void

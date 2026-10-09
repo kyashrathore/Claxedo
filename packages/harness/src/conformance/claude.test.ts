@@ -9,6 +9,7 @@ import path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { runConformance, type ConformanceBackend, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { PINNED_CLAUDE } from "../../e2e/harness/pinned-claude"
@@ -24,6 +25,9 @@ import { ClaudeQueryLauncher } from "../transports/claude-sdk/query-options"
 import { askClaudePermission } from "../transports/claude-sdk/requests"
 import { sdkModes } from "../transports/claude-sdk/permissions"
 import { pollUntil } from "./test-support/poll"
+import { shellPath } from "./test-support/shell-path"
+
+const POSIX_FILE_MODES = process.platform !== "win32"
 
 type ClaudeBackend = SuiteBackend & {
   root: string
@@ -42,16 +46,24 @@ type ClaudeBackend = SuiteBackend & {
 
 const runFile = promisify(execFile)
 
-async function sampleSockets(pid: number, sockets: string[]): Promise<void> {
+async function socketRows(pid: number): Promise<{ line: string; peer: string | undefined }[]> {
+  if (process.platform === "win32") {
+    const { stdout } = await runFile("netstat", ["-ano", "-p", "tcp"])
+    return stdout.split(/\r?\n/).map((line) => line.trim().split(/\s+/)).filter((columns) => columns[0] === "TCP" && columns.at(-1) === String(pid))
+      .map((columns) => ({ line: columns.join(" "), peer: columns[2] === "0.0.0.0:0" ? undefined : columns[2] }))
+  }
   let output: string
   try { output = (await runFile("lsof", ["-a", "-i", "-p", String(pid), "-n", "-P"])).stdout }
   catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === 1)) throw error
     output = ""
   }
-  for (const line of output.split("\n").slice(1).filter(Boolean)) {
+  return output.split("\n").slice(1).filter(Boolean).map((line) => ({ line, peer: line.split("->")[1]?.split(" ")[0] }))
+}
+
+async function sampleSockets(pid: number, sockets: string[]): Promise<void> {
+  for (const { line, peer } of await socketRows(pid)) {
     sockets.push(`${pid} ${line}`)
-    const peer = line.split("->")[1]?.split(" ")[0]
     if (peer && !/^127\.|^\[::1\]:|^\[::ffff:127\./.test(peer)) throw new Error(`Claude connected beyond loopback: ${line}`)
   }
 }
@@ -192,7 +204,7 @@ async function backend(): Promise<ClaudeBackend> {
         await server.close()
         releasePort(proxyPort)
         releasePort(port)
-        await fs.rm(root, { recursive: true, force: true })
+        await removeTempRoot(root)
       }
       expect(attempts).toEqual([])
     },
@@ -228,7 +240,7 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     const committed = () => ({ ...session, binding: ports.bindings.get("s1") ?? session.binding })
     const target = path.join(state.directory, "permission-result.txt")
     const originalSettings = await fs.readFile(path.join(state.userConfigRoot, "settings.json"))
-    state.scriptTool?.("Bash", { command: `printf approved > ${target}` })
+    state.scriptTool?.("Bash", { command: `printf approved > ${shellPath(target)}` })
     const turn = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", origin, model: state.model,
       prompt: { agent: "claude", assistantMessageId: "a1", parts: [{ type: "text" as const, text: "Run the scripted Bash tool" }] }, todos: [] }
     const turnBroker = createTurnBroker(owner, { authority: { ...authority, directory: state.directory,
@@ -262,7 +274,7 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     if (decision === "allow_always") {
       expect(ports.states.get("s1")?.brokerGrants).toHaveLength(1)
       await fs.rm(target)
-      state.server.scriptToolSequence("again", [{ name: "Bash", input: { command: `printf approved > ${target}` } }])
+      state.server.scriptToolSequence("again", [{ name: "Bash", input: { command: `printf approved > ${shellPath(target)}` } }])
       const next = { ...turn, turnId: "t2", userMessageId: "u2", assistantMessageId: "a2",
         prompt: { ...turn.prompt, assistantMessageId: "a2", parts: [{ type: "text" as const, text: "Run the scripted Bash tool again" }] } }
       ports.current.set("s1", { ...authority, directory: state.directory, upstreamSessionId: committed().binding.upstreamSessionId, turnId: "t2" })
@@ -415,11 +427,11 @@ test.each([...sdkModes])("the Claude profile's deny floor holds in %s mode, visi
   const floor = path.join(state.root, "floor")
   await fs.mkdir(floor, { mode: 0o700 })
   try {
-    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 777 ${floor}` } })
+    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 777 ${shellPath(floor)}` } })
     const events = await context.collect("t1", "Run the scripted Bash tool")
     expect(context.owner.broker.list({ sessionId: "s1" })).toHaveLength(0)
     expect(context.ports.saved).toHaveLength(0)
-    expect(await fileMode(floor)).toBe(0o700)
+    if (POSIX_FILE_MODES) expect(await fileMode(floor)).toBe(0o700)
     expect(events.some((row) => row.event.type === "tool-error" && /has been denied/.test(row.event.error))).toBe(true)
   } finally { await context.close(); await state.close() }
 }, 60_000)
@@ -431,9 +443,9 @@ test("a command outside the floor runs unprompted in bypassPermissions mode", as
   const outside = path.join(state.root, "outside")
   await fs.mkdir(outside, { mode: 0o700 })
   try {
-    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 755 ${outside}` } })
+    state.server.scriptTool({ name: "Bash", input: { command: `chmod -R 755 ${shellPath(outside)}` } })
     const events = await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
-    expect(await fileMode(outside)).toBe(0o755)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o755)
     expect(events.some((row) => row.event.type === "tool-error")).toBe(false)
   } finally { await context.close(); await state.close() }
 }, 60_000)
@@ -445,7 +457,7 @@ test("Claude applies permission changes before the active turn's next tool", asy
   await fs.mkdir(outside, { mode: 0o700 })
   const release = state.server.holdOpeningReplies("CLAUDELIVEPERMISSIONS")
   state.server.scriptTool({ name: "Bash", whenPromptIncludes: "CLAUDELIVEPERMISSIONS",
-    input: { command: `chmod -R 755 ${outside}` } })
+    input: { command: `chmod -R 755 ${shellPath(outside)}` } })
   const running = context.collectWithoutAsk("t1", "Run the scripted Bash tool CLAUDELIVEPERMISSIONS")
   try {
     await state.server.textGateReached("CLAUDELIVEPERMISSIONS")
@@ -454,7 +466,7 @@ test("Claude applies permission changes before the active turn's next tool", asy
     state.config.permissionMode = "bypassPermissions"
     release()
     await running
-    expect(await fileMode(outside)).toBe(0o755)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o755)
     expect(state.sampledPids).toHaveLength(1)
   } finally { release(); await running.then(() => undefined, () => undefined); await context.close(); await state.close() }
 }, 60_000)
@@ -466,7 +478,7 @@ test("a permission mode set in the runtime's config reaches the next Claude laun
   try {
     state.config.permissionMode = "bypassPermissions"
     expect((await context.transport.config.permissionModes({ session: context.session() })).currentModeId).toBe("bypassPermissions")
-    state.server.scriptTool({ name: "Bash", input: { command: `printf hi > ${out}` } })
+    state.server.scriptTool({ name: "Bash", input: { command: `printf hi > ${shellPath(out)}` } })
     await context.collectWithoutAsk("t1", "Run the scripted Bash tool")
     expect(await fs.readFile(out, "utf8")).toBe("hi")
   } finally { await context.close(); await state.close() }
@@ -480,7 +492,7 @@ test("Claude tightens permissions during the active turn before its next tool", 
   await fs.mkdir(outside, { mode: 0o700 })
   const release = state.server.holdOpeningReplies("CLAUDETIGHTENPERMISSIONS")
   state.server.scriptTool({ name: "Bash", whenPromptIncludes: "CLAUDETIGHTENPERMISSIONS",
-    input: { command: `chmod -R 755 ${outside}` } })
+    input: { command: `chmod -R 755 ${shellPath(outside)}` } })
   const running = context.collect("t1", "Run the scripted Bash tool CLAUDETIGHTENPERMISSIONS")
   try {
     await state.server.textGateReached("CLAUDETIGHTENPERMISSIONS")
@@ -490,7 +502,7 @@ test("Claude tightens permissions during the active turn before its next tool", 
     const asked = await context.awaitPending()
     await context.owner.broker.answer(asked.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })
     await running
-    expect(await fileMode(outside)).toBe(0o700)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o700)
     expect(state.sampledPids).toHaveLength(1)
   } finally { release(); await context.close(); await running.then(() => undefined, () => undefined); await state.close() }
 }, 60_000)
@@ -543,7 +555,7 @@ test("Always allow persists Claude's suggested rules through the broker's grants
   const first = await attachedClaude(state)
   const outside = path.join(state.root, "outside")
   await fs.mkdir(outside, { mode: 0o700 })
-  const command = `chmod -R 750 ${outside}`
+  const command = `chmod -R 750 ${shellPath(outside)}`
   const originalSettings = await fs.readFile(path.join(state.userConfigRoot, "settings.json"))
   let second: Awaited<ReturnType<typeof attachedClaude>> | undefined
   try {
@@ -556,7 +568,7 @@ test("Always allow persists Claude's suggested rules through the broker's grants
     expect(await first.owner.broker.answer(pending.request.requestId, { kind: "permission", decision: "allow_always" }, { sessionId: "s1" }))
       .toMatchObject({ ok: true })
     await running
-    expect(await fileMode(outside)).toBe(0o750)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o750)
     expect(first.ports.states.get("s1")?.brokerGrants).toHaveLength(1)
     expect(first.ports.saved).toHaveLength(1)
     expect(await fs.readFile(path.join(state.userConfigRoot, "settings.json"))).toEqual(originalSettings)
@@ -568,7 +580,7 @@ test("Always allow persists Claude's suggested rules through the broker's grants
     state.server.scriptToolSequence("AGAIN", [{ name: "Bash", input: { command } }])
     await second.collectWithoutAsk("t2", "AGAIN: run the scripted Bash tool")
     expect(second.ports.saved).toHaveLength(1)
-    expect(await fileMode(outside)).toBe(0o750)
+    if (POSIX_FILE_MODES) expect(await fileMode(outside)).toBe(0o750)
   } finally { await second?.close(); await first.close(); await state.close() }
 }, 90_000)
 

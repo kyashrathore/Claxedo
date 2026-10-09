@@ -8,6 +8,8 @@ import { pollUntil } from "./test-support/poll"
 import { piBackend, piTransport, type PiBackend } from "../../e2e/harness/pi-conformance"
 import { runConformance, setupConformance } from "./test-support/run"
 
+const POSIX_PROCESS_GROUPS = process.platform !== "win32"
+
 runConformance({ name: "pi-durable", backend: () => piBackend(), makeTransport: (services, backend) => piTransport(services, backend as PiBackend) })
 
 async function collect(events: AsyncIterable<RoutedEvent>): Promise<RoutedEvent[]> {
@@ -37,12 +39,12 @@ test("a Pi turn writes a real file through its own tools, streams usage, spends 
   } finally { await context.close() }
 }, 60_000)
 
-test("stopping a Pi turn mid-bash kills the command's process and settles the turn cancelled", async () => {
+test.skipIf(!POSIX_PROCESS_GROUPS)("stopping a Pi turn mid-bash kills the command's process and settles the turn cancelled", async () => {
   const context = await piContext("pi-stop")
   const backend = context.backend as PiBackend
   try {
     const pidFile = path.join(backend.directory, "sleep.pid")
-    backend.server.scriptTool({ name: "bash", input: { command: `echo $$ > ${pidFile}; exec sleep 60` }, whenPromptIncludes: "PISLEEP" })
+    backend.server.scriptTool({ name: "bash", input: { command: "echo $$ > sleep.pid; exec sleep 60" }, whenPromptIncludes: "PISLEEP" })
     const controller = new AbortController()
     const running = collect(context.transport.send(context.session, context.turn("Run it PISLEEP"), context.turnBroker(controller.signal)))
     const pid = await pollUntil(async () => await Bun.file(pidFile).exists() ? Number(await Bun.file(pidFile).text()) || undefined : undefined, Date.now() + 10_000)
@@ -113,12 +115,12 @@ test("the model's Pi question reaches the person and their answer returns to the
   } finally { await context.close() }
 }, 60_000)
 
-test("a background job outlives its Pi bash call and ends when the session closes", async () => {
+test.skipIf(!POSIX_PROCESS_GROUPS)("a background job outlives its Pi bash call and ends when the session closes", async () => {
   const context = await piContext("pi-background")
   const backend = context.backend as PiBackend
   try {
     const pidFile = path.join(backend.directory, "background.pid")
-    backend.server.scriptTool({ name: "bash", input: { command: `sleep 30 & echo $! > ${pidFile}; echo started` }, whenPromptIncludes: "PIBACKGROUND" })
+    backend.server.scriptTool({ name: "bash", input: { command: "sleep 30 & echo $! > background.pid; echo started" }, whenPromptIncludes: "PIBACKGROUND" })
     const started = Date.now()
     const events = await collect(context.transport.send(context.session, context.turn("Reply with exactly this one token: PIBACKGROUND"), context.turnBroker()))
     expect(Date.now() - started).toBeLessThan(10_000)

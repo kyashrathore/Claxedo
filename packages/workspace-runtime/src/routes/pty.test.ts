@@ -391,7 +391,7 @@ describe("PtyRoutes", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pty-agents-"))
     const previousPath = process.env.PATH
     try {
-      await fs.writeFile(path.join(root, "cursor-agent"), "#!/bin/sh\n", { mode: 0o755 })
+      await fs.writeFile(path.join(root, process.platform === "win32" ? "cursor-agent.cmd" : "cursor-agent"), "#!/bin/sh\n", { mode: 0o755 })
       process.env.PATH = root
       const response = await appFor(hostPolicy()).request("http://localhost/agents")
       expect(response.status).toBe(200)

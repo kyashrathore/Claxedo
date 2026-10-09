@@ -8,14 +8,16 @@ const root = path.join(os.tmpdir(), `agent-config-snapshot-${randomUUID().slice(
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const [{ createAgentConfigRoutes }, { configureAgentConfig, disposeAgentConfig }] = await Promise.all([
+const [{ createAgentConfigRoutes }, { configureAgentConfig, disposeAgentConfig }, { ClaxedoDB }] = await Promise.all([
   import("./index"),
   import("@claxedo/server-core/agent-config/index"),
+  import("@claxedo/server-core/platform/db/index"),
 ])
 
 afterEach(async () => {
   vi.clearAllMocks()
   disposeAgentConfig()
+  ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
 })
 

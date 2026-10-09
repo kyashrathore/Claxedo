@@ -15,7 +15,7 @@ const services = createHarnessServices({
   healthChanged: () => {},
 })
 await services.recordHomeUse(home)
-const harness = await services.spawn({ file: "/bin/sleep", args: ["60"], cwd: home, env: { PATH: process.env.PATH ?? "" } },
+const harness = await services.spawn({ file: process.execPath, args: ["-e", "setTimeout(() => {}, 60_000)"], cwd: home, env: { PATH: process.env.PATH ?? "" } },
   { role: "harness", label: "surviving harness", signal: new AbortController().signal, home })
 console.log(JSON.stringify({ pid: harness.pid }))
 process.exit(0)

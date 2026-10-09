@@ -4,6 +4,7 @@ import path from "node:path"
 import { expect, test } from "bun:test"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { runConformance, setupConformance, withUndeliverableFile, type SuiteBackend } from "./test-support/run"
+import { removeTempRoot } from "../test-support/temp-root"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedCursorBackend } from "../../e2e/harness/cursor/backend"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "../../e2e/harness/egress-guard"
@@ -56,7 +57,7 @@ async function backend(): Promise<CursorBackend> {
       await server.close()
       releasePort(serverPort)
       releasePort(guardPort)
-      await fs.rm(root, { recursive: true, force: true })
+      await removeTempRoot(root)
       expect(unexpected).toEqual([])
     },
   }
@@ -683,7 +684,7 @@ test("non-image attachments are materialized in the workspace and images travel 
     expect(files.some((name) => name.endsWith("-shot.png"))).toBe(true)
     expect(await fs.readFile(path.join(folder, written!), "utf8")).toBe("notes")
     const run = runText(state)
-    expect(run).toContain(`Attached file (text/plain): ${path.join(folder, written!)}`)
+    expect(run).toContain(JSON.stringify(`Attached file (text/plain): ${path.join(folder, written!)}`).slice(1, -1))
     expect(run).toContain(`"data":"${image}"`)
     expect(await refusal(collect(context, { ...base, prompt: { ...base.prompt, parts: [{ type: "file", mime: "text/plain", url: "https://example.invalid/notes.txt" }] } })))
       .toBe("CursorTransportError: Cursor cannot deliver the file URL https://example.invalid/notes.txt")
@@ -797,6 +798,6 @@ test("a plugin root whose link escapes it is refused before Cursor starts", asyn
     }
   } finally {
     await transport.dispose()
-    await fs.rm(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   }
 })

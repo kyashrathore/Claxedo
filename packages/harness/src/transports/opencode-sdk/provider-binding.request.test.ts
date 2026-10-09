@@ -6,6 +6,7 @@ import { createServer } from "node:http"
 import { CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
 import { createOpenCodeRuntime, type OpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
+import { removeTempRoot } from "../../test-support/temp-root"
 
 type Recorded = { path: string; authorization?: string; model: unknown }
 
@@ -81,7 +82,7 @@ async function turn(runtime: OpenCodeRuntime, scope: WorkspaceScope, until: () =
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-binding-request-"))
-  return { root, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) }
+  return { root, cleanup: () => removeTempRoot(root) }
 }
 
 test("a bound provider's request reaches the binding and carries its placeholder", async () => {
@@ -102,7 +103,7 @@ test("a bound provider's request reaches the binding and carries its placeholder
   } finally {
     await runtime.close()
     await broker.close()
-    cleanup()
+    await cleanup()
   }
 }, 60_000)
 
@@ -124,7 +125,7 @@ test("a withdrawn account sends nothing to the binding it used to name", async (
   } finally {
     await runtime.close()
     await broker.close()
-    cleanup()
+    await cleanup()
   }
 }, 90_000)
 
@@ -145,7 +146,7 @@ test("a provider nobody bound sends nothing to the broker", async () => {
   } finally {
     await runtime.close()
     await broker.close()
-    cleanup()
+    await cleanup()
   }
 }, 90_000)
 
@@ -174,7 +175,7 @@ test("a broker refusal reaches the operator in the broker's own words", async ()
   } finally {
     await runtime.close()
     await broker.close()
-    cleanup()
+    await cleanup()
   }
 }, 90_000)
 
@@ -194,7 +195,7 @@ test("a bound provider ignores the apiKey and baseURL its config content carries
     await runtime.close()
     await fromConfig.close()
     await fromBinding.close()
-    cleanup()
+    await cleanup()
   }
 }, 60_000)
 
@@ -218,7 +219,7 @@ test("a bound provider ignores the apiKey and baseURL the workspace's opencode.j
     await runtime.close()
     await fromConfig.close()
     await fromBinding.close()
-    cleanup()
+    await cleanup()
   }
 }, 60_000)
 
@@ -242,6 +243,6 @@ test("a vendor provider the engine only catalogs is enabled by its binding and r
   } finally {
     await runtime.close()
     await broker.close()
-    cleanup()
+    await cleanup()
   }
 }, 60_000)

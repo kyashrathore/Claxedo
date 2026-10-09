@@ -3,6 +3,7 @@ import { Hono } from "hono"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { deleteSessionMeta, putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "./session-meta-tap"
@@ -28,6 +29,7 @@ beforeEach(() => {
 afterEach(() => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  ClaxedoDB.close()
   rmSync(dataDir, { recursive: true, force: true })
 })
 

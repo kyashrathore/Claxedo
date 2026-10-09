@@ -4,7 +4,9 @@ import os from "node:os"
 import path from "node:path"
 import { mirrorConfigTree } from "./config-mirror"
 
-test("mirrored hooks stay executable and private", async () => {
+const POSIX_FILE_MODES = process.platform !== "win32"
+
+test.skipIf(!POSIX_FILE_MODES)("mirrored hooks stay executable and private", async () => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "config-mirror-executable-")))
   try {
     const source = path.join(root, "source")
@@ -19,7 +21,7 @@ test("mirrored hooks stay executable and private", async () => {
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 
-test("mode-only source changes invalidate the mirror cache in both directions", async () => {
+test.skipIf(!POSIX_FILE_MODES)("mode-only source changes invalidate the mirror cache in both directions", async () => {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "config-mirror-mode-")))
   try {
     const source = path.join(root, "hook.sh")

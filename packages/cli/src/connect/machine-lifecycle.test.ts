@@ -216,7 +216,10 @@ async function servedEverywhere(m: Machine, workspaceId: string, generation: num
   return socket
 }
 
-describe("claxedo connect on a simulated machine", () => {
+// The simulated machine is a Linux box: cloud-init, a systemd user manager, POSIX file modes and POSIX machine roots.
+const linuxMachine = describe.skipIf(process.platform === "win32")
+
+linuxMachine("claxedo connect on a simulated machine", () => {
   let m: Machine
   afterEach(async () => {
     await m?.close()
@@ -520,7 +523,7 @@ const providerConfig = (placeholder: string) =>
     },
   })
 
-describe("provider configuration on a running claxedo connect host", () => {
+linuxMachine("provider configuration on a running claxedo connect host", () => {
   let h: Awaited<ReturnType<typeof inProcessHost>>
   const previousDataDir = process.env.CLAXEDO_DATA_DIR
   beforeEach(() => resetHostEnrolledOwner())

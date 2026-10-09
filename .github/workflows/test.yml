@@ -99,9 +99,10 @@ jobs:
       matrix:
         settings: ${{ fromJSON(needs.changes.outputs.unit_matrix) }}
         # claxedo-server is 236 serialized files; beside the other 30 packages
-        # it took the whole suite past 35 minutes on a 2-core runner. The lanes
-        # share this job's setup and run as two jobs.
-        lane: [server-1, server-2, server-3, server-4, rest]
+        # it took the whole suite past 35 minutes on a 2-core runner. harness
+        # alone is 21 minutes on Windows (its conformance suites boot a real
+        # OpenCode engine per test), so it is a lane of its own there too.
+        lane: [server-1, server-2, server-3, server-4, harness, rest]
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -166,7 +167,7 @@ jobs:
         run: bun run --cwd packages/claxedo-server verify:closure
 
       - name: Prepare Linux sandbox and test ports
-        if: runner.os == 'Linux' && matrix.lane == 'rest'
+        if: runner.os == 'Linux' && (matrix.lane == 'rest' || matrix.lane == 'harness')
         run: bash script/ci-linux-test-host.sh
 
       # `bun turbo test` used to be a near-no-op: turbo.json declared only five
@@ -199,16 +200,18 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             concurrency=1
           fi
-          lane=--filter=@claxedo/server
+          lane=(--filter=@claxedo/server)
           if [[ "${{ matrix.lane }}" == "rest" ]]; then
-            lane=--filter=!@claxedo/server
+            lane=(--filter='!@claxedo/server' --filter='!@claxedo/harness')
+          elif [[ "${{ matrix.lane }}" == "harness" ]]; then
+            lane=(--filter=@claxedo/harness)
           else
             export CLAXEDO_SERVER_TEST_SHARD="${LANE#server-}/4"
           fi
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
-            bun turbo test "$lane" --concurrency="$concurrency" --continue
+            bun turbo test "${lane[@]}" --concurrency="$concurrency" --continue
           else
-            bun turbo test "$lane" --affected --concurrency="$concurrency" --continue
+            bun turbo test "${lane[@]}" --affected --concurrency="$concurrency" --continue
           fi
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

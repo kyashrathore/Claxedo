@@ -231,6 +231,10 @@ describe("local binding authority", () => {
       updateCredentialHealth(id, health, at, org), resolveCredentialSecretById: readSecretById, updateCredentialSecret,
       updateCredentialUsage: async () => {}, updateCredentialLabel: async () => true }
     const row = credentialById(credential.id, { onOutage: "throw" })!
+    // The broker's first projection opens its state, and on Windows writing the
+    // signing key private spawns an ACL process that outlasts the stubbed
+    // exchange; opened here, the two renewals below start together.
+    await local.runtimeIdentity(workspaceId, "__local__", "local")
 
     const [checked, rows] = await Promise.all([
       checkCredential(registry, row, { org: "__local__", fetch: provider, now: () => Date.now() + 20 * 60_000 }),

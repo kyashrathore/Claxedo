@@ -17,6 +17,7 @@ export function codexStopDeadline(): Deadline {
 
 export class CodexTerminals {
   private readonly byTurn = new Map<string, Set<string>>()
+  private readonly before = new Map<string, Promise<Set<string> | Error>>()
   private readonly completed = new Set<string>()
   private readonly completions = new Map<string, PromiseWithResolvers<void>>()
   private readonly stopping = new Map<string, Promise<AdapterCancelOutcome>>()
@@ -37,15 +38,19 @@ export class CodexTerminals {
     const item = asRecordOrEmpty(params.item)
     if (item.type !== "commandExecution") return
     const turnId = asString(params.turnId)
-    const processId = asString(item.processId)
-    if (!turnId || !processId) return
+    if (!turnId) return
     const ids = this.byTurn.get(turnId) ?? new Set<string>()
-    ids.add(processId)
+    const processId = asString(item.processId)
+    if (processId) ids.add(processId)
+    else if (!this.before.has(turnId)) {
+      this.before.set(turnId, this.inventory(codexStopDeadline()).then((present) => new Set(present),
+        (failure: unknown) => failure instanceof Error ? failure : new CodexTransportError("protocol", errorMessage(failure))))
+    }
     this.byTurn.set(turnId, ids)
   }
 
   ranCommand(turnId: string): boolean {
-    return (this.byTurn.get(turnId)?.size ?? 0) > 0
+    return this.byTurn.has(turnId)
   }
 
   async hasBackgroundTasks(deadline: Deadline): Promise<boolean> {
@@ -71,7 +76,7 @@ export class CodexTerminals {
     }
     const execution = noActive || await this.completion(turnId, deadline) ? "terminal" as const : "unknown" as const
     const ours = this.byTurn.get(turnId)
-    if (!ours?.size) return { execution, cleanup: execution === "terminal" ? "verified_clear" : "unknown" }
+    if (!ours) return { execution, cleanup: execution === "terminal" ? "verified_clear" : "unknown" }
     try { return { execution, cleanup: await this.release(turnId, ours, deadline) } }
     catch (error) { return { execution, cleanup: "unknown", error: cleanupFailure(error) } }
   }
@@ -101,15 +106,22 @@ export class CodexTerminals {
   }
 
   private async release(turnId: string, ours: Set<string>, deadline: Deadline): Promise<CleanupFact> {
-    await this.terminate(await this.survivors(ours, deadline), deadline)
-    const remaining = await this.survivors(ours, deadline)
+    await this.terminate(await this.survivors(turnId, ours, deadline), deadline)
+    const remaining = await this.survivors(turnId, ours, deadline)
     if (remaining.length) return "owned"
     this.byTurn.delete(turnId)
+    this.before.delete(turnId)
     return "verified_clear"
   }
 
-  private async survivors(ours: Set<string>, deadline: Deadline): Promise<string[]> {
-    return (await this.inventory(deadline)).filter((id) => ours.has(id))
+  private async survivors(turnId: string, ours: Set<string>, deadline: Deadline): Promise<string[]> {
+    const listed = await this.inventory(deadline)
+    const pending = this.before.get(turnId)
+    if (!pending) return listed.filter((id) => ours.has(id))
+    const before = await pending
+    if (before instanceof Error) throw before
+    const named = new Set([...this.byTurn].filter(([id]) => id !== turnId).flatMap(([, ids]) => [...ids]))
+    return listed.filter((id) => ours.has(id) || (!before.has(id) && !named.has(id)))
   }
 
   private async inventory(deadline: Deadline): Promise<string[]> {

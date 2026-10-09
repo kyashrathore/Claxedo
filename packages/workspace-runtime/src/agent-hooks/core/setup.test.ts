@@ -59,6 +59,8 @@ describe("writeStatusHooksArtifacts", () => {
       force: true,
     })
 
-    expect(readFileSync(path.join(manifest.dirs.bin, "codex"), "utf-8")).toContain(`command="'\\''${manifest.files.notify}'\\'' --harness=codex"`)
+    // The hook command is JSON-quoted into the TOML flag, then the whole flag is shell-quoted.
+    const notifyCommand = JSON.stringify(`'${manifest.files.notify}' --harness=codex`).replaceAll("'", "'\\''")
+    expect(readFileSync(path.join(manifest.dirs.bin, "codex"), "utf-8")).toContain(`command=${notifyCommand}`)
   })
 })

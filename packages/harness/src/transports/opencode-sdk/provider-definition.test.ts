@@ -6,6 +6,7 @@ import { createServer } from "node:http"
 import { createOpenCodeRuntime, type OpenCodeRuntime } from "./runtime"
 import type { ProviderDefinition } from "./provider-definition"
 import { WorkspaceScope } from "./scope"
+import { removeTempRoot } from "../../test-support/temp-root"
 
 type Recorded = { path: string; authorization?: string; tenant?: string; model: unknown }
 
@@ -55,7 +56,7 @@ function engine() {
   const runtime = createOpenCodeRuntime({ databasePath: path.join(root, "opencode.db") })
   cleanups.push(async () => {
     await runtime.close()
-    fs.rmSync(root, { recursive: true, force: true })
+    await removeTempRoot(root)
   })
   return { runtime, scope: WorkspaceScope.authorize({ workspaceID: "w", directory }) }
 }

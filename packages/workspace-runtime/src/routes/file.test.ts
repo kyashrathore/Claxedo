@@ -32,7 +32,8 @@ afterEach(async () => {
 describe("FileRoutes file reads", () => {
   test("preserves whitespace, unicode and newlines in Git filenames on listing and search routes", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
     await runGit(["init"], tmp)
-    const name = " 雪 furniture\nnotes.txt "
+    // NTFS refuses a newline in a name and Win32 strips a trailing space.
+    const name = process.platform === "win32" ? " 雪 furniture notes.txt" : " 雪 furniture\nnotes.txt "
     await fs.writeFile(path.join(tmp, name), "")
     const app = new Hono().route("/", FileRoutes())
     expect(await (await app.request("http://localhost/file/all")).json()).toEqual({ paths: [name] })
@@ -48,7 +49,7 @@ describe("FileRoutes file reads", () => {
     const res = await app.request("http://localhost/file/all")
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({
-      paths: ["README.md", path.join("src", "index.ts")],
+      paths: ["README.md", "src/index.ts"],
     })
   }))
 

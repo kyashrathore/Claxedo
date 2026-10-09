@@ -220,8 +220,9 @@ describe("agent-hooks real-world execution", () => {
   })
 
   it("a real Claude CLI in a Claxedo terminal runs its lifecycle hooks from --settings without touching ~/.claude", async () => {
+    const windows = process.platform === "win32"
     const sdk = path.dirname(fileURLToPath(import.meta.resolve("@anthropic-ai/claude-agent-sdk")))
-    const realClaude = path.join(sdk, "..", `claude-agent-sdk-${process.platform}-${process.arch}`, "claude")
+    const realClaude = path.join(sdk, "..", `claude-agent-sdk-${process.platform}-${process.arch}`, windows ? "claude.exe" : "claude")
     const home = path.join(rootDir, "person")
     const personalClaude = path.join(home, ".claude")
     await fs.mkdir(personalClaude, { recursive: true })
@@ -230,13 +231,17 @@ describe("agent-hooks real-world execution", () => {
     const before = await settingsHash()
     const realBin = path.join(rootDir, "real-claude-bin")
     await fs.mkdir(realBin, { recursive: true })
-    await fs.symlink(realClaude, path.join(realBin, "claude"))
+    await fs.symlink(realClaude, path.join(realBin, path.basename(realClaude)))
     received.splice(0)
 
+    // Git Bash reads a Windows-form PATH and brings its own curl; POSIX keeps the system tools only.
+    const searchPath = windows ? [realBin, process.env.PATH ?? ""].join(path.delimiter) : `${realBin}:/usr/bin:/bin`
     const result = await runShell("bash", [path.join(binDir, "claude"), "-p", "hello"], {
       env: {
-        PATH: `${realBin}:/usr/bin:/bin`,
+        PATH: searchPath,
         HOME: home,
+        // Windows processes read their home from USERPROFILE and cannot start without SystemRoot.
+        ...(windows ? { USERPROFILE: home, SystemRoot: process.env.SystemRoot ?? "C:\\Windows", TEMP: os.tmpdir(), TMP: os.tmpdir() } : {}),
         ANTHROPIC_API_KEY: "sk-hook-test",
         ANTHROPIC_BASE_URL: `http://127.0.0.1:${serverPort}`,
         CLAXEDO_TAB_ID: "real-claude-tab",

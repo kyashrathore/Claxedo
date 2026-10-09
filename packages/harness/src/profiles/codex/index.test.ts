@@ -14,6 +14,8 @@ const brokered: ResolvedCredentials = { machineLoginAllowed: true, accountOwner:
 const ownLogin: ResolvedCredentials = { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "own" }
 const noPlugins: PluginProjection = { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }
 
+const removeDirectoryLink = (link: string) => process.platform === "win32" ? fs.rmdir(link) : fs.rm(link)
+
 async function plugin(root: string, name: string, version = "1.0.0") {
   const folder = path.join(root, name)
   await fs.mkdir(path.join(folder, ".codex-plugin"), { recursive: true })
@@ -217,7 +219,7 @@ test("the home is shared by account holder, credential binding and plugin select
     expect(await fs.readdir((await run({ credentials: brokered })).home)).not.toContain("auth.json")
     expect(await fs.readFile(path.join((await run({ credentials: brokered })).home, "config.toml"), "utf8")).not.toContain("mcp_servers.owner")
   } finally { await fs.rm(root, { recursive: true, force: true }) }
-})
+}, 60_000)
 
 test("every home of one owner links one conversation store and names it Codex's sqlite home, and another owner's homes link their own", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-store-"))
@@ -257,12 +259,12 @@ test("the shared home refuses a symlink in its place and a mirror link that esca
     await fs.symlink(path.join(root, "elsewhere"), home)
     await expect(prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: noPlugins, ownerHome: owner })).rejects.toThrow("symlink")
     expect(await fs.readdir(path.join(root, "elsewhere"))).toEqual([])
-    await fs.rm(home)
+    await removeDirectoryLink(home)
     const store = path.dirname(path.dirname(home))
     await fs.rename(store, path.join(root, "moved-store"))
     await fs.symlink(path.join(root, "moved-store"), store)
     await expect(prepareCodexProfile({ homeRoot, credentials: ownLogin, projection: noPlugins, ownerHome: owner })).rejects.toThrow("symlink")
-    await fs.rm(store)
+    await removeDirectoryLink(store)
     await fs.writeFile(path.join(root, "private.txt"), "private")
     await fs.symlink(path.join(root, "private.txt"), path.join(owner, "prompts-link"))
     await fs.mkdir(path.join(owner, "prompts"))

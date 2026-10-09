@@ -25,6 +25,10 @@ beforeEach(async () => {
   directory = path.join(process.env.CLAXEDO_DATA_DIR, "repo")
   await fs.mkdir(directory)
   git(directory, "init", "-b", "main")
+  // The worktree the route creates is checked out by git under this repository's
+  // config; Git for Windows installs autocrlf=true globally, which would land
+  // `dev\r\n` in the worktree's file.txt.
+  git(directory, "config", "core.autocrlf", "false")
   await fs.writeFile(path.join(directory, "file.txt"), "main\n")
   git(directory, "add", ".")
   git(directory, "commit", "-m", "main")

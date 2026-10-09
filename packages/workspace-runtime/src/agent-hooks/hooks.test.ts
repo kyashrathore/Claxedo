@@ -158,7 +158,7 @@ describe("template NotifyScript", () => {
     try {
       const script = path.join(root, "notify.sh")
       await writeFile(script, notifyScript(server.port))
-      const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ type: "agent-turn-complete" })], {
+      const child = Bun.spawn(["bash", script, JSON.stringify({ type: "agent-turn-complete" })], {
         env: {
           ...process.env,
           CLAXEDO_SERVER_PORT: String(server.port),
@@ -193,7 +193,7 @@ describe("template NotifyScript", () => {
       const script = path.join(root, "notify.sh")
       await writeFile(script, notifyScript(server.port))
       const invoke = async (hook_event_name: string, subagent?: string) => {
-        const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name, session_id: "parent", ...(subagent ? { agent_id: subagent } : {}) })], {
+        const child = Bun.spawn(["bash", script, JSON.stringify({ hook_event_name, session_id: "parent", ...(subagent ? { agent_id: subagent } : {}) })], {
           env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "parent", WORKSPACE_RUNTIME_STATE_DIR: root },
           stdout: "ignore", stderr: "ignore",
         })
@@ -230,7 +230,7 @@ describe("template NotifyScript", () => {
       const script = path.join(root, "notify.sh")
       await writeFile(script, notifyScript(server.port))
       const invoke = async (args: string[], env: Record<string, string>) => {
-        const child = Bun.spawn(["/bin/bash", script, ...args], {
+        const child = Bun.spawn(["bash", script, ...args], {
           env: { ...process.env, CLAXEDO_AGENT: "", CURSOR_VERSION: "", CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "pty", WORKSPACE_RUNTIME_STATE_DIR: root, ...env },
           stdin: "ignore", stdout: "ignore", stderr: "ignore",
         })
@@ -276,7 +276,7 @@ describe("template NotifyScript", () => {
     try {
       const script = path.join(root, "notify.sh")
       await writeFile(script, notifyScript(server.port))
-      const invoke = () => Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name: "Stop" })], {
+      const invoke = () => Bun.spawn(["bash", script, JSON.stringify({ hook_event_name: "Stop" })], {
         env: { ...process.env, CLAXEDO_TAB_ID: "retry-tab", CLAXEDO_SERVER_PORT: String(server.port), WORKSPACE_RUNTIME_STATE_DIR: root },
         stdout: "ignore", stderr: "ignore",
       }).exited
@@ -321,7 +321,7 @@ describe("template CursorHook", () => {
       await writeFile(hook, artifact("cursor", "cursor-hook.sh", notify))
       const terminalId = path.basename(root)
       const run = async (arg: string, payload: Record<string, unknown>) => {
-        const child = Bun.spawn(["/bin/bash", hook, arg], {
+        const child = Bun.spawn(["bash", hook, arg], {
           env: { ...process.env, CLAXEDO_AGENT: "cursor-agent", CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: terminalId, CLAXEDO_TERMINAL_ID: terminalId, WORKSPACE_RUNTIME_STATE_DIR: root },
           stdin: new Blob([JSON.stringify({ conversation_id: "conv-1", ...payload })]), stdout: "pipe", stderr: "ignore",
         })
@@ -355,7 +355,7 @@ describe("template CursorHook", () => {
       await writeFile(notify, notifyScript(server.port))
       await writeFile(hook, artifact("cursor", "cursor-hook.sh", notify))
       for (const [arg, reply] of [["PermissionRequest", '{"continue":true}'], ["Stop", "{}"]] as const) {
-        const child = Bun.spawn(["/bin/bash", hook, arg], {
+        const child = Bun.spawn(["bash", hook, arg], {
           env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
           stdin: new Blob([JSON.stringify({ hook_event_name: "stop", conversation_id: "conv-1" })]), stdout: "pipe", stderr: "ignore",
         })
@@ -379,7 +379,7 @@ it("copilot hook outside a Claxedo tab answers and forwards nothing", async () =
     const hook = path.join(root, "copilot-hook.sh")
     await writeFile(notify, notifyScript(server.port))
     await writeFile(hook, artifact("copilot", "copilot-hook.sh", notify))
-    const child = Bun.spawn(["/bin/bash", hook, "Stop"], {
+    const child = Bun.spawn(["bash", hook, "Stop"], {
       env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
       stdin: new Blob([JSON.stringify({ hook_event_name: "Stop" })]), stdout: "pipe", stderr: "ignore",
     })
@@ -414,7 +414,7 @@ describe("template CopilotProjectHooks", () => {
 
   it("embeds the hook script path in commands", () => {
     const json = projectContent("copilot", "/tmp/hooks/copilot-hook.sh".replace(/copilot-hook\.sh$/, "notify.sh"))
-    expect(json).toContain("/tmp/hooks/copilot-hook.sh")
+    expect(json).toContain(JSON.stringify(path.join("/tmp/hooks", "copilot-hook.sh")).slice(1, -1))
   })
 })
 
@@ -434,7 +434,7 @@ it("cursor forwards complete provider JSON and waits for the HTTP acknowledgemen
     const script = path.join(root, "hook.sh")
     await writeFile(notify, notifyScript(server.port), { mode: 0o700 })
     await writeFile(script, artifact("cursor", "cursor-hook.sh", notify))
-    const child = Bun.spawn(["/bin/bash", script, "Start"], {
+    const child = Bun.spawn(["bash", script, "Start"], {
       stdin: new Blob([payload]), stdout: "pipe", stderr: "pipe",
       env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "provider-hook-tab", CLAXEDO_TERMINAL_ID: "provider-hook-terminal", CLAXEDO_AGENT: "cursor" },
     })

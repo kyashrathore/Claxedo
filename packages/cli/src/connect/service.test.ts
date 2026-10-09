@@ -182,7 +182,8 @@ describe("service units", () => {
     expect(files.has(plist)).toBe(false)
   })
 
-  describe("the launchd wrapper, run under /bin/sh", () => {
+  // The wrapper is the /bin/sh script launchd runs.
+  describe.skipIf(process.platform === "win32")("the launchd wrapper, run under /bin/sh", () => {
     const dirs: string[] = []
     afterEach(async () => {
       for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true })

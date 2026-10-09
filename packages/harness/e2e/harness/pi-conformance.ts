@@ -8,6 +8,7 @@ import type { ResolvedCredentials } from "../../src/contract"
 import { PiDurableTransport } from "../../src/transports/pi-durable"
 import { createNodePiPlacement } from "../../src/transports/pi-durable/node"
 import { withUndeliverableFile, type SuiteBackend } from "../../src/conformance/test-support/run"
+import { removeTempRoot } from "../../src/test-support/temp-root"
 import type { TestServices } from "../../src/conformance/test-support/services"
 
 export type PiBackend = SuiteBackend & { root: string; server: ScriptedModelServer; secret: string }
@@ -48,7 +49,7 @@ export async function piBackend(name = "pi-durable"): Promise<PiBackend> {
     },
     close: async () => {
       for (const entry of [{ port, server }, ...rotated]) { await entry.server.close(); releasePort(entry.port) }
-      await fs.rm(root, { recursive: true, force: true })
+      await removeTempRoot(root)
     },
   }
 }

@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { createOpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
+import { removeTempRoot } from "../../test-support/temp-root"
 
 function engine() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-provider-binding-"))
@@ -22,7 +23,7 @@ function engine() {
     scope: WorkspaceScope.authorize({ workspaceID: "w", directory }),
     close: async () => {
       await runtime.close()
-      fs.rmSync(root, { recursive: true, force: true })
+      await removeTempRoot(root)
     },
   }
 }

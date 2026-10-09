@@ -31,8 +31,15 @@ const unsupportedRunner =
     // entrypoint of this package runs under Node, which `node --test` matches.
     : "Bun cannot service the pty data socket; this suite runs under `node --test`"
 
-const unsupportedPlatform =
-  process.platform === "win32" ? "the conpty path needs a Windows host to mean anything" : undefined
+const windows = process.platform === "win32"
+
+/**
+ * What a shell session is told to type, and the expansion only a live shell
+ * can answer: an echo of the typed input would still carry the unexpanded form.
+ */
+const shellProof = windows
+  ? { typed: "echo neighbor-%OS%\n", expected: "neighbor-Windows_NT" }
+  : { typed: "echo neighbor-$((40 + 2))\n", expected: "neighbor-42" }
 
 const previousHistoryDir = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
 
@@ -64,7 +71,7 @@ async function waitFor(check: () => boolean, timeoutMs = 15_000) {
   }
 }
 
-const unsupported = unsupportedPlatform ?? unsupportedRunner
+const unsupported = unsupportedRunner
 
 // Bun's `node:test` shim honours neither the `skip` option nor a hook's scope,
 // so an unrunnable environment has to be answered by registering a different
@@ -108,7 +115,10 @@ setInterval(() => {}, 1000);
     await waitFor(() => client.text().includes("early-output-42"))
   })
 
-  void test("removing a terminal terminates its separate child process group without affecting a neighbor", { timeout: 30_000 }, async () => {
+  void test("removing a terminal terminates its separate child process group without affecting a neighbor", {
+    timeout: 30_000,
+    skip: windows && "a detached grandchild outlives the terminal's taskkill tree on Windows (open)",
+  }, async () => {
     const { Pty } = await import("./index")
     const launcher = path.join(tmpDir, "child-launcher.cjs")
     await fs.writeFile(launcher, `const { spawn } = require('node:child_process');
@@ -117,7 +127,7 @@ console.log('CHILD_PID=' + child.pid);
 setInterval(() => {}, 1000);
 `)
     const target = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir }, ownership))
-    const neighbor = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: "/bin/sh", cwd: tmpDir }, ownership))
+    const neighbor = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ cwd: tmpDir }, ownership))
     const targetClient = socket()
     const neighborClient = socket()
     assert.ok(Pty.connect(target.id, targetClient.ws))
@@ -138,15 +148,16 @@ setInterval(() => {}, 1000);
       await waitFor(() => !alive(childPid!), 2_000)
       assert.equal(Pty.get(target.id), undefined)
       assert.equal(Pty.get(neighbor.id)?.pid, neighbor.pid)
-      Pty.write(neighbor.id, "echo neighbor-$((40 + 2))\n")
-      await waitFor(() => neighborClient.text().includes("neighbor-42"))
+      Pty.write(neighbor.id, shellProof.typed)
+      await waitFor(() => neighborClient.text().includes(shellProof.expected))
     } finally {
       // The regression intentionally exposes an orphan on unfixed builds.
-      if (childPid && alive(childPid)) process.kill(-childPid, "SIGKILL")
+      if (childPid && alive(childPid)) process.kill(windows ? childPid : -childPid, "SIGKILL")
     }
   })
 
-  void test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000 }, async () => {
+  // The typed `stty size`, `printf` and `$(( ))` are POSIX shell; cmd.exe has no geometry query to round-trip.
+  void test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000, skip: windows }, async () => {
     const { Pty } = await import("./index")
     const info = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: "/bin/sh", cwd: tmpDir, title: "real" }, ownership))
     assert.equal(info.status, "running")
