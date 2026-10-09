@@ -5,7 +5,7 @@ const STDERR_CLOSE_MS = 1_000
 export class NdjsonOwnedProcess {
   private buffer = ""
   private failure?: Error
-  private settling = false
+  private whole?: Promise<Error>
   private readonly failures = new Set<(error: Error) => void>()
 
   constructor(readonly process: OwnedProcess, private readonly clock: Clock,
@@ -22,13 +22,12 @@ export class NdjsonOwnedProcess {
 
   private exited(error: () => Error): void {
     if (this.failure) return
-    this.failure = error()
-    this.settling = true
-    void this.stderrClosed().then(() => {
-      this.settling = false
-      this.failure = error()
-      for (const listener of this.failures) listener(this.failure)
-    })
+    this.whole = this.stderrClosed().then(() => error())
+    this.fail(error(), false)
+  }
+
+  wholeFailure(): Promise<Error> | undefined {
+    return this.whole ?? (this.failure && Promise.resolve(this.failure))
   }
 
   private stderrClosed(): Promise<void> {
@@ -42,7 +41,7 @@ export class NdjsonOwnedProcess {
   get alive(): boolean { return this.failure === undefined }
 
   onFailure(listener: (error: Error) => void): () => void {
-    if (this.failure && !this.settling) listener(this.failure)
+    if (this.failure) listener(this.failure)
     else this.failures.add(listener)
     return () => this.failures.delete(listener)
   }

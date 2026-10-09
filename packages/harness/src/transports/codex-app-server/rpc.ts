@@ -36,7 +36,7 @@ export class CodexRpc implements CodexConnection {
     this.channel = new NdjsonOwnedProcess(process, clock, (value) => this.receive(this.decode(value)),
       (reason, cause) => codexChannelError(reason, cause, this.stderr.value),
     (error) => console.error("Codex process retirement failed", error))
-    this.channel.onFailure((error) => this.pending.fail(error))
+    this.channel.onFailure((error) => { void (this.channel.wholeFailure() ?? Promise.resolve(error)).then((whole) => this.pending.fail(whole)) })
   }
 
   get alive(): boolean { return this.channel.alive }
