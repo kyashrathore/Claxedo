@@ -301,7 +301,9 @@ const COMMAND =
   "} catch { " +
   // A .NET throw arrives wrapped, and the wrapper's message is the one that says nothing useful.
   "$reason = $_.Exception; if ($reason.InnerException) { $reason = $reason.InnerException }; " +
-  "[Console]::Error.WriteLine($reason.Message); exit 1 }"
+  "$message = $reason.Message; " +
+  "if ($reason -is [System.ComponentModel.Win32Exception]) { $message += ' (Windows error ' + $reason.NativeErrorCode + ')' }; " +
+  "[Console]::Error.WriteLine($message); exit 1 }"
 
 /** Absolute, so `PATH` cannot decide which interpreter enforces the permissions. */
 export function powershellPath() {
