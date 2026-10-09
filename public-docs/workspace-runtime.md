@@ -196,13 +196,13 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/checkpoint/*` | Freeze, flush, scrub, resume, and restore reconciliation for consistent provider capture. |
 | `POST /api/wr/config` | Apply a `RuntimeSnapshot`. Requires configured auth. |
 | `GET /api/wr/harness-config-options` | Probe config options for the selected harness when it advertises that capability. |
+| `GET /api/wr/harness-providers` | Provider catalog of the named harness, for the workspace owner, when the harness serves one. |
 | `GET /api/wr/events` | The workspace runtime's one stream: projected presentation frames, subagent/goal revisions, and control frames (pty, process, agent lifecycle, session lifecycle) as `{ directory, payload }`. Admitted principals read unscoped under the session authority's per-session decision; refused principals reopen with `?sessionID=` under a lease. |
 | `/api/wr/file/*` | File metadata, content, status, and list routes. |
 | `/api/wr/find/file` | Workspace file search. |
 | `/api/wr/diff/*` | Git diff and refs routes. |
 | `/api/wr/git/*` | Git source snapshot and commit routes. |
 | `/api/wr/pty/*` | PTY lifecycle and WebSocket connect routes. |
-| `/api/wr/process/*` | Managed process config, lifecycle, diagnostics, port map, logs. |
 | `/api/wr/hook/*` | Agent hook routes. |
 | `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
 | `/api/wr/execution-env/*` | Relay-exposed runtimes only: a session host's file, shell and plugin stdio MCP access to this machine (`fs`, `exec` as SSE, `mcp/:serverName` as WebSocket). |

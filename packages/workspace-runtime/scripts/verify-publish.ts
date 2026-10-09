@@ -138,7 +138,7 @@ compareSet(
 )
 compareSet(
   "README.md route table vs docs/api-manifest.json routePrefixes",
-  routePrefixes(section(readme, "## Routes", "## Event contract")),
+  routePrefixes(tableRows(section(readme, "## Routes", "## Event contract"))),
   manifest.routePrefixes,
 )
 
@@ -146,7 +146,7 @@ const publicDocsPath = path.join(repoRoot, "public-docs", "workspace-runtime.md"
 if (fs.existsSync(publicDocsPath)) {
   compareSet(
     "public-docs/workspace-runtime.md route families vs docs/api-manifest.json routePrefixes",
-    routePrefixes(section(fs.readFileSync(publicDocsPath, "utf8"), "## Mounted Route Families", "## Grounding")),
+    routePrefixes(tableRows(section(fs.readFileSync(publicDocsPath, "utf8"), "## Mounted Route Families", "## Grounding"))),
     manifest.routePrefixes,
   )
 }
@@ -212,6 +212,10 @@ function section(text: string, start: string, end: string) {
 
 function codeTokens(text: string) {
   return [...text.matchAll(/`([^`]+)`/g)].map((match) => match[1]).filter((item): item is string => !!item)
+}
+
+function tableRows(text: string) {
+  return text.split("\n").filter((line) => line.startsWith("|")).join("\n")
 }
 
 function routePrefixes(text: string) {

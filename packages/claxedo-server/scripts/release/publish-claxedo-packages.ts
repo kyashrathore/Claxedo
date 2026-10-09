@@ -1,5 +1,5 @@
 /**
- * The one publisher for the 10 public `@claxedo/*` packages.
+ * The one publisher for the 8 public `@claxedo/*` packages.
  *
  * Policy this script encodes:
  *
@@ -37,7 +37,7 @@ import {
   type PublishedVersionPackage,
 } from "./check-published-versions"
 
-export type PackageTrack = "helpers" | "runtime" | "apps" | "cli"
+export type PackageTrack = "helpers" | "runtime" | "apps"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -51,7 +51,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 10 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 8 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -68,10 +68,6 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime" },
   // Tier 2
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime" },
-  // Tier 3
-  { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime" },
-  // Tier 4
-  { name: "@claxedo/cli", dir: "packages/cli", track: "cli" },
 ]
 
 export type PackageSelector = "all" | PackageTrack
@@ -127,15 +123,26 @@ export function crossPinViolations(pkg: PackageJson, publicNames: ReadonlySet<st
 }
 
 /**
+ * Every `workspace:` reference, in a section consumers install, to a package
+ * that is not public: a published manifest has no version to pin it to.
+ */
+export function unpublishedWorkspaceReferences(pkg: PackageJson, versions: ReadonlyMap<string, string>) {
+  return CONSUMER_SECTIONS.flatMap((section) => Object.entries(pkg[section] ?? {})
+    .filter(([dep, spec]) => typeof spec === "string" && spec.startsWith("workspace:") && !versions.has(dep))
+    .map(([dep, spec]) => `${section}.${dep}=${spec} references a package that is not published`))
+}
+
+/**
  * The manifest npm sees: every `workspace:` specifier replaced by the exact
- * in-repo version of that package. In a section consumers install, a
- * `workspace:` reference to a package that is not public cannot be
- * materialized and is an error, not a silent pass. In `devDependencies` —
- * which npm never installs from a published package — a private sibling is
- * dropped instead: it is a build-time input (the CLI bundles `host-connector`
- * and `host-serving` into `dist/index.mjs`) that has no registry name to pin.
+ * in-repo version of that package. An unpublished reference in a section
+ * consumers install is an error, not a silent pass. In `devDependencies` —
+ * which npm never installs from a published package — an unpublished sibling
+ * is dropped instead: it is a build-time input (`sandbox-manager` bundles
+ * `egress-broker` into its `dist`) that has no registry version to pin.
  */
 export function materializeWorkspacePins(pkg: PackageJson, versions: ReadonlyMap<string, string>): PackageJson {
+  const unpublished = unpublishedWorkspaceReferences(pkg, versions)
+  if (unpublished.length > 0) throw new Error(`${pkg.name ?? "package"}: ${unpublished.join("; ")}`)
   const next: PackageJson = { ...pkg }
   for (const section of ALL_SECTIONS) {
     const deps = pkg[section]
@@ -147,12 +154,7 @@ export function materializeWorkspacePins(pkg: PackageJson, versions: ReadonlyMap
         continue
       }
       const version = versions.get(dep)
-      if (version) {
-        materialized.push([dep, version])
-        continue
-      }
-      if (section === "devDependencies") continue
-      throw new Error(`${pkg.name ?? "package"}: ${section}.${dep}=${spec} references a package that is not published`)
+      if (version) materialized.push([dep, version])
     }
     next[section] = Object.fromEntries(materialized)
   }
@@ -227,6 +229,31 @@ function commandFailureReason(error: unknown) {
     ?? error.message
 }
 
+const SCRIPT_OUTPUT_TAIL_LINES = 20
+
+function outputText(value: unknown) {
+  if (typeof value === "string") return value
+  if (Buffer.isBuffer(value)) return value.toString("utf8")
+  return ""
+}
+
+/**
+ * The tail of what a failed `npm run <script>` printed, without npm's own
+ * lifecycle banner and `npm error` lines, which only say that the script
+ * failed and never why.
+ */
+function scriptFailureOutput(error: unknown) {
+  if (!(error instanceof Error)) return `      ${String(error)}`
+  const stdout = "stdout" in error ? error.stdout : undefined
+  const stderr = "stderr" in error ? error.stderr : undefined
+  const lines = `${outputText(stdout)}\n${outputText(stderr)}`
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== "" && !line.startsWith("npm error") && !line.startsWith("npm ERR!") && !line.startsWith("> "))
+  const tail = lines.length > 0 ? lines.slice(-SCRIPT_OUTPUT_TAIL_LINES) : [commandFailureReason(error)]
+  return tail.map((line) => `      ${line}`).join("\n")
+}
+
 export function npmVersionPublished(name: string, version: string, run: CommandRunner, root: string) {
   try {
     run("npm", ["view", `${name}@${version}`, "version"], root)
@@ -272,6 +299,52 @@ function publishedTarballMatchesTree(
       return false
     }
   })
+}
+
+/**
+ * Pack the package as its materialized manifest stands and inspect the real
+ * tarball — reading package.json is not proof of what npm will ship. Returns
+ * every problem found, empty when the tarball is publishable.
+ */
+function packAndInspect(
+  item: ClaxedoPackage,
+  version: string,
+  root: string,
+  packDir: string,
+  run: CommandRunner,
+  log: (message: string) => void,
+) {
+  fs.mkdirSync(packDir, { recursive: true })
+  let packed: ReturnType<typeof parsePackJson>[number]
+  try {
+    packed = parsePackJson(run("npm", ["pack", "--json", "--pack-destination", packDir], path.join(root, item.dir)))[0]!
+  } catch (error) {
+    return [`npm pack failed: ${commandFailureReason(error)}`]
+  }
+  log(`    pack                         ok (${packed.filename})`)
+
+  const extractDir = path.join(packDir, "extract")
+  fs.mkdirSync(extractDir, { recursive: true })
+  // The archive name stays relative to the cwd: an absolute Windows path in
+  // tar's -f argument reads as host:file (GNU tar's remote syntax) and dies
+  // with "Cannot connect". -C is not parsed that way and may stay absolute.
+  run("tar", ["-xzf", packed.filename, "-C", extractDir, "package/package.json"], packDir)
+  const packedPkg = readPackageJson(path.join(extractDir, "package", "package.json"))
+
+  const problems: string[] = []
+  const specifiers = protocolSpecifiers(packedPkg)
+  if (specifiers.breaking.length > 0) {
+    problems.push(`packed tarball has workspace:/catalog: specifier(s) consumers install: ${specifiers.breaking.join(", ")}`)
+  } else {
+    log(`    workspace:/catalog: specifiers ok${specifiers.cosmetic.length > 0 ? ` (devDependencies only: ${specifiers.cosmetic.join(", ")})` : ""}`)
+  }
+
+  const missing = missingTarballFiles(packed.files.map((entry) => entry.path))
+  if (missing.length > 0) problems.push(`tarball missing ${missing.join(", ")}`)
+  else log("    README.md/LICENSE in tarball ok")
+
+  if (packedPkg.version !== version) problems.push(`packed version ${packedPkg.version} != repo version ${version}`)
+  return problems
 }
 
 function withMaterializedManifest<T>(file: string, materialized: PackageJson, fn: () => T): T {
@@ -342,77 +415,42 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
       if (!version) throw new Error(`${item.name} missing from the version map`)
       log(`==> ${item.name}@${version} (track ${item.track})`)
 
-      if (pkg.private === true) {
-        failures.push(`${item.name}: marked private, refusing to publish`)
-        continue
-      }
+      const problems: string[] = []
+      if (pkg.private === true) problems.push("marked private, refusing to publish")
 
       const pins = crossPinViolations(pkg, publicNames)
-      if (pins.length > 0) {
-        failures.push(`${item.name}: sibling dependency is not ${WORKSPACE_PIN}: ${pins.join(", ")}`)
-        continue
-      }
+      if (pins.length > 0) problems.push(`sibling dependency is not ${WORKSPACE_PIN}: ${pins.join(", ")}`)
 
+      const unpublished = unpublishedWorkspaceReferences(pkg, versions)
+      problems.push(...unpublished)
+      const materialized = unpublished.length === 0 ? materializeWorkspacePins(pkg, versions) : undefined
+
+      let builtOk = false
       try {
         buildWithDependencies(item, root, run, packagesByName, built)
+        builtOk = true
         log("    build                        ok")
       } catch (error) {
-        failures.push(`${item.name}: build failed: ${commandFailureReason(error)}`)
-        continue
+        problems.push(`build failed:\n${scriptFailureOutput(error)}`)
       }
 
-      if (pkg.scripts?.["verify:publish"]) {
+      if (builtOk && pkg.scripts?.["verify:publish"]) {
         try {
           run("npm", ["run", "verify:publish", "--workspace", item.name], root)
           log("    verify:publish               ok")
         } catch (error) {
-          failures.push(`${item.name}: verify:publish failed: ${commandFailureReason(error)}`)
-          continue
+          problems.push(`verify:publish failed:\n${scriptFailureOutput(error)}`)
         }
       }
 
-      let materialized: PackageJson
-      try {
-        materialized = materializeWorkspacePins(pkg, versions)
-      } catch (error) {
-        failures.push(`${item.name}: ${error instanceof Error ? error.message : String(error)}`)
+      if (!builtOk || !materialized) {
+        failures.push(...problems.map((problem) => `${item.name}: ${problem}`))
         continue
       }
 
-      const outcome = withMaterializedManifest(file, materialized, (): PublishOutcome | string => {
-        // Pack and inspect the real tarball — reading package.json is not proof
-        // of what npm will ship.
-        const packDir = path.join(workDir, item.name.replace("/", "__"))
-        fs.mkdirSync(packDir, { recursive: true })
-        let packed: ReturnType<typeof parsePackJson>[number]
-        try {
-          packed = parsePackJson(run("npm", ["pack", "--json", "--pack-destination", packDir], path.join(root, item.dir)))[0]!
-        } catch (error) {
-          return `${item.name}: npm pack failed: ${commandFailureReason(error)}`
-        }
-        log(`    pack                         ok (${packed.filename})`)
-
-        const extractDir = path.join(packDir, "extract")
-        fs.mkdirSync(extractDir, { recursive: true })
-        // The archive name stays relative to the cwd: an absolute Windows path in
-        // tar's -f argument reads as host:file (GNU tar's remote syntax) and dies
-        // with "Cannot connect". -C is not parsed that way and may stay absolute.
-        run("tar", ["-xzf", packed.filename, "-C", extractDir, "package/package.json"], packDir)
-        const packedPkg = readPackageJson(path.join(extractDir, "package", "package.json"))
-
-        const specifiers = protocolSpecifiers(packedPkg)
-        if (specifiers.breaking.length > 0) {
-          return `${item.name}: packed tarball has workspace:/catalog: specifier(s) consumers install: ${specifiers.breaking.join(", ")}`
-        }
-        log(`    workspace:/catalog: specifiers ok${specifiers.cosmetic.length > 0 ? ` (devDependencies only: ${specifiers.cosmetic.join(", ")})` : ""}`)
-
-        const missing = missingTarballFiles(packed.files.map((entry) => entry.path))
-        if (missing.length > 0) return `${item.name}: tarball missing ${missing.join(", ")}`
-        log("    README.md/LICENSE in tarball ok")
-
-        if (packedPkg.version !== version) {
-          return `${item.name}: packed version ${packedPkg.version} != repo version ${version}`
-        }
+      const outcome = withMaterializedManifest(file, materialized, (): PublishOutcome | string[] => {
+        problems.push(...packAndInspect(item, version, root, path.join(workDir, item.name.replace("/", "__")), run, log))
+        if (problems.length > 0) return problems
 
         if (npmVersionPublished(item.name, version, run, root)) {
           log(`    registry                     ${version} already published, skipping`)
@@ -436,16 +474,16 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
             tag,
           ], root)
         } catch (error) {
-          return `${item.name}: publish failed: ${commandFailureReason(error)}`
+          return [`publish failed: ${commandFailureReason(error)}`]
         }
         if (!npmVersionPublished(item.name, version, run, root)) {
-          return `${item.name}: npm did not expose ${version} after publish`
+          return [`npm did not expose ${version} after publish`]
         }
         log(`    registry                     published ${version}`)
         return { name: item.name, version, action: "published" }
       })
 
-      if (typeof outcome === "string") failures.push(outcome)
+      if (Array.isArray(outcome)) failures.push(...outcome.map((problem) => `${item.name}: ${problem}`))
       else outcomes.push(outcome)
     }
   } finally {
@@ -465,7 +503,7 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "cli"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps"]
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track")

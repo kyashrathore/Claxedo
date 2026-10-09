@@ -20,9 +20,13 @@ A PTY's pid can reach the runtime before its child has made itself a process-gro
 
 ## Install
 
-```sh
-npm install @claxedo/workspace-runtime
-```
+`@claxedo/workspace-runtime` is not published from this repository yet
+([`script/PUBLISH-ORDER.md`](../../script/PUBLISH-ORDER.md) says why), and the
+`0.8.0` on npm predates this code. Use it from a checkout: a package under
+`packages/` declares `"@claxedo/workspace-runtime": "workspace:*"` and
+`bun install` at the repository root links it. Bun loads its source through the
+`bun` export condition; Node loads `dist/`, which `bun run build:packages`
+builds.
 
 Minimal loopback host, no `claxedo-server` or control plane involved:
 
@@ -101,6 +105,7 @@ lower-level helpers:
 | `@claxedo/workspace-runtime` | Standalone bootstrap, host creation, exposure/management contracts, route manifest, and stable config types. |
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, and PTY routes. |
 | `@claxedo/workspace-runtime/file-index` | Machine file listing, bounded search index, and explicit cache invalidation. |
+| `@claxedo/workspace-runtime/file-content` | `readFileContent`: one file as UTF-8 text, a base64 image, or an empty binary, refused past 20 MiB. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/session-core` | Runtime-neutral session storage, orchestration, projection, session routes, event delivery and HTTP primitives. |
 | `@claxedo/harness/opencode-sdk` | The embedded OpenCode engine and its transport, which this runtime composes as the `opencode` registry row (Node 24+). |
@@ -108,6 +113,7 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
 | `@claxedo/workspace-runtime/config` | Runtime config snapshot and management-auth contracts. |
 | `@claxedo/workspace-runtime/routes` | Neutral `/api/wr/*` route manifest. |
+| `@claxedo/workspace-runtime/execution-env` | `ExecutionEnvRoutes`, the relay-only `/api/wr/execution-env/*` routes, and `createSpawnService`, which launches harness processes under the workspace's launch ownership. |
 | `@claxedo/workspace-runtime/route-contribution` | Host route-contribution contracts and lifecycle-safe route mounting. |
 | `@claxedo/workspace-runtime/testing` | Test support: management-auth helpers, the loopback login policy, and the fake transport and connection provider. |
 

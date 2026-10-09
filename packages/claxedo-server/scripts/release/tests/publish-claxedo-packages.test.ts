@@ -43,8 +43,8 @@ function fixtureRepo(version: string, extra: (name: string) => Record<string, un
 }
 
 describe("publish-claxedo-packages", () => {
-  test("covers the 10 public packages, on four version tracks", () => {
-    expect(claxedoPackages).toHaveLength(10)
+  test("covers the 8 public packages, on three version tracks", () => {
+    expect(claxedoPackages).toHaveLength(8)
     expect(selectPackages("all")).toEqual(claxedoPackages)
     expect(selectPackages("helpers").map((item) => item.name)).toEqual(["@claxedo/helpers"])
     expect(selectPackages("runtime").map((item) => item.name).sort()).toEqual([
@@ -53,13 +53,11 @@ describe("publish-claxedo-packages", () => {
       "@claxedo/sandbox-manager",
       "@claxedo/workspace-relay",
       "@claxedo/workspace-relay-protocol",
-      "@claxedo/workspace-runtime",
     ])
     expect(selectPackages("apps").map((item) => item.name).sort()).toEqual([
       "@claxedo/channels",
       "@claxedo/connections",
     ])
-    expect(selectPackages("cli").map((item) => item.name)).toEqual(["@claxedo/cli"])
   })
 
   test("requires --track to name a selector the publisher knows", () => {
@@ -120,14 +118,14 @@ describe("publish-claxedo-packages", () => {
     }, versions)).toThrow(/not published/)
   })
 
-  test("drops a private sibling from devDependencies, which npm never installs, and pins a public one", () => {
+  test("drops an unpublished sibling from devDependencies, which npm never installs, and pins a public one", () => {
     const versions = new Map([["@claxedo/helpers", "0.4.0"]])
     expect(materializeWorkspacePins({
-      name: "@claxedo/cli",
+      name: "@claxedo/sandbox-manager",
       dependencies: { "@claxedo/helpers": "workspace:*" },
-      devDependencies: { "@claxedo/helpers": "workspace:*", "@claxedo/host-connector": "workspace:*", esbuild: "0.25.12" },
+      devDependencies: { "@claxedo/helpers": "workspace:*", "@claxedo/egress-broker": "workspace:*", esbuild: "0.25.12" },
     }, versions)).toEqual({
-      name: "@claxedo/cli",
+      name: "@claxedo/sandbox-manager",
       dependencies: { "@claxedo/helpers": "0.4.0" },
       devDependencies: { "@claxedo/helpers": "0.4.0", esbuild: "0.25.12" },
     })
@@ -241,5 +239,56 @@ describe("publish-claxedo-packages", () => {
       },
       log: () => {},
     })).rejects.toThrow(/@claxedo\/helpers@9\.9\.9 is already on npm but packages\/claxedo-helpers changed/)
+  })
+
+  test("reports every problem a package has, with a failing verify:publish script's own output", async () => {
+    const root = fixtureRepo("9.9.9", (name) =>
+      name === "@claxedo/connections"
+        ? {
+            dependencies: { "@claxedo/helpers": "0.3.0", "@claxedo/server": "workspace:*", "@claxedo/documents": "workspace:*" },
+            scripts: { build: "echo build", "verify:publish": "tsx scripts/verify-publish.ts" },
+          }
+        : {})
+    const verifyFailure = Object.assign(new Error("Command failed: npm run verify:publish"), {
+      stdout: "\n> @claxedo/connections@9.9.9 verify:publish\n> tsx scripts/verify-publish.ts\n\n",
+      stderr: [
+        "Publish verification failed:",
+        "- README.md public surface table is missing @claxedo/connections/extra",
+        "npm error Lifecycle script `verify:publish` failed with error:",
+        "npm error code 1",
+      ].join("\n"),
+    })
+    const failure = await publishClaxedoPackages({
+      root,
+      selector: "apps",
+      dryRun: true,
+      run: (cmd, args, cwd) => {
+        if (cmd === "git" || cmd === "cat" || cmd === "tar") return defaultCommandRunner(cmd, args, cwd)
+        if (cmd === "npm" && args[0] === "run" && args[1] === "build") return ""
+        if (cmd === "npm" && args[0] === "run" && args[1] === "verify:publish") throw verifyFailure
+        if (cmd === "npm" && args[0] === "pack") {
+          const dest = args[args.indexOf("--pack-destination") + 1]
+          const stage = path.join(dest, "stage", "package")
+          fs.mkdirSync(stage, { recursive: true })
+          const manifest = JSON.parse(fs.readFileSync(path.join(cwd!, "package.json"), "utf8"))
+          fs.writeFileSync(path.join(stage, "package.json"), JSON.stringify({ ...manifest, version: "0.0.1" }))
+          defaultCommandRunner("tar", ["-czf", "fixture.tgz", "-C", path.join(dest, "stage"), "package"], dest)
+          return JSON.stringify([{ filename: "fixture.tgz", files: [{ path: "package.json" }, { path: "README.md" }] }])
+        }
+        throw new Error("E404")
+      },
+      log: () => {},
+    }).then(() => undefined, (error: unknown) => (error instanceof Error ? error.message : String(error)))
+
+    expect(failure).toBeDefined()
+    const lines = failure!.split("\n")
+    expect(lines).toContain("  - @claxedo/connections: sibling dependency is not workspace:*: dependencies.@claxedo/helpers=0.3.0 (expected workspace:*)")
+    expect(lines).toContain("  - @claxedo/connections: dependencies.@claxedo/server=workspace:* references a package that is not published")
+    expect(lines).toContain("  - @claxedo/connections: dependencies.@claxedo/documents=workspace:* references a package that is not published")
+    expect(lines).toContain("  - @claxedo/connections: verify:publish failed:")
+    expect(lines).toContain("      - README.md public surface table is missing @claxedo/connections/extra")
+    expect(failure).not.toContain("npm error")
+    expect(lines).toContain("  - @claxedo/channels: tarball missing LICENSE")
+    expect(lines).toContain("  - @claxedo/channels: packed version 0.0.1 != repo version 9.9.9")
   })
 })

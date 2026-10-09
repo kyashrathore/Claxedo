@@ -40,15 +40,15 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@claxedo/process-ownership": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
-    "better-sqlite3": "13.0.1",
-    "@claxedo/account-contract": "workspace:*"
+    "better-sqlite3": "13.0.1"
   },
   "devDependencies": {
+    "@claxedo/account-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/host-connector": "workspace:*",
     "@claxedo/host-serving": "workspace:*",
+    "@claxedo/process-ownership": "workspace:*",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
