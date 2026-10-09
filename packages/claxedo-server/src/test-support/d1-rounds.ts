@@ -16,8 +16,13 @@ export type D1Rounds = {
  * A `batch` is one round however many statements it carries, and statements
  * started together (`Promise.all`) count as one round, so the number is the
  * depth of the serial chain a request pays rather than its total work.
+ *
+ * Each statement first waits `hopMs`, the staging Worker-to-D1 hop (~80 ms):
+ * local SQLite answers in microseconds, so without it two branches started
+ * together could finish one before the other began on a slow host and read as
+ * two rounds. A serial chain still awaits each answer, so it still counts each.
  */
-export function countD1Rounds(database: D1Database): D1Rounds {
+export function countD1Rounds(database: D1Database, hopMs = 80): D1Rounds {
   let inFlight = 0
   let rounds = 0
   let statements = 0
@@ -28,6 +33,7 @@ export function countD1Rounds(database: D1Database): D1Rounds {
     trace.push(...sql.map((text) => ({ round: rounds, sql: text.replace(/\s+/g, " ").trim().slice(0, 90) })))
     inFlight += 1
     try {
+      await new Promise((resolve) => setTimeout(resolve, hopMs))
       return await run()
     } finally {
       inFlight -= 1

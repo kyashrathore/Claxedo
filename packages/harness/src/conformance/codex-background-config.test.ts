@@ -22,7 +22,7 @@ test("a real Codex background shell survives a configuration replacement request
     expect(await rejectionMessage(() => context.transport.configure(context.session, { projection }))).toContain("background tasks are running")
     expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(1)
     expect(recorder.frames.some((frame) => frame.method === "thread/backgroundTerminals/terminate")).toBe(false)
-    expect(await pollUntil(async () => await Bun.file(marker).exists() ? true : undefined, Date.now() + MARKER_WAIT_MS)).toBe(true)
+    expect(await pollUntil(async () => await Bun.file(marker).exists() && await readMarker(marker) !== "" ? true : undefined, Date.now() + MARKER_WAIT_MS)).toBe(true)
     expect(await readMarker(marker)).toBe("done\n")
     const deadline = { at: Date.now() + 10_000, signal: new AbortController().signal }
     const terminals = codexEntry(context.transport, context.session.binding.sessionId).terminals
@@ -48,7 +48,7 @@ test("a real Codex background shell survives a live model and effort change", as
     const updated = await pollUntil(() => recorder.received.find((frame) => frame.method === "thread/settings/updated"
       && (frame.params?.threadSettings as { model?: string })?.model === "gpt-5.6-sol"), Date.now() + 5_000)
     expect(updated?.params?.threadSettings).toMatchObject({ model: "gpt-5.6-sol", effort: "high" })
-    expect(await pollUntil(async () => await Bun.file(marker).exists() ? true : undefined, Date.now() + MARKER_WAIT_MS)).toBe(true)
+    expect(await pollUntil(async () => await Bun.file(marker).exists() && await readMarker(marker) !== "" ? true : undefined, Date.now() + MARKER_WAIT_MS)).toBe(true)
     expect(await readMarker(marker)).toBe("done\n")
     expect(recorder.frames.filter((frame) => frame.method === "thread/start")).toHaveLength(1)
   } finally { release(); await context.close() }

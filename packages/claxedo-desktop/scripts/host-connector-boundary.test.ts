@@ -164,6 +164,9 @@ test("the bundled local-server's import closure never reaches Host Connector", (
   expect(reached).toEqual([])
 })
 
+// A fresh Windows runner reads the repository cold: 36.9 s for every source.
+const COLD_REPOSITORY_READ_MS = 60_000
+
 test("no package the renderer is composed from declares or imports Host Connector", () => {
   // The renderer bundle is built from the desktop's own renderer/preload plus
   // the app package. If the specifier appears in none of them, no Vite alias
@@ -180,7 +183,8 @@ test("no package the renderer is composed from declares or imports Host Connecto
   const importers = trees
     .flatMap((tree) => sources(tree))
     .filter((file) =>
-      specifiers(fs.readFileSync(file, "utf8")).some((s) => s === CONNECTOR || s.startsWith(`${CONNECTOR}/`)),
+      // Under Bun on Windows an encoded readFileSync costs about 6 ms a file; the Buffer read and in-process decode cost 0.03 ms.
+      specifiers(fs.readFileSync(file).toString("utf8")).some((s) => s === CONNECTOR || s.startsWith(`${CONNECTOR}/`)),
     )
 
   expect(importers).toEqual([])
@@ -193,7 +197,7 @@ test("no package the renderer is composed from declares or imports Host Connecto
     }
     expect(Object.keys({ ...parsed.dependencies, ...parsed.devDependencies }), manifest).not.toContain(CONNECTOR)
   }
-})
+}, COLD_REPOSITORY_READ_MS)
 
 test("Host Connector is fingerprinted separately in the desktop build contract", () => {
   // It ships in the same artifact without being in either closure, so nothing

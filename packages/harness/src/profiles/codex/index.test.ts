@@ -50,6 +50,8 @@ async function snapshot(root: string): Promise<Record<string, string>> {
   return rows
 }
 
+const WINDOWS_COLD_HOME_COMPOSE_MS = 20_000
+
 test("an own-login session with plugins leaves the owner's Codex home byte-identical and composes a shared home", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-own-"))
   try {
@@ -82,7 +84,7 @@ test("an own-login session with plugins leaves the owner's Codex home byte-ident
     expect(again.home).toBe(first.home)
     expect(await snapshot(owner)).toEqual(before)
   } finally { await fs.rm(root, { recursive: true, force: true }) }
-})
+}, WINDOWS_COLD_HOME_COMPOSE_MS)
 
 async function codexLogin(codexHome: string, home: string, apiKey: string): Promise<void> {
   const child = spawn(PINNED_CODEX, ["login", "--with-api-key"], { env: { PATH: process.env.PATH ?? "", HOME: home, CODEX_HOME: codexHome }, stdio: ["pipe", "ignore", "pipe"] })

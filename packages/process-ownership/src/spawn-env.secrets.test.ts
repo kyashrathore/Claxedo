@@ -38,6 +38,9 @@ function secretNamesInRepo(): string[] {
   return [...names].sort()
 }
 
+// A fresh Windows runner reads the repository cold: 36.9 s for every source.
+const COLD_REPOSITORY_READ_MS = 60_000
+
 describe("harness spawn env never carries internal secrets", () => {
   test("every secret-suffixed CLAXEDO_/WORKSPACE_RUNTIME_ name in the repo is unreachable", () => {
     const names = secretNamesInRepo()
@@ -46,7 +49,7 @@ describe("harness spawn env never carries internal secrets", () => {
 
     const env = Object.fromEntries(names.map((name) => [name, "leaked-value"]))
     expect(Object.keys(harnessSpawnEnv(env))).toEqual([])
-  })
+  }, COLD_REPOSITORY_READ_MS)
 
   test("the specific keys-to-the-kingdom names are denied", () => {
     for (const name of [
