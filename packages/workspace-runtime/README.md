@@ -20,9 +20,13 @@ A PTY's pid can reach the runtime before its child has made itself a process-gro
 
 ## Install
 
-```sh
-npm install @claxedo/workspace-runtime
-```
+`@claxedo/workspace-runtime` is not published from this repository yet
+([`script/PUBLISH-ORDER.md`](../../script/PUBLISH-ORDER.md) says why), and the
+`0.8.0` on npm predates this code. Use it from a checkout: a package under
+`packages/` declares `"@claxedo/workspace-runtime": "workspace:*"` and
+`bun install` at the repository root links it. Bun loads its source through the
+`bun` export condition; Node loads `dist/`, which `bun run build:packages`
+builds.
 
 Minimal loopback host, no `claxedo-server` or control plane involved:
 

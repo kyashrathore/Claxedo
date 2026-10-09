@@ -6,34 +6,29 @@ the assigned folders to your Claxedo sessions.
 
 ## Install
 
-One line, no sudo, for the current user:
+`@claxedo/cli` is not published from this repository yet
+([`script/PUBLISH-ORDER.md`](../../script/PUBLISH-ORDER.md) says why), and the
+`0.1.0` on npm predates this code. Run it from a checkout, with Bun and Node 24
+or newer:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kyashrathore/Claxedo/dev/packages/cli/install.sh | sh
+bun install
+bun run build:packages            # the dist/ of the workspace packages the cli loads under Node
+bun run --cwd packages/cli build
+node packages/cli/dist/index.mjs --help
 ```
 
-`claxedo.dev/install.sh` will redirect to that file once the domain points at
-it; the raw GitHub URL is the one that works today.
+`bun run --cwd packages/cli dev -- --help` runs the source under Bun instead.
 
-The script:
-
-1. uses the `node` on your PATH when it is 24 or newer; otherwise downloads the
-   current Node 24 release from nodejs.org (linux/darwin, x64/arm64, sha256
-   checked) into `~/.claxedo/node` and prints the `PATH` line to add;
-2. runs `npm install -g @claxedo/cli` — under `~/.claxedo/npm` when the global
-   prefix is not writable, again printing the `PATH` line;
-3. checks `claxedo --help` and prints the `connect` command to run next.
-
-With Node 24 already installed you can skip the script:
-
-```sh
-npm install -g @claxedo/cli
-```
-
-Knobs: `CLAXEDO_CLI_VERSION=0.1.0` pins the version, `CLAXEDO_INSTALL_DIR`
-moves `~/.claxedo`, and `CLAXEDO_CLI_TARBALL=./claxedo-cli-0.1.0.tgz` installs a
-local pack instead of the registry (used to check a release before it is
-published; several tarballs may be listed separated by spaces). Such a check
+`install.sh` is the one-line installer for once the package is published: it
+installs `@claxedo/cli` from npm, so until then it installs only the stale
+release. It uses the `node` on your PATH when it is 24 or newer, otherwise
+downloads the current Node 24 release from nodejs.org (linux/darwin, x64/arm64,
+sha256 checked) into `~/.claxedo/node`; installs under `~/.claxedo/npm` when the
+global prefix is not writable, printing the `PATH` line to add; and checks
+`claxedo --help`. Knobs: `CLAXEDO_CLI_VERSION` pins the version,
+`CLAXEDO_INSTALL_DIR` moves `~/.claxedo`, and `CLAXEDO_CLI_TARBALL` installs one
+or more local packs (space-separated) instead of the registry. Such an install
 still lands in the real global prefix when that prefix is writable — point
 `npm_config_prefix` at a scratch directory to keep it out.
 
@@ -92,6 +87,5 @@ bun run typecheck
 ```
 
 `dist/index.mjs` bundles everything except `@claxedo/workspace-runtime`, which
-ships the embedded OpenCode host and a native lock binding and is installed by
-npm as the package's one dependency. The package is not published for now;
-`script/PUBLISH-ORDER.md` says why.
+ships the embedded OpenCode host and a native lock binding and stays the
+package's one runtime dependency.
