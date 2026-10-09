@@ -100,9 +100,12 @@ jobs:
         settings: ${{ fromJSON(needs.changes.outputs.unit_matrix) }}
         # claxedo-server is 236 serialized files; beside the other 30 packages
         # it took the whole suite past 35 minutes on a 2-core runner. harness
-        # alone is 21 minutes on Windows (its conformance suites boot a real
-        # OpenCode engine per test), so it is a lane of its own there too.
-        lane: [server-1, server-2, server-3, server-4, harness, rest]
+        # is 21 minutes on an 8-core Windows box (its conformance suites boot a
+        # real OpenCode engine per test) and past 35 on a hosted runner, so it
+        # runs as two shards. local-server (6.6 min there) and workspace-runtime
+        # (5 min) left the rest lane past 35 minutes on Windows too; they run
+        # with the app and relay suites their turbo edges chain them to.
+        lane: [server-1, server-2, server-3, server-4, harness-1, harness-2, runtime, rest]
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -167,7 +170,7 @@ jobs:
         run: bun run --cwd packages/claxedo-server verify:closure
 
       - name: Prepare Linux sandbox and test ports
-        if: runner.os == 'Linux' && (matrix.lane == 'rest' || matrix.lane == 'harness')
+        if: runner.os == 'Linux' && (matrix.lane == 'rest' || matrix.lane == 'runtime' || startsWith(matrix.lane, 'harness-'))
         run: bash script/ci-linux-test-host.sh
 
       # `bun turbo test` used to be a near-no-op: turbo.json declared only five
@@ -200,18 +203,29 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             concurrency=1
           fi
-          lane=(--filter=@claxedo/server)
-          if [[ "${{ matrix.lane }}" == "rest" ]]; then
-            lane=(--filter='!@claxedo/server' --filter='!@claxedo/harness')
-          elif [[ "${{ matrix.lane }}" == "harness" ]]; then
-            lane=(--filter=@claxedo/harness)
-          else
-            export CLAXEDO_SERVER_TEST_SHARD="${LANE#server-}/4"
-          fi
+          runtime=(@claxedo/app @claxedo/workspace-runtime @claxedo/workspace-relay @claxedo/local-server)
+          case "$LANE" in
+            rest)
+              lane=(--filter='!@claxedo/server' --filter='!@claxedo/harness')
+              for name in "${runtime[@]}"; do lane+=(--filter="!$name"); done
+              ;;
+            runtime)
+              lane=()
+              for name in "${runtime[@]}"; do lane+=(--filter="$name"); done
+              ;;
+            harness-*)
+              lane=(--filter=@claxedo/harness)
+              export CLAXEDO_HARNESS_TEST_SHARD="${LANE#harness-}/2"
+              ;;
+            *)
+              lane=(--filter=@claxedo/server)
+              export CLAXEDO_SERVER_TEST_SHARD="${LANE#server-}/4"
+              ;;
+          esac
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
-            bun turbo test "${lane[@]}" --concurrency="$concurrency" --continue
+            bun turbo test "${lane[@]}" --concurrency="$concurrency" --continue --log-order=stream
           else
-            bun turbo test "${lane[@]}" --affected --concurrency="$concurrency" --continue
+            bun turbo test "${lane[@]}" --affected --concurrency="$concurrency" --continue --log-order=stream
           fi
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

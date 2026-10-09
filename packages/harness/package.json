@@ -103,7 +103,7 @@
     "build": "bun run generate:codex-protocol && bun scripts/build.ts",
     "typecheck": "bun run generate:codex-protocol && tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
-    "test": "bun run check && bun run test:files src scripts e2e/harness && bun run test:node",
+    "test": "node scripts/unit.mjs",
     "test:files": "node ../../script/test-home/run.mjs bun test",
     "flows": "bun e2e/flows/run.ts",
     "flows:versions": "bun e2e/flows/version-matrix.ts",

@@ -54,6 +54,11 @@
       "env": ["CLAXEDO_SERVER_TEST_SHARD"],
       "passThroughEnv": ["*"]
     },
+    "@claxedo/harness#test": {
+      "outputs": [],
+      "env": ["CLAXEDO_HARNESS_TEST_SHARD"],
+      "passThroughEnv": ["*"]
+    },
     "@claxedo/workspace-runtime#test": {
       "dependsOn": ["@claxedo/app#test"],
       "outputs": [".artifacts/unit/junit.xml", ".artifacts/unit/junit-relay.xml"],
