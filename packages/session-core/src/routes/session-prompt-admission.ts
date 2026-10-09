@@ -257,7 +257,6 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<typeof ADMISSION_ACK_TIMED_OUT>((resolve) => {
       timer = setTimeout(() => resolve(ADMISSION_ACK_TIMED_OUT), opts.promptAsyncAdmissionAckTimeoutMs ?? 5_000)
-      timer.unref?.()
     })
     try {
       return await Promise.race([admission, timeout])
