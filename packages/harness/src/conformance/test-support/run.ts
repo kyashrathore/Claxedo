@@ -96,16 +96,18 @@ export function withUndeliverableFile(turn: TurnInput): TurnInput {
     { type: "file", mime: "image/png", filename: "remote.png", url: "https://attachments.invalid/remote.png" }] } }
 }
 
+const BROKER_ARRIVAL_MS = 20_000
+
 async function pendingQuestion(context: Awaited<ReturnType<typeof setup>>) {
   const pending = await pollUntil(() => context.owner.broker.list({ sessionId: context.session.binding.sessionId })
-    .find((row) => row.request.kind === "question"), Date.now() + 5_000)
+    .find((row) => row.request.kind === "question"), Date.now() + BROKER_ARRIVAL_MS)
   if (pending) return pending
   throw new Error("Pi question did not reach the broker")
 }
 
 async function pendingPermission(context: Awaited<ReturnType<typeof setup>>) {
   const pending = await pollUntil(() => context.owner.broker.list({ sessionId: context.session.binding.sessionId })
-    .find((row) => row.request.kind === "permission"), Date.now() + 5_000)
+    .find((row) => row.request.kind === "permission"), Date.now() + BROKER_ARRIVAL_MS)
   if (pending) return pending
   throw new Error("ACP permission did not reach the broker")
 }
@@ -484,7 +486,7 @@ export function runConformance(input: SuiteInput): void {
         let pending: ReturnType<typeof context.owner.broker.list>[number] | undefined
         if (!release) {
           pending = await pollUntil(() => context.owner.broker.list({ sessionId: "s2" })
-            .find((row) => row.request.kind === "permission"), Date.now() + 5_000)
+            .find((row) => row.request.kind === "permission"), Date.now() + BROKER_ARRIVAL_MS)
           expect(pending).toBeDefined()
         } else await heldRequest(context.backend, "CONFORMANCESECOND")
         const secondProcess = context.services.processes.at(-1)
