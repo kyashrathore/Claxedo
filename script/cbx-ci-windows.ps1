@@ -1,7 +1,7 @@
 param(
   [ValidateSet("unit", "opencode-node", "package", "package-test")]
   [string]$Lane = "unit",
-  [string]$Package,
+  [string[]]$Package,
   [switch]$AclAcceptance,
   # GitHub's unit job builds only the dist-resolved packages before testing;
   # `package` builds every dependency, which Bun cannot do for local-server on Windows.
@@ -40,19 +40,26 @@ Assert-LastExitCode "git config user.email"
 Assert-LastExitCode "git config user.name"
 
 if ($Lane -eq "package" -or $Lane -eq "package-test") {
-  if (-not $Package -or $Package -notmatch '^@[a-z0-9-]+/[a-z0-9-]+$') {
-    throw "The package lane requires a scoped package name"
+  # `powershell.exe -File` hands a comma list over as one string.
+  $Package = @($Package | ForEach-Object { $_ -split "," } | Where-Object { $_ })
+  if (-not $Package -or @($Package | Where-Object { $_ -notmatch '^@[a-z0-9-]+/[a-z0-9-]+$' }).Count -gt 0) {
+    throw "The package lane requires scoped package names"
   }
   if ($Lane -eq "package") {
-    bun turbo build "--filter=$Package..."
-    Assert-LastExitCode "bun turbo build --filter=$Package..."
+    $buildFilters = @($Package | ForEach-Object { "--filter=$_..." })
+    bun turbo build @buildFilters
+    Assert-LastExitCode "bun turbo build $buildFilters"
   }
   if ($BuildPackages) {
     bun run build:packages
     Assert-LastExitCode "bun run build:packages"
   }
-  bun turbo test "--filter=$Package" --concurrency=2
-  Assert-LastExitCode "bun turbo test --filter=$Package --concurrency=2"
+  $testArguments = @("test") + @($Package | ForEach-Object { "--filter=$_" }) + @("--concurrency=2")
+  if ($Continue) {
+    $testArguments += "--continue"
+  }
+  bun turbo @testArguments
+  Assert-LastExitCode "bun turbo $testArguments"
   exit 0
 }
 
