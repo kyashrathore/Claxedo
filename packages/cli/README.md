@@ -93,5 +93,5 @@ bun run typecheck
 
 `dist/index.mjs` bundles everything except `@claxedo/workspace-runtime`, which
 ships the embedded OpenCode host and a native lock binding and is installed by
-npm as the package's one dependency. Releases go through
-`script/PUBLISH-ORDER.md` (track `cli`).
+npm as the package's one dependency. The package is not published for now;
+`script/PUBLISH-ORDER.md` says why.

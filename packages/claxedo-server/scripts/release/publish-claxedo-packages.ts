@@ -1,5 +1,5 @@
 /**
- * The one publisher for the 10 public `@claxedo/*` packages.
+ * The one publisher for the 8 public `@claxedo/*` packages.
  *
  * Policy this script encodes:
  *
@@ -37,7 +37,7 @@ import {
   type PublishedVersionPackage,
 } from "./check-published-versions"
 
-export type PackageTrack = "helpers" | "runtime" | "apps" | "cli"
+export type PackageTrack = "helpers" | "runtime" | "apps"
 
 export type ClaxedoPackage = {
   readonly name: string
@@ -51,7 +51,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 10 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 8 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -68,10 +68,6 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime" },
   // Tier 2
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime" },
-  // Tier 3
-  { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime" },
-  // Tier 4
-  { name: "@claxedo/cli", dir: "packages/cli", track: "cli" },
 ]
 
 export type PackageSelector = "all" | PackageTrack
@@ -131,9 +127,9 @@ export function crossPinViolations(pkg: PackageJson, publicNames: ReadonlySet<st
  * in-repo version of that package. In a section consumers install, a
  * `workspace:` reference to a package that is not public cannot be
  * materialized and is an error, not a silent pass. In `devDependencies` —
- * which npm never installs from a published package — a private sibling is
- * dropped instead: it is a build-time input (the CLI bundles `host-connector`
- * and `host-serving` into `dist/index.mjs`) that has no registry name to pin.
+ * which npm never installs from a published package — an unpublished sibling
+ * is dropped instead: it is a build-time input (`sandbox-manager` bundles
+ * `egress-broker` into its `dist`) that has no registry version to pin.
  */
 export function materializeWorkspacePins(pkg: PackageJson, versions: ReadonlyMap<string, string>): PackageJson {
   const next: PackageJson = { ...pkg }
@@ -465,7 +461,7 @@ function argValue(argv: readonly string[], name: string) {
   return argv[index + 1]
 }
 
-const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps", "cli"]
+const SELECTORS: readonly PackageSelector[] = ["all", "helpers", "runtime", "apps"]
 
 export function parseArgs(argv: readonly string[]) {
   const selectorArg = argValue(argv, "--track")

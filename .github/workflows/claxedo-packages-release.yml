@@ -22,12 +22,10 @@ on:
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
-      - "packages/cli/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/workspace-relay-protocol/**"
       - "packages/workspace-relay/**"
-      - "packages/workspace-runtime/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   pull_request:
@@ -36,12 +34,10 @@ on:
       - "packages/claxedo-channels/**"
       - "packages/claxedo-connections/**"
       - "packages/claxedo-helpers/**"
-      - "packages/cli/**"
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/workspace-relay-protocol/**"
       - "packages/workspace-relay/**"
-      - "packages/workspace-runtime/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   workflow_dispatch:
@@ -54,9 +50,8 @@ on:
         options:
           - all # every public @claxedo/* package
           - helpers # helpers
-          - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, sandbox-manager, workspace-relay, workspace-runtime
+          - runtime # agent-runtime-contract, workspace-relay-protocol, sandbox-contract, sandbox-manager, workspace-relay
           - apps # channels, connections
-          - cli # cli
       npm_tag:
         description: "npm dist-tag"
         required: false
@@ -89,8 +84,8 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      # The cli bundles the private @claxedo/host-connector, which the publisher
-      # never builds, and esbuild resolves it through dist/.
+      # sandbox-manager bundles the unpublished @claxedo/egress-broker, which the
+      # publisher never builds, and esbuild resolves it through dist/.
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
 

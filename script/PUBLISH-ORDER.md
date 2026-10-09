@@ -1,7 +1,11 @@
 # Publish order
 
-Dependency-ordered publish sequence for the 10 public `@claxedo/*` packages,
+Dependency-ordered publish sequence for the 8 public `@claxedo/*` packages,
 derived from the actual `dependencies` in each `packages/*/package.json`.
+
+`@claxedo/workspace-runtime` and `@claxedo/cli` are not published: they import
+the private `harness`, `process-ownership` and `session-core`, pending a
+publishing plan.
 
 - **Re-derived:** 2026-09-14
 - **Previous release:** 2026-07-30 (`0.7.0` / `0.4.0`)
@@ -11,7 +15,7 @@ the workspace that hosts the release tooling, nothing more.
 
 ## Version scheme
 
-Four version tracks. Packages on a track move together, one step at a time.
+Three version tracks. Packages on a track move together, one step at a time.
 `publish-claxedo-packages.ts` reads every version from the repo — the tracks
 are a review convention it selects on (`--track`), not a number it computes.
 The cost is that a package with no content change still gets a bump; the
@@ -21,25 +25,14 @@ mistake that has actually bitten this repo.
 | Track | Packages | Previous | This release |
 |---|---|---|---|
 | helpers | `helpers` | — | **0.1.0** |
-| runtime | `agent-runtime-contract`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.7.0 | **0.8.0** |
+| runtime | `agent-runtime-contract`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol` | 0.7.0 | **0.8.0** |
 | apps | `channels`, `connections` | 0.4.0 | **0.5.0** |
-| cli | `cli` | — | **0.1.0** |
 
 `agent-runtime-contract` has never been published: the 0.7.0 release pinned it
 from three siblings but did not publish it. 0.8.0 is its first release.
 
-`cli` is the `claxedo` command (`npm install -g @claxedo/cli`). It rides its
-own track because it is an application, not a library: it moves when a
-command changes, which has nothing to do with the runtime's API. Its only
-runtime dependency is `workspace-runtime` (the embedded OpenCode host cannot be
-bundled — `dist/opencode-node` ships a native lock binding); `helpers`,
-`account-contract`, `host-connector`, `host-serving` and `process-ownership`
-are `devDependencies` folded into `dist/index.mjs` by esbuild. `install.sh` in the package directory is the
-one-line installer documented in `packages/cli/README.md`. 0.1.0 is its first
-release.
-
 `helpers` rides its own track because both other tracks depend on it —
-`agent-runtime-contract` and `workspace-runtime` on the runtime track,
+`agent-runtime-contract` and `sandbox-manager` on the runtime track,
 `connections` on apps. Folding it into either would
 make the other track's packages pin a number that moves for reasons unrelated
 to them. 0.1.0 is its first release.
@@ -89,21 +82,13 @@ Tier 1
   workspace-relay    -> workspace-relay-protocol, helpers
 
 Tier 2
-  sandbox-manager    -> sandbox-contract, helpers
-
-Tier 3
-  workspace-runtime  -> agent-runtime-contract, workspace-relay,
-                        workspace-relay-protocol, helpers,
-                        harness and process-ownership (private)
-
-Tier 4
-  cli                -> workspace-runtime            (build-time only: helpers)
+  sandbox-manager    -> sandbox-contract, helpers    (build-time only: egress-broker)
 ```
 
 `helpers` sits under every other package: each imports a
 canonical guard or string helper from it, which is what pulls `agent-runtime-contract`,
 `workspace-relay-protocol`, `sandbox-contract`, `channels` and `connections`
-out of tier 0 and pushes `sandbox-manager` and `workspace-runtime` down a tier. `sandbox-manager` still depends on
+out of tier 0 and pushes `sandbox-manager` down a tier. `sandbox-manager` still depends on
 `sandbox-contract` rather than `workspace-runtime` — that pin was replaced by a
 constant in `src/runtime-version.ts` — so the contract keeps publishing ahead of
 the manager.
@@ -130,7 +115,7 @@ bun run --cwd packages/claxedo-server release:packages --track all
 `release:packages` reads each version from its `package.json` — there is no
 `--version` argument, because the bump is meant to be a reviewed commit rather
 than a number typed at release time. `--track` accepts `all` or a version
-track name (`helpers`, `runtime`, `apps`, `cli`). `--packages a,b` selects by
+track name (`helpers`, `runtime`, `apps`). `--packages a,b` selects by
 name or directory. `--tag` sets the dist-tag (default `latest`); `--no-provenance`
 disables provenance.
 
@@ -151,7 +136,7 @@ It refuses to publish when any of these is true, per package:
 ### Via GitHub Actions
 
 `claxedo-packages-release.yml` — `workflow_dispatch` with a `track` choice
-(`all`, `helpers`, `runtime`, `apps`, `cli`), `npm_tag`, and a `dry_run` toggle that
+(`all`, `helpers`, `runtime`, `apps`), `npm_tag`, and a `dry_run` toggle that
 defaults to **true**. Uses the existing `NPM_TOKEN` secret and `id-token:
 write` for provenance. The same workflow runs `--track all --dry-run`
 automatically on every push to `dev` (and on PRs) touching any public package
@@ -179,30 +164,22 @@ for name in \
   @claxedo/sandbox-manager \
   @claxedo/workspace-relay \
   @claxedo/workspace-relay-protocol \
-  @claxedo/workspace-runtime \
   @claxedo/channels \
   @claxedo/connections \
-  @claxedo/cli \
 ; do
   echo "$name -> $(npm view "$name" version 2>/dev/null || echo 'NOT FOUND')"
 done
 ```
 
-Expect `0.1.0` for `@claxedo/helpers`, `0.8.0` for the runtime track, `0.5.0`
-for the apps track, and `0.1.0` for
-`@claxedo/cli`. A line still showing the old version means either the
+Expect `0.1.0` for `@claxedo/helpers`, `0.8.0` for the runtime track, and
+`0.5.0` for the apps track. A line still showing the old version means either the
 registry has not finished indexing (retry) or that package's publish failed and
 must be re-run before anything downstream of it in the graph above.
-
-`@claxedo/workspace-runtime` ships its own `scripts/verify-publish.ts`, wired
-into both its `prepublishOnly` and the publisher's `verify:publish` step; it
-cross-checks `package.json` exports against `docs/api-manifest.json` and does
-not need to be invoked separately.
 
 ## Known issues, deliberately not fixed here
 
 - `workspace-runtime` still carries `Copyright (c) 2025 opencode`
-  in `LICENSE`; the other nine read `Copyright (c) 2026 Claxedo`. Cosmetic, and a
+  in `LICENSE`; the published packages read `Copyright (c) 2026 Claxedo`. Cosmetic, and a
   call for the owner rather than the release tooling.
 - `packages/sandbox-manager/src/runtime-version.ts` pins
   `DEFAULT_WORKSPACE_RUNTIME_VERSION = "0.5.2"`, which is a **sandbox image

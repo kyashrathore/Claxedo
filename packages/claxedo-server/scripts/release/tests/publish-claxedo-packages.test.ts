@@ -43,8 +43,8 @@ function fixtureRepo(version: string, extra: (name: string) => Record<string, un
 }
 
 describe("publish-claxedo-packages", () => {
-  test("covers the 10 public packages, on four version tracks", () => {
-    expect(claxedoPackages).toHaveLength(10)
+  test("covers the 8 public packages, on three version tracks", () => {
+    expect(claxedoPackages).toHaveLength(8)
     expect(selectPackages("all")).toEqual(claxedoPackages)
     expect(selectPackages("helpers").map((item) => item.name)).toEqual(["@claxedo/helpers"])
     expect(selectPackages("runtime").map((item) => item.name).sort()).toEqual([
@@ -53,13 +53,11 @@ describe("publish-claxedo-packages", () => {
       "@claxedo/sandbox-manager",
       "@claxedo/workspace-relay",
       "@claxedo/workspace-relay-protocol",
-      "@claxedo/workspace-runtime",
     ])
     expect(selectPackages("apps").map((item) => item.name).sort()).toEqual([
       "@claxedo/channels",
       "@claxedo/connections",
     ])
-    expect(selectPackages("cli").map((item) => item.name)).toEqual(["@claxedo/cli"])
   })
 
   test("requires --track to name a selector the publisher knows", () => {
@@ -120,14 +118,14 @@ describe("publish-claxedo-packages", () => {
     }, versions)).toThrow(/not published/)
   })
 
-  test("drops a private sibling from devDependencies, which npm never installs, and pins a public one", () => {
+  test("drops an unpublished sibling from devDependencies, which npm never installs, and pins a public one", () => {
     const versions = new Map([["@claxedo/helpers", "0.4.0"]])
     expect(materializeWorkspacePins({
-      name: "@claxedo/cli",
+      name: "@claxedo/sandbox-manager",
       dependencies: { "@claxedo/helpers": "workspace:*" },
-      devDependencies: { "@claxedo/helpers": "workspace:*", "@claxedo/host-connector": "workspace:*", esbuild: "0.25.12" },
+      devDependencies: { "@claxedo/helpers": "workspace:*", "@claxedo/egress-broker": "workspace:*", esbuild: "0.25.12" },
     }, versions)).toEqual({
-      name: "@claxedo/cli",
+      name: "@claxedo/sandbox-manager",
       dependencies: { "@claxedo/helpers": "0.4.0" },
       devDependencies: { "@claxedo/helpers": "0.4.0", esbuild: "0.25.12" },
     })
