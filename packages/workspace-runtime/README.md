@@ -60,8 +60,10 @@ for the other four exposure/deployment options, and
 
 This package ships the runtime **primitives** (host wiring, harness composition,
 PTY/file/git/event surfaces, config apply behavior, exposure/relay
-contracts). It deliberately ships **no bin**: runnable hosts are composed by
-downstream packages. ACP binaries are not shipped by Claxedo. The operator
+contracts). Its one bin, `workspace-runtime` (`dist/cli.mjs`), is a
+product-neutral host for the kit; product hosts compose the kit themselves, as
+Claxedo's sandbox image does through its own boot policy. ACP binaries are not
+shipped by Claxedo. The operator
 installs them and names their command, arguments, and environment in the
 applied runtime descriptor.
 
