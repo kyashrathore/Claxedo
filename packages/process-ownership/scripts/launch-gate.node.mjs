@@ -5,14 +5,14 @@ import os from "node:os"
 import { spawnLaunchGate } from "@claxedo/process-ownership/launch"
 
 await test("an activation sent to a gate that already died fails with the gate's exit, not the send's EPIPE", { skip: process.platform === "win32" }, async () => {
-  const handle = spawnLaunchGate({ cwd: os.tmpdir(), env: process.env, activationDeadlineMs: 30_000 })
+  const handle = spawnLaunchGate({ cwd: os.tmpdir(), activationDeadlineMs: 30_000 })
   const { identity, gateNonce } = await handle.reported
   process.kill(-identity.processGroupId, "SIGKILL")
   for (let wait = 0; !defunct(identity.pid); wait++) {
     assert.ok(wait < 400, "the killed gate never became defunct")
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
   }
-  handle.activate(gateNonce, { command: "/bin/sh", args: ["-c", "true"] })
+  handle.activate(gateNonce, { command: "/bin/sh", args: ["-c", "true"], env: {} })
   const failure = await handle.acknowledged.then(() => undefined, (error) => error)
   assert.match(String(failure?.message), /^Launch gate exited \(code null, signal SIGKILL\)/)
 })

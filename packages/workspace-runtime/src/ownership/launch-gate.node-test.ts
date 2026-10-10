@@ -43,7 +43,7 @@ void test("the gate this host resolves is one this host can actually run", () =>
 
 void test("a gate spawned into a directory that knows nothing still reports", async () => {
   const cwd = await elsewhere()
-  const handle = spawnLaunchGate({ cwd, env: process.env, activationDeadlineMs: 2_000 })
+  const handle = spawnLaunchGate({ cwd, activationDeadlineMs: 2_000 })
 
   const reported = await handle.reported
   assert.equal(reported.identity.processGroupId, reported.identity.pid)

@@ -4,6 +4,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { isRecord } from "@claxedo/helpers/guards"
+import { harnessSpawnEnv } from "../spawn-env"
 import { launchErrorText, type CreationIdentity } from "./identity"
 import {
   LaunchRefusedError,
@@ -24,13 +25,15 @@ export const GATE_EXIT = {
 } as const
 
 /**
- * What the gate executes once the host has authorized it. It travels over the
- * private channel rather than in argv so that the token authorizing execution
- * and the command being executed are the same secret exchange.
+ * What the gate executes once the host has authorized it, and the whole
+ * environment it executes in. It travels over the private channel rather than
+ * in argv so that the token authorizing execution and the command being
+ * executed are the same secret exchange.
  */
 export type GatePayload = {
   command: string
   args: string[]
+  env: Record<string, string>
 }
 
 export type LaunchGateHandle = {
@@ -45,7 +48,6 @@ export type LaunchGateHandle = {
 
 export type SpawnLaunchGateInput = {
   cwd: string
-  env: NodeJS.ProcessEnv
   activationDeadlineMs: number
   stdio?: StdioOptions
 }
@@ -58,7 +60,11 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
     "--activation-deadline-ms", String(input.activationDeadlineMs),
   ], {
     cwd: input.cwd,
-    env: input.env,
+    // The gate reads its own creation identity with `ps`, `sysctl` or
+    // PowerShell before any payload exists, so it runs in this host's
+    // environment and the payload's travels with the activation. A payload
+    // environment without PATH left darwin unable to find `sysctl`.
+    env: harnessSpawnEnv(process.env),
     // A new POSIX session, so the payload's containment scope is a process
     // group this launch owns outright and `pgid === gate pid` holds.
     detached: process.platform !== "win32",
@@ -190,7 +196,7 @@ export type LaunchOwnedProcessInput = {
   role: LaunchRole
   parentOwnerId?: string
   scope?: LaunchSite
-  payload: GatePayload
+  payload: Omit<GatePayload, "env">
   cwd: string
   env: NodeJS.ProcessEnv
   stdio?: StdioOptions
@@ -222,7 +228,6 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
 
   const handle = spawnLaunchGate({
     cwd: input.cwd,
-    env: input.env,
     activationDeadlineMs: input.activationDeadlineMs ?? DEFAULT_ACTIVATION_DEADLINE_MS,
     ...(input.stdio ? { stdio: input.stdio } : {}),
   })
@@ -246,7 +251,7 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
     throw new LaunchRefusedError(input.role, error)
   }
 
-  handle.activate(gateNonce, input.payload)
+  handle.activate(gateNonce, { ...input.payload, env: definedEnv(input.env) })
   const payloadPid = await handle.acknowledged
   await input.ownership.acknowledgeActivation(prepared.launchId).catch(() => {})
 
@@ -261,6 +266,10 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
       return result
     },
   }
+}
+
+function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
 let gateChild: { file: string; runner: string[] } | undefined

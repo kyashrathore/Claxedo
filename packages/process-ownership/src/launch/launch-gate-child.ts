@@ -48,6 +48,7 @@ export async function runLaunchGateChild(): Promise<never> {
   for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(signal, () => {})
 
   const child = spawn(activation.payload.command, activation.payload.args, {
+    env: activation.payload.env,
     stdio: ["inherit", "inherit", "inherit"],
   })
 
@@ -85,14 +86,19 @@ function argument(name: string) {
 
 function gatePayload(value: unknown): GatePayload | undefined {
   if (!isRecord(value)) return undefined
-  const { command, args } = value
-  if (typeof command !== "string" || !Array.isArray(args)) return undefined
+  const { command, args, env } = value
+  if (typeof command !== "string" || !Array.isArray(args) || !isRecord(env)) return undefined
   const parts: string[] = []
   for (const arg of args) {
     if (typeof arg !== "string") return undefined
     parts.push(arg)
   }
-  return { command, args: parts }
+  const variables: Record<string, string> = {}
+  for (const [name, variable] of Object.entries(env)) {
+    if (typeof variable !== "string") return undefined
+    variables[name] = variable
+  }
+  return { command, args: parts, env: variables }
 }
 
 function waitForActivation(gateNonce: string, activationDeadlineMs: number) {
@@ -104,8 +110,8 @@ function waitForActivation(gateNonce: string, activationDeadlineMs: number) {
       if (message.type !== "activate") return
       if (message.gateNonce !== gateNonce) return finish({ outcome: "nonce-mismatch" })
       const payload = gatePayload(message.payload)
-      // An activate frame carrying no command authorizes nothing to run, so
-      // this gate keeps waiting and the deadline reports that none arrived.
+      // An activate frame without a well-formed payload authorizes nothing to
+      // run, so this gate keeps waiting and the deadline reports that none arrived.
       if (!payload) return
       finish({ outcome: "activate", payload })
     }

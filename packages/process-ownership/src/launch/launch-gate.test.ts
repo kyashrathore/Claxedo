@@ -119,6 +119,24 @@ test.skipIf(!posix)("the gate child resolves to a file this process can execute"
   expect(entry.file).toMatch(/launch-gate-child\.(ts|mjs)$/)
 })
 
+test("a payload environment without PATH launches, and the payload sees only that environment", async () => {
+  const directory = await workspace()
+  process.env.GATE_TEST_HOST_ONLY = "host"
+  cleanup.push(() => { delete process.env.GATE_TEST_HOST_ONLY })
+  const owned = await launch({
+    ownership: volatileLaunchOwnership(),
+    role: "harness",
+    scope: { directory },
+    payload: { command: process.execPath, args: ["-e", `process.stdout.write([process.env.PAYLOAD_ONLY, process.env.GATE_TEST_HOST_ONLY].map((value) => value ?? "unset").join("|"))`] },
+    cwd: directory,
+    env: { PAYLOAD_ONLY: "payload" },
+  })
+  let output = ""
+  for await (const chunk of owned.child.stdout!) output += String(chunk)
+  expect(output).toBe("payload|unset")
+  expect((await owned.retire(budgets)).leader).toBe("exited")
+}, 30_000)
+
 test.skipIf(!posix)("an acknowledged launch owns a group the payload is inside", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
@@ -215,7 +233,7 @@ test.skipIf(!posix)("a store that fails after the gate reports leaves no payload
 
 test.skipIf(!posix)("the gate exits on its activation deadline without running a payload", async () => {
   const directory = await workspace()
-  const handle = gate({ cwd: directory, env: process.env, activationDeadlineMs: 200 })
+  const handle = gate({ cwd: directory, activationDeadlineMs: 200 })
   const { identity } = await handle.reported
   expect(identity.processGroupId).toBe(identity.pid)
   const exit = await handle.exit
@@ -224,16 +242,16 @@ test.skipIf(!posix)("the gate exits on its activation deadline without running a
 
 test.skipIf(!posix)("the gate refuses a nonce it did not mint", async () => {
   const directory = await workspace()
-  const handle = gate({ cwd: directory, env: process.env, activationDeadlineMs: 5000 })
+  const handle = gate({ cwd: directory, activationDeadlineMs: 5000 })
   await handle.reported
-  handle.activate("00000000-0000-4000-8000-000000000000", sleeper(30))
+  handle.activate("00000000-0000-4000-8000-000000000000", { ...sleeper(30), env: {} })
   const exit = await handle.exit
   expect(exit.code).toBe(GATE_EXIT.nonceMismatch)
 })
 
 test.skipIf(!posix)("the gate exits when the private channel closes before activation", async () => {
   const directory = await workspace()
-  const handle = gate({ cwd: directory, env: process.env, activationDeadlineMs: 30_000 })
+  const handle = gate({ cwd: directory, activationDeadlineMs: 30_000 })
   await handle.reported
   handle.child.disconnect()
   const exit = await handle.exit
