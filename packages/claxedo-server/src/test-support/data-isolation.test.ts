@@ -59,7 +59,7 @@ test("opening the database creates the file under the temporary root", () => {
 })
 
 test("agent hook setup rewrites the harness configs under the temporary home, not the real one", async () => {
-  expect(contains(temporary, os.homedir())).toBe(true)
+  expect(contains(temporary, realpathSync.native(os.homedir()))).toBe(true)
   const before = fingerprint(home)
 
   await setupAgentHooks({ port: 7860 })
