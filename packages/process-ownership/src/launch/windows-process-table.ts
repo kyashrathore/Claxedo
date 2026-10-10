@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import { referable } from "@claxedo/helpers/process"
 
 /** What the process table says about one pid: its creation time in UTC, ISO 8601 to 100 ns, and its parent. */
 export type WindowsProcessRow = { creationDate: string; parentPid: number }
@@ -64,10 +65,6 @@ export function createWindowsProcessTable(options: WindowsProcessTableOptions) {
       current = undefined
     },
   }
-}
-
-function referable<Pipe extends object>(pipe: Pipe): pipe is Pipe & { ref(): void; unref(): void } {
-  return "ref" in pipe && typeof pipe.ref === "function" && "unref" in pipe && typeof pipe.unref === "function"
 }
 
 class TableProcess {
@@ -139,7 +136,7 @@ class TableProcess {
     if (line === "absent") return this.settle(request, () => request.resolve(undefined))
     if (line.startsWith("error ")) return this.settle(request, () => request.reject(new Error(line.slice("error ".length))))
     const row = /^row (\S+) (\d+)$/.exec(line)
-    if (row) return this.settle(request, () => request.resolve({ creationDate: row[1]!, parentPid: Number(row[2]) }))
+    if (row) return this.settle(request, () => request.resolve({ creationDate: row[1], parentPid: Number(row[2]) }))
     this.pending.unshift(request)
     this.discard(`the process table reader answered in an unexpected form: ${line.slice(0, 200)}`)
   }
@@ -176,7 +173,6 @@ class TableProcess {
     for (const pipe of this.pipes()) pipe.unref()
   }
 
-  /** Bun's stdin has no `ref`, and does not hold the loop. */
   private pipes() {
     return [this.child.stdin, this.child.stdout, this.child.stderr].filter(referable)
   }

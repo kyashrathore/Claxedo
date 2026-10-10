@@ -107,3 +107,11 @@ export function stopChild(
   stopping.set(child, pending)
   return pending
 }
+
+/**
+ * Whether a child's stdio stream can be referenced and unreferenced. Node's
+ * pipes can; Bun's stdin cannot, and does not hold the loop.
+ */
+export function referable<Pipe extends object>(pipe: Pipe): pipe is Pipe & { ref(): void; unref(): void } {
+  return "ref" in pipe && typeof pipe.ref === "function" && "unref" in pipe && typeof pipe.unref === "function"
+}

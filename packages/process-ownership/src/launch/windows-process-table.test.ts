@@ -57,7 +57,7 @@ test("a read past its bound is refused and the wedged interpreter is replaced", 
   await expect(reader.read(400, 200)).rejects.toThrow("did not answer for pid 400 within 200ms")
   expect(await reader.read(100, 5_000)).toEqual(row)
   expect(launched).toHaveLength(2)
-  expect(launched[0]!.killed).toBe(true)
+  expect(launched[0].killed).toBe(true)
   reader.release()
 })
 
@@ -93,8 +93,8 @@ test("a released interpreter exits once it has answered", async () => {
   expect(await answer).toEqual(row)
   // An idle reader is unreferenced, and Bun on Windows delivers nothing to a
   // loop that only unreferenced handles hold, its exit included.
-  launched[0]!.ref()
-  const [code] = await once(launched[0]!, "exit")
+  launched[0].ref()
+  const [code] = await once(launched[0], "exit")
   expect(code).toBe(0)
 })
 

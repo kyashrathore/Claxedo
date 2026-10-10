@@ -3,6 +3,7 @@ import { createRequire } from "node:module"
 import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { stringRecord } from "@claxedo/helpers"
 import { isRecord } from "@claxedo/helpers/guards"
 import { harnessSpawnEnv } from "../spawn-env"
 import { launchErrorText, type CreationIdentity } from "./identity"
@@ -251,7 +252,7 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
     throw new LaunchRefusedError(input.role, error)
   }
 
-  handle.activate(gateNonce, { ...input.payload, env: definedEnv(input.env) })
+  handle.activate(gateNonce, { ...input.payload, env: stringRecord(input.env) })
   const payloadPid = await handle.acknowledged
   await input.ownership.acknowledgeActivation(prepared.launchId).catch(() => {})
 
@@ -266,10 +267,6 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
       return result
     },
   }
-}
-
-function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
 let gateChild: { file: string; runner: string[] } | undefined
