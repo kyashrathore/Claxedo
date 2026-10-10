@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url"
 import { build, type Plugin } from "esbuild"
 import { asRecord } from "@claxedo/helpers/guards"
 import { Miniflare } from "miniflare"
-import { RuntimeStore } from "./store"
-import { openTestRuntimeStoreDatabase } from "./test-support/store"
+import type { RuntimeStore } from "./store"
+import { openTestRuntimeStore, openTestRuntimeStoreDatabase } from "./test-support/store"
 import { storeCoreScenarios } from "./test-support/store-core-scenarios"
 
 const scenarios = Object.keys(storeCoreScenarios)
@@ -23,7 +23,7 @@ void describe("store core scenarios on the Node SQLite driver", () => {
       try {
         storeCoreScenarios[name]({
           open: () => {
-            const store = new RuntimeStore(openTestRuntimeStoreDatabase(root))
+            const store = openTestRuntimeStore(root)
             stores.push(store)
             return store
           },
