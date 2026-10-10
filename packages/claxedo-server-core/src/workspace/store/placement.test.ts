@@ -146,20 +146,13 @@ async function productionSources() {
   for (const entry of packages) {
     if (!entry.isDirectory()) continue
     const root = path.join(repositoryRoot, "packages", entry.name, "src")
-    const walk = async (directory: string) => {
-      const children = await fs.readdir(directory, { withFileTypes: true }).catch(() => [])
-      for (const child of children) {
-        const full = path.join(directory, child.name)
-        if (child.isDirectory()) {
-          await walk(full)
-          continue
-        }
-        if (!/\.(tsx?|mjs)$/.test(child.name)) continue
-        if (/\.(test|vitest)\.tsx?$/.test(child.name)) continue
-        files.push(full)
-      }
+    const children = await fs.readdir(root, { recursive: true, withFileTypes: true }).catch(() => [])
+    for (const child of children) {
+      if (!child.isFile()) continue
+      if (!/\.(tsx?|mjs)$/.test(child.name)) continue
+      if (/\.(test|vitest)\.tsx?$/.test(child.name)) continue
+      files.push(path.join(child.parentPath, child.name))
     }
-    await walk(root)
   }
   return files
 }
@@ -188,8 +181,10 @@ function callArguments(source: string, open: number) {
  */
 async function productionCloudWorkspaceWrites() {
   const writes: { file: string; literal: string }[] = []
-  for (const file of await productionSources()) {
-    const source = await fs.readFile(file, "utf-8")
+  const files = await productionSources()
+  const sources = await Promise.all(files.map((file) => fs.readFile(file, "utf-8")))
+  for (const [index, file] of files.entries()) {
+    const source = sources[index]
     let cursor = source.indexOf("ensureWorkspace(")
     while (cursor !== -1) {
       const literal = callArguments(source, cursor + "ensureWorkspace".length)
