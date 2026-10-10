@@ -202,6 +202,11 @@ jobs:
           concurrency=2
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             concurrency=1
+            # Suites that start real Codex, Claude Code and OpenCode run 5x
+            # slower on the hosted 4-vCPU runner than on 8 cores and miss their
+            # budgets; Linux runs them here, and Windows runs them before each
+            # release (docs/release/windows-real-cli-suites.md).
+            export CLAXEDO_REAL_CLI_SUITES=skip
           fi
           runtime=(@claxedo/app @claxedo/workspace-runtime @claxedo/workspace-relay @claxedo/local-server)
           case "$LANE" in

@@ -1,6 +1,6 @@
 {
   "$schema": "https://v2-8-13.turborepo.dev/schema.json",
-  "globalEnv": ["CI"],
+  "globalEnv": ["CI", "CLAXEDO_REAL_CLI_SUITES"],
   "globalPassThroughEnv": ["CI"],
   "tasks": {
     "typecheck": {},
