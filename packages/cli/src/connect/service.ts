@@ -139,13 +139,19 @@ function singleQuoted(value: string) {
  * runs connect in the background, forwards TERM and INT, and waits again
  * after the interrupted `wait` (which answers 128+signal, not the child's
  * status) so the exit status is connect's own.
+ *
+ * A signal can land before `child=$!` has run, when the trap has no pid to
+ * forward to; it is forwarded as soon as the pid exists. A signal that lands
+ * after connect already exited makes the next `wait` answer 127 for a child
+ * that was reaped, so that answer keeps the status already read.
  */
 export function launchdWrapperScript(connect: string, bootout: string) {
   return [
-    `trap 'signalled=1; kill -TERM "$child" 2>/dev/null' TERM INT`,
+    `trap 'signalled=1; if [ -n "$child" ]; then forwarded=1; kill -TERM "$child" 2>/dev/null; fi' TERM INT`,
     `${connect} & child=$!`,
+    `if [ -n "$signalled" ] && [ -z "$forwarded" ]; then kill -TERM "$child" 2>/dev/null; fi`,
     `wait "$child"; status=$?`,
-    `while [ -n "$signalled" ]; do signalled=; wait "$child"; status=$?; done`,
+    `while [ -n "$signalled" ]; do signalled=; wait "$child"; next=$?; if [ "$next" -ne 127 ]; then status=$next; fi; done`,
     `if [ "$status" -eq 78 ]; then ${bootout}; fi`,
     `exit "$status"`,
   ].join("\n")
