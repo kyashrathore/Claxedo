@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import {
   describeSddl,
   expectedOwnerOnlyDescription,
@@ -29,6 +30,8 @@ const bytes = (value: string) => new TextEncoder().encode(value)
 /** Reachable by a service account, which neither this run's temporary directory nor a profile is. */
 const PUBLIC = "C:\\Users\\Public"
 
+const MODULE = join(import.meta.dirname, "windows-private-file.ts")
+
 let dir: string
 
 beforeEach(() => {
@@ -38,6 +41,24 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
+
+/**
+ * Runs `body` in a fresh Bun process with the module imported, because the
+ * runner is per process: only a new process has none yet.
+ */
+function inFreshProcess(body: string[]) {
+  const script = join(dir, "fresh.ts")
+  writeFileSync(
+    script,
+    [`import { writeWindowsPrivateFile } from ${JSON.stringify(pathToFileURL(MODULE).href)}`, ...body].join("\n"),
+  )
+  return spawnSync(process.execPath, [script], { encoding: "utf8", timeout: 120_000 })
+}
+
+function processAlive(pid: number) {
+  const listing = spawnSync("tasklist.exe", ["/FI", `PID eq ${pid}`, "/NH", "/FO", "CSV"], { encoding: "utf8" })
+  return (listing.stdout ?? "").includes(`"${pid}"`)
+}
 
 function staging() {
   return join(dir, ".credentials.json.staging.tmp")
@@ -248,6 +269,89 @@ describe.skipIf(process.platform !== "win32")("a private file on Windows", () =>
     expect(readdirSync(dir)).toEqual([])
   }, 30_000)
 
+  test("the write after a killed runner succeeds on a fresh one", async () => {
+    let killed: number | undefined
+    await expect(
+      writeWindowsPrivateFile({
+        target: target(),
+        staging: staging(),
+        contents: bytes(SECRET),
+        beforeWrite: ({ holder }) => {
+          killed = holder
+          execFileSync("taskkill.exe", ["/PID", String(holder), "/F"], { encoding: "utf8" })
+        },
+      }),
+    ).rejects.toThrow(PrivateFileError)
+
+    let next: number | undefined
+    await writeWindowsPrivateFile({
+      target: target(),
+      staging: staging(),
+      contents: bytes(SECRET),
+      beforeWrite: ({ holder }) => {
+        next = holder
+      },
+    })
+
+    expect(next).toBeDefined()
+    expect(next).not.toBe(killed)
+    expect(readFileSync(target(), "utf8")).toBe(SECRET)
+    expect(readdirSync(dir)).toEqual(["credentials.json"])
+  }, 120_000)
+
+  test("two concurrent writes both publish their complete contents", async () => {
+    const first = join(dir, "first.json")
+    const second = join(dir, "second.json")
+    const large = (seed: string) => bytes(seed.repeat(200_000))
+
+    await Promise.all([
+      writeWindowsPrivateFile({ target: first, staging: join(dir, ".first.tmp"), contents: large("first;") }),
+      writeWindowsPrivateFile({ target: second, staging: join(dir, ".second.tmp"), contents: large("second;") }),
+    ])
+
+    expect(readFileSync(first, "utf8")).toBe("first;".repeat(200_000))
+    expect(readFileSync(second, "utf8")).toBe("second;".repeat(200_000))
+    expect(ownerOnlyDescription(first)).toBe(expectedOwnerOnlyDescription())
+    expect(ownerOnlyDescription(second)).toBe(expectedOwnerOnlyDescription())
+    expect(readdirSync(dir).sort()).toEqual(["first.json", "second.json"])
+  }, 120_000)
+
+  test("a process starts one runner, reuses it, and is not kept alive by it", async () => {
+    const result = inFreshProcess([
+      `import { join } from "node:path"`,
+      `const holders: (number | undefined)[] = []`,
+      `const took: number[] = []`,
+      `for (const name of ["one", "two"]) {`,
+      `  const started = performance.now()`,
+      `  await writeWindowsPrivateFile({`,
+      `    target: join(${JSON.stringify(dir)}, name + ".json"),`,
+      `    staging: join(${JSON.stringify(dir)}, "." + name + ".tmp"),`,
+      `    contents: new TextEncoder().encode(name),`,
+      `    beforeWrite: ({ holder }) => { holders.push(holder) },`,
+      `  })`,
+      `  took.push(performance.now() - started)`,
+      `}`,
+      `process.stdout.write(JSON.stringify({ holders, took }))`,
+    ])
+
+    // Exiting on its own within the bound is the proof that an idle runner
+    // holds nothing; a held process would be killed by the timeout instead.
+    expect(result.signal).toBeNull()
+    expect(result.status).toBe(0)
+    const { holders, took } = JSON.parse(result.stdout) as { holders: number[]; took: number[] }
+    expect(holders).toHaveLength(2)
+    expect(holders[1]).toBe(holders[0])
+    // The first write pays for PowerShell and the C# compile; the second pays for neither.
+    expect(took[1]!).toBeLessThan(took[0]! / 4)
+    expect(readFileSync(join(dir, "one.json"), "utf8")).toBe("one")
+    expect(readFileSync(join(dir, "two.json"), "utf8")).toBe("two")
+
+    // Its stdin closed with the process, which ends its loop.
+    const deadline = Date.now() + 10_000
+    while (processAlive(holders[0]!) && Date.now() < deadline) await Bun.sleep(100)
+    expect(processAlive(holders[0]!)).toBe(false)
+  }, 180_000)
+
   test("a staging name that is already taken fails closed", async () => {
     const taken = staging()
     writeFileSync(taken, "someone got here first")
@@ -264,28 +368,30 @@ describe.skipIf(process.platform !== "win32")("a private file on Windows", () =>
     expect(existsSync(target())).toBe(false)
   })
 
-  test("a missing interpreter fails closed and says nothing about the contents", async () => {
-    const systemRoot = process.env.SystemRoot
-    process.env.SystemRoot = join(dir, "no-interpreter-here")
-    try {
-      const error = await writeWindowsPrivateFile({
-        target: target(),
-        staging: staging(),
-        contents: bytes(SECRET),
-      }).catch((thrown: unknown) => thrown)
-      expect(error).toBeInstanceOf(PrivateFileError)
-      expect(String(error)).toContain(target())
-      // Runtimes word a missing executable differently — Node raises ENOENT,
-      // Bun says "Executable not found in $PATH" — so the assertion is on this
-      // module's own cause, which is the same under both.
-      expect(String(error)).toContain("the interpreter could not be started")
-      expect(String(error)).not.toContain("tok_do_not_share")
-    } finally {
-      if (systemRoot === undefined) delete process.env.SystemRoot
-      else process.env.SystemRoot = systemRoot
-    }
+  test("a missing interpreter fails closed and says nothing about the contents", () => {
+    const result = inFreshProcess([
+      // Set inside the process, which needs a real one to start; the runner
+      // reads it when it is launched.
+      `process.env.SystemRoot = ${JSON.stringify(join(dir, "no-interpreter-here"))}`,
+      `const error = await writeWindowsPrivateFile({`,
+      `  target: ${JSON.stringify(target())},`,
+      `  staging: ${JSON.stringify(staging())},`,
+      `  contents: new TextEncoder().encode(${JSON.stringify(SECRET)}),`,
+      `}).catch((thrown: unknown) => thrown)`,
+      `process.stdout.write(JSON.stringify({ name: (error as Error)?.name, message: String(error) }))`,
+    ])
+
+    expect(result.status).toBe(0)
+    const error = JSON.parse(result.stdout) as { name: string; message: string }
+    expect(error.name).toBe("PrivateFileError")
+    expect(error.message).toContain(target())
+    // Runtimes word a missing executable differently — Node raises ENOENT,
+    // Bun says "Executable not found in $PATH" — so the assertion is on this
+    // module's own cause, which is the same under both.
+    expect(error.message).toContain("the interpreter could not be started")
+    expect(error.message).not.toContain("tok_do_not_share")
     expect(existsSync(target())).toBe(false)
-  })
+  }, 60_000)
 })
 
 /**
