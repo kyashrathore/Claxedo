@@ -28,7 +28,7 @@ const { tasksStoreConformance, tasksCommandReplayConformance } = await import("@
  */
 function freshDatabase() {
   ClaxedoDB.close()
-  const root = path.join(realpathSync(os.tmpdir()), `tasks-sqlite-store-${randomUUID().slice(0, 8)}`)
+  const root = path.join(realpathSync.native(os.tmpdir()), `tasks-sqlite-store-${randomUUID().slice(0, 8)}`)
   mkdirSync(root, { recursive: true })
   roots.push(root)
   process.env.CLAXEDO_DATA_DIR = root
@@ -159,7 +159,7 @@ describe("SQLite Tasks child-number migration", () => {
   const MIGRATION = "20260915000100_task_child_number"
 
   function journalBefore(): string {
-    const dir = path.join(realpathSync(os.tmpdir()), `tasks-journal-${randomUUID().slice(0, 8)}`)
+    const dir = path.join(realpathSync.native(os.tmpdir()), `tasks-journal-${randomUUID().slice(0, 8)}`)
     roots.push(dir)
     mkdirSync(dir, { recursive: true })
     for (const entry of readdirSync(CLAXEDO_MIGRATION_JOURNAL)) {

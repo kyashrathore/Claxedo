@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import type { ControlPlaneTokenVerifier, ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
-const root = path.join(realpathSync(os.tmpdir()), `credential-org-isolation-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `credential-org-isolation-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 const previousSignedAuth = process.env.CLAXEDO_SIGNED_CLOUD_AUTH

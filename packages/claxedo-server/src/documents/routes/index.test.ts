@@ -45,7 +45,7 @@ import {
 
 const execFileAsync = promisify(execFile)
 
-const root = path.join(realpathSync(os.tmpdir()), `document-routes-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `document-routes-${randomUUID().slice(0, 8)}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 mkdirSync(root, { recursive: true })

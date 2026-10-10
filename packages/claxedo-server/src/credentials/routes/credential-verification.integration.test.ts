@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto"
 import { afterAll, describe, expect, test, vi } from "vitest"
 import { fetchUrl } from "../../test-support/fetch-calls"
 
-const root = path.join(realpathSync(os.tmpdir()), `credential-verification-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `credential-verification-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const previous = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root

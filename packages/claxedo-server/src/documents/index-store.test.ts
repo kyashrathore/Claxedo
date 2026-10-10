@@ -22,7 +22,7 @@ import {
   updateDocumentIndexMetadata,
 } from "@claxedo/server-core/documents/index-store"
 
-const root = path.join(realpathSync(os.tmpdir()), `document-index-${randomUUID()}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `document-index-${randomUUID()}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 

@@ -17,7 +17,7 @@ function contains(parent: string, child: string) {
 test("agent hook setup writes every harness config under the temporary home the suite runs in", async () => {
   const home = userHomeDir()
   expect(os.homedir()).toBe(home)
-  expect(contains(fs.realpathSync(os.tmpdir()), home)).toBe(true)
+  expect(contains(fs.realpathSync.native(os.tmpdir()), home)).toBe(true)
   expect(contains(home, workspaceRuntimeDataDir())).toBe(true)
 
   await setupAgentHooks({ port: 7860 })

@@ -6,7 +6,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { isOwnerOnlyFile } from "@claxedo/helpers/fs"
 
-const root = path.join(realpathSync(os.tmpdir()), `local-broker-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `local-broker-test-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root

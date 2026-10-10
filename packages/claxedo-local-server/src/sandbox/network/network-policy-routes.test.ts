@@ -8,7 +8,7 @@ import { Hono } from "hono"
 import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 
-const root = path.join(realpathSync(os.tmpdir()), `network-policy-routes-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `network-policy-routes-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root

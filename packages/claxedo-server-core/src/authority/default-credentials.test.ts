@@ -5,7 +5,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-const root = path.join(realpathSync(os.tmpdir()), `default-credentials-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `default-credentials-test-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root

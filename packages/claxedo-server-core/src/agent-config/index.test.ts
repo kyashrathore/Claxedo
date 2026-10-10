@@ -7,7 +7,7 @@ import path from "path"
 import { randomUUID } from "crypto"
 import type { HarnessConnectionDescriptor } from "./connections"
 
-const root = path.join(realpathSync(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 

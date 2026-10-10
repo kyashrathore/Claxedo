@@ -37,7 +37,7 @@ function hookCommands(file: string) {
 
 /** The passwd home; script/test-home/run.mjs has pointed HOME, and so `os.homedir()`, at a temporary home. */
 const home = os.userInfo().homedir
-const temporary = realpathSync(os.tmpdir())
+const temporary = realpathSync.native(os.tmpdir())
 
 afterAll(() => ClaxedoDB.close())
 

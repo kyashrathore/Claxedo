@@ -4,7 +4,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-const root = path.join(realpathSync(os.tmpdir()), `runtime-config-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `runtime-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 

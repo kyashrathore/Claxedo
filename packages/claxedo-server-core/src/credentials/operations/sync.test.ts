@@ -17,7 +17,7 @@ vi.mock("child_process", async (importOriginal) => {
   return { ...actual, default: { ...actual, execFileSync }, execFileSync }
 })
 
-const root = path.join(realpathSync(os.tmpdir()), `cred-sync-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `cred-sync-test-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 const prevHome = process.env.HOME

@@ -7,7 +7,7 @@ import path from "path"
 import { randomUUID } from "crypto"
 import type { RuntimeStatusPath } from "@claxedo/server-core/session/runtime-activity"
 
-const root = path.join(realpathSync(os.tmpdir()), `session-list-page-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `session-list-page-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const prev = { CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR, CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR }
 process.env.CLAXEDO_DATA_DIR = root

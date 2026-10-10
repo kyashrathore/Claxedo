@@ -264,7 +264,7 @@ describe("getCommandShellArgs", () => {
   // These rc files are the developer's real generated ones unless the data
   // root sits in the temporary home script/test-home/run.mjs starts bun in.
   // afterEach runs even when beforeEach fails, so it checks too.
-  const relative = path.relative(realpathSync(os.tmpdir()), CLAXEDO_DIR)
+  const relative = path.relative(realpathSync.native(os.tmpdir()), CLAXEDO_DIR)
   const isolated = !relative.startsWith("..") && !path.isAbsolute(relative)
 
   beforeEach(() => {

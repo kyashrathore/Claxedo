@@ -1195,7 +1195,7 @@ describe("what this computer's own logins say", () => {
 })
 
 describe("choosing which account a provider runs on", () => {
-  const root = path.join(realpathSync(os.tmpdir()), `credential-activate-${randomUUID().slice(0, 8)}`)
+  const root = path.join(realpathSync.native(os.tmpdir()), `credential-activate-${randomUUID().slice(0, 8)}`)
   let registry: typeof import("@claxedo/server-core/credentials/registry")
   let app: ReturnType<typeof CredentialRoutes>
   let previousDataDir: string | undefined
@@ -1481,7 +1481,7 @@ describe("a host that holds one record per provider", () => {
 })
 
 describe("how much of a plan is left, kept between reads", () => {
-  const root = path.join(realpathSync(os.tmpdir()), `credential-usage-${randomUUID().slice(0, 8)}`)
+  const root = path.join(realpathSync.native(os.tmpdir()), `credential-usage-${randomUUID().slice(0, 8)}`)
   let registry: typeof import("@claxedo/server-core/credentials/registry")
   let previousDataDir: string | undefined
 

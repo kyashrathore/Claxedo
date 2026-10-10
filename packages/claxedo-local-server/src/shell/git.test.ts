@@ -27,7 +27,7 @@ import { randomUUID } from "crypto"
 // Point the data dir at a temp root BEFORE importing the route modules: they
 // pull in workspace-store, which boots (and persists) against CLAXEDO_DATA_DIR
 // on first use. Same idiom as worktree-events.test.ts.
-const root = path.join(realpathSync(os.tmpdir()), `compat-git-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `compat-git-${randomUUID().slice(0, 8)}`)
 const prev = {
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,

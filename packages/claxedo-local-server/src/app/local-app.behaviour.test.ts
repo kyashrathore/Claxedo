@@ -803,7 +803,7 @@ describe("local composition — first-party MCP", () => {
   const claims = { runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_1", expiresAt: Number.MAX_SAFE_INTEGER }
   let directory: string
   beforeEach(async () => {
-    directory = realpathSync(dataDir)
+    directory = realpathSync.native(dataDir)
     execFileSync("git", ["init"], { cwd: directory, stdio: "pipe" })
     const workspace = await ensureWorkspace({ directory })
     if (!workspace) throw new Error("The fixture workspace was not created")

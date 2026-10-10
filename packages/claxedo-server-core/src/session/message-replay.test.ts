@@ -15,7 +15,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-const root = path.join(realpathSync(os.tmpdir()), `message-replay-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realpathSync.native(os.tmpdir()), `message-replay-test-${randomUUID().slice(0, 8)}`)
 const prev = {
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,

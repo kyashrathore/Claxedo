@@ -17,7 +17,7 @@ afterEach(() => {
 // tokentracker holds one catalog per process, so the refresh below is this
 // file's alone: vitest gives every test file its own module graph.
 test("the refreshed catalog is tokentracker's cache under the home directory, and a bundled price refuses once it replaced the seed", async () => {
-  const temporaryHome = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "tokentracker-home-"))
+  const temporaryHome = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "tokentracker-home-"))
   const cache = path.join(temporaryHome, ".tokentracker", "cache", "pricing.json")
   fs.mkdirSync(path.dirname(cache), { recursive: true })
   fs.writeFileSync(cache, JSON.stringify({
