@@ -10,10 +10,6 @@ import { errorMessage } from "@claxedo/helpers"
 
 type Timer = ReturnType<typeof setTimeout>
 
-function unref(timer: Timer) {
-  ;(timer as Timer & { unref?: () => void }).unref?.()
-}
-
 /**
  * What containment produced for the turn this lease was revoked under. An
  * outcome that refuses, or an `onLost` that rejected or outran the graceful
@@ -132,7 +128,6 @@ function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSession
         () => resolve({ at: now(), error: `Containing the lost turn exceeded ${DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs}ms` }),
         DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs,
       )
-      unref(timer)
     })
     void (async () => {
       try {
@@ -168,7 +163,6 @@ function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSession
       return
     }
     expiryTimer = setTimeout(lose, remaining)
-    unref(expiryTimer)
     const renewAfter = Math.max(25, Math.floor(remaining / 2))
     renewTimer = setTimeout(() => {
       if (!stillValid()) return
@@ -193,7 +187,6 @@ function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSession
         schedule()
       }, lose)
     }, renewAfter)
-    unref(renewTimer)
   }
   schedule()
 
