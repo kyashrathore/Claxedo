@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process"
 import { statSync } from "node:fs"
+import { join } from "node:path"
 import { parseSddl } from "./windows-private-file"
 
 /**
@@ -15,7 +16,10 @@ import { parseSddl } from "./windows-private-file"
  * Administrator `LA`, never their numeric form.
  */
 export function currentWindowsSddlUser(): string {
-  const line = execFileSync("whoami.exe", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" }).trim()
+  // By full path: on a runner with Git for Windows on PATH, a bare `whoami.exe`
+  // is coreutils' `whoami`, which has no `/user`.
+  const whoami = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "whoami.exe")
+  const line = execFileSync(whoami, ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" }).trim()
   const sid = line.split(",").at(-1)?.replaceAll('"', "").trim()
   if (!sid?.startsWith("S-1-")) throw new Error(`whoami did not report a SID: ${line}`)
   const owner = execFileSync(

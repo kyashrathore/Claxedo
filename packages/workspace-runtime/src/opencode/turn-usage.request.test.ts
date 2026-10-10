@@ -88,7 +88,7 @@ function services(): HarnessServices {
 }
 
 test("a two-step turn meters each step in disjoint categories and closes on their sum", async () => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-turn-usage-")))
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-turn-usage-")))
   const directory = path.join(root, "work")
   fs.mkdirSync(directory, { recursive: true })
   fs.writeFileSync(path.join(directory, "README.md"), "# usage\n")

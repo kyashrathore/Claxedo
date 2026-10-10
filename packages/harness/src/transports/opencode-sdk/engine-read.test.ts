@@ -15,7 +15,7 @@ class ClientError extends Error {
   }
 }
 
-const directory = realpathSync(mkdtempSync(join(tmpdir(), "claxedo-engine-read-")))
+const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "claxedo-engine-read-")))
 const scope = WorkspaceScope.authorize({ workspaceID: "ws_1", directory })
 
 describe("engineRead", () => {

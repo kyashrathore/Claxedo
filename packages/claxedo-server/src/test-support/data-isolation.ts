@@ -19,7 +19,7 @@ import { afterAll } from "vitest"
  * canonical path resolvers derive them from these roots, including when a
  * test deliberately selects a different temporary data root.
  */
-const root = mkdtempSync(path.join(realpathSync(tmpdir()), "claxedo-server-vitest-"))
+const root = mkdtempSync(path.join(realpathSync.native(tmpdir()), "claxedo-server-vitest-"))
 
 const claxedo = path.join(root, "claxedo")
 const workspaceRuntime = path.join(root, "workspace-runtime")

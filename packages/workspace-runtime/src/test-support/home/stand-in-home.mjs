@@ -21,7 +21,7 @@ function run(command, options) {
  * stand-in for their real home. `written` is everything that landed there.
  */
 export async function runUnderStandInHome(packageDir, command) {
-  const standIn = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "stand-in-home-"))
+  const standIn = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "stand-in-home-"))
   try {
     const env = { ...process.env, HOME: standIn, USERPROFILE: standIn }
     for (const key of HOME_STATE_ENV) env[key] = path.join(standIn, key)
