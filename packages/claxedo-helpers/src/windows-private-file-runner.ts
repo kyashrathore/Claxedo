@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
+import { referable } from "./process"
 import { ABORT, COMMIT, FAILED, FATAL, PUBLISHED, READY, SERVING, payloadFrame, requestFrame } from "./windows-private-file-program"
 
 export type PrivateStagingReport = {
@@ -128,10 +129,6 @@ async function abort(runner: RunnerProcess, graceMs: number) {
   } finally {
     clearTimeout(grace)
   }
-}
-
-function referable<Pipe extends object>(pipe: Pipe): pipe is Pipe & { ref(): void; unref(): void } {
-  return "ref" in pipe && typeof pipe.ref === "function" && "unref" in pipe && typeof pipe.unref === "function"
 }
 
 /** Collapsed and bounded, because it is quoted into an error a user reads. */

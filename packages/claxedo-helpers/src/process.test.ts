@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { spawn, type ChildProcess } from "node:child_process"
-import { arg, envPositiveIntMs, requiredEnv, stopChild } from "./process"
+import { arg, envPositiveIntMs, referable, requiredEnv, stopChild } from "./process"
 
 const originalArgv = process.argv
 const children: ChildProcess[] = []
@@ -166,5 +166,15 @@ describe("stopChild", () => {
     const exit = exited(child)
     await stopChild(child, { processGroup: true })
     expect((await exit).signal).toBe("SIGTERM")
+  })
+})
+
+describe("referable", () => {
+  test("admits a child's stdio stream that can be referenced and unreferenced, and refuses one that cannot", () => {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10_000)"], { stdio: ["pipe", "pipe", "pipe"] })
+    children.push(child)
+    expect(child.stdout && referable(child.stdout)).toBe(true)
+    expect(referable({ ref() {} })).toBe(false)
+    expect(referable({ ref: true, unref: () => {} })).toBe(false)
   })
 })
