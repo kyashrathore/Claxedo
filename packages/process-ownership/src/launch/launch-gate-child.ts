@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { isRecord } from "@claxedo/helpers/guards"
 import { GATE_EXIT, type GatePayload } from "./launch-gate"
-import { launchErrorText, readCreationIdentity, type CreationIdentity } from "./identity"
+import { launchErrorText, readCreationIdentity, releaseWindowsProcessTable, type CreationIdentity } from "./identity"
 
 type Activation =
   | { outcome: "activate"; payload: GatePayload }
@@ -29,6 +29,7 @@ export async function runLaunchGateChild(): Promise<never> {
     // reason travels as one line rather than as an uncaught-exception dump.
     process.stderr.write(`${launchErrorText(error)}\n`)
   }
+  releaseWindowsProcessTable()
   if (!identity) process.exit(GATE_EXIT.identityUnavailable)
 
   // Minted here and delivered only over the private channel, so activation

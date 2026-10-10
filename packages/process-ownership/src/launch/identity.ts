@@ -1,8 +1,9 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { promisify } from "node:util"
 import { isRecord } from "@claxedo/helpers/guards"
+import { createWindowsProcessTable, PROCESS_TABLE_PROGRAM } from "./windows-process-table"
 
 const execFileAsync = promisify(execFile)
 
@@ -14,7 +15,7 @@ const execFileAsync = promisify(execFile)
 const PROBE_TIMEOUT_MS = 2_000
 
 /**
- * PowerShell answers in 250 ms on an 8-core box and took over 2 s to start on
+ * A process's first Windows read starts PowerShell, which took over 2 s on
  * GitHub's 2-core windows-latest runner (unit run 35787260714), so its budget
  * is its own.
  */
@@ -27,6 +28,22 @@ export function windowsSystemTool(name: string) {
 
 function windowsPowerShell() {
   return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+}
+
+const windowsProcessTable = createWindowsProcessTable({
+  launch: () => spawn(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", PROCESS_TABLE_PROGRAM], {
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "pipe"],
+  }),
+})
+
+/**
+ * Lets this process's Windows process table reader exit. A process that reads
+ * one identity and then lives on for something else, as the launch gate does,
+ * calls this so no interpreter outlives the read as its child.
+ */
+export function releaseWindowsProcessTable() {
+  windowsProcessTable.release()
 }
 
 const CREATION_IDENTITY_SOURCES = ["darwin-ps", "linux-procfs", "win32-cim"] as const
@@ -242,25 +259,19 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
  * resolution, so `startSecond` alone already tells two holders of one pid apart.
  */
 async function readWindowsCreationIdentity(pid: number, boot: string, timeout: number): Promise<CreationIdentity | undefined> {
-  let stdout: string
+  let row: Awaited<ReturnType<typeof windowsProcessTable.read>>
   try {
-    ;({ stdout } = await execFileAsync(windowsPowerShell(), [
-      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
-      `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId }`,
-    ], { timeout, windowsHide: true }))
+    row = await windowsProcessTable.read(pid, timeout)
   } catch (error) {
     throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }
-  const value = stdout.trim()
-  if (!value) return undefined
-  const split = value.lastIndexOf(" ")
-  const startSecond = value.slice(0, split)
+  if (!row) return undefined
   return {
     pid,
     processGroupId: pid,
-    parentPid: Number(value.slice(split + 1)),
-    startSecond,
-    startedAtMs: Date.parse(startSecond),
+    parentPid: row.parentPid,
+    startSecond: row.creationDate,
+    startedAtMs: Date.parse(row.creationDate),
     bootTime: boot,
     source: "win32-cim",
   }
