@@ -1,6 +1,7 @@
-import { execFileSync } from "node:child_process"
-import { statSync } from "node:fs"
+import { execFileSync, spawnSync } from "node:child_process"
+import { statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { parseSddl } from "./windows-private-file"
 
 /**
@@ -86,4 +87,16 @@ export function expectedOwnerOnlyDescription(): string {
   if (process.platform !== "win32") return "mode=600"
   const user = currentWindowsSddlUser()
   return `owner=${user} inheritance-blocked=true entries=A;;FA;;;${user}`
+}
+
+/**
+ * Runs `body` in a fresh Bun process with `name` imported from this package's
+ * `module`, because the private-file runner is per process: only a new process
+ * has none yet.
+ */
+export function inFreshProcess(dir: string, name: string, module: string, body: string[]) {
+  const script = join(dir, "fresh.ts")
+  const source = pathToFileURL(join(import.meta.dirname, module)).href
+  writeFileSync(script, [`import { ${name} } from ${JSON.stringify(source)}`, ...body].join("\n"))
+  return spawnSync(process.execPath, [script], { encoding: "utf8", timeout: 120_000 })
 }

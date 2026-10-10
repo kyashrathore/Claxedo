@@ -16,7 +16,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { isMissingFile, isOwnerOnlyFile, PrivateFileError, readJsonFile, readTextIfExists, resolvePem, writeFileAtomic, writeFileAtomicSync, writePrivateFileAtomic } from "./fs"
-import { expectedOwnerOnlyDescription, ownerOnlyDescription, widenWindowsPath, windowsSddl } from "./private-file.test-support"
+import { expectedOwnerOnlyDescription, inFreshProcess, ownerOnlyDescription, widenWindowsPath, windowsSddl } from "./private-file.test-support"
 
 let dir: string
 
@@ -262,20 +262,21 @@ describe("writePrivateFileAtomic", () => {
     expect(readdirSync(dir)).toEqual(["credentials.json"])
   }, 30_000)
 
-  test.skipIf(onPosix)("permissions that cannot be applied fail the write before the secret is on disk", async () => {
-    const systemRoot = process.env.SystemRoot
-    process.env.SystemRoot = join(dir, "no-interpreter-here")
+  test.skipIf(onPosix)("permissions that cannot be applied fail the write before the secret is on disk", () => {
     const file = join(dir, "credentials.json")
-    try {
-      await expect(writePrivateFileAtomic(file, secret)).rejects.toThrow(PrivateFileError)
-    } finally {
-      if (systemRoot === undefined) delete process.env.SystemRoot
-      else process.env.SystemRoot = systemRoot
-    }
+    const result = inFreshProcess(dir, "writePrivateFileAtomic", "fs.ts", [
+      // Set inside the process, which needs a real one to start; the runner
+      // reads it when it is launched.
+      `process.env.SystemRoot = ${JSON.stringify(join(dir, "no-interpreter-here"))}`,
+      `const error = await writePrivateFileAtomic(${JSON.stringify(file)}, ${JSON.stringify(secret)}).catch((thrown: unknown) => thrown)`,
+      `process.stdout.write(String((error as Error | undefined)?.name))`,
+    ])
 
-    expect(readdirSync(dir)).toEqual([])
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(PrivateFileError.name)
+    expect(readdirSync(dir)).toEqual(["fresh.ts"])
     expect(() => statSync(file)).toThrow()
-  })
+  }, 60_000)
 })
 
 describe("isOwnerOnlyFile", () => {

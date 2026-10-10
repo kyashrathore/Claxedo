@@ -3,10 +3,10 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
 import {
   describeSddl,
   expectedOwnerOnlyDescription,
+  inFreshProcess,
   inheritablyWidenWindowsDirectory,
   ownerOnlyDescription,
   widenWindowsPath,
@@ -30,8 +30,6 @@ const bytes = (value: string) => new TextEncoder().encode(value)
 /** Reachable by a service account, which neither this run's temporary directory nor a profile is. */
 const PUBLIC = "C:\\Users\\Public"
 
-const MODULE = join(import.meta.dirname, "windows-private-file.ts")
-
 let dir: string
 
 beforeEach(() => {
@@ -41,19 +39,6 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
-
-/**
- * Runs `body` in a fresh Bun process with the module imported, because the
- * runner is per process: only a new process has none yet.
- */
-function inFreshProcess(body: string[]) {
-  const script = join(dir, "fresh.ts")
-  writeFileSync(
-    script,
-    [`import { writeWindowsPrivateFile } from ${JSON.stringify(pathToFileURL(MODULE).href)}`, ...body].join("\n"),
-  )
-  return spawnSync(process.execPath, [script], { encoding: "utf8", timeout: 120_000 })
-}
 
 function processAlive(pid: number) {
   const listing = spawnSync("tasklist.exe", ["/FI", `PID eq ${pid}`, "/NH", "/FO", "CSV"], { encoding: "utf8" })
@@ -317,7 +302,7 @@ describe.skipIf(process.platform !== "win32")("a private file on Windows", () =>
   }, 120_000)
 
   test("a process starts one runner, reuses it, and is not kept alive by it", async () => {
-    const result = inFreshProcess([
+    const result = inFreshProcess(dir, "writeWindowsPrivateFile", "windows-private-file.ts", [
       `import { join } from "node:path"`,
       `const holders: (number | undefined)[] = []`,
       `const took: number[] = []`,
@@ -369,7 +354,7 @@ describe.skipIf(process.platform !== "win32")("a private file on Windows", () =>
   })
 
   test("a missing interpreter fails closed and says nothing about the contents", () => {
-    const result = inFreshProcess([
+    const result = inFreshProcess(dir, "writeWindowsPrivateFile", "windows-private-file.ts", [
       // Set inside the process, which needs a real one to start; the runner
       // reads it when it is launched.
       `process.env.SystemRoot = ${JSON.stringify(join(dir, "no-interpreter-here"))}`,
