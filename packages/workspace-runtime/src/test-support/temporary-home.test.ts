@@ -9,7 +9,7 @@ const engineTest = path.join(packageDir, "src/opencode/ports.integration.test.ts
 const runner = path.resolve(packageDir, "../../script/test-home/run.mjs")
 
 test("bun runs these tests in a temporary home, not the developer's", () => {
-  expect(os.homedir().startsWith(realpathSync(os.tmpdir()) + path.sep)).toBe(true)
+  expect(os.homedir().startsWith(realpathSync.native(os.tmpdir()) + path.sep)).toBe(true)
 })
 
 test("a bare bun test refuses to start and leaves a stand-in for the developer's home untouched", async () => {

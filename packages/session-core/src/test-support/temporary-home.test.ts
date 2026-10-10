@@ -4,5 +4,5 @@ import os from "node:os"
 import path from "node:path"
 
 test("bun runs these tests in a temporary home, not the developer's", () => {
-  expect(os.homedir().startsWith(realpathSync(os.tmpdir()) + path.sep)).toBe(true)
+  expect(os.homedir().startsWith(realpathSync.native(os.tmpdir()) + path.sep)).toBe(true)
 })
