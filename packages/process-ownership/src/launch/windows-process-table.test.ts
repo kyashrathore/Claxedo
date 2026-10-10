@@ -20,10 +20,10 @@ async function answer(pid) {
   if (pid === 500) { process.stderr.write("the interpreter failed to load CIM\\n"); process.exit(3) }
   if (pid === 600) return write("Get-CimInstance : not a row")
   if (pid === 700) await new Promise((resolve) => setTimeout(resolve, 600))
-  write("row 2026-10-10T20:58:24.8238420+00:00 4116")
+  write("row 2026-10-10T20:58:24.8238420Z 4116")
 }`
 
-const row = { creationDate: "2026-10-10T20:58:24.8238420+00:00", parentPid: 4116 }
+const row = { creationDate: "2026-10-10T20:58:24.8238420Z", parentPid: 4116 }
 
 function table() {
   const launched: ChildProcessWithoutNullStreams[] = []

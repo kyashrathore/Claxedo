@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
 
-/** What the process table says about one pid: its creation time as CIM prints it, and its parent. */
+/** What the process table says about one pid: its creation time in UTC, ISO 8601 to 100 ns, and its parent. */
 export type WindowsProcessRow = { creationDate: string; parentPid: number }
 
 export type WindowsProcessTableOptions = {
@@ -9,14 +9,21 @@ export type WindowsProcessTableOptions = {
 
 /**
  * The PowerShell program the table reader runs: one pid per input line, one
- * answer per output line, in order, until its input closes.
+ * answer per output line, in order, until its input closes. It resolves no
+ * cmdlet: resolving one makes PowerShell discover modules across
+ * `PSModulePath`, which took 12 to 23 s per start under a minimal environment
+ * on GitHub's windows-latest image with Az installed. The creation time is
+ * printed in UTC because WMI's converter returns a time with no zone.
  */
 export const PROCESS_TABLE_PROGRAM = [
   "$ErrorActionPreference = 'Stop'",
   "while ($null -ne ($line = [Console]::In.ReadLine())) {",
   "  try {",
-  "    $p = Get-CimInstance Win32_Process -Filter \"ProcessId=$([int]$line)\"",
-  "    if ($p) { [Console]::Out.WriteLine('row ' + $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId) } else { [Console]::Out.WriteLine('absent') }",
+  "    $rows = @(([wmisearcher]\"SELECT CreationDate, ParentProcessId FROM Win32_Process WHERE ProcessId = $([int]$line)\").Get())",
+  "    if ($rows.Count -eq 0) { [Console]::Out.WriteLine('absent') } else {",
+  "      $created = [System.Management.ManagementDateTimeConverter]::ToDateTime($rows[0]['CreationDate']).ToUniversalTime()",
+  "      [Console]::Out.WriteLine('row ' + $created.ToString('o') + ' ' + $rows[0]['ParentProcessId'])",
+  "    }",
   "  } catch { [Console]::Out.WriteLine('error ' + ($_.Exception.Message -replace '\\s+', ' ')) }",
   "  [Console]::Out.Flush()",
   "}",
@@ -33,10 +40,10 @@ type Pending = {
 /**
  * Reads the Windows process table through one long-lived PowerShell.
  *
- * Starting PowerShell and loading CIM costs 300-450 ms on a 4-vCPU box, and a
- * retirement reads the table three times or more; the same query answered by
- * an interpreter that is already running takes 12 ms. Requests are answered in
- * the order they were sent. A reader that exits is replaced on the next read.
+ * A PowerShell started for one read cost 300-450 ms on a 4-vCPU box, and a
+ * retirement reads the table three times or more; an interpreter that is
+ * already running answers in 10-18 ms. Requests are answered in the order they
+ * were sent. A reader that exits is replaced on the next read.
  *
  * `timeoutMs` bounds one read. A read past it is rejected, and the reader is
  * discarded unless an unbounded read is waiting on it: that caller's own
