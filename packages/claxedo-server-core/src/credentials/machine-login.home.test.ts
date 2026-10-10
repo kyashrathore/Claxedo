@@ -21,7 +21,7 @@ async function hashes(root: string): Promise<Record<string, string>> {
 }
 
 test("reading the machine's Codex login leaves the person's ~/.codex byte-identical and runs Codex in a Claxedo-owned home", async () => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), "codex-machine-login-"))
+  const home = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), "codex-machine-login-"))
   try {
     const codex = path.join(home, ".codex")
     await fs.mkdir(codex)
