@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { join } from "node:path"
-import { RUNNER_COMMAND, RUNNER_SOURCE, SOURCE_VARIABLE } from "./windows-private-file-program"
+import { cmdletFreeCommand, RUNNER_COMMAND, RUNNER_SOURCE, SOURCE_VARIABLE } from "./windows-private-file-program"
 import { createPrivateFileRunner, RunnerRefusal, type PrivateStagingReport } from "./windows-private-file-runner"
 
 export type { PrivateStagingReport } from "./windows-private-file-runner"
@@ -35,9 +35,9 @@ export type { PrivateStagingReport } from "./windows-private-file-runner"
  * exists and cleared before the rename. What that buys, and what it does not,
  * is written out at {@link writeWindowsPrivateFile}.
  *
- * Starting PowerShell and compiling the runner takes 5 to 25 s on a 4-vCPU
- * machine, so one runner per process serves every write; see
- * {@link createPrivateFileRunner}.
+ * Starting PowerShell and compiling the runner took 300 to 400 ms on a 4-vCPU
+ * machine and a write through a running one 3 to 5 ms, so one runner per
+ * process serves every write; see {@link createPrivateFileRunner}.
  */
 
 /** Thrown instead of returning: a file that cannot be made private must not receive secret bytes. */
@@ -102,10 +102,12 @@ export function readWindowsFileProtection(file: string): Promise<{ user: string;
       powershellPath(),
       [
         "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
-        "$ErrorActionPreference = 'Stop'; " +
-        "(New-Object System.Security.AccessControl.RawSecurityDescriptor " +
-        "('O:' + [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)).GetSddlForm('Owner'); " +
-        `(Get-Acl -LiteralPath $env:${TARGET_VARIABLE}).GetSecurityDescriptorSddlForm('Access,Owner')`,
+        cmdletFreeCommand(
+          "$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; " +
+          "[Console]::Out.WriteLine([System.Security.AccessControl.RawSecurityDescriptor]::new('O:' + $user).GetSddlForm('Owner')); " +
+          `$file = [Environment]::GetEnvironmentVariable('${TARGET_VARIABLE}'); ` +
+          "[Console]::Out.WriteLine([System.IO.File]::GetAccessControl($file).GetSecurityDescriptorSddlForm('Access, Owner'))",
+        ),
       ],
       { env: environment({ [TARGET_VARIABLE]: file }), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
     )
