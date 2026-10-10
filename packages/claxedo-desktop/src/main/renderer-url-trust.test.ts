@@ -26,3 +26,11 @@ describe("renderer document URL trust", () => {
     expect(isTrustedRendererDocumentUrl("file:///Applications/Claxedo.app/Contents/Resources/app/renderer/loading.html", options)).toBe(false)
   })
 })
+
+test("a document whose path carries a tilde matches however the tilde is spelled, and a reserved escape keeps its meaning", () => {
+  const options = { packagedIndexUrl: "file:///C:/Users/RUNNER%7E1/AppData/Local/Programs/Claxedo/resources/app.asar/out/renderer/index.html" }
+
+  expect(isTrustedRendererDocumentUrl("file:///C:/Users/RUNNER~1/AppData/Local/Programs/Claxedo/resources/app.asar/out/renderer/index.html?w=1", options)).toBe(true)
+  expect(isTrustedRendererDocumentUrl("file:///C:/Users/RUNNER~2/AppData/Local/Programs/Claxedo/resources/app.asar/out/renderer/index.html", options)).toBe(false)
+  expect(isTrustedRendererDocumentUrl("file:///C:/Users/RUNNER%7E1/AppData/Local/Programs/Claxedo/resources/app.asar%2Fout/renderer/index.html", options)).toBe(false)
+})

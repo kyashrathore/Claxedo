@@ -3,11 +3,21 @@ type TrustedRendererUrlOptions = {
   packagedIndexUrl: string
 }
 
+/**
+ * RFC 3986 makes a percent-encoded unreserved character the same as the
+ * character itself, and the two sides spell it differently: Node's
+ * `pathToFileURL` writes `~` as `%7E` while Chromium reports it literally, so
+ * an 8.3 path such as `C:\Users\RUNNER~1` matches only once both are decoded.
+ * Only unreserved characters are decoded; `%2F` and the rest keep their meaning.
+ */
 function documentUrl(input: string) {
   const url = new URL(input)
   url.hash = ""
   url.search = ""
-  return url.href
+  return url.href.replace(/%([0-9A-Fa-f]{2})/g, (escape: string, hex: string) => {
+    const character = String.fromCharCode(Number.parseInt(hex, 16))
+    return /^[A-Za-z0-9\-._~]$/.test(character) ? character : escape.toUpperCase()
+  })
 }
 
 /**
