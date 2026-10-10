@@ -56,7 +56,7 @@ test("projects real SDK events and marks durability correctly", async () => {
 
   expect(created!.durable?.seq).toBeNumber()
   expect(created!.hintOnly).toBe(false)
-  expect(created!.directory).toBe(fs.realpathSync(workspace))
+  expect(created!.directory).toBe(fs.realpathSync.native(workspace))
 
   const connected = seen.find((event) => event.type === "server.connected")
   if (connected) {

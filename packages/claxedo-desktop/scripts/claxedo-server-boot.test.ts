@@ -256,7 +256,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
     expect(registeredWorkspace.status).toBe(200)
     const project = await daemon(`/project/current?directory=${directory}`)
     expect(project.status).toBe(200)
-    expect(await project.json()).toMatchObject({ worktree: fs.realpathSync(workspaceDirectory) })
+    expect(await project.json()).toMatchObject({ worktree: fs.realpathSync.native(workspaceDirectory) })
 
     const sessions = await daemon(`/session?directory=${directory}&roots=true`)
     const sessionsBody = await sessions.text()

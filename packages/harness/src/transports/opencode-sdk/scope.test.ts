@@ -28,7 +28,7 @@ test("rejects a path that is not a directory", () => {
 })
 
 test("resolves symlinks so a later retarget cannot widen access", () => {
-  const root = fs.realpathSync(tempDir())
+  const root = fs.realpathSync.native(tempDir())
   const real = path.join(root, "real")
   const other = path.join(root, "other")
   const link = path.join(root, "link")
