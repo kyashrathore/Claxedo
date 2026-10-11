@@ -59,10 +59,14 @@ export function payloadFrame(verb: typeof COMMIT | typeof ABORT, length: number)
  * come from the pointer size: a `BOOLEAN`, padding to the `HANDLE`, the
  * `HANDLE`, then the `DWORD` length.
  *
- * `dwShareMode` 0 is the line that matters most. It is what makes the window
- * unreachable rather than narrow, and it holds whatever share mask the calling
- * runtime would have chosen — libuv always adds `FILE_SHARE_DELETE`, and this
- * file is never opened by libuv.
+ * `dwShareMode` admits readers and nothing else, and it is the line that matters
+ * most. Denying write and delete sharing keeps every other handle from changing,
+ * moving or replacing the file, which makes the window unreachable rather than
+ * narrow; libuv always adds `FILE_SHARE_DELETE`, and this file is never opened
+ * by libuv. Readers are admitted because the file is born owner-only, so only
+ * its owner can read it, as they can the published file, and because after the
+ * rename the published file is this handle: denying them failed every read of
+ * the target that landed before the close with EBUSY.
  *
  * A payload whose write fails part-way is still read to its end, so the next
  * request frame starts where this process expects it to.
@@ -102,6 +106,7 @@ public static class ClaxedoPrivateFile
     private const uint GenericWrite = 0x40000000;
     private const uint Delete = 0x00010000;
     private const uint ReadControl = 0x00020000;
+    private const uint ShareRead = 0x00000001;
     private const uint CreateNew = 1;
     private const uint Normal = 0x00000080;
     private const uint OpenReparsePoint = 0x00200000;
@@ -178,7 +183,7 @@ public static class ClaxedoPrivateFile
             security.Length = Marshal.SizeOf(typeof(SecurityAttributes));
             security.Descriptor = pinned.AddrOfPinnedObject();
             security.InheritHandle = 0;
-            handle = CreateFileW(staging, GenericWrite | Delete | ReadControl, 0, ref security,
+            handle = CreateFileW(staging, GenericWrite | Delete | ReadControl, ShareRead, ref security,
                 CreateNew, Normal | OpenReparsePoint, IntPtr.Zero);
             if (handle.IsInvalid)
             {

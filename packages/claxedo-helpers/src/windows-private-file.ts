@@ -22,8 +22,8 @@ export type { PrivateStagingReport } from "./windows-private-file-runner"
  * the name can be moved aside and a decoy left in its place, which is what then
  * gets the descriptor, the verification, and the publish.
  *
- * So the descriptor exists at creation, the staging file is opened with no
- * sharing at all, and its name is never resolved again: it is filled through
+ * So the descriptor exists at creation, the staging file is opened sharing
+ * nothing but reads, and its name is never resolved again: it is filled through
  * that first handle and published through it too. Node does not open the file
  * on this platform; a PowerShell runner hosting `ClaxedoPrivateFile` owns its
  * whole life.
