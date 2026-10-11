@@ -67,30 +67,37 @@ const restore: SandboxRestoreStatus = {
 }
 
 /**
- * Wraps a D1 database so the FIRST guarded write (`update ...`) runs only after
- * a competing writer has already bumped the row's epoch.
+ * Wraps a D1 database so the FIRST guarded write (`update ...`, alone or in the
+ * batch that records the boot it ends) runs only after a competing writer has
+ * already bumped the row's epoch.
  *
  * That interleaving is the only way to reach the statement's own
  * `and epoch = ?` guard: on every other path the store's pre-read already sees
  * the moved epoch and returns before writing. Without this the SQL guard is
- * untested, and D1 has no transaction to fall back on — the statement IS the
+ * untested, and the store holds no lock to fall back on — the guard IS the
  * concurrency control.
  */
 function raceBeforeFirstWrite(target: D1Database, competitor: () => Promise<unknown>): D1Database {
   let armed = true
-  const wrapBound = (bound: D1PreparedStatement): D1PreparedStatement =>
-    new Proxy(bound, {
+  const race = async () => {
+    if (!armed) return
+    armed = false
+    await competitor()
+  }
+  const sources = new WeakMap<D1PreparedStatement, D1PreparedStatement>()
+  const wrapBound = (bound: D1PreparedStatement): D1PreparedStatement => {
+    const wrapped = new Proxy(bound, {
       get(source, property) {
         if (property !== "run" && property !== "first") return Reflect.get(source, property).bind(source)
         return async () => {
-          if (armed) {
-            armed = false
-            await competitor()
-          }
+          await race()
           return property === "run" ? await source.run() : await source.first()
         }
       },
     })
+    sources.set(wrapped, bound)
+    return wrapped
+  }
   const wrapStatement = (statement: D1PreparedStatement): D1PreparedStatement =>
     new Proxy(statement, {
       get(source, property) {
@@ -100,6 +107,12 @@ function raceBeforeFirstWrite(target: D1Database, competitor: () => Promise<unkn
     })
   return new Proxy(target, {
     get(source, property) {
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          if (statements.some((statement) => sources.has(statement))) await race()
+          return await source.batch(statements.map((statement) => sources.get(statement) ?? statement))
+        }
+      }
       if (property !== "prepare") return Reflect.get(source, property).bind(source)
       return (query: string) => {
         const statement = source.prepare(query)

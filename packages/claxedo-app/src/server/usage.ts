@@ -1,8 +1,8 @@
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
-import type { UsageRequest, UsageSummary } from "./usage-types"
-import { usageSummaryFromWire } from "./wire/usage"
+import type { MachineTime, UsageRequest, UsageSummary } from "./usage-types"
+import { machineTimeFromWire, usageSummaryFromWire } from "./wire/usage"
 
 function usageQuery(input: UsageRequest) {
   const filters = Object.fromEntries(Object.entries(input.filters ?? {}).flatMap(([dimension, value]) => (value ? [[`filter_${dimension}`, value]] : [])))
@@ -26,6 +26,10 @@ export function usageQueries(transport: Transport) {
     summary: (input: UsageRequest) =>
       fetchQuery<UsageSummary>(queryKeys.usage(transport.serverUrl, input), () =>
         transport.json(withQuery("/api/claxedo/usage", usageQuery(input))).then(usageSummaryFromWire),
+      ),
+    machineTime: (since: number) =>
+      fetchQuery<MachineTime>(queryKeys.machineTime(transport.serverUrl, since), () =>
+        transport.json(withQuery("/api/claxedo/usage/machine-time", { since })).then(machineTimeFromWire),
       ),
   }
 }

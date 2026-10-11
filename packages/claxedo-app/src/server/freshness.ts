@@ -6,7 +6,7 @@ export type Freshness =
   | { readonly kind: "ttl"; readonly ms: number; readonly reason: string }
   | { readonly kind: "once"; readonly reason: string }
 
-type CachePrefix = "filesAll" | "filesOf" | "gitAll" | "gitOf" | "usageAll" | "marketplaceAll" | "codeHostAll" | "providerCatalogs"
+type CachePrefix = "filesAll" | "filesOf" | "gitAll" | "gitOf" | "usageAll" | "machineTimeAll" | "marketplaceAll" | "codeHostAll" | "providerCatalogs"
 
 export type CacheName = Exclude<keyof typeof queryKeys, CachePrefix>
 
@@ -33,6 +33,7 @@ export const freshness = {
   cloud: placementOwned,
   livePlugins: { kind: "event-owned", events: ["pluginsChanged"] },
   usage: { kind: "event-owned", events: ["usageChanged"] },
+  machineTime: placementOwned,
   fileTree: fileOwned,
   fileContent: fileOwned,
   localFilesAll: { kind: "once", reason: "the desktop file prefix configures gcTime 0; each artifact is read afresh when its tab mounts" },

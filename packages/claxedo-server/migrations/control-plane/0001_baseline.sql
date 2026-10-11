@@ -441,6 +441,17 @@ CREATE TABLE runtime_access_tokens (
   )
 );
 
+CREATE TABLE sandbox_boots (
+  workspace_id text not null,
+  epoch integer not null,
+  org_id text not null,
+  owner_user_id text not null,
+  machine_class text,
+  started_at integer not null,
+  stopped_at integer not null check (stopped_at >= started_at),
+  primary key (workspace_id, epoch)
+);
+
 CREATE TABLE sandbox_leases (
   workspace_id text primary key,
   lease_id text not null,
@@ -930,6 +941,9 @@ CREATE INDEX runtime_access_tokens_by_workspace_host
 
 CREATE INDEX runtime_access_tokens_by_workspace_user
   on runtime_access_tokens (workspace_id, minted_for_user_id, revoked_at, expires_at);
+
+CREATE INDEX sandbox_boots_by_owner_stopped
+  on sandbox_boots (org_id, owner_user_id, stopped_at);
 
 CREATE INDEX sandbox_leases_by_sandbox on sandbox_leases (sandbox_id);
 

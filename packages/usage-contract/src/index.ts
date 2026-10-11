@@ -170,3 +170,14 @@ export type UnifiedUsageResponse = {
   modelBreakdown?: UsageBreakdownPage
   chart?: UsageChartSeries
 }
+
+/**
+ * The signed person's cloud machine time in [since, until]: the boots of their own cloud workspaces that ended in the
+ * range, clipped to it, and those still serving, counted to `until`. `running` is how many are still serving.
+ */
+export type MachineTimeResponse = {
+  since: number
+  until: number
+  activeMs: number
+  running: number
+}

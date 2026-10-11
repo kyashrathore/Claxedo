@@ -79,7 +79,7 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
       return [queryKeys.projects(server), queryKeys.project(server, event.projectId), queryKeys.bootstrap(server), queryKeys.placements(server), queryKeys.placementsOf(server, event.projectId)]
     case "placementsChanged":
     case "cloudWorkspaceChanged":
-      return [queryKeys.bootstrap(server), queryKeys.accountCatalog(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server)]
+      return [queryKeys.bootstrap(server), queryKeys.accountCatalog(server), queryKeys.placements(server), queryKeys.projects(server), queryKeys.machines(server), queryKeys.cloud(server), queryKeys.machineTimeAll(server)]
     case "pluginsChanged":
       return [queryKeys.livePlugins(server)]
     case "usageChanged":
@@ -93,6 +93,7 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
         queryKeys.projects(server),
         queryKeys.machines(server),
         queryKeys.cloud(server),
+        queryKeys.machineTimeAll(server),
         queryKeys.filesAll(server),
         queryKeys.gitAll(server),
       ]

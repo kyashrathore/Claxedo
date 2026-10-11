@@ -15,3 +15,10 @@ export type UsageRequest = {
 }
 
 export type UsageSummary = UnifiedUsageResponse
+
+export type MachineTime = {
+  readonly since: number
+  readonly until: number
+  readonly activeMs: number
+  readonly running: number
+}

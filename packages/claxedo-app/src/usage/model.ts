@@ -1,4 +1,4 @@
-import type { AppError, UsageRequest, UsageSummary } from "@/server"
+import type { AppError, MachineTime, UsageRequest, UsageSummary } from "@/server"
 
 export type UsageTotals = UsageSummary["claxedo"]["totals"]
 
@@ -27,12 +27,29 @@ export type UsageOptions = {
   readonly refreshNonce?: number
 }
 
-export type UsageLoad =
+export type UsageRead<Data> =
   | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly summary: UsageSummary }
+  | { readonly kind: "ready"; readonly data: Data }
   | { readonly kind: "failed"; readonly error: AppError }
 
+export type UsageLoad = UsageRead<UsageSummary>
+
+export type MachineTimeLoad = UsageRead<MachineTime>
+
 export const BREAKDOWN_PAGE_SIZE = 25
+
+const MINUTE_MS = 60_000
+
+export function localMonthStart(now: number): number {
+  const start = new Date(now)
+  start.setDate(1)
+  start.setHours(0, 0, 0, 0)
+  return start.getTime()
+}
+
+export function wholeMinutes(ms: number): number {
+  return Math.floor(ms / MINUTE_MS)
+}
 
 export function inclusiveLocalRange(days: number, now: number): { readonly since: number; readonly until: number } {
   const since = new Date(now)

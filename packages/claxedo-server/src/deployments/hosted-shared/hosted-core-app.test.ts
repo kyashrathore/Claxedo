@@ -715,8 +715,9 @@ describe("hosted-core usage", () => {
       locations: [],
     }))
     const cloudUsageFacts = vi.fn(async () => [])
+    const machineTime = vi.fn(async () => ({ activeMs: 600_000, running: 1 }))
     const writeRevision = vi.fn(async () => ({ status: "accepted" as const }))
-    const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts } })
+    const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts, machineTime } })
 
     const view = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2", {
       headers: { authorization: "Bearer alice" },
@@ -741,6 +742,15 @@ describe("hosted-core usage", () => {
     expect(await facts.json()).toEqual({ facts: [] })
     expect(cloudUsageFacts).toHaveBeenCalledWith({ org_id: "org-1", user_id: "alice", since: 1, until: 2, limit: 10_001 })
     expect((await app.fetch(new Request("https://core.test/api/claxedo/usage/cloud-facts?since=1&until=2"))).status).toBe(401)
+
+    const since = Date.now() - 86_400_000
+    const time = await app.fetch(new Request(`https://core.test/api/claxedo/usage/machine-time?since=${since}`, {
+      headers: { authorization: "Bearer alice" },
+    }))
+    expect(time.status).toBe(200)
+    expect(await time.json()).toMatchObject({ since, activeMs: 600_000, running: 1 })
+    expect(machineTime).toHaveBeenCalledWith({ org_id: "org-1", user_id: "alice", since, until: expect.any(Number) })
+    expect((await app.fetch(new Request(`https://core.test/api/claxedo/usage/machine-time?since=${since}`))).status).toBe(401)
 
     const leaseId = await signedTurnLease(env, {
       principal_kind: "user", actor_id: "actor:alice", actor_kind: "human", org_id: "org-1", workspace_id: "ws_cloud",

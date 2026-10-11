@@ -1,8 +1,10 @@
 /**
- * `SandboxLeaseStore` over Cloudflare D1. Every write is a SINGLE statement
- * guarded by the epoch the caller observed, so a lost race is reported by the
- * write itself (`meta.changes === 0`) rather than prevented by a lock. A loser
- * re-reads and answers from the winner's row.
+ * `SandboxLeaseStore` over Cloudflare D1. Every write is ONE statement guarded
+ * by the epoch the caller observed, so a lost race is reported by the write
+ * itself (`meta.changes === 0`) rather than prevented by a lock. A loser
+ * re-reads and answers from the winner's row. A write that can end a serving
+ * boot is batched behind the statement that records it (`./d1-boots`), under
+ * the same guard.
  */
 
 import { applySandboxLeasePatch, applySandboxProvisionedTarget } from "@claxedo/sandbox-manager"
@@ -20,6 +22,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { sandboxLeaseRowStatus, sandboxLeaseStatus } from "./lease-status"
 import { toSandboxLeaseRow } from "./lease-row"
+import { closeServingBoot, type SandboxLeaseGuard } from "./d1-boots"
 
 const TABLE = "sandbox_leases"
 
@@ -183,19 +186,22 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     lastHealthFailureAt?: number,
   ) {
     const values = rowValues(next, current, { lastHealthFailureAt })
-    const result = await database
-      .prepare(
-        `update ${TABLE} set ${columns.map((column) => `${column} = ?`).join(", ")}
-         where workspace_id = ? and epoch = ?${expectedStatus === undefined ? "" : " and status = ?"}${columns.includes("routing_id") ? " and routing_id is ?" : ""} returning *`,
-      )
-      .bind(
-        ...columns.map((column) => values[COLUMNS.indexOf(column)] ?? null),
+    const guard: SandboxLeaseGuard = {
+      sql: `workspace_id = ? and epoch = ?${expectedStatus === undefined ? "" : " and status = ?"}${columns.includes("routing_id") ? " and routing_id is ?" : ""}`,
+      binds: [
         workspaceId,
         expectedEpoch,
         ...(expectedStatus === undefined ? [] : [expectedStatus]),
         ...(columns.includes("routing_id") ? [current.routing_id ?? null] : []),
-      )
-      .first()
+      ],
+    }
+    const write = database
+      .prepare(`update ${TABLE} set ${columns.map((column) => `${column} = ?`).join(", ")} where ${guard.sql} returning *`)
+      .bind(...columns.map((column) => values[COLUMNS.indexOf(column)] ?? null), ...guard.binds)
+    const endsServing = columns.includes("status") && next.status !== "ready"
+    const result = endsServing
+      ? (await database.batch<Record<string, unknown>>([closeServingBoot(database, guard, next.updatedAt), write]))[1]?.results[0]
+      : await write.first()
     return result ? toSandboxLease(toLeaseRow(result)) : undefined
   }
 
@@ -246,11 +252,11 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
          where ${TABLE}.epoch = ?`
       : `insert into ${TABLE} (${COLUMNS.join(", ")}) values (${COLUMNS.map(() => "?").join(", ")})
          on conflict(workspace_id) do nothing`
-    const result = await database
-      .prepare(statement)
-      .bind(...(current ? [...values, current.epoch] : values))
-      .run()
-    return result.meta.changes === 0 ? undefined : { acquired: true, lease: next }
+    const write = database.prepare(statement).bind(...(current ? [...values, current.epoch] : values))
+    const result = current
+      ? (await database.batch([closeServingBoot(database, { sql: "workspace_id = ? and epoch = ?", binds: [workspaceId, current.epoch] }, now), write]))[1]
+      : await write.run()
+    return !result || result.meta.changes === 0 ? undefined : { acquired: true, lease: next }
   }
 
   return {
@@ -320,7 +326,10 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     },
 
     async release(workspaceId: string) {
-      await database.prepare(`delete from ${TABLE} where workspace_id = ?`).bind(workspaceId).run()
+      await database.batch([
+        closeServingBoot(database, { sql: "workspace_id = ?", binds: [workspaceId] }, clock()),
+        database.prepare(`delete from ${TABLE} where workspace_id = ?`).bind(workspaceId),
+      ])
     },
 
     async get(workspaceId: string) {

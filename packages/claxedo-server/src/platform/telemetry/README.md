@@ -52,8 +52,16 @@ The ops events (`sandbox.start_phase`, `sandbox.touch`, `sandbox.ensure`, `sandb
 `workspace.connection.*`, `runtime_access_token.minted`, `usage.dashboard`, `channel.*`) stay as they were,
 minus token ids, relay URLs, relay rooms, driver resource ids and free-text reasons.
 
+## Machine time in the product
+
+VM minutes per period in Usage → Cloud are not read from analytics. The D1 lease store
+(`sandbox/stores/d1.ts`) records each boot's interval in `sandbox_boots` (`sandbox/stores/d1-boots.ts`) in the
+same batch as the write that takes a serving epoch out of `ready`: a stop by hand or by idleness, a delete, a
+restore that replaces the machine, a release, or a failure. `GET /api/claxedo/usage/machine-time` sums the
+signed person's own boots in the period, plus their epochs still serving. `workspace_stopped.active_ms` is the
+same interval, but only stops and deletes send it.
+
 ## Not covered
 
-- VM minutes per period in Usage → Cloud: `sandbox_leases` holds only each workspace's current epoch, so no
-  interval history exists to sum. `workspace_stopped.active_ms` carries the measure to analytics.
 - Turns on a desktop's own machine are metered in its local ledger and are not sent.
+- Machine time has no price: no per-machine-class rate exists, so Usage → Cloud shows minutes and no cost.

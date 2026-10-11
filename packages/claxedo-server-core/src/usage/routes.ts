@@ -37,11 +37,8 @@ import {
 } from "./projection"
 import { publicUsageHref } from "./public-href"
 import { quotaAnswers } from "./quota-answers"
-
-// Ninety inclusive local calendar days can span one DST fall-back hour.
-// This still rejects a 91-day UTC request while accepting the advertised
-// 90-day control in every IANA timezone.
-const MAX_RANGE_MS = 90 * 86_400_000 + 2 * 3_600_000
+import { CloudUsageRoutes, MAX_CLOUD_USAGE_FACTS, type SignedUsageIdentity } from "./cloud-routes"
+import { validUsageRange } from "./usage-range"
 
 type UsageTelemetry = {
   capture(distinctId: string, event: string, properties: Record<string, string | number | boolean>): void
@@ -53,10 +50,6 @@ function captureUsage(telemetry: UsageTelemetry | undefined, properties: Record<
   } catch {
     // Operational evidence cannot fail the dashboard.
   }
-}
-
-function validRange(since: number, until: number) {
-  return Number.isFinite(since) && Number.isFinite(until) && until >= since && until - since <= MAX_RANGE_MS
 }
 
 function validTimeZone(timeZone: string) {
@@ -72,7 +65,7 @@ function parseUsageQuery(query: (name: string) => string | undefined) {
   const since = Number(query("since"))
   const until = Number(query("until"))
   const timeZone = query("timezone") || "UTC"
-  if (!validRange(since, until)) return { error: "invalid_usage_range" } as const
+  if (!validUsageRange(since, until)) return { error: "invalid_usage_range" } as const
   if (!validTimeZone(timeZone)) return { error: "invalid_timezone" } as const
   const requestedGroup = query("group")
   const group = requestedGroup && isUsageFilterDimension(requestedGroup) ? requestedGroup : undefined
@@ -468,12 +461,6 @@ function modelRowsByModel(rows: readonly CentralUsageRow[] | undefined) {
   return (rows ?? []).map((row) => ({ ...row, group: rowText(row, "value") }))
 }
 
-/**
- * The most cloud revisions one usage answer carries. A revision serializes to
- * about 1 KB (994 bytes with ULID ids and a full quality block), so the hosted
- * answer, the desktop's IPC hop and the sidecar request stay near 10 MB.
- */
-const MAX_CLOUD_USAGE_FACTS = 10_000
 const MAX_CLOUD_USAGE_BODY_BYTES = 16 * 1024 * 1024
 const MAX_CLOUD_USAGE_ERROR_LENGTH = 500
 
@@ -484,7 +471,8 @@ export function UsageRoutes(input: {
    * owns authentication. Nothing for an unsigned caller; a rejected credential
    * throws the `ControlPlaneAuthError` its verifier raised.
    */
-  identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
+  identity: (request: Request) => Promise<SignedUsageIdentity | undefined>
+  now?: () => number
   /** Plan usage for the quota view: the signed person's own accounts and the organization's they may spend. */
   quota?: (input: { org: string; person: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
   pricing: UsagePricing
@@ -492,47 +480,7 @@ export function UsageRoutes(input: {
 }) {
   const app = new Hono()
   const quotas = quotaAnswers()
-  // A signed desktop draws its Usage view from its own sidecar, which holds no
-  // account credential; Electron main fetches the account's cloud turns here
-  // and the renderer hands them to the sidecar with the usage request.
-  app.get("/cloud-facts", async (c) => {
-    try {
-      const identity = await input.identity(c.req.raw)
-      if (!identity) {
-        return c.json(
-          { error: { code: "signed_org_required", message: "A signed organization session is required" } },
-          401,
-        )
-      }
-      const since = Number(c.req.query("since"))
-      const until = Number(c.req.query("until"))
-      if (!validRange(since, until)) {
-        return c.json(
-          { error: { code: "invalid_usage_range", message: "since and until must define a range of at most 90 days" } },
-          400,
-        )
-      }
-      if (!input.ledger.cloudUsageFacts) {
-        return c.json({ error: { code: "usage_projection_unavailable", message: "Cloud usage is not stored here" } }, 503)
-      }
-      const facts = await input.ledger.cloudUsageFacts({ ...identity, since, until, limit: MAX_CLOUD_USAGE_FACTS + 1 })
-      if (facts.length > MAX_CLOUD_USAGE_FACTS) {
-        return c.json(
-          {
-            error: {
-              code: "cloud_usage_range_too_large",
-              message: `More than ${MAX_CLOUD_USAGE_FACTS} cloud turns fall in this range; choose a shorter one`,
-            },
-          },
-          422,
-        )
-      }
-      return c.json({ facts })
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-      throw error
-    }
-  })
+  app.route("/", CloudUsageRoutes({ ledger: input.ledger, identity: input.identity, now: input.now ?? Date.now }))
   app.get("/", async (c) => {
     const startedAt = Date.now()
     try {

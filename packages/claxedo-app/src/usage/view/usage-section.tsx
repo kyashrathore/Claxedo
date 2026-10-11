@@ -11,6 +11,7 @@ import type { BreakdownPaging } from "./breakdown"
 import { Choices, type Choice } from "./choices"
 import { ClaxedoUsage } from "./claxedo-usage"
 import { CloudUsage } from "./cloud-usage"
+import { MachineTimeSummary } from "./machine-time"
 import { UsageLimits } from "./usage-limits"
 import "./usage.css"
 
@@ -74,7 +75,7 @@ export function UsageSection(): JSX.Element {
   }
   const ready = () => {
     const load = usage.load()
-    return load.kind === "ready" ? load.summary : undefined
+    return load.kind === "ready" ? load.data : undefined
   }
   return (
     <div class="usage">
@@ -100,6 +101,7 @@ export function UsageSection(): JSX.Element {
       </Show>
       <Switch>
         <Match when={tab() === "cloud"}>
+          <MachineTimeSummary />
           <CloudUsage />
         </Match>
         <Match when={failed()}>

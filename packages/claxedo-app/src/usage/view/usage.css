@@ -48,6 +48,20 @@
   }
 }
 
+.usage-machine-time {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-machine-time-value {
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
 .usage-cloud {
   display: flex;
   flex-direction: column;

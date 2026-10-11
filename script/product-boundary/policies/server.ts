@@ -146,8 +146,12 @@ export const serverWorkerd: Policy = {
   // (`platform/http/server-timing.ts`) over the observed databases
   // (`platform/db/observed-d1.ts`); the ledger follows the request through
   // `node:async_hooks`, under the Worker's nodejs_compat.
-  // 157/21, no headroom.
-  ceilings: { modules: 157, packages: 21 },
+  // +1 module (owner: the D1 usage ledger): a person's cloud machine time is
+  // read from the boots the D1 lease store records, and both sides of the
+  // `sandbox_boots` table live in `sandbox/stores/d1-boots.ts`. It imports no
+  // sandbox provider.
+  // 158/21, no headroom.
+  ceilings: { modules: 158, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

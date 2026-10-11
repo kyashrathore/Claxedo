@@ -19,6 +19,7 @@ import {
 } from "@claxedo/server-core/usage/projection"
 import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { isOneOf, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { readMachineTime } from "../../sandbox/stores/d1-boots"
 
 type FactRow = {
   host_id: string
@@ -229,11 +230,12 @@ function rollUp(rows: readonly GroupRow[], identity: (row: GroupRow) => Record<s
 }
 
 export type D1UsageLedger = UsageReportWriter
-  & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts">>
+  & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts" | "machineTime">>
 
 /**
  * The hosted plane's usage store: the latest revision of every reported turn,
- * owned by the account that produced it. It answers the signed account's
+ * owned by the account that produced it, and the machine time of its cloud
+ * workspaces' boots. It answers the signed account's
  * cross-machine view and nothing wider — every read is keyed by one
  * organization and one user.
  */
@@ -381,5 +383,7 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
       `).bind(query.org_id, query.user_id, query.since, query.until, query.limit).all<FactRow>()
       return rows.results.flatMap((row) => usageFactFromRow(row) ?? [])
     },
+
+    machineTime: (query) => readMachineTime(database, query),
   }
 }

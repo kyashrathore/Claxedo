@@ -1,6 +1,7 @@
+import type { MachineTimeResponse } from "@claxedo/usage-contract"
 import type { TurnUsageRevision } from "./contracts"
 
-/** The store the hosted plane files its cloud workspaces' turns in, as its usage routes read it. */
+/** The store the hosted plane files its cloud workspaces' turns and boots in, as its usage routes read it. */
 export type UsageProjectionLedger = {
   usageDashboard?: (input: {
     org_id: string
@@ -22,4 +23,11 @@ export type UsageProjectionLedger = {
     until: number
     limit: number
   }) => Promise<TurnUsageRevision[]>
+  /** The machine time of this account's own cloud workspaces in [since, until]. */
+  machineTime?: (input: {
+    org_id: string
+    user_id: string
+    since: number
+    until: number
+  }) => Promise<Pick<MachineTimeResponse, "activeMs" | "running">>
 }
