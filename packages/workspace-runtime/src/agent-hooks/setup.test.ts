@@ -57,7 +57,7 @@ test("agent hook setup leaves the person's Claude and Codex folders byte-identic
   expect(merged.startsWith('{"version":1,"hooks":{"stop":[{"command":"/user/stop.sh"}')).toBe(true)
   expect(JSON.parse(merged).hooks.stop).toEqual([
     { command: "/user/stop.sh" },
-    { command: `${path.join(workspaceRuntimeDataDir(), "hooks", "cursor-hook.sh")} Stop` },
+    { command: `'${path.join(workspaceRuntimeDataDir(), "hooks", "cursor-hook.sh")}' Stop` },
   ])
   await setupAgentHooks({ port: 7860, force: true })
   expect(fs.readFileSync(cursorHooks, "utf8")).toBe(merged)

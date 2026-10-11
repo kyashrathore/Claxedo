@@ -105,10 +105,10 @@ describe("materializeAgentHooks", () => {
     const hooks = (JSON.parse(first) as { hooks: Record<string, unknown[]> }).hooks
     expect(hooks.beforeShellExecution).toEqual([
       { command: "./scripts/approve-network.sh", matcher: "curl|wget" },
-      { command: `${cursorHookPath} PermissionRequest` },
+      { command: `'${cursorHookPath}' PermissionRequest` },
     ])
     expect(hooks.afterFileEdit).toEqual([{ command: "./scripts/format.sh" }])
-    expect(hooks.stop).toEqual([{ command: `${cursorHookPath} Stop` }])
+    expect(hooks.stop).toEqual([{ command: `'${cursorHookPath}' Stop` }])
     expect((await fs.stat(file)).mode & 0o777).toBe(writtenMode(0o600))
 
     const before = await fs.stat(file)
@@ -186,7 +186,7 @@ describe("materializeAgentHooks", () => {
     await fs.symlink(target, file)
     await materializeAgentHooks({ templates: defaultStatusHooks, homeDir: root, notifyPath })
     expect((await fs.lstat(file)).isSymbolicLink()).toBe(true)
-    expect(await fs.readFile(target, "utf8")).toContain(JSON.stringify(`${cursorHookPath} Stop`).slice(1, -1))
+    expect(await fs.readFile(target, "utf8")).toContain(JSON.stringify(`'${cursorHookPath}' Stop`).slice(1, -1))
   })
 
   test("Droid uses standalone hooks and retires only its owned settings entries", async () => {
@@ -369,7 +369,7 @@ describe("materializeAgentHooks across data roots", () => {
     expect(await commandsIn(droidSettings)).toEqual([foreign])
     expect(await commandsIn(files.mastracode)).toEqual(sorted(`bash '${foreign}'`, ...times(3, `bash '${current.notify}' --harness=mastracode`)))
     expect(Object.keys((await readJson(files.cursor)).hooks as object)).not.toContain("afterAgentResponse")
-    expect((await commandsIn(files.cursor)).filter((value) => !value.startsWith(`${current.cursor} `))).toEqual(["./scripts/format.sh"])
+    expect((await commandsIn(files.cursor)).filter((value) => !value.startsWith(`'${current.cursor}' `))).toEqual(["./scripts/format.sh"])
     expect(await commandsIn(files.antigravity)).toEqual([
       `bash '${current.antigravity}' PreInvocation`,
       `bash '${current.antigravity}' Stop`,

@@ -58,7 +58,7 @@ test("a hard-linked file is rewritten in place, so every name sees the merge", a
   expect((await cursorResult()).status).toBe("applied")
   expect((await fs.stat(file)).ino).toBe(inode)
   expect(await fs.readFile(other, "utf8")).toBe(await fs.readFile(file, "utf8"))
-  expect(await fs.readFile(other, "utf8")).toContain("cursor-hook.sh Stop")
+  expect(await fs.readFile(other, "utf8")).toContain("cursor-hook.sh' Stop")
 })
 
 test("a file that changed after it was read is not overwritten", async () => {
