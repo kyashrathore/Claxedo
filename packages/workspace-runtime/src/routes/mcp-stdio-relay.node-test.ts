@@ -23,7 +23,8 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 
 async function relay(input: { env?: NodeJS.ProcessEnv; mcpHeartbeatMs?: number } = {}) {
   const directory = await realpath(await mkdtemp(path.join(tmpdir(), "wr-mcp-relay-node-")))
-  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  // Windows can hold a just-retired server's folder for a moment after it exits.
+  cleanups.push(() => rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   const script = path.join(directory, "stdio-mcp.cjs")
   await writeFile(script, STDIO_SERVER)
   const stdio = { kind: "stdio" as const, command: process.execPath, args: [script], env: { SERVER_VAR: "from-projection" } }

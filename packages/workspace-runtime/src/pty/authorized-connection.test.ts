@@ -305,7 +305,8 @@ describe("typing at a terminal", () => {
     let clock = Date.now()
 
     const { connection, socket } = await attach(policy, relayed(), { now: () => clock })
-    clock += 15_001
+    // The lease is stamped from the real clock at admission, after `clock` was read.
+    clock += 60_000
     connection!.onMessage("late\r")
     await settle()
 
