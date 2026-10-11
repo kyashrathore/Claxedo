@@ -155,8 +155,9 @@ const STARTUP_DIAGNOSTICS_MS = 2_000
 
 /**
  * What a gate that died before reporting wrote on stderr, read to its end.
- * Nothing else holds the stream before a payload exists, so it closes with the
- * gate; the bound covers a stream that was already gone.
+ * Nothing else should hold the stream before a payload exists, so it closes
+ * with the gate; the bound covers a stream something the gate started still
+ * holds open.
  */
 function startupDiagnostics(stderr: Readable | null): Promise<string> {
   if (!stderr || stderr.destroyed) return Promise.resolve("")

@@ -15,13 +15,16 @@ import {
   type DesktopDaemonDiscovery,
 } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
-import { relayStub, until } from "../connect/relay-stub.test-support"
+import { relayStub, until as waitUntil } from "../connect/relay-stub.test-support"
 import type { ServiceDeps } from "../connect/service"
 import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
 import { HostEndpointUrlError } from "@claxedo/host-connector/host-state"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { connect, type ConnectDeps } from "./connect"
 import { hostOnline, statusLines } from "./status"
+
+/** Bounded below bun's 5 s test timeout, so a wait that never ends fails naming what it waited for. */
+const until = (predicate: () => boolean | Promise<boolean>, what: string) => waitUntil(predicate, what, 4_000)
 
 /**
  * The real `connect` command function against the strict fake control plane,

@@ -49,7 +49,8 @@ export function responseTiming(): MiddlewareHandler {
     const started = performance.now()
     await requests.run(ledger, () => next())
     const total = performance.now() - started
-    c.res = withSecurityHeaders(c.res, [["server-timing", responseTimingHeader(ledger, total)]])
+    const stamped = withSecurityHeaders(c.res, [["server-timing", responseTimingHeader(ledger, total)]])
+    if (stamped !== c.res) c.res = stamped
     if (total >= SLOW_REQUEST_MS) console.log(`[timing] ${c.req.method} ${new URL(c.req.url).pathname} ${c.res.status} total=${total.toFixed(0)}ms d1=${ledger.d1.ms.toFixed(0)}ms do=${ledger.do.ms.toFixed(0)}ms`)
   }
 }
