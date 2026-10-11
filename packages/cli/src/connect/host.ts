@@ -498,7 +498,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
 
   let code: number
   try {
-    const started = await withBootstrapRetry(
+    const starting = withBootstrapRetry(
       deps,
       "acquire",
       async ({ timeoutMs }) => {
@@ -508,7 +508,13 @@ export async function runHost(input: HostRunInput): Promise<number> {
       },
       (error) => error instanceof StartFailure,
     )
-    if (started.status === "stopped") {
+    starting.catch(() => undefined)
+    // Starting ends with the first beat, whose reconciliation awaits the
+    // preparations it delivers; a stop signal must reach the drain bound even
+    // when one of those never finishes.
+    const started = await Promise.race([starting, stopSignal])
+    if (typeof started === "number") code = started
+    else if (started.status === "stopped") {
       deps.log(`the control plane refused this machine: ${started.detail}`)
       code = DECISION_EXIT_CODE
     } else {

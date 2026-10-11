@@ -20,6 +20,7 @@ import type { ServiceDeps } from "../connect/service"
 import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
 import { HostEndpointUrlError } from "@claxedo/host-connector/host-state"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
+import { freePort } from "@claxedo/helpers/net"
 import { connect, type ConnectDeps } from "./connect"
 import { hostOnline, statusLines } from "./status"
 
@@ -547,6 +548,42 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.run).toBeUndefined()
   })
 
+  posixHost("a stop while the first beat's preparation hangs is still bounded by the drain", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const enrolled = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    h.stop()
+    expect(await enrolled).toBe(0)
+    const stuck = path.join(h.root, "stuck")
+    await fs.mkdir(stuck)
+    h.cp.assign({ hostId: (await h.deps.store.load())!.host_id, workspaceId: "ws_stuck", remoteDirectory: stuck })
+    const realpath = h.deps.host.resolvePath
+    let stuckAttempted = false
+    h.deps.host.resolvePath = (target) => {
+      if (target !== stuck) return realpath(target)
+      stuckAttempted = true
+      return new Promise<string>(() => undefined)
+    }
+    const timeouts: number[] = []
+    h.deps.host.setTimeout = (fn, ms) => {
+      timeouts.push(ms)
+      fn()
+      return { cancel: () => undefined }
+    }
+    const linesBefore = h.lines.length
+
+    const resumed = connect([], h.deps)
+    await until(() => stuckAttempted, "the first beat's preparation to hang")
+    h.stop()
+
+    expect(await resumed).toBe(0)
+    expect(h.lines.slice(linesBefore).some((line) => line.startsWith("serving as "))).toBe(false)
+    expect(timeouts).toEqual([10_000])
+    expect(h.lines).toContain("drain did not finish within 10s; closing anyway")
+    expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
+    expect((await h.deps.store.load())?.run).toBeUndefined()
+  })
+
   posixHost("a folder assigned before it exists is served once it appears, without a restart", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
@@ -695,7 +732,9 @@ describe("claxedo connect", () => {
       h.stop()
       expect(await recycled).toBe(0)
 
-      await fs.writeFile(discovery, daemon.record({ port: daemon.port + 1 }))
+      // A port nothing serves. The daemon's port plus one can belong to a
+      // parallel suite's fake daemon, which answers as this same identity.
+      await fs.writeFile(discovery, daemon.record({ port: await freePort() }))
       const beatsBefore = h.cp.beats().length
       const gone = connect([], h.deps)
       await until(() => h.cp.beats().length > beatsBefore, "resumed beat")
