@@ -125,7 +125,8 @@ describe("bounded git runner", () => {
 async function startedChild(start: (alias: string) => Promise<string>) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "git-child-"))
   const pidFile = path.join(directory, "pid")
-  const run = start(`alias.wait=!sleep 30 & echo $! > '${pidFile}'; wait`)
+  // Git Bash's `$!` is an MSYS pid; /proc names the Windows pid `process.kill` reaches.
+  const run = start(`alias.wait=!sleep 30 & p=$!; cat /proc/$p/winpid > '${pidFile}' 2>/dev/null || echo $p > '${pidFile}'; wait`)
   run.catch(() => {})
   const deadline = Date.now() + 5_000
   let started = NaN
@@ -137,7 +138,12 @@ async function startedChild(start: (alias: string) => Promise<string>) {
   return { run, started }
 }
 
-/** An orphan is reaped by init, not by this process, so its exit is observed by polling. */
+/**
+ * An orphan is reaped by init, not by this process, so its exit is observed by
+ * polling. Windows runs neither reaping test: Git Bash's fork emulation leaves
+ * a backgrounded job's Windows parent already exited, so `taskkill /T` from git
+ * cannot reach it.
+ */
 async function exits(pid: number) {
   const deadline = Date.now() + 5_000
   while (Date.now() < deadline) {
@@ -167,7 +173,7 @@ describe("default git exec", () => {
     expect(stdout.trim()).toBe("/scratch/claxedo-index")
   })
 
-  test("an aborted run ends what git started and is not reported as a timeout", async () => {
+  test.skipIf(process.platform === "win32")("an aborted run ends what git started and is not reported as a timeout", async () => {
     const git = createBoundedGit()
     const abort = new AbortController()
     const { run, started } = await startedChild((alias) => git(["-c", alias, "wait"], process.cwd(), { signal: abort.signal }))
@@ -178,7 +184,7 @@ describe("default git exec", () => {
     expect(await exits(started)).toBe(true)
   })
 
-  test("a run past its deadline ends what git started and is reported as a timeout", async () => {
+  test.skipIf(process.platform === "win32")("a run past its deadline ends what git started and is reported as a timeout", async () => {
     const git = createBoundedGit({ timeoutMs: 300 })
     const { run, started } = await startedChild((alias) => git(["-c", alias, "wait"], process.cwd()))
     await expect(run).rejects.toBeInstanceOf(GitTimeoutError)

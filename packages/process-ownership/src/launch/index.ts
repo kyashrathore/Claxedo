@@ -7,6 +7,7 @@ export {
   readCreationIdentity,
   sameCreationIdentity,
   verifyCreationIdentity,
+  windowsSystemTool,
   type CreationIdentity,
   type CreationIdentitySource,
   type IdentityVerdict,
