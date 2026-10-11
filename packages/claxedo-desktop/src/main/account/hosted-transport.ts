@@ -45,34 +45,22 @@ export async function fetchWithDeadline(
     parentSignal?: AbortSignal
     /** Registers this attempt's controller with a caller-wide cancellation set (e.g. logout). */
     track?: (controller: AbortController) => () => void
-    /**
-     * Keep the deadline timer ref'd instead of the default unref'd.
-     *
-     * An unref'd timer must not be the event loop's only reason to stay
-     * alive: on Windows, Bun does not fire an unref'd timer once every other
-     * ref'd handle is gone, which turns a bounded deadline into a permanent
-     * hang instead of a timeout. The OAuth token exchange can be the only
-     * pending work on the loop (a directly injected `fetch` with no socket of
-     * its own, as tests use), so it opts into a ref'd timer; every other
-     * caller runs alongside Electron's own event sources and stays with the
-     * default so a pending request cannot itself keep the process alive after
-     * the user quits.
-     */
-    refTimer?: boolean
   } = {},
 ): Promise<Response> {
-  const { parentSignal, track, refTimer = false } = options
+  const { parentSignal, track } = options
   const controller = new AbortController()
   const untrack = track?.(controller)
   const abortFromParent = () => controller.abort(parentSignal?.reason)
   if (parentSignal?.aborted) abortFromParent()
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
   let timedOut: DeadlineExceededError | undefined
+  // Referenced: Bun on Windows never fires an unreferenced timer that is the
+  // loop's only work, and an attempt whose fetch holds no handle of its own
+  // would then never reach its deadline. The finally below clears it.
   const handle = setTimeout(() => {
     timedOut = new DeadlineExceededError(deadlineMs)
     controller.abort(timedOut)
   }, deadlineMs)
-  if (!refTimer) handle.unref?.()
   let settled = false
   try {
     const response = await fetchImpl(url, { ...init, signal: controller.signal })

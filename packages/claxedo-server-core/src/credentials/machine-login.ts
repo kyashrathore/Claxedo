@@ -291,9 +291,9 @@ async function codexAccountRead(env: NodeJS.ProcessEnv): Promise<{ account: unkn
     child.on("error", (error) => reject(error))
     child.on("exit", (code, signal) => reject(new Error(`codex app-server exited (${signal ?? code ?? "unknown"})`)))
   })
+  let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<never>((_, reject) => {
-    const timer = setTimeout(() => reject(new Error("codex app-server did not answer in time")), TIMEOUT_MS)
-    timer.unref()
+    timer = setTimeout(() => reject(new Error("codex app-server did not answer in time")), TIMEOUT_MS)
   })
 
   try {
@@ -310,6 +310,7 @@ async function codexAccountRead(env: NodeJS.ProcessEnv): Promise<{ account: unkn
       return { account, rateLimits }
     })()])
   } finally {
+    clearTimeout(timer)
     stopAppServer(child)
   }
 }

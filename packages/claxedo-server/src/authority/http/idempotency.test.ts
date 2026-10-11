@@ -7,9 +7,11 @@ import {
   IdempotencyCapacityError,
   IdempotencyConflictError,
   idempotencyCacheKey,
+  lockKey,
   memoryIdempotencyStore,
   parseIdempotencyKey,
   d1ProjectionCommandIdempotency,
+  serialized,
   type DurableIdempotencyStore,
 } from "./idempotency"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
@@ -303,5 +305,39 @@ describe("one coordinator", () => {
     await coordinator.run(key("signed:issuer|user_1"), run)
     await coordinator.run(key("signed:issuer|user_2"), run)
     expect(run).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("per-session serialization", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test("a predecessor that never settles stops blocking its successor at the in-flight bound", async () => {
+    const key = lockKey("ws_1", "session_hung")
+    void serialized(key, () => new Promise(() => {}))
+    let ran = false
+    const successor = serialized(key, async () => { ran = true })
+
+    await vi.advanceTimersByTimeAsync(IDEMPOTENCY_INFLIGHT_TTL_MS - 1)
+    expect(ran).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await successor
+    expect(ran).toBe(true)
+  })
+
+  test("a predecessor that settles releases its successor and leaves no bound pending", async () => {
+    const key = lockKey("ws_1", "session_settled")
+    const predecessor = Promise.withResolvers<void>()
+    const first = serialized(key, () => predecessor.promise)
+    const second = serialized(key, async () => "ran")
+
+    predecessor.resolve()
+    await first
+    expect(await second).toBe("ran")
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

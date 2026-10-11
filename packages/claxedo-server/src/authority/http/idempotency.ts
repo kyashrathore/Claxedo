@@ -259,23 +259,32 @@ export function lockKey(workspaceId: string, sessionId: string) {
  */
 export async function serialized<T>(key: string, run: () => Promise<T>) {
   const previous = sessionLocks.get(key)
-  const ready = previous
-    ? Promise.race([
-      previous.catch(() => undefined),
-      new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, IDEMPOTENCY_INFLIGHT_TTL_MS)
-        // Never hold the Node event loop open on a lock-release timer. Absent on
-        // workerd, where a timer handle is a number and does not keep an isolate alive.
-        if (typeof timer === "object") timer.unref()
-      }),
-    ])
-    : Promise.resolve()
+  const ready = previous ? predecessorReleased(previous) : Promise.resolve()
   const next = ready.then(run)
   sessionLocks.set(key, next)
   try {
     return await next
   } finally {
     if (sessionLocks.get(key) === next) sessionLocks.delete(key)
+  }
+}
+
+/**
+ * The bound is referenced: Bun on Windows never fires an unreferenced timer
+ * that is the loop's only work, and a predecessor that never settles would
+ * then hold its successor forever. It is cleared once either side settles.
+ */
+async function predecessorReleased(previous: Promise<unknown>) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      previous.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, IDEMPOTENCY_INFLIGHT_TTL_MS)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
   }
 }
 

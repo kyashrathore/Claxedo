@@ -386,7 +386,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         ;(server as typeof server & { closeAllConnections?: () => void }).closeAllConnections?.()
         for (const socket of upgraded) socket.destroy()
       }, 5_000)
-      deadline.unref()
       server.close(() => {
         clearTimeout(deadline)
         resolve()

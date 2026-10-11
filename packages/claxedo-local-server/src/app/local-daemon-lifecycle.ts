@@ -1129,7 +1129,6 @@ async function settleWithin<T>(
   let timer: ReturnType<typeof setTimeout> | undefined
   const overdue = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, Math.max(0, budgetMs))
-    timer.unref?.()
   })
   try {
     const raced = await Promise.race([

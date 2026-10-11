@@ -128,13 +128,15 @@ export function credentialFile(userDataDir: string): CredentialFile {
   }
 }
 
-/** `setTimeout`, shaped as the flow's cancellable timer. */
+/**
+ * `setTimeout`, shaped as the flow's cancellable timer. Referenced, because the
+ * sign-in awaits it as its deadline and Bun on Windows never fires an
+ * unreferenced timer that is the loop's only work; the flow cancels it on
+ * every path.
+ */
 export function nodeTimer(): OAuthSeams["setTimeout"] {
   return (fn, ms) => {
     const handle = setTimeout(fn, ms)
-    // Unref'd: a pending sign-in must not keep the process alive after the user
-    // has quit.
-    handle.unref?.()
     return { cancel: () => clearTimeout(handle) }
   }
 }
@@ -213,15 +215,7 @@ async function postToTokenEndpoint(
       body: new URLSearchParams(form).toString(),
     },
     timeoutMs,
-    {
-      parentSignal,
-      // The token exchange can be the only pending work on the event loop —
-      // a directly injected `fetch` with no socket of its own, as tests use —
-      // so its deadline timer must be able to wake the process on its own.
-      // See `hosted-transport.ts`'s `refTimer` for what an unref'd timer would
-      // cost here (a permanent hang, not a timeout, on Windows).
-      refTimer: true,
-    },
+    { parentSignal },
   )
 }
 

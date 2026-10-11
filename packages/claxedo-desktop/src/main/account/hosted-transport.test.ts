@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { DeadlineExceededError, fetchHosted, fetchWithDeadline } from "./hosted-transport"
+import { printedAlone } from "../test-support/printed-alone"
 
 const INIT_GET = { method: "GET", headers: { authorization: "Bearer t" } }
 const INIT_POST = { method: "POST", headers: { authorization: "Bearer t" }, body: "{}" }
@@ -17,10 +18,6 @@ function tracker() {
 }
 
 describe("fetchWithDeadline", () => {
-  // `fetchHosted` below exercises the shape every hosted call uses; this
-  // covers the primitive's own knobs directly, since `electron-seams.ts`'s
-  // token transport calls `fetchWithDeadline` with a plain deadline (no
-  // `track`) and `refTimer: true`.
   test("returns the response when it arrives before the deadline", async () => {
     const response = await fetchWithDeadline(
       async () => Response.json({ ok: true }),
@@ -31,24 +28,18 @@ describe("fetchWithDeadline", () => {
     expect(await response.json()).toEqual({ ok: true })
   })
 
-  test("with refTimer: true, still fires the deadline (a ref'd timer times out, it does not hang)", async () => {
-    let aborted = false
-    await expect(
-      fetchWithDeadline(
-        (_url, init) =>
-          new Promise<Response>((_resolve, reject) => {
-            init.signal?.addEventListener("abort", () => {
-              aborted = true
-              reject(new Error("socket destroyed"))
-            })
-          }),
+  test("reaches its deadline when the stalled attempt is the only pending work", () => {
+    const module = JSON.stringify(new URL("./hosted-transport.ts", import.meta.url).href)
+    expect(printedAlone(`
+      import(${module}).then(({ fetchWithDeadline, DeadlineExceededError }) => fetchWithDeadline(
+        (_url, init) => new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(new Error("socket destroyed")))
+        }),
         "https://core.example/api/auth/oauth2/token",
         { method: "POST", headers: {} },
         20,
-        { refTimer: true },
-      ),
-    ).rejects.toThrow(DeadlineExceededError)
-    expect(aborted).toBe(true)
+      ).catch((error) => console.log(error instanceof DeadlineExceededError ? "deadline" : String(error))))
+    `)).toBe("deadline")
   })
 })
 

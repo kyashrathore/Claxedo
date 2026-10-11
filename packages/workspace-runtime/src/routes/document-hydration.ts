@@ -734,7 +734,6 @@ async function withRequestDeadline<T>(timeoutMs: number, operation: (signal: Abo
     controller.abort(error)
     rejectDeadline(error)
   }, timeoutMs)
-  timeout.unref()
   try {
     return await Promise.race([operation(controller.signal), deadline])
   } finally {

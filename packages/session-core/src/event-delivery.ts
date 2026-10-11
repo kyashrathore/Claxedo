@@ -619,7 +619,6 @@ export function createIdentityAwareEventSource<T extends object>(input: {
               decide(principal, event).catch(() => "terminate" as const),
               new Promise<"terminate">((resolve) => {
                 timer = setTimeout(() => resolve("terminate"), remaining)
-                ;(timer as { unref?: () => void }).unref?.()
               }),
             ])
           } finally {

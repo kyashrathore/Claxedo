@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { controlPlaneBearerFromTokenPayload, isJwtShaped, tokenExchange } from "./electron-seams"
+import { printedAlone } from "../test-support/printed-alone"
 
 const JWT = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1XzEifQ.sig"
 
@@ -88,5 +89,14 @@ describe("tokenExchange", () => {
     controller.abort(new Error("sign-in cancelled"))
     await expect(pending).rejects.toThrow("sign-in cancelled")
     expect(attempts).toBe(1)
+  })
+})
+
+describe("nodeTimer", () => {
+  test("fires when it is the only pending work, as the sign-in deadline", () => {
+    const module = JSON.stringify(new URL("./electron-seams.ts", import.meta.url).href)
+    expect(printedAlone(`
+      import(${module}).then(({ nodeTimer }) => nodeTimer()(() => console.log("fired"), 20))
+    `)).toBe("fired")
   })
 })

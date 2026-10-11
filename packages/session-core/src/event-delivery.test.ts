@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { createBus } from "./bus"
 import {
   createIdentityAwareEventSource,
@@ -153,6 +154,28 @@ describe("createIdentityAwareEventSource", () => {
     expect(settled).toBe("ready")
     expect(opened.replay.lastId()).toBeUndefined()
     source.close()
+  })
+
+  test("the replay startup deadline settles readiness when it is the only pending work", () => {
+    // A fresh bun process with no top-level await, which would keep it alive:
+    // there an unreferenced deadline never fires, as on Bun for Windows.
+    const module = JSON.stringify(new URL("./event-delivery.ts", import.meta.url).href)
+    const bus = JSON.stringify(new URL("./bus.ts", import.meta.url).href)
+    const child = spawnSync(process.execPath, ["-e", `
+      Promise.all([import(${module}), import(${bus})]).then(([{ createIdentityAwareEventSource }, { createBus }]) => {
+        const events = createBus()
+        const source = createIdentityAwareEventSource({
+          subscribe: (fn) => events.subscribe(fn),
+          sequenceOrigin: () => 0,
+          policy: () => new Promise(() => {}),
+          sessionId: (event) => event.sessionId,
+          replayStartupDeadlineMs: 20,
+        })
+        events.publish({ sessionId: "ses_stuck", value: "stuck" })
+        return source.open(${JSON.stringify(participant("alone_connection"))}).ready
+      }).then(() => console.log("ready"))
+    `], { encoding: "utf8", timeout: 20_000 })
+    expect(child.stdout.trim()).toBe("ready")
   })
 
   test("uses per-principal replay ids so another identity's traffic cannot create a false gap", async () => {
