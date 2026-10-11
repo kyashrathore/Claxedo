@@ -147,6 +147,7 @@ function singleQuoted(value: string) {
  */
 export function launchdWrapperScript(connect: string, bootout: string) {
   return [
+    `child= signalled= forwarded=`,
     `trap 'signalled=1; if [ -n "$child" ]; then forwarded=1; kill -TERM "$child" 2>/dev/null; fi' TERM INT`,
     `${connect} & child=$!`,
     `if [ -n "$signalled" ] && [ -z "$forwarded" ]; then kill -TERM "$child" 2>/dev/null; fi`,
