@@ -87,7 +87,9 @@ describe("agent-hooks real-world execution", () => {
     await fs.rm(rootDir, { recursive: true, force: true })
   })
 
-  it("Cursor hook should be non-blocking and return JSON immediately", async () => {
+  // Windows installs cursor-hook.cmd, which windows-hooks.test.ts runs; under Git Bash this
+  // POSIX script's budget measures bash's own start, 1.6 s on a 4-vCPU Windows runner.
+  it.skipIf(process.platform === "win32")("Cursor hook should be non-blocking and return JSON immediately", async () => {
     const cursorHook = path.join(hooksDir, "cursor-hook.sh")
 
     expect(await fs.stat(cursorHook)).toBeDefined()
