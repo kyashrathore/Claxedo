@@ -7,6 +7,7 @@ import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
 import { withSessionCore } from "../session-context"
+import type { WebSocketBackpressureSocket } from "./websocket-backpressure"
 
 async function waitFor(check: () => boolean, screen: () => string, timeoutMs = 30_000) {
   const started = Date.now()
@@ -30,7 +31,9 @@ else void test("a Windows tab reports an agent typed by name: cmd.exe runs its C
     })
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-  const port = (server.address() as { port: number }).port
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("the lifecycle stand-in did not bind a port")
+  const port = address.port
   const fakes = path.join(tmpDir, "fake-clis")
   await fs.mkdir(fakes, { recursive: true })
   await fs.writeFile(path.join(fakes, "aider.cmd"), "@echo fake-aider-ran\r\n@exit /b 0\r\n")
@@ -40,7 +43,8 @@ else void test("a Windows tab reports an agent typed by name: cmd.exe runs its C
   try {
     const info = await withSessionCore(testSessionCore(tmpDir), () =>
       Pty.create({ cwd: tmpDir, env: { CLAXEDO_PORT: String(port) } }, volatileLaunchOwnership()))
-    assert.ok(Pty.connect(info.id, { readyState: 1, send: () => {}, close: () => {} } as unknown as Parameters<typeof Pty.connect>[1]))
+    const viewer: WebSocketBackpressureSocket = { readyState: 1, send: () => {}, close: () => {} }
+    assert.ok(Pty.connect(info.id, viewer))
     Pty.write(info.id, "aider\r\n")
     await waitFor(() => received.length >= 2, () => Pty.snapshot(info.id))
     assert.match(Pty.snapshot(info.id), /fake-aider-ran/)
