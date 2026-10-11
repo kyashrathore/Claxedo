@@ -189,7 +189,7 @@ public static class ClaxedoPrivateFile
             pinned.Free();
         }
 
-        FileStream file = new FileStream(handle, FileAccess.Write);
+        FileStream file = null;
         bool published = false;
         try
         {
@@ -197,6 +197,7 @@ public static class ClaxedoPrivateFile
             // of here from now on — including one that never runs another line
             // of this method — takes the staging file with it.
             Arm(handle, true);
+            file = new FileStream(handle, FileAccess.Write);
             Answer("${READY}" + Verify(file, sid));
             if (!Fill(input, file)) throw new Exception("the caller cancelled the write");
             file.Flush(true);
@@ -207,8 +208,16 @@ public static class ClaxedoPrivateFile
         }
         finally
         {
-            if (!published) Arm(handle, true);
-            file.Dispose();
+            // This runner serves every write in the process, so a handle left
+            // open here holds an exclusive staging file until a collection.
+            try
+            {
+                if (!published) Arm(handle, true);
+            }
+            finally
+            {
+                if (file != null) file.Dispose(); else handle.Dispose();
+            }
         }
     }
 
