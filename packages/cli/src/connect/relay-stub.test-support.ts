@@ -43,7 +43,8 @@ export function relayStub() {
 
 export type RelayStub = ReturnType<typeof relayStub>
 
-export async function until(predicate: () => boolean | Promise<boolean>, what: string, timeoutMs = 10_000) {
+/** Bounded below bun's 5 s test timeout, so a wait that never ends fails naming what it waited for. */
+export async function until(predicate: () => boolean | Promise<boolean>, what: string, timeoutMs = 4_000) {
   const started = Date.now()
   while (!(await predicate())) {
     if (Date.now() - started > timeoutMs) throw new Error(`timed out waiting for ${what}`)
