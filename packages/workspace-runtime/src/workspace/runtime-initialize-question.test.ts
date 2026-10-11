@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { Hono } from "hono"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -8,6 +8,7 @@ import { createWorkspaceHost } from "./runtime"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
+import { removeTempRoot } from "@claxedo/harness/testing"
 
 const body = (value: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) })
 async function until<T>(read: () => Promise<T>, accepts: (value: T) => boolean): Promise<T> {
@@ -53,5 +54,5 @@ test.each(["accept", "decline"] as const)("draft initialization uses ordinary du
     expect((await readStart()).status).toBe("created")
     expect(await questions()).toEqual([])
     expect((await request(`/question/${question.id}/reply`, body({ answers: [[JSON.stringify({ label: "late" })]] })) ).status).toBe(404)
-  } finally { await host.dispose(); await rm(directory, { recursive: true, force: true }) }
+  } finally { await host.dispose(); await removeTempRoot(directory) }
 }, 10_000)

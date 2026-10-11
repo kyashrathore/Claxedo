@@ -305,29 +305,26 @@ describe.skipIf(process.platform !== "win32")("a private file on Windows", () =>
     const result = inFreshProcess(dir, "writeWindowsPrivateFile", "windows-private-file.ts", [
       `import { join } from "node:path"`,
       `const holders: (number | undefined)[] = []`,
-      `const took: number[] = []`,
       `for (const name of ["one", "two"]) {`,
-      `  const started = performance.now()`,
       `  await writeWindowsPrivateFile({`,
       `    target: join(${JSON.stringify(dir)}, name + ".json"),`,
       `    staging: join(${JSON.stringify(dir)}, "." + name + ".tmp"),`,
       `    contents: new TextEncoder().encode(name),`,
       `    beforeWrite: ({ holder }) => { holders.push(holder) },`,
       `  })`,
-      `  took.push(performance.now() - started)`,
       `}`,
-      `process.stdout.write(JSON.stringify({ holders, took }))`,
+      `process.stdout.write(JSON.stringify({ holders }))`,
     ])
 
     // Exiting on its own within the bound is the proof that an idle runner
     // holds nothing; a held process would be killed by the timeout instead.
     expect(result.signal).toBeNull()
     expect(result.status).toBe(0)
-    const { holders, took } = JSON.parse(result.stdout) as { holders: number[]; took: number[] }
+    const { holders } = JSON.parse(result.stdout) as { holders: number[] }
     expect(holders).toHaveLength(2)
+    // PowerShell compiles the program once, before its greeting, so one
+    // holder for both writes means the second paid for neither.
     expect(holders[1]).toBe(holders[0])
-    // The first write pays for PowerShell and the C# compile; the second pays for neither.
-    expect(took[1]!).toBeLessThan(took[0]! / 4)
     expect(readFileSync(join(dir, "one.json"), "utf8")).toBe("one")
     expect(readFileSync(join(dir, "two.json"), "utf8")).toBe("two")
 

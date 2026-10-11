@@ -30,8 +30,15 @@ describe("agent-hooks real-world execution", () => {
   let binDir: string
   let notifyPath: string
   let mockServer: Server
-  let lastEvent: any = null
   const received: any[] = []
+  // The hooks post from a detached curl, so an event can land after the test
+  // that caused it; each test waits for its own tab's event only.
+  const eventFor = async (tabId: string) => {
+    const deadline = Date.now() + 10_000
+    const find = () => received.find((event) => event?.tabId === tabId)
+    while (!find() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
+    return find()
+  }
   let serverPort: number
   const ptyGet = spyOn(Pty, "get").mockImplementation((id) => id
     ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
@@ -56,10 +63,10 @@ describe("agent-hooks real-world execution", () => {
           const response = await app.request("http://localhost/agent-lifecycle", {
             method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body,
           })
-          lastEvent = await response.json()
-          received.push(lastEvent)
+          const event = await response.json()
+          received.push(event)
           res.writeHead(response.status, { "Content-Type": "application/json" })
-          res.end(JSON.stringify(lastEvent))
+          res.end(JSON.stringify(event))
         })
         return
       }
@@ -114,17 +121,13 @@ describe("agent-hooks real-world execution", () => {
 
     expect(duration).toBeLessThan(1000)
 
-    // Wait a bit for the background curl to finish
-    await new Promise((r) => setTimeout(r, 2500))
-    expect(lastEvent).toMatchObject({
+    expect(await eventFor("test-tab")).toMatchObject({
       eventType: "Busy",
       tabId: "test-tab",
     })
   })
 
   it("notify hook prefers CLAXEDO_SERVER_PORT when workspace CLAXEDO_PORT differs", async () => {
-    lastEvent = null
-
     const result = await runShell("bash", [notifyPath], {
       input: '{"hook_event_name":"UserPromptSubmit"}',
       env: {
@@ -139,8 +142,7 @@ describe("agent-hooks real-world execution", () => {
     })
 
     expect(result.status).toBe(0)
-    await new Promise((r) => setTimeout(r, 2500))
-    expect(lastEvent).toMatchObject({
+    expect(await eventFor("split-port-tab")).toMatchObject({
       eventType: "Busy",
       tabId: "split-port-tab",
       terminalId: "split-port-terminal",
@@ -155,9 +157,6 @@ describe("agent-hooks real-world execution", () => {
     await fs.mkdir(path.dirname(fakeClaude), { recursive: true })
     await fs.writeFile(fakeClaude, "#!/bin/bash\nexit 1", { mode: 0o755 })
 
-    lastEvent = null
-
-    // Run the wrapper
     await runShell("bash", [claudeWrapper], {
       env: {
         ...process.env,
@@ -169,17 +168,7 @@ describe("agent-hooks real-world execution", () => {
       },
     })
 
-    // Wait for the background trap notification: it arrives from a detached
-    // curl the wrapper fires on exit, so poll rather than sleep a fixed
-    // 500ms (run 366: the event landed just past that on a loaded runner).
-    // Read through a call: `lastEvent` is assigned by the HTTP handler on
-    // another task, which a bare variable in the loop condition cannot express.
-    const eventPending = () => lastEvent === null
-    for (let attempt = 0; eventPending() && attempt < 200; attempt++) {
-      await new Promise((r) => setTimeout(r, 25))
-    }
-
-    expect(lastEvent).toMatchObject({
+    expect(await eventFor("claude-tab")).toMatchObject({
       eventType: "Error",
       tabId: "claude-tab",
     })
@@ -191,8 +180,6 @@ describe("agent-hooks real-world execution", () => {
     const fakeClaude = path.join(rootDir, "fake-bin-clean", "claude")
     await fs.mkdir(path.dirname(fakeClaude), { recursive: true })
     await fs.writeFile(fakeClaude, "#!/bin/bash\nexit 0", { mode: 0o755 })
-
-    lastEvent = null
 
     const result = await runShell("bash", [claudeWrapper], {
       env: {
@@ -206,16 +193,7 @@ describe("agent-hooks real-world execution", () => {
     })
 
     expect(result.status).toBe(0)
-    // Same shape as the crash-trap test above: poll for the detached
-    // notification instead of a fixed sleep.
-    // Read through a call: `lastEvent` is assigned by the HTTP handler on
-    // another task, which a bare variable in the loop condition cannot express.
-    const eventPending = () => lastEvent === null
-    for (let attempt = 0; eventPending() && attempt < 200; attempt++) {
-      await new Promise((r) => setTimeout(r, 25))
-    }
-
-    expect(lastEvent).toMatchObject({
+    expect(await eventFor("claude-tab-clean")).toMatchObject({
       eventType: "Idle",
       tabId: "claude-tab-clean",
     })
@@ -234,7 +212,6 @@ describe("agent-hooks real-world execution", () => {
     const realBin = path.join(rootDir, "real-claude-bin")
     await fs.mkdir(realBin, { recursive: true })
     await fs.symlink(realClaude, path.join(realBin, path.basename(realClaude)))
-    received.splice(0)
 
     // Git Bash reads a Windows-form PATH and brings its own curl; POSIX keeps the system tools only.
     const searchPath = windows ? [realBin, process.env.PATH ?? ""].join(path.delimiter) : `${realBin}:/usr/bin:/bin`
