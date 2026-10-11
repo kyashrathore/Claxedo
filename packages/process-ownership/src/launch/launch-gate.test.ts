@@ -137,6 +137,23 @@ test("a payload environment without PATH launches, and the payload sees only tha
   expect((await owned.retire(budgets)).leader).toBe("exited")
 }, 30_000)
 
+test("what the payload writes on stderr before its caller listens still reaches the caller", async () => {
+  const directory = await workspace()
+  const owned = await launch({
+    ownership: volatileLaunchOwnership(),
+    role: "harness",
+    scope: { directory },
+    payload: { command: process.execPath, args: ["-e", `process.stderr.write("early"); setTimeout(() => {}, 1_000)`] },
+    cwd: directory,
+    env: {},
+  })
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  let output = ""
+  for await (const chunk of owned.child.stderr!) output += String(chunk)
+  expect(output).toBe("early")
+  expect((await owned.retire(budgets)).leader).toBe("exited")
+}, 30_000)
+
 test.skipIf(!posix)("an acknowledged launch owns a group the payload is inside", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()

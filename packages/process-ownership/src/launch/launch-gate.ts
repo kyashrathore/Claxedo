@@ -2,6 +2,7 @@ import { spawn, type ChildProcess, type StdioOptions } from "node:child_process"
 import { createRequire } from "node:module"
 import { existsSync } from "node:fs"
 import path from "node:path"
+import type { Readable } from "node:stream"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { stringRecord } from "@claxedo/helpers"
 import { isRecord } from "@claxedo/helpers/guards"
@@ -73,13 +74,11 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
   })
 
   // Until the gate reports, its stderr is its own and is the only account of
-  // why it failed to start. After that the payload owns the stream, so this
-  // stops listening rather than mixing the user's output into a launch error.
-  let startupStderr = ""
+  // why it failed to start; after that the payload owns the stream. It is read
+  // only once the gate has exited without reporting: a `data` listener puts the
+  // stream in flowing mode for good, and output the payload writes before its
+  // caller attaches a listener of its own would be emitted to nobody.
   let reporting = true
-  child.stderr?.on("data", (chunk: Buffer) => {
-    if (reporting && startupStderr.length < 4096) startupStderr += chunk.toString()
-  })
 
   let onReported = (_: { identity: CreationIdentity; gateNonce: string }) => {}
   let failReported = (_: unknown) => {}
@@ -117,15 +116,17 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
   let undelivered: Error | undefined
   const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.on("exit", (code, signal) => {
+      const early = reporting
       reporting = false
-      const detail = startupStderr.trim()
-      const reason = new Error(
-        `Launch gate exited (code ${String(code)}, signal ${String(signal)}) before reporting ${gatePhase(code)}${detail ? `: ${detail}` : ""}`,
-        undelivered ? { cause: undelivered } : undefined,
-      )
-      failReported(reason)
-      failAcknowledged(reason)
-      resolve({ code, signal })
+      void (early ? startupDiagnostics(child.stderr) : Promise.resolve("")).then((detail) => {
+        const reason = new Error(
+          `Launch gate exited (code ${String(code)}, signal ${String(signal)}) before reporting ${gatePhase(code)}${detail ? `: ${detail}` : ""}`,
+          undelivered ? { cause: undelivered } : undefined,
+        )
+        failReported(reason)
+        failAcknowledged(reason)
+        resolve({ code, signal })
+      })
     })
     child.on("error", (error) => {
       reporting = false
@@ -148,6 +149,29 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
       child.send({ type: "activate", gateNonce, payload }, (error) => { if (error) undelivered = error })
     },
   }
+}
+
+const STARTUP_DIAGNOSTICS_MS = 2_000
+
+/**
+ * What a gate that died before reporting wrote on stderr, read to its end.
+ * Nothing else holds the stream before a payload exists, so it closes with the
+ * gate; the bound covers a stream that was already gone.
+ */
+function startupDiagnostics(stderr: Readable | null): Promise<string> {
+  if (!stderr || stderr.destroyed) return Promise.resolve("")
+  return new Promise((resolve) => {
+    let text = ""
+    const done = () => {
+      clearTimeout(bound)
+      resolve(text.trim())
+    }
+    const bound = setTimeout(done, STARTUP_DIAGNOSTICS_MS)
+    stderr.on("data", (chunk: Buffer) => {
+      if (text.length < 4096) text += chunk.toString()
+    })
+    stderr.once("close", done)
+  })
 }
 
 /**
