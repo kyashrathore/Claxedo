@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
-import { referable } from "@claxedo/helpers/process"
+import { loopHold } from "@claxedo/helpers/process"
 
 /** What the process table says about one pid: its creation time in UTC, ISO 8601 to 100 ns, and its parent. */
 export type WindowsProcessRow = { creationDate: string; parentPid: number }
@@ -73,12 +73,11 @@ class TableProcess {
   private readonly pending: Pending[] = []
   private partial = ""
   private diagnostics = ""
-  // Bun counts a pipe's refs where Node toggles them, so holding and idling
-  // strictly alternate.
-  private held = true
+  private readonly loop: ReturnType<typeof loopHold>
 
   constructor(launch: () => ChildProcessWithoutNullStreams) {
     this.child = launch()
+    this.loop = loopHold(this.child)
     this.child.stderr.on("data", (chunk: Buffer) => {
       this.diagnostics = `${this.diagnostics}${chunk.toString()}`.slice(-2_000)
     })
@@ -160,20 +159,10 @@ class TableProcess {
   }
 
   private hold() {
-    if (this.held) return
-    this.held = true
-    this.child.ref()
-    for (const pipe of this.pipes()) pipe.ref()
+    this.loop.hold()
   }
 
   private idle() {
-    if (!this.held) return
-    this.held = false
-    this.child.unref()
-    for (const pipe of this.pipes()) pipe.unref()
-  }
-
-  private pipes() {
-    return [this.child.stdin, this.child.stdout, this.child.stderr].filter(referable)
+    this.loop.idle()
   }
 }

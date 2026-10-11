@@ -108,10 +108,32 @@ export function stopChild(
   return pending
 }
 
-/**
- * Whether a child's stdio stream can be referenced and unreferenced. Node's
- * pipes can; Bun's stdin cannot, and does not hold the loop.
- */
-export function referable<Pipe extends object>(pipe: Pipe): pipe is Pipe & { ref(): void; unref(): void } {
+function referable<Pipe extends object>(pipe: Pipe): pipe is Pipe & { ref(): void; unref(): void } {
   return "ref" in pipe && typeof pipe.ref === "function" && "unref" in pipe && typeof pipe.unref === "function"
+}
+
+/**
+ * Holds or releases a long-lived child's claim on this process's event loop:
+ * the child and every stdio pipe that can be referenced. Bun's stdin cannot,
+ * and does not hold the loop. Bun counts a pipe's refs where Node toggles
+ * them, so a `ref()` on a referenced pipe needs two `unref()`s; holding and
+ * idling therefore strictly alternate. Starts held, as a spawned child is.
+ */
+export function loopHold(child: Pick<ChildProcess, "ref" | "unref" | "stdin" | "stdout" | "stderr">) {
+  let held = true
+  const pipes = () => [child.stdin, child.stdout, child.stderr].filter((pipe) => pipe !== null).filter(referable)
+  return {
+    hold() {
+      if (held) return
+      held = true
+      child.ref()
+      for (const pipe of pipes()) pipe.ref()
+    },
+    idle() {
+      if (!held) return
+      held = false
+      child.unref()
+      for (const pipe of pipes()) pipe.unref()
+    },
+  }
 }

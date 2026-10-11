@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer"
 import type { ChildProcessWithoutNullStreams } from "node:child_process"
-import { referable } from "./process"
+import { loopHold } from "./process"
 import { ABORT, COMMIT, FAILED, FATAL, PUBLISHED, READY, SERVING, payloadFrame, requestFrame } from "./windows-private-file-program"
 
 export type PrivateStagingReport = {
@@ -145,13 +145,11 @@ class RunnerProcess {
   private waiting: PromiseWithResolvers<string> | undefined
   private diagnostics = ""
   private transportFailure: string | undefined
-  // Bun counts a pipe's refs where Node toggles them: a `ref()` on a pipe that
-  // is already referenced needs two `unref()`s. Strict alternation is the one
-  // sequence both agree on.
-  private held = true
+  private readonly loop: ReturnType<typeof loopHold>
 
   constructor(launch: () => ChildProcessWithoutNullStreams) {
     this.child = launch()
+    this.loop = loopHold(this.child)
     // The runner writes nothing on stderr but its reason for stopping, which
     // is about the runner, never about a file's contents.
     this.child.stderr.on("data", (chunk: Buffer) => {
@@ -201,18 +199,12 @@ class RunnerProcess {
 
   /** While a request is pending, the runner keeps this process alive. */
   hold() {
-    if (this.held) return
-    this.held = true
-    this.child.ref()
-    for (const pipe of this.pipes()) pipe.ref()
+    this.loop.hold()
   }
 
   /** An idle runner never does. */
   idle() {
-    if (!this.held) return
-    this.held = false
-    this.child.unref()
-    for (const pipe of this.pipes()) pipe.unref()
+    this.loop.idle()
   }
 
   discard(reason: string) {
@@ -224,11 +216,6 @@ class RunnerProcess {
   unexpected(line: string) {
     if (line.startsWith(FATAL)) return this.discard(line.slice(FATAL.length))
     return this.discard(`unexpected answer ${JSON.stringify(line.slice(0, 200))}`)
-  }
-
-  /** Bun's stdin has no `ref`, and does not hold the loop. */
-  private pipes() {
-    return [this.child.stdin, this.child.stdout, this.child.stderr].filter(referable)
   }
 
   private receive(text: string) {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { spawn, type ChildProcess } from "node:child_process"
-import { arg, envPositiveIntMs, referable, requiredEnv, stopChild } from "./process"
+import { arg, envPositiveIntMs, loopHold, requiredEnv, stopChild } from "./process"
 
 const originalArgv = process.argv
 const children: ChildProcess[] = []
@@ -169,12 +169,30 @@ describe("stopChild", () => {
   })
 })
 
-describe("referable", () => {
-  test("admits a child's stdio stream that can be referenced and unreferenced, and refuses one that cannot", () => {
-    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10_000)"], { stdio: ["pipe", "pipe", "pipe"] })
-    children.push(child)
-    expect(child.stdout && referable(child.stdout)).toBe(true)
-    expect(referable({ ref() {} })).toBe(false)
-    expect(referable({ ref: true, unref: () => {} })).toBe(false)
+describe("loopHold", () => {
+  function counted() {
+    const calls: string[] = []
+    const pipe = (name: string) => ({ ref: () => calls.push(`${name}.ref`), unref: () => calls.push(`${name}.unref`) })
+    const child = {
+      ref: () => calls.push("child.ref"),
+      unref: () => calls.push("child.unref"),
+      stdin: { write() {} },
+      stdout: pipe("stdout"),
+      stderr: pipe("stderr"),
+    }
+    return { calls, child: child as unknown as ChildProcess }
+  }
+
+  test("starts held, alternates strictly, and skips a pipe that cannot be referenced", () => {
+    const { calls, child } = counted()
+    const loop = loopHold(child)
+    loop.hold()
+    expect(calls).toEqual([])
+    loop.idle()
+    loop.idle()
+    expect(calls).toEqual(["child.unref", "stdout.unref", "stderr.unref"])
+    loop.hold()
+    loop.hold()
+    expect(calls.slice(3)).toEqual(["child.ref", "stdout.ref", "stderr.ref"])
   })
 })
