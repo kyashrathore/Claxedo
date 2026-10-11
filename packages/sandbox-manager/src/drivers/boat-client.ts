@@ -1,5 +1,6 @@
 import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
 import { record } from "../json"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 export type BoatSandboxState =
   | "init" | "provisioning" | "provisioned" | "cloning" | "ready" | "idle" | "running"
@@ -79,30 +80,32 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
   const fetchImpl = options.fetchImpl ?? fetch
 
   async function api(path: string, types: readonly string[], init?: { method?: string; body?: unknown; headers?: Record<string, string>; timeoutMs?: number }) {
-    let response: Response
-    try {
-      response = await fetchImpl(`${baseUrl}${path}`, {
-        method: init?.method ?? "GET",
-        redirect: "manual",
-        headers: {
-          Authorization: `Bearer ${options.apiKey}`,
-          ...(init?.body === undefined ? {} : { "Content-Type": "application/json" }),
-          ...init?.headers,
-        },
-        ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-        signal: AbortSignal.timeout(init?.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-      })
-    } catch {
-      throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} failed before acknowledgement`, "transport_failed")
-    }
-    const body = await readBoundedResponseJson(response).catch(() => undefined)
-    // Provider error text is never copied: command bodies and their output can carry secrets.
-    if (!response.ok || body?.ok === false) {
-      const code = typeof body?.code === "string" ? body.code : `http_${response.status}`
-      throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status)
-    }
-    if (body?.ok !== true || !types.includes(requiredText(body.type))) invalid()
-    return body
+    return withDeadlineSignal(init?.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS, async (signal) => {
+      let response: Response
+      try {
+        response = await fetchImpl(`${baseUrl}${path}`, {
+          method: init?.method ?? "GET",
+          redirect: "manual",
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            ...(init?.body === undefined ? {} : { "Content-Type": "application/json" }),
+            ...init?.headers,
+          },
+          ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+          signal,
+        })
+      } catch {
+        throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} failed before acknowledgement`, "transport_failed")
+      }
+      const body = await readBoundedResponseJson(response).catch(() => undefined)
+      // Provider error text is never copied: command bodies and their output can carry secrets.
+      if (!response.ok || body?.ok === false) {
+        const code = typeof body?.code === "string" ? body.code : `http_${response.status}`
+        throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status)
+      }
+      if (body?.ok !== true || !types.includes(requiredText(body.type))) invalid()
+      return body
+    })
   }
 
   const path = (id: string) => `/sandboxes/${encodeURIComponent(id)}`

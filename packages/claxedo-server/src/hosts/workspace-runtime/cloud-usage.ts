@@ -27,6 +27,7 @@ import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { isJsonRecord, isOneOf } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 /**
  * The session-authority endpoint refuses a body over 16 KiB; the turn lease
@@ -424,18 +425,22 @@ export function cloudWorkspaceUsage(input: {
 
   async function report(proof: TurnProof, facts: readonly PendingUsageFact[]) {
     for (const batch of reportBatches(proof, facts)) {
-      const response = await send(input.authorityUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: reportBody(proof, batch),
-        signal: AbortSignal.timeout(REPORT_TIMEOUT_MS),
+      const answered = await withDeadlineSignal(REPORT_TIMEOUT_MS, async (signal) => {
+        const response = await send(input.authorityUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: reportBody(proof, batch),
+          signal,
+        })
+        if (!response.ok) {
+          log.warn("usage.report_refused", { status: response.status, sessionId: proof.sessionId, facts: batch.length })
+          return BATCH_REFUSALS.has(response.status) ? "next" : "stop"
+        }
+        return reportResults(await response.json().catch(() => undefined)) ?? []
       })
-      if (!response.ok) {
-        log.warn("usage.report_refused", { status: response.status, sessionId: proof.sessionId, facts: batch.length })
-        if (BATCH_REFUSALS.has(response.status)) continue
-        return
-      }
-      for (const result of reportResults(await response.json().catch(() => undefined)) ?? []) {
+      if (answered === "stop") return
+      if (answered === "next") continue
+      for (const result of answered) {
         const reported = batch.find((item) => item.fact.messageId === result.messageId && item.fact.revision === result.revision)
         if (!reported) continue
         if (result.status === "refused") {

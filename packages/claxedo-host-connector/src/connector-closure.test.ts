@@ -32,8 +32,14 @@ function externalImports() {
 }
 
 describe("Host Connector's dependency closure", () => {
-  test("imports only the machine wire contract from first-party packages", () => {
-    const allowed = new Set(["@claxedo/account-contract/machine", "@claxedo/account-contract/machine-seal"])
+  test("imports only the machine wire contract and the import-free deadline from first-party packages", () => {
+    // The deadline module imports nothing, so it adds no code beyond itself;
+    // the connector's requests need its referenced timer on Bun for Windows.
+    const allowed = new Set([
+      "@claxedo/account-contract/machine",
+      "@claxedo/account-contract/machine-seal",
+      "@claxedo/helpers/deadline",
+    ])
     const offenders = externalImports().filter(
       (entry) => entry.specifier.startsWith("@claxedo/") && !allowed.has(entry.specifier),
     )
@@ -78,12 +84,12 @@ describe("Host Connector's dependency closure", () => {
     ).toEqual(["node:fs/promises"])
   })
 
-  test("declares only the shared wire contract as a runtime dependency", () => {
+  test("declares only the shared wire contract and the helpers that hold the deadline as runtime dependencies", () => {
     const pkg = JSON.parse(readFileSync(path.join(SRC, "..", "package.json"), "utf8")) as {
       dependencies?: Record<string, string>
     }
 
-    expect(pkg.dependencies).toEqual({ "@claxedo/account-contract": "workspace:*" })
+    expect(pkg.dependencies).toEqual({ "@claxedo/account-contract": "workspace:*", "@claxedo/helpers": "workspace:*" })
   })
 
   test("the scanner actually reads this package's imports", () => {

@@ -1,6 +1,7 @@
 import { currentSessionCore } from "@claxedo/workspace-runtime/host"
 import { createVmConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 /**
  * The sandbox half of the connection secret lease: every request carries the
@@ -18,15 +19,17 @@ export function sandboxConnectionSecrets(input: { workspaceId: string; authority
     resolveLease: async ({ connectionId, providerKey, configRevision, authority, owner }) => {
       if (!authority) throw new Error("Connection secret lease requires the authority its operation was admitted under")
       if (owner.kind !== "person") throw new Error("A sandbox session spends a person's accounts, and this session names none")
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { ...authorizationHeader(authority), "content-type": "application/json" },
-        body: JSON.stringify({ connectionId, providerKey, configRevision, ownerUserId: owner.userId,
-          ...(authority.kind === "turn" ? { turnLease: authority.lease } : {}) }),
-        signal: AbortSignal.timeout(10_000),
+      return withDeadlineSignal(10_000, async (signal) => {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { ...authorizationHeader(authority), "content-type": "application/json" },
+          body: JSON.stringify({ connectionId, providerKey, configRevision, ownerUserId: owner.userId,
+            ...(authority.kind === "turn" ? { turnLease: authority.lease } : {}) }),
+          signal,
+        })
+        if (!response.ok) throw new Error(`Connection secret lease refused (${response.status})`)
+        return response.json()
       })
-      if (!response.ok) throw new Error(`Connection secret lease refused (${response.status})`)
-      return response.json()
     },
   })
 }

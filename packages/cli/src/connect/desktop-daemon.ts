@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { sameCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
 import { CLAXEDO_DAEMON_DISCOVERY_FILE, CLAXEDO_DAEMON_PROTOCOL, CLAXEDO_DAEMON_SERVICE, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { asRecordOrEmpty, isNonNegativeSafeInteger, nonEmptyString } from "@claxedo/helpers/guards"
 
 /**
@@ -104,27 +105,29 @@ export async function verifyDesktopDaemon(
   fetchImpl: (input: string, init: RequestInit) => Promise<Response> = fetch,
 ): Promise<DesktopDaemonVerdict> {
   try {
-    const response = await fetchImpl(`http://127.0.0.1:${record.port}/api/claxedo/daemon`, {
-      headers: {
-        authorization: `Bearer ${record.token}`,
-        [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL),
-      },
-      signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
+    return await withDeadlineSignal(VERIFY_TIMEOUT_MS, async (signal) => {
+      const response = await fetchImpl(`http://127.0.0.1:${record.port}/api/claxedo/daemon`, {
+        headers: {
+          authorization: `Bearer ${record.token}`,
+          [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL),
+        },
+        signal,
+      })
+      if (!response.ok) return "unresponsive"
+      const identity = asRecordOrEmpty(await response.json())
+      const answered = (
+        identity.service === CLAXEDO_DAEMON_SERVICE &&
+        identity.protocol === record.protocol &&
+        identity.generation === record.generation &&
+        identity.pid === record.pid &&
+        // The listener must agree about its own process, not just its token and
+        // generation: the identity it reports is what a later signal would be
+        // checked against, and one that disagrees is not the daemon that wrote
+        // the file this CLI is reading.
+        sameReportedIdentity(record.identity, identity.identity)
+      )
+      return answered ? "live" : "unresponsive"
     })
-    if (!response.ok) return "unresponsive"
-    const identity = asRecordOrEmpty(await response.json())
-    const answered = (
-      identity.service === CLAXEDO_DAEMON_SERVICE &&
-      identity.protocol === record.protocol &&
-      identity.generation === record.generation &&
-      identity.pid === record.pid &&
-      // The listener must agree about its own process, not just its token and
-      // generation: the identity it reports is what a later signal would be
-      // checked against, and one that disagrees is not the daemon that wrote
-      // the file this CLI is reading.
-      sameReportedIdentity(record.identity, identity.identity)
-    )
-    return answered ? "live" : "unresponsive"
   } catch {
     return "unresponsive"
   }

@@ -14,6 +14,7 @@ import { RUNTIME_DIR } from "../defaults"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { record } from "../json"
 import { isTransientDriverError } from "./transient-error"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 type VercelSnapshotLike = { snapshotId: string }
 type VercelCommandLike = {
@@ -291,9 +292,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
   }
 
   async function runSetup(sandbox: VercelSandboxLike, command: string) {
-    await sandbox.runCommand("bash", ["-c", command], {
-      signal: AbortSignal.timeout(snapshotBuildTimeoutMs),
-    })
+    await withDeadlineSignal(snapshotBuildTimeoutMs, (signal) => sandbox.runCommand("bash", ["-c", command], { signal }))
   }
 
   async function ensureSnapshot() {
@@ -347,10 +346,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
         `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/workspace-runtime /usr/local/bin/workspace-runtime`,
         "command -v workspace-runtime",
       ].join(" && "))
-      const snapshot = await builder.snapshot({
-        expiration: 0,
-        signal: AbortSignal.timeout(snapshotBuildTimeoutMs),
-      })
+      const snapshot = await withDeadlineSignal(snapshotBuildTimeoutMs, (signal) => builder.snapshot({ expiration: 0, signal }))
       cache.set(cacheKey, snapshot.snapshotId)
       cacheState.expires.set(cacheKey, now() + SNAPSHOT_CACHE_TTL_MS)
       return snapshot.snapshotId
@@ -375,14 +371,14 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
 
   async function startRuntime(sandbox: VercelSandboxLike, input: SandboxDriverEnsureInput, env: Record<string, string>) {
     const directory = workspaceDirectory(input)
-    await sandbox.runCommand({
+    await withDeadlineSignal(operationTimeoutMs, (signal) => sandbox.runCommand({
       cmd: "bash",
       args: ["-lc", `mkdir -p ${shell(directory)}; cd ${shell(directory)}; exec ${runtimeCommand}`],
       cwd: "/vercel/sandbox",
       env,
       detached: true,
-      signal: AbortSignal.timeout(operationTimeoutMs),
-    })
+      signal,
+    }))
   }
 
   async function readyTarget(input: SandboxDriverEnsureInput, sandbox: VercelSandboxLike, hostId: string): Promise<SandboxTarget> {
@@ -430,9 +426,9 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     if (input.secrets?.length) {
       // Inject brokered credentials at the firewall — the raw values never
       // reach the sandbox env; they are spliced onto egress to their hosts.
-      await sandbox.updateNetworkPolicy(vercelBrokeredNetworkPolicy(input.secrets, createPolicy), {
-        signal: AbortSignal.timeout(operationTimeoutMs),
-      })
+      const secrets = input.secrets
+      await withDeadlineSignal(operationTimeoutMs, (signal) =>
+        sandbox.updateNetworkPolicy(vercelBrokeredNetworkPolicy(secrets, createPolicy), { signal }))
     }
     await startRuntime(sandbox, input, env)
     return readyTarget(input, sandbox, hostId)
@@ -470,10 +466,8 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       await (await sandboxById(target)).stop({ blocking: true })
     },
     async snapshot(target) {
-      const snapshot = await (await sandboxById(target)).snapshot({
-        expiration: 0,
-        signal: AbortSignal.timeout(snapshotBuildTimeoutMs),
-      })
+      const sandbox = await sandboxById(target)
+      const snapshot = await withDeadlineSignal(snapshotBuildTimeoutMs, (signal) => sandbox.snapshot({ expiration: 0, signal }))
       return { snapshotId: snapshot.snapshotId }
     },
   }

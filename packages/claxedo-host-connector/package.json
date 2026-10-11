@@ -85,6 +85,7 @@
     "vitest": "2.1.9"
   },
   "dependencies": {
-    "@claxedo/account-contract": "workspace:*"
+    "@claxedo/account-contract": "workspace:*",
+    "@claxedo/helpers": "workspace:*"
   }
 }

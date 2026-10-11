@@ -1,6 +1,7 @@
 import { USAGE_WINDOW_NAMES } from "@claxedo/agent-runtime-contract"
 import { jsonNumber, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { CredentialVerificationError } from "../verification-error"
 import {
   credentialRefreshToken,
@@ -14,6 +15,7 @@ import { credentialSecretMaterial, type CredentialSecretMaterial } from "@claxed
 import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-verify" })
+const PROVIDER_REQUEST_TIMEOUT_MS = 10_000
 
 export type { CredentialHealth, CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 
@@ -104,38 +106,39 @@ export async function verifyCredential(
     ...(detail.usage ? { usage: detail.usage } : {}),
     ...(detail.accountEmail ? { accountEmail: detail.accountEmail } : {}),
   })
-  const ask = (url: string, init: RequestInit) =>
-    (options.fetch ?? globalThis.fetch)(url, init).catch(() => {
+  const ask = (url: string, init: RequestInit, signal: AbortSignal) =>
+    (options.fetch ?? globalThis.fetch)(url, { ...init, signal }).catch(() => {
       throw new CredentialVerificationError("credential_provider_unavailable", "Credential provider request failed")
     })
-  const response = await ask(probe.url, probe.init)
-  if (response.ok) {
-    if (probe.usage) {
-      const body: unknown = await response.json().catch(() => undefined)
-      const accountEmail = anthropicSubscription
-        ? await anthropicAccountEmail(auth.token, options.fetch)
-        : auth.email
-      return outcome("ok", { usage: probe.usage(body), ...(accountEmail ? { accountEmail } : {}) })
-    }
+  const probed = await withDeadlineSignal(PROVIDER_REQUEST_TIMEOUT_MS, async (signal) => {
+    const response = await ask(probe.url, probe.init, signal)
+    if (!response.ok) return { refused: await refusalVerdict(response) }
+    if (probe.usage) return { usage: probe.usage(await response.json().catch(() => undefined)) }
     // The OpenAI probe must stream; drop the body rather than leave an open SSE
     // connection for a completion we never read.
     await response.body?.cancel().catch(() => undefined)
-    return outcome("ok")
+    return {}
+  })
+  if (probed.refused === undefined) {
+    if (!probed.usage) return outcome("ok")
+    const accountEmail = anthropicSubscription
+      ? await anthropicAccountEmail(auth.token, options.fetch)
+      : auth.email
+    return outcome("ok", { usage: probed.usage, ...(accountEmail ? { accountEmail } : {}) })
   }
-  const verdict = await refusalVerdict(response)
   // A `claude setup-token` is minted with `user:inference` only — the CLI's own
   // words — so the usage read turns away a token that runs every turn. The
   // model catalog is the inference scope's own route, and answers the one
   // question left: whether the provider knows this token at all.
-  if (verdict === "auth_failed" && anthropicSubscription) {
-    const catalog = await ask("https://api.anthropic.com/v1/models", anthropicInferenceProbe(auth.token))
-    if (catalog.ok) {
+  if (probed.refused === "auth_failed" && anthropicSubscription) {
+    return outcome(await withDeadlineSignal(PROVIDER_REQUEST_TIMEOUT_MS, async (signal) => {
+      const catalog = await ask("https://api.anthropic.com/v1/models", anthropicInferenceProbe(auth.token), signal)
+      if (!catalog.ok) return refusalVerdict(catalog)
       await catalog.body?.cancel().catch(() => undefined)
-      return outcome("ok")
-    }
-    return outcome(await refusalVerdict(catalog))
+      return "ok" as const
+    }))
   }
-  return outcome(verdict)
+  return outcome(probed.refused)
 }
 
 /** What a non-ok probe answer says about the material, or nothing a verdict can carry. */
@@ -157,7 +160,6 @@ async function refusalVerdict(response: Response): Promise<CredentialHealth> {
 function anthropicInferenceProbe(token: string): RequestInit {
   return {
     method: "GET",
-    signal: AbortSignal.timeout(10_000),
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
@@ -179,21 +181,23 @@ function anthropicInferenceProbe(token: string): RequestInit {
  * spellings.
  */
 async function anthropicAccountEmail(token: string, fetchImpl: typeof fetch | undefined) {
-  const response = await (fetchImpl ?? globalThis.fetch)("https://api.anthropic.com/api/oauth/profile", {
-    method: "GET",
-    signal: AbortSignal.timeout(10_000),
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`,
-      "anthropic-beta": "oauth-2025-04-20",
-    },
-  }).catch(() => undefined)
-  if (!response?.ok) return undefined
-  const body = jsonRecord(await response.json().catch(() => undefined))
-  const account = jsonRecord(body?.account)
-  return [account?.email_address, account?.email, body?.email_address, body?.email]
-    .map(jsonString)
-    .find((item) => item !== undefined)
+  return withDeadlineSignal(PROVIDER_REQUEST_TIMEOUT_MS, async (signal) => {
+    const response = await (fetchImpl ?? globalThis.fetch)("https://api.anthropic.com/api/oauth/profile", {
+      method: "GET",
+      signal,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        "anthropic-beta": "oauth-2025-04-20",
+      },
+    }).catch(() => undefined)
+    if (!response?.ok) return undefined
+    const body = jsonRecord(await response.json().catch(() => undefined))
+    const account = jsonRecord(body?.account)
+    return [account?.email_address, account?.email, body?.email_address, body?.email]
+      .map(jsonString)
+      .find((item) => item !== undefined)
+  })
 }
 
 /**
@@ -216,7 +220,6 @@ function providerProbe(
       url: "https://chatgpt.com/backend-api/wham/usage",
       init: {
         method: "GET",
-        signal: AbortSignal.timeout(10_000),
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${auth.token}`,
@@ -231,7 +234,6 @@ function providerProbe(
       url: "https://api.anthropic.com/api/oauth/usage",
       init: {
         method: "GET",
-        signal: AbortSignal.timeout(10_000),
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${auth.token}`,
@@ -253,7 +255,6 @@ function providerProbe(
       url: "https://api.cursor.com/v1/me",
       init: {
         method: "GET",
-        signal: AbortSignal.timeout(10_000),
         headers: { Authorization: `Bearer ${auth.token}` },
       },
     }
@@ -263,7 +264,6 @@ function providerProbe(
       url: "https://api.anthropic.com/v1/messages",
       init: {
         method: "POST",
-        signal: AbortSignal.timeout(10_000),
         headers: {
           "Content-Type": "application/json",
           "anthropic-version": "2023-06-01",
@@ -281,7 +281,6 @@ function providerProbe(
     url: "https://api.openai.com/v1/responses",
     init: {
       method: "POST",
-      signal: AbortSignal.timeout(10_000),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${auth.token}`,

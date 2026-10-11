@@ -35,3 +35,25 @@ export function settleAtRequestDeadline<T>(
     )
   })
 }
+
+/**
+ * Runs `work` under a signal that aborts with the `TimeoutError`
+ * `AbortSignal.timeout` raises, or when `parent` aborts. `AbortSignal.timeout`
+ * arms an unreferenced timer, and Bun on Windows never fires an unreferenced
+ * timer that is the loop's only work, so a peer that never answered held its
+ * caller forever. This timer is referenced and cleared once `work` settles, so
+ * it holds the process no longer than the work does.
+ */
+export async function withDeadlineSignal<T>(
+  timeoutMs: number,
+  work: (signal: AbortSignal) => Promise<T>,
+  parent?: AbortSignal,
+): Promise<T> {
+  const deadline = new AbortController()
+  const timer = setTimeout(() => deadline.abort(new DOMException("The operation timed out.", "TimeoutError")), timeoutMs)
+  try {
+    return await work(parent ? AbortSignal.any([parent, deadline.signal]) : deadline.signal)
+  } finally {
+    clearTimeout(timer)
+  }
+}

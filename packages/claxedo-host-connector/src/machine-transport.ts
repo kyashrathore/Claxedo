@@ -7,6 +7,7 @@
 
 import { machineRequestSignature, randomNonce, type HostKeyPair } from "./host-identity"
 import { MACHINE_REQUEST_HEADERS } from "@claxedo/account-contract/machine"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import {
   canonicalControlPlaneUrl,
   canonicalFetchEndpointUrl,
@@ -128,36 +129,35 @@ export async function postJson(
   headers: Record<string, string>,
   timeoutMs: number,
 ): Promise<unknown> {
-  const signal = AbortSignal.timeout(timeoutMs)
-  const timedOut = new Promise<never>((_, reject) => {
-    signal.addEventListener(
-      "abort",
-      () => reject(new HostedRequestTimeoutError(url.pathname, timeoutMs, signal.reason)),
-      { once: true },
-    )
-  })
-  let text: string
-  let response: Response
-  try {
-    ;({ response, text } = await Promise.race([
-      (async () => {
-        const answer = await fetchImpl(url, {
-          method: "POST",
-          headers: { "content-type": "application/json", ...headers },
-          body: bodyText,
-          redirect: "manual",
-          signal,
-        })
-        return { response: answer, text: await answer.text() }
-      })(),
-      timedOut,
-    ]))
-  } catch (error) {
-    if (signal.aborted && !(error instanceof HostedRequestTimeoutError)) {
-      throw new HostedRequestTimeoutError(url.pathname, timeoutMs, error)
+  const { response, text } = await withDeadlineSignal(timeoutMs, async (signal) => {
+    const timedOut = new Promise<never>((_, reject) => {
+      signal.addEventListener(
+        "abort",
+        () => reject(new HostedRequestTimeoutError(url.pathname, timeoutMs, signal.reason)),
+        { once: true },
+      )
+    })
+    try {
+      return await Promise.race([
+        (async () => {
+          const answer = await fetchImpl(url, {
+            method: "POST",
+            headers: { "content-type": "application/json", ...headers },
+            body: bodyText,
+            redirect: "manual",
+            signal,
+          })
+          return { response: answer, text: await answer.text() }
+        })(),
+        timedOut,
+      ])
+    } catch (error) {
+      if (signal.aborted && !(error instanceof HostedRequestTimeoutError)) {
+        throw new HostedRequestTimeoutError(url.pathname, timeoutMs, error)
+      }
+      throw error
     }
-    throw error
-  }
+  })
   if (response.redirected || response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
     throw new HostedRedirectError(url.pathname, response.status)
   }

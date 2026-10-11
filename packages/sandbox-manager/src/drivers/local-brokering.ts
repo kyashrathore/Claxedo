@@ -10,6 +10,7 @@ import { substituteNativeSecrets } from "@claxedo/egress-broker"
 import type { SandboxBrokeredSecret, SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from "../contract"
 import { localBrokeringTestDriverCatalogEntry } from "../driver-catalog"
 import { workspaceRuntimeBootEnv } from "../runtime-env"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 export type LocalBrokeringDriverOptions = {
   root: string
@@ -89,7 +90,7 @@ async function waitForLocalRuntimeHealth(url: string, child: ChildProcess, logFi
       throw new Error(`local sandbox runtime exited: ${child.exitCode ?? child.signalCode}${lines ? `\n${lines}` : ""}`)
     }
     try {
-      if ((await fetch(`${url}/global/health`, { signal: AbortSignal.timeout(1_000) })).ok) return
+      if ((await withDeadlineSignal(1_000, (signal) => fetch(`${url}/global/health`, { signal }))).ok) return
     } catch { /* The runtime may still be binding its listener. */ }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }

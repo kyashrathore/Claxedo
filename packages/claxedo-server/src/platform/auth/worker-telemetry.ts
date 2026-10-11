@@ -11,6 +11,7 @@
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { resolveTelemetryHost, resolveTelemetryKey, type ObservabilityEnv } from "../telemetry/errors/config"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 type TelemetryEnv = ObservabilityEnv
 
@@ -189,16 +190,17 @@ async function postCapture(
   properties: Record<string, unknown>,
   capturedAt: Date,
 ): Promise<void> {
-  await fetch(`${host}/capture/`, {
+  const body = JSON.stringify({
+    api_key: key,
+    event,
+    timestamp: capturedAt.toISOString(),
+    distinct_id: await pseudonymousId(distinctId),
+    properties: await pseudonymousEntries(properties, isIdentifierKey),
+  })
+  await withDeadlineSignal(5_000, (signal) => fetch(`${host}/capture/`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      api_key: key,
-      event,
-      timestamp: capturedAt.toISOString(),
-      distinct_id: await pseudonymousId(distinctId),
-      properties: await pseudonymousEntries(properties, isIdentifierKey),
-    }),
-    signal: AbortSignal.timeout(5_000),
-  })
+    body,
+    signal,
+  }))
 }

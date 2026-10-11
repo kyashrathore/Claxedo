@@ -10,6 +10,7 @@ import type {
   AgentPluginSourceKind,
 } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 const OWNER_REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})$/
 const GIT_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/
@@ -241,24 +242,26 @@ class GitHubRateLimited extends Error {
 }
 
 async function resolveRevision(fetcher: Fetch, collection: GitHubRepositoryCollection, token?: string) {
-  const response = await fetcher(
-    `https://api.github.com/repos/${collection.owner}/${collection.repository}/commits/${encodeURIComponent(collection.ref)}`,
-    {
-      headers: {
-        accept: "application/vnd.github+json",
-        "user-agent": "Claxedo-Agent-Plugins",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
+  return withDeadlineSignal(GITHUB_REQUEST_TIMEOUT_MS, async (signal) => {
+    const response = await fetcher(
+      `https://api.github.com/repos/${collection.owner}/${collection.repository}/commits/${encodeURIComponent(collection.ref)}`,
+      {
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": "Claxedo-Agent-Plugins",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        signal,
       },
-      signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
-    },
-  )
-  if (response.status === 403 || response.status === 429) throw new GitHubRateLimited(response.status)
-  if (!response.ok) throw new Error(`GitHub revision lookup failed with ${response.status}`)
-  const raw = JSON.parse(new TextDecoder().decode(await responseBytes(response, MAX_GITHUB_METADATA_BYTES))) as unknown
-  if (!raw || typeof raw !== "object" || !("sha" in raw) || typeof raw.sha !== "string" || !/^[a-f0-9]{40}$/.test(raw.sha)) {
-    throw new Error("GitHub revision lookup returned an invalid commit")
-  }
-  return raw.sha
+    )
+    if (response.status === 403 || response.status === 429) throw new GitHubRateLimited(response.status)
+    if (!response.ok) throw new Error(`GitHub revision lookup failed with ${response.status}`)
+    const raw = JSON.parse(new TextDecoder().decode(await responseBytes(response, MAX_GITHUB_METADATA_BYTES))) as unknown
+    if (!raw || typeof raw !== "object" || !("sha" in raw) || typeof raw.sha !== "string" || !/^[a-f0-9]{40}$/.test(raw.sha)) {
+      throw new Error("GitHub revision lookup returned an invalid commit")
+    }
+    return raw.sha
+  })
 }
 
 async function loadCollection(fetcher: Fetch, collection: GitHubRepositoryCollection, token?: string) {
@@ -279,15 +282,18 @@ async function loadCollection(fetcher: Fetch, collection: GitHubRepositoryCollec
       if (!(error instanceof GitHubRateLimited)) throw error
       revision = collection.ref
     }
-    const response = await fetcher(
-      `https://codeload.github.com/${collection.owner}/${collection.repository}/zip/${revision === collection.ref && !/^[a-f0-9]{40}$/.test(revision) ? `refs/heads/${encodeURIComponent(revision)}` : revision}`,
-      {
-        headers: { accept: "application/zip", "user-agent": "Claxedo-Agent-Plugins" },
-        signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
-      },
-    )
-    if (!response.ok) throw new Error(`GitHub archive download failed with ${response.status}`)
-    return await archiveSource(collection, revision, await responseBytes(response, MAX_ARCHIVE_BYTES))
+    const archive = await withDeadlineSignal(GITHUB_REQUEST_TIMEOUT_MS, async (signal) => {
+      const response = await fetcher(
+        `https://codeload.github.com/${collection.owner}/${collection.repository}/zip/${revision === collection.ref && !/^[a-f0-9]{40}$/.test(revision) ? `refs/heads/${encodeURIComponent(revision)}` : revision}`,
+        {
+          headers: { accept: "application/zip", "user-agent": "Claxedo-Agent-Plugins" },
+          signal,
+        },
+      )
+      if (!response.ok) throw new Error(`GitHub archive download failed with ${response.status}`)
+      return await responseBytes(response, MAX_ARCHIVE_BYTES)
+    })
+    return await archiveSource(collection, revision, archive)
   } catch (cause) {
     return unavailable(collection, cause instanceof Error ? cause.message : String(cause))
   }

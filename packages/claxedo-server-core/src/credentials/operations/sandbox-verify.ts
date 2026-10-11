@@ -4,6 +4,7 @@ import {
   sandboxDriverCredentialFields,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { CredentialVerificationError } from "../verification-error"
 import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
@@ -33,27 +34,29 @@ export async function verifySandboxDriverAuth(
   const probe = sandboxDriverProbe(id, values)
   if (!probe) throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
 
-  const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "error" }).catch(() => {
-    throw new CredentialVerificationError("credential_provider_unavailable", "Sandbox provider request failed")
+  return withDeadlineSignal(10_000, async (signal): Promise<CredentialHealth> => {
+    const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "error", signal }).catch(() => {
+      throw new CredentialVerificationError("credential_provider_unavailable", "Sandbox provider request failed")
+    })
+    if (response.redirected || (response.status >= 300 && response.status < 400)) {
+      throw new CredentialVerificationError("credential_redirect_denied", "Sandbox provider redirects are not allowed")
+    }
+    if (response.ok) {
+      await response.body?.cancel().catch(() => undefined)
+      return "ok"
+    }
+    const failure = (await response.text().catch(() => "")).slice(0, 8_192).toLowerCase()
+    if (probe.ok?.(response.status, failure)) return "ok"
+    if (
+      response.status === 402 ||
+      failure.includes("insufficient_quota") ||
+      failure.includes("billing") ||
+      failure.includes("credit balance")
+    ) return "no_billing"
+    if (response.status === 429) return "rate_capped"
+    if (probe.rejected(response.status)) return "auth_failed"
+    throw new CredentialVerificationError("credential_verification_failed", "Sandbox provider verification failed")
   })
-  if (response.redirected || (response.status >= 300 && response.status < 400)) {
-    throw new CredentialVerificationError("credential_redirect_denied", "Sandbox provider redirects are not allowed")
-  }
-  if (response.ok) {
-    await response.body?.cancel().catch(() => undefined)
-    return "ok"
-  }
-  const failure = (await response.text().catch(() => "")).slice(0, 8_192).toLowerCase()
-  if (probe.ok?.(response.status, failure)) return "ok"
-  if (
-    response.status === 402 ||
-    failure.includes("insufficient_quota") ||
-    failure.includes("billing") ||
-    failure.includes("credit balance")
-  ) return "no_billing"
-  if (response.status === 429) return "rate_capped"
-  if (probe.rejected(response.status)) return "auth_failed"
-  throw new CredentialVerificationError("credential_verification_failed", "Sandbox provider verification failed")
 }
 
 export async function verifySandboxDriverCredential(
@@ -87,8 +90,6 @@ type SandboxDriverProbe = {
 }
 
 function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): SandboxDriverProbe | undefined {
-  const signal = () => AbortSignal.timeout(10_000)
-
   // Vercel: one documented read that proves all three stored fields
   // (https://vercel.com/docs/rest-api/reference/endpoints/projects/find-a-project-by-id-or-name).
   // `GET /v2/user` is cheaper but only proves the token, and the catalog
@@ -98,7 +99,7 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
   if (id === "vercel") {
     return {
       url: `https://api.vercel.com/v9/projects/${encodeURIComponent(auth.project_id)}?teamId=${encodeURIComponent(auth.team_id)}`,
-      init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.access_token}` } },
+      init: { method: "GET", headers: { Authorization: `Bearer ${auth.access_token}` } },
       // 404 is a verdict, not a miss: the token authenticated and the project
       // it names is unreachable, so this credential set cannot launch anything.
       rejected: (status) => REJECTED(status) || status === 404,
@@ -119,7 +120,7 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
     }
     return {
       url: `${base}/sandboxes`,
-      init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.api_token}` } },
+      init: { method: "GET", headers: { Authorization: `Bearer ${auth.api_token}` } },
       // The Worker answers 501 when no R2 bucket is bound, and that reply is
       // produced after the gate — reaching it proves the token. Rejecting the
       // pair over an unrelated optional binding would be a false verdict.
@@ -134,7 +135,7 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
   if (id === "boat") {
     return {
       url: "https://boat.dev/api/v1/me",
-      init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.api_key}` } },
+      init: { method: "GET", headers: { Authorization: `Bearer ${auth.api_key}` } },
       rejected: REJECTED,
     }
   }

@@ -1,6 +1,7 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { isHostGeneration } from "./auth"
 import type { WorkspaceRelayTarget } from "./relay-target"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 export type RuntimeAccessTokenActiveResult =
   | {
@@ -51,17 +52,19 @@ export function createHostGenerationResolverLookup(url: string, options: HostGen
   return async ({ enrollmentId }) => {
     const target = new URL(url)
     target.searchParams.set("enrollmentId", enrollmentId)
-    const res = await fetcher(target, { headers: options.headers, signal: AbortSignal.timeout(timeoutMs) })
-    if (res.status === 404) {
-      const body: unknown = await res.json().catch(() => undefined)
-      const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
-      if (error?.code === HOST_GENERATION_ENROLLMENT_NOT_FOUND_CODE) return undefined
-      throw new Error(`relay host-generation resolver failed: 404 (no host-generation route at ${url})`)
-    }
-    if (!res.ok) throw new Error(`relay host-generation resolver failed: ${res.status} ${await res.text()}`)
-    const result = parseHostGenerationResult(await res.json())
-    if (!result) throw new Error("relay host-generation resolver returned a malformed result")
-    return result
+    return withDeadlineSignal(timeoutMs, async (signal) => {
+      const res = await fetcher(target, { headers: options.headers, signal })
+      if (res.status === 404) {
+        const body: unknown = await res.json().catch(() => undefined)
+        const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
+        if (error?.code === HOST_GENERATION_ENROLLMENT_NOT_FOUND_CODE) return undefined
+        throw new Error(`relay host-generation resolver failed: 404 (no host-generation route at ${url})`)
+      }
+      if (!res.ok) throw new Error(`relay host-generation resolver failed: ${res.status} ${await res.text()}`)
+      const result = parseHostGenerationResult(await res.json())
+      if (!result) throw new Error("relay host-generation resolver returned a malformed result")
+      return result
+    })
   }
 }
 export type RevocationLookupArgs = { jti: string; workspaceId: string; hostId: string }

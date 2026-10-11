@@ -1,3 +1,4 @@
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { asBoolean, asNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import {
   managedWorkspaceSessionAccessPolicy,
@@ -103,20 +104,21 @@ export function remoteWorkspaceSessionAccessPolicy(
     )
       return denied(503, "session_turn_lease_required")
     try {
-      const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000)
-      const response = await (options.fetch ?? globalThis.fetch)(url, {
-        method: "POST",
-        headers: {
-          ...(input.credential && action !== "turn_renew" && action !== "turn_release"
-            ? { authorization: input.credential }
-            : {}),
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(authorityRequestBody(input, action, requestOptions)),
-        signal: input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal,
-      })
-      if (!response.ok) return deniedFromResponse(response, await jsonBody(response))
-      return decode(await jsonBody(response))
+      return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
+        const response = await (options.fetch ?? globalThis.fetch)(url, {
+          method: "POST",
+          headers: {
+            ...(input.credential && action !== "turn_renew" && action !== "turn_release"
+              ? { authorization: input.credential }
+              : {}),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(authorityRequestBody(input, action, requestOptions)),
+          signal,
+        })
+        if (!response.ok) return deniedFromResponse(response, await jsonBody(response))
+        return decode(await jsonBody(response))
+      }, input.signal)
     } catch {
       return denied(503, "session_authority_unavailable")
     }
@@ -171,30 +173,31 @@ export function remoteWorkspaceSessionAccessPolicy(
     if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
     const action: HostAuthorityAction = input.hostAccess === "admin" ? "host_admin" : "host_read"
     try {
-      const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000)
-      const response = await (options.fetch ?? globalThis.fetch)(url, {
-        method: "POST",
-        headers: {
-          ...(input.credential && !input.lease ? { authorization: input.credential } : {}),
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ action, ...(input.lease ? { lease: input.lease } : {}) }),
-        signal: input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal,
-      })
-      if (response.ok) {
-        const body = await jsonBody(response)
-        const lease = asString(body?.lease)
-        const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : undefined
-        return lease && expiresAt !== undefined ? { allowed: true, lease, expiresAt } : { allowed: true }
-      }
-      const error = asRecord((await jsonBody(response))?.error)
-      // Only the authority's own refusal is a refusal; anything else it
-      // answered — a fault, a missing route, a throttle — is the authority
-      // being unavailable, and is not what sends a reader to the session arm.
-      if (response.status === 401 || response.status === 403) {
-        return denied(response.status, asString(error?.code) ?? "host_authority_denied", asString(error?.message))
-      }
-      return denied(503, asString(error?.code) ?? "session_authority_unavailable", asString(error?.message))
+      return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
+        const response = await (options.fetch ?? globalThis.fetch)(url, {
+          method: "POST",
+          headers: {
+            ...(input.credential && !input.lease ? { authorization: input.credential } : {}),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ action, ...(input.lease ? { lease: input.lease } : {}) }),
+          signal,
+        })
+        if (response.ok) {
+          const body = await jsonBody(response)
+          const lease = asString(body?.lease)
+          const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : undefined
+          return lease && expiresAt !== undefined ? { allowed: true, lease, expiresAt } : { allowed: true }
+        }
+        const error = asRecord((await jsonBody(response))?.error)
+        // Only the authority's own refusal is a refusal; anything else it
+        // answered — a fault, a missing route, a throttle — is the authority
+        // being unavailable, and is not what sends a reader to the session arm.
+        if (response.status === 401 || response.status === 403) {
+          return denied(response.status, asString(error?.code) ?? "host_authority_denied", asString(error?.message))
+        }
+        return denied(503, asString(error?.code) ?? "session_authority_unavailable", asString(error?.message))
+      }, input.signal)
     } catch {
       return denied(503, "session_authority_unavailable")
     }

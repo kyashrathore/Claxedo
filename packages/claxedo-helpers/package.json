@@ -32,6 +32,13 @@
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     },
+    "./deadline": {
+      "development": "./src/deadline.ts",
+      "bun": "./src/deadline.ts",
+      "types": "./dist/deadline.d.ts",
+      "import": "./dist/deadline.mjs",
+      "default": "./dist/deadline.mjs"
+    },
     "./guards": {
       "development": "./src/guards.ts",
       "bun": "./src/guards.ts",

@@ -16,6 +16,7 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE, assertSandboxImageReference } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { isTransientDriverError } from "./transient-error"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 type SandboxEnv = Record<string, string | undefined>
 
@@ -251,9 +252,8 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
     let error = "workspace runtime not ready"
     while (Date.now() < until) {
       try {
-        const res = await healthFetch(`${url}/global/health`, {
-          signal: AbortSignal.timeout(Math.min(2_000, Math.max(1, healthTimeoutMs))),
-        })
+        const res = await withDeadlineSignal(Math.min(2_000, Math.max(1, healthTimeoutMs)), (signal) =>
+          healthFetch(`${url}/global/health`, { signal }))
         if (res.ok) return
         error = `${res.status} ${res.statusText}`
       } catch (err) {

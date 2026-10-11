@@ -1,4 +1,5 @@
 import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { asRecord } from "@claxedo/helpers/guards"
 import { expiryFromJwt } from "@claxedo/agent-runtime-contract"
 import { OPENAI_CLIENT_ID, OPENAI_TOKEN_URL } from "../provider-auth/openai-oauth"
@@ -59,34 +60,37 @@ export async function refreshCredentialSecret(
   const current = credentialRefreshToken(secret)
   if (!current) throw new CredentialRefreshError("Credential secret has no refresh token")
 
-  const response = await (options.fetch ?? globalThis.fetch)(OPENAI_TOKEN_URL, {
-    method: "POST",
-    signal: AbortSignal.timeout(10_000),
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: current,
-      client_id: OPENAI_CLIENT_ID,
-    }).toString(),
-  }).catch(() => {
-    throw new CredentialRefreshError("Credential refresh request failed")
+  const { access, refresh, body } = await withDeadlineSignal(10_000, async (signal) => {
+    const response = await (options.fetch ?? globalThis.fetch)(OPENAI_TOKEN_URL, {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: current,
+        client_id: OPENAI_CLIENT_ID,
+      }).toString(),
+    }).catch(() => {
+      throw new CredentialRefreshError("Credential refresh request failed")
+    })
+
+    if (!response.ok) {
+      // OAuth error codes (`invalid_grant`, `invalid_client`, …) are not secret
+      // and are the only thing that distinguishes "revoked" from "misconfigured".
+      const reason = await response.text().then(oauthErrorCode).catch(() => undefined)
+      throw new CredentialRefreshError(
+        `Credential refresh was rejected (${response.status}${reason ? `: ${reason}` : ""})`,
+      )
+    }
+
+    const body = jsonRecord(await response.json().catch(() => undefined))
+    const access = jsonString(body?.access_token)
+    if (!access) throw new CredentialRefreshError("Credential refresh returned no access token")
+    // The provider may or may not rotate the refresh token; keep the current one
+    // when it does not, or the next refresh has nothing to present.
+    const refresh = jsonString(body?.refresh_token) ?? current
+    return { access, refresh, body }
   })
-
-  if (!response.ok) {
-    // OAuth error codes (`invalid_grant`, `invalid_client`, …) are not secret
-    // and are the only thing that distinguishes "revoked" from "misconfigured".
-    const reason = await response.text().then(oauthErrorCode).catch(() => undefined)
-    throw new CredentialRefreshError(
-      `Credential refresh was rejected (${response.status}${reason ? `: ${reason}` : ""})`,
-    )
-  }
-
-  const body = jsonRecord(await response.json().catch(() => undefined))
-  const access = jsonString(body?.access_token)
-  if (!access) throw new CredentialRefreshError("Credential refresh returned no access token")
-  // The provider may or may not rotate the refresh token; keep the current one
-  // when it does not, or the next refresh has nothing to present.
-  const refresh = jsonString(body?.refresh_token) ?? current
   const idToken = jsonString(body?.id_token)
   const now = options.now ?? Date.now
   const expiresAt = expiryFromJwt(access) ?? now() + fallbackLifetimeMs
