@@ -39,6 +39,19 @@ describe("Server-Timing", () => {
     expect(measured.total).toBeGreaterThanOrEqual(measured.d1 + measured.do - 5)
   })
 
+  test("charges concurrent statements their shared wall time once, so the database never reads longer than the request", async () => {
+    const database = timedD1(slowDatabase(30))
+    const app = new Hono()
+    app.use(responseTiming())
+    app.get("/parallel", async (c) => {
+      await Promise.all([database.prepare("select 1").first(), database.prepare("select 2").first(), database.prepare("select 3").first()])
+      return c.text("parallel")
+    })
+    const measured = timings((await app.request("https://core.test/parallel")).headers.get("server-timing"))
+    expect(measured.d1).toBeGreaterThanOrEqual(25)
+    expect(measured.d1).toBeLessThanOrEqual(measured.total)
+  })
+
   test("keeps concurrent requests' ledgers apart and runs an unrequested call untimed", async () => {
     const database = timedD1(slowDatabase(15))
     const app = new Hono()

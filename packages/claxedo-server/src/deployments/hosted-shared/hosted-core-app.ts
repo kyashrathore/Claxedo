@@ -260,8 +260,8 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const ownership = createRouteOwnership()
   const app = withRouteOwnership(new Hono(), ownership, "hosted-core")
 
-  app.use(responseTiming())
   app.use(securityHeaders())
+  app.use(responseTiming())
   const flushTelemetry = services.telemetry.flush
   if (flushTelemetry) {
     app.use(async (c, next) => {
