@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { promisify } from "node:util"
 import { isRecord } from "@claxedo/helpers/guards"
+import { harnessSpawnEnv } from "../spawn-env"
 import { createWindowsProcessTable, PROCESS_TABLE_PROGRAM } from "./windows-process-table"
 
 const execFileAsync = promisify(execFile)
@@ -32,6 +33,8 @@ function windowsPowerShell() {
 
 const windowsProcessTable = createWindowsProcessTable({
   launch: () => spawn(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", PROCESS_TABLE_PROGRAM], {
+    // It lives as long as the host, so it holds none of the host's internal secrets.
+    env: harnessSpawnEnv(process.env),
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   }),
