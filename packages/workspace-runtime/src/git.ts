@@ -3,7 +3,6 @@ import { realpath } from "node:fs/promises"
 import { runtimeEnvText } from "./env"
 import { buildSafeEnv } from "./pty/env"
 import { limitConcurrency } from "@claxedo/helpers"
-import { windowsSystemTool } from "@claxedo/process-ownership/launch"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export const GIT_TIMEOUT_MS = 10_000
@@ -137,8 +136,7 @@ const GIT_ENV = { ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }), GIT
  * leaves them running when it is terminated. Started in its own process group
  * (which `execFile` cannot do), git is ended with all of them, and a run settles
  * once every process holding its output has exited. Windows has no process
- * groups: there git's tree is ended with `taskkill /T` while git still links
- * it in the live process table, and its output stops being read.
+ * groups: there git alone is ended and its output stops being read.
  */
 const GIT_OWN_GROUP = process.platform !== "win32"
 
@@ -148,9 +146,7 @@ function endGit(child: ChildProcess) {
   if (!GIT_OWN_GROUP) {
     child.stdout?.destroy()
     child.stderr?.destroy()
-    spawn(windowsSystemTool("taskkill.exe"), ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true })
-      .once("error", () => child.kill())
-    return true
+    return child.kill()
   }
   try {
     process.kill(-child.pid, "SIGTERM")

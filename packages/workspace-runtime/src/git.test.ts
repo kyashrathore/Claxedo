@@ -140,9 +140,9 @@ async function startedChild(start: (alias: string) => Promise<string>) {
 
 /**
  * An orphan is reaped by init, not by this process, so its exit is observed by
- * polling. Windows runs neither reaping test: Git Bash's fork emulation leaves
- * a backgrounded job's Windows parent already exited, so `taskkill /T` from git
- * cannot reach it.
+ * polling. Windows runs neither reaping test: there git alone is ended, and Git
+ * Bash's fork emulation leaves a backgrounded job's Windows parent already
+ * exited, so not even a tree kill from git reaches it.
  */
 async function exits(pid: number) {
   const deadline = Date.now() + 5_000
