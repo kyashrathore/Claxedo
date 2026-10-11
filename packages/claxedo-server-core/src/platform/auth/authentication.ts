@@ -515,7 +515,8 @@ function resolveApplicationIdentity(
  * The verifier may name the credential's subject (`identified`) as soon as
  * the provider confirms it, before it finishes attesting the session; the
  * application identity is then resolved while the attestation completes,
- * and the two subjects must agree.
+ * and the two subjects must agree. A request the attestation then refuses can
+ * therefore still have created the rows of a subject the provider confirmed.
  */
 export type CredentialVerifier = (request: Request, identified: (identity: AuthIdentity) => void) => Promise<unknown>
 
