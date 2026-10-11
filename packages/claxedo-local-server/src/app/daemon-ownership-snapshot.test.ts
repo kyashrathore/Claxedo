@@ -10,7 +10,8 @@ import {
   writeDaemonOwnershipSnapshot,
   type DaemonOwnershipSnapshot,
 } from "./daemon-ownership-snapshot"
-import type { LocalDaemonOwner, MachineRecoveryInspection } from "./local-daemon-lifecycle"
+import type { MachineRecoveryInspection } from "./local-daemon-lifecycle"
+import type { LocalDaemonOwner } from "./local-daemon-work"
 
 const roots: string[] = []
 

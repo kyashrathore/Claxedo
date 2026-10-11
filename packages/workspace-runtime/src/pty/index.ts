@@ -320,6 +320,7 @@ export namespace Pty {
   }
 
   const sessions = new Map<string, ActiveSession>()
+  let creating = 0
   const activityListeners = new Set<() => void>()
 
   function activityChanged() {
@@ -328,8 +329,9 @@ export namespace Pty {
 
   /**
    * Called synchronously after every change to what `activity()` and
-   * `listDetailed()` report: a terminal created, exited, removed, retained
-   * unresolved, or let go. A listener must not create or remove a terminal.
+   * `listDetailed()` report: a terminal whose creation began, created, failed
+   * to create, exited, removed, retained unresolved, or let go. A listener
+   * must not create or remove a terminal.
    */
   export function onActivityChange(listener: () => void): () => void {
     activityListeners.add(listener)
@@ -361,16 +363,17 @@ export namespace Pty {
   /**
    * What this module is holding the runtime open for.
    *
-   * `unrecorded` and `unresolved` are both counted inside `running`; they are
-   * reported separately so a drain preview can name why a daemon will not
-   * exit. They are different facts: an unresolved terminal has processes
-   * nothing proved were gone, an unrecorded one has a process no durable
-   * record will ever find again.
+   * `creating`, `unrecorded` and `unresolved` are all counted inside
+   * `running`; they are reported separately so a drain preview can name why a
+   * daemon will not exit. A terminal being created has no id yet, but its
+   * spawn may already have started a process. An unresolved terminal has
+   * processes nothing proved were gone, an unrecorded one has a process no
+   * durable record will ever find again.
    */
   export function activity() {
-    let running = 0
+    let running = creating
     let committed = 0
-    let provisional = 0
+    let provisional = creating
     let subscribers = 0
     let unrecorded = 0
     let unresolved = 0
@@ -388,7 +391,7 @@ export namespace Pty {
       if (session.committed) committed++
       else provisional++
     }
-    return { running, committed, provisional, subscribers, unrecorded, unresolved }
+    return { running, committed, provisional, subscribers, creating, unrecorded, unresolved }
   }
 
   export function commit(id: string) {
@@ -454,35 +457,50 @@ export namespace Pty {
     return session.buffer.slice(-cap)
   }
 
-  export function create(input: CreateInput, ownership: LaunchOwnershipStore, agentHookAccess?: AgentHookAccessBinding, options: { platform?: NodeJS.Platform } = {}) {
-    return startTerminal(input, ownership, agentHookAccess, options.platform ?? process.platform, {
-      bufferLimit: BUFFER_LIMIT,
-      highWatermark: QUEUE_HIGH_WATERMARK,
-      lowWatermark: QUEUE_LOW_WATERMARK,
-      register(session) {
-        sessions.set(session.info.id, session)
+  export async function create(input: CreateInput, ownership: LaunchOwnershipStore, agentHookAccess?: AgentHookAccessBinding, options: { platform?: NodeJS.Platform } = {}) {
+    let pinned = true
+    creating++
+    activityChanged()
+    try {
+      return await startTerminal(input, ownership, agentHookAccess, options.platform ?? process.platform, {
+        bufferLimit: BUFFER_LIMIT,
+        highWatermark: QUEUE_HIGH_WATERMARK,
+        lowWatermark: QUEUE_LOW_WATERMARK,
+        register(session) {
+          // Released here, not when startTerminal returns: a shell that exits
+          // during creation is cleaned up before it returns, and the creation
+          // pin would then outlive the terminal it stood for.
+          pinned = false
+          creating--
+          sessions.set(session.info.id, session)
+          activityChanged()
+          armOrphanTimer(session.info.id, session)
+        },
+        broadcast: safeBroadcast,
+        checkpoint(session) {
+          const checkpoint = session.modeTracker.checkpoint()
+          checkpoint.screen = session.modeTracker.buildPreamble() + checkpoint.screen
+          safeBroadcast(session, meta(session.cursor, checkpoint))
+        },
+        async exited(session, exitCode) {
+          session.exited = true
+          session.info.status = "exited"
+          activityChanged()
+          const id = session.info.id
+          log.info("session exited", { id, exitCode })
+          const tail = snapshot(id, 16_384)
+          const event = { id, exitCode, tail }
+          session.bus.publish({ type: "pty.exited", ...event })
+          session.bus.publish({ type: "pty.stream", kind: "exit", ...event })
+          await cleanupSession(session.info.id, session, "exit")
+        },
+      })
+    } finally {
+      if (pinned) {
+        creating--
         activityChanged()
-        armOrphanTimer(session.info.id, session)
-      },
-      broadcast: safeBroadcast,
-      checkpoint(session) {
-        const checkpoint = session.modeTracker.checkpoint()
-        checkpoint.screen = session.modeTracker.buildPreamble() + checkpoint.screen
-        safeBroadcast(session, meta(session.cursor, checkpoint))
-      },
-      async exited(session, exitCode) {
-        session.exited = true
-        session.info.status = "exited"
-        activityChanged()
-        const id = session.info.id
-        log.info("session exited", { id, exitCode })
-        const tail = snapshot(id, 16_384)
-        const event = { id, exitCode, tail }
-        session.bus.publish({ type: "pty.exited", ...event })
-        session.bus.publish({ type: "pty.stream", kind: "exit", ...event })
-        await cleanupSession(session.info.id, session, "exit")
-      },
-    })
+      }
+    }
   }
 
   export async function update(id: string, input: UpdateInput) {

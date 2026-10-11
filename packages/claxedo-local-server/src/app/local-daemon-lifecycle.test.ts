@@ -3,19 +3,18 @@ import { describe, expect, test, vi } from "vitest"
 import { recoveryPostconditionHolds, type RecoveryRequest } from "@claxedo/agent-runtime-contract"
 import { DaemonOperationStore } from "./daemon-operation-store"
 import { machineRecoveryFence, servedDuringMachineRecovery } from "./daemon-admission"
+import { createLocalDaemonLifecycle, type ReconciledLaunch } from "./local-daemon-lifecycle"
 import {
-  createLocalDaemonLifecycle,
   localDaemonOwners,
   localDaemonResidencyPins,
   localDaemonScopePreview,
   localDaemonScopeRevision,
   type LocalDaemonOwner,
-  type ReconciledLaunch,
   type LocalDaemonWorkActivity,
-} from "./local-daemon-lifecycle"
+} from "./local-daemon-work"
 
 const empty = (): LocalDaemonWorkActivity => ({
-  pty: { running: 0, committed: 0, provisional: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
+  pty: { running: 0, committed: 0, provisional: 0, subscribers: 0, creating: 0, unrecorded: 0, unresolved: 0 },
   runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
   owners: [],
   residencyPins: 0,
@@ -977,7 +976,7 @@ describe("what the inventory names", () => {
   test("a terminal nothing can find again is named apart from one that may yet settle", () => {
     const work: LocalDaemonWorkActivity = {
       ...empty(),
-      pty: { running: 3, committed: 3, provisional: 0, subscribers: 0, unrecorded: 1, unresolved: 2 },
+      pty: { running: 3, committed: 3, provisional: 0, subscribers: 0, creating: 0, unrecorded: 1, unresolved: 2 },
       residencyPins: 3,
       replacementBlockers: 3,
     }
@@ -994,20 +993,21 @@ describe("what the inventory names", () => {
     expect(preview.summary).toContain("2 unverified terminal retirement(s)")
   })
 
-  test("the preview names the writes and checkpoint transitions that own nothing", () => {
+  test("the preview names the writes, checkpoint transitions and terminal creations that own nothing", () => {
     const work: LocalDaemonWorkActivity = {
       ...empty(),
+      pty: { ...empty().pty, running: 1, provisional: 1, creating: 1 },
       runtime: { hosts: 1, activeTurns: 0, activeWrites: 2, checkpointing: 1, owners: [] },
-      residencyPins: 3,
-      replacementBlockers: 3,
+      residencyPins: 4,
+      replacementBlockers: 4,
     }
 
     const preview = localDaemonScopePreview(work)
-    expect(preview.resources).toEqual(["workspace writes: 2", "checkpoint transitions: 1"])
-    // A summary counting only owners would call this machine empty while three
+    expect(preview.resources).toEqual(["workspace writes: 2", "checkpoint transitions: 1", "terminal creations: 1"])
+    // A summary counting only owners would call this machine empty while four
     // things are holding the drain open.
     expect(preview.summary).toBe(
-      "0 named owners; 2 workspace write(s), 1 checkpoint transition(s) that own nothing but block a drain",
+      "0 named owners; 2 workspace write(s), 1 checkpoint transition(s), 1 terminal creation(s) that own nothing but block a drain",
     )
   })
 
@@ -1035,6 +1035,12 @@ describe("what the inventory names", () => {
       localDaemonScopeRevision({ ...empty(), owners, residencyPins: owners.length, replacementBlockers: owners.length })
 
     expect(revisionOf(after)).not.toBe(revisionOf(before))
+  })
+
+  test("a terminal whose creation began after the preview changes the scope revision", () => {
+    const creating = { ...empty(), pty: { ...empty().pty, running: 1, provisional: 1, creating: 1 }, residencyPins: 1, replacementBlockers: 1 }
+
+    expect(localDaemonScopeRevision(creating)).not.toBe(localDaemonScopeRevision(empty()))
   })
 
   test("a remounted workspace is a different owner, so a gate for the old mount does not carry", () => {

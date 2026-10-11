@@ -1030,6 +1030,40 @@ describe("the daemon lifecycle on its real work sources", () => {
     }
   })
 
+  test("a terminal still being created holds the daemon past idle grace", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-lifecycle-creating-")
+    const onStop = vi.fn()
+    const lifecycle = createLocalDaemonLifecycle({ onStop, machine: { machineId: "local", generation: "gen-creating" }, idleGraceMs: graceMs })
+    const ownership = volatileLaunchOwnership()
+    const prepared = Promise.withResolvers<void>()
+    let creating: Promise<Pty.Info> | undefined
+    try {
+      lifecycle.start()
+      await lifecycle.recovery.launchesReconciled()
+      const command = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
+      creating = withSessionCore(testSessionCore(project), () => Pty.create({ command, cwd: project }, {
+        ...ownership,
+        async prepare(input) {
+          await prepared.promise
+          return ownership.prepare(input)
+        },
+      }))
+      await sleep(graceMs + 500)
+      expect(onStop, "the creation pins the daemon").not.toHaveBeenCalled()
+
+      prepared.resolve()
+      await Pty.remove((await creating).id)
+      creating = undefined
+      await sleep(graceMs + 300)
+      expect(onStop).toHaveBeenCalledWith({ kind: "idle", idleMs: expect.any(Number) })
+    } finally {
+      lifecycle.stop()
+      prepared.resolve()
+      if (creating) await Pty.remove((await creating).id)
+      await removeWorkspaceRoot(root)
+    }
+  })
+
   test("a turn started during idle grace restarts grace when it ends", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-lifecycle-turn-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")

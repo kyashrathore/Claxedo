@@ -95,6 +95,19 @@ await mock.module("@lydell/node-pty", () => ({
   },
 }))
 
+const { readPtyCreationIdentity } = await import("./creation-identity")
+let heldIdentityRead: { started: () => void; released: Promise<void> } | undefined
+await mock.module("./creation-identity", () => ({
+  async readPtyCreationIdentity(...args: Parameters<typeof readPtyCreationIdentity>) {
+    const held = heldIdentityRead
+    if (held) {
+      held.started()
+      await held.released
+    }
+    return readPtyCreationIdentity(...args)
+  },
+}))
+
 const previousOrphanTimeout = process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS
 const previousHistoryDir = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
 
@@ -213,7 +226,7 @@ describe("Pty lifecycle cleanup", () => {
   test("orphan timeout removes abandoned provisional sessions", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "orphan" }, ownership)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, subscribers: 0, unrecorded: 0, unresolved: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, subscribers: 0, creating: 0, unrecorded: 0, unresolved: 0 })
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(true)
 
     // Each identity read of the retirement is a PowerShell CIM query on Windows, 250 ms to 2 s apiece.
@@ -237,7 +250,7 @@ describe("Pty lifecycle cleanup", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(Pty.get(info.id)).toEqual(info)
-    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, subscribers: 0, unrecorded: 0, unresolved: 0 })
+    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, subscribers: 0, creating: 0, unrecorded: 0, unresolved: 0 })
     expect(alive(info.pid)).toBe(true)
   }))
 
@@ -307,14 +320,60 @@ describe("Pty activity changes", () => {
       Pty.commit(first.id)
       const second = await Pty.create({ cwd: tmpDir, title: "second" }, ownership)
       Pty.commit(second.id)
-      expect(running).toEqual([1, 2])
+      expect(running).toEqual([1, 1, 2, 2])
 
       await Promise.all(fakeProcesses.get(first.pid)!.exitHandlers.map((handler) => handler({ exitCode: 0 })))
-      expect(running).toEqual([1, 2, 1])
+      expect(running).toEqual([1, 1, 2, 2, 1])
 
       await Pty.remove(second.id)
       expect(running.at(-1)).toBe(0)
       expect(Pty.activity().running).toBe(0)
+    } finally {
+      stop()
+    }
+  }))
+
+  test("a terminal pins from the moment its creation starts, while its identity read is still out", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+    const { Pty } = await import("./index")
+    const started = Promise.withResolvers<void>()
+    const released = Promise.withResolvers<void>()
+    heldIdentityRead = { started: started.resolve, released: released.promise }
+    const running: number[] = []
+    const stop = Pty.onActivityChange(() => running.push(Pty.activity().running))
+    try {
+      const creating = Pty.create({ cwd: tmpDir, title: "slow identity" }, ownership)
+      await started.promise
+      expect(running).toEqual([1])
+      expect(Pty.activity()).toMatchObject({ running: 1, provisional: 1, creating: 1 })
+
+      released.resolve()
+      const info = await creating
+      expect(running).toEqual([1, 1])
+      expect(Pty.activity()).toMatchObject({ running: 1, provisional: 1, creating: 0 })
+
+      await Pty.remove(info.id)
+      expect(Pty.activity().running).toBe(0)
+    } finally {
+      heldIdentityRead = undefined
+      released.resolve()
+      stop()
+    }
+  }))
+
+  test("a creation that fails releases its pin", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+    const { Pty } = await import("./index")
+    const running: number[] = []
+    const stop = Pty.onActivityChange(() => running.push(Pty.activity().running))
+    try {
+      const refused = Pty.create({ cwd: tmpDir, title: "refused" }, {
+        ...ownership,
+        async prepare() { throw new Error("launch store unavailable") },
+      })
+      expect(Pty.activity()).toMatchObject({ running: 1, creating: 1 })
+
+      await expect(refused).rejects.toThrow()
+      expect(running).toEqual([1, 0])
+      expect(Pty.activity()).toMatchObject({ running: 0, creating: 0 })
     } finally {
       stop()
     }

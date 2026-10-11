@@ -20,7 +20,8 @@ import {
   daemonOwnershipSnapshotPath,
   isDaemonOwnershipSnapshot,
 } from "@claxedo/agent-runtime-contract"
-import type { LocalDaemonOwner, MachineRecoveryGate, MachineRecoveryInspection } from "./local-daemon-lifecycle"
+import type { MachineRecoveryGate, MachineRecoveryInspection } from "./local-daemon-lifecycle"
+import type { LocalDaemonOwner } from "./local-daemon-work"
 
 export type DaemonOwnershipSnapshot = {
   machineId: string

@@ -223,7 +223,10 @@ export const localServer: Policy = {
   // `@claxedo/sandbox-contract` and `smol-toml` left with them.
   // `@claxedo/harness` (owner: the harness registry the workspace provider
   // catalog reads) and `@claxedo/process-ownership` arrived. 73/28, no headroom.
-  ceilings: { modules: 73, packages: 28 },
+  // +1 module: `app/local-daemon-work.ts` (owner: the daemon's account of its
+  // own work: residency pins, named owners, scope revision and preview), split
+  // out of `app/local-daemon-lifecycle.ts` with no new import. 74/28, no headroom.
+  ceilings: { modules: 74, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
