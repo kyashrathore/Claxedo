@@ -16,5 +16,5 @@ export async function releaseCodexThreads(entry: Entry, deadline: Deadline): Pro
     await interruptChildren(entry)
     await entry.terminals.clear(deadline)
   }
-  await entry.rpc.archive(entry.session.binding.upstreamSessionId)
+  await entry.rpc.unload(deadline)
 }

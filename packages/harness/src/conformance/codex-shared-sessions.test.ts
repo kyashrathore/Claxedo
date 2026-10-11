@@ -20,8 +20,8 @@ async function reply(context: Context, marker: string) {
   return { text: text.join(""), prompt: request?.prompt ?? "", authorization: request?.authorization ?? "" }
 }
 
-test("a Codex session keeps its thread and goal when its plugin selection mode and then its account switch, and back again", async () => {
-  const { context, ownerHome } = await ownLoginContext("codex-shared-sessions")
+test("a Codex session keeps its thread and goal when its plugin selection mode and then its account switch, and back again, while each app-server it left stays up", async () => {
+  const { context, ownerHome } = await ownLoginContext("codex-shared-sessions", {}, 30_000)
   try {
     const state = context.backend as CodexBackend
     const before = await hashes(ownerHome)
@@ -59,6 +59,8 @@ test("a Codex session keeps its thread and goal when its plugin selection mode a
     expect(back.prompt).toContain("STOREDACCOUNT")
     expect(back.authorization).toContain(OWNER_KEY)
     expect(await context.transport.goals!.read(context.session)).toMatchObject({ objective: "Reply with exactly this one token: GOALKEPT", status: "paused" })
+    expect(context.services.processes).toHaveLength(4)
+    for (const left of context.services.processes.slice(0, 3)) expect(await aliveAfter(left, 50)).toBe("alive")
     expect(await hashes(ownerHome)).toEqual(before)
   } finally { await context.close() }
 }, 180_000)
@@ -157,7 +159,7 @@ test("an account change moves only that session to a new app-server while its si
   } finally { await w.close() }
 }, 180_000)
 
-test("a session lost to a turn/start timeout archives its thread on the live app-server, so it resumes on another one", async () => {
+test("a session lost to a turn/start timeout unloads its thread from the live app-server, so it resumes on another one", async () => {
   const expire = { armed: false }
   const w = await sharedWorkspace("codex-share-lost", ["account-one", "account-one"], { prepare: (services) => {
     const clock = services.clock

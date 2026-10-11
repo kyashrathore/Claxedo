@@ -136,7 +136,7 @@ export function makeCodexTransport(services: TestServices, state: ConformanceBac
 
 export const OWNER_KEY = "owner-key-1"
 
-export async function ownLoginContext(name: string, providers: ResolvedCredentials["providers"] = {}) {
+export async function ownLoginContext(name: string, providers: ResolvedCredentials["providers"] = {}, idleMs = 0) {
   const state = await codexBackend()
   const ownerHome = path.join(state.root, "owner-codex")
   const mcpPort = await reservePort()
@@ -160,7 +160,7 @@ export async function ownLoginContext(name: string, providers: ResolvedCredentia
       releasePort(mcpPort)
       await state.close()
     } }
-  const context = await setupConformance({ name, backend: async () => ownLogin, makeTransport: (services, backendState) => new CodexAppServerTransport(services, codexOptions(backendState, { ownerHome })) })
+  const context = await setupConformance({ name, backend: async () => ownLogin, makeTransport: (services, backendState) => new CodexAppServerTransport(services, codexOptions(backendState, { ownerHome, idleMs })) })
   return { context, ownerHome, mcpRequests, homes: path.join(state.root, "homes") }
 }
 

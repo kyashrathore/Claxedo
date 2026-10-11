@@ -94,7 +94,7 @@ test("a turn/start that never answers fails only its session, interrupts the tur
     await second
     expect(peer.spawned()).toBe(1)
     expect(peer.frames.filter((frame) => frame.method?.startsWith("thread/") && frame.method !== "thread/start").map((frame) => frame.method))
-      .toEqual(["thread/archive", "thread/resume", "thread/unarchive", "thread/resume", "thread/goal/get"])
+      .toEqual(["thread/unsubscribe", "thread/resume", "thread/goal/get"])
     expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "ok" })
   } finally { await peer.close() }
 })
@@ -116,7 +116,7 @@ test("an account change during a turn is deferred to that turn's end, then moves
     await running
     for (let attempt = 0; attempt < 50 && !peer.frames.some((frame) => frame.method === "thread/resume"); attempt++) await tick()
     expect(peer.spawned()).toBe(2)
-    expect(peer.frames.filter((frame) => frame.method === "thread/archive").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
+    expect(peer.frames.filter((frame) => frame.method === "thread/unsubscribe").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
     expect(peer.frames.find((frame) => frame.method === "thread/resume")?.params).toMatchObject({ threadId: "thread-1" })
     expect(await peer.transport.configure(session, { credentials: brokered("placeholder-two", "account-two") })).toEqual({ state: "applied" })
     expect(peer.spawned()).toBe(2)

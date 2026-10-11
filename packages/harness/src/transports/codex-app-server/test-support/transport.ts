@@ -10,8 +10,8 @@ export type { Frame } from "./protocol"
 type CodexProcess = { wire: ScriptedProcess<Frame>; protocol: CodexPeer }
 
 export async function scriptedTransport(options: { holdTurnStart?: boolean; clock?: Clock; idleMs?: number; models?: unknown[]; completeTurns?: boolean
-  modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[]; archiveFailures?: number } = {}) {
-  const script = { modelListFailures: options.modelListFailures, turnSettingsFailures: options.turnSettingsFailures, turnStartError: options.turnStartError, goal: options.goal, userAgent: options.userAgent, backgroundTerminals: options.backgroundTerminals, archiveFailures: options.archiveFailures }
+  modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[]; unsubscribeFailures?: number } = {}) {
+  const script = { modelListFailures: options.modelListFailures, turnSettingsFailures: options.turnSettingsFailures, turnStartError: options.turnStartError, goal: options.goal, userAgent: options.userAgent, backgroundTerminals: options.backgroundTerminals, unsubscribeFailures: options.unsubscribeFailures }
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-scripted-"))
   const frames: Frame[] = []
   const violations: unknown[] = []
@@ -20,7 +20,8 @@ export async function scriptedTransport(options: { holdTurnStart?: boolean; cloc
   let turnStarted!: () => void
   const started = new Promise<void>((resolve) => { turnStarted = resolve })
   let heldTurnStart: number | undefined
-  const emit = (process: CodexProcess, frame: Frame) => { process.protocol.emitted(frame); process.wire.send(frame) }
+  const notify = (process: CodexProcess) => { for (const frame of process.protocol.drain()) process.wire.send(frame) }
+  const emit = (process: CodexProcess, frame: Frame) => { process.protocol.emitted(frame); process.wire.send(frame); notify(process) }
   const answer = (process: CodexProcess, frame: Frame) => {
     frames.push(frame)
     let result: unknown
@@ -35,6 +36,7 @@ export async function scriptedTransport(options: { holdTurnStart?: boolean; cloc
     if (frame.id === undefined || !frame.method) return
     if (frame.method === "turn/start" && options.holdTurnStart) { heldTurnStart = frame.id; turnStarted(); return }
     process.wire.send({ id: frame.id, result })
+    notify(process)
     if (frame.method !== "turn/start") return
     turnStarted()
     if (options.completeTurns) emit(process, { method: "turn/completed", params: { threadId: String(frame.params?.threadId), turn: { id: "turn-current", status: "completed" } } })

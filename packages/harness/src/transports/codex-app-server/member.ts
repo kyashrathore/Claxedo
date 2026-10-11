@@ -1,4 +1,5 @@
 import { errorMessage } from "@claxedo/helpers"
+import type { Deadline } from "../../contract"
 import type { CodexAccountLogin } from "./account"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { CodexRequestRefusal, CodexTransportError } from "./errors"
@@ -6,7 +7,6 @@ import type { CodexRouter } from "./router"
 import type { CodexConnection, CodexRequestHandler, RpcMessage } from "./rpc"
 
 const LOGIN_BEFORE: readonly string[] = ["thread/start", "thread/resume", "turn/start", "thread/goal/set"]
-const OPENING: readonly string[] = ["thread/resume", "thread/unarchive"]
 
 function resultThread(result: unknown): string | undefined {
   return asString(asRecordOrEmpty(asRecordOrEmpty(result).thread).id)
@@ -29,7 +29,7 @@ export class CodexMember implements CodexConnection {
   async request(method: string, params?: unknown, ms?: number): Promise<unknown> {
     if (!this.alive) throw new CodexTransportError("process", `Codex ${method} was not sent: the session no longer holds its app-server`)
     const threadId = asString(asRecordOrEmpty(params).threadId)
-    if (threadId && !OPENING.includes(method) && !this.router.owns(threadId, this)) {
+    if (threadId && method !== "thread/resume" && !this.router.owns(threadId, this)) {
       throw new CodexTransportError("session", `Codex thread ${threadId} does not belong to this session`)
     }
     if (LOGIN_BEFORE.includes(method)) await this.router.login(await this.account.current())
@@ -75,9 +75,9 @@ export class CodexMember implements CodexConnection {
     }).then(undefined, (cause: unknown) => this.router.log.warn("Codex could not interrupt a turn whose start timed out", { threadId, error: errorMessage(cause) }))
   }
 
-  async archive(threadId: string): Promise<void> {
+  async unload(deadline: Deadline): Promise<void> {
     if (this.state === "left" || !this.router.raw.alive) return
-    await this.router.raw.request("thread/archive", { threadId })
+    await Promise.all(this.threads.map((threadId) => this.router.unload(threadId, deadline)))
   }
 
   leave(): void {

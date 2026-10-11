@@ -54,7 +54,7 @@ const methods: Record<string, Shape> = {
   "thread/backgroundTerminals/list": { required: ["threadId"], fields: { threadId: text, cursor: optional(text) } },
   "thread/backgroundTerminals/terminate": { required: ["threadId", "processId"], fields: { threadId: text, processId: text } },
   "thread/archive": { required: ["threadId"], fields: { threadId: text } },
-  "thread/unarchive": { required: ["threadId"], fields: { threadId: text } },
+  "thread/unsubscribe": { required: ["threadId"], fields: { threadId: text } },
   "account/login/start": { required: ["type", "apiKey"], fields: { type: oneOf("apiKey"), apiKey: text } },
   "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
     clientUserMessageId: optional(text), input: list(userInput) } },
@@ -67,10 +67,11 @@ export class CodexPeer {
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
   private started = 0
-  private readonly archived = new Set<string>()
+  private readonly unsubscribed = new Set<string>()
+  private readonly notifications: Frame[] = []
   readonly logins: string[] = []
 
-  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[]; archiveFailures?: number } = {}) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[]; unsubscribeFailures?: number } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
@@ -81,6 +82,16 @@ export class CodexPeer {
     const threadId = String(frame.params?.threadId)
     const turn = frame.params?.turn
     if (isRecord(turn) && this.threads.get(threadId) === turn.id) this.threads.set(threadId, undefined)
+    this.unloadIfIdle(threadId)
+  }
+
+  drain(): Frame[] { return this.notifications.splice(0) }
+
+  private unloadIfIdle(threadId: string) {
+    if (!this.unsubscribed.has(threadId) || this.threads.get(threadId) !== undefined) return
+    this.unsubscribed.delete(threadId)
+    this.threads.delete(threadId)
+    this.notifications.push({ method: "thread/closed", params: { threadId } })
   }
 
   receive(frame: Frame): unknown {
@@ -110,18 +121,10 @@ export class CodexPeer {
       return {}
     }
     if (frame.method === "thread/archive") {
-      if (this.script.archiveFailures) { this.script.archiveFailures--; throw new CodexScriptedFailure("archive refused") }
       this.threads.delete(String(params.threadId))
-      this.archived.add(String(params.threadId))
       return {}
     }
-    if (frame.method === "thread/unarchive") {
-      if (!this.archived.delete(String(params.threadId))) throw new CodexScriptedFailure(`no archived rollout found for thread id ${String(params.threadId)}`)
-      return { thread: { id: params.threadId } }
-    }
-    if (frame.method === "thread/resume" && this.archived.has(String(params.threadId))) {
-      throw new CodexScriptedFailure(`session ${String(params.threadId)} is archived. Run \`codex unarchive ${String(params.threadId)}\` to unarchive it first.`)
-    }
+    if (frame.method === "thread/unsubscribe") return this.unsubscribe(String(params.threadId))
     if (frame.method === "account/login/start") { this.logins.push(String(params.apiKey)); return { type: "apiKey" } }
     if (frame.method === "turn/start") return this.start(params)
     if (frame.method === "turn/settings/update") {
@@ -140,6 +143,14 @@ export class CodexPeer {
     const threadId = frame.method === "thread/start" ? `thread-${++this.started}` : String(params.threadId)
     if (!this.threads.has(threadId)) this.threads.set(threadId, undefined)
     return { thread: { id: threadId } }
+  }
+
+  private unsubscribe(threadId: string) {
+    if (this.script.unsubscribeFailures) { this.script.unsubscribeFailures--; throw new CodexScriptedFailure("unsubscribe refused") }
+    if (!this.threads.has(threadId)) return { status: "notLoaded" }
+    this.unsubscribed.add(threadId)
+    this.unloadIfIdle(threadId)
+    return { status: "unsubscribed" }
   }
 
   private reply(frame: Frame) {

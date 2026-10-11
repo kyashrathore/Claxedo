@@ -18,10 +18,6 @@ export class CodexNoActiveTurnError extends CodexTransportError {
   constructor() { super("protocol", "No active turn to interrupt") }
 }
 
-export class CodexThreadArchivedError extends CodexTransportError {
-  constructor(message: string) { super("session", message) }
-}
-
 export class CodexDeadlineError extends CodexTransportError {
   constructor(message: string) { super("process", message) }
 }
@@ -45,6 +41,5 @@ export function codexChannelError(reason: "frame" | "stdout" | "exit" | "write",
 
 export function codexRpcError(error: { code: number; message: string }): CodexTransportError {
   if (/^no active turn to interrupt$/i.test(error.message)) return new CodexNoActiveTurnError()
-  if (/^session \S+ is archived\b/i.test(error.message)) return new CodexThreadArchivedError(error.message)
   return new CodexTransportError("protocol", error.message)
 }

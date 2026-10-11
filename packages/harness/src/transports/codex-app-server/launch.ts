@@ -12,6 +12,8 @@ import { CodexRouter } from "./router"
 import { CodexRpc, codexRetirementDeadline, type CodexConnection } from "./rpc"
 import { CODEX_RANGE, codexReportedVersion } from "./version"
 
+const UNLOAD_UNSUBSCRIBED_IDLE_THREADS = "thread_unload_delay_secs=0"
+
 export type CodexProcess = { rpc: CodexRpc; router: CodexRouter; version: string }
 
 export type CodexLaunch = { member: CodexMember; key: string; home: string; modelProvider?: string; plugins: string[]; version: string; release: () => Promise<void> }
@@ -24,7 +26,7 @@ async function prepareProfile(input: StartInput, options: CodexTransportOptions,
 
 async function startCodexProcess(profile: CodexProfile, options: CodexTransportOptions, services: HarnessServices, signal: AbortSignal): Promise<CodexProcess> {
   const env = { ...stringRecord(options.env ?? process.env), CODEX_HOME: profile.home }
-  const overrides = profile.configOverrides.flatMap((override) => ["-c", override])
+  const overrides = [...profile.configOverrides, UNLOAD_UNSUBSCRIBED_IDLE_THREADS].flatMap((override) => ["-c", override])
   const owned = await services.spawn({ file: options.binary, args: ["app-server", ...overrides, "--listen", "stdio://"], cwd: profile.home, env },
     { role: "harness", label: "Codex app-server", home: profile.store, signal })
   const rpc = new CodexRpc(owned, services.clock)

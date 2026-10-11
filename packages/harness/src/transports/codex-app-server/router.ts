@@ -1,9 +1,9 @@
-import { createKeyedSerializer, errorMessage } from "@claxedo/helpers"
+import { createKeyedSerializer, errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import type { Clock, Logger } from "../../contract"
+import type { Clock, Deadline, Logger } from "../../contract"
 import type { CodexLogin } from "./account"
 import { CodexEarlyFrames } from "./early-frames"
-import { CodexRequestRefusal, CodexTransportError } from "./errors"
+import { CodexDeadlineError, CodexRequestRefusal, CodexTransportError } from "./errors"
 import type { CodexMember } from "./member"
 import type { CodexRpc, RpcMessage } from "./rpc"
 import { codexCollabAgentCall, codexSubagentActivity } from "./translate"
@@ -23,6 +23,7 @@ export class CodexRouter {
   private readonly members = new Set<CodexMember>()
   private readonly threads = new Map<string, CodexMember>()
   private readonly released = new Set<string>()
+  private readonly closing = new Map<string, () => void>()
   private readonly early: CodexEarlyFrames
   private readonly logins = createKeyedSerializer()
   private signedIn?: string
@@ -60,6 +61,17 @@ export class CodexRouter {
 
   threadsOf(member: CodexMember): string[] { return [...this.threads].flatMap(([threadId, owner]) => owner === member ? [threadId] : []) }
 
+  async unload(threadId: string, deadline: Deadline): Promise<void> {
+    const closed = Promise.withResolvers<void>()
+    this.closing.set(threadId, closed.resolve)
+    try {
+      const unsubscribed = await this.raw.request("thread/unsubscribe", { threadId })
+      if (asString(asRecordOrEmpty(unsubscribed).status) === "notLoaded") return
+      await settleAtRequestDeadline(`Codex thread ${threadId} unload`, { signal: deadline.signal, deadlineAt: deadline.at }, closed.promise, () => {},
+        () => new CodexDeadlineError(`Codex did not unload thread ${threadId} before the release deadline`))
+    } finally { this.closing.delete(threadId) }
+  }
+
   login(login: CodexLogin | undefined): Promise<void> {
     if (login === undefined) return Promise.resolve()
     const key = JSON.stringify(login)
@@ -87,6 +99,7 @@ export class CodexRouter {
       return
     }
     const threadId = asString(asRecordOrEmpty(message.params).threadId)
+    if (message.method === "thread/closed" && threadId) this.closing.get(threadId)?.()
     if (!threadId || this.released.has(threadId)) return
     const owner = this.threads.get(threadId)
     if (!owner) {

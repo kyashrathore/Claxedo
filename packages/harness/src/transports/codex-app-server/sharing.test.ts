@@ -90,7 +90,7 @@ test("two sessions of one workspace, owner and account share one app-server with
     expect(aEvents.filter((row) => row.event.type === "usage")).toHaveLength(1)
     expect(bEvents.filter((row) => row.event.type === "usage")).toHaveLength(1)
     await peer.transport.close(aSession)
-    expect(peer.frames.filter((frame) => frame.method === "thread/archive").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
+    expect(peer.frames.filter((frame) => frame.method === "thread/unsubscribe").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
     expect(peer.retired()).toBe(0)
     expect(b.health.runtime(bDirectory, "s2")).toEqual({ status: "ok" })
     await b.close(bSession)
@@ -115,8 +115,15 @@ test("one session's turn/start timeout fails only that session while its sibling
     expect(text(await bRunning)).toBe("B_CONTINUES")
     expect(b.health.runtime(bDirectory, "s2")).toEqual({ status: "ok" })
     expect(peer.retired()).toBe(0)
-    await peer.transport.close(aSession)
-    expect(peer.frames.filter((frame) => frame.method === "thread/archive").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
+    peer.releaseTurnStart()
+    await until(() => peer.frames.some((frame) => frame.method === "turn/interrupt"))
+    let closed = false
+    const closing = peer.transport.close(aSession).then(() => { closed = true })
+    await until(() => peer.frames.some((frame) => frame.method === "thread/unsubscribe"))
+    expect(closed).toBe(false)
+    peer.emit(turnCompleted("thread-1", "turn-current"))
+    await closing
+    expect(peer.frames.filter((frame) => frame.method === "thread/unsubscribe").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
   } finally { await close() }
 })
 
@@ -188,7 +195,7 @@ test("an account change moves only that session to a new app-server while its si
     peer.releaseTurnStart()
     expect(await peer.transport.configure(aSession, { credentials: account("account-two") })).toEqual({ state: "applied" })
     expect(peer.spawned()).toBe(2)
-    expect(peer.frames.filter((frame) => frame.method === "thread/archive").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
+    expect(peer.frames.filter((frame) => frame.method === "thread/unsubscribe").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
     expect(peer.frames.find((frame) => frame.method === "thread/resume")?.params).toMatchObject({ threadId: "thread-1" })
     for (const frame of agentMessage("thread-2", "turn-current", "b-text", "B_STAYS")) peer.emit(frame, 0)
     peer.emit(turnCompleted("thread-2", "turn-current"), 0)
@@ -212,9 +219,9 @@ test("a process exit fails every session on it, and each resumes its own thread 
 })
 
 test("a move whose thread release fails leaves the session lost, and its next turn resumes on the new app-server", async () => {
-  const { peer, aSession, close } = await shared({ completeTurns: true, archiveFailures: 1 }, account("account-one"))
+  const { peer, aSession, close } = await shared({ completeTurns: true, unsubscribeFailures: 1 }, account("account-one"))
   try {
-    await expect(peer.transport.configure(aSession, { credentials: account("account-two") })).rejects.toThrow("archive refused")
+    await expect(peer.transport.configure(aSession, { credentials: account("account-two") })).rejects.toThrow("unsubscribe refused")
     await collect(peer.transport.send(aSession, turn("A"), asking().broker))
     expect(peer.spawned()).toBe(2)
     expect(peer.frames.find((frame) => frame.method === "thread/resume")?.params).toMatchObject({ threadId: "thread-1" })

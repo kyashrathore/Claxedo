@@ -37,8 +37,10 @@ for (const kind of ["codex", "cursor"] as const) {
               : { id: frame.id, result: frame.method === "thread/start" ? { thread: { id: "agent" } }
                 : frame.method === "initialize" ? { userAgent: "claxedo/0.156.1 (Mac OS 26.6.2; arm64) unknown (claxedo; 0.1.0)" }
                 : frame.method === "thread/backgroundTerminals/list" ? { data: [] }
+                : frame.method === "thread/unsubscribe" ? { status: "unsubscribed" }
                 : {} }
             stdout.write(`${JSON.stringify(reply)}\n`)
+            if (frame.method === "thread/unsubscribe") stdout.write(`${JSON.stringify({ method: "thread/closed", params: { threadId: "agent" } })}\n`)
           }
         })
         return { pid: 5_000_010, stdin, stdout, stderr: new PassThrough(), exited: exit.promise,

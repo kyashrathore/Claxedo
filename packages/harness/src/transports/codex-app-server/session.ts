@@ -4,7 +4,7 @@ import type { HarnessServices, HarnessVersionGate, ProcessLosses, SessionBroker,
 import { CodexAccountLogin } from "./account"
 import { projectCodexThreadConfig } from "./configuration"
 import type { Entry } from "./entry"
-import { CodexRequestRefusal, CodexThreadArchivedError, CodexTransportError } from "./errors"
+import { CodexRequestRefusal, CodexTransportError } from "./errors"
 import { reconcileCodexGoal } from "./goals"
 import { codexThreadResumeParams, codexThreadStartParams } from "./input"
 import { codexModelProvider, type CodexLaunch, type CodexLaunches } from "./launch"
@@ -27,20 +27,11 @@ export type CodexSessionHost = {
 
 type OpenedLaunch = CodexLaunch & { modelProvider: string }
 
-async function resumeThread(member: CodexLaunch["member"], threadId: string, params: unknown): Promise<unknown> {
-  try { return await member.request("thread/resume", params) }
-  catch (error) {
-    if (!(error instanceof CodexThreadArchivedError)) throw error
-    await member.request("thread/unarchive", { threadId })
-    return member.request("thread/resume", params)
-  }
-}
-
 async function openThread(host: CodexSessionHost, { member, plugins, modelProvider }: OpenedLaunch, input: StartInput, resumed: string | undefined): Promise<string> {
   const config = projectCodexThreadConfig(input, host.services, plugins)
   host.launches.assertLive(" during startup")
   const mode = codexPermissionSettings(input.config.permissionMode)
-  const result = asRecordOrEmpty(resumed ? await resumeThread(member, resumed, codexThreadResumeParams(resumed, input, config, mode, modelProvider))
+  const result = asRecordOrEmpty(resumed ? await member.request("thread/resume", codexThreadResumeParams(resumed, input, config, mode, modelProvider))
     : await member.request("thread/start", codexThreadStartParams(input, config, mode, modelProvider)))
   const threadId = asString(asRecordOrEmpty(result.thread).id) ?? ""
   if (!threadId || (resumed && threadId !== resumed)) throw new CodexTransportError("session", "Codex returned a different or missing thread")
