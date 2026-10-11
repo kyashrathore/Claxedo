@@ -209,9 +209,11 @@ async function servedEverywhere(m: Machine, workspaceId: string, generation: num
     generation,
   })
   await until(
-    async () =>
-      (await m.state())?.run?.served?.some((row) => row.workspace_id === workspaceId && row.connected) === true,
-    "the served row to show the tunnel",
+    async () => {
+      const run = (await m.state())?.run
+      return run?.generation === generation && run.served?.some((row) => row.workspace_id === workspaceId && row.connected) === true
+    },
+    `generation ${generation}'s served row to show the tunnel`,
   )
   return socket
 }

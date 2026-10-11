@@ -141,17 +141,18 @@ describe("the private-file runner client", () => {
     expect(launches).toHaveLength(2)
   })
 
+  // The bound also covers the replacement's cold start, which took over 500 ms on a 4-vCPU Windows runner.
   test("a wedged runner fails its request at the bound and is replaced", async () => {
-    const { write, launches, request } = fakeRunner({ answerTimeoutMs: 500, abortGraceMs: 500 })
+    const { write, launches, request } = fakeRunner({ answerTimeoutMs: 2_000, abortGraceMs: 500 })
 
     const error = await write(request("wedge-x.json")).catch((thrown: unknown) => thrown)
 
     expect(error).toBeInstanceOf(RunnerRefusal)
-    expect(String(error)).toContain("no answer within 500ms")
+    expect(String(error)).toContain("no answer within 2000ms")
     expect(await exited(launches[0]!)).toBe(true)
     await write(request("after.json"))
     expect(launches).toHaveLength(2)
-  })
+  }, 15_000)
 
   test("a runner that reports the stream lost is replaced", async () => {
     const { write, launches, request } = fakeRunner()
