@@ -116,8 +116,10 @@ export function getTerminalEnvVars(params: {
   port: number
   shell?: string
   agentHookToken?: string
+  platform?: NodeJS.Platform
 }): Record<string, string> {
-  const { tabId, terminalId, workspaceId, port, shell, agentHookToken } = params
+  const { tabId, terminalId, workspaceId, port, shell, agentHookToken, platform = process.platform } = params
+  const delimiter = platform === "win32" ? ";" : ":"
 
   const env: Record<string, string> = {
     CLAXEDO_HOME_DIR: CLAXEDO_DIR,
@@ -130,18 +132,18 @@ export function getTerminalEnvVars(params: {
   }
 
   const base = process.env.PATH || ""
-  const parts = base.split(":").filter(Boolean)
+  const parts = base.split(delimiter).filter(Boolean)
   const has = parts.includes(BIN_DIR)
-  env.PATH = has ? base : `${BIN_DIR}${base ? ":" : ""}${base}`
+  env.PATH = has ? base : `${BIN_DIR}${base ? delimiter : ""}${base}`
 
-  const shellName = shell?.split("/").pop() || ""
+  const shellName = shell?.split(/[\\/]/).pop() || ""
   if (shellName === "zsh" || shellName.includes("zsh")) {
     env.ZDOTDIR = SHELL_DIR
     env.CLAXEDO_ORIG_ZDOTDIR = process.env.ZDOTDIR || process.env.HOME || ""
   } else if (shellName === "bash" || shellName.includes("bash")) {
     // Bash ignores --rcfile when -c is present; env vars are enough
   } else {
-    env.PATH = `${BIN_DIR}:${process.env.PATH || ""}`
+    env.PATH = `${BIN_DIR}${delimiter}${process.env.PATH || ""}`
   }
 
   return env

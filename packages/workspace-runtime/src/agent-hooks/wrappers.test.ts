@@ -22,7 +22,7 @@ const posixShebang = process.platform !== "win32"
 
 describe("buildWrapperScript", () => {
   it("includes marker, find_real_binary, binary name, and exec block", () => {
-    const script = buildWrapperScript("myagent", `exec "$REAL_BIN" "$@"`)
+    const script = buildWrapperScript("myagent", `exec "$REAL_BIN" "$@"`, "posix")
 
     expect(script).toContain(WRAPPER_MARKER)
     expect(script).toContain("find_real_binary")
@@ -33,7 +33,7 @@ describe("buildWrapperScript", () => {
   })
 
   it("starts with shebang", () => {
-    const script = buildWrapperScript("test", "exec true")
+    const script = buildWrapperScript("test", "exec true", "posix")
     expect(script.startsWith("#!/bin/bash\n")).toBe(true)
   })
 })
@@ -56,13 +56,13 @@ describe("Codex template arguments", () => {
     const events = flags.filter((_, index) => index % 2 === 1).map((flag) => flag.slice("hooks.".length, flag.indexOf("=")))
     expect(events).toEqual(["SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "Interrupt", "SubagentStart", "SubagentStop"])
     expect(flags.filter((_, index) => index % 2 === 0).every((flag) => flag === "-c")).toBe(true)
-    expect(flags[7]).toBe(`hooks.PreToolUse=[{matcher="^request_user_input$",hooks=[{type="command",command="'/tmp/hooks/notify.sh' --harness=codex"}]}]`)
+    expect(flags[7]).toBe(`hooks.PreToolUse=[{matcher="request_user_input",hooks=[{type="command",command="'/tmp/hooks/notify.sh' --harness=codex"}]}]`)
   })
 })
 
 describe("generateGenericWrapper", () => {
   it("sends busy/idle/error notifications around the real binary", () => {
-    const script = generateGenericWrapper("aider", "/tmp/hooks/notify.sh")
+    const script = generateGenericWrapper("aider", "/tmp/hooks/notify.sh", "posix")
 
     expect(script).toContain('hook_event_name":"Busy"')
     expect(script).toContain('hook_event_name":"Idle"')

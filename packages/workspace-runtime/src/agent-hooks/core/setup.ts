@@ -1,10 +1,18 @@
 import * as fs from "fs"
 import * as path from "path"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
-import { CLAXEDO_DIR, NOTIFY_SCRIPT } from "./constants"
+import { CLAXEDO_DIR } from "./constants"
 import { writeIfChanged } from "./utils"
 import { generateNotifyScript } from "./hooks"
 import { hookArtifact } from "./render"
+import {
+  hookPlatform,
+  installedTemplates,
+  notifyScriptName,
+  wrappedCommands,
+  wrapperFile,
+  type HookPlatform,
+} from "./platform"
 import {
   generateTemplateWrapper,
   generateGenericWrapper,
@@ -22,6 +30,7 @@ export interface StatusHooksSetupOptions {
 }
 
 export interface StatusHooksManifest {
+  platform: HookPlatform
   dirs: { root: string; bin: string; hooks: string; shell: string; bash: string }
   files: { notify: string }
 }
@@ -31,12 +40,25 @@ export interface WriteStatusHooksOptions extends StatusHooksSetupOptions {
   genericWrappers?: readonly string[]
 }
 
-export function createStatusHooksManifest(root = CLAXEDO_DIR): StatusHooksManifest {
+export function createStatusHooksManifest(root = CLAXEDO_DIR, platform = hookPlatform()): StatusHooksManifest {
   const hooks = path.join(root, "hooks")
   return {
+    platform,
     dirs: { root, bin: path.join(root, "bin"), hooks, shell: path.join(root, "shell"), bash: path.join(root, "bash") },
-    files: { notify: path.join(hooks, NOTIFY_SCRIPT) },
+    files: { notify: path.join(hooks, notifyScriptName(platform)) },
   }
+}
+
+/** The zsh and bash startup files; cmd.exe and PowerShell find the wrappers through PATH alone. */
+function shellIntegrationFiles(manifest: StatusHooksManifest): [string, () => string][] {
+  if (manifest.platform === "windows") return []
+  return [
+    [path.join(manifest.dirs.shell, ".zshenv"), generateZshenv],
+    [path.join(manifest.dirs.shell, ".zprofile"), generateZshprofile],
+    [path.join(manifest.dirs.shell, ".zshrc"), generateZshrc],
+    [path.join(manifest.dirs.shell, ".zlogin"), generateZshlogin],
+    [path.join(manifest.dirs.bash, "rcfile"), generateBashrc],
+  ]
 }
 
 export async function writeStatusHooksArtifacts(
@@ -44,18 +66,26 @@ export async function writeStatusHooksArtifacts(
   options: WriteStatusHooksOptions,
 ): Promise<StatusHooksManifest> {
   const { port = 7860, force = false, wrappers, replaceWrappers = false, templates, genericWrappers = [] } = options
-  for (const dir of Object.values(manifest.dirs)) await fs.promises.mkdir(dir, { recursive: true, mode: 0o755 })
-  await writeIfChanged(manifest.files.notify, generateNotifyScript(port, templates), 0o755, force)
-  for (const template of templates) {
+  const { platform } = manifest
+  const shellFiles = shellIntegrationFiles(manifest)
+  for (const dir of [manifest.dirs.root, manifest.dirs.bin, manifest.dirs.hooks, ...shellFiles.map(([file]) => path.dirname(file))])
+    await fs.promises.mkdir(dir, { recursive: true, mode: 0o755 })
+  await writeIfChanged(manifest.files.notify, generateNotifyScript(port, templates, platform), 0o755, force)
+  for (const template of installedTemplates(templates, platform)) {
     for (const artifact of template.artifacts ?? []) {
       const file = path.join(manifest.dirs.hooks, artifact.file)
       await fs.promises.mkdir(path.dirname(file), { recursive: true })
-      await writeIfChanged(file, hookArtifact(template, artifact.file, manifest.files.notify), artifact.mode, force)
-    }
-    for (const command of template.wrapper === false ? [] : [template.command, ...(template.aliases ?? [])]) {
       await writeIfChanged(
-        path.join(manifest.dirs.bin, command),
-        generateTemplateWrapper(template, manifest.files.notify, command),
+        file,
+        hookArtifact(template, artifact.file, manifest.files.notify, platform),
+        artifact.mode,
+        force,
+      )
+    }
+    for (const command of wrappedCommands(template)) {
+      await writeIfChanged(
+        wrapperFile(manifest.dirs.bin, command, platform),
+        generateTemplateWrapper(template, manifest.files.notify, platform, command),
         0o755,
         force,
       )
@@ -70,36 +100,25 @@ export async function writeStatusHooksArtifacts(
   const shimmed = new Set(templates.flatMap((template) => [template.command, ...(template.aliases ?? [])]))
   for (const agent of normalizeWrappers([...genericWrappers, ...custom]).filter((item) => !shimmed.has(item))) {
     await writeIfChanged(
-      path.join(manifest.dirs.bin, agent),
-      generateGenericWrapper(agent, manifest.files.notify),
+      wrapperFile(manifest.dirs.bin, agent, platform),
+      generateGenericWrapper(agent, manifest.files.notify, platform),
       0o755,
       force,
     )
   }
-  for (const [file, content] of [
-    [path.join(manifest.dirs.shell, ".zshenv"), generateZshenv()],
-    [path.join(manifest.dirs.shell, ".zprofile"), generateZshprofile()],
-    [path.join(manifest.dirs.shell, ".zshrc"), generateZshrc()],
-    [path.join(manifest.dirs.shell, ".zlogin"), generateZshlogin()],
-    [path.join(manifest.dirs.bash, "rcfile"), generateBashrc()],
-  ])
-    await writeIfChanged(file, content, 0o644, force)
+  for (const [file, generate] of shellFiles) await writeIfChanged(file, generate(), 0o644, force)
   return manifest
 }
 
-export function isStatusHooksSetupComplete(templates: readonly StatusHookTemplate[]): boolean {
-  const manifest = createStatusHooksManifest()
+export function isStatusHooksSetupComplete(templates: readonly StatusHookTemplate[], platform = hookPlatform()): boolean {
+  const manifest = createStatusHooksManifest(CLAXEDO_DIR, platform)
   const required = [
     manifest.files.notify,
-    ...templates.flatMap((template) => [
+    ...installedTemplates(templates, platform).flatMap((template) => [
       ...(template.artifacts ?? []).map((artifact) => path.join(manifest.dirs.hooks, artifact.file)),
-      ...(template.wrapper === false ? [] : [template.command, ...(template.aliases ?? [])]).map((command) =>
-        path.join(manifest.dirs.bin, command),
-      ),
+      ...wrappedCommands(template).map((command) => wrapperFile(manifest.dirs.bin, command, platform)),
     ]),
-    path.join(manifest.dirs.shell, ".zshrc"),
-    path.join(manifest.dirs.shell, ".zlogin"),
-    path.join(manifest.dirs.bash, "rcfile"),
+    ...shellIntegrationFiles(manifest).map(([file]) => file),
   ]
   return required.every((file) => fs.existsSync(file))
 }

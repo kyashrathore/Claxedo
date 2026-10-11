@@ -92,7 +92,9 @@ const HISTORY_RETENTION_MS = (() => {
   if (!Number.isFinite(raw) || raw <= 0) return 7 * 24 * 60 * 60 * 1000
   return Math.floor(raw)
 })()
-const agentInitialCommand = (value: string) => {
+const agentInitialCommand = (value: string, platform: NodeJS.Platform) => {
+  // cmd.exe has no startup file that reorders PATH, so the wrapper ahead of the real CLI on PATH is enough.
+  if (platform === "win32") return value
   const match = value.match(/^(\s*)(claude|codex|cursor)(?=\s|$)(.*)$/)
   if (!match) return value
   const command = match[2]
@@ -188,6 +190,7 @@ export async function startTerminal(
       workspaceId,
       port,
       shell: command,
+      platform,
     })
 
     Object.assign(env, agentEnv)
@@ -331,7 +334,7 @@ export async function startTerminal(
   if (notice) history.append(notice)
   if (previousPtyId) log.info("pty history restored", { id, previousPtyId, restoredChars: restored.length })
   const restoredBuffer = restored + notice
-  const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand) : undefined
+  const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand, platform) : undefined
   let initialCommandSent = false
   let initialCommandTimer: ReturnType<typeof setTimeout> | undefined
   // Per-session, because the carry is stream state.

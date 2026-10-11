@@ -7,11 +7,10 @@ export const HOOKS_DIR = path.join(CLAXEDO_DIR, "hooks")
 export const SHELL_DIR = path.join(CLAXEDO_DIR, "shell")
 export const BASH_DIR = path.join(CLAXEDO_DIR, "bash")
 
-export const WRAPPER_MARKER = "# Claxedo agent-wrapper v1"
-export const NOTIFY_MARKER = "# Claxedo agent notification hook v1"
+export const WRAPPER_MARKER = "Claxedo agent-wrapper v1"
+export const NOTIFY_MARKER = "Claxedo agent notification hook v1"
 export const SHELL_MARKER = "# Claxedo shell integration v1"
 
-export const NOTIFY_SCRIPT = "notify.sh"
 export const WRAPPERS_JSON = "wrappers.json"
 
 export const WRAPPER_NAME = /^[a-z0-9][a-z0-9._-]{0,31}$/

@@ -1,5 +1,5 @@
 #!/bin/bash
-{{MARKER}}
+# {{MARKER}}
 # Forward provider JSON unchanged. The runtime owns normalization and state.
 [ -z "$CLAXEDO_TAB_ID" ] && exit 0
 

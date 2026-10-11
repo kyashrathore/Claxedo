@@ -44,3 +44,15 @@ test("bundled status hook templates are validated on their own", () => {
   expect(readStatusHookTemplates([template])).toEqual([template])
   expect(() => readStatusHookTemplates([{ ...template, command: "Bad Name" }])).toThrow(PluginManifestError)
 })
+
+test("a template's Windows installation is validated like the template's own fields", () => {
+  const windows: StatusHookTemplate = {
+    ...template,
+    windows: { wrapper: 'call "%REAL_BIN%" %*', artifacts: [{ file: "hook.cmd", content: "@echo off", mode: 0o755 }] },
+  }
+  expect(readStatusHookTemplates([windows])).toEqual([windows])
+  expect(() => readStatusHookTemplates([{ ...template, windows: { shell: "powershell" } }])).toThrow(PluginManifestError)
+  expect(() =>
+    readStatusHookTemplates([{ ...template, windows: { artifacts: [{ file: "..\\hook.cmd", content: "", mode: 0o755 }] } }]),
+  ).toThrow(PluginManifestError)
+})

@@ -23,7 +23,12 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
     templates,
     genericWrappers: defaultGenericWrappers,
   })
-  const results = await materializeAgentHooks({ homeDir: userHomeDir(), notifyPath: manifest.files.notify, templates })
+  const results = await materializeAgentHooks({
+    homeDir: userHomeDir(),
+    notifyPath: manifest.files.notify,
+    templates,
+    platform: manifest.platform,
+  })
   for (const result of results) {
     if (result.status !== "failed") continue
     log.warn("Failed to materialize agent hooks", { runner: result.runner, path: result.path, reason: result.reason })

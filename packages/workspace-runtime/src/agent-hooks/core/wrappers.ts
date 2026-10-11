@@ -1,12 +1,21 @@
 import * as fs from "fs"
 import * as path from "path"
 import { CLAXEDO_DIR, FIND_REAL_BINARY, WRAPPER_MARKER, WRAPPER_NAME, WRAPPERS_JSON } from "./constants"
-import { loadTemplate, shellQuote, writeIfChanged } from "./utils"
+import { batchText, cmdQuote, loadTemplate, shellQuote, writeIfChanged } from "./utils"
 import { asArrayOrUndefined, asRecord } from "@claxedo/helpers/guards"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
+import { wrappedCommands, type HookPlatform } from "./platform"
 import { hookArguments, hookVariables, projectHookContent, renderHookText } from "./render"
 
-export function buildWrapperScript(binaryName: string, execBlock: string): string {
+export function buildWrapperScript(binaryName: string, execBlock: string, platform: HookPlatform): string {
+  if (platform === "windows")
+    return batchText(
+      loadTemplate("wrapper-common.cmd.template.txt", {
+        MARKER: WRAPPER_MARKER,
+        BINARY_NAME: binaryName,
+        EXEC_BLOCK: execBlock,
+      }),
+    )
   return loadTemplate("wrapper-common.template.sh", {
     MARKER: WRAPPER_MARKER,
     FIND_REAL_BINARY,
@@ -15,7 +24,24 @@ export function buildWrapperScript(binaryName: string, execBlock: string): strin
   })
 }
 
-export function generateGenericWrapper(binaryName: string, notifyPath: string): string {
+export function generateGenericWrapper(binaryName: string, notifyPath: string, platform: HookPlatform): string {
+  if (platform === "windows") {
+    const notify = cmdQuote(notifyPath)
+    return buildWrapperScript(
+      binaryName,
+      `if defined CLAXEDO_TAB_ID (echo {"hook_event_name":"Busy"}| ${notify} >nul 2>&1)
+
+call "%REAL_BIN%" %*
+set "CLAXEDO_EXIT=%ERRORLEVEL%"
+
+set "CLAXEDO_EVENT=Idle"
+if not "%CLAXEDO_EXIT%"=="0" set "CLAXEDO_EVENT=Error"
+if defined CLAXEDO_TAB_ID (echo {"hook_event_name":"%CLAXEDO_EVENT%"}| ${notify} >nul 2>&1)
+
+exit /b %CLAXEDO_EXIT%`,
+      platform,
+    )
+  }
   return buildWrapperScript(
     binaryName,
     `if [ -n "\${CLAXEDO_TAB_ID:-}" ]; then
@@ -34,6 +60,7 @@ if [ -n "\${CLAXEDO_TAB_ID:-}" ]; then
 fi
 
 exit $EXIT_CODE`,
+    platform,
   )
 }
 
@@ -77,40 +104,39 @@ export async function readWrapperInventory(
 ) {
   const custom = await loadCustomWrappers(root)
   const defaults = normalizeWrappers([...generic])
-  const all = normalizeWrappers([
-    ...defaults,
-    ...custom,
-    ...templates.flatMap((template) =>
-      template.wrapper === false ? [] : [template.command, ...(template.aliases ?? [])],
-    ),
-  ])
+  const all = normalizeWrappers([...defaults, ...custom, ...templates.flatMap(wrappedCommands)])
   return { defaults, custom, all }
 }
 
+/** `template` is the installation `platform` uses, as `installedTemplates` returns it. */
 export function generateTemplateWrapper(
   template: StatusHookTemplate,
   notify: string,
+  platform: HookPlatform,
   command = template.command,
 ): string {
-  const args = hookArguments(template, notify)
+  const args = hookArguments(template, notify, platform)
+  const windows = platform === "windows"
   const variables = {
     ...Object.fromEntries(args.map((arg, index) => [`arg${index}`, arg])),
-    ...hookVariables(template, notify),
-    args: args.map(shellQuote).join(" "),
+    ...hookVariables(template, notify, platform),
+    args: args.map(windows ? cmdQuote : shellQuote).join(" "),
     ...(template.install.type === "project-file"
-      ? { projectInstall: generateProjectInstallation(template, notify) }
+      ? { projectInstall: generateProjectInstallation(template, notify, platform) }
       : {}),
   }
+  if (template.wrapper) return buildWrapperScript(command, renderHookText(template.wrapper, variables), platform)
+  if (windows) return buildWrapperScript(command, `call "%REAL_BIN%" ${variables.args ? variables.args + " " : ""}%*`, platform)
   return buildWrapperScript(
     command,
-    template.wrapper
-      ? renderHookText(template.wrapper, variables)
-      : `${variables.projectInstall ? variables.projectInstall + "\n\n" : ""}exec "$REAL_BIN" ${variables.args ? variables.args + " " : ""}"$@"`,
+    `${variables.projectInstall ? variables.projectInstall + "\n\n" : ""}exec "$REAL_BIN" ${variables.args ? variables.args + " " : ""}"$@"`,
+    platform,
   )
 }
 
-function generateProjectInstallation(template: StatusHookTemplate, notify: string): string {
+function generateProjectInstallation(template: StatusHookTemplate, notify: string, platform: HookPlatform): string {
   if (template.install.type !== "project-file") throw new Error("Template does not install a project file")
+  if (platform === "windows") throw new Error("Project-file installs have no Windows wrapper")
   const install = template.install
   const quotedDirectory = JSON.stringify(path.dirname(install.path)).replaceAll("$", "\\$").replaceAll("`", "\\`")
   return renderHookText(loadTemplate("project-file.template.sh", {}), {
@@ -119,6 +145,6 @@ function generateProjectInstallation(template: StatusHookTemplate, notify: strin
     projectDir: quotedDirectory,
     projectFile: path.basename(install.path),
     projectPath: install.path,
-    project: projectHookContent(template, notify),
+    project: projectHookContent(template, notify, platform),
   }).trimEnd()
 }

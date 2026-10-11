@@ -21,7 +21,7 @@ async function readJson(file: string) {
 test("Antigravity preserves user hooks, installs idempotently, and refuses a named collision", async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "agy-hooks-"))
   const file = path.join(home, ".gemini/config/hooks.json")
-  const options = { templates: defaultStatusHooks, homeDir: home, notifyPath }
+  const options = { templates: defaultStatusHooks, platform: "posix" as const, homeDir: home, notifyPath }
   try {
     await fs.mkdir(path.dirname(file), { recursive: true })
     const user = { Stop: [{ command: "echo user-owned" }] }
@@ -45,7 +45,7 @@ describe("materializeAgentHooks", () => {
     await fs.mkdir(dir, { recursive: true })
     const user = path.join(dir, "user.ts")
     await fs.writeFile(user, "user plugin")
-    const options = { templates: defaultStatusHooks, homeDir: root, notifyPath }
+    const options = { templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath }
     expect((await materializeAgentHooks(options)).find((result) => result.runner === "amp")?.status).toBe("applied")
     const file = path.join(dir, "claxedo-lifecycle.ts")
     const content = await fs.readFile(file, "utf8")
@@ -67,7 +67,7 @@ describe("materializeAgentHooks", () => {
 
   test("writes external agent hook config under the provided home dir", async () => {
     const results = await materializeAgentHooks({
-      templates: defaultStatusHooks, homeDir: root,
+      templates: defaultStatusHooks, platform: "posix" as const, homeDir: root,
       notifyPath,
     })
 
@@ -95,7 +95,7 @@ describe("materializeAgentHooks", () => {
 }
 `
     await fs.writeFile(file, person, { mode: 0o600 })
-    const input = { templates: defaultStatusHooks, homeDir: root, notifyPath }
+    const input = { templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath }
 
     expect((await materializeAgentHooks(input)).find((result) => result.runner === "cursor")?.status).toBe("applied")
     const first = await fs.readFile(file, "utf8")
@@ -141,7 +141,7 @@ describe("materializeAgentHooks", () => {
     const file = path.join(root, relative)
     await fs.mkdir(path.dirname(file), { recursive: true })
     await fs.writeFile(file, person, { mode: 0o640 })
-    const input = { templates: defaultStatusHooks, homeDir: root, notifyPath }
+    const input = { templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath }
     expect((await materializeAgentHooks(input)).find((result) => result.runner === runner)?.status).toBe("applied")
     const first = await fs.readFile(file, "utf8")
     expect(first).not.toBe(person)
@@ -157,7 +157,7 @@ describe("materializeAgentHooks", () => {
     const dir = path.join(root, ".config", "amp", "plugins")
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(path.join(dir, "person.ts"), "person plugin\n")
-    const input = { templates: defaultStatusHooks, homeDir: root, notifyPath }
+    const input = { templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath }
     await materializeAgentHooks(input)
     const plugin = path.join(dir, "claxedo-lifecycle.ts")
     const before = await fs.stat(plugin)
@@ -171,7 +171,7 @@ describe("materializeAgentHooks", () => {
     await fs.mkdir(path.dirname(file), { recursive: true })
     for (const content of ['{"version":1,"hooks":{"stop":"not-a-list"}}', "{ not json"]) {
       await fs.writeFile(file, content)
-      const results = await materializeAgentHooks({ templates: defaultStatusHooks, homeDir: root, notifyPath })
+      const results = await materializeAgentHooks({ templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath })
       expect(results.find((result) => result.runner === "cursor")?.status).toBe("failed")
       expect(await fs.readFile(file, "utf8")).toBe(content)
     }
@@ -184,7 +184,7 @@ describe("materializeAgentHooks", () => {
     const file = path.join(root, ".cursor", "hooks.json")
     await fs.mkdir(path.dirname(file), { recursive: true })
     await fs.symlink(target, file)
-    await materializeAgentHooks({ templates: defaultStatusHooks, homeDir: root, notifyPath })
+    await materializeAgentHooks({ templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath })
     expect((await fs.lstat(file)).isSymbolicLink()).toBe(true)
     expect(await fs.readFile(target, "utf8")).toContain(JSON.stringify(`'${cursorHookPath}' Stop`).slice(1, -1))
   })
@@ -199,7 +199,7 @@ describe("materializeAgentHooks", () => {
       Stop: [{ hooks: [{ type: "command", command: notifyPath }, ...user.hooks] }],
     } }))
     await fs.writeFile(file, JSON.stringify({ Stop: [user] }))
-    const input = { templates: defaultStatusHooks, homeDir: root, notifyPath }
+    const input = { templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath }
     for (let i = 0; i < 2; i++) await materializeAgentHooks(input)
     const command = `'${notifyPath}' --harness=droid`
     expect(await readJson(file)).toEqual({
@@ -216,7 +216,7 @@ describe("materializeAgentHooks", () => {
     await fs.mkdir(directory)
     const user = { hooks: [{ type: "command", command: "/user/start.sh" }] }
     await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({ model: "keep", hooks: { SessionStart: [user] } }))
-    await materializeAgentHooks({ templates: defaultStatusHooks, homeDir: root, notifyPath })
+    await materializeAgentHooks({ templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath })
     await expect(fs.stat(path.join(directory, "hooks.json"))).rejects.toMatchObject({ code: "ENOENT" })
     const settings = await readJson(path.join(directory, "settings.json")) as { model: string; hooks: Record<string, unknown[]> }
     expect(settings.model).toBe("keep")
@@ -230,7 +230,7 @@ describe("materializeAgentHooks", () => {
     const original = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: notifyPath }] }] } })
     await fs.writeFile(path.join(directory, "settings.json"), original)
     await fs.writeFile(path.join(directory, "hooks.json"), "{broken")
-    const results = await materializeAgentHooks({ templates: defaultStatusHooks, homeDir: root, notifyPath })
+    const results = await materializeAgentHooks({ templates: defaultStatusHooks, platform: "posix" as const, homeDir: root, notifyPath })
     expect(results.find((item) => item.runner === "droid")?.status).toBe("failed")
     expect(await fs.readFile(path.join(directory, "settings.json"), "utf8")).toBe(original)
     expect(await fs.readFile(path.join(directory, "hooks.json"), "utf8")).toBe("{broken")
@@ -242,7 +242,7 @@ describe("materializeAgentHooks", () => {
     await fs.writeFile(cursorPath, "{ this is not json")
 
     const results = await materializeAgentHooks({
-      templates: defaultStatusHooks, homeDir: root,
+      templates: defaultStatusHooks, platform: "posix" as const, homeDir: root,
       notifyPath,
     })
 
@@ -304,7 +304,7 @@ describe("materializeAgentHooks across data roots", () => {
 
   function materializeFor(scripts: ReturnType<typeof scriptsIn>) {
     return materializeAgentHooks({
-      templates: defaultStatusHooks, homeDir: home,
+      templates: defaultStatusHooks, platform: "posix" as const, homeDir: home,
       notifyPath: scripts.notify,
     })
   }
@@ -317,7 +317,7 @@ describe("materializeAgentHooks across data roots", () => {
       expect((await materializeFor(last)).filter((result) => result.status !== "applied")).toEqual([])
       await fs.rm(dataRoot, { recursive: true, force: true })
     }
-    const files = agentHookConfigPaths(home, defaultStatusHooks)
+    const files = agentHookConfigPaths(home, defaultStatusHooks, "posix")
     expect(await commandsIn(files.mastracode)).toEqual(times(3, `bash '${last.notify}' --harness=mastracode`))
     expect(await commandsIn(files.droid)).toEqual(times(4, `'${last.notify}' --harness=droid`))
     expect((await commandsIn(files.cursor)).length).toBe(6)
@@ -336,7 +336,7 @@ describe("materializeAgentHooks across data roots", () => {
     await fs.writeFile(foreign, "#!/bin/bash\n# Superset agent notification hook\n", { mode: 0o755 })
     const guardedMissing = `if [ -x '${deleted.notify}' ]; then /bin/sh '${deleted.notify}'; fi`
     const command = (value: string) => ({ type: "command", command: value })
-    const files = agentHookConfigPaths(home, defaultStatusHooks)
+    const files = agentHookConfigPaths(home, defaultStatusHooks, "posix")
     const droidSettings = files.droid
     const droidHooks = path.join(path.dirname(files.droid), "hooks.json")
 
@@ -381,7 +381,7 @@ describe("materializeAgentHooks across data roots", () => {
     const other = path.join(home, ".superset", "hooks", "notify.sh")
     await fs.mkdir(path.dirname(other), { recursive: true })
     await fs.writeFile(other, "#!/bin/bash\n# Superset agent notification hook\n", { mode: 0o755 })
-    const file = path.join(path.dirname(agentHookConfigPaths(home, defaultStatusHooks).droid), "hooks.json")
+    const file = path.join(path.dirname(agentHookConfigPaths(home, defaultStatusHooks, "posix").droid), "hooks.json")
     await writeJson(file, { Stop: [{ hooks: [{ type: "command", command: other }] }] })
 
     await materializeFor(current)
@@ -397,7 +397,7 @@ describe("materializeAgentHooks across data roots", () => {
     const other = path.join(home, "elsewhere", "hooks", "antigravity-hook.sh")
     await fs.mkdir(path.dirname(other), { recursive: true })
     await fs.writeFile(other, "#!/bin/sh\necho mine\n")
-    const file = agentHookConfigPaths(home, defaultStatusHooks).antigravity
+    const file = agentHookConfigPaths(home, defaultStatusHooks, "posix").antigravity
     const original = { "claxedo-lifecycle": { Stop: [{ type: "command", command: `bash '${other}' Stop` }] } }
     await writeJson(file, original)
 

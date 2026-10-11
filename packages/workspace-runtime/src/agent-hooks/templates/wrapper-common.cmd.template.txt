@@ -1,0 +1,14 @@
+@echo off
+rem {{MARKER}}
+rem Claxedo wrapper for {{BINARY_NAME}}
+setlocal
+
+rem The first launchable {{BINARY_NAME}} on PATH outside this wrapper's own folder.
+set "REAL_BIN="
+for /f "delims=" %%I in ('%SystemRoot%\System32\where.exe {{BINARY_NAME}} 2^>nul') do if not defined REAL_BIN if /i not "%%~dpI"=="%~dp0" for %%E in (.exe .cmd .bat .com) do if /i "%%~xI"=="%%E" set "REAL_BIN=%%I"
+if not defined REAL_BIN echo Claxedo: {{BINARY_NAME}} not found in PATH. Install it and ensure it is on PATH, then retry. 1>&2
+if not defined REAL_BIN exit /b 127
+
+set "CLAXEDO_AGENT={{BINARY_NAME}}"
+
+{{EXEC_BLOCK}}

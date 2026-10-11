@@ -1,0 +1,31 @@
+@echo off
+rem {{MARKER}}
+rem Forward provider JSON unchanged. The runtime owns normalization and state.
+setlocal
+if not defined CLAXEDO_TAB_ID exit /b 0
+
+rem Every hook config Claxedo writes names the harness that owns it. Agents
+rem replay each other's configs and run each other as tools; a config firing
+rem under a different agent than this terminal's is not this terminal's
+rem lifecycle.
+set "HARNESS="
+set "CLAXEDO_FIRST=_%~1"
+if "%CLAXEDO_FIRST:~0,11%"=="_--harness=" set "HARNESS=%CLAXEDO_FIRST:~11%"
+set "AGENT=%CLAXEDO_AGENT%"
+{{ALIASES}}
+if not defined HARNESS goto claxedo_send
+if defined AGENT goto claxedo_compare
+{{REPLAY_GUARDS}}
+set "CLAXEDO_AGENT=%HARNESS%"
+goto claxedo_send
+:claxedo_compare
+if not "%HARNESS%"=="%AGENT%" exit /b 0
+
+:claxedo_send
+set "HOOK_PORT={{PORT}}"
+if defined CLAXEDO_PORT set "HOOK_PORT=%CLAXEDO_PORT%"
+if defined CLAXEDO_SERVER_PORT set "HOOK_PORT=%CLAXEDO_SERVER_PORT%"
+
+rem curl reads the provider's JSON from this script's stdin. Complete delivery
+rem before returning to the provider, so a failed request is the hook's failure.
+"%SystemRoot%\System32\curl.exe" -fsS "http://127.0.0.1:%HOOK_PORT%/api/wr/hook/agent-lifecycle" --request POST --connect-timeout 1 --max-time 2 --header "x-workspace-id: %CLAXEDO_WORKSPACE_ID%" --header "Authorization: Bearer %CLAXEDO_AGENT_HOOK_TOKEN%" --data-urlencode "tabId=%CLAXEDO_TAB_ID%" --data-urlencode "terminalId=%CLAXEDO_TERMINAL_ID%" --data-urlencode "workspaceId=%CLAXEDO_WORKSPACE_ID%" --data-urlencode "provider=%CLAXEDO_AGENT%" --data-urlencode "providerEvent@-" >nul

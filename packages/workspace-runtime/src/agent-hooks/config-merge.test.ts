@@ -8,7 +8,7 @@ import { materializeAgentHooks } from "./materialize-status-hooks"
 
 let root: string
 const input = () => ({
-  templates: defaultStatusHooks, homeDir: root,
+  templates: defaultStatusHooks, platform: "posix" as const, homeDir: root,
   notifyPath: path.join(root, ".claxedo", "hooks", "notify.sh"),
 })
 const cursorResult = async () => (await materializeAgentHooks(input())).find((result) => result.runner === "cursor")!

@@ -14,6 +14,7 @@ import { asArrayOrUndefined, asRecord, asString } from "@claxedo/helpers/guards"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
 import { hookVariables, renderHookText, renderHookValue } from "./core/render"
 import { NOTIFY_MARKER } from "./core/constants"
+import { hookPlatform, installedTemplates, type HookPlatform } from "./core/platform"
 import { isMissingFile } from "@claxedo/helpers/fs"
 
 async function readFileIfExists(filePath: string): Promise<string | undefined> {
@@ -38,14 +39,16 @@ export type MaterializeAgentHooksOptions = {
   homeDir: string
   notifyPath: string
   templates: readonly StatusHookTemplate[]
+  platform?: HookPlatform
 }
 
-// `[bash] <script> [--harness=<name> | <Event>]`, the script shell-quoted or bare.
-const GENERATED_HOOK_COMMAND = /^(?:bash\s+)?(?:'((?:[^']|'\\'')+)'|([^\s'"]+))(?:\s+(?:--harness=[\w-]+|[A-Za-z]+))?$/
+// `[bash] <script> [--harness=<name> | <Event>]`, the script shell-quoted, cmd-quoted or bare.
+const GENERATED_HOOK_COMMAND =
+  /^(?:bash\s+)?(?:'((?:[^']|'\\'')+)'|"([^"]+)"|([^\s'"]+))(?:\s+(?:--harness=[\w-]+|[A-Za-z]+))?$/
 
 function generatedScriptPath(command: string, scriptName: string) {
   const match = GENERATED_HOOK_COMMAND.exec(command.trim())
-  const script = match?.[1]?.replaceAll("'\\''", "'") ?? match?.[2]
+  const script = match?.[1]?.replaceAll("'\\''", "'") ?? match?.[2] ?? match?.[3]
   if (!script || !path.isAbsolute(script)) return undefined
   return script.replaceAll("\\", "/").endsWith(`/hooks/${scriptName}`) ? script : undefined
 }
@@ -95,9 +98,13 @@ async function loadManagedHookCommands(scriptName: string, ...configs: unknown[]
   }
 }
 
-export function agentHookConfigPaths(homeDir: string, templates: readonly StatusHookTemplate[]) {
+export function agentHookConfigPaths(
+  homeDir: string,
+  templates: readonly StatusHookTemplate[],
+  platform = hookPlatform(),
+) {
   return Object.fromEntries(
-    templates.flatMap((template) =>
+    installedTemplates(templates, platform).flatMap((template) =>
       template.install.type === "config-merge"
         ? [[template.command, path.join(homeDir, template.install.path.slice(2))]]
         : [],
@@ -121,7 +128,11 @@ function hookEntries(rendered: unknown): Record<string, Record<string, unknown>>
   }))
 }
 
-async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAgentHooksOptions) {
+async function mergeTemplate(
+  template: StatusHookTemplate,
+  input: MaterializeAgentHooksOptions,
+  platform: HookPlatform,
+) {
   const install = template.install
   if (install.type !== "config-merge") return
   const file = path.join(input.homeDir, install.path.slice(2))
@@ -133,7 +144,7 @@ async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAge
     await writeMergedConfig(
       file,
       original,
-      renderHookText(install.entries, hookVariables(template, input.notifyPath)),
+      renderHookText(install.entries, hookVariables(template, input.notifyPath, platform)),
     )
     return
   }
@@ -147,7 +158,7 @@ async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAge
   const target = selected === alternate ? alternateFile! : file
   const targetBase = selected === alternate ? effective!.base : base
   const container = valueAt(selected.value, targetBase)
-  const entries = hookEntries(renderHookValue(install.entries, hookVariables(template, input.notifyPath)))
+  const entries = hookEntries(renderHookValue(install.entries, hookVariables(template, input.notifyPath, platform)))
   const isManaged = await loadManagedHookCommands(install.managedScript!, primary.value, alternate?.value)
   const desiredCommands = new Set(hookCommands(entries))
   const owns = (command: string | undefined) =>
@@ -183,7 +194,8 @@ export async function materializeAgentHooks(
   input: MaterializeAgentHooksOptions,
 ): Promise<AgentHookMaterializationResult[]> {
   const results: AgentHookMaterializationResult[] = []
-  for (const template of input.templates) {
+  const platform = input.platform ?? hookPlatform()
+  for (const template of installedTemplates(input.templates, platform)) {
     if (template.install.type !== "config-merge") continue
     const file = path.join(input.homeDir, template.install.path.slice(2))
     const result = {
@@ -195,7 +207,7 @@ export async function materializeAgentHooks(
     try {
       for (let attempt = 1; ; attempt++) {
         try {
-          await mergeTemplate(template, input)
+          await mergeTemplate(template, input, platform)
           break
         } catch (error) {
           if (!(error instanceof ConfigChangedError) || attempt === 3) throw error

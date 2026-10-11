@@ -215,6 +215,12 @@ describe("getTerminalEnvVars", () => {
     expect(env.PATH).toContain(BIN_DIR)
   })
 
+  it("leads a cmd.exe PATH with BIN_DIR, separated by ;", () => {
+    const env = getTerminalEnvVars({ ...baseParams, shell: "C:\\Windows\\System32\\cmd.exe", platform: "win32" })
+    expect(env.PATH.split(";")[0]).toBe(BIN_DIR)
+    expect(env.ZDOTDIR).toBeUndefined()
+  })
+
   it("adds PATH for zsh as a safety net", () => {
     const env = getTerminalEnvVars({ ...baseParams, shell: "/bin/zsh" })
     expect(env.PATH).toContain(BIN_DIR)

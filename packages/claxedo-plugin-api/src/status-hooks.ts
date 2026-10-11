@@ -65,31 +65,35 @@ const merge = z
     }
   })
 
+const install = z.union([
+  z.object({ type: z.literal("wrapper-flags"), args: z.array(z.string()) }).strict(),
+  merge,
+  z
+    .object({
+      type: z.literal("project-file"),
+      path: relativePath,
+      entries: z.record(z.string(), z.unknown()),
+      hookFile: relativePath,
+    })
+    .strict(),
+])
+const artifacts = z.array(
+  z.object({ file: relativePath, content: z.string(), mode: z.union([z.literal(0o644), z.literal(0o755)]) }).strict(),
+)
+const wrapper = z.union([z.string(), z.literal(false)])
+
 const statusHookTemplateSchema = z
   .object({
     command,
     provider: command,
     aliases: z.array(command).optional(),
-    install: z.union([
-      z.object({ type: z.literal("wrapper-flags"), args: z.array(z.string()) }).strict(),
-      merge,
-      z
-        .object({
-          type: z.literal("project-file"),
-          path: relativePath,
-          entries: z.record(z.string(), z.unknown()),
-          hookFile: relativePath,
-        })
-        .strict(),
-    ]),
-    artifacts: z
-      .array(
-        z
-          .object({ file: relativePath, content: z.string(), mode: z.union([z.literal(0o644), z.literal(0o755)]) })
-          .strict(),
-      )
+    install,
+    artifacts: artifacts.optional(),
+    wrapper: wrapper.optional(),
+    windows: z
+      .object({ install: install.optional(), artifacts: artifacts.optional(), wrapper: wrapper.optional() })
+      .strict()
       .optional(),
-    wrapper: z.union([z.string(), z.literal(false)]).optional(),
     events: z.record(z.string(), z.union([status, eventRule, z.array(eventRule)])),
     subagent: z.array(z.string()),
     payload: payload.optional(),

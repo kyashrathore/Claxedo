@@ -6,9 +6,8 @@ import http from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { defaultStatusHooks } from "../../../workspace-runtime/src/status-hooks"
-import { generateNotifyScript } from "../../../workspace-runtime/src/agent-hooks/core/hooks"
-import { hookArtifact } from "../../../workspace-runtime/src/agent-hooks/core/render"
-import { generateTemplateWrapper } from "../../../workspace-runtime/src/agent-hooks/core/wrappers"
+import { wrapperFile } from "../../../workspace-runtime/src/agent-hooks/core/platform"
+import { createStatusHooksManifest, writeStatusHooksArtifacts } from "../../../workspace-runtime/src/agent-hooks/core/setup"
 import { materializeAgentHooks } from "../../../workspace-runtime/src/agent-hooks/materialize-status-hooks"
 import { AgentHookRoutes } from "../../../workspace-runtime/src/routes/agent-hook"
 import { Pty } from "../../../workspace-runtime/src/pty/index"
@@ -20,7 +19,7 @@ import { startScriptedModelServer } from "./scripted-model-server"
 
 type Observation = { terminalId: string; event: string; agentId?: string; state?: string }
 
-const POSIX_SHELL_HOOKS = process.platform !== "win32"
+const WINDOWS = process.platform === "win32"
 
 const terminals = new Set<string>()
 const pty = spyOn(Pty, "get").mockImplementation((id) => id && terminals.has(id)
@@ -46,8 +45,10 @@ async function snapshot(folder: string, files?: readonly string[]): Promise<Reco
   return rows
 }
 
-function run(file: string, args: string[], options: { cwd: string; env: Record<string, string> }) {
-  const child = spawn(file, args, { cwd: options.cwd, env: options.env, stdio: ["ignore", "pipe", "pipe"] })
+function run(file: string, args: string[], options: { cwd: string; env: Record<string, string>; verbatim?: boolean }) {
+  const child = spawn(file, args, {
+    cwd: options.cwd, env: options.env, stdio: ["ignore", "pipe", "pipe"], windowsVerbatimArguments: options.verbatim,
+  })
   let output = ""
   child.stdout.on("data", (chunk: Buffer) => { output += chunk })
   child.stderr.on("data", (chunk: Buffer) => { output += chunk })
@@ -65,10 +66,38 @@ async function until(label: string, done: () => boolean | Promise<boolean>, time
   }
 }
 
+function runWrapper(wrapper: string, args: string[], options: { cwd: string; env: Record<string, string> }) {
+  if (!WINDOWS) return run("bash", [wrapper, ...args], options)
+  const line = [wrapper, ...args].map((arg) => `"${arg}"`).join(" ")
+  return run(options.env.ComSpec, ["/d", "/s", "/c", `"${line}"`], { ...options, verbatim: true })
+}
+
+function homeEnv(home: string): Record<string, string> {
+  if (!WINDOWS) return { HOME: home }
+  const system = process.env.SystemRoot ?? "C:\\Windows"
+  return {
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: path.join(home, "AppData", "Roaming"),
+    LOCALAPPDATA: path.join(home, "AppData", "Local"),
+    SystemRoot: system,
+    ComSpec: process.env.ComSpec ?? path.join(system, "System32", "cmd.exe"),
+    PATHEXT: process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD",
+    TEMP: os.tmpdir(),
+    TMP: os.tmpdir(),
+  }
+}
+
+async function statusHooks(name: string) {
+  const manifest = createStatusHooksManifest(path.join(root, name))
+  await writeStatusHooksArtifacts(manifest, { templates: defaultStatusHooks, port: lifecyclePort })
+  return manifest
+}
+
 function tabEnv(home: string, terminalId: string): Record<string, string> {
   return {
     PATH: process.env.PATH ?? "",
-    HOME: home,
+    ...homeEnv(home),
     CLAXEDO_TAB_ID: terminalId,
     CLAXEDO_TERMINAL_ID: terminalId,
     CLAXEDO_SERVER_PORT: String(lifecyclePort),
@@ -104,7 +133,7 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
 })
 
-test.skipIf(!POSIX_SHELL_HOOKS)("a real Codex run in a tab reports busy, waiting and done through session-flag hooks, a subagent never settles it, and personal config is unchanged", async () => {
+test("a real Codex run in a tab reports busy, waiting and done through session-flag hooks, a subagent never settles it, and personal config is unchanged", async () => {
   const modelPort = await reservePort()
   const model = await startScriptedModelServer({ port: modelPort, red: false })
   const home = path.join(root, "codex-person")
@@ -119,12 +148,8 @@ test.skipIf(!POSIX_SHELL_HOOKS)("a real Codex run in a tab reports busy, waiting
   ].join("\n"))
   await fs.writeFile(path.join(personal, "AGENTS.md"), "Person's instructions\n")
   const before = await snapshot(personal)
-  const notify = path.join(root, "hooks", "notify.sh")
-  await fs.mkdir(path.dirname(notify), { recursive: true })
-  await fs.writeFile(notify, generateNotifyScript(lifecyclePort, defaultStatusHooks), { mode: 0o755 })
-  const wrapper = path.join(root, "claxedo-bin", "codex")
-  await fs.mkdir(path.dirname(wrapper), { recursive: true })
-  await fs.writeFile(wrapper, generateTemplateWrapper(defaultStatusHooks.find((template) => template.command === "codex")!, notify), { mode: 0o755 })
+  const hooks = await statusHooks("codex-data")
+  const wrapper = wrapperFile(hooks.dirs.bin, "codex", hooks.platform)
   const codexBin = path.dirname(PINNED_CODEX)
   const terminalId = "codex-tab"
   terminals.add(terminalId)
@@ -135,8 +160,8 @@ test.skipIf(!POSIX_SHELL_HOOKS)("a real Codex run in a tab reports busy, waiting
   model.scriptText({ marker: "CHILDTASK", text: "child done" })
   const release = model.holdTextReplies("CODEXTAB")
   try {
-    const running = run("bash", [wrapper, "exec", "--skip-git-repo-check", "CODEXTAB finish the task"], {
-      cwd: work, env: { ...tabEnv(home, terminalId), PATH: `${codexBin}:${process.env.PATH ?? ""}` },
+    const running = runWrapper(wrapper, ["exec", "--skip-git-repo-check", "CODEXTAB finish the task"], {
+      cwd: work, env: { ...tabEnv(home, terminalId), PATH: `${codexBin}${path.delimiter}${process.env.PATH ?? ""}` },
     })
     const tab = () => observations.filter((row) => row.terminalId === terminalId)
     await until("the subagent's SubagentStop", () => tab().some((row) => row.agentId && row.event === "SubagentStop"))
@@ -162,7 +187,7 @@ test.skipIf(!POSIX_SHELL_HOOKS)("a real Codex run in a tab reports busy, waiting
   }
 }, 120_000)
 
-test.skipIf(!POSIX_SHELL_HOOKS)("a real Cursor agent in a tab reaches the lifecycle route through Claxedo's merged ~/.cursor/hooks.json entries", async () => {
+test("a real Cursor agent in a tab reaches the lifecycle route through Claxedo's merged ~/.cursor/hooks.json entries", async () => {
   const backendPort = await reservePort()
   const backend = await startScriptedCursorBackend(backendPort)
   const home = path.join(root, "cursor-person")
@@ -172,13 +197,8 @@ test.skipIf(!POSIX_SHELL_HOOKS)("a real Cursor agent in a tab reaches the lifecy
   await fs.mkdir(work, { recursive: true })
   const personHooks = '{\n  "version": 1,\n  "hooks": { "afterFileEdit": [ { "command": "true" } ] }\n}\n'
   await fs.writeFile(personal, personHooks)
-  const hookDir = path.join(root, "cursor-hooks")
-  await fs.mkdir(hookDir, { recursive: true })
-  const notify = path.join(hookDir, "notify.sh")
-  const cursorHook = path.join(hookDir, "cursor-hook.sh")
-  await fs.writeFile(notify, generateNotifyScript(lifecyclePort, defaultStatusHooks), { mode: 0o755 })
-  await fs.writeFile(cursorHook, hookArtifact(defaultStatusHooks.find((template) => template.command === "cursor")!, "cursor-hook.sh", notify), { mode: 0o755 })
-  const merge = () => materializeAgentHooks({ homeDir: home, notifyPath: notify, templates: defaultStatusHooks })
+  const hooks = await statusHooks("cursor-data")
+  const merge = () => materializeAgentHooks({ homeDir: home, notifyPath: hooks.files.notify, templates: defaultStatusHooks })
   expect((await merge()).find((result) => result.runner === "cursor")?.status).toBe("applied")
   const merged = await fs.readFile(personal, "utf8")
   expect(merged).toContain('"afterFileEdit": [ { "command": "true" } ]')
@@ -199,7 +219,7 @@ test.skipIf(!POSIX_SHELL_HOOKS)("a real Cursor agent in a tab reaches the lifecy
     const delivered = observations.length
     const outside = await run("bun", [path.join(import.meta.dirname, "cursor-local-run.ts"), "CURSOR_SCRIPT:cursortab", work], {
       cwd: path.join(import.meta.dirname, ".."),
-      env: { PATH: process.env.PATH ?? "", HOME: home, CLAXEDO_SERVER_PORT: String(lifecyclePort), CURSOR_BACKEND_URL: backend.url },
+      env: { PATH: process.env.PATH ?? "", ...homeEnv(home), CLAXEDO_SERVER_PORT: String(lifecyclePort), CURSOR_BACKEND_URL: backend.url },
     })
     expect(outside.output).toContain('"status":"finished"')
     await new Promise((resolve) => setTimeout(resolve, 500))

@@ -1,5 +1,5 @@
 #!/bin/bash
-{{MARKER}}
+# {{MARKER}}
 # Claxedo wrapper for {{BINARY_NAME}}
 
 {{FIND_REAL_BINARY}}

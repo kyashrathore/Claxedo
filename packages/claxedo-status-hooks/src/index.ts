@@ -44,6 +44,25 @@ const events: StatusHookTemplate["events"] = {
   unknown: "ignored",
 }
 
+/**
+ * Claude runs a shell-form hook in Git Bash when it finds one and in PowerShell otherwise, and the two
+ * quote a path differently; the exec form starts the script with no shell at all.
+ */
+function claudeWindowsSettings() {
+  const hooks = [{ type: "command", command: "{{notify}}", args: ["--harness=claude"] }]
+  const everyTool = { matcher: "*", hooks }
+  return JSON.stringify({
+    hooks: {
+      UserPromptSubmit: [{ hooks }],
+      Stop: [{ hooks }],
+      PostToolUse: [everyTool],
+      PostToolUseFailure: [everyTool],
+      PermissionRequest: [everyTool],
+      PermissionDenied: [everyTool],
+    },
+  })
+}
+
 export const firstPartyStatusHooks = readStatusHookTemplates([
   {
     command: "claude",
@@ -61,6 +80,18 @@ export const firstPartyStatusHooks = readStatusHookTemplates([
         mode: 420,
       },
     ],
+    windows: {
+      wrapper: [
+        "rem Claude can exit without its Stop hook, after a crash or at a usage limit.",
+        'call "%REAL_BIN%" {{args}} %*',
+        'set "CLAXEDO_EXIT=%ERRORLEVEL%"',
+        'set "CLAXEDO_EVENT=Idle"',
+        'if not "%CLAXEDO_EXIT%"=="0" set "CLAXEDO_EVENT=Error"',
+        'echo {"hook_event_name":"%CLAXEDO_EVENT%"}| {{notify|cmd}} >nul 2>&1',
+        "exit /b %CLAXEDO_EXIT%",
+      ].join("\n"),
+      artifacts: [{ file: "claude-settings.json", content: claudeWindowsSettings(), mode: 420 }],
+    },
     replayGuard: { env: "CURSOR_VERSION" },
   },
   {
@@ -76,7 +107,7 @@ export const firstPartyStatusHooks = readStatusHookTemplates([
         "-c",
         'hooks.UserPromptSubmit=[{hooks=[{type="command",command={{notifyCommand|json}}}]}]',
         "-c",
-        'hooks.PreToolUse=[{matcher="^request_user_input$",hooks=[{type="command",command={{notifyCommand|json}}}]}]',
+        'hooks.PreToolUse=[{matcher="request_user_input",hooks=[{type="command",command={{notifyCommand|json}}}]}]',
         "-c",
         'hooks.PostToolUse=[{matcher="*",hooks=[{type="command",command={{notifyCommand|json}}}]}]',
         "-c",
@@ -95,6 +126,23 @@ export const firstPartyStatusHooks = readStatusHookTemplates([
     subagent: ["agent_id", "agentId"],
     wrapper:
       '# Inside a Claxedo tab, Codex runs Claxedo\'s lifecycle hooks from session flags,\n# so no Codex config file is written. Codex skips hooks it has not trusted, and\n# rejects the bypass flag when it is repeated.\nif [ -n "${CLAXEDO_TAB_ID:-}" ]; then\n  _claxedo_bypass="--dangerously-bypass-hook-trust"\n  for _claxedo_arg in "$@"; do\n    [ "$_claxedo_arg" = "--" ] && break\n    if [ "$_claxedo_arg" = "--dangerously-bypass-hook-trust" ]; then\n      _claxedo_bypass=""\n      break\n    fi\n  done\n  exec "$REAL_BIN" --enable hooks ${_claxedo_bypass:+"$_claxedo_bypass"} {{args}} "$@"\nfi\n\nexec "$REAL_BIN" "$@"\n',
+    windows: {
+      wrapper: [
+        "if not defined CLAXEDO_TAB_ID goto claxedo_passthrough",
+        "",
+        "rem Inside a Claxedo tab, Codex runs Claxedo's lifecycle hooks from session flags,",
+        "rem so no Codex config file is written. Codex skips hooks it has not trusted, and",
+        "rem rejects the bypass flag when it is repeated.",
+        'set "CLAXEDO_BYPASS=--dangerously-bypass-hook-trust"',
+        'echo(%*| "%SystemRoot%\\System32\\findstr.exe" /l /c:"--dangerously-bypass-hook-trust" >nul && set "CLAXEDO_BYPASS="',
+        'call "%REAL_BIN%" --enable hooks %CLAXEDO_BYPASS% {{args}} %*',
+        "exit /b %ERRORLEVEL%",
+        "",
+        ":claxedo_passthrough",
+        'call "%REAL_BIN%" %*',
+        "exit /b %ERRORLEVEL%",
+      ].join("\n"),
+    },
     typeProvider: true,
   },
   {
@@ -127,6 +175,48 @@ export const firstPartyStatusHooks = readStatusHookTemplates([
         mode: 493,
       },
     ],
+    windows: {
+      install: {
+        type: "config-merge",
+        path: "~/.cursor/hooks.json",
+        shape: "flat",
+        base: ["hooks"],
+        entries: {
+          beforeSubmitPrompt: { command: "{{cursor-hook.cmd|cmd}} Start" },
+          stop: { command: "{{cursor-hook.cmd|cmd}} Stop" },
+          beforeShellExecution: { command: "{{cursor-hook.cmd|cmd}} PermissionRequest" },
+          beforeMCPExecution: { command: "{{cursor-hook.cmd|cmd}} PermissionRequest" },
+          postToolUse: { command: "{{cursor-hook.cmd|cmd}} PostToolUse", matcher: "^(Shell|MCP:.+)$" },
+          postToolUseFailure: { command: "{{cursor-hook.cmd|cmd}} PostToolUse", matcher: "^(Shell|MCP:.+)$" },
+        },
+        managedScript: "cursor-hook.cmd",
+        defaults: { version: 1 },
+      },
+      artifacts: [
+        {
+          file: "cursor-hook.cmd",
+          content: [
+            "@echo off",
+            "rem Claxedo agent notification hook v1",
+            "setlocal",
+            "",
+            "rem Every exit path below must already have answered Cursor's permission hooks.",
+            'set "CLAXEDO_ANSWER={}"',
+            'for %%E in (beforeShellExecution beforeMCPExecution PermissionRequest UserActionRequired QuestionRequest) do if "%~1"=="%%E" set "CLAXEDO_ANSWER={"continue":true}"',
+            "echo %CLAXEDO_ANSWER%",
+            "",
+            "rem ~/.cursor/hooks.json is global: every Cursor session runs this script, and",
+            "rem only a Claxedo terminal tab sets CLAXEDO_TAB_ID.",
+            "if not defined CLAXEDO_TAB_ID exit /b 0",
+            "",
+            "rem Cursor supplies hook_event_name and session metadata as JSON on stdin, which notify reads.",
+            "call {{notify|cmd}} --harness=cursor >nul 2>&1",
+            "exit /b 0",
+          ].join("\n"),
+          mode: 493,
+        },
+      ],
+    },
   },
   {
     command: "antigravity",

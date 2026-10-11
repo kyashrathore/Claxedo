@@ -35,7 +35,7 @@ function withFixtureRoot(content: string, root: string) {
 test("eight first-party templates reproduce the base wrappers, configs, hook artifacts and project file", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-hooks-golden-"))
   try {
-    const manifest = createStatusHooksManifest(path.join(root, "data"))
+    const manifest = createStatusHooksManifest(path.join(root, "data"), "posix")
     await writeStatusHooksArtifacts(manifest, {
       templates: defaultStatusHooks,
       genericWrappers: defaultGenericWrappers,
@@ -47,6 +47,7 @@ test("eight first-party templates reproduce the base wrappers, configs, hook art
           homeDir: path.join(root, "home"),
           notifyPath: manifest.files.notify,
           templates: defaultStatusHooks,
+          platform: "posix",
         })
       ).filter((result) => result.status !== "applied"),
     ).toEqual([])
@@ -63,7 +64,7 @@ test("eight first-party templates reproduce the base wrappers, configs, hook art
     }
     const project = defaultStatusHooks.find((template) => template.install.type === "project-file")!
     actual[`project/${project.install.type === "project-file" ? project.install.path : ""}`] = withFixtureRoot(
-      projectHookContent(project, manifest.files.notify),
+      projectHookContent(project, manifest.files.notify, "posix"),
       root,
     )
     expect(defaultStatusHooks).toHaveLength(8)

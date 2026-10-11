@@ -55,11 +55,15 @@ describe("buildSafeEnv", () => {
 
   // -- Windows-specific behavior --
 
-  test("Windows: allows case-insensitive matching of allowed vars", () => {
-    const result = buildSafeEnv({ path: "/usr/bin", Path: "/usr/bin2", HOME: "/home" }, { platform: "win32" })
-    // Both 'path' and 'Path' should be allowed (case-insensitive match for PATH)
-    expect(result.path ?? result.Path).toBeDefined()
-    expect(result.HOME).toBe("/home")
+  test("Windows: an allowed name in any case is kept once, under one spelling", () => {
+    const result = buildSafeEnv({ path: "/usr/bin", Path: "/usr/bin2", Home: "/home" }, { platform: "win32" })
+    expect(result).toEqual({ PATH: "/usr/bin2", HOME: "/home" })
+  })
+
+  test("Windows: a terminal's PATH replaces the inherited Path instead of sitting beside it", () => {
+    const env = buildSafeEnv({ Path: "C:\\Windows\\System32" }, { platform: "win32" })
+    env.PATH = `C:\\claxedo\\bin;${env.PATH}`
+    expect(env).toEqual({ PATH: "C:\\claxedo\\bin;C:\\Windows\\System32" })
   })
 
   test("Windows: case-insensitive deny list blocks NODE_OPTIONS variants", () => {

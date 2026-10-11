@@ -7,6 +7,7 @@ import path from "node:path"
 import { userHomeDir } from "@claxedo/helpers/path"
 import { workspaceRuntimeDataDir } from "../env"
 import { agentHookConfigPaths } from "./materialize-status-hooks"
+import { hookPlatform, notifyScriptName, wrapperFile } from "./core/platform"
 import { setupAgentHooks } from "./setup"
 
 function contains(parent: string, child: string) {
@@ -55,13 +56,16 @@ test("agent hook setup leaves the person's Claude and Codex folders byte-identic
   const cursorHooks = path.join(home, ".cursor", "hooks.json")
   const merged = fs.readFileSync(cursorHooks, "utf8")
   expect(merged.startsWith('{"version":1,"hooks":{"stop":[{"command":"/user/stop.sh"}')).toBe(true)
+  const hooks = path.join(workspaceRuntimeDataDir(), "hooks")
+  const windows = hookPlatform() === "windows"
   expect(JSON.parse(merged).hooks.stop).toEqual([
     { command: "/user/stop.sh" },
-    { command: `'${path.join(workspaceRuntimeDataDir(), "hooks", "cursor-hook.sh")}' Stop` },
+    { command: windows ? `"${path.join(hooks, "cursor-hook.cmd")}" Stop` : `'${path.join(hooks, "cursor-hook.sh")}' Stop` },
   ])
   await setupAgentHooks({ port: 7860, force: true })
   expect(fs.readFileSync(cursorHooks, "utf8")).toBe(merged)
-  const claudeSettings = JSON.parse(fs.readFileSync(path.join(workspaceRuntimeDataDir(), "hooks", "claude-settings.json"), "utf8"))
-  expect(claudeSettings.hooks.UserPromptSubmit[0].hooks[0].command).toContain(path.join(workspaceRuntimeDataDir(), "hooks", "notify.sh"))
-  expect(fs.readFileSync(path.join(workspaceRuntimeDataDir(), "bin", "codex"), "utf8")).toContain("--dangerously-bypass-hook-trust")
+  const claudeSettings = JSON.parse(fs.readFileSync(path.join(hooks, "claude-settings.json"), "utf8"))
+  expect(claudeSettings.hooks.UserPromptSubmit[0].hooks[0].command).toContain(path.join(hooks, notifyScriptName(hookPlatform())))
+  const codex = wrapperFile(path.join(workspaceRuntimeDataDir(), "bin"), "codex", hookPlatform())
+  expect(fs.readFileSync(codex, "utf8")).toContain("--dangerously-bypass-hook-trust")
 })

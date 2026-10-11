@@ -236,8 +236,10 @@ export function buildSafeEnv(
     if (isWindows ? denyUpper!.has(checkKey) : DENY_LIST.has(key) || DENY_LIST.has(key.toUpperCase())) continue
 
     // Check allowlist
+    // Windows names are case-insensitive, and an environment block holding both the inherited `Path`
+    // and a caller's `PATH` gives a child whichever one comes first, so each name gets one spelling.
     if (isWindows ? allowedUpper!.has(checkKey) : ALLOWED_VARS.has(key)) {
-      result[key] = value
+      result[checkKey] = value
       continue
     }
 

@@ -22,7 +22,7 @@ function temp() {
 describe("writeStatusHooksArtifacts", () => {
   it("writes generic hook artifacts and returns the manifest", async () => {
     const root = temp()
-    const manifest = createStatusHooksManifest(root)
+    const manifest = createStatusHooksManifest(root, "posix")
 
     const result = await writeStatusHooksArtifacts(manifest, {
       templates: defaultStatusHooks,
@@ -50,7 +50,7 @@ describe("writeStatusHooksArtifacts", () => {
 
   it("writes a Codex wrapper whose hooks run Claxedo's notify script", async () => {
     const root = temp()
-    const manifest = createStatusHooksManifest(root)
+    const manifest = createStatusHooksManifest(root, "posix")
 
     await writeStatusHooksArtifacts(manifest, {
       templates: defaultStatusHooks,

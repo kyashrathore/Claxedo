@@ -67,8 +67,16 @@ test("agent hook setup rewrites the harness configs under the temporary home, no
   const written = agentHookConfigPaths(os.homedir(), defaultStatusHooks)
   for (const file of Object.values(written)) expect({ file, exists: existsSync(file) }).toEqual({ file, exists: true })
   const workspaceRuntime = process.env.WORKSPACE_RUNTIME_DATA_DIR!
-  const notify = path.join(workspaceRuntime, "hooks", "notify.sh").replaceAll("\\", "/")
-  expect(hookCommands(written.droid)).toContain(`'${notify}' --harness=droid`)
+  const hooks = path.join(workspaceRuntime, "hooks").replaceAll("\\", "/")
+  const windows = process.platform === "win32"
+  const notify = `${hooks}/${windows ? "notify.cmd" : "notify.sh"}`
+  if (windows) {
+    const cursor = z.object({ hooks: z.object({ stop: z.array(z.object({ command: z.string() })) }) })
+      .parse(JSON.parse(readFileSync(written.cursor, "utf8")))
+    expect(cursor.hooks.stop.map((hook) => hook.command.replaceAll("\\", "/"))).toContain(`"${hooks}/cursor-hook.cmd" Stop`)
+  } else {
+    expect(hookCommands(written.droid)).toContain(`'${notify}' --harness=droid`)
+  }
   expect(hookCommands(path.join(workspaceRuntime, "hooks", "claude-settings.json")).some((command) => command.includes(notify))).toBe(true)
   expect(fingerprint(home)).toEqual(before)
 })
