@@ -286,13 +286,19 @@ export namespace Pty {
     // The native PTY owns the process even when the platform cannot expose a
     // usable OS pid (the Windows ConPTY wrapper reports 0 in that case).
     // Always close it through its native handle; the PID-based tree sweep is
-    // additional cleanup only when a real pid is available.
-    const closeNative = () => { try { session.process.kill() } catch {} }
+    // additional cleanup only when a real pid is available. Once only: on
+    // Windows node-pty's kill() forks a console-list agent and, when that agent
+    // does not answer within 5 s, signals the inner pid by number.
+    let nativeClosed = false
+    const closeNative = () => {
+      if (nativeClosed) return
+      nativeClosed = true
+      try { session.process.kill() } catch {}
+    }
     const result = await retireSession(id, session, closeNative)
     // node-pty frees its ConPTY conout worker and pipe only from kill(), and a
     // retirement whose taskkill ended every process inside the TERM grace never
-    // reached closeNative. Its inner pid is verified gone, so this kill signals
-    // nothing and only releases the handles.
+    // reached closeNative.
     if (process.platform === "win32" && result.leader === "exited") closeNative()
     session.cleanupResult = result
     await session.history.close()
