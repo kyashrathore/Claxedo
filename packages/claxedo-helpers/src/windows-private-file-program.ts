@@ -204,6 +204,9 @@ public static class ClaxedoPrivateFile
             Arm(handle, false);
             Rename(handle, target);
             published = true;
+            // Closed before the caller hears of it: the file was opened with no
+            // sharing, so a read the caller makes at once fails while it is open.
+            file.Dispose();
             Answer("${PUBLISHED}");
         }
         finally
@@ -216,7 +219,8 @@ public static class ClaxedoPrivateFile
             }
             finally
             {
-                if (file != null) file.Dispose(); else handle.Dispose();
+                if (file != null) file.Dispose();
+                handle.Dispose();
             }
         }
     }
