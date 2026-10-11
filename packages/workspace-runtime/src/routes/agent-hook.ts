@@ -495,7 +495,8 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
         return c.json({ success: false, error: "Invalid payload" }, 400)
       }
       const raw = "providerEvent" in parsed.data ? parsed.data.providerEvent : undefined
-      const input = raw === undefined ? undefined : jsonRecord(raw)
+      // Cursor's Windows hook runner writes its JSON to the hook's stdin behind two UTF-8 byte-order marks.
+      const input = raw === undefined ? undefined : jsonRecord(raw.replace(/^\uFEFF+/, ""))
       if (raw !== undefined && !input) return c.json({ success: false, error: "Invalid provider event JSON" }, 400)
       const providerEvent = input ? providerLifecycle(input, statusHooks, parsed.data.provider) : undefined
       const payload = raw === undefined ? parsed.data : {

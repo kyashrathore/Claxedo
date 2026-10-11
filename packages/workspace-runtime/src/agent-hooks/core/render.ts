@@ -1,6 +1,6 @@
 import path from "node:path"
 import type { StatusHookTemplate } from "@claxedo/plugin-api"
-import type { HookPlatform } from "./platform"
+import { WINDOWS_CMD, type HookPlatform } from "./platform"
 import { batchText, cmdQuote, shellQuote } from "./utils"
 
 export function renderHookText(text: string, variables: Record<string, string>): string {
@@ -27,14 +27,14 @@ export function renderHookValue(value: unknown, variables: Record<string, string
 }
 
 export function hookVariables(template: StatusHookTemplate, notify: string, platform: HookPlatform) {
-  const quote = platform === "windows" ? cmdQuote : shellQuote
+  const script = platform === "windows" ? `${WINDOWS_CMD} /d /c ${cmdQuote(notify)}` : shellQuote(notify)
   return {
     ...Object.fromEntries(
       (template.artifacts ?? []).map((artifact) => [artifact.file, path.join(path.dirname(notify), artifact.file)]),
     ),
     notify,
     hooks: path.dirname(notify),
-    notifyCommand: `${quote(notify)} --harness=${template.provider}`,
+    notifyCommand: `${script} --harness=${template.provider}`,
   }
 }
 

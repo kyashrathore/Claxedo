@@ -1,11 +1,14 @@
-import { wrapper, argumentsFor } from "../test-support/status-hooks"
+import { wrapper, argumentsFor, template } from "../test-support/status-hooks"
+import { runInCmd, writeNpmShimRecorder } from "../test-support/windows-cli"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs"
 import { execFileSync } from "child_process"
 import { tmpdir } from "os"
 import path from "path"
-import { buildWrapperScript, generateGenericWrapper, normalizeWrappers } from "./core/wrappers"
+import { buildWrapperScript, generateGenericWrapper, generateTemplateWrapper, normalizeWrappers } from "./core/wrappers"
 import { WRAPPER_MARKER } from "./core/constants"
+import { installedTemplates, wrapperFile } from "./core/platform"
+import { hookArguments } from "./core/render"
 
 const TEST_ROOT = path.join(tmpdir(), `claxedo-wrappers-test-${process.pid}-${Date.now()}`)
 
@@ -17,8 +20,8 @@ afterEach(() => {
   rmSync(TEST_ROOT, { recursive: true, force: true })
 })
 
-// POSIX shebang execution: a wrapper is a bare bash script a POSIX shell finds on PATH, which cmd.exe never does.
-const posixShebang = process.platform !== "win32"
+// Copilot declares no Windows installation, so Windows has no Copilot wrapper to run.
+const copilotInstalled = process.platform !== "win32"
 
 describe("buildWrapperScript", () => {
   it("includes marker, find_real_binary, binary name, and exec block", () => {
@@ -84,7 +87,7 @@ describe("Copilot template wrapper", () => {
   })
 })
 
-describe.skipIf(!posixShebang)("copilot wrapper integration", () => {
+describe.skipIf(!copilotInstalled)("copilot wrapper integration", () => {
   it("rewrites stale hook file with current hook path", () => {
     const projectDir = path.join(TEST_ROOT, "project")
     const hooksDir = path.join(projectDir, ".github", "hooks")
@@ -130,7 +133,7 @@ describe.skipIf(!posixShebang)("copilot wrapper integration", () => {
   })
 })
 
-describe.skipIf(!posixShebang)("copilot project hooks", () => {
+describe.skipIf(!copilotInstalled)("copilot project hooks", () => {
   function copilotProject() {
     const projectDir = path.join(TEST_ROOT, "copilot-project")
     const realBinDir = path.join(TEST_ROOT, "copilot-real-bin")
@@ -174,8 +177,8 @@ describe.skipIf(!posixShebang)("copilot project hooks", () => {
   })
 })
 
-describe.skipIf(!posixShebang)("codex wrapper integration", () => {
-  function run(args: string[], env: Record<string, string>) {
+describe("codex wrapper integration", () => {
+  function runPosix(args: string[], env: Record<string, string>) {
     const realBinDir = path.join(TEST_ROOT, "real-bin")
     const wrapperPath = path.join(TEST_ROOT, "bin", "codex")
     const argsFile = path.join(TEST_ROOT, "codex-args.txt")
@@ -190,18 +193,38 @@ describe.skipIf(!posixShebang)("codex wrapper integration", () => {
     return { args: readFileSync(argsFile, "utf-8").trimEnd().split("\n"), flags: argumentsFor("codex", notifyPath) }
   }
 
-  it("inside a tab, turns hooks on, bypasses hook trust once and adds the hook flags ahead of the caller's arguments", () => {
-    const { args, flags } = run(["exec", "Reply with exactly OK."], { CLAXEDO_TAB_ID: "tab-1" })
-    expect(args).toEqual(["--enable", "hooks", "--dangerously-bypass-hook-trust", ...flags, "exec", "Reply with exactly OK."])
+  /** Typed into cmd.exe, ahead of the real Codex installed as an npm shim. */
+  async function runWindows(args: string[], env: Record<string, string>) {
+    const realBinDir = path.join(TEST_ROOT, "real-bin")
+    const notifyPath = path.join(TEST_ROOT, "hooks", "notify.cmd")
+    const wrapperPath = wrapperFile(path.join(TEST_ROOT, "bin"), "codex", "windows")
+    const argsFile = path.join(TEST_ROOT, "codex-args.json")
+    await writeNpmShimRecorder(realBinDir, "codex")
+    mkdirSync(path.dirname(wrapperPath), { recursive: true })
+    const [codex] = installedTemplates([template("codex")], "windows")
+    writeFileSync(wrapperPath, generateTemplateWrapper(codex, notifyPath, "windows"))
+    await runInCmd([wrapperPath, ...args].map((arg) => `"${arg}"`).join(" "), {
+      cwd: TEST_ROOT,
+      env: { ...process.env, CLAXEDO_TAB_ID: "", ...env, FAKE_ARGV: argsFile, PATH: `${realBinDir};${process.env.PATH || ""}` } as Record<string, string>,
+    })
+    return { args: JSON.parse(readFileSync(argsFile, "utf-8")) as string[], flags: hookArguments(codex, notifyPath, "windows") }
+  }
+
+  const run = (args: string[], env: Record<string, string>) =>
+    process.platform === "win32" ? runWindows(args, env) : Promise.resolve(runPosix(args, env))
+
+  it("inside a tab, turns hooks on, bypasses hook trust once and adds the hook flags ahead of the caller's arguments", async () => {
+    const { args, flags } = await run(["exec", "Reply with exactly OK & done."], { CLAXEDO_TAB_ID: "tab-1" })
+    expect(args).toEqual(["--enable", "hooks", "--dangerously-bypass-hook-trust", ...flags, "exec", "Reply with exactly OK & done."])
   })
 
-  it("does not repeat a trust bypass the caller already passed", () => {
-    const { args, flags } = run(["--dangerously-bypass-hook-trust", "resume"], { CLAXEDO_TAB_ID: "tab-1" })
+  it("does not repeat a trust bypass the caller already passed", async () => {
+    const { args, flags } = await run(["--dangerously-bypass-hook-trust", "resume"], { CLAXEDO_TAB_ID: "tab-1" })
     expect(args).toEqual(["--enable", "hooks", ...flags, "--dangerously-bypass-hook-trust", "resume"])
   })
 
-  it("outside a tab, passes the caller's arguments through untouched", () => {
-    expect(run(["exec", "hello"], {}).args).toEqual(["exec", "hello"])
+  it("outside a tab, passes the caller's arguments through untouched", async () => {
+    expect((await run(["exec", "hello"], {})).args).toEqual(["exec", "hello"])
   })
 })
 

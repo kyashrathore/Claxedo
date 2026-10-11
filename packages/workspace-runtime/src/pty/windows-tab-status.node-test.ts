@@ -8,10 +8,10 @@ import path from "node:path"
 import { test } from "node:test"
 import { withSessionCore } from "../session-context"
 
-async function waitFor(check: () => boolean, timeoutMs = 30_000) {
+async function waitFor(check: () => boolean, screen: () => string, timeoutMs = 30_000) {
   const started = Date.now()
   while (!check()) {
-    if (Date.now() - started > timeoutMs) throw new Error("waitFor timed out")
+    if (Date.now() - started > timeoutMs) throw new Error(`waitFor timed out; the tab shows:\n${screen()}`)
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 }
@@ -40,8 +40,9 @@ else void test("a Windows tab reports an agent typed by name: cmd.exe runs its C
   try {
     const info = await withSessionCore(testSessionCore(tmpDir), () =>
       Pty.create({ cwd: tmpDir, env: { CLAXEDO_PORT: String(port) } }, volatileLaunchOwnership()))
+    assert.ok(Pty.connect(info.id, { readyState: 1, send: () => {}, close: () => {} } as unknown as Parameters<typeof Pty.connect>[1]))
     Pty.write(info.id, "aider\r\n")
-    await waitFor(() => received.length >= 2)
+    await waitFor(() => received.length >= 2, () => Pty.snapshot(info.id))
     assert.match(Pty.snapshot(info.id), /fake-aider-ran/)
     assert.deepEqual(
       received.map((form) => [form.get("terminalId"), form.get("provider"), JSON.parse(form.get("providerEvent") ?? "{}").hook_event_name]),

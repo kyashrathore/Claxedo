@@ -52,16 +52,17 @@ function run(file: string, args: string[], options: { cwd: string; env: Record<s
   let output = ""
   child.stdout.on("data", (chunk: Buffer) => { output += chunk })
   child.stderr.on("data", (chunk: Buffer) => { output += chunk })
-  return new Promise<{ code: number | null; output: string }>((resolve, reject) => {
+  const finished = new Promise<{ code: number | null; output: string }>((resolve, reject) => {
     child.once("error", reject)
     child.once("close", (code) => resolve({ code, output }))
   })
+  return Object.assign(finished, { output: () => output })
 }
 
-async function until(label: string, done: () => boolean | Promise<boolean>, timeoutMs = 30_000) {
+async function until(label: string, done: () => boolean | Promise<boolean>, output = () => "", timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs
   while (!(await done())) {
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(observations)}`)
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(observations)}\n${output()}`)
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
 }
@@ -117,7 +118,7 @@ beforeAll(async () => {
       const response = await routes.request("http://localhost/agent-lifecycle", {
         method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body,
       })
-      const event = JSON.parse(form.get("providerEvent") ?? "{}") as { hook_event_name?: string; agent_id?: string }
+      const event = JSON.parse((form.get("providerEvent") ?? "{}").replace(/^\uFEFF+/, "")) as { hook_event_name?: string; agent_id?: string }
       const terminalId = form.get("terminalId") ?? ""
       observations.push({ terminalId, event: event.hook_event_name ?? "", ...(event.agent_id ? { agentId: event.agent_id } : {}), state: await tabState(terminalId) })
       outgoing.writeHead(response.status, { "content-type": "application/json" }).end(await response.text())
@@ -161,10 +162,11 @@ test("a real Codex run in a tab reports busy, waiting and done through session-f
   const release = model.holdTextReplies("CODEXTAB")
   try {
     const running = runWrapper(wrapper, ["exec", "--skip-git-repo-check", "CODEXTAB finish the task"], {
-      cwd: work, env: { ...tabEnv(home, terminalId), PATH: `${codexBin}${path.delimiter}${process.env.PATH ?? ""}` },
+      cwd: work,
+      env: { ...tabEnv(home, terminalId), CODEX_HOME: personal, PATH: `${codexBin}${path.delimiter}${process.env.PATH ?? ""}` },
     })
     const tab = () => observations.filter((row) => row.terminalId === terminalId)
-    await until("the subagent's SubagentStop", () => tab().some((row) => row.agentId && row.event === "SubagentStop"))
+    await until("the subagent's SubagentStop", () => tab().some((row) => row.agentId && row.event === "SubagentStop"), running.output)
     expect(tab().filter((row) => row.agentId).map((row) => row.event)).toEqual(expect.arrayContaining(["SubagentStart", "UserPromptSubmit", "SubagentStop"]))
     expect(await tabState(terminalId)).not.toBe("Idle")
     release()

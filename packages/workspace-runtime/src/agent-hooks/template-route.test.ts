@@ -5,7 +5,7 @@ import { Pty } from "../pty/index"
 import { defaultStatusHooks } from "../status-hooks"
 import { createBus, type WorkspaceRuntimeEvent } from "@claxedo/session-core"
 
-async function lifecycle(statusHooks: StatusHookTemplate[], provider: string, events: Record<string, unknown>[]) {
+async function lifecycle(statusHooks: StatusHookTemplate[], provider: string, events: (Record<string, unknown> | string)[]) {
   const terminalId = `route-${provider}`
   const terminal = spyOn(Pty, "get").mockImplementation((id) =>
     id === terminalId ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running", pid: 1 } : undefined,
@@ -17,7 +17,7 @@ async function lifecycle(statusHooks: StatusHookTemplate[], provider: string, ev
       const posted = await app.request("http://localhost/agent-lifecycle", {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ tabId: terminalId, terminalId, provider, providerEvent: JSON.stringify(event) }),
+        body: new URLSearchParams({ tabId: terminalId, terminalId, provider, providerEvent: typeof event === "string" ? event : JSON.stringify(event) }),
       })
       expect(posted.status).toBe(200)
       sessions.push((await (await app.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).json()).session)
@@ -44,4 +44,9 @@ test("a wrapper with no template reports the engine's own statuses at the lifecy
   const statuses = ["Busy", "Idle", "Error"]
   const sessions = await lifecycle([], "custom-tool", statuses.map((status) => ({ hook_event_name: status })))
   expect(sessions.map((session) => session.eventType)).toEqual(statuses)
+})
+
+test("a provider event behind UTF-8 byte-order marks, as Cursor's Windows hook runner writes it, is read as its JSON", async () => {
+  const [session] = await lifecycle([...defaultStatusHooks], "cursor", ['\uFEFF\uFEFF{"hook_event_name":"beforeSubmitPrompt"}'])
+  expect(session).toMatchObject({ eventType: "Busy", provider: "cursor" })
 })

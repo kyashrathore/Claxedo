@@ -8,9 +8,9 @@ rem Every hook config Claxedo writes names the harness that owns it. Agents
 rem replay each other's configs and run each other as tools; a config firing
 rem under a different agent than this terminal's is not this terminal's
 rem lifecycle.
+rem cmd.exe splits arguments at "=", so --harness=<name> arrives as %1 and %2.
 set "HARNESS="
-set "CLAXEDO_FIRST=_%~1"
-if "%CLAXEDO_FIRST:~0,11%"=="_--harness=" set "HARNESS=%CLAXEDO_FIRST:~11%"
+if "%~1"=="--harness" set "HARNESS=%~2"
 set "AGENT=%CLAXEDO_AGENT%"
 {{ALIASES}}
 if not defined HARNESS goto claxedo_send

@@ -14,6 +14,8 @@ import {
   getCommandShellArgs,
 } from "./core/shell"
 import { BASH_DIR, BIN_DIR, CLAXEDO_DIR, SHELL_DIR, SHELL_MARKER } from "./core/constants"
+import { wrapperFile } from "./core/platform"
+import { runInCmd } from "../test-support/windows-cli"
 
 const TEST_ROOT = path.join(os.tmpdir(), `claxedo-shell-test-${process.pid}-${Date.now()}`)
 
@@ -326,11 +328,25 @@ describe("zsh integration", () => {
   })
 })
 
-// ── Bash integration test ───────────────────────────────────────────────────
 
-// POSIX shebang execution: a wrapper is a bare bash script a POSIX shell finds on PATH, which cmd.exe never does.
-describe.skipIf(process.platform === "win32")("bash integration", () => {
-  it("wrapper wins over system binary when BIN_DIR is first in PATH", () => {
+describe("agent wrapper on PATH", () => {
+  it.skipIf(process.platform !== "win32")("cmd.exe runs the .cmd wrapper for a bare agent name when BIN_DIR is first in PATH", async () => {
+    const realBinDir = path.join(TEST_ROOT, "real-bin")
+    const wrapperBinDir = path.join(TEST_ROOT, "wrapper-bin")
+    mkdirSync(realBinDir, { recursive: true })
+    mkdirSync(wrapperBinDir, { recursive: true })
+    writeFileSync(path.join(realBinDir, "test-agent.cmd"), "@echo real\r\n")
+    writeFileSync(wrapperFile(wrapperBinDir, "test-agent", "windows"), "@echo wrapper\r\n")
+
+    const ran = await runInCmd("test-agent", {
+      cwd: TEST_ROOT,
+      env: { ...process.env, PATH: `${wrapperBinDir};${realBinDir};${process.env.PATH || ""}` } as Record<string, string>,
+    })
+
+    expect(ran.stdout.trim()).toBe("wrapper")
+  })
+
+  it.skipIf(process.platform === "win32")("wrapper wins over system binary when BIN_DIR is first in PATH", () => {
     const realBinDir = path.join(TEST_ROOT, "real-bin")
     const wrapperBinDir = path.join(TEST_ROOT, "wrapper-bin")
 

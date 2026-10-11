@@ -6,8 +6,9 @@ import os from "node:os"
 import path from "node:path"
 import { defaultGenericWrappers, defaultStatusHooks } from "../status-hooks"
 import { template } from "../test-support/status-hooks"
+import { runInCmd, writeNpmShimRecorder } from "../test-support/windows-cli"
 import { installedTemplates } from "./core/platform"
-import { hookArguments } from "./core/render"
+import { hookVariables } from "./core/render"
 import { createStatusHooksManifest, writeStatusHooksArtifacts } from "./core/setup"
 import { materializeAgentHooks } from "./materialize-status-hooks"
 
@@ -101,7 +102,6 @@ describe("Windows status hooks as written", () => {
 })
 
 type Delivery = { form: URLSearchParams; authorization?: string; workspace?: string }
-type Ran = { code: number | null; stdout: string; stderr: string }
 
 describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.exe", () => {
   const deliveries: Delivery[] = []
@@ -109,7 +109,6 @@ describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.ex
   let port: number
   let manifest: Awaited<ReturnType<typeof windowsArtifacts>>
   let fakes: string
-  let argvFile: string
 
   beforeAll(async () => {
     server = http.createServer((incoming, outgoing) => {
@@ -128,42 +127,11 @@ describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.ex
     port = (server.address() as { port: number }).port
     manifest = await windowsArtifacts("cmd", port)
     fakes = path.join(root, "fake-clis")
-    await fs.mkdir(fakes, { recursive: true })
-    argvFile = path.join(fakes, "argv.mjs")
-    await fs.writeFile(
-      argvFile,
-      'import { writeFileSync } from "node:fs"\n' +
-        "writeFileSync(process.env.FAKE_ARGV, JSON.stringify(process.argv.slice(2)))\n" +
-        "process.exit(Number(process.env.FAKE_EXIT ?? 0))\n",
-    )
   })
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   })
-
-  /** A CLI installed the way npm installs one: cmd-shim's .cmd, which leaves its batch context before starting node. */
-  async function fakeCli(name: string) {
-    const dir = path.join(fakes, name)
-    await fs.mkdir(dir, { recursive: true })
-    await fs.writeFile(
-      path.join(dir, `${name}.cmd`),
-      [
-        "@ECHO off",
-        "GOTO start",
-        ":find_dp0",
-        "SET dp0=%~dp0",
-        "EXIT /b",
-        ":start",
-        "SETLOCAL",
-        "CALL :find_dp0",
-        `SET "_prog=${process.execPath}"`,
-        `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%" "${argvFile}" %*`,
-        "",
-      ].join("\r\n"),
-    )
-    return dir
-  }
 
   function env(extra: Record<string, string | undefined> = {}) {
     const system = process.env.SystemRoot ?? "C:\\Windows"
@@ -184,26 +152,16 @@ describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.ex
     return Object.fromEntries(Object.entries(base).filter((entry): entry is [string, string] => entry[1] !== undefined))
   }
 
-  /** Runs `line` the way cmd.exe runs a typed command or a hook command line, with `switches` before `/c`. */
-  function cmd(line: string, options: { env: Record<string, string>; stdin?: string; switches?: string[] }): Promise<Ran> {
-    const child = spawn(options.env.ComSpec, [...(options.switches ?? ["/d", "/s"]), "/c", `"${line}"`], {
-      env: options.env,
-      cwd: root,
-      windowsVerbatimArguments: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    })
-    let stdout = ""
-    let stderr = ""
-    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk))
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk))
-    child.stdin.end(options.stdin ?? "")
-    return new Promise((resolve, reject) => {
-      child.once("error", reject)
-      child.once("close", (code) => resolve({ code, stdout, stderr }))
-    })
+  const cmd = (line: string, options: { env: Record<string, string>; stdin?: string; switches?: string[] }) =>
+    runInCmd(line, { ...options, cwd: root })
+
+  async function fakeCli(name: string) {
+    const dir = path.join(fakes, name)
+    await writeNpmShimRecorder(dir, name)
+    return { dir, argv: path.join(dir, "argv.json") }
   }
 
-  function deliveredSince(count: number) {
+  function deliveredSince(count: number): Record<string, string | undefined>[] {
     return deliveries.slice(count).map(({ form, authorization, workspace }) => ({
       ...Object.fromEntries(form),
       authorization,
@@ -211,22 +169,41 @@ describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.ex
     }))
   }
 
-  test("notify.cmd posts the provider JSON from its stdin, unchanged, with the tab's identity", async () => {
+  test("Codex's hook command posts the provider JSON from stdin, unchanged, from PowerShell and from cmd.exe", async () => {
+    const command = hookVariables(template("codex"), manifest.files.notify, "windows").notifyCommand
+    const event = JSON.stringify({ hook_event_name: "Stop", text: 'a & b | "c" %PATH% ^ ! < > π' })
+    const delivered = {
+      tabId: "tab-1",
+      terminalId: "terminal-1",
+      workspaceId: "workspace-1",
+      provider: "codex",
+      providerEvent: event,
+      authorization: "Bearer hook-token",
+      workspace: "workspace-1",
+    }
+
     const before = deliveries.length
-    const event = JSON.stringify({ hook_event_name: "Stop", text: 'a & b | "c" %PATH% ^ ! < >' })
-    const ran = await cmd(`"${manifest.files.notify}" --harness=codex`, { env: env(), stdin: event, switches: [] })
-    expect(ran).toEqual({ code: 0, stdout: "", stderr: "" })
-    expect(deliveredSince(before)).toEqual([
-      {
-        tabId: "tab-1",
-        terminalId: "terminal-1",
-        workspaceId: "workspace-1",
-        provider: "codex",
-        providerEvent: event,
-        authorization: "Bearer hook-token",
-        workspace: "workspace-1",
-      },
-    ])
+    const started = Date.now()
+    const powershell = spawn(
+      path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      ["-NoProfile", "-Command", command],
+      { env: env(), stdio: ["pipe", "pipe", "pipe"] },
+    )
+    let stderr = ""
+    powershell.stderr.on("data", (chunk: Buffer) => (stderr += chunk))
+    powershell.stdin.end(event)
+    const code = await new Promise<number | null>((resolve, reject) => {
+      powershell.once("error", reject)
+      powershell.once("close", resolve)
+    })
+    expect({ code, stderr }).toEqual({ code: 0, stderr: "" })
+    // A cmdlet under this reduced environment spends 12-23 s on module discovery; the hook runs none.
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(deliveredSince(before)).toEqual([delivered])
+
+    const fromCmd = deliveries.length
+    expect(await cmd(command, { env: env(), stdin: event, switches: [] })).toEqual({ code: 0, stdout: "", stderr: "" })
+    expect(deliveredSince(fromCmd)).toEqual([delivered])
   })
 
   test("notify.cmd drops another harness's hook, a Claude replay under Cursor, and every call outside a tab", async () => {
@@ -256,15 +233,14 @@ describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.ex
   })
 
   test("a generic wrapper reports Busy, then Idle or Error with the real CLI's exit code", async () => {
-    const dir = await fakeCli("aider")
-    const argv = path.join(dir, "argv.json")
+    const { dir, argv } = await fakeCli("aider")
     const tab = (exit: string) => env({ PATH: `${manifest.dirs.bin};${dir};${env().PATH}`, FAKE_ARGV: argv, FAKE_EXIT: exit })
 
     const before = deliveries.length
     expect((await cmd('aider --message "fix & ship"', { env: tab("0") })).code).toBe(0)
     expect(JSON.parse(await fs.readFile(argv, "utf8"))).toEqual(["--message", "fix & ship"])
     expect((await cmd("aider", { env: tab("3") })).code).toBe(3)
-    expect(deliveredSince(before).map((row) => [row.provider, JSON.parse(row.providerEvent).hook_event_name])).toEqual([
+    expect(deliveredSince(before).map((row) => [row.provider, JSON.parse(row.providerEvent ?? "").hook_event_name])).toEqual([
       ["aider", "Busy"],
       ["aider", "Idle"],
       ["aider", "Busy"],
@@ -277,8 +253,7 @@ describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.ex
   })
 
   test("the Claude wrapper starts Claude with Claxedo's settings and settles the tab when Claude exits", async () => {
-    const dir = await fakeCli("claude")
-    const argv = path.join(dir, "argv.json")
+    const { dir, argv } = await fakeCli("claude")
     const before = deliveries.length
     const ran = await cmd('claude -p "say hi"', {
       env: env({ PATH: `${manifest.dirs.bin};${dir};${env().PATH}`, FAKE_ARGV: argv, FAKE_EXIT: "2" }),
@@ -290,37 +265,9 @@ describe.skipIf(process.platform !== "win32")("Windows status hooks under cmd.ex
       "-p",
       "say hi",
     ])
-    expect(deliveredSince(before).map((row) => [row.provider, row.providerEvent])).toEqual([
-      ["claude", '{"hook_event_name":"Error"}'],
+    expect(deliveredSince(before).map((row) => [row.provider, JSON.parse(row.providerEvent ?? "")])).toEqual([
+      ["claude", { hook_event_name: "Error" }],
     ])
-  })
-
-  test("the Codex wrapper adds its hook flags only inside a tab, through an npm shim, and never repeats the bypass flag", async () => {
-    const dir = await fakeCli("codex")
-    const argv = path.join(dir, "argv.json")
-    const run = async (line: string, extra: Record<string, string | undefined> = {}) => {
-      await cmd(line, { env: env({ PATH: `${manifest.dirs.bin};${dir};${env().PATH}`, FAKE_ARGV: argv, ...extra }) })
-      return JSON.parse(await fs.readFile(argv, "utf8")) as string[]
-    }
-    const flags = hookArguments(template("codex"), manifest.files.notify, "windows")
-
-    expect(await run('codex exec "fix & ship"')).toEqual([
-      "--enable",
-      "hooks",
-      "--dangerously-bypass-hook-trust",
-      ...flags,
-      "exec",
-      "fix & ship",
-    ])
-    expect(await run("codex --dangerously-bypass-hook-trust exec go")).toEqual([
-      "--enable",
-      "hooks",
-      ...flags,
-      "--dangerously-bypass-hook-trust",
-      "exec",
-      "go",
-    ])
-    expect(await run('codex exec "fix & ship"', { CLAXEDO_TAB_ID: undefined })).toEqual(["exec", "fix & ship"])
   })
 
   test("Cursor's merged hook command answers Cursor and forwards the event, as Cursor runs it through cmd.exe", async () => {

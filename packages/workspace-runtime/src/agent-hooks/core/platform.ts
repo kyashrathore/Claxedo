@@ -27,6 +27,13 @@ export function installedTemplates(
   )
 }
 
+/**
+ * cmd.exe by its full path, which starts the same way from cmd.exe and from PowerShell. Codex runs a Windows
+ * hook command with `powershell -NoProfile -Command`, where a quoted script path is a string, not a command,
+ * and a bare `cmd` would first go through PowerShell's command discovery.
+ */
+export const WINDOWS_CMD = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe")
+
 export function notifyScriptName(platform: HookPlatform) {
   return platform === "windows" ? "notify.cmd" : "notify.sh"
 }
