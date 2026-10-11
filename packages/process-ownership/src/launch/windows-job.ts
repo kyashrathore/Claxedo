@@ -225,6 +225,7 @@ export type JobContainment = "contained" | "exited"
 export function createWindowsJobs(options: WindowsJobsOptions) {
   const helper = createLineHelper({ name: "job helper", launch: options.launch })
   return {
+    warm: () => helper.warm(),
     contain: (identity: Pick<CreationIdentity, "pid" | "startSecond">, timeoutMs: number) =>
       helper.ask(`contain ${identity.pid} ${identity.startSecond}`, `pid ${identity.pid}`, timeoutMs, (line) => containment(identity.pid, line)),
   }
@@ -256,4 +257,13 @@ const windowsJobs = createWindowsJobs({
  */
 export function containInWindowsJob(identity: CreationIdentity): Promise<JobContainment> {
   return windowsJobs.contain(identity, CONTAIN_TIMEOUT_MS)
+}
+
+/**
+ * Starts the job helper while a launch is still spawning. Its first start and
+ * compile took 350-430 ms on an m7i.2xlarge, which the spawn, pid and
+ * identity reads before containment then cover.
+ */
+export function warmWindowsJobs() {
+  windowsJobs.warm()
 }

@@ -33,11 +33,18 @@ type Pending = {
  */
 export function createLineHelper(options: LineHelperOptions) {
   let current: HelperProcess | undefined
+  const running = () => {
+    if (!current || current.lost) current = new HelperProcess(options)
+    return current
+  }
 
   return {
+    /** Starts the helper with nothing asked, so its startup is off the first request's path. */
+    warm() {
+      running()
+    },
     ask<T>(request: string, subject: string, timeoutMs: number, interpret: (line: string) => HelperAnswer<T>): Promise<T> {
-      if (!current || current.lost) current = new HelperProcess(options)
-      return current.ask(request, subject, timeoutMs, interpret)
+      return running().ask(request, subject, timeoutMs, interpret)
     },
     /** Lets the helper exit once it has answered everything already asked. */
     release() {

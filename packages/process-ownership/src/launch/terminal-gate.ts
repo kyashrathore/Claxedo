@@ -5,7 +5,7 @@ import { isRecord } from "@claxedo/helpers/guards"
 import { harnessSpawnEnv } from "../spawn-env"
 import type { CreationIdentity } from "./identity"
 import { resolveLaunchGateChild, type GatePayload } from "./launch-gate"
-import { containInWindowsJob } from "./windows-job"
+import { containInWindowsJob, warmWindowsJobs } from "./windows-job"
 
 /**
  * A Windows terminal's launch gate. A PTY library starts the gate attached to
@@ -40,6 +40,7 @@ const TERMINAL_ACTIVATION_DEADLINE_MS = 60_000
 
 export async function openTerminalGate(): Promise<TerminalGate> {
   const entry = resolveLaunchGateChild()
+  warmWindowsJobs()
   const pipe = `\\\\.\\pipe\\claxedo-terminal-gate-${randomUUID()}`
   const server = net.createServer()
   await new Promise<void>((resolve, reject) => {

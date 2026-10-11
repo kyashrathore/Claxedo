@@ -37,6 +37,18 @@ test("each answer the program writes settles its own request", async () => {
   ])
 }, 60_000)
 
+test("a warmed helper is started before anything is asked, and is the one that answers", async () => {
+  let launches = 0
+  const helper = createWindowsJobs({ launch: () => {
+    launches++
+    return spawn(process.execPath, ["-e", interpreter], { stdio: ["pipe", "pipe", "pipe"] })
+  } })
+  helper.warm()
+  expect(launches).toBe(1)
+  expect(await helper.contain({ pid: 100, startSecond: created }, 15_000)).toBe("contained")
+  expect(launches).toBe(1)
+}, 60_000)
+
 const cleanup: Array<() => void | Promise<void>> = []
 
 afterEach(async () => {

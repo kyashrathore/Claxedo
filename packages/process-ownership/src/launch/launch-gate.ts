@@ -16,7 +16,7 @@ import {
   type PreparedLaunch,
 } from "./ownership-store"
 import { neverExecuted, retire, type RetirementBudgets, type RetirementResult } from "./retirement"
-import { containInWindowsJob } from "./windows-job"
+import { containInWindowsJob, warmWindowsJobs } from "./windows-job"
 
 export const GATE_EXIT = {
   channelLostBeforeActivation: 20,
@@ -256,6 +256,7 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
     throw new LaunchRefusedError(input.role, error)
   }
 
+  if (process.platform === "win32") warmWindowsJobs()
   const handle = spawnLaunchGate({
     cwd: input.cwd,
     activationDeadlineMs: input.activationDeadlineMs ?? DEFAULT_ACTIVATION_DEADLINE_MS,
