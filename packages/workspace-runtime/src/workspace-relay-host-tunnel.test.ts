@@ -570,7 +570,8 @@ describe("workspace relay host tunnel client", () => {
       hostId: "host_1",
       workspaceIds: ["ws_1"],
       localBaseUrl: "http://runtime.invalid",
-      pingIntervalMs: 5,
+      // Windows timers tick about every 16 ms; a first tick past three intervals reads as a silent relay.
+      pingIntervalMs: 25,
       webSocket: class extends FakeWebSocket {
         pings = 0
         private readonly pongListeners = new Set<() => void>()
@@ -591,7 +592,7 @@ describe("workspace relay host tunnel client", () => {
       } as never,
     })
     sockets[0].open()
-    await new Promise((resolve) => setTimeout(resolve, 25))
+    await new Promise((resolve) => setTimeout(resolve, 60))
 
     expect(sockets).toHaveLength(1)
     expect(sockets[0].pings).toBeGreaterThan(0)

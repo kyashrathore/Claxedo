@@ -36,6 +36,7 @@ function node() {
 const built = join(import.meta.dirname, "..", "dist", "fs.mjs")
 
 describe("the built writer under the runtime the CLI ships", () => {
+  // A cold Node, PowerShell and CodeDom compile took 1.4 to 5.3 s on a 4-vCPU Windows runner.
   test("writes a private file that Node itself can read back", () => {
     const executable = node()
     if (!executable || !existsSync(built)) {
@@ -64,5 +65,5 @@ describe("the built writer under the runtime the CLI ships", () => {
     expect(readFileSync(target, "utf8")).toBe(SECRET)
     expect(ownerOnlyDescription(target)).toBe(expectedOwnerOnlyDescription())
     expect(readdirSync(dir).sort()).toEqual(["credentials.json", "run.mjs"])
-  })
+  }, 15_000)
 })
