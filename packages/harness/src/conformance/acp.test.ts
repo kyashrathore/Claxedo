@@ -331,6 +331,20 @@ test("an ACP process exiting during initialize reports its exit code and retires
   expect(await processes[0]!.exited).toMatchObject({ code: 17 })
 })
 
+test("an ACP process that dies during initialize names what it wrote on stderr", async () => {
+  await expect(setupConformance({
+    name: "acp stderr exit",
+    async backend() {
+      const peer = await backend("process")
+      return { ...peer, connection: { kind: "process" as const, command: process.execPath,
+        args: ["-e", "process.stderr.write('agent config is missing'); process.exit(3)"], startupTimeoutMs: 1_000 } }
+    },
+    makeTransport(services, state) {
+      return new AcpTransport(services, (state as AcpBackend).connection, filterMcpServers)
+    },
+  })).rejects.toThrow("code 3: agent config is missing")
+})
+
 test("ACP harness and probe spawns carry observer metadata without launch secrets", async () => {
   const descriptors: unknown[] = []
   const context = await setupConformance({

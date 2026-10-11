@@ -31,6 +31,7 @@ export interface OwnedProcess {
   readonly pid: number
   readonly stdin: Writable
   readonly stdout: Readable
+  /** Read by nothing else: a caller that ignores it leaves a child that writes enough to it blocked on a full pipe. */
   readonly stderr: Readable
   readonly exited: Promise<ExitStatus>
   retire(deadline: Deadline): Promise<RetireOutcome>

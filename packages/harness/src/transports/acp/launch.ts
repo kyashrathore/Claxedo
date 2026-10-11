@@ -6,6 +6,7 @@ import type { HarnessServices, OwnedProcess, StartInput } from "../../contract"
 import type { AcpConnectionOptions, AcpLaunch } from "./connection"
 import { AcpStartupDeadline } from "./deadline"
 import { AcpTransportError } from "./errors"
+import { StderrTail } from "../../rpc/stderr-tail"
 import { processByteStreams } from "./streams"
 
 export async function openAcpStream(input: StartInput, options: AcpConnectionOptions, services: HarnessServices, launch: AcpLaunch) {
@@ -18,7 +19,7 @@ export async function openAcpStream(input: StartInput, options: AcpConnectionOpt
 }
 
 async function openStream(input: StartInput, options: AcpConnectionOptions, services: HarnessServices,
-  launch: AcpLaunch): Promise<{ process?: OwnedProcess; stream: Stream }> {
+  launch: AcpLaunch): Promise<{ process?: OwnedProcess; stderr?: StderrTail; stream: Stream }> {
   if (options.kind === "process") {
     const process = await services.spawn({ file: options.command, args: options.args ?? [], cwd: input.directory,
       env: { ...stringRecord(globalThis.process.env), ...options.env, ...input.credentials.secrets } },
@@ -30,9 +31,10 @@ async function openStream(input: StartInput, options: AcpConnectionOptions, serv
       catch (error) { services.log.error("ACP late launch retirement failed", { error }); throw error }
       throw new AcpTransportError("connection", "ACP launch was abandoned", launch.signal.reason)
     }
+    const stderr = new StderrTail(process)
     const streams = processByteStreams(process)
     const stream = ndJsonStream(streams.output, streams.input)
-    return { process, stream }
+    return { process, stderr, stream }
   }
   if (options.kind === "websocket") return { stream: createWebSocketStream(options.url,
     { headers: options.headers, protocols: options.protocols ? [...options.protocols] : undefined }) }

@@ -45,7 +45,7 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
 
 async function openPeer(input: StartInput, options: AcpConnectionOptions, services: HarnessServices, handlers: AcpHandlers,
   launch: AcpLaunch): Promise<AcpPeer> {
-  const { process, stream } = await openAcpStream(input, options, services, launch)
+  const { process, stderr, stream } = await openAcpStream(input, options, services, launch)
   const startup = new AcpStartupDeadline(services.clock, options.startupTimeoutMs, "initialize")
   let initializing = true
   const requests = new AcpRequestScope()
@@ -70,7 +70,8 @@ async function openPeer(input: StartInput, options: AcpConnectionOptions, servic
     await launch.owner.retire({ retire })
     if (error instanceof AcpTransportError) throw error
     const exit = process ? await process.exited : undefined
+    const said = stderr?.value ? `: ${stderr.value}` : ""
     throw new AcpTransportError("connection", exit?.code !== null && exit?.code !== undefined
-      ? `ACP initialization failed after process exited with code ${exit.code}` : "ACP initialization failed", error)
+      ? `ACP initialization failed after process exited with code ${exit.code}${said}` : `ACP initialization failed${said}`, error)
   }
 }
