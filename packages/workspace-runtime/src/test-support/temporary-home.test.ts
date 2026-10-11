@@ -21,7 +21,9 @@ test("a bare bun test refuses to start and leaves a stand-in for the developer's
 }, 120_000)
 
 test("the embedded OpenCode engine run through the test runner leaves a stand-in for the developer's home untouched", async () => {
-  const child = await runUnderStandInHome(packageDir, ["node", runner, process.execPath, "test", engineTest])
+  // The package suite's own budget: Windows can hold the engine's closed temp
+  // root for seconds, and the engine test's cleanup waits it out.
+  const child = await runUnderStandInHome(packageDir, ["node", runner, process.execPath, "test", "--timeout", "30000", engineTest])
 
   expect({ code: child.code, output: child.output }).toMatchObject({ code: 0 })
   expect(child.output, "the engine test did not run, so nothing was proven").toMatch(/\b[1-9]\d* pass\b/)

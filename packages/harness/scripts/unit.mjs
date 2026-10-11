@@ -18,9 +18,5 @@ function run(command, args) {
 
 if (first) run("bun", ["run", "check"])
 const realCliSuites = process.env.CLAXEDO_REAL_CLI_SUITES === "skip" ? ["--path-ignore-patterns=src/conformance/**"] : []
-// The first private-file write in a Windows test process starts the
-// PowerShell runner, 1.4 to 5.3 s on the hosted runner, so whichever test
-// writes first would otherwise race the 5 s default.
-const timeout = process.platform === "win32" ? ["--timeout=15000"] : []
-run(process.execPath, ["../../script/test-home/run.mjs", "bun", "test", "src", "scripts", "e2e/harness", ...realCliSuites, ...timeout, ...(shard ? [`--shard=${shard}`] : [])])
+run(process.execPath, ["../../script/test-home/run.mjs", "bun", "test", "src", "scripts", "e2e/harness", ...realCliSuites, ...(shard ? [`--shard=${shard}`] : [])])
 if (first) run("bun", ["run", "test:node"])

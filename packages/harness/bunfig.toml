@@ -1,2 +1,2 @@
 [test]
-preload = ["../../script/test-home/guard.mjs", "./e2e/harness/pinned-harnesses.ts"]
+preload = ["../../script/test-home/guard.mjs", "../../script/windows-test-timeout.mjs", "./e2e/harness/pinned-harnesses.ts"]
