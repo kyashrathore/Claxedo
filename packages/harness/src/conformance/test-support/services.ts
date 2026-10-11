@@ -75,7 +75,7 @@ async function gatedProcess(command: SpawnCommand): Promise<OwnedProcess> {
       const termGraceMs = Math.floor(remainingMs / 2)
       const result = await launch.retire({ termGraceMs, killVerifyMs: remainingMs - termGraceMs })
       if (retirementSettled(result)) return { stopped: true }
-      return { stopped: false, error: result.error ?? { code: "retirement_unverified", message: `Test launch ${launch.launchId} retirement was not verified` } }
+      return { stopped: false, error: result.error ?? { code: "retirement_unverified", message: `Test launch ${launch.launchId} retirement was not verified: ${JSON.stringify(result)}` } }
     }, (result) => result.stopped),
   }
 }

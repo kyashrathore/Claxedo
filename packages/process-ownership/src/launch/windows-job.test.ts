@@ -28,11 +28,13 @@ const created = "2026-10-11T03:59:59.1234560Z"
 
 test("each answer the program writes settles its own request", async () => {
   const helper = jobs()
-  expect(await helper.contain({ pid: 100, startSecond: created }, 15_000)).toBe("contained")
-  expect(await helper.contain({ pid: 200, startSecond: created }, 15_000)).toBe("exited")
-  await expect(helper.contain({ pid: 300, startSecond: created }, 15_000)).rejects.toThrow("pid 300 is now a process created at 2026-10-11T04:00:00.0000000Z")
-  await expect(helper.contain({ pid: 400, startSecond: created }, 15_000)).rejects.toThrow("Access is denied. (Windows error 5)")
-  await expect(helper.contain({ pid: 500, startSecond: created }, 15_000)).rejects.toThrow("unexpected form")
+  const answers = await Promise.allSettled([100, 200, 300, 400, 500].map((pid) => helper.contain({ pid, startSecond: created }, 15_000)))
+  expect(answers.slice(0, 2)).toEqual([{ status: "fulfilled", value: "contained" }, { status: "fulfilled", value: "exited" }])
+  expect(answers.slice(2).map((answer) => answer.status === "rejected" ? String(answer.reason) : answer.status)).toEqual([
+    "Error: pid 300 is now a process created at 2026-10-11T04:00:00.0000000Z, not the recorded launch",
+    "Error: Access is denied. (Windows error 5)",
+    "Error: the job helper answered in an unexpected form: contained but differently",
+  ])
 }, 60_000)
 
 const cleanup: Array<() => void | Promise<void>> = []

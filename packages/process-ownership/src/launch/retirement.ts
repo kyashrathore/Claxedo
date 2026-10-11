@@ -210,10 +210,26 @@ function deliverWindowsTree(identity: CreationIdentity, signal: NodeJS.Signals):
   return new Promise((resolve) => {
     const killer = spawn(windowsSystemTool("taskkill.exe"), ["/pid", String(identity.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true })
     killer.once("error", () => resolve({ signal, scope: "tree", delivered: false, refusal: "identity_unverifiable" }))
-    killer.once("exit", (code) => resolve(code === 0
-      ? { signal, scope: "tree", delivered: true }
-      : { signal, scope: "tree", delivered: false, refusal: code === 128 ? "exited" : "permission_denied" }))
+    killer.once("exit", (code) => {
+      if (code === 0) return resolve({ signal, scope: "tree", delivered: true })
+      resolve({ signal, scope: "tree", delivered: false, refusal: code === 128 || !windowsProcessRunning(identity.pid) ? "exited" : "permission_denied" })
+    })
   })
+}
+
+/**
+ * A process that has exited stays in the process table while anything holds a
+ * handle to it, as this host's libuv does until it reaps the exit, and
+ * terminating it then fails with access denied. Its exit code tells the two
+ * apart.
+ */
+function windowsProcessRunning(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return !(isRecord(error) && error.code === "ESRCH")
+  }
 }
 
 async function descendantsAfterExit(identity: CreationIdentity): Promise<RetirementResult["descendants"]> {

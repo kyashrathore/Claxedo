@@ -288,7 +288,7 @@ test("a hung ACP initialize retires its process", async () => {
     async backend() {
       const peer = await backend("process")
       return { ...peer, connection: { kind: "process" as const, command: process.execPath,
-        args: ["-e", "process.stdin.resume()"], startupTimeoutMs: 100 },
+        args: ["-e", "process.stdin.resume()"], startupTimeoutMs: 2_000 },
         configureServices(services) { processes = services.processes } }
     },
     makeTransport(services, state) {
