@@ -36,6 +36,7 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "process", target: "node" },
   { entry: "net", target: "node" },
   { entry: "machine-name", target: "node" },
+  { entry: "windows-powershell", target: "node" },
 ]
 
 // package.json is what consumers resolve, so a subpath it exports must have a

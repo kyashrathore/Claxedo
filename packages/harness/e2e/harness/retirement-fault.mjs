@@ -8,10 +8,17 @@ fs.appendFileSync(record, `loaded ${process.pid}\n`)
 const spawn = childProcess.spawn
 const kill = process.kill.bind(process)
 
+const killOnClose = "limits.Basic.LimitFlags = KillOnJobClose;"
+
 childProcess.spawn = (command, args, options) => {
   if (process.platform === "win32" && path.basename(command).toLowerCase() === "taskkill.exe" && args.includes("/T")) {
     fs.appendFileSync(record, `taskkill ${args.join(" ")}\n`)
     return spawn(command, args.filter((arg) => arg !== "/T"), options)
+  }
+  const source = options?.env?.CLAXEDO_WINDOWS_JOB_SOURCE
+  if (process.platform === "win32" && typeof source === "string" && source.includes(killOnClose)) {
+    fs.appendFileSync(record, "job without kill-on-close\n")
+    return spawn(command, args, { ...options, env: { ...options.env, CLAXEDO_WINDOWS_JOB_SOURCE: source.replace(killOnClose, "") } })
   }
   return spawn(command, args, options)
 }

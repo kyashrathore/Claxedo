@@ -8,6 +8,7 @@ import os from "node:os"
 import path from "node:path"
 import type { WSContext } from "hono/ws"
 import { historyPath } from "./history-disk"
+import { answerAsTerminalGate, fakeWindowsAgent } from "./terminal-gate.test-support"
 
 type DataHandler = (data: string) => void
 type ExitHandler = (event: { exitCode: number }) => void | Promise<void>
@@ -71,8 +72,10 @@ await mock.module("@lydell/node-pty", () => ({
     fakeProcesses.set(pid, { dataHandlers: [], exitHandlers: [] })
     if (nextSpawnExit) setTimeout(() => { fakeProcesses.get(pid)?.exitHandlers.forEach((handler) => handler({ exitCode: 7 })) }, 10)
     nextSpawnExit = false
+    answerAsTerminalGate(args, pid)
     return {
       get pid() { return ready ? pid : 0 },
+      _agent: fakeWindowsAgent(pid),
       kill() {
         nativeKills.push(pid)
       },
@@ -187,7 +190,8 @@ describe("Pty lifecycle cleanup", () => {
     expect(Pty.list().find((row) => row.id === info.id)?.createRequestId).toBe("request-client-a")
   }))
 
-  test("an unavailable native pid does not block native PTY cleanup", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+  // A Windows terminal that cannot be identified is refused before its shell starts.
+  test.skipIf(windows)("an unavailable native pid does not block native PTY cleanup", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     nextSpawnPid = 0
 
@@ -379,7 +383,8 @@ describe("Pty activity changes", () => {
     }
   }))
 
-  test("a retirement left unresolved notifies that the terminal pins again, and abandoning it notifies the release", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+  // A Windows terminal that cannot be identified is refused before its shell starts.
+  test.skipIf(windows)("a retirement left unresolved notifies that the terminal pins again, and abandoning it notifies the release", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     nextSpawnPid = 0
     const info = await Pty.create({ cwd: tmpDir, title: "unverifiable" }, ownership)
@@ -493,7 +498,8 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.get(info.id)).toBeUndefined()
   }), 20_000)
 
-  test("a payload that exited before its identity was read is reported exited, not unverifiable", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+  // A Windows terminal that cannot be identified is refused before its shell starts.
+  test.skipIf(windows)("a payload that exited before its identity was read is reported exited, not unverifiable", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     const brief = disposableChild("process.exit(0)")
     await new Promise<void>((resolve) => brief.once("exit", () => resolve()))
@@ -506,7 +512,8 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.get(info.id)).toBeUndefined()
   }), 20_000)
 
-  test("a pid the runtime did not spawn records no identity and never becomes a signal target", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+  // A Windows terminal that cannot be identified is refused before its shell starts.
+  test.skipIf(windows)("a pid the runtime did not spawn records no identity and never becomes a signal target", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     nextSpawnPid = FOREIGN_PID
 
@@ -520,6 +527,20 @@ describe("Pty unresolved retirement", () => {
     // A second remove retries rather than reporting a terminal already claimed stopped.
     expect((await Pty.remove(info.id))?.error?.code).toBe("ownership_unverified")
     await Pty.abandon(info.id, { actorId: "test", reason: "fixture teardown" })
+  }), 20_000)
+
+  test.skipIf(!windows)("a Windows terminal whose gate cannot be identified is refused and its console closed", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+    const { Pty } = await import("./index")
+    const { LaunchRefusedError } = await import("@claxedo/process-ownership/launch")
+    const before = Pty.list().length
+    nextSpawnPid = FOREIGN_PID
+
+    const failure = await Pty.create({ cwd: tmpDir, title: "unidentified" }, ownership).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(LaunchRefusedError)
+    expect(nativeKills).toContain(FOREIGN_PID)
+    expect(alive(FOREIGN_PID)).toBe(true)
+    expect(Pty.list().length).toBe(before)
   }), 20_000)
 
   test("a store that cannot record ownership refuses the launch before anything is spawned", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
@@ -538,7 +559,7 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.list().length).toBe(before)
   }))
 
-  // POSIX process groups: Windows retirement resolves a taskkill tree, not a group a leader leaves behind.
+  // POSIX process groups: a Windows terminal's job ends every member with its leader, so none outlives it.
   test.skipIf(windows)("a terminal whose group still holds a process stays addressable and keeps pinning the runtime", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
     // A leader with a member of its own. Killing only the leader leaves the

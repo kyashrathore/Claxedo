@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
+import net from "node:net"
 import { isRecord } from "@claxedo/helpers/guards"
 import { GATE_EXIT, type GatePayload } from "./launch-gate"
 import { launchErrorText, readCreationIdentity, releaseWindowsProcessTable, type CreationIdentity } from "./identity"
@@ -10,43 +11,49 @@ type Activation =
   | { outcome: "deadline" }
   | { outcome: "nonce-mismatch" }
 
+/** The private channel to the host: Node's IPC channel, or the named pipe a terminal's gate is given. */
+type GateChannel = {
+  send(frame: Record<string, unknown>): void
+  onMessage(listener: (frame: unknown) => void): () => void
+  onClose(listener: () => void): () => void
+  release(): void
+}
+
 /**
  * The gate program. It is spawned by path and never imported for its effects,
  * so importing it — which this package's own export checker does — must not
  * start a gate or exit the importer.
  */
 export async function runLaunchGateChild(): Promise<never> {
-  const send = process.send?.bind(process)
-  if (!send) process.exit(GATE_EXIT.noParentChannel)
-
   const activationDeadlineMs = Number(argument("--activation-deadline-ms") ?? "10000")
-
-  let identity: CreationIdentity | undefined
-  try {
-    identity = await readCreationIdentity(process.pid)
-  } catch (error) {
-    // The host reads this stream until the identity frame arrives, so the
-    // reason travels as one line rather than as an uncaught-exception dump.
-    process.stderr.write(`${launchErrorText(error)}\n`)
-  }
-  releaseWindowsProcessTable()
-  if (!identity) process.exit(GATE_EXIT.identityUnavailable)
+  const pipe = argument("--activation-pipe")
+  const channel = pipe ? await pipeChannel(pipe) : ipcChannel()
+  if (!channel) process.exit(GATE_EXIT.noParentChannel)
 
   // Minted here and delivered only over the private channel, so activation
   // proves the sender received that message. An environment variable or an
   // argv token carries no nonce and therefore authorizes nothing.
   const gateNonce = randomUUID()
-  send({ type: "identity", identity, gateNonce })
+  if (pipe) {
+    // A terminal's host reads this gate's identity itself, from a process
+    // table reader that is already running.
+    channel.send({ type: "hello", pid: process.pid, gateNonce })
+  } else {
+    channel.send({ type: "identity", identity: await ownIdentity(), gateNonce })
+  }
 
-  const activation = await waitForActivation(gateNonce, activationDeadlineMs)
+  const activation = await waitForActivation(channel, gateNonce, activationDeadlineMs)
   if (activation.outcome === "channel-lost") process.exit(GATE_EXIT.channelLostBeforeActivation)
   if (activation.outcome === "deadline") process.exit(GATE_EXIT.activationDeadline)
   if (activation.outcome === "nonce-mismatch") process.exit(GATE_EXIT.nonceMismatch)
 
   // This process leads the group the host recorded, so it must outlive its own
   // payload: an early exit here would make the recorded leader read as gone
-  // while the payload is still running.
-  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(signal, () => {})
+  // while the payload is still running. A terminal's console delivers Ctrl+C
+  // and Ctrl+Break to every process attached to it, this one included.
+  const ignored: NodeJS.Signals[] = ["SIGTERM", "SIGINT", "SIGHUP"]
+  if (process.platform === "win32") ignored.push("SIGBREAK")
+  for (const signal of ignored) process.on(signal, () => {})
 
   const child = spawn(activation.payload.command, activation.payload.args, {
     env: activation.payload.env,
@@ -55,7 +62,7 @@ export async function runLaunchGateChild(): Promise<never> {
 
   const trySend = (frame: Record<string, unknown>) => {
     try {
-      send(frame)
+      channel.send(frame)
     } catch {
       // The parent is gone; the payload still runs and its record already exists.
     }
@@ -72,12 +79,82 @@ export async function runLaunchGateChild(): Promise<never> {
   // Past activation the host's record already exists, so losing the channel
   // while acknowledging must not cancel the user's work.
   trySend({ type: "activated", gateNonce, pid: child.pid })
+  if (pipe) channel.release()
 
   const code = await new Promise<number>((resolve) => {
     child.on("exit", (exitCode, signal) => resolve(exitCode ?? (signal ? 128 : 0)))
     child.on("error", () => resolve(GATE_EXIT.payloadSpawnFailed))
   })
   process.exit(code)
+}
+
+async function ownIdentity(): Promise<CreationIdentity> {
+  let identity: CreationIdentity | undefined
+  try {
+    identity = await readCreationIdentity(process.pid)
+  } catch (error) {
+    // The host reads this stream until the identity frame arrives, so the
+    // reason travels as one line rather than as an uncaught-exception dump.
+    process.stderr.write(`${launchErrorText(error)}\n`)
+  }
+  releaseWindowsProcessTable()
+  if (!identity) process.exit(GATE_EXIT.identityUnavailable)
+  return identity
+}
+
+function ipcChannel(): GateChannel | undefined {
+  const send = process.send?.bind(process)
+  if (!send) return undefined
+  return {
+    send: (frame) => { send(frame) },
+    onMessage: (listener) => {
+      process.on("message", listener)
+      return () => { process.off("message", listener) }
+    },
+    onClose: (listener) => {
+      process.on("disconnect", listener)
+      return () => { process.off("disconnect", listener) }
+    },
+    release: () => {},
+  }
+}
+
+/** One JSON frame per line, in both directions. */
+function pipeChannel(pipe: string): Promise<GateChannel | undefined> {
+  return new Promise((resolve) => {
+    const socket = net.connect(pipe)
+    socket.once("error", () => resolve(undefined))
+    socket.once("connect", () => {
+      const listeners = new Set<(frame: unknown) => void>()
+      let partial = ""
+      socket.on("data", (chunk: Buffer) => {
+        partial += chunk.toString()
+        for (let end = partial.indexOf("\n"); end >= 0; end = partial.indexOf("\n")) {
+          const line = partial.slice(0, end)
+          partial = partial.slice(end + 1)
+          let frame: unknown
+          try {
+            frame = JSON.parse(line)
+          } catch {
+            continue
+          }
+          for (const listener of listeners) listener(frame)
+        }
+      })
+      resolve({
+        send: (frame) => { socket.write(`${JSON.stringify(frame)}\n`) },
+        onMessage: (listener) => {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+        onClose: (listener) => {
+          socket.on("close", listener)
+          return () => { socket.off("close", listener) }
+        },
+        release: () => { socket.end() },
+      })
+    })
+  })
 }
 
 function argument(name: string) {
@@ -102,10 +179,10 @@ function gatePayload(value: unknown): GatePayload | undefined {
   return { command, args: parts, env: variables }
 }
 
-function waitForActivation(gateNonce: string, activationDeadlineMs: number) {
+function waitForActivation(channel: GateChannel, gateNonce: string, activationDeadlineMs: number) {
   return new Promise<Activation>((resolve) => {
     const timer = setTimeout(() => finish({ outcome: "deadline" }), activationDeadlineMs)
-    const onMessage = (frame: unknown) => {
+    const offMessage = channel.onMessage((frame) => {
       if (typeof frame !== "object" || frame === null) return
       const message = frame as { type?: unknown; gateNonce?: unknown; payload?: unknown }
       if (message.type !== "activate") return
@@ -115,16 +192,14 @@ function waitForActivation(gateNonce: string, activationDeadlineMs: number) {
       // run, so this gate keeps waiting and the deadline reports that none arrived.
       if (!payload) return
       finish({ outcome: "activate", payload })
-    }
-    const onChannelLost = () => finish({ outcome: "channel-lost" })
+    })
+    const offClose = channel.onClose(() => finish({ outcome: "channel-lost" }))
     const finish = (result: Activation) => {
       clearTimeout(timer)
-      process.off("message", onMessage)
-      process.off("disconnect", onChannelLost)
+      offMessage()
+      offClose()
       resolve(result)
     }
-    process.on("message", onMessage)
-    process.on("disconnect", onChannelLost)
   })
 }
 

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
-import { join } from "node:path"
-import { cmdletFreeCommand, RUNNER_COMMAND, RUNNER_SOURCE, SOURCE_VARIABLE } from "./windows-private-file-program"
+import { RUNNER_COMMAND, RUNNER_SOURCE, SOURCE_VARIABLE } from "./windows-private-file-program"
+import { cmdletFreeCommand, powershellPath } from "./windows-powershell"
 import { createPrivateFileRunner, RunnerRefusal, type PrivateStagingReport } from "./windows-private-file-runner"
 
 export type { PrivateStagingReport } from "./windows-private-file-runner"
@@ -49,11 +49,6 @@ export class PrivateFileError extends Error {
 }
 
 const TARGET_VARIABLE = "CLAXEDO_PRIVATE_FILE_TARGET"
-
-/** Absolute, so `PATH` cannot decide which interpreter enforces the permissions. */
-export function powershellPath() {
-  return join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-}
 
 export type WindowsDescriptor = {
   owner: string

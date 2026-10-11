@@ -1,7 +1,20 @@
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
-import { LaunchRefusedError, launchErrorText, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
+import type { IPty } from "@lydell/node-pty"
+import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
+import {
+  LaunchRefusedError,
+  launchErrorText,
+  neverExecuted,
+  openTerminalGate,
+  retire,
+  type CreationIdentity,
+  type GatePayload,
+  type LaunchOwnershipStore,
+  type TerminalGate,
+} from "@claxedo/process-ownership/launch"
+import { closeNativeTerminal } from "./native-close"
 import { readPtyCreationIdentity } from "./creation-identity"
 import { Log } from "../log"
 import { shellQuote } from "@claxedo/helpers"
@@ -220,6 +233,8 @@ export async function startTerminal(
   // channel without taking the shell's session leadership away from it, so
   // this launch records its identity immediately after the spawn instead and
   // reconciles a crash in that window as unknown rather than as no execution.
+  // On Windows the PTY starts a terminal gate in the shell's place, which
+  // starts the shell only once it is contained in a job.
   const prepared = await ownership
     .prepare({
       role: "terminal",
@@ -228,12 +243,13 @@ export async function startTerminal(
     })
     .catch((error: unknown) => { throw new LaunchRefusedError("terminal", error) })
 
+  const gate = process.platform === "win32" ? await openTerminalGate() : undefined
   const t3 = performance.now()
   const spawnedAt = Date.now()
-  const ptyProcess = spawn(command, args, {
+  const ptyProcess = spawn(gate ? gate.file : command, gate ? gate.args : args, {
     name: "xterm-256color",
     cwd,
-    env,
+    env: gate ? gate.env : env,
   })
   const spawnMs = performance.now() - t3
   // node-pty drops output no listener hears, and the session's own listener
@@ -279,6 +295,17 @@ export async function startTerminal(
       unrecorded = launchErrorText(error)
       log.error("PTY creation identity could not be recorded; this terminal is unowned", { id, pid: identity.pid, error: unrecorded })
     }
+  }
+  if (gate) {
+    await admitThroughGate({
+      gate,
+      ptyProcess,
+      identity,
+      payload: { command, args, env },
+      exited: () => nativeExit !== undefined,
+      launchId: prepared.launchId,
+      ownership,
+    })
   }
 
   const info: ActiveSession["info"] = {
@@ -476,4 +503,53 @@ export async function startTerminal(
   session.bus.publish({ type: "pty.created", info })
   if (nativeExit) await handleExit(nativeExit)
   return info
+}
+
+type GateAdmission = {
+  gate: TerminalGate
+  ptyProcess: IPty
+  identity: CreationIdentity | undefined
+  payload: GatePayload
+  exited: () => boolean
+  launchId: string
+  ownership: LaunchOwnershipStore
+}
+
+/**
+ * Lets a Windows terminal's gate start the shell once it is contained. A gate
+ * that exits first leaves an exited terminal. One that cannot be contained
+ * never starts the shell, and the terminal is refused.
+ */
+async function admitThroughGate(input: GateAdmission) {
+  const { gate, ptyProcess, identity } = input
+  try {
+    if (input.exited()) return
+    if (!identity) throw new Error("the terminal gate's creation identity could not be read, so it cannot be contained")
+    const activation = gate.activate(identity, input.payload)
+    void activation.catch(() => {})
+    let exitSubscription: { dispose(): void } | undefined
+    const exitedFirst = new Promise<"exited">((resolve) => {
+      exitSubscription = ptyProcess.onExit(() => resolve("exited"))
+    })
+    try {
+      await Promise.race([activation, exitedFirst])
+    } finally {
+      exitSubscription?.dispose()
+    }
+  } catch (error) {
+    if (input.exited()) return
+    const closeNative = () => closeNativeTerminal(ptyProcess)
+    const result = identity ? await retire({ identity, closeNative }, DEFAULT_RECOVERY_BUDGETS) : neverExecuted()
+    if (!identity) {
+      try {
+        closeNative()
+      } catch (closing) {
+        log.error("refused PTY's native handle could not be closed", { error: launchErrorText(closing) })
+      }
+    }
+    await input.ownership.recordRetirement(input.launchId, result).catch(() => {})
+    throw new LaunchRefusedError("terminal", error)
+  } finally {
+    gate.close()
+  }
 }

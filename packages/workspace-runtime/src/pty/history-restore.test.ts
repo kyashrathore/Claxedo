@@ -9,6 +9,8 @@ import { historyPath } from "./history-disk"
 import xterm from "@xterm/headless"
 import { terminalCheckpointSchema, applyTerminalCheckpointState } from "./terminal-checkpoint-state"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
+import { spawn as spawnChild, type ChildProcess } from "node:child_process"
+import { answerAsTerminalGate, fakeWindowsAgent } from "./terminal-gate.test-support"
 
 /** History restore is about transcripts, not recovery: these records die with the test. */
 const ownership = volatileLaunchOwnership()
@@ -33,12 +35,25 @@ const fakeProcesses = new Map<number, { dataHandlers: DataHandler[]; exitHandler
 /** Above every kernel's pid ceiling (Linux 2^22, macOS 99999), so no identity read can land on a real process. */
 let nextPid = 4_194_305
 
+/** A Windows terminal is admitted only once its gate is contained, which takes a real process. */
+const windowsGates: ChildProcess[] = []
+
+function fakePid() {
+  if (process.platform !== "win32") return nextPid++
+  const gate = spawnChild(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], { stdio: "ignore", windowsHide: true })
+  windowsGates.push(gate)
+  return gate.pid!
+}
+
 await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
-    const pid = nextPid++
+    const pid = fakePid()
     fakeProcesses.set(pid, { dataHandlers: [], exitHandlers: [] })
+    answerAsTerminalGate(args, pid)
     return {
       pid,
+      _agent: fakeWindowsAgent(pid),
+      kill() {},
       write(data: string) {
         fakeProcesses.get(pid)?.dataHandlers.forEach((handler) => handler(data))
       },
@@ -122,6 +137,7 @@ afterEach(async () => {
   const { Pty } = await import("./index")
   await Pty.dispose()
   kill.mockRestore()
+  for (const gate of windowsGates.splice(0)) gate.kill()
   fakeProcesses.clear()
   if (previousHistoryDir === undefined) delete process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
   else process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = previousHistoryDir

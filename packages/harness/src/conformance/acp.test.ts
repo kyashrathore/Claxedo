@@ -278,7 +278,7 @@ test("a hung ACP session/new times out and retires its started process", async (
     },
   })).rejects.toThrow("session/new timed out")
   expect(processes).toHaveLength(1)
-  expect((await processes[0]!.exited).signal).not.toBeNull()
+  expect(await processes[0]!.exited).not.toEqual({ code: 0, signal: null })
 })
 
 test("a hung ACP initialize retires its process", async () => {

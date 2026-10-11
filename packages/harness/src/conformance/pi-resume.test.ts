@@ -10,12 +10,12 @@ import { authority, MemoryPorts, origin } from "./test-support/memory-ports"
 import { piBackend, piTransport } from "../../e2e/harness/pi-conformance"
 import { createTestServices } from "./test-support/services"
 
-const POSIX_PROCESS_GROUPS = process.platform !== "win32"
+const backgroundPid = "$(cat /proc/$!/winpid 2>/dev/null || echo $!)"
 
-test.skipIf(!POSIX_PROCESS_GROUPS)("a Pi run killed mid-tool resumes on attach as a continuation turn that answers with the interrupted result", async () => {
+test("a Pi run killed mid-tool resumes on attach as a continuation turn that answers with the interrupted result", async () => {
   const backend = await piBackend("pi-resume")
   const pidFile = path.join(backend.directory, "sleep.pid")
-  backend.server.scriptTool({ name: "bash", input: { command: "echo $$ > sleep.pid; exec sleep 60" }, whenPromptIncludes: "PICRASH" })
+  backend.server.scriptTool({ name: "bash", input: { command: `sleep 60 & echo ${backgroundPid} > sleep.pid; wait` }, whenPromptIncludes: "PICRASH" })
   const child = spawn(process.execPath, [path.join(import.meta.dirname, "../../e2e/harness/pi-crash-child.ts"), backend.root, backend.directory, backend.server.url],
     { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, HOME: path.join(backend.root, "home") } })
   let output = ""
@@ -24,7 +24,7 @@ test.skipIf(!POSIX_PROCESS_GROUPS)("a Pi run killed mid-tool resumes on attach a
   const { binding } = JSON.parse(output.split("\n")[0]!) as { binding: HarnessBinding }
   child.kill("SIGKILL")
   await new Promise((resolve) => child.once("exit", resolve))
-  process.kill(pid!, "SIGKILL")
+  if (processAlive(pid!)) process.kill(pid!, "SIGKILL")
   const services = createTestServices()
   const ports = new MemoryPorts()
   Object.assign(ports, { clock: services.clock })

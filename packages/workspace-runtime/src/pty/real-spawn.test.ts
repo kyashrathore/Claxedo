@@ -38,7 +38,7 @@ const windows = process.platform === "win32"
  * can answer: an echo of the typed input would still carry the unexpanded form.
  */
 const shellProof = windows
-  ? { typed: "echo neighbor-%OS%\n", expected: "neighbor-Windows_NT" }
+  ? { typed: "echo neighbor-%OS%\r", expected: "neighbor-Windows_NT" }
   : { typed: "echo neighbor-$((40 + 2))\n", expected: "neighbor-42" }
 
 const previousHistoryDir = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
@@ -115,10 +115,7 @@ setInterval(() => {}, 1000);
     await waitFor(() => client.text().includes("early-output-42"))
   })
 
-  void test("removing a terminal terminates its separate child process group without affecting a neighbor", {
-    timeout: 30_000,
-    skip: windows && "a detached grandchild outlives the terminal's taskkill tree on Windows (open)",
-  }, async () => {
+  void test("removing a terminal terminates its separate child process group without affecting a neighbor", { timeout: 30_000 }, async () => {
     const { Pty } = await import("./index")
     const launcher = path.join(tmpDir, "child-launcher.cjs")
     await fs.writeFile(launcher, `const { spawn } = require('node:child_process');
@@ -153,6 +150,40 @@ setInterval(() => {}, 1000);
     } finally {
       // The regression intentionally exposes an orphan on unfixed builds.
       if (childPid && alive(childPid)) process.kill(windows ? childPid : -childPid, "SIGKILL")
+    }
+  })
+
+  void test("removing a terminal ends a process whose launcher exited before the terminal was removed", {
+    timeout: 30_000,
+    skip: !windows && "a POSIX descendant that leaves the terminal's session is out of reach once its parent exits",
+  }, async () => {
+    const { Pty } = await import("./index")
+    const pidFile = path.join(tmpDir, "orphan.pid")
+    const orphan = `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`
+    const launcher = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(orphan)}], { detached: true, stdio: 'ignore' }).unref()`
+    const script = path.join(tmpDir, "orphan-launcher.cjs")
+    await fs.writeFile(script, `const { spawn } = require('node:child_process');
+const launcher = spawn(process.execPath, ['-e', ${JSON.stringify(launcher)}], { stdio: 'inherit' });
+launcher.on('exit', () => console.log('LAUNCHER_EXITED'));
+setInterval(() => {}, 1000);
+`)
+    const target = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: process.execPath, args: [script], cwd: tmpDir }, ownership))
+    const client = socket()
+    assert.ok(Pty.connect(target.id, client.ws))
+    let orphanPid: number | undefined
+    const alive = (pid: number) => {
+      try { process.kill(pid, 0); return true }
+      catch { return false }
+    }
+    try {
+      await waitFor(() => existsSync(pidFile) && client.text().includes("LAUNCHER_EXITED"))
+      orphanPid = Number(await fs.readFile(pidFile, "utf8"))
+      assert.ok(alive(orphanPid))
+      await Pty.remove(target.id)
+      await waitFor(() => !alive(orphanPid!), 5_000)
+      assert.equal(Pty.get(target.id), undefined)
+    } finally {
+      if (orphanPid && alive(orphanPid)) process.kill(orphanPid, "SIGKILL")
     }
   })
 

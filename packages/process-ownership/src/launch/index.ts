@@ -43,6 +43,8 @@ export {
   type DescendantSweep,
 } from "./descendants"
 export { volatileLaunchOwnership } from "./volatile-ownership"
+export { containInWindowsJob, type JobContainment } from "./windows-job"
+export { openTerminalGate, type TerminalGate } from "./terminal-gate"
 export {
   RecoveryCodedError,
   deadlineExceeded,

@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { promisify } from "node:util"
 import { isRecord } from "@claxedo/helpers/guards"
+import { powershellPath } from "@claxedo/helpers/windows-powershell"
 import { harnessSpawnEnv } from "../spawn-env"
 import { createWindowsProcessTable, PROCESS_TABLE_PROGRAM } from "./windows-process-table"
 
@@ -27,12 +28,8 @@ export function windowsSystemTool(name: string) {
   return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", name)
 }
 
-function windowsPowerShell() {
-  return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-}
-
 const windowsProcessTable = createWindowsProcessTable({
-  launch: () => spawn(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", PROCESS_TABLE_PROGRAM], {
+  launch: () => spawn(powershellPath(), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", PROCESS_TABLE_PROGRAM], {
     // It lives as long as the host, so it holds none of the host's internal secrets.
     env: harnessSpawnEnv(process.env),
     windowsHide: true,
@@ -258,7 +255,7 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
 /**
  * Windows has no process groups, so `processGroupId` repeats the pid and the
  * group-leader check in `retirement.ts` is satisfied vacuously; containment
- * there is the `taskkill /T` tree, not a group signal. `CreationDate` has 100 ns
+ * there is the launch's job, not a group signal. `CreationDate` has microsecond
  * resolution, so `startSecond` alone already tells two holders of one pid apart.
  */
 async function readWindowsCreationIdentity(pid: number, boot: string, timeout: number): Promise<CreationIdentity | undefined> {

@@ -13,7 +13,7 @@ test("spawn refuses an already-aborted signal and starts nothing", async () => {
   expect(services.processes).toHaveLength(0)
 })
 
-test.skipIf(process.platform === "win32")("retirement kills a descendant that ignores TERM", async () => {
+test("retirement kills a descendant that ignores TERM", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-process-group-"))
   const pidFile = path.join(directory, "descendant.pid")
   const script = `const {spawn}=require("node:child_process");

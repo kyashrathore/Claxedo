@@ -84,10 +84,10 @@ async function cancelAndRetire() {
     if (retirementFault) {
       const record = await eventually("descendant retirement fault reached", async () => {
         const value = await fs.readFile(path.join(stack.dataDir, "retirement-fault.log"), "utf8")
-        return process.platform === "win32" ? value.includes("taskkill") ? value : undefined
+        return process.platform === "win32" ? value.includes("job without kill-on-close") && value.includes("taskkill") ? value : undefined
           : value.includes("kill group") ? value : undefined
       })
-      assert.match(record, process.platform === "win32" ? /taskkill .*\/T/ : /kill group .*SIGTERM/)
+      assert.match(record, process.platform === "win32" ? /job without kill-on-close[\s\S]*taskkill .*\/T/ : /kill group .*SIGTERM/)
       console.log(`H23 planted descendant retirement fault: ${record.trim()}`)
     }
     await absent(child, "child")

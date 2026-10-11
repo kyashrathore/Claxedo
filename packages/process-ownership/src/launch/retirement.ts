@@ -161,7 +161,7 @@ async function awaitGroupEmpty(identity: CreationIdentity, budgetMs: number) {
 
 /**
  * Whether anything this launch owns is still running. Windows cannot enumerate
- * a group, so the leader that `taskkill /T` answers for is what is watched;
+ * a job from here, so the leader whose end ends the job is what is watched;
  * reading "unknown" as "empty" there would skip the KILL step and leave the
  * leader alive.
  */
@@ -197,13 +197,14 @@ async function signalOwnedGroup(identity: CreationIdentity, signal: NodeJS.Signa
 }
 
 /**
- * Windows has no signals and no process groups, so the containment on offer is
- * whatever tree `taskkill /T` resolves from the live process table at the
- * moment it runs. Both steps terminate forcefully: without `/F`, taskkill only
- * posts WM_CLOSE, which a console process such as every harness never
- * receives, and Node's own `kill()` on this platform is TerminateProcess too.
- * The second step exists for a tree the first resolved incompletely. A pid
- * nobody holds exits 128.
+ * Windows has no signals and no process groups. A launch there runs in a job
+ * that ends when its leader does (`containInWindowsJob`), which reaches an
+ * orphan whose parent already exited; `taskkill /T` resolves the tree that is
+ * still connected in the live process table, which also reaches the children
+ * of a recorded process that was never contained, such as a daemon. Both steps
+ * terminate forcefully: without `/F`, taskkill only posts WM_CLOSE, which a
+ * console process such as every harness never receives. The second step exists
+ * for a tree the first resolved incompletely. A pid nobody holds exits 128.
  */
 function deliverWindowsTree(identity: CreationIdentity, signal: NodeJS.Signals): Promise<SignalOutcome> {
   return new Promise((resolve) => {

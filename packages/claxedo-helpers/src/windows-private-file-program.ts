@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer"
+import { compiledProgramCommand } from "./windows-powershell"
 
 /**
  * The PowerShell this package runs on Windows: the runner's program, the
@@ -363,36 +364,4 @@ public static class ClaxedoPrivateFile
 }
 `
 
-/**
- * A PowerShell command that resolves no cmdlet, `New-Object` included: it
- * calls .NET directly and writes through `[Console]`. Resolving a cmdlet makes
- * PowerShell discover modules across `PSModulePath`, which under the minimal
- * environment these commands run with took 12 to 23 s per start on GitHub's
- * windows-latest image, with Az installed, against 150 ms without one.
- *
- * A failure reaches stderr as its innermost .NET message: a throw arrives
- * wrapped, reflection adds a layer, and the wrappers' messages say nothing
- * useful.
- */
-export function cmdletFreeCommand(body: string) {
-  return (
-    "$ErrorActionPreference = 'Stop'; try { " +
-    body +
-    " } catch { $reason = $_.Exception; while ($reason.InnerException) { $reason = $reason.InnerException }; " +
-    "[Console]::Error.WriteLine($reason.Message); exit 1 }"
-  )
-}
-
-// One line, separators included: a missing `;` here is a parse error that
-// reaches the caller as a runner that exited before serving.
-export const RUNNER_COMMAND = cmdletFreeCommand(
-  "$options = [System.CodeDom.Compiler.CompilerParameters]::new([string[]] @('System.dll')); " +
-  "$options.GenerateInMemory = $true; " +
-  "$compiled = [Microsoft.CSharp.CSharpCodeProvider]::new().CompileAssemblyFromSource(" +
-  `$options, [Environment]::GetEnvironmentVariable('${SOURCE_VARIABLE}')); ` +
-  "if ($compiled.Errors.HasErrors) { " +
-  "$failure = 'the runner did not compile:'; " +
-  "foreach ($problem in $compiled.Errors) { if (-not $problem.IsWarning) { $failure += ' ' + $problem.ToString() } }; " +
-  "throw $failure }; " +
-  "$compiled.CompiledAssembly.GetType('ClaxedoPrivateFile').GetMethod('Serve').Invoke($null, $null)",
-)
+export const RUNNER_COMMAND = compiledProgramCommand(SOURCE_VARIABLE, "ClaxedoPrivateFile")

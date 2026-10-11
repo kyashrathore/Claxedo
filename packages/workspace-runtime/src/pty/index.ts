@@ -20,6 +20,7 @@ import { sendWebSocketWithBackpressure, type WebSocketBackpressureSocket } from 
 import { safeChunkEnd } from "./safe-slice"
 import { type ModeTracker } from "./mode-tracker"
 import { sanitizeReplay } from "./replay-sanitize"
+import { closeNativeTerminal } from "./native-close"
 
 import * as contracts from "./session-types"
 import type { ActiveSession } from "./session-types"
@@ -286,14 +287,16 @@ export namespace Pty {
     // The native PTY owns the process even when the platform cannot expose a
     // usable OS pid (the Windows ConPTY wrapper reports 0 in that case).
     // Always close it through its native handle; the PID-based tree sweep is
-    // additional cleanup only when a real pid is available. Once only: on
-    // Windows node-pty's kill() forks a console-list agent and, when that agent
-    // does not answer within 5 s, signals the inner pid by number.
+    // additional cleanup only when a real pid is available.
     let nativeClosed = false
     const closeNative = () => {
       if (nativeClosed) return
       nativeClosed = true
-      try { session.process.kill() } catch {}
+      try {
+        closeNativeTerminal(session.process)
+      } catch (error) {
+        log.error("PTY native handle could not be closed", { id, error: launchErrorText(error) })
+      }
     }
     const result = await retireSession(id, session, closeNative)
     // node-pty frees its ConPTY conout worker and pipe only from kill(), and a

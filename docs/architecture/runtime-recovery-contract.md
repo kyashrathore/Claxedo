@@ -68,6 +68,14 @@ process group, and neither macOS nor Linux offers an enumeration that finds it
 again. An emptied group is therefore `unknown`, and the owner keeps the
 obligation rather than reporting the resources gone.
 
+On Windows every launch runs in a job before its payload starts: a harness
+through the launch gate, a terminal through the terminal gate its PTY starts in
+the shell's place. The job ends its processes when it closes, allows no
+breakaway, and its only handle is held by the gate, so retiring the gate ends
+everything the launch started, an orphan whose parent already exited included.
+A harness gate also stays in the daemon's own kill-on-close job, so a daemon
+that exits still ends its running turns.
+
 `AgentProcessObserver` is currently optional diagnostics. Its inferred process rows and swallowed observer errors cannot establish permission to kill a process. Recovery must use the launch owner's mandatory handle and identity. Reuse descriptor identities where appropriate, but keep observation distinct from authority.
 
 Every resource must be inspectable by owner ID, launch/execution generation, parent owner, affected sessions, and the operation keeping it resident. A PID alone is insufficient: verify creation identity and ownership to prevent PID-reuse mistakes. Detached descendants need explicit ownership or an explicit handoff to the managed-process owner; a name match is not a handoff.

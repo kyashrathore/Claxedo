@@ -150,6 +150,13 @@
       "types": "./dist/net.d.ts",
       "import": "./dist/net.mjs",
       "default": "./dist/net.mjs"
+    },
+    "./windows-powershell": {
+      "development": "./src/windows-powershell.ts",
+      "bun": "./src/windows-powershell.ts",
+      "types": "./dist/windows-powershell.d.ts",
+      "import": "./dist/windows-powershell.mjs",
+      "default": "./dist/windows-powershell.mjs"
     }
   },
   "files": [

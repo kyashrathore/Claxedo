@@ -16,6 +16,7 @@ import {
   type PreparedLaunch,
 } from "./ownership-store"
 import { neverExecuted, retire, type RetirementBudgets, type RetirementResult } from "./retirement"
+import { containInWindowsJob } from "./windows-job"
 
 export const GATE_EXIT = {
   channelLostBeforeActivation: 20,
@@ -68,7 +69,10 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
     // environment without PATH left darwin unable to find `sysctl`.
     env: harnessSpawnEnv(process.env),
     // A new POSIX session, so the payload's containment scope is a process
-    // group this launch owns outright and `pgid === gate pid` holds.
+    // group this launch owns outright and `pgid === gate pid` holds. On
+    // Windows the gate stays in libuv's kill-on-close job for this host's
+    // children, and the job `containInWindowsJob` gives it nests inside, so a
+    // host that exits ends the whole launch.
     detached: process.platform !== "win32",
     stdio: withIpc(input.stdio ?? ["pipe", "pipe", "pipe"]),
   })
@@ -268,6 +272,9 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
   }
   try {
     await input.ownership.recordIdentity(prepared.launchId, identity, gateNonce)
+    if (process.platform === "win32" && (await containInWindowsJob(identity)) === "exited") {
+      throw new Error(`launch gate ${identity.pid} exited before it could be contained`)
+    }
     await input.ownership.authorizeActivation(prepared.launchId)
   } catch (error) {
     // The gate is holding the nonce and no payload; letting its deadline expire
