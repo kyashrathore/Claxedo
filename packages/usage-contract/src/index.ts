@@ -171,13 +171,55 @@ export type UnifiedUsageResponse = {
   chart?: UsageChartSeries
 }
 
+/** The provider's rate for the machine a workspace ran on, from its published pricing. */
+export type MachineTimeRate = {
+  /** The provider's own name for the size. */
+  size: string
+  vcpu: number
+  memoryGb: number
+  usdPerHour: number
+}
+
+/**
+ * One cloud workspace's machine time on one provider and size in the period. A workspace resized within the period
+ * is two rows, each priced at its own rate.
+ */
+export type MachineTimeWorkspace = {
+  workspaceId: string
+  projectId?: string
+  name?: string
+  branch?: string
+  provider: string
+  providerLabel: string
+  machineClass: string | null
+  activeMs: number
+  /** Set while an epoch is still serving: when it started. */
+  runningSince?: number
+  /** Absent where the provider's rate for this size is not established; then `costUsd` is absent too. */
+  rate?: MachineTimeRate
+  costUsd?: number
+}
+
+/** How one provider bills the time this period counted on it, with where and when its rates were read. */
+export type MachineTimeProvider = {
+  provider: string
+  label: string
+  meter: string
+  source: { url: string; readOn: string }
+  excludes?: string
+}
+
 /**
  * The signed person's cloud machine time in [since, until]: the boots of their own cloud workspaces that ended in the
- * range, clipped to it, and those still serving, counted to `until`. `running` is how many are still serving.
+ * range, clipped to it, and those still serving, counted to `until`. `running` is how many are still serving, and
+ * `workspaces` splits the same time per workspace, provider and size with the provider's published rate where one is
+ * established. `providers` describes the billing of every provider among the rows that has a published rate.
  */
 export type MachineTimeResponse = {
   since: number
   until: number
   activeMs: number
   running: number
+  workspaces: MachineTimeWorkspace[]
+  providers: MachineTimeProvider[]
 }

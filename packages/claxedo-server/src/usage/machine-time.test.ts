@@ -128,20 +128,20 @@ test("each ended boot is recorded once with its owner and machine class, and a p
   at += 15 * MINUTE
 
   expect(await bootRows()).toEqual([
-    { workspace_id: "ws_bob", epoch: 1, org_id: "org_acme", owner_user_id: "usr_bob", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 100 * MINUTE },
-    { workspace_id: "ws_cross", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", machine_class: "large", started_at: PERIOD - 30 * MINUTE, stopped_at: PERIOD + 30 * MINUTE },
-    { workspace_id: "ws_delete", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", machine_class: "small", started_at: PERIOD + 180 * MINUTE, stopped_at: PERIOD + 185 * MINUTE },
-    { workspace_id: "ws_idle", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", machine_class: "small", started_at: PERIOD + 120 * MINUTE, stopped_at: PERIOD + 140 * MINUTE },
-    { workspace_id: "ws_old", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", machine_class: "small", started_at: PERIOD - 180 * MINUTE, stopped_at: PERIOD - 120 * MINUTE },
-    { workspace_id: "ws_released", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", machine_class: "small", started_at: PERIOD + 200 * MINUTE, stopped_at: PERIOD + 207 * MINUTE },
-    { workspace_id: "ws_stop", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 70 * MINUTE },
+    { workspace_id: "ws_bob", epoch: 1, org_id: "org_acme", owner_user_id: "usr_bob", driver: "test-provider", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 100 * MINUTE },
+    { workspace_id: "ws_cross", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "large", started_at: PERIOD - 30 * MINUTE, stopped_at: PERIOD + 30 * MINUTE },
+    { workspace_id: "ws_delete", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 180 * MINUTE, stopped_at: PERIOD + 185 * MINUTE },
+    { workspace_id: "ws_idle", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 120 * MINUTE, stopped_at: PERIOD + 140 * MINUTE },
+    { workspace_id: "ws_old", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD - 180 * MINUTE, stopped_at: PERIOD - 120 * MINUTE },
+    { workspace_id: "ws_released", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 200 * MINUTE, stopped_at: PERIOD + 207 * MINUTE },
+    { workspace_id: "ws_stop", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 70 * MINUTE },
   ])
 
   const until = PERIOD + 255 * MINUTE
-  expect(await machineTime("usr_alice")).toEqual({ since: PERIOD, until, activeMs: (30 + 10 + 20 + 5 + 7 + 15) * MINUTE, running: 1 })
-  expect(await machineTime("usr_bob")).toEqual({ since: PERIOD, until, activeMs: 40 * MINUTE, running: 0 })
-  expect(await machineTime("usr_carol")).toEqual({ since: PERIOD, until, activeMs: 0, running: 0 })
-  expect(await machineTime("usr_alice", PERIOD, "org_other")).toEqual({ since: PERIOD, until, activeMs: 0, running: 0 })
+  expect(await machineTime("usr_alice")).toMatchObject({ since: PERIOD, until, activeMs: (30 + 10 + 20 + 5 + 7 + 15) * MINUTE, running: 1 })
+  expect(await machineTime("usr_bob")).toMatchObject({ since: PERIOD, until, activeMs: 40 * MINUTE, running: 0 })
+  expect(await machineTime("usr_carol")).toEqual({ since: PERIOD, until, activeMs: 0, running: 0, workspaces: [], providers: [] })
+  expect(await machineTime("usr_alice", PERIOD, "org_other")).toEqual({ since: PERIOD, until, activeMs: 0, running: 0, workspaces: [], providers: [] })
   expect((await machineTime("usr_alice", PERIOD - 150 * MINUTE)).activeMs).toBe((30 + 60 + 10 + 20 + 5 + 7 + 15) * MINUTE)
   expect((await machineTime("usr_alice", PERIOD + 245 * MINUTE)).activeMs).toBe(10 * MINUTE)
 })
@@ -149,7 +149,7 @@ test("each ended boot is recorded once with its owner and machine class, and a p
 test("a boot that started before the period and still runs counts from the period's start, and a woken workspace's next boot is its own interval", async () => {
   await boot("ws_running", PERIOD - 60 * MINUTE)
   at = PERIOD + 25 * MINUTE
-  expect(await machineTime("usr_alice")).toEqual({ since: PERIOD, until: at, activeMs: 25 * MINUTE, running: 1 })
+  expect(await machineTime("usr_alice")).toMatchObject({ since: PERIOD, until: at, activeMs: 25 * MINUTE, running: 1 })
 
   await manager.stop("ws_running")
   await boot("ws_running", PERIOD + 40 * MINUTE)
@@ -160,7 +160,7 @@ test("a boot that started before the period and still runs counts from the perio
     [1, PERIOD - 60 * MINUTE, PERIOD + 25 * MINUTE],
     [2, PERIOD + 40 * MINUTE, PERIOD + 50 * MINUTE],
   ])
-  expect(await machineTime("usr_alice")).toEqual({ since: PERIOD, until: at, activeMs: 35 * MINUTE, running: 0 })
+  expect(await machineTime("usr_alice")).toMatchObject({ since: PERIOD, until: at, activeMs: 35 * MINUTE, running: 0 })
 })
 
 test("the machine-time read refuses an unsigned caller, a period over 90 days, and a ledger that keeps no boots", async () => {
@@ -177,4 +177,42 @@ test("the machine-time read refuses an unsigned caller, a period over 90 days, a
   expect((await routes(ledger).request(`/machine-time?since=${PERIOD + MINUTE}`, { headers })).status).toBe(400)
   expect((await routes(ledger).request("/machine-time", { headers })).status).toBe(400)
   expect((await routes({ usageDashboard: ledger.usageDashboard }).request(`/machine-time?since=${PERIOD}`, { headers })).status).toBe(503)
+})
+
+test("the period is split per workspace, provider and size, priced at the provider's published rate where it has one, running workspaces first", async () => {
+  const boat = createSandboxManager({
+    leaseStore: createD1SandboxLeaseStore({ database: controlPlane.database, now: () => at }),
+    driver: { ...driver(), id: "boat" },
+    now: () => at,
+  })
+  at = PERIOD + 10 * MINUTE
+  expect(await boat.ensure("ws_old", { homeRegion: "us-east", machineClass: "small" })).toMatchObject({ status: "ready" })
+  at = PERIOD + 70 * MINUTE
+  await boat.stop("ws_old")
+  at = PERIOD + 100 * MINUTE
+  expect(await boat.ensure("ws_cross", { homeRegion: "us-east", machineClass: "large" })).toMatchObject({ status: "ready" })
+  at = PERIOD + 120 * MINUTE
+  await boat.stop("ws_cross")
+  at = PERIOD + 130 * MINUTE
+  expect(await boat.ensure("ws_cross", { homeRegion: "us-east" })).toMatchObject({ status: "ready" })
+  await boot("ws_running", PERIOD + 115 * MINUTE)
+  at = PERIOD + 145 * MINUTE
+
+  const time = await machineTime("usr_alice")
+
+  const small = { size: "small", vcpu: 2, memoryGb: 4, usdPerHour: 0.018 }
+  const large = { size: "large", vcpu: 8, memoryGb: 16, usdPerHour: 0.072 }
+  expect(time).toMatchObject({ activeMs: (60 + 35 + 30) * MINUTE, running: 2 })
+  expect(time.workspaces).toEqual([
+    { workspaceId: "ws_cross", projectId: "prj_app", name: "ws_cross", provider: "boat", providerLabel: "Boat", machineClass: "large", activeMs: 35 * MINUTE, runningSince: PERIOD + 130 * MINUTE, rate: large, costUsd: (0.072 * 35 * MINUTE) / 3_600_000 },
+    { workspaceId: "ws_running", projectId: "prj_app", name: "ws_running", provider: "test-provider", providerLabel: "test-provider", machineClass: "small", activeMs: 30 * MINUTE, runningSince: PERIOD + 115 * MINUTE },
+    { workspaceId: "ws_old", projectId: "prj_app", name: "ws_old", provider: "boat", providerLabel: "Boat", machineClass: "small", activeMs: 60 * MINUTE, rate: small, costUsd: (0.018 * 60 * MINUTE) / 3_600_000 },
+  ])
+  expect(time.providers).toEqual([{
+    provider: "boat",
+    label: "Boat",
+    meter: "Boat bills machine time per second while a sandbox runs, at an hourly rate per size; a stopped sandbox costs nothing.",
+    source: { url: "https://docs.boat.dev/pricing", readOn: "2026-10-12" },
+  }])
+  expect((await bootRows()).map((row) => [row.workspace_id, row.driver, row.machine_class])).toEqual([["ws_cross", "boat", "large"], ["ws_old", "boat", "small"]])
 })

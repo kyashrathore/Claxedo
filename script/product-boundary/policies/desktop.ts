@@ -598,8 +598,12 @@ export const desktopRenderer: Policy = {
   // The VM minutes this month above Usage → Cloud's running workspaces
   // (owner: the app's usage domain, `usage/view/machine-time.tsx`). It adds no
   // package edge.
-  // 1356/36, no headroom.
-  ceilings: { modules: 1356, packages: 36 },
+  // Usage → Cloud's per-workspace table, each row a workspace on one machine
+  // size with its minutes, published rate and cost, merged with the cloud
+  // domain's running rows (owner: the app's usage domain, `usage/cloud-rows.ts`,
+  // `usage/view/cloud-workspace-table.tsx`). They add no package edge.
+  // 1358/36, no headroom.
+  ceilings: { modules: 1358, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

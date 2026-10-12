@@ -446,6 +446,7 @@ CREATE TABLE sandbox_boots (
   epoch integer not null,
   org_id text not null,
   owner_user_id text not null,
+  driver text not null,
   machine_class text,
   started_at integer not null,
   stopped_at integer not null check (stopped_at >= started_at),

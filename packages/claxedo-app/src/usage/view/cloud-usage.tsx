@@ -1,65 +1,61 @@
-import { For, Match, Show, Switch, type JSX } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
-import { useCloudStatusText, useRunningCloudWorkspaces } from "@/cloud"
+import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
+import { useRunningCloudWorkspaces } from "@/cloud"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import { FailureNotice } from "@/lib/failure"
-import { useServer, type ProjectId } from "@/server"
-import { Button } from "@/ui"
+import { useMachineTime } from "../api"
+import { cloudRows } from "../cloud-rows"
 import { usageDictionary } from "../i18n"
+import { CloudWorkspaceTable } from "./cloud-workspace-table"
+import { MachineTimeSummary } from "./machine-time"
 
 export function CloudUsage(): JSX.Element {
   const t = useTranslator(usageDictionary)
-  const server = useServer()
   const errorCopy = useErrorCopy("usage")
   const elapsed = useElapsed()
+  const machineTime = useMachineTime()
   const running = useRunningCloudWorkspaces(() => true)
-  const projects = useQuery(() => server.queries.projects.list())
-  const projectName = (id: ProjectId) => projects.data?.find((project) => project.id === id)?.name
-  const statusLabel = useCloudStatusText()
-  const failed = () => {
+  const time = () => {
+    const state = machineTime.load()
+    return state.kind === "ready" ? state.data : undefined
+  }
+  const timeFailure = () => {
+    const state = machineTime.load()
+    return state.kind === "failed" ? state.error : undefined
+  }
+  const liveFailure = () => {
     const state = running.list()
     return state.kind === "failed" ? state.error : undefined
   }
-  const rows = () => {
+  const live = () => {
     const state = running.list()
-    return state.kind === "ready" ? state.rows : undefined
+    return state.kind === "ready" ? state.rows : []
   }
+  const rows = createMemo(() => cloudRows(time(), live()))
+  const loaded = () => machineTime.load().kind !== "loading" || running.list().kind !== "loading"
   return (
-    <section class="usage-cloud" aria-labelledby="usage-cloud-title">
-      <div>
-        <h3 id="usage-cloud-title" class="usage-group-title">{t("usage.cloud.title")}</h3>
-        <p class="usage-hint">{t("usage.cloud.description")}</p>
-      </div>
+    <section class="usage-cloud" aria-label={t("usage.view.cloud")}>
       <Switch>
-        <Match when={failed()}>
-          {(error) => <FailureNotice title={t("usage.cloud.failed")} message={errorCopy(error()).message} retryLabel={errorCopy(error()).retry} onRetry={running.refresh} />}
+        <Match when={timeFailure()}>
+          {(error) => <FailureNotice title={t("usage.machineTime.failed")} message={errorCopy(error()).message} retryLabel={errorCopy(error()).retry} onRetry={machineTime.refresh} />}
         </Match>
-        <Match when={rows()}>
-          {(ready) => (
-            <Show when={ready().length > 0} fallback={<p class="usage-empty">{t("usage.cloud.empty")}</p>}>
-              <ul class="usage-cloud-list">
-                <For each={ready()}>
-                  {(row) => (
-                    <li class="usage-cloud-row" data-workspace-id={row.id} data-state={row.state.kind}>
-                      <div class="usage-cloud-text">
-                        <span class="usage-cloud-name" title={row.id}>{row.name}</span>
-                        <span class="usage-hint">{[projectName(row.projectId), row.branch, statusLabel(row.state)].filter(Boolean).join(" · ")}</span>
-                      </div>
-                      <Show when={row.state.kind !== "stopping"}>
-                        <Button size="small" variant="neutral" onClick={() => void running.stop(row.id)}>{t("usage.cloud.stop")}</Button>
-                      </Show>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          )}
-        </Match>
+        <Match when={time()}>{(ready) => <MachineTimeSummary time={ready()} />}</Match>
         <Match when={elapsed()}>
-          <p class="usage-status" role="status">{t("usage.cloud.loading")}</p>
+          <p class="usage-status" role="status">{t("usage.machineTime.loading")}</p>
         </Match>
       </Switch>
+      <Show when={liveFailure()}>
+        {(error) => <FailureNotice title={t("usage.cloud.failed")} message={errorCopy(error()).message} retryLabel={errorCopy(error()).retry} onRetry={running.refresh} />}
+      </Show>
+      <Show when={loaded()}>
+        <div class="usage-cloud-workspaces">
+          <h3 class="usage-group-title">{t("usage.cloud.title")}</h3>
+          <p class="usage-hint">{t("usage.cloud.description")}</p>
+          <Show when={rows().length > 0} fallback={<p class="usage-empty">{t("usage.cloud.empty")}</p>}>
+            <CloudWorkspaceTable rows={rows()} onStop={(id) => void running.stop(id)} />
+          </Show>
+        </div>
+      </Show>
     </section>
   )
 }

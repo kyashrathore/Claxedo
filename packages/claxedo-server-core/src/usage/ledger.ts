@@ -23,11 +23,11 @@ export type UsageProjectionLedger = {
     until: number
     limit: number
   }) => Promise<TurnUsageRevision[]>
-  /** The machine time of this account's own cloud workspaces in [since, until]. */
+  /** The machine time of this account's own cloud workspaces in [since, until], per workspace and priced where the provider's rate is known. */
   machineTime?: (input: {
     org_id: string
     user_id: string
     since: number
     until: number
-  }) => Promise<Pick<MachineTimeResponse, "activeMs" | "running">>
+  }) => Promise<Omit<MachineTimeResponse, "since" | "until">>
 }

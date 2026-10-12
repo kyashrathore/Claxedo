@@ -150,8 +150,15 @@ export const serverWorkerd: Policy = {
   // read from the boots the D1 lease store records, and both sides of the
   // `sandbox_boots` table live in `sandbox/stores/d1-boots.ts`. It imports no
   // sandbox provider.
-  // 158/21, no headroom.
-  ceilings: { modules: 158, packages: 21 },
+  // +1 module net (owner: the hosted core app and the D1 usage ledger): the
+  // usage-limits view reads each stored account's vendor before answering
+  // (`usage/hosted-quota.ts` over `usage/quota-accounts.ts`, replacing the
+  // machine reader `usage/quota.ts` and its bell), and the machine-time answer
+  // is priced by the published rates beside the driver catalog
+  // (`usage/machine-time-pricing.ts` over `sandbox-manager/driver-billing.ts`),
+  // which is data and reaches no sandbox provider.
+  // 159/21, no headroom.
+  ceilings: { modules: 159, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

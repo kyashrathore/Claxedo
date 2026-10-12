@@ -20,6 +20,7 @@ import {
 import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { isOneOf, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { readMachineTime } from "../../sandbox/stores/d1-boots"
+import { priceMachineTime } from "../machine-time-pricing"
 
 type FactRow = {
   host_id: string
@@ -384,6 +385,6 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
       return rows.results.flatMap((row) => usageFactFromRow(row) ?? [])
     },
 
-    machineTime: (query) => readMachineTime(database, query),
+    machineTime: async (query) => priceMachineTime(await readMachineTime(database, query)),
   }
 }

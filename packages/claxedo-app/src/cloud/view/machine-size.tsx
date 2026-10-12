@@ -13,6 +13,15 @@ export type MachineSizeChoice = {
 const SIZE_NAMES = { small: "cloud.size.small", default: "cloud.size.default", large: "cloud.size.large" } as const
 const SIZE_DESCRIPTIONS = { small: "cloud.size.small.description", default: "cloud.size.default.description", large: "cloud.size.large.description" } as const
 
+function isMachineClass(value: string): value is MachineClass {
+  return value in SIZE_NAMES
+}
+
+export function useMachineSizeName(): (machineClass: string | undefined) => string | undefined {
+  const t = useCloudText()
+  return (machineClass) => (machineClass === undefined ? undefined : isMachineClass(machineClass) ? t(SIZE_NAMES[machineClass]) : machineClass)
+}
+
 export function createMachineSizeChoice(): MachineSizeChoice {
   const server = useServer()
   const listing = useQuery(() => server.queries.accounts.sandbox())

@@ -5,10 +5,14 @@ import type { CostEstimate } from "../cost-estimate"
 const TINY_SHARE = 0.001
 const WEEK_DAYS = 7
 
+const CENT = 0.01
+
 export type UsageFormats = {
   readonly count: (value: number) => string
   readonly whole: (value: number) => string
   readonly usd: (value: number) => string
+  readonly money: (value: number) => string
+  readonly hourlyRate: (usdPerHour: number) => string
   readonly cost: (estimate: CostEstimate) => string
   readonly share: (share: number) => string
   readonly day: (date: string, rangeDays: number) => string
@@ -23,11 +27,14 @@ export function useUsageFormats(): UsageFormats {
   const i18n = useI18n()
   const t = useTranslator(usageDictionary)
   const usd = (value: number) => new Intl.NumberFormat(i18n.intlTag(), { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value)
+  const money = (value: number) => new Intl.NumberFormat(i18n.intlTag(), { style: "currency", currency: "USD", maximumFractionDigits: value > 0 && value < CENT ? 4 : 2 }).format(value)
   const percent = (value: number) => new Intl.NumberFormat(i18n.intlTag(), { style: "percent", maximumFractionDigits: value < 0.01 ? 1 : 0 }).format(value)
   return {
     count: (value) => new Intl.NumberFormat(i18n.intlTag(), { notation: "compact", maximumFractionDigits: 1 }).format(value),
     whole: (value) => new Intl.NumberFormat(i18n.intlTag()).format(value),
     usd,
+    money,
+    hourlyRate: (usdPerHour) => t("usage.cloud.rate", { amount: new Intl.NumberFormat(i18n.intlTag(), { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(usdPerHour) }),
     cost: (estimate) => {
       if (estimate.kind === "unknown") return t("usage.unknown")
       if (estimate.kind === "none") return usd(0)

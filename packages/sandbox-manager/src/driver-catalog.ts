@@ -1,4 +1,5 @@
 import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./contract"
+import { boatBilling, cloudflareBilling, type SandboxDriverBilling } from "./driver-billing"
 import {
   dockerSandboxDriverEnabled as contractDockerSandboxDriverEnabled,
   sandboxDriverCredentialFields,
@@ -9,6 +10,7 @@ import {
 } from "@claxedo/sandbox-contract"
 
 export { sandboxDriverId }
+export { sandboxMachineCostUsd, sandboxMachineRate, type SandboxDriverBilling, type SandboxMachineRate } from "./driver-billing"
 
 export type SandboxDriverCatalogEntry<ID extends string = SandboxDriverID> = {
   id: ID
@@ -18,6 +20,8 @@ export type SandboxDriverCatalogEntry<ID extends string = SandboxDriverID> = {
   runtimeNetwork: { controlPlane: "docker-host" | "direct"; relay: "configured" | "local" }
   runtimeEnv: "ensure" | "callback"
   preparedImage: boolean
+  /** Absent where no published rate for the machines this driver places on has been established. */
+  billing?: SandboxDriverBilling
 }
 
 export { validateSandboxPersistenceCapabilities }
@@ -111,6 +115,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     runtimeNetwork: { controlPlane: "direct", relay: "configured" },
     runtimeEnv: "callback",
     preparedImage: false,
+    billing: cloudflareBilling,
     metadata: {
       driverRunsIn: ["worker"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
@@ -135,6 +140,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     runtimeNetwork: { controlPlane: "direct", relay: "configured" },
     runtimeEnv: "callback",
     preparedImage: true,
+    billing: boatBilling,
     metadata: {
       driverRunsIn: ["worker", "node"],
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
