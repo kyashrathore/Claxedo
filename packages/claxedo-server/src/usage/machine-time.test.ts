@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "vitest"
-import { createSandboxManager, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
+import { createSandboxManager, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput, type SandboxManager } from "@claxedo/sandbox-manager"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { createD1SandboxLeaseStore } from "../sandbox/stores/d1"
@@ -161,6 +161,57 @@ test("a boot that started before the period and still runs counts from the perio
     [2, PERIOD + 40 * MINUTE, PERIOD + 50 * MINUTE],
   ])
   expect(await machineTime("usr_alice")).toMatchObject({ since: PERIOD, until: at, activeMs: 35 * MINUTE, running: 0 })
+})
+
+test("a boot that failed on the host it created is the machine time it spent, its retry's boot is an interval of its own, and a boot still on its host counts as running", async () => {
+  const reported = async (input: SandboxDriverEnsureInput) => {
+    await input.onResource?.({ sandboxId: `sandbox_${input.workspaceId}`, hostId: `host_${input.workspaceId}`, labels: input.labels })
+  }
+  let bootFails = true
+  const hosted: SandboxDriver = {
+    ...driver(),
+    ensureHost: async (input) => {
+      await reported(input)
+      if (input.workspaceId === "ws_running") return { provisioning: true, retryAfterMs: MINUTE }
+      at += 3 * MINUTE
+      if (bootFails) throw new SandboxRuntimeBootError("the image has no runtime")
+      return { sandboxId: `sandbox_${input.workspaceId}`, url: `https://runtime.test/${input.workspaceId}`, hostId: `host_${input.workspaceId}`, labels: input.labels }
+    },
+    resumeHost: (input) => hosted.ensureHost(input.ensure),
+    suspend: async () => {},
+    stop: async () => {},
+  }
+  manager = createSandboxManager({ leaseStore: createD1SandboxLeaseStore({ database: controlPlane.database, now: () => at }), driver: hosted, now: () => at, retryDelayMs: () => MINUTE })
+
+  at = PERIOD + 10 * MINUTE
+  expect(await manager.ensure("ws_stop", { homeRegion: "us-east", machineClass: "large" })).toMatchObject({ status: "unavailable", epoch: 1 })
+  expect(await bootRows()).toEqual([
+    { workspace_id: "ws_stop", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "large", started_at: PERIOD + 10 * MINUTE, stopped_at: PERIOD + 13 * MINUTE },
+  ])
+  expect(await machineTime("usr_alice")).toMatchObject({ activeMs: 3 * MINUTE, running: 0, workspaces: [expect.objectContaining({ workspaceId: "ws_stop", machineClass: "large", activeMs: 3 * MINUTE })] })
+
+  at = PERIOD + 60 * MINUTE
+  bootFails = false
+  expect(await manager.ensure("ws_stop", { homeRegion: "us-east" })).toMatchObject({ status: "ready", epoch: 2 })
+  at += 7 * MINUTE
+  expect(await manager.stop("ws_stop")).toMatchObject({ ok: true, status: "stopped" })
+  expect((await bootRows()).map((row) => [row.epoch, row.started_at, row.stopped_at])).toEqual([
+    [1, PERIOD + 10 * MINUTE, PERIOD + 13 * MINUTE],
+    [2, PERIOD + 60 * MINUTE, PERIOD + 70 * MINUTE],
+  ])
+  expect(await machineTime("usr_alice")).toMatchObject({ activeMs: 13 * MINUTE, running: 0 })
+
+  at = PERIOD + 100 * MINUTE
+  expect(await manager.ensure("ws_running", { homeRegion: "us-east" })).toMatchObject({ status: "provisioning", epoch: 1 })
+  at += 4 * MINUTE
+  expect(await machineTime("usr_alice")).toMatchObject({
+    activeMs: 17 * MINUTE,
+    running: 1,
+    workspaces: expect.arrayContaining([expect.objectContaining({ workspaceId: "ws_running", activeMs: 4 * MINUTE, runningSince: PERIOD + 100 * MINUTE })]),
+  })
+  expect(await manager.stop("ws_running")).toMatchObject({ ok: true, status: "stopped" })
+  expect((await bootRows()).find((row) => row.workspace_id === "ws_running")).toMatchObject({ epoch: 1, started_at: PERIOD + 100 * MINUTE, stopped_at: PERIOD + 104 * MINUTE })
+  expect(await machineTime("usr_alice")).toMatchObject({ activeMs: 17 * MINUTE, running: 0 })
 })
 
 test("the machine-time read refuses an unsigned caller, a period over 90 days, and a ledger that keeps no boots", async () => {

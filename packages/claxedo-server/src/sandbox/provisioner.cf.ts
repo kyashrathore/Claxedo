@@ -121,7 +121,9 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
           : await drive(this.env).provision(run.workspaceId, run.epoch).catch((cause: unknown) => stepThrew(run, cause))
         const retryAfterMs = nextStepAfter(answer)
         if (retryAfterMs !== undefined) {
-          await storage.put("run", { ...run, retryAfterMs })
+          // A failed step's retry runs on the fresh epoch its answer names.
+          const epoch = "epoch" in answer && answer.epoch !== undefined ? answer.epoch : run.epoch
+          await storage.put("run", { ...run, epoch, retryAfterMs })
           await storage.setAlarm(Date.now() + retryAfterMs)
           return
         }

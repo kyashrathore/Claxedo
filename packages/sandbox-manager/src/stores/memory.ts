@@ -1,4 +1,4 @@
-import { applySandboxLeasePatch, applySandboxProvisionedTarget } from "../contract"
+import { applySandboxLeasePatch, applySandboxProvisionedTarget, sandboxLeaseHeldHost } from "../contract"
 import type {
   SandboxLeaseAcquireInput,
   SandboxLeaseAcquireResult,
@@ -27,7 +27,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
           retryAfterMs: Math.max(0, input.staleAfterMs - (now - current.updatedAt)),
         }
       }
-      const resumable = current?.status === "stopped"
+      const held = sandboxLeaseHeldHost(current)
       const next: SandboxLease = {
         workspaceId,
         homeRegion: current?.homeRegion ?? input.homeRegion,
@@ -37,14 +37,14 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
         retryCount: current?.retryCount ?? 0,
         createdAt: current?.createdAt ?? now,
         updatedAt: now,
-        sandboxId: resumable ? current.sandboxId : undefined,
-        url: resumable ? current.url : undefined,
-        hostId: resumable ? current.hostId : undefined,
-        driverResourceId: resumable ? current.driverResourceId : undefined,
-        lastHeartbeatAt: resumable ? current.lastHeartbeatAt : undefined,
-        lastActivityAt: resumable ? current.lastActivityAt : undefined,
-        labels: resumable ? current.labels : input.labels,
-        machineClass: resumable ? current.machineClass : input.machineClass,
+        sandboxId: held?.sandboxId,
+        url: held?.url,
+        hostId: held?.hostId,
+        driverResourceId: held?.driverResourceId,
+        lastHeartbeatAt: held?.lastHeartbeatAt,
+        lastActivityAt: held?.lastActivityAt,
+        labels: held ? held.labels : input.labels,
+        machineClass: held ? held.machineClass : input.machineClass,
         checkpoint: current?.checkpoint,
         persistence: current?.persistence,
         restore: current?.restore,

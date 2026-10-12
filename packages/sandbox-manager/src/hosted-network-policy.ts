@@ -38,7 +38,8 @@
  */
 
 import { publicRepoHost } from "@claxedo/sandbox-contract"
-import type { SandboxNetworkPolicy, SandboxSource } from "./contract"
+import type { SandboxSource } from "./contract"
+import type { SandboxNetworkPolicy } from "./egress-policy"
 
 /**
  * Model-provider endpoints. Derived from the harness→provider groups in

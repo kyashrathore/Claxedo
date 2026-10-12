@@ -122,6 +122,21 @@ function raceBeforeFirstWrite(target: D1Database, competitor: () => Promise<unkn
   })
 }
 
+/** The owner rows a boot's `workspaces` join reads for `workspaceId`. */
+async function ownedWorkspace(target: D1Database, workspaceId: string) {
+  await target.batch([
+    target.prepare("insert or ignore into users values ('usr_alice', 'active', 1, 1, null, null)"),
+    target.prepare("insert or ignore into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at, deleted_at) values ('org_acme', 'Acme', 'deployment', 'usr_alice', 'deployment-1', 1, 1, null)"),
+    target.prepare("insert or ignore into projects values ('prj_app', 'org_acme', 'repo:app', 'usr_alice', 1, 1, null)"),
+    target.prepare(`insert into workspaces (workspace_id, org_id, project_id, owner_user_id, backing, display_name, created_at, updated_at)
+      values (?, 'org_acme', 'prj_app', 'usr_alice', 'cloud-vm', ?, 1, 1)`).bind(workspaceId, workspaceId),
+  ])
+}
+
+async function bootRows(target: D1Database) {
+  return (await target.prepare("select * from sandbox_boots order by workspace_id, epoch").all()).results
+}
+
 function fakeDriver(): SandboxDriver {
   return {
     id: "test-provider",
@@ -348,6 +363,41 @@ describe("d1 sandbox lease store", () => {
     expect(remaining.map((lease) => lease.workspaceId)).toEqual(["ws_2"])
     // Releasing an absent workspace is a no-op, not a failure.
     await expect(leaseStore.release("ws_missing")).resolves.toBeUndefined()
+  })
+
+  test("a lease whose attempt failed on a host keeps it on the next epoch, and the boot it spent is recorded", async () => {
+    let at = NOW
+    const { target, leaseStore } = await store(() => at)
+    await ownedWorkspace(target, "ws_1")
+    await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW, labels: { placed: "here" }, machineClass: "large" })
+    await leaseStore.recordTarget("ws_1", 1, { sandboxId: "sandbox_1", hostId: "host_1", labels: { placed: "here" } })
+    await leaseStore.update("ws_1", 1, { start: { startedAt: NOW, bootMode: "cold-start", markedAt: NOW, phases: ["lease_decision"] } })
+    await expect(bootRows(target)).resolves.toEqual([])
+
+    at = NOW + 90_000
+    await expect(leaseStore.recordFailure("ws_1", 1, "runtime_boot_failed: no runtime", at + 5_000))
+      .resolves.toMatchObject({ status: "unavailable", epoch: 1, sandboxId: "sandbox_1", retryCount: 1 })
+    await expect(bootRows(target)).resolves.toEqual([
+      { workspace_id: "ws_1", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test", machine_class: "large", started_at: NOW, stopped_at: NOW + 90_000 },
+    ])
+
+    // The next epoch resumes the host on the size and placement it has; the failure's reason is the old epoch's.
+    at += 10_000
+    const next = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: at, labels: { placed: "elsewhere" }, machineClass: "small" })
+    expect(next).toMatchObject({
+      acquired: true,
+      lease: { epoch: 2, status: "acquiring", sandboxId: "sandbox_1", hostId: "host_1", labels: { placed: "here" }, machineClass: "large", retryCount: 1 },
+    })
+    expect(next.lease.lastError).toBeUndefined()
+    await expect(bootRows(target)).resolves.toHaveLength(1)
+
+    // A lease that failed before any host was reported is placed afresh.
+    await leaseStore.acquire("ws_2", { ...ACQUIRE, now: at, labels: { placed: "here" }, machineClass: "large" })
+    await leaseStore.recordFailure("ws_2", 1, "quota exhausted", at + 5_000)
+    expect(await leaseStore.acquire("ws_2", { ...ACQUIRE, now: at, labels: { placed: "elsewhere" }, machineClass: "small" })).toMatchObject({
+      acquired: true,
+      lease: { epoch: 2, labels: { placed: "elsewhere" }, machineClass: "small" },
+    })
   })
 
   test("labels, checkpoint, persistence and restore round-trip through their json columns", async () => {

@@ -2,12 +2,12 @@
  * `SandboxLeaseStore` over Cloudflare D1. Every write is ONE statement guarded
  * by the epoch the caller observed, so a lost race is reported by the write
  * itself (`meta.changes === 0`) rather than prevented by a lock. A loser
- * re-reads and answers from the winner's row. A write that can end a serving
- * boot is batched behind the statement that records it (`./d1-boots`), under
- * the same guard.
+ * re-reads and answers from the winner's row. A write that can take an epoch
+ * off its host is batched behind the statement that records the boot it ends
+ * (`./d1-boots`), under the same guard.
  */
 
-import { applySandboxLeasePatch, applySandboxProvisionedTarget } from "@claxedo/sandbox-manager"
+import { applySandboxLeasePatch, applySandboxProvisionedTarget, sandboxLeaseHeldHost } from "@claxedo/sandbox-manager"
 import type {
   SandboxLease,
   SandboxLeaseAcquireInput,
@@ -22,7 +22,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { sandboxLeaseRowStatus, sandboxLeaseStatus } from "./lease-status"
 import { toSandboxLeaseRow } from "./lease-row"
-import { closeServingBoot, type SandboxLeaseGuard } from "./d1-boots"
+import { closeBoot, type SandboxLeaseGuard } from "./d1-boots"
 
 const TABLE = "sandbox_leases"
 
@@ -198,9 +198,9 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     const write = database
       .prepare(`update ${TABLE} set ${columns.map((column) => `${column} = ?`).join(", ")} where ${guard.sql} returning *`)
       .bind(...columns.map((column) => values[COLUMNS.indexOf(column)] ?? null), ...guard.binds)
-    const endsServing = columns.includes("status") && next.status !== "ready"
-    const result = endsServing
-      ? (await database.batch<Record<string, unknown>>([closeServingBoot(database, guard, next.updatedAt), write]))[1]?.results[0]
+    const endsHosting = columns.includes("status") && next.status !== "ready" && next.status !== "acquiring"
+    const result = endsHosting
+      ? (await database.batch<Record<string, unknown>>([closeBoot(database, guard, next.updatedAt), write]))[1]?.results[0]
       : await write.first()
     return result ? toSandboxLease(toLeaseRow(result)) : undefined
   }
@@ -220,7 +220,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       const refused = refusal(currentLease, now, acquireInput.staleAfterMs)
       if (refused) return refused
     }
-    const resumable = currentLease?.status === "stopped"
+    const held = sandboxLeaseHeldHost(currentLease)
     const next: SandboxLease = {
       workspaceId,
       homeRegion: currentLease?.homeRegion ?? acquireInput.homeRegion,
@@ -230,14 +230,14 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       retryCount: currentLease?.retryCount ?? 0,
       createdAt: currentLease?.createdAt ?? now,
       updatedAt: now,
-      sandboxId: resumable ? currentLease.sandboxId : undefined,
-      url: resumable ? currentLease.url : undefined,
-      hostId: resumable ? currentLease.hostId : undefined,
-      driverResourceId: resumable ? currentLease.driverResourceId : undefined,
-      lastHeartbeatAt: resumable ? currentLease.lastHeartbeatAt : undefined,
-      lastActivityAt: resumable ? currentLease.lastActivityAt : undefined,
-      labels: resumable ? currentLease.labels : acquireInput.labels,
-      machineClass: resumable ? currentLease.machineClass : acquireInput.machineClass,
+      sandboxId: held?.sandboxId,
+      url: held?.url,
+      hostId: held?.hostId,
+      driverResourceId: held?.driverResourceId,
+      lastHeartbeatAt: held?.lastHeartbeatAt,
+      lastActivityAt: held?.lastActivityAt,
+      labels: held ? held.labels : acquireInput.labels,
+      machineClass: held ? held.machineClass : acquireInput.machineClass,
       checkpoint: currentLease?.checkpoint,
       persistence: currentLease?.persistence,
       restore: currentLease?.restore,
@@ -254,7 +254,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
          on conflict(workspace_id) do nothing`
     const write = database.prepare(statement).bind(...(current ? [...values, current.epoch] : values))
     const result = current
-      ? (await database.batch([closeServingBoot(database, { sql: "workspace_id = ? and epoch = ?", binds: [workspaceId, current.epoch] }, now), write]))[1]
+      ? (await database.batch([closeBoot(database, { sql: "workspace_id = ? and epoch = ?", binds: [workspaceId, current.epoch] }, now), write]))[1]
       : await write.run()
     return !result || result.meta.changes === 0 ? undefined : { acquired: true, lease: next }
   }
@@ -327,7 +327,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
 
     async release(workspaceId: string) {
       await database.batch([
-        closeServingBoot(database, { sql: "workspace_id = ?", binds: [workspaceId] }, clock()),
+        closeBoot(database, { sql: "workspace_id = ?", binds: [workspaceId] }, clock()),
         database.prepare(`delete from ${TABLE} where workspace_id = ?`).bind(workspaceId),
       ])
     },

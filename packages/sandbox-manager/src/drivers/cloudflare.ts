@@ -22,13 +22,13 @@
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { cloudflareWorkerBaseUrl } from "@claxedo/sandbox-contract"
 import {
-  brokeredPlaceholderEnv,
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxListingUnsupported,
   type SandboxTarget,
   type SandboxResource,
 } from "../contract"
+import { brokeredPlaceholderEnv } from "../egress-policy"
 import { SandboxRuntimeBootError } from "../lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { record, text } from "../json"

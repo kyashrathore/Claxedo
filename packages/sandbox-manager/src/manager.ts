@@ -1,11 +1,7 @@
 import {
   type SandboxRegion,
   validateSandboxPersistenceCapabilities,
-  sandboxEgressDisposition,
-  type SandboxEgressUnenforcedEvent,
   type SandboxLease,
-  type SandboxNetworkPolicy,
-  sandboxNetworkPolicyWithBrokeredHosts,
   type SandboxDriverEnsureInput,
   type SandboxTarget,
   type SandboxDriver,
@@ -22,6 +18,12 @@ import {
   SANDBOX_IMAGE_LABEL,
   type SandboxManagerOptions
 } from "./contract"
+import {
+  sandboxEgressDisposition,
+  type SandboxEgressUnenforcedEvent,
+  type SandboxNetworkPolicy,
+  sandboxNetworkPolicyWithBrokeredHosts,
+} from "./egress-policy"
 import { isSandboxRuntimeBootFailure, sandboxLeaseFailure, sandboxRuntimeBootFailedError } from "./lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import {
@@ -413,24 +415,45 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           if (resolved.status === "ready") return { ...resolved, stale: true }
         }
       }
-      lifecycle.failed(lease, bootFailed)
       const nextRetryCount = lease.retryCount + 1
       const retryCapped = nextRetryCount >= maxRetryCount
+      // A boot failure is never retried on its own and a capped lease waits
+      // out a cooldown nobody drives: a host held through either would run
+      // unattended. A provider failure is retried within its backoff on the
+      // host as it is, since stopping and resuming it costs minutes.
+      const unstopped = bootFailed || retryCapped ? await stopHeldHost(workspaceId, lease.epoch) : undefined
+      const recorded = unstopped ? `${error}; ${unstopped}` : error
+      lifecycle.failed(lease, bootFailed)
+      await start?.flush()
       const failed = await options.leaseStore.recordFailure(
         workspaceId,
         lease.epoch,
-        error,
+        recorded,
         now() + (retryCapped ? retryCapCooldownMs : retryDelayMs(nextRetryCount)),
       )
       return {
         status: "unavailable",
         retryAfterMs: failed?.nextRetryAt ? Math.max(0, failed.nextRetryAt - now()) : retryAfterMs,
-        error,
+        error: recorded,
         epoch: lease.epoch,
         homeRegion,
       }
     } finally {
       await start?.flush()
+    }
+  }
+
+  /** Stops the host the epoch holds, if it holds one and the driver can; otherwise why it still runs, or nothing. */
+  async function stopHeldHost(workspaceId: string, epoch: number): Promise<string | undefined> {
+    const current = await options.leaseStore.get(workspaceId)
+    const resource = current?.epoch === epoch ? leaseResource(current) : undefined
+    const stopHost = options.driver.suspend ?? options.driver.stop
+    if (!current || !resource || !stopHost) return undefined
+    try {
+      await stopHost({ ...resource, ...(current.checkpoint ? { checkpoint: current.checkpoint.providerReference } : {}) })
+      return undefined
+    } catch (stopError) {
+      return `host ${resource.sandboxId} not stopped: ${stopError instanceof Error ? stopError.message : String(stopError)}`
     }
   }
 
@@ -479,17 +502,18 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   /**
    * Whether a start continues this lease on its epoch rather than taking a
-   * new one: a ready lease is re-ensured so an auto-stopped runtime resumes;
-   * one that already names a sandbox is never orphaned by an epoch bump; and
-   * an in-flight provision whose driver asked to be polled again is polled.
+   * new one: a ready lease is re-ensured so an auto-stopped runtime resumes,
+   * and an in-flight provision is polled when its driver asked to be, or
+   * already handed it a sandbox. A failed attempt's epoch is over: its boot
+   * is one metered interval, and the next attempt takes an epoch of its own
+   * that keeps the host (`sandboxLeaseHeldHost`), so it resumes rather than
+   * re-creates.
    */
   function continues(lease: SandboxLease) {
     if (lease.status === "ready") return true
+    if (lease.status !== "acquiring") return false
     const stale = now() - lease.updatedAt >= staleAfterMs
-    if (lease.status === "acquiring") {
-      return lease.sandboxId ? lease.nextRetryAt !== undefined || stale : lease.nextRetryAt !== undefined && !stale
-    }
-    return lease.status === "unavailable" && lease.sandboxId !== undefined
+    return lease.sandboxId ? lease.nextRetryAt !== undefined || stale : lease.nextRetryAt !== undefined && !stale
   }
 
   /** The lease a start runs the driver for, or the answer that stands in for one. */
@@ -570,7 +594,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       if (lease.status === "stopped" || lease.status === "destroyed") {
         return { status: "unavailable", error: `runtime_lease_${lease.status}`, epoch, homeRegion: lease.homeRegion }
       }
-      return waiting(lease) ?? provisionLease(workspaceId, lease, lease.homeRegion, input, enteredAt)
+      const admitted = lease.status === "unavailable" ? await admit(workspaceId, input) : waiting(lease) ?? { lease }
+      if (!("lease" in admitted)) return admitted
+      return provisionLease(workspaceId, admitted.lease, admitted.lease.homeRegion, input, enteredAt)
     },
     async register(workspaceId, input) {
       return await runtimeSnapshot(workspaceId, input)
@@ -614,8 +640,17 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         const stopped = (checkpoint: string | undefined) => ({ ok: true as const, status: "stopped" as const, ...(checkpoint ? { checkpoint } : {}) })
         if (lease?.status === "stopped") return stopped(lease.checkpoint?.providerReference)
         const target = await this.target(workspaceId)
-        if (target.status !== "ready") return { ok: false, reason: target.reason }
         const stopHost = input.hostStopsItself ? undefined : options.driver.suspend ?? options.driver.stop
+        if (target.status !== "ready") {
+          // A lease still booting on a host it holds has nothing serving to drain, and the host costs all the same.
+          const held = lease?.status === "acquiring" ? leaseResource(lease) : undefined
+          if (!lease || !held) return { ok: false, reason: target.reason }
+          await stopHost?.(held)
+          const updated = await options.leaseStore.update(workspaceId, held.epoch, { status: "stopped" })
+          if (!updated) return { ok: false, reason: "runtime_lease_changed" }
+          lifecycle.stopped(lease, input.idleBefore !== undefined)
+          return stopped(lease.checkpoint?.providerReference)
+        }
         const persistence = lease?.persistence
         if (input.runtime && persistence && persistence.capture !== "none") {
           // The commit stops the lease before the host stops, so a send from here on wakes a restore of this capture.

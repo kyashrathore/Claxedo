@@ -1,11 +1,10 @@
 import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox"
 import {
-  brokeredPlaceholderEnv,
-  type SandboxBrokeredSecret,
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxTarget,
 } from "../contract"
+import { brokeredPlaceholderEnv, type SandboxBrokeredSecret } from "../egress-policy"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { workspaceRuntimeVersion } from "../runtime-version"
 import { shell } from "../command"

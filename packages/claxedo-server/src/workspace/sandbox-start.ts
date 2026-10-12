@@ -23,6 +23,7 @@ export type SandboxInFlight = (workspaceId: string) => Promise<SandboxStartAnswe
 /** The steps of a start, for whoever owns its schedule: the lease, then the driver until the lease settles. */
 export type SandboxStartDrive = {
   acquire(workspaceId: string): Promise<SandboxStartAnswer>
+  /** One driver step at `epoch`; a step that retries a failed attempt runs on the fresh epoch its answer names. */
   provision(workspaceId: string, epoch: number): Promise<SandboxStartAnswer>
   target(workspaceId: string): Promise<SandboxTargetResult>
   /** The ready target whose runtime answers right now; nothing while the lease is ready in the store but its sandbox sleeps or is gone. */

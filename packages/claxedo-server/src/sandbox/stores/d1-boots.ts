@@ -4,20 +4,27 @@ import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 export type SandboxLeaseGuard = { sql: string; binds: readonly (string | number | null)[] }
 
 /**
- * Records the boot a lease write ends, in `sandbox_boots`. It runs in the same batch as that write and ahead of it,
- * under the write's own guard, so a boot is recorded exactly when the write takes a serving epoch out of `ready`.
- * The interval is the one `workspace_stopped.active_ms` measures: the epoch's start to the write. An epoch that serves
- * again after an outage extends its own row rather than adding one. The driver and machine class travel with the
- * boot because they are what it is priced by, and the lease that named them is rewritten by the next boot.
+ * A lease row the provider bills a host for: one serving, or one still booting on a host the driver already
+ * reported. A row whose attempt failed or that was stopped holds its host archived, which costs nothing.
  */
-export function closeServingBoot(database: D1Database, guard: SandboxLeaseGuard, stoppedAt: number): D1PreparedStatement {
+const HOSTED = "(l.status = 'ready' or (l.status in ('pending', 'acquiring', 'starting') and l.sandbox_id is not null))"
+
+/**
+ * Records the boot a lease write ends, in `sandbox_boots`. It runs in the same batch as that write and ahead of it,
+ * under the write's own guard, so a boot is recorded exactly when the write takes an epoch off the host it holds,
+ * whether its runtime served or its boot failed on it. The interval is the one `workspace_stopped.active_ms`
+ * measures: the epoch's start to the write. An epoch that serves again after an outage extends its own row rather
+ * than adding one; a retried boot takes an epoch of its own. The driver and machine class travel with the boot
+ * because they are what it is priced by, and the lease that named them is rewritten by the next boot.
+ */
+export function closeBoot(database: D1Database, guard: SandboxLeaseGuard, stoppedAt: number): D1PreparedStatement {
   return database.prepare(`
     insert into sandbox_boots (workspace_id, epoch, org_id, owner_user_id, driver, machine_class, started_at, stopped_at)
     select l.workspace_id, l.epoch, w.org_id, w.owner_user_id, l.driver, l.machine_class,
       min(json_extract(l.start_json, '$.startedAt'), ?1), ?1
     from (select * from sandbox_leases where ${guard.sql}) l
     join workspaces w on w.workspace_id = l.workspace_id
-    where l.status = 'ready' and json_extract(l.start_json, '$.startedAt') is not null
+    where ${HOSTED} and json_extract(l.start_json, '$.startedAt') is not null
     on conflict (workspace_id, epoch) do update set stopped_at = max(sandbox_boots.stopped_at, excluded.stopped_at)
   `).bind(stoppedAt, ...guard.binds)
 }
@@ -33,24 +40,24 @@ export type MachineTimeRow = {
   driver: string
   machine_class: string | null
   active_ms: number
-  /** The start of the epoch still serving at `until`, where one is. */
+  /** The start of the epoch still on a host at `until`, where one is. */
   running_since: number | null
 }
 
 /**
  * The machine time of one person's cloud workspaces in [since, until], per workspace, driver and machine class: every
- * ended boot clipped to the range, and every epoch still serving from its start, or `since`, to `until`. Ended boots
- * are read by the owner index; serving ones through the person's workspaces to their lease rows. A workspace that
+ * ended boot clipped to the range, and every epoch still on a host from its start, or `since`, to `until`. Ended boots
+ * are read by the owner index; hosted ones through the person's workspaces to their lease rows. A workspace that
  * changed size within the range is two rows.
  */
 export async function readMachineTime(database: D1Database, query: MachineTimeQuery): Promise<MachineTimeRow[]> {
   const rows = await database.prepare(`
-    with serving as (
+    with hosted as (
       select l.workspace_id, l.driver, l.machine_class,
         ?4 - max(json_extract(l.start_json, '$.startedAt'), ?3) as active_ms,
         json_extract(l.start_json, '$.startedAt') as running_since
       from workspaces w join sandbox_leases l on l.workspace_id = w.workspace_id
-      where w.owner_user_id = ?2 and w.org_id = ?1 and l.status = 'ready'
+      where w.owner_user_id = ?2 and w.org_id = ?1 and ${HOSTED}
         and json_extract(l.start_json, '$.startedAt') < ?4
     ),
     ended as (
@@ -59,7 +66,7 @@ export async function readMachineTime(database: D1Database, query: MachineTimeQu
       where org_id = ?1 and owner_user_id = ?2 and stopped_at > ?3 and started_at < ?4
     ),
     spent as (
-      select * from ended union all select * from serving
+      select * from ended union all select * from hosted
     )
     select s.workspace_id, w.project_id, w.display_name, w.git_branch, s.driver, s.machine_class,
       sum(s.active_ms) as active_ms, max(s.running_since) as running_since

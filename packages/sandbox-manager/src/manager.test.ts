@@ -847,6 +847,150 @@ describe("sandbox manager", () => {
     })
   })
 
+  /** A driver that reports its host before the boot on it ends the way `outcome` says, and resumes that host. */
+  function hostedDriver(outcome: () => Error | undefined) {
+    return fakeDriver({
+      metadata: { machineClasses: ["large"] } as Partial<SandboxDriver["metadata"]> as SandboxDriver["metadata"],
+      ensureHost: vi.fn(async (input) => {
+        await input.onResource?.({ sandboxId: "sandbox_1", hostId: "host_1", labels: input.labels })
+        const failure = outcome()
+        if (failure) throw failure
+        return { sandboxId: "sandbox_1", url: "https://runtime.test/booted", hostId: "host_1", labels: input.labels }
+      }),
+      resumeHost: vi.fn(async ({ lease, ensure }) => {
+        const failure = outcome()
+        if (failure) throw failure
+        return { sandboxId: lease.sandboxId ?? "", url: "https://runtime.test/resumed", hostId: lease.hostId ?? "", labels: ensure.labels }
+      }),
+      suspend: vi.fn(async () => {}),
+    })
+  }
+
+  test("a boot that fails on the host the driver reported stops that host, the lease keeps it, and the next start resumes it on a fresh epoch", async () => {
+    let now = 10_000
+    const store = createMemoryLeaseStore()
+    let failure: Error | undefined = new SandboxRuntimeBootError("fatal: couldn't find remote ref refs/heads/missing")
+    const driver = hostedDriver(() => failure)
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 5_000 })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east", machineClass: "large" })).resolves.toMatchObject({
+      status: "unavailable",
+      retryAfterMs: 5_000,
+      error: "runtime_boot_failed: fatal: couldn't find remote ref refs/heads/missing",
+      epoch: 1,
+    })
+    expect(driver.suspend).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "sandbox_1", hostId: "host_1", epoch: 1 }))
+    await expect(store.get("ws_1")).resolves.toMatchObject({
+      status: "unavailable",
+      epoch: 1,
+      sandboxId: "sandbox_1",
+      retryCount: 1,
+      machineClass: "large",
+      start: { startedAt: 10_000, bootMode: "cold-start" },
+    })
+
+    now += 5_001
+    failure = undefined
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
+      status: "ready",
+      epoch: 2,
+      sandboxId: "sandbox_1",
+      url: "https://runtime.test/resumed",
+    })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(1)
+    expect(driver.resumeHost).toHaveBeenCalledWith(expect.objectContaining({
+      lease: expect.objectContaining({ epoch: 2, status: "acquiring", sandboxId: "sandbox_1", hostId: "host_1" }),
+      ensure: expect.objectContaining({ machineClass: "large", epoch: 2 }),
+    }))
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 2, retryCount: 0, start: { startedAt: 15_001, bootMode: "resume" } })
+    expect(driver.suspend).toHaveBeenCalledTimes(1)
+  })
+
+  test("a provider failure within the retry budget keeps the host running for the retry, which takes its own epoch", async () => {
+    let now = 10_000
+    const store = createMemoryLeaseStore()
+    let failure: Error | undefined = new Error("provider hiccup")
+    const driver = hostedDriver(() => failure)
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 1_000, maxRetryCount: 5 })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "provider hiccup", epoch: 1 })
+    expect(driver.suspend).not.toHaveBeenCalled()
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", epoch: 1, sandboxId: "sandbox_1", retryCount: 1 })
+
+    now += 1_000
+    failure = undefined
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready", epoch: 2, sandboxId: "sandbox_1" })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(1)
+    expect(driver.resumeHost).toHaveBeenCalledTimes(1)
+  })
+
+  test("a failure that spends the retry budget stops the host for the cooldown nobody drives", async () => {
+    const store = createMemoryLeaseStore()
+    const driver = hostedDriver(() => new Error("provider hiccup"))
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => 10_000, retryDelayMs: () => 1_000, maxRetryCount: 2, retryCapCooldownMs: 60_000 })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 1_000, epoch: 1 })
+    expect(driver.suspend).not.toHaveBeenCalled()
+    await store.update("ws_1", 1, { nextRetryAt: 10_000 })
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 60_000, epoch: 2 })
+    expect(driver.suspend).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "sandbox_1", epoch: 2 }))
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", epoch: 2, sandboxId: "sandbox_1", retryCount: 2, nextRetryAt: 70_000 })
+  })
+
+  test("a host that refuses to stop stays on the lease, with its reason beside the boot's", async () => {
+    const store = createMemoryLeaseStore()
+    const driver = hostedDriver(() => new SandboxRuntimeBootError("the image has no runtime"))
+    driver.suspend = vi.fn(async () => { throw new Error("provider busy") })
+    const manager = createSandboxManager({ leaseStore: store, driver, retryDelayMs: () => 1_000 })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
+      status: "unavailable",
+      error: "runtime_boot_failed: the image has no runtime; host sandbox_1 not stopped: provider busy",
+    })
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", sandboxId: "sandbox_1" })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({
+      failure: { kind: "boot", message: "the image has no runtime; host sandbox_1 not stopped: provider busy" },
+    })
+  })
+
+  test("provision waits out a failed attempt's retry, then runs the next attempt on a fresh epoch that keeps the host", async () => {
+    let now = 10_000
+    const store = createMemoryLeaseStore()
+    let failure: Error | undefined = new SandboxRuntimeBootError("the image has no runtime")
+    const driver = hostedDriver(() => failure)
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 5_000 })
+    const input = { homeRegion: "us-east" }
+
+    await expect(manager.acquire("ws_1", input)).resolves.toMatchObject({ status: "provisioning", epoch: 1 })
+    await expect(manager.provision("ws_1", 1, input)).resolves.toMatchObject({ status: "unavailable", epoch: 1, retryAfterMs: 5_000 })
+    now += 1_000
+    await expect(manager.provision("ws_1", 1, input)).resolves.toMatchObject({ status: "unavailable", epoch: 1, retryAfterMs: 4_000 })
+    expect(driver.resumeHost).not.toHaveBeenCalled()
+
+    now += 4_000
+    failure = undefined
+    await expect(manager.provision("ws_1", 1, input)).resolves.toMatchObject({ status: "ready", epoch: 2, sandboxId: "sandbox_1" })
+    expect(driver.resumeHost).toHaveBeenCalledTimes(1)
+    await expect(manager.provision("ws_1", 1, input)).resolves.toMatchObject({ status: "unavailable", error: "runtime_lease_changed" })
+  })
+
+  test("stop ends a lease still booting on the host it holds, without a capture; one holding no host is not ready to stop", async () => {
+    const store = createMemoryLeaseStore([
+      sandboxLease({ workspaceId: "ws_booting", status: "acquiring", epoch: 2, sandboxId: "sandbox_booting", hostId: "host_booting" }),
+      sandboxLease({ workspaceId: "ws_placing", status: "acquiring", epoch: 1 }),
+    ])
+    const driver = fakeDriver({ stop: vi.fn(async () => {}), snapshot: vi.fn() })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    await expect(manager.stop("ws_booting")).resolves.toEqual({ ok: true, status: "stopped" })
+    expect(driver.stop).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "sandbox_booting", hostId: "host_booting", epoch: 2 }))
+    expect(driver.snapshot).not.toHaveBeenCalled()
+    await expect(store.get("ws_booting")).resolves.toMatchObject({ status: "stopped", epoch: 2, sandboxId: "sandbox_booting" })
+
+    await expect(manager.stop("ws_placing")).resolves.toEqual({ ok: false, reason: "runtime_lease_not_ready" })
+    expect(driver.stop).toHaveBeenCalledTimes(1)
+  })
+
   test("polls past nextRetryAt continue an in-flight provision on the same epoch with exactly one sandbox", async () => {
     let now = 0
     let createdSandboxes = 0

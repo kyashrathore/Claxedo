@@ -313,7 +313,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
     return readyTarget(input.ensure, sandboxId, input.ensure.hostId ?? sandboxId)
   }
 
-  async function stop(target: SandboxTarget) {
+  async function stop(target: SandboxResource) {
     await dockerCommand(["stop", target.sandboxId], 30_000)
   }
 

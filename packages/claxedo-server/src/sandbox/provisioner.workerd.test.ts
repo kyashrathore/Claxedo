@@ -170,9 +170,10 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_boot_fail")).toBe(1)
   })
 
-  test("a provider failure is retried from the alarm after the lease's own delay", async () => {
+  test("a provider failure is retried from the alarm after the lease's own delay, on a fresh epoch the run follows", async () => {
     expect(await start("ws_flaky")).toMatchObject({ status: "provisioning", epoch: 1 })
-    await until(() => target("ws_flaky"), (lease) => lease.status === "ready")
+    expect(await until(() => target("ws_flaky"), (lease) => lease.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
     expect(await driverCalls("ws_flaky")).toBe(2)
+    expect(await until(() => start("ws_flaky"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
   })
 })

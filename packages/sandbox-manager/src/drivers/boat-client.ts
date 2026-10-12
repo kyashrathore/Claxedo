@@ -124,6 +124,11 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
     async resume(id: string, input: { ttlSeconds: number | null }) {
       await api(`${path(id)}/resume`, ["sandbox.resuming"], { method: "POST", body: { noEnv: true, ttlSeconds: input.ttlSeconds } })
     },
+    /** `ttlSeconds` sets the auto-stop deadline to now plus that many seconds; `null` removes it. */
+    async update(id: string, input: { ttlSeconds: number | null }) {
+      const value = sandbox(await api(path(id), ["sandbox.info"], { method: "PATCH", body: input }))
+      return value.id === id ? value : invalid()
+    },
     async stop(id: string) {
       await api(`${path(id)}/stop`, ["sandbox.stopping"], { method: "POST" })
     },

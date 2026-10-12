@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
-import { createSandboxManager, isSandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -47,14 +47,17 @@ function commandFinished(input: { stdout?: string; stderr?: string; exitCode?: n
 /**
  * The current Boat v1 API as documented at docs.boat.dev/api/v1: sandbox
  * creation → readiness polling → command execution (docker run / host /
- * health probe / host url). Records every call so tests can assert on it.
+ * health probe / host url), a stop that archives the sandbox until it is
+ * resumed, and the TTL update. Records every call so tests can assert on it;
+ * `options` is read at each call, so a test changes the sandbox mid-flight.
  */
-function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string; containerState?: string }) {
+function fakeBoat(options: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string; containerState?: string } = {}) {
   const calls: Call[] = []
-  const states = options?.states ?? ["ready"]
+  const states = options.states ?? ["ready"]
   let stateIdx = 0
   let healthChecks = 0
-  const hostUrl = options?.hostUrl ?? "https://machine-2593.on.boat.dev"
+  let archived = false
+  const hostUrl = options.hostUrl ?? "https://machine-2593.on.boat.dev"
 
   const fetchImpl: BoatFetch = async (input, init) => {
     const path = input.replace(API, "")
@@ -67,28 +70,34 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
       return json({ type: "sandbox.created", status: "provisioning", ttlSeconds: body.ttlSeconds, sandbox: sandboxRecord("provisioning") }, 202)
     }
     if (path === `/sandboxes/${ID}` && method === "GET") {
+      if (archived) return json({ type: "sandbox.info", sandbox: sandboxRecord("archived") })
       const state = states[Math.min(stateIdx, states.length - 1)]
       stateIdx++
       return json({ type: "sandbox.info", sandbox: sandboxRecord(state) })
+    }
+    if (path === `/sandboxes/${ID}` && method === "PATCH") {
+      return json({ type: "sandbox.info", sandbox: { ...sandboxRecord("ready"), archiveAfter: body.ttlSeconds === null ? null : "2026-10-03T12:30:00Z" } })
     }
     if (path === `/sandboxes/${ID}/files` && method === "PUT") {
       return json({ type: "file.written", success: true, path: `/home/user/${body.path}`, encoding: "utf8", size: body.content.length })
     }
     if (path === `/sandboxes/${ID}/commands` && method === "POST") {
       const command: string = body.command
-      if (options?.failingStderr) return json(commandFinished({ stderr: options.failingStderr, exitCode: 125 }))
+      if (options.failingStderr) return json(commandFinished({ stderr: options.failingStderr, exitCode: 125 }))
       if (command.includes("/global/health")) {
         healthChecks++
-        const healthy = options?.failHealthOnce ? healthChecks > 1 : true
-        return json(commandFinished({ stdout: `${healthy ? "200" : "000"}\n${options?.containerState ?? "running"}` }))
+        const healthy = options.failHealthOnce ? healthChecks > 1 : true
+        return json(commandFinished({ stdout: `${healthy ? "200" : "000"}\n${options.containerState ?? "running"}` }))
       }
       if (command.startsWith("host url")) return json(commandFinished({ stdout: `${hostUrl}\n` }))
       return json(commandFinished({}))
     }
     if (path === `/sandboxes/${ID}/stop` && method === "POST") {
+      archived = true
       return json({ type: "sandbox.stopping", id: ID, status: "archiving", sandbox: sandboxRecord("archiving") }, 202)
     }
     if (path === `/sandboxes/${ID}/resume` && method === "POST") {
+      archived = false
       return json({ type: "sandbox.resuming", id: ID, status: "provisioning", sandbox: sandboxRecord("provisioning") }, 202)
     }
     if (path === `/sandboxes/${ID}` && method === "DELETE") {
@@ -96,8 +105,12 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
     }
     return Response.json({ ok: false, code: "not_found", message: `unhandled ${method} ${path}` }, { status: 404 })
   }
-  return { fetchImpl, calls, get healthChecks() { return healthChecks } }
+  return { fetchImpl, calls, options, get healthChecks() { return healthChecks } }
 }
+
+const BOOT_TTL_SECONDS = 30 * 60
+
+const ttlUpdates = (calls: Call[]) => calls.filter((c) => c.path === `/sandboxes/${ID}` && c.method === "PATCH").map((c) => c.body)
 
 /**
  * Runs the driver's container start command under a real `sh`, with `docker`
@@ -236,7 +249,7 @@ describe("boat sandbox driver", () => {
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl })
     await expect(driver.ensureHost(ensureInput({ machineClass: "large", onResource: async () => { throw handoffError } }))).rejects.toBe(handoffError)
     expect(boat.calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
-      { path: "/sandboxes", method: "POST", body: { noEnv: true, ttlSeconds: null, type: "large" } },
+      { path: "/sandboxes", method: "POST", body: { noEnv: true, ttlSeconds: BOOT_TTL_SECONDS, type: "large" } },
       { path: `/sandboxes/${ID}`, method: "DELETE", body: undefined },
     ])
     expect(boat.calls[1].headers).toMatchObject({ "X-Ascii-Confirm-Delete": ID, Authorization: "Bearer k" })
@@ -292,7 +305,7 @@ describe("boat sandbox driver", () => {
   })
 
   test.each(["auth", "malformed", "wrong type", "boot", "missing"])("resume propagates %s failure without creating a replacement", async (failure) => {
-    const boat = fakeBoat()
+    const boat = fakeBoat({ states: ["archived", "ready"] })
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
       if (failure === "auth" && url.endsWith("/resume")) return Response.json({ ok: false, code: "unauthorized", message: "Unauthorized" }, { status: 401 })
       if (failure === "missing" && url.endsWith("/resume")) return Response.json({ ok: false, code: "not_found", message: "gone" }, { status: 404 })
@@ -338,8 +351,12 @@ describe("boat sandbox driver", () => {
     expect(target.driver).toEqual({ id: "boat", resourceId: ID })
 
     const create = boat.calls.find((c) => c.path === "/sandboxes" && c.method === "POST")
-    expect(create?.body).toEqual({ noEnv: true, ttlSeconds: null })
+    expect(create?.body).toEqual({ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS })
     expect(create?.headers).toMatchObject({ "Idempotency-Key": "claxedo:ws1:1", Authorization: "Bearer k" })
+    // The deadline the create set is removed once the runtime answers, before its URL is published.
+    expect(ttlUpdates(boat.calls)).toEqual([{ ttlSeconds: null }])
+    const order = boat.calls.map((c) => c.method === "PATCH" ? "ttl" : c.body?.command?.includes("/global/health") ? "health" : c.body?.command?.startsWith("host url") ? "url" : undefined).filter(Boolean)
+    expect(order).toEqual(["health", "ttl", "url"])
     const run = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker run"))
     expect(run?.body.timeoutSeconds).toBe(600)
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
@@ -671,8 +688,8 @@ describe("boat sandbox driver", () => {
     ])
   })
 
-  test("resume brings the same sandbox back and re-establishes the runtime", async () => {
-    const boat = fakeBoat({ states: ["provisioning", "ready"] })
+  test("resume brings an archived sandbox back under the boot deadline, re-establishes the runtime, and removes the deadline", async () => {
+    const boat = fakeBoat({ states: ["archived", "provisioning", "ready"] })
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
     const target = await driver.resumeHost?.({
       lease: sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" }),
@@ -680,6 +697,51 @@ describe("boat sandbox driver", () => {
     })
     if (!target || "provisioning" in target) throw new Error("unexpected provisioning")
     expect(target.sandboxId).toBe(ID)
-    expect(boat.calls.find((c) => c.path === `/sandboxes/${ID}/resume`)?.body).toEqual({ noEnv: true, ttlSeconds: null })
+    expect(boat.calls.find((c) => c.path === `/sandboxes/${ID}/resume`)?.body).toEqual({ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS })
+    expect(ttlUpdates(boat.calls)).toEqual([{ ttlSeconds: null }])
+  })
+
+  test("a sandbox that still runs is booted again without a resume, and one still archiving is polled", async () => {
+    const running = fakeBoat({ states: ["idle"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: running.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
+    const lease = sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", status: "unavailable", lastError: "Boat GET /sandboxes/bx_23456789 was rejected (http_500)" })
+    const target = await driver.resumeHost?.({ lease, ensure: ensureInput() })
+    if (!target || "provisioning" in target) throw new Error("unexpected provisioning")
+    expect(running.calls.filter((c) => c.path.endsWith("/resume"))).toHaveLength(0)
+    expect(commandsOf(running.calls).some((command) => command.includes("docker run"))).toBe(true)
+
+    const archiving = fakeBoat({ states: ["archiving"] })
+    const polled = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: archiving.fetchImpl, provisionIntervalMs: 250 })
+    expect(await polled.resumeHost?.({ lease, ensure: ensureInput() })).toEqual({ provisioning: true, retryAfterMs: 250 })
+    expect(archiving.calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /sandboxes/${ID}`])
+  })
+
+  test("a boot whose deadline Boat refuses to remove fails before the runtime is published", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, fetchImpl: async (url, init) => {
+      if (init?.method === "PATCH") return Response.json({ ok: false, code: "trial_auto_stop_required", message: "trial" }, { status: 403 })
+      return boat.fetchImpl(url, init)
+    } })
+    await expect(driver.ensureHost(ensureInput())).rejects.toThrow("trial_auto_stop_required")
+    expect(commandsOf(boat.calls).some((command) => command.startsWith("host url"))).toBe(false)
+  })
+
+  test("a boot that fails stops the sandbox, the lease keeps it, and the retry resumes it under the one create", async () => {
+    const store = createMemoryLeaseStore()
+    const boat = fakeBoat({ failHealthOnce: true, containerState: "exited" })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
+    const manager = createSandboxManager({ leaseStore: store, driver, retryDelayMs: () => 0, onEgressUnenforced: () => {} })
+
+    const failed = await manager.ensure("ws1", { homeRegion: "eu" })
+    expect(failed.status === "unavailable" ? sandboxRuntimeBootFailure(failed.error) : undefined).toContain("the runtime container is exited")
+    expect(boat.calls.map((c) => `${c.method} ${c.path}`)).toContain(`POST /sandboxes/${ID}/stop`)
+    await expect(store.get("ws1")).resolves.toMatchObject({ status: "unavailable", epoch: 1, sandboxId: ID, retryCount: 1 })
+
+    boat.options.containerState = "running"
+    expect((await manager.ensure("ws1", { homeRegion: "eu" })).status).toBe("ready")
+    await expect(store.get("ws1")).resolves.toMatchObject({ status: "ready", epoch: 2, sandboxId: ID, retryCount: 0 })
+    expect(boat.calls.filter((c) => c.path === "/sandboxes" && c.method === "POST")).toHaveLength(1)
+    expect(boat.calls.find((c) => c.path.endsWith("/resume"))?.body).toEqual({ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS })
+    expect(ttlUpdates(boat.calls)).toEqual([{ ttlSeconds: null }])
   })
 })

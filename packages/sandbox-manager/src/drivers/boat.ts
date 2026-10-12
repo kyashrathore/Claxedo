@@ -36,11 +36,6 @@ export type BoatSandboxDriverOptions = {
   /** Container name used for the runtime container inside the sandbox. */
   containerName?: string
   /**
-   * Boat archives a sandbox after this many seconds. `null` (default) disables
-   * it so the SandboxManager owns the lifecycle.
-   */
-  ttlSeconds?: number | null
-  /**
    * Optional `docker login` before the pull, for a private runtime registry.
    * Omit for public images.
    */
@@ -68,6 +63,13 @@ const DEFAULT_HEALTH_INTERVAL_MS = 1_000
 const BOOTING_CONTAINER_STATES: ReadonlySet<string> = new Set(["running", "paused"])
 // An image pull needs Boat's documented command maximum.
 const CONTAINER_START_TIMEOUT_SECONDS = 600
+// Boat's auto-stop is a deadline counted from the create or resume, not from
+// use (docs.boat.dev/long-running-tasks/auto-stop), so a serving sandbox
+// carries none and the control plane's own idle stop ends it. A boot nobody
+// drives to its end — the start that began it died with its Worker — is
+// archived by Boat at this deadline instead, which outlasts the longest boot
+// (two minutes to provision, ten to pull and start, ten to turn healthy).
+const BOOT_TTL_SECONDS = 30 * 60
 const DOCKER_DAEMON_WAIT_SECONDS = 120
 // Written via PUT /sandboxes/{id}/files — the provider's file channel — so env
 // and registry credentials never appear in a /commands body, which Boat
@@ -127,7 +129,6 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const containerName = options.containerName ?? DEFAULT_CONTAINER_NAME
-  const ttlSeconds = options.ttlSeconds === undefined ? null : options.ttlSeconds
   const provisionTimeoutMs = options.provisionTimeoutMs ?? DEFAULT_PROVISION_TIMEOUT_MS
   const provisionIntervalMs = options.provisionIntervalMs ?? DEFAULT_PROVISION_INTERVAL_MS
   const healthTimeoutMs = options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS
@@ -306,6 +307,10 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // `/global/health` probe (liveness, the workspace id and the lease epoch).
     await execOrThrow(sandboxId, `host ${port} --public`, "host publish")
     await waitForHealth(sandboxId, input, secrets)
+    // The lease owns the sandbox's lifetime from here; a deadline Boat keeps
+    // would end it mid-work, so a sandbox whose deadline cannot be removed
+    // is not handed over.
+    await client.update(sandboxId, { ttlSeconds: null })
     const urlResult = await execOrThrow(sandboxId, `host url ${port} --public`, "host url")
     const url = trimToUndefined(urlResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop())
     if (!url?.startsWith("https://") || url.includes("?")) {
@@ -333,7 +338,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const hostId = input.hostId ?? `boat-${input.workspaceId}`
     const created = await client.create({
       idempotencyKey: `claxedo:${input.workspaceId}:${input.epoch}`,
-      ttlSeconds,
+      ttlSeconds: BOOT_TTL_SECONDS,
       ...(input.machineClass ? { type: input.machineClass } : {}),
     })
       .catch((err: unknown) => {
@@ -365,13 +370,18 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     if (!sandboxId) throw new BoatDriverError("Cannot resume Boat without its sandbox id")
     assertNetwork(input.ensure)
     const hostId = input.ensure.hostId ?? input.lease.hostId ?? `boat-${input.ensure.workspaceId}`
-    if (input.lease.url !== undefined) await client.resume(sandboxId, { ttlSeconds })
+    // The lease does not say whether its sandbox is archived: one stopped
+    // after serving is, one whose boot failed was stopped too, and one a
+    // provider error interrupted still runs.
+    const state = (await client.get(sandboxId)).state
+    if (state === "archiving") return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    if (state === "archived") await client.resume(sandboxId, { ttlSeconds: BOOT_TTL_SECONDS })
     const ready = await waitUntilReady(sandboxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     return boot(sandboxId, input.ensure, hostId)
   }
 
-  async function stop(target: SandboxTarget) {
+  async function stop(target: SandboxResource) {
     await client.stop(target.sandboxId)
   }
 

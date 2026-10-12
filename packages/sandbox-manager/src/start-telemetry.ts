@@ -66,13 +66,15 @@ export function createSandboxStartRecorder(options: {
     /**
      * The phases one provision call observes, timed as they end and written
      * once when the call is done, so observing them adds no lease write to
-     * the path a start waits on. A serving lease is not starting.
+     * the path a start waits on; a failure flushes them first, so the boot the
+     * failure ends has its start on the row. A serving lease is not starting.
      */
     observe(lease: SandboxLease, input: { bootMode: SandboxBootMode; enteredAt: number; labels: Record<string, string> }) {
       if (lease.status === "ready") return undefined
       const progress = lease.start ?? { startedAt: input.enteredAt, bootMode: input.bootMode, markedAt: input.enteredAt, phases: [] }
       const ended: Timing[] = []
       let markedAt = progress.markedAt
+      let flushed = false
       const end = (phase: SandboxStartPhase) => {
         if (progress.phases.includes(phase) || ended.some((timing) => timing.phase === phase)) return
         const at = options.now()
@@ -83,6 +85,8 @@ export function createSandboxStartRecorder(options: {
       return {
         end,
         flush: async () => {
+          if (flushed) return
+          flushed = true
           await append(lease, progress, ended, { labels: input.labels, markedAt }).catch(() => undefined)
         },
       }
