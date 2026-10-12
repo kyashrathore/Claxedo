@@ -10,7 +10,9 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 
 void test("a client disconnect from exec retires the running command", async () => {
   const directory = await realpath(await mkdtemp(path.join(tmpdir(), "wr-execution-env-node-")))
-  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  // Windows can hold the directory for a moment after the killed command exits; Node retries EBUSY
+  // and EPERM with a linear backoff, 5.5 s in all.
+  cleanups.push(() => rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   const server = await serveExecutionEnv({ directory })
   cleanups.push(server.close)
   const controller = new AbortController()
