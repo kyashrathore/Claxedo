@@ -16,12 +16,13 @@ import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
 import { admittedRepoUrl, sandboxMachineClasses, type RepoAddressResolver, type SandboxMachineClass } from "@claxedo/sandbox-contract"
+import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
 } from "@claxedo/server-core/platform/auth/auth"
-import type { ControlPlaneServices, SandboxKeyedDriver } from "../../authority/services"
+import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
@@ -132,9 +133,9 @@ const createCloudBody = z
 
 const machineClassBody = z.object({ machineClass: z.enum(sandboxMachineClasses).nullable() }).strict()
 
-function machineClassUnsupported(placed: SandboxKeyedDriver | undefined, machineClass: SandboxMachineClass) {
-  if (placed?.driver.metadata.machineClasses?.includes(machineClass)) return undefined
-  return { error: apiError("machine_class_unsupported", `${placed?.driver.id ?? "This sandbox provider"} has no ${machineClass} machines`) }
+function machineClassUnsupported(placed: SandboxDriver | undefined, machineClass: SandboxMachineClass) {
+  if (placed?.metadata.machineClasses?.includes(machineClass)) return undefined
+  return { error: apiError("machine_class_unsupported", `${placed?.id ?? "This sandbox provider"} has no ${machineClass} machines`) }
 }
 
 export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: HostedWorkspaceRouteOptions = {}) {
@@ -218,6 +219,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     } catch (err) {
       if (err instanceof ControlPlaneAuthError)
         return c.json(controlPlaneAuthErrorBody(err), err.status)
+      // An organization whose sandbox provider key was removed after this
+      // workspace was created has no account to start it on.
+      if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
       throw err
     }
   }
@@ -381,12 +385,19 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             400,
           )
         }
-        // The driver that places this workspace is its organization's, known
-        // from the admission; a machine it has no grade for is refused before
-        // any row exists, so no project is left standing for a workspace that
-        // never was.
+        // The driver that places this workspace is the one its organization's
+        // key builds, known from the admission: an organization without a key,
+        // or a machine the driver has no grade for, is refused before any row
+        // exists, so no project is left standing for a workspace that never was.
+        let placed: SandboxDriver | undefined
+        try {
+          placed = await services.sandbox.orgDriver?.(admitted.orgId)
+        } catch (err) {
+          if (!isClaxedoError(err)) throw err
+          return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
+        }
         if (body.machineClass) {
-          const unsupported = machineClassUnsupported(await services.sandbox.orgDriver?.(admitted.orgId), body.machineClass)
+          const unsupported = machineClassUnsupported(placed, body.machineClass)
           if (unsupported) return c.json(unsupported, 400)
         }
 

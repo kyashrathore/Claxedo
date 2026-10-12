@@ -272,7 +272,7 @@ async function subject(connected: boolean) {
     },
     gatewayUrl: "https://mcp-gateway.claxedo.test/",
     signingEnv,
-    secretBrokering: "native",
+    workspaceSecretBrokering: async () => "native",
   })
   const provisionRuntime = createHostedAgentPluginRuntimeProvisioner({
     activations,

@@ -11,8 +11,8 @@ every later slice is judged against numbers.
 
 - **Provider keys are org keys.** A hosted sandbox provider key is an org credential of kind `sandbox_driver` in the
   shared credential store, added, verified and listed through the shared credentials route. Personal provider keys
-  exist only on a local machine. The deployment's operator key (for example `BOAT_API_KEY`) stays the default managed
-  driver; an org key, when present, wins for that org.
+  exist only on a local machine. The deployment holds no provider account of its own (owner ruling 2026-10-12): a
+  cloud workspace starts only on an org key, and an org without one is refused with `sandbox_provider_key_missing`.
 - **Setup format.** `.claxedo/setup.sh` runs at prebuild time and `.claxedo/start.sh` on every boot. They are the only
   setup format; there is no `devcontainer.json`. A repository with neither gets its package manager detected from its
   lockfile.
@@ -116,8 +116,8 @@ record it. Schema change: `sandbox_leases.start_json`.
 - [ ] Delete the driver-key routes (`SandboxDriverSettingsRoutes`, `PUT/DELETE /drivers/:id/auth`) and every caller.
 - [ ] Org sandbox provider keys are added, verified and listed through the shared credentials route as kind
   `sandbox_driver`, using the shared verify.
-- [ ] An org setting names the org's default driver. The deployment's operator key is the default managed driver, and
-  an org key, when present, wins for that org.
+- [ ] An org setting names the org's default driver. Without an org key no cloud workspace starts; the deployment
+  has no provider account of its own.
 - [ ] A Settings "Sandbox" group lists the org's provider keys and the default driver.
 
 Done when: no driver-key route remains; a hosted org adds, verifies, lists and removes a provider key through the

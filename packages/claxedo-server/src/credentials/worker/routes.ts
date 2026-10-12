@@ -6,7 +6,7 @@ import { createProviderAuthService } from "@claxedo/server-core/credentials/prov
 import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { SandboxDriverKeys, SandboxKeyRemoval } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
-import type { SandboxDriverID, SandboxMachineClass, SandboxProvisionerID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID, SandboxMachineClass, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { orgRoutedCredentials } from "./org-routed"
 
@@ -23,23 +23,21 @@ export type HostedCredentialRoutesInput = {
   sandboxDriverKeys?: HostedSandboxDriverKeys
 }
 
-/** The organization's sandbox provider keys beside the deployment's managed driver. */
+/** The organization's sandbox provider keys: the only accounts this plane starts cloud workspaces on. */
 export type HostedSandboxDriverKeys = {
   drivers: readonly SandboxDriverID[]
-  managed: SandboxProvisionerID
   administers(auth: SignedControlPlaneAuth, orgId: string): Promise<boolean>
   chosen(orgId: string): Promise<string | undefined>
   choose(auth: SignedControlPlaneAuth, orgId: string, driver: SandboxDriverID | undefined): Promise<void>
   remove(auth: SignedControlPlaneAuth, orgId: string, keyId: string): Promise<SandboxKeyRemoval>
-  brokering(driver: SandboxProvisionerID): SandboxSecretBrokering | undefined
-  machineClasses(driver: SandboxProvisionerID): readonly SandboxMachineClass[] | undefined
+  brokering(driver: SandboxDriverID): SandboxSecretBrokering | undefined
+  machineClasses(driver: SandboxDriverID): readonly SandboxMachineClass[] | undefined
 }
 
 function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: Request) => Promise<SignedControlPlaneAuth>): SandboxDriverKeys {
   return {
     drivers: keys.drivers,
     owner: "org",
-    managed: keys.managed,
     canManage: async (request, { org }) => keys.administers(await signed(request), org),
     chosenDriver: ({ org }) => keys.chosen(org),
     chooseDriver: async (request, { org }, driver) => keys.choose(await signed(request), org, driver),

@@ -173,30 +173,9 @@ describe("Better Auth + D1 user-deployed composition", () => {
     await composed.authReady.catch(() => undefined)
   })
 
-  test("full-hosted composes the sandbox manager over the injected driver and lease store, and admits cloud workspaces", async () => {
+  test("full-hosted composes the sandbox manager over the organizations' keys and the lease store, offers those keys' drivers, and admits cloud workspaces", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
     const { createMemoryLeaseStore } = await import("@claxedo/sandbox-manager/stores/memory")
-    const sandboxDriver = (id: string) => ({
-      id,
-      metadata: {
-        driverRunsIn: ["worker"],
-        hostStopBehavior: "suspends-host",
-        hostResumeBehavior: "same-host",
-        targetAccess: "relay",
-        secretBrokering: "native",
-        egressControl: "hosts-and-cidrs",
-        persistence: {
-          resume: "same-sandbox",
-          capture: "none",
-          clone: false,
-          captureSource: "not-applicable",
-          retention: "not-applicable",
-          restoreMount: "not-applicable",
-        },
-      },
-      ensureHost: async () => { throw new Error("not exercised") },
-    } as unknown as NonNullable<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0]["sandbox"]>["driver"])
-    const driver = sandboxDriver("cloudflare")
     const input = {
       authDatabase,
       controlPlaneDatabase,
@@ -208,48 +187,37 @@ describe("Better Auth + D1 user-deployed composition", () => {
         ownerBootstrap: "one-use-claim" as const,
       },
     }
-    const sandbox = { driver, leaseStore: createMemoryLeaseStore(), ...unusedSandboxStarts }
+    const keys = { drivers: ["cloudflare", "boat"] as const, create: () => undefined, chosenDriver: async () => undefined }
+    const sandbox = { leaseStore: createMemoryLeaseStore(), keys, ...unusedSandboxStarts }
+    const credentials = { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 4).toString("base64") }
     const composed = composeBetterAuthD1UserDeployedControlPlane({
       ...input,
-      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "cloudflare" }),
+      env: env({ ...credentials, CLAXEDO_SANDBOX_POSTURE: "full-hosted" }),
       sandbox,
     })
     expect(composed.plane.services.sandbox.sandboxManager).toBeDefined()
-    // The placement every cloud root this deployment allocates is stored under.
-    expect(composed.plane.services.sandbox.defaultDriver).toBe("cloudflare")
+    expect(composed.plane.services.sandbox.orgDriver).toBeDefined()
+    // The account-setup routes offer exactly the drivers the binding builds from a key.
+    expect(composed.options.accountSetup?.sandboxDriverKeys?.drivers).toEqual(["cloudflare", "boat"])
     expect(await composed.options.cloudWorkspaceAdmission({} as never)).toBeUndefined()
     await composed.authReady.catch(() => undefined)
 
-    // Fail closed in both directions: a posture without its driver, and a
-    // driver on a posture that promised none.
+    // Fail closed in every direction: a posture without its binding, a binding
+    // on a posture that promised none, and a binding with nowhere to keep keys.
     expect(() => composeBetterAuthD1UserDeployedControlPlane({
       ...input,
-      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "cloudflare" }),
-    })).toThrow(/full-hosted Better Auth \+ D1 requires/)
+      env: env({ ...credentials, CLAXEDO_SANDBOX_POSTURE: "full-hosted" }),
+    })).toThrow(/full-hosted Better Auth \+ D1 requires a composed sandbox binding/)
+    expect(() => composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env(credentials), sandbox })).toThrow(/must not inject a sandbox/)
     expect(() => composeBetterAuthD1UserDeployedControlPlane({
       ...input,
-      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "fetch" }),
+      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted" }),
       sandbox,
-    })).toThrow(/full-hosted Better Auth \+ D1 requires/)
-    expect(() => composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env(), sandbox })).toThrow(
-      /must not configure CLAXEDO_SANDBOX_DRIVER or inject a sandbox/,
-    )
-    // The fetch bridge provisions through an operator-run service instead of a
-    // catalog driver. The release pipeline certifies it, so a composition that
-    // could not declare it would refuse every cloud root on that posture.
-    const bridged = composeBetterAuthD1UserDeployedControlPlane({
-      ...input,
-      env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "fetch" }),
-      sandbox: { driver: sandboxDriver("fetch"), leaseStore: createMemoryLeaseStore(), ...unusedSandboxStarts },
-    })
-    expect(bridged.plane.services.sandbox.sandboxManager).toBeDefined()
-    expect(bridged.plane.services.sandbox.defaultDriver).toBe("fetch")
-    expect(await bridged.options.cloudWorkspaceAdmission({} as never)).toBeUndefined()
-    await bridged.authReady.catch(() => undefined)
+    })).toThrow(/per-organization credential store/)
 
     const plain = composeBetterAuthD1UserDeployedControlPlane({ ...input, env: env() })
     expect(plain.plane.services.sandbox.sandboxManager).toBeUndefined()
-    expect(plain.plane.services.sandbox.defaultDriver).toBeUndefined()
+    expect(plain.plane.services.sandbox.orgDriver).toBeUndefined()
     expect((await plain.options.cloudWorkspaceAdmission({} as never))?.status).toBe(403)
     await plain.authReady.catch(() => undefined)
   })
@@ -314,14 +282,11 @@ describe("Better Auth + D1 user-deployed composition", () => {
     )
   })
 
-  test("fails closed when full-hosted is declared without a composed driver and lease store", async () => {
+  test("fails closed when full-hosted is declared without a composed sandbox binding and lease store", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
     expect(() =>
       composeBetterAuthD1UserDeployedControlPlane({
-        env: env({
-          CLAXEDO_SANDBOX_POSTURE: "full-hosted",
-          CLAXEDO_SANDBOX_DRIVER: "cloudflare",
-        }),
+        env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted" }),
         authDatabase,
         controlPlaneDatabase,
         descriptorExpiresAt: 1_900_000_000_000,
@@ -336,7 +301,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
           },
         },
       }),
-    ).toThrow(/full-hosted Better Auth \+ D1 requires CLAXEDO_SANDBOX_DRIVER and a composed sandbox driver/)
+    ).toThrow(/full-hosted Better Auth \+ D1 requires a composed sandbox binding/)
   })
 
   test("rejects reused D1 bindings before composing any provider state", async () => {

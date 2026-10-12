@@ -322,8 +322,8 @@ describe("hosted Tasks composition", () => {
     expect(refused.body).toMatchObject({ error: { message: expect.stringContaining("does not support cloud") } })
   })
 
-  test("offers cloud placement once the deployment has a sandbox driver to allocate a root from", async () => {
-    const app = await hostedApp({ sandboxManager: { ensure: vi.fn(), target: vi.fn() }, defaultDriver: "modal" })
+  test("offers cloud placement once the deployment has a sandbox manager to allocate a root from", async () => {
+    const app = await hostedApp({ sandboxManager: { ensure: vi.fn(), target: vi.fn() } })
     const response = await app.request(`https://core.test${TASKS}/capabilities`, { headers: headers("alice") })
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ placements: ["local", "cloud"] })
@@ -926,7 +926,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
     const rootEnvironment = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "root-grant" }))
     const controlPlane = await database()
     const app = await hostedApp(
-      { sandboxManager, defaultDriver: "modal", orgDriver: async () => ({ driver: { ...driver, id: "modal" }, key: "operator" }) },
+      { sandboxManager, orgDriver: async () => ({ ...driver, id: "modal" }) },
       {
         signingEnv,
         database: controlPlane,
@@ -1065,7 +1065,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
       body: { error: { code: "billing_entitlement_required", message: `no cloud-workspace for ${tenant.orgId}` } },
     }))
     const app = await hostedApp(
-      { sandboxManager, defaultDriver: "modal" },
+      { sandboxManager },
       {
         signingEnv,
         database: await database(),

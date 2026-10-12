@@ -5,7 +5,6 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { cloudRootBacking, isCloudRoot } from "../workspace/cloud-root-backing"
 import type { Hono } from "hono"
 import { brokeredPlaceholderEnv } from "@claxedo/sandbox-manager"
-import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
 import {
   acpSessionMcpServers,
   runtimeMcpServers,
@@ -166,16 +165,14 @@ export function mcpOAuthClientsFromEnv(
 
 /**
  * The runtime credential can only stay unreadable to the agent when the
- * selected sandbox driver brokers secrets. A control-plane-only deployment
- * has no driver at all, and its cloud runtimes are never created, so the
- * answer there is "none" — authenticated cloud MCP is refused per server, not
- * per plugin (`runtime-preparation.ts`).
+ * driver a workspace's sandbox runs on brokers secrets, and that driver is the
+ * one its organization's key builds. A control-plane-only deployment has no
+ * driver at all, and its cloud runtimes are never created, so the answer
+ * there is "none" — authenticated cloud MCP is refused per server, not per
+ * plugin (`runtime-preparation.ts`).
  */
-function secretBrokering(plane: HostedControlPlane) {
-  if (!plane.services.sandbox.sandboxManager) return "none" as const
-  const selected = sandboxDriverId(plane.env.CLAXEDO_SANDBOX_DRIVER?.trim())
-  if (!selected) return "none" as const
-  return sandboxDriverCatalog[selected].metadata.secretBrokering
+function workspaceSecretBrokering(plane: HostedControlPlane) {
+  return async (workspaceId: string) => await plane.services.sandbox.workspaceSecretBrokering?.(workspaceId) ?? ("none" as const)
 }
 
 /**
@@ -342,7 +339,7 @@ export function createHostedAgentPluginsComposition(input: {
     oauth,
     gatewayUrl: env.CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL?.trim() || publicUrl,
     signingEnv: env,
-    secretBrokering: secretBrokering(input.plane),
+    workspaceSecretBrokering: workspaceSecretBrokering(input.plane),
     passes: input.passes,
     imageCommands,
   })

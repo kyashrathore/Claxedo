@@ -1,5 +1,5 @@
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
-import { hostedSandboxDriver, hostedSandboxKeyDrivers } from "../../authority/adapters/worker/hosted-sandbox-driver"
+import { hostedSandboxKeyDrivers } from "../../authority/adapters/worker/hosted-sandbox-key-drivers"
 import { sandboxProvisionerClass } from "../../sandbox/provisioner.cf"
 import type { SandboxProvisionerNamespace } from "../../workspace/sandbox-start"
 import { composeWithCloudSandbox } from "./full-hosted-sandbox"
@@ -23,10 +23,11 @@ export type BetterAuthD1FullHostedWorkerEnv = BetterAuthD1AgentPluginsWorkerEnv 
 
 /**
  * The full-hosted Agent Plugins Worker: the Agent Plugins composition plus
- * cloud workspace execution. It is the only entry that bundles a sandbox
- * provider, so a control-plane-only artifact keeps its closure, and it fails
- * closed at composition when the selected driver's configuration is missing —
- * a deployment certified as full-hosted must not quietly serve without VMs.
+ * cloud workspace execution on the organizations' own sandbox provider keys.
+ * It is the only entry that bundles the sandbox drivers, so a
+ * control-plane-only artifact keeps its closure, and it fails closed at
+ * composition when the runtime image those drivers boot is missing — a
+ * deployment certified as full-hosted must not quietly serve without VMs.
  *
  * Leases live in `CONTROL_PLANE_DB` (`sandbox/stores/d1.ts`): every isolate of
  * this Worker sees the same acquire/epoch state, which is what makes the
@@ -35,13 +36,6 @@ export type BetterAuthD1FullHostedWorkerEnv = BetterAuthD1AgentPluginsWorkerEnv 
  */
 const composition = settledCompositionCache(
   (env: BetterAuthD1FullHostedWorkerEnv) => {
-    const driver = hostedSandboxDriver(stringEnvironment(env))
-    if (!driver) {
-      throw new HostedWorkerCompositionError(
-        "sandbox_posture_unsupported",
-        "full-hosted entry requires a completely configured CLAXEDO_SANDBOX_DRIVER",
-      )
-    }
     if (!env.SANDBOX_PROVISIONER) {
       throw new HostedWorkerCompositionError("hosted_dependency_missing", "The full-hosted Worker requires the SANDBOX_PROVISIONER binding")
     }
@@ -49,7 +43,6 @@ const composition = settledCompositionCache(
       {
         database: env.CONTROL_PLANE_DB,
         signingEnv: stringEnvironment(env),
-        driver,
         provisioner: env.SANDBOX_PROVISIONER,
         keyDrivers: hostedSandboxKeyDrivers(stringEnvironment(env)),
       },

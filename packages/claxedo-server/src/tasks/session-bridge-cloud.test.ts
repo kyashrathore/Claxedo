@@ -145,8 +145,7 @@ function runtime() {
 function services(
   sandboxManager: SandboxManager | undefined,
   sandbox: ControlPlaneServices["sandbox"] = {
-    defaultDriver: "modal",
-    orgDriver: async () => ({ driver: fakeDriver({ id: "modal" }).driver, key: "operator" }),
+    orgDriver: async () => fakeDriver({ id: "modal" }).driver,
   },
 ) {
   const created = new Map<string, { projectId?: string; displayName: string }>()
@@ -366,26 +365,37 @@ const HOSTED_TOKEN_KEYS = {
 
 /**
  * The hosted control plane a Worker entry composes, with this file's fake
- * driver injected where the entry injects the selected one.
+ * driver built where the entry builds one from an organization's key, and the
+ * organization holding one such key (or none).
  *
- * Built here rather than hand-writing a `sandbox` object because the field the
- * allocator reads is one the composition DERIVES from the injected driver: a
- * services object assembled by a test cannot tell whether the composition
- * still derives it, which is how a deployment shipped with none.
+ * Built here rather than hand-writing a `sandbox` object because the driver
+ * the allocator places a root on is one the composition DERIVES from the
+ * organization's keys: a services object assembled by a test cannot tell
+ * whether the composition still derives it.
  */
-function composedHostedServices(driver: SandboxDriver) {
+function composedHostedServices(driver: SandboxDriver, orgKeys: readonly string[] = [driver.id]) {
+  const rows = orgKeys.map((providerId, index) => ({
+    id: `cred_${providerId}`, owner: null, provider_id: providerId, kind: "sandbox_driver", status: "active", revision: 1, created_at: index,
+  }))
   return composeProviderNeutralHostedControlPlane(
     {
       ...HOSTED_TOKEN_KEYS,
       CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.claxedo.test",
       CLAXEDO_RELAY_RESOLVER_TOKEN: "relay-resolver-secret",
-      CLAXEDO_SANDBOX_DRIVER: driver.id,
     },
     {
       auth: { config: { enabled: true, mode: "signed" } } as never,
-      authority: {} as never,
+      authority: { resolveWorkspaceOwner: async () => ({ orgId: "org" }) } as never,
       hostTunnelResolver: (async () => undefined) as never,
-      sandbox: { driver, leaseStore: createMemoryLeaseStore(), ...unusedSandboxStarts },
+      orgCredentials: () => ({
+        listCredentials: async () => rows,
+        resolveCredentialSecretById: async () => JSON.stringify({ api_key: "bx" }),
+      }) as never,
+      sandbox: {
+        leaseStore: createMemoryLeaseStore(),
+        keys: { drivers: ["cloudflare", "boat"], create: () => driver, chosenDriver: async () => undefined },
+        ...unusedSandboxStarts,
+      },
     },
   ).services
 }
@@ -533,7 +543,7 @@ describe("hosted tasks cloud roots", () => {
     runtime()
     const composition = services(
       createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
-      { orgDriver: async () => ({ driver: fakeDriver().driver, key: "operator" }) },
+      { orgDriver: async () => fakeDriver().driver },
     )
 
     const { started } = await start(bridge(composition), "tsk_one")
@@ -547,29 +557,29 @@ describe("hosted tasks cloud roots", () => {
     expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
   })
 
-  test("a root allocated over the real hosted composition is placed on the provisioner that composition declared", async () => {
+  test("a root allocated over the real hosted composition is placed on the driver its organization's key builds", async () => {
     runtime()
     const { driver } = fakeDriver({ id: "cloudflare" })
     const sandbox = composedHostedServices(driver)
-    expect(sandbox.sandbox.defaultDriver).toBe("cloudflare")
+    expect((await sandbox.sandbox.orgDriver!("org")).id).toBe("cloudflare")
     const composition = services(undefined, sandbox.sandbox)
 
     expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
     expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "cloudflare" })
   })
 
-  test("the fetch bridge is a provisioner a root can be placed on, not a refusal", async () => {
+  test("an organization without a sandbox provider key is refused a root, and told which key to add", async () => {
     runtime()
-    const { driver } = fakeDriver({ id: "fetch" })
-    const sandbox = composedHostedServices(driver)
-    expect(sandbox.sandbox.defaultDriver).toBe("fetch")
+    const sandbox = composedHostedServices(fakeDriver({ id: "cloudflare" }).driver, [])
     const composition = services(undefined, sandbox.sandbox)
 
-    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
-    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "fetch" })
+    const { started } = await start(bridge(composition), "tsk_one")
+    expect(started).toMatchObject({ ok: false, error: { message: expect.stringContaining("Add a sandbox provider key") } })
+    expect(await rootOf("tsk_one")).toBeUndefined()
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
   })
 
-  test("stores the deployment's declared driver as the root's placement", async () => {
+  test("stores the organization's driver as the root's placement", async () => {
     runtime()
     const composition = services(
       createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
@@ -579,12 +589,12 @@ describe("hosted tasks cloud roots", () => {
     expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "modal" })
   })
 
-  test("places a root on its organization's own sandbox key and opens its lease metered against that key", async () => {
+  test("places a root on its organization's own sandbox key and opens its lease metered against that driver", async () => {
     runtime()
-    const orgDriver = vi.fn(async () => ({ driver: fakeDriver({ id: "boat" }).driver, key: "org" as const }))
+    const orgDriver = vi.fn(async () => fakeDriver({ id: "boat" }).driver)
     const composition = services(
       createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
-      { defaultDriver: "modal", orgDriver },
+      { orgDriver },
     )
     const usage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
     const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, undefined, usage)
@@ -594,7 +604,7 @@ describe("hosted tasks cloud roots", () => {
     expect(root).toMatchObject({ kind: "cloud", driver: "boat" })
     expect(orgDriver).toHaveBeenCalledWith("org")
     expect(usage.leaseOpened).toHaveBeenCalledOnce()
-    expect(usage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: root?.id, driver: "boat", keyOwner: "org" }))
+    expect(usage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: root?.id, driver: "boat" }))
   })
 
   test("keeps a root out of its project's workspace list, so an ordinary start still resolves one workspace", async () => {

@@ -7,6 +7,7 @@ import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/s
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority-error"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
+import { SandboxProviderKeyMissingError } from "../../sandbox/org-sandbox-drivers"
 import { sandboxRuntimeBootFailedError, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
 
 /**
@@ -193,7 +194,7 @@ describe("the machine a cloud workspace runs on (PUT /:id/machine-class)", () =>
     openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace: { workspace_id: "ws_1", backing } })),
     setWorkspaceMachineClass: setMachineClass,
   })
-  const sized = vi.fn(async () => ({ driver: { id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver, key: "operator" as const }))
+  const sized = vi.fn(async () => ({ id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver))
 
   test("a class the workspace's driver has is recorded for its next sandbox, and null returns it to the provider's default", async () => {
     const { app } = buildApp({ authority: cloud(), workspaceDriver: sized })
@@ -208,7 +209,7 @@ describe("the machine a cloud workspace runs on (PUT /:id/machine-class)", () =>
 
   test("a class the driver has no grade for, a class that is not one, and a machine-placed workspace are refused unrecorded", async () => {
     setMachineClass.mockClear()
-    const unsized = vi.fn(async () => ({ driver: { id: "vercel", metadata: {} } as unknown as SandboxDriver, key: "operator" as const }))
+    const unsized = vi.fn(async () => ({ id: "vercel", metadata: {} } as unknown as SandboxDriver))
     const { app } = buildApp({ authority: cloud(), workspaceDriver: unsized })
     const res = await app.fetch(put("/ws_1/machine-class", { machineClass: "large" }))
     expect(res.status).toBe(400)
@@ -1196,7 +1197,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
   test("a create names the machine its sandboxes run on when the organization's driver has that grade", async () => {
     const createCloudWorkspace = vi.fn(async () => ({}))
     const authority = fakeAuthority({ createCloudWorkspace })
-    const orgDriver = vi.fn(async () => ({ driver: { id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver, key: "operator" as const }))
+    const orgDriver = vi.fn(async () => ({ id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver))
     const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, orgDriver })
     const res = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "large" }))
     expect(res.status).toBe(200)
@@ -1204,11 +1205,22 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(orgDriver).toHaveBeenCalledWith("org_1")
   })
 
+  test("an organization without a sandbox provider key is refused a create before any row or project exists, and told which key to add", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({}))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const orgDriver = vi.fn(async () => { throw new SandboxProviderKeyMissingError() })
+    const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, orgDriver })
+    const res = await app.fetch(post("/create", { workspaceName: "Keyless", repoUrl: "https://github.com/a/b" }))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ error: { code: "sandbox_provider_key_missing", message: expect.stringContaining("Add a sandbox provider key") } })
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
   test("a machine the organization's driver has no grade for is refused before any row or project exists", async () => {
     const createCloudWorkspace = vi.fn(async () => ({}))
     const deleteWorkspace = vi.fn(async () => ({ deleted: true }))
     const authority = fakeAuthority({ createCloudWorkspace, deleteWorkspace })
-    const orgDriver = vi.fn(async () => ({ driver: { id: "vercel", metadata: {} } as unknown as SandboxDriver, key: "operator" as const }))
+    const orgDriver = vi.fn(async () => ({ id: "vercel", metadata: {} } as unknown as SandboxDriver))
     const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, orgDriver })
     const res = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "large" }))
     expect(res.status).toBe(400)
@@ -1567,15 +1579,15 @@ describe("the start that opens a cloud workspace's first lease", () => {
     })
   }
 
-  test("meters the lease under the driver, and whose key, it is placed on when its acquire opens it, stamps its tenant after, and meters a later start of it no more", async () => {
+  test("meters the lease under the driver it is placed on when its acquire opens it, stamps its tenant after, and meters a later start of it no more", async () => {
     const sandboxStart = openingStart()
     const target = vi.fn().mockResolvedValueOnce(leaseMissing).mockResolvedValue(leaseAcquiring)
-    const workspaceDriver = vi.fn(async () => ({ driver: { id: "boat" } as SandboxDriver, key: "org" as const }))
+    const workspaceDriver = vi.fn(async () => ({ id: "boat" } as SandboxDriver))
     const sandboxUsage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
     const { app } = buildApp({ authority: cloudAuthority(), sandboxManager: { target } as unknown as SandboxManager, workspaceDriver, options: { sandboxUsage, sandboxStart } })
 
     expect((await app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
-    expect(sandboxUsage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1", driver: "boat", keyOwner: "org" }))
+    expect(sandboxUsage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1", driver: "boat" }))
     expect(sandboxUsage.recordLeaseTenant).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1" }))
     expect(sandboxUsage.recordLeaseTenant.mock.invocationCallOrder[0]).toBeGreaterThan(sandboxUsage.leaseOpened.mock.invocationCallOrder[0])
 

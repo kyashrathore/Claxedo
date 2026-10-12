@@ -208,7 +208,8 @@ describe("local composition — sandbox provider keys", () => {
     expect((await put(instance, "http://localhost/api/claxedo/credentials", key)).status).toBe(200)
 
     const listing = await (await instance.request("http://localhost/api/claxedo/credentials/sandbox-drivers")).json()
-    expect(listing).toMatchObject({ default_driver: "boat", managed_driver: null, can_manage: true, keys: [{ provider_id: "boat", owner: "local", kind: "sandbox_driver" }] })
+    expect(listing).toMatchObject({ default_driver: "boat", can_manage: true, keys: [{ provider_id: "boat", owner: "local", kind: "sandbox_driver" }] })
+    expect(listing).not.toHaveProperty("managed_driver")
     expect(listing.drivers.map((driver: { id: string }) => driver.id)).toEqual(["modal", "vercel", "cloudflare", "boat"])
     expect((await (await instance.request("http://localhost/api/claxedo/credentials")).json()).credentials).toEqual([])
     expect(await resolveSecretById(listing.keys[0].id)).toBe(JSON.stringify({ api_key: "bx-local" }))

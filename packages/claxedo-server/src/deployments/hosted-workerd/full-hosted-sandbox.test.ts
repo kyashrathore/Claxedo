@@ -1,6 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
@@ -35,15 +34,15 @@ test("the composed plane's ready sandbox is handed a pass for its lease epoch ov
     sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host_cloud", routingId: "routing_1", homeRegion: "us-east", url: "https://sandbox.test", epoch: lease.epoch }) } },
     relay: { provider: { mintRuntimeAccessToken: async () => ({ token: "rat" }), getRelayEndpoint: async () => "https://relay.test" } },
   } as unknown as ControlPlaneServices
-  const driver = { id: "test" } as unknown as SandboxDriver
+  const keyDrivers = { drivers: ["cloudflare" as const], create: () => undefined }
 
   const composed = composeWithCloudSandbox(
-    { database: backing.database, signingEnv, driver, provisioner: inlineSandboxProvisioner(), keyDrivers: { drivers: [], create: () => undefined } },
+    { database: backing.database, signingEnv, provisioner: inlineSandboxProvisioner(), keyDrivers },
     (extra) => ({ plane: { services }, extra }),
   )
   await composed.extra.sandbox.deliverSessionRowsPass!("ws_cloud")
 
-  expect(composed.extra.sandbox.driver).toBe(driver)
+  expect(composed.extra.sandbox.keys.drivers).toBe(keyDrivers.drivers)
   expect(relayed.map((call) => `${call.method} ${call.url}`)).toEqual([
     "GET https://relay.test/workspaces/ws_cloud/api/claxedo/session-rows/pass",
     "PUT https://relay.test/workspaces/ws_cloud/api/claxedo/session-rows/pass",

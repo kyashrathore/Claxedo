@@ -115,9 +115,8 @@ async function composition() {
     authority,
     sandbox: {
       sandboxManager,
-      defaultDriver: driver.id,
-      workspaceDriver: async () => ({ driver, key: "operator" }),
-      orgDriver: async () => ({ driver, key: "operator" }),
+      workspaceDriver: async () => driver,
+      orgDriver: async () => driver,
     },
     telemetry: { capture: vi.fn() },
   } as unknown as ControlPlaneServices

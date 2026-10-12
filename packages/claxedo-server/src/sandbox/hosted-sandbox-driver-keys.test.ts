@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
+import { hostedSandboxKeyDrivers } from "../authority/adapters/worker/hosted-sandbox-key-drivers"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
 import { hostedCredentialRoutes } from "../credentials/worker/routes"
 import { d1Authority } from "../test-support/d1-authority"
@@ -9,6 +10,8 @@ import { hostedSandboxDriverKeys } from "./hosted-sandbox-driver-keys"
 import { d1OrgSandboxDriver } from "./stores/d1-org-driver"
 
 const env = { [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 9).toString("base64") }
+/** The full-hosted Worker's own settings: the runtime image is the one thing the key drivers need from the deployment. */
+const workerEnv = { CLAXEDO_SANDBOX_IMAGE: "ghcr.io/claxedo/claxedo-sandbox:test-agent-plugins" }
 const authConfig = { enabled: true as const, issuer: "https://auth.test", jwksUrl: "https://auth.test/jwks" }
 
 let fixture: Awaited<ReturnType<typeof d1Authority>>
@@ -52,9 +55,7 @@ function app() {
     sandboxDriverKeys: hostedSandboxDriverKeys({
       database: fixture.database,
       authority: fixture.authority,
-      drivers: ["cloudflare", "boat"],
-      managed: "fetch",
-      managedMetadata: { secretBrokering: "none" },
+      drivers: hostedSandboxKeyDrivers(workerEnv).drivers,
     }),
   })
 }
@@ -70,8 +71,17 @@ const boatKey = { provider_id: "boat", kind: "sandbox_driver", secret: JSON.stri
 const listing = async (person: keyof typeof people) => await (await call(person, "/sandbox-drivers")).json()
 
 describe("organization sandbox provider keys on the hosted plane", () => {
+  test("the listing offers every provider the Worker can run, Cloudflare and Boat, with the fields a key needs, and nothing a deployment provides", async () => {
+    const offered = await listing("owner")
+    expect(offered.drivers).toEqual([
+      { id: "cloudflare", label: "Cloudflare", fields: [{ key: "api_token", label: "API Token", secret: true }, { key: "worker_url", label: "Worker URL" }] },
+      { id: "boat", label: "Boat", fields: [{ key: "api_key", label: "API Key", secret: true }] },
+    ])
+    expect(offered).toEqual({ drivers: offered.drivers, default_driver: null, machine_classes: [], keys: [], can_manage: true })
+  })
+
   test("an admin adds, checks, lists, chooses and removes the organization's keys; a member only sees which driver is in use and its machine sizes", async () => {
-    expect(await listing("member")).toMatchObject({ default_driver: "fetch", machine_classes: [], managed_driver: "fetch", keys: [], can_manage: false })
+    expect(await listing("member")).toEqual({ drivers: expect.any(Array), default_driver: null, machine_classes: [], keys: [], can_manage: false })
     expect((await call("member", "", "PUT", boatKey)).status).toBe(403)
     expect((await call("owner", "", "PUT", { ...boatKey, provider_id: "vercel" })).status).toBe(400)
 
@@ -96,7 +106,7 @@ describe("organization sandbox provider keys on the hosted plane", () => {
     expect((await listing("owner")).default_driver).toBe("boat")
     boatAnswer = 401
     expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "auth_failed" })
-    expect((await listing("owner")).default_driver).toBe("fetch")
+    expect((await listing("owner")).default_driver).toBeNull()
     boatAnswer = 200
     await call("owner", `/${row.id}/verify`, "POST", {})
 

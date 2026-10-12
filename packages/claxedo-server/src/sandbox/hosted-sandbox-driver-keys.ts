@@ -1,6 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { isSandboxDriverID, type SandboxDriverID, type SandboxProvisionerID } from "@claxedo/sandbox-contract"
-import { sandboxDriverCatalog, type SandboxDriverCatalogEntry } from "@claxedo/sandbox-manager/driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
@@ -12,12 +12,8 @@ export function hostedSandboxDriverKeys(input: {
   database: D1Database
   authority: Pick<WorkspaceAuthority, "usersMe">
   drivers: readonly SandboxDriverID[]
-  managed: SandboxProvisionerID
-  managedMetadata: Pick<SandboxDriverCatalogEntry["metadata"], "secretBrokering" | "machineClasses">
   now?: () => number
 }): HostedSandboxDriverKeys {
-  const metadata = (driver: SandboxProvisionerID) => driver === input.managed ? input.managedMetadata
-    : isSandboxDriverID(driver) ? sandboxDriverCatalog[driver].metadata : undefined
   const store = d1OrgSandboxDriver(input.database, input.now)
   const person = async (auth: SignedControlPlaneAuth) => {
     const userId = stringField(asRecord(await input.authority.usersMe(auth)), "user_id")
@@ -26,7 +22,6 @@ export function hostedSandboxDriverKeys(input: {
   }
   return {
     drivers: input.drivers,
-    managed: input.managed,
     administers: async (auth, orgId) => await store.administers(await person(auth), orgId),
     chosen: store.chosen,
     choose: async (auth, orgId, driver) => {
@@ -35,7 +30,7 @@ export function hostedSandboxDriverKeys(input: {
       }
     },
     remove: async (auth, orgId, keyId) => await store.remove(await person(auth), orgId, keyId),
-    brokering: (driver) => metadata(driver)?.secretBrokering,
-    machineClasses: (driver) => metadata(driver)?.machineClasses,
+    brokering: (driver) => sandboxDriverCatalog[driver].metadata.secretBrokering,
+    machineClasses: (driver) => sandboxDriverCatalog[driver].metadata.machineClasses,
   }
 }

@@ -44,20 +44,28 @@ const driver: SandboxDriver = {
 test("a hosted control plane reports each cloud start phase as an ops event tagged with the project, never the repository", async () => {
   const telemetry = await captureServer()
   const key = await generateKeyPair("EdDSA", { extractable: true })
+  const orgKey = { id: "cred_boat", owner: null, provider_id: "boat", kind: "sandbox_driver", status: "active", revision: 1, created_at: 1 }
   const { services } = composeProviderNeutralHostedControlPlane({
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
     CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.claxedo.test",
     CLAXEDO_RELAY_RESOLVER_TOKEN: "relay-resolver-secret",
-    CLAXEDO_SANDBOX_DRIVER: driver.id,
     CLAXEDO_TELEMETRY_MODE: "on",
     CLAXEDO_POSTHOG_KEY: "phc_test",
     CLAXEDO_POSTHOG_HOST: telemetry.host,
   }, {
     auth: { config: { enabled: true, mode: "signed" } } as never,
-    authority: {} as never,
+    authority: { resolveWorkspaceOwner: async () => ({ orgId: "org_1" }) } as never,
     hostTunnelResolver: (async () => undefined) as never,
-    sandbox: { driver, leaseStore: createMemoryLeaseStore(), ...unusedSandboxStarts },
+    orgCredentials: () => ({
+      listCredentials: async () => [orgKey],
+      resolveCredentialSecretById: async () => JSON.stringify({ api_key: "bx" }),
+    }) as never,
+    sandbox: {
+      leaseStore: createMemoryLeaseStore(),
+      keys: { drivers: ["boat"], create: () => driver, chosenDriver: async () => undefined },
+      ...unusedSandboxStarts,
+    },
   })
 
   await services.sandbox.sandboxManager!.ensure("ws_1", {
@@ -79,7 +87,8 @@ test("a hosted control plane reports each cloud start phase as an ops event tagg
   }
   await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "workspace_ready")).toHaveLength(1))
   expect(telemetry.captured.find((entry) => entry.event === "workspace_ready")?.properties)
-    .toMatchObject({ workspace_id: workspace, driver: "test", key_owner: "operator", boot_mode: "cold-start", start_ms: expect.any(Number) })
+    .toMatchObject({ workspace_id: workspace, driver: "test", boot_mode: "cold-start", start_ms: expect.any(Number) })
+  expect(JSON.stringify(telemetry.captured)).not.toContain("cred_boat")
 
   expect((await services.sandbox.sandboxManager!.stop("ws_1")).ok).toBe(true)
   await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "workspace_stopped")).toHaveLength(1))

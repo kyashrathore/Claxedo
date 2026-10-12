@@ -5,7 +5,6 @@ import {
   sandboxDriverSecret,
   type SandboxDriverID,
   type SandboxMachineClass,
-  type SandboxProvisionerID,
   type SandboxSecretBrokering,
 } from "@claxedo/sandbox-contract"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -18,15 +17,14 @@ export type SandboxKeyRemoval = { deleted: boolean } | { workspaces: number }
 
 /**
  * How one host keeps sandbox provider keys. A hosted plane keeps the
- * organization's keys (owner `null`) beside a deployment-managed driver; a
- * local machine keeps the person's own. The key is spent only by the sandbox
- * manager, which is why these rows never join the account listings a harness
- * runs on.
+ * organization's keys (owner `null`); a local machine keeps the person's own.
+ * Cloud workspaces start only on one of these keys. The key is spent only by
+ * the sandbox manager, which is why these rows never join the account listings
+ * a harness runs on.
  */
 export type SandboxDriverKeys = {
   drivers: readonly SandboxDriverID[]
   owner: "org" | "person"
-  managed?: SandboxProvisionerID
   canManage: (request: Request, context: SandboxDriverKeyContext) => Promise<boolean>
   chosenDriver: (context: SandboxDriverKeyContext) => Promise<string | undefined>
   chooseDriver: (request: Request, context: SandboxDriverKeyContext, driver: SandboxDriverID | undefined) => Promise<void>
@@ -37,9 +35,9 @@ export type SandboxDriverKeys = {
    */
   removeKey?: (request: Request, context: SandboxDriverKeyContext, keyId: string) => Promise<SandboxKeyRemoval>
   /** Whether a driver keeps a delivered secret out of its sandbox; absent where the host cannot tell. */
-  brokering?: (driver: SandboxProvisionerID) => SandboxSecretBrokering | undefined
+  brokering?: (driver: SandboxDriverID) => SandboxSecretBrokering | undefined
   /** The machine sizes a driver lets a new workspace choose; absent or empty, the provider's one size. */
-  machineClasses?: (driver: SandboxProvisionerID) => readonly SandboxMachineClass[] | undefined
+  machineClasses?: (driver: SandboxDriverID) => readonly SandboxMachineClass[] | undefined
 }
 
 function keyOwner(keys: SandboxDriverKeys, context: SandboxDriverKeyContext) {
@@ -89,7 +87,7 @@ async function newWorkspaceDriver(keys: SandboxDriverKeys, rows: readonly Creden
     const id = usableSandboxKey(row) ? keyDriver(keys, row.provider_id) : undefined
     return id ? [id] : []
   })
-  return effectiveSandboxDriver({ chosen: await keys.chosenDriver(context), keyed, managed: keys.managed })
+  return effectiveSandboxDriver({ chosen: await keys.chosenDriver(context), keyed })
 }
 
 /** How the driver new cloud workspaces get treats a delivered secret. */
@@ -110,7 +108,6 @@ export async function sandboxKeyListing<Row>(
     drivers: keys.drivers.map((id) => ({ id, label: sandboxDriverLabels[id], fields: sandboxDriverCredentialFields[id] })),
     default_driver: driver ?? null,
     machine_classes: (driver && keys.machineClasses?.(driver)) || [],
-    managed_driver: keys.managed ?? null,
     keys: options.canManage ? stored.map(options.redact) : [],
     can_manage: options.canManage,
   }

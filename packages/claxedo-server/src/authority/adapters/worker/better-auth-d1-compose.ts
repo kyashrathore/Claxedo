@@ -14,7 +14,6 @@ import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
-import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
 import { ownerSessionList } from "../../../session/list"
 import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
@@ -106,16 +105,16 @@ export type BetterAuthD1UserDeployedCompositionInput = {
   emailSender?: AuthEmailSender
   now?: () => number
   /**
-   * The full-hosted entry's sandbox driver and durable lease store. Present
-   * exactly when `CLAXEDO_SANDBOX_POSTURE=full-hosted`; the composition refuses
-   * every other combination so a deployment never half-promises cloud VMs.
+   * The full-hosted entry's organization key drivers and durable lease store.
+   * Present exactly when `CLAXEDO_SANDBOX_POSTURE=full-hosted`; the composition
+   * refuses every other combination so a deployment never half-promises cloud VMs.
    */
   sandbox?: HostedSandboxBinding
 }
 
 export type BetterAuthD1UserDeployedComposition = {
   plane: HostedControlPlane
-  /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox driver. */
+  /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox binding. */
   runtimeDelivery?: ReturnType<typeof createHostedRuntimeDelivery>
   options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
   /** The membership, team and project rows hosted Pages authorize against. */
@@ -277,18 +276,12 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         draftCredentials: delivery.credentialSnapshot,
         accountSetup: {
           changed: delivery.reconcileCredentialDelivery,
-          ...(input.sandbox?.keys && isSandboxProvisionerID(input.sandbox.driver.id)
-            ? {
-                sandboxDriverKeys: hostedSandboxDriverKeys({
-                  database: input.controlPlaneDatabase,
-                  authority,
-                  drivers: input.sandbox.keys.drivers,
-                  managed: input.sandbox.driver.id,
-                  managedMetadata: input.sandbox.driver.metadata,
-                  ...(input.now ? { now: input.now } : {}),
-                }),
-              }
-            : {}),
+          sandboxDriverKeys: hostedSandboxDriverKeys({
+            database: input.controlPlaneDatabase,
+            authority,
+            drivers: sandbox.keys.drivers,
+            ...(input.now ? { now: input.now } : {}),
+          }),
         },
         productWorkspace: {
           sandboxStart: sandbox.start,
@@ -404,24 +397,22 @@ function requireProfile(env: HostedWorkerEnv, sandbox: BetterAuthD1UserDeployedC
     )
   }
   const posture = env.CLAXEDO_SANDBOX_POSTURE
-  const selectedDriver = env.CLAXEDO_SANDBOX_DRIVER?.trim()
   if (posture === "control-plane-only") {
-    if (selectedDriver || sandbox) {
+    if (sandbox) {
       throw new HostedWorkerCompositionError(
         "sandbox_posture_unsupported",
-        "control-plane-only Better Auth + D1 must not configure CLAXEDO_SANDBOX_DRIVER or inject a sandbox",
+        "control-plane-only Better Auth + D1 must not inject a sandbox",
       )
     }
     return
   }
   if (posture === "full-hosted") {
-    // The lease store lives in CONTROL_PLANE_DB (sandbox/stores/d1.ts); the
-    // driver is the full-hosted entry's, selected by the same variable the
-    // provider-neutral plane checks it against.
-    if (!selectedDriver || !sandbox || sandbox.driver.id !== selectedDriver) {
+    // The lease store lives in CONTROL_PLANE_DB (sandbox/stores/d1.ts) and the
+    // drivers are built from the organizations' keys by the full-hosted entry.
+    if (!sandbox) {
       throw new HostedWorkerCompositionError(
         "sandbox_posture_unsupported",
-        "full-hosted Better Auth + D1 requires CLAXEDO_SANDBOX_DRIVER and a composed sandbox driver of that id with its D1 lease store",
+        "full-hosted Better Auth + D1 requires a composed sandbox binding with its D1 lease store",
       )
     }
     return

@@ -248,8 +248,7 @@ function createTasksCloudTarget(
           input.sandboxUsage?.leaseOpened({
             caller: creator.caller,
             workspaceId: workspace.id,
-            driver: context.placed.driver.id,
-            keyOwner: context.placed.key,
+            driver: context.placed.id,
             startedAt: Date.now(),
             services: input.services,
           })

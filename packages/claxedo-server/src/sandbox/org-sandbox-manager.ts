@@ -1,62 +1,90 @@
-import type { SandboxDriver, SandboxGarbageCollectResult, SandboxLease, SandboxLeaseStore, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
+import {
+  applySandboxRuntimeSnapshot,
+  type SandboxDriver,
+  type SandboxGarbageCollectResult,
+  type SandboxLease,
+  type SandboxLeaseStore,
+  type SandboxManager,
+  type SandboxManagerInput,
+} from "@claxedo/sandbox-manager"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
-import type { SandboxKeyedDriver } from "../authority/services"
-import { OPERATOR_SANDBOX_KEY, type OrgSandboxDrivers, type SandboxKeyBinding } from "./org-sandbox-drivers"
+import { SandboxProviderKeyMissingError, type OrgSandboxDrivers, type SandboxKeyBinding } from "./org-sandbox-drivers"
 
 export const SANDBOX_KEY_LABEL = "sandboxKey"
 export const SANDBOX_ORG_LABEL = "sandboxOrg"
 
-/** Whose provider account a recorded `sandboxKey` label spends, without naming the key. */
-export function sandboxKeyOwner(key: string | undefined): SandboxKeyedDriver["key"] {
-  return key && key !== OPERATOR_SANDBOX_KEY ? "org" : "operator"
-}
+type Recorded = { key: string; orgId: string }
 
 /**
- * One `SandboxManager` over every key a deployment spends. A workspace's first
- * ensure binds it to its organization's driver of the moment, and the lease's
- * labels record that key, so every later stop, snapshot or destroy reaches the
- * provider account that made the machine even after the organization adds or
- * switches keys. Lease-only operations need no driver and go to the operator's
- * manager, which shares the one lease store. A sweep visits the operator's
- * account and every organization key a live machine was made on, each through
- * its own driver; one organization's revoked or removed key cannot stop the
- * others'.
+ * One `SandboxManager` over every organization key a deployment spends. A
+ * workspace's first ensure binds it to its organization's driver of the
+ * moment, and the lease's labels record that key from the acquire on, so every
+ * later stop, snapshot or destroy reaches the provider account that made the
+ * machine even after the organization adds or switches keys. A start on a
+ * lease whose machine is gone chooses again. A sweep visits every organization
+ * key a live machine was made on, each through its own driver; one
+ * organization's revoked or removed key cannot stop the others'.
  */
 export function createOrgSandboxManager(input: {
   leaseStore: SandboxLeaseStore
   drivers: OrgSandboxDrivers
   workspaceOrg: (workspaceId: string) => Promise<string | undefined>
   manager: (driver: SandboxDriver) => SandboxManager
+  now?: () => number
 }) {
-  const operator = input.manager(input.drivers.operator.driver)
+  const now = input.now ?? Date.now
   const managers = new WeakMap<SandboxKeyBinding, SandboxManager>()
   const managerFor = (binding: SandboxKeyBinding) => {
-    if (binding.key === OPERATOR_SANDBOX_KEY) return operator
     const manager = managers.get(binding) ?? input.manager(binding.driver)
     managers.set(binding, manager)
     return manager
   }
-  /** Whose key a workspace's machine spends: the one its lease recorded, else the operator's, else, for a start, its organization's choice. */
-  const choice = async (workspaceId: string, fresh: boolean): Promise<{ kind: "key"; orgId: string; key: string } | { kind: "operator"; orgId?: string } | { kind: "org"; orgId: string }> => {
-    const { key, orgId: recordedOrg } = machineKey(await input.leaseStore.get(workspaceId)) ?? {}
-    if (key && key !== OPERATOR_SANDBOX_KEY && recordedOrg) return { kind: "key", orgId: recordedOrg, key }
-    if (key || !fresh) return { kind: "operator", ...(recordedOrg ? { orgId: recordedOrg } : {}) }
-    const orgId = await input.workspaceOrg(workspaceId)
+  const orgOf = async (workspaceId: string, lease: SandboxLease | undefined) => {
+    const orgId = recordedKey(lease)?.orgId ?? await input.workspaceOrg(workspaceId)
     if (!orgId) throw new Error(`workspace ${workspaceId} has no active owner to choose a sandbox provider for`)
-    return { kind: "org", orgId }
+    return orgId
   }
-  const bound = async (workspaceId: string, fresh: boolean): Promise<{ binding: SandboxKeyBinding; orgId?: string }> => {
-    const chosen = await choice(workspaceId, fresh)
-    if (chosen.kind === "key") return { binding: await input.drivers.forKey(chosen.orgId, chosen.key), orgId: chosen.orgId }
-    if (chosen.kind === "org") return { binding: await input.drivers.forOrg(chosen.orgId), orgId: chosen.orgId }
-    return { binding: input.drivers.operator, ...(chosen.orgId ? { orgId: chosen.orgId } : {}) }
-  }
-  const routed = async (workspaceId: string) => managerFor((await bound(workspaceId, false)).binding)
-  /** A start's manager and its input stamped with the key it spends, so the lease records that key from its first write. */
+  /** The key a start spends: the one whose machine the lease still holds, else the organization's current choice. */
   const starting = async (workspaceId: string, managerInput: SandboxManagerInput) => {
-    const { binding, orgId } = await bound(workspaceId, true)
-    const labels = { ...managerInput.labels, [SANDBOX_KEY_LABEL]: binding.key, ...(orgId ? { [SANDBOX_ORG_LABEL]: orgId } : {}) }
+    const lease = await input.leaseStore.get(workspaceId)
+    const machine = machineKey(lease)
+    const orgId = machine?.orgId ?? await orgOf(workspaceId, lease)
+    const binding = machine ? await input.drivers.forKey(orgId, machine.key) : await input.drivers.forOrg(orgId)
+    const labels = { ...managerInput.labels, [SANDBOX_KEY_LABEL]: binding.key, [SANDBOX_ORG_LABEL]: orgId }
     return { manager: managerFor(binding), input: { ...managerInput, labels } }
+  }
+  /**
+   * The manager a lifecycle call runs on: the key that made the lease's machine; for a lease with no machine, its
+   * recorded key while that key exists, else the organization's current key. None when the organization holds no key
+   * at all, which is also when the workspace has no machine to reach.
+   */
+  const routed = async (workspaceId: string, lease: SandboxLease | undefined): Promise<SandboxManager | undefined> => {
+    const machine = machineKey(lease)
+    if (machine) return managerFor(await input.drivers.forKey(machine.orgId, machine.key))
+    const recorded = recordedKey(lease)
+    if (recorded) {
+      const binding = await input.drivers.forKey(recorded.orgId, recorded.key).catch(() => undefined)
+      if (binding) return managerFor(binding)
+    }
+    try {
+      return managerFor(await input.drivers.forOrg(await orgOf(workspaceId, lease)))
+    } catch (error) {
+      if (error instanceof SandboxProviderKeyMissingError) return undefined
+      throw error
+    }
+  }
+  const lifecycle = async <T>(
+    workspaceId: string,
+    run: (manager: SandboxManager) => Promise<T>,
+    keyless: (lease: SandboxLease | undefined) => T,
+  ): Promise<T> => {
+    const lease = await input.leaseStore.get(workspaceId)
+    const manager = await routed(workspaceId, lease)
+    return manager ? await run(manager) : keyless(lease)
+  }
+  /** A lease on an organization without a key: a start chose a key that was removed before it made a machine. */
+  const refuse = (): never => {
+    throw new SandboxProviderKeyMissingError()
   }
   const manager: SandboxManager = {
     ensure: async (workspaceId, managerInput) => {
@@ -71,20 +99,25 @@ export function createOrgSandboxManager(input: {
       const start = await starting(workspaceId, managerInput)
       return await start.manager.provision(workspaceId, epoch, start.input)
     },
-    register: (workspaceId, snapshot) => operator.register(workspaceId, snapshot),
-    heartbeat: (workspaceId, snapshot) => operator.heartbeat(workspaceId, snapshot),
-    target: (workspaceId) => operator.target(workspaceId),
-    release: (workspaceId) => operator.release(workspaceId),
-    touch: async (workspaceId) => (await routed(workspaceId)).touch(workspaceId),
-    snapshot: async (workspaceId, committed) => (await routed(workspaceId)).snapshot(workspaceId, committed),
-    checkpoint: async (workspaceId, request) => (await routed(workspaceId)).checkpoint(workspaceId, request),
-    restore: async (workspaceId, request) => (await routed(workspaceId)).restore(workspaceId, request),
-    stop: async (workspaceId, request) => (await routed(workspaceId)).stop(workspaceId, request),
-    destroy: async (workspaceId) => (await routed(workspaceId)).destroy(workspaceId),
-    recordStartPhases: async (workspaceId, phases) => (await routed(workspaceId)).recordStartPhases(workspaceId, phases),
-    markStartPhase: async (workspaceId, phase) => (await routed(workspaceId)).markStartPhase(workspaceId, phase),
+    register: (workspaceId, snapshot) => applySandboxRuntimeSnapshot({ leaseStore: input.leaseStore, workspaceId, snapshot, now }),
+    heartbeat: (workspaceId, snapshot) => applySandboxRuntimeSnapshot({ leaseStore: input.leaseStore, workspaceId, snapshot, now }),
+    target: (workspaceId) => lifecycle(workspaceId, (manager) => manager.target(workspaceId), (lease) => lease ? refuse() : { status: "unavailable", reason: "runtime_lease_missing" }),
+    release: async (workspaceId) => {
+      if (!(await input.leaseStore.get(workspaceId))) return { released: false }
+      await input.leaseStore.release(workspaceId)
+      return { released: true }
+    },
+    touch: (workspaceId) => lifecycle(workspaceId, (manager) => manager.touch(workspaceId), (lease) => lease ? refuse() : { touched: false, status: "missing" }),
+    snapshot: (workspaceId, committed) => lifecycle(workspaceId, (manager) => manager.snapshot(workspaceId, committed), (lease) => lease ? refuse() : { ok: false, reason: "runtime_lease_missing" }),
+    checkpoint: (workspaceId, request) => lifecycle(workspaceId, (manager) => manager.checkpoint(workspaceId, request), refuse),
+    restore: (workspaceId, request) => lifecycle(workspaceId, (manager) => manager.restore(workspaceId, request), refuse),
+    stop: (workspaceId, request) => lifecycle(workspaceId, (manager) => manager.stop(workspaceId, request), (lease) => lease ? refuse() : { ok: false, reason: "runtime_lease_missing" }),
+    // A keyless lease never made a machine, so there is nothing on any provider to destroy; the caller releases it.
+    destroy: (workspaceId) => lifecycle(workspaceId, (manager) => manager.destroy(workspaceId), (lease) => ({ ok: false, reason: lease ? "runtime_lease_resource_missing" : "runtime_lease_missing" })),
+    recordStartPhases: (workspaceId, phases) => lifecycle(workspaceId, (manager) => manager.recordStartPhases(workspaceId, phases), () => undefined),
+    markStartPhase: (workspaceId, phase) => lifecycle(workspaceId, (manager) => manager.markStartPhase(workspaceId, phase), () => undefined),
     garbageCollect: async () => {
-      const sweeps = [await operator.garbageCollect()]
+      const sweeps: SandboxGarbageCollectResult[] = []
       const unreachable: Array<{ driver: string; error: string }> = []
       for (const { key, orgId, driver } of await leasedOrgKeys(input.leaseStore)) {
         try {
@@ -95,35 +128,47 @@ export function createOrgSandboxManager(input: {
       }
       return mergedSweeps(sweeps, unreachable)
     },
-    list: () => operator.list(),
+    list: () => input.leaseStore.list(),
   }
-  const keyedDriver = (binding: SandboxKeyBinding): SandboxKeyedDriver => ({ driver: binding.driver, key: sandboxKeyOwner(binding.key) })
   return {
     manager,
-    workspaceDriver: async (workspaceId: string) => keyedDriver((await bound(workspaceId, true)).binding),
-    workspaceSecretBrokering: async (workspaceId: string): Promise<SandboxSecretBrokering> => {
-      const chosen = await choice(workspaceId, true)
-      if (chosen.kind === "operator") return input.drivers.operator.driver.metadata.secretBrokering
-      return input.drivers.secretBrokering(chosen.orgId, chosen.kind === "key" ? chosen.key : undefined)
+    workspaceDriver: async (workspaceId: string): Promise<SandboxDriver> => {
+      const lease = await input.leaseStore.get(workspaceId)
+      const machine = machineKey(lease)
+      return (machine ? await input.drivers.forKey(machine.orgId, machine.key) : await input.drivers.forOrg(await orgOf(workspaceId, lease))).driver
     },
-    orgDriver: async (orgId: string) => keyedDriver(await input.drivers.forOrg(orgId)),
+    workspaceSecretBrokering: async (workspaceId: string): Promise<SandboxSecretBrokering> => {
+      const lease = await input.leaseStore.get(workspaceId)
+      const machine = machineKey(lease)
+      return machine
+        ? input.drivers.secretBrokering(machine.orgId, machine.key)
+        : input.drivers.secretBrokering(await orgOf(workspaceId, lease))
+    },
+    orgDriver: async (orgId: string): Promise<SandboxDriver> => (await input.drivers.forOrg(orgId)).driver,
   }
+}
+
+/** The key a lease was taken on. Absent only for a lease nothing wrote through this manager. */
+function recordedKey(lease: SandboxLease | undefined): Recorded | undefined {
+  const key = lease?.labels?.[SANDBOX_KEY_LABEL]
+  const orgId = lease?.labels?.[SANDBOX_ORG_LABEL]
+  return key && orgId ? { key, orgId } : undefined
 }
 
 /**
- * The key a lease's machine spends. A lease names its key from the moment it is taken, but one that never made a
- * machine, or whose machine was destroyed, holds nothing on that key's account.
+ * The key a lease's machine spends. A lease that never made a machine, or whose machine was destroyed, holds nothing
+ * on that key's account, so a start chooses the organization's current key instead.
  */
-function machineKey(lease: SandboxLease | undefined) {
+function machineKey(lease: SandboxLease | undefined): Recorded | undefined {
   if (!lease || lease.status === "destroyed" || !lease.sandboxId) return undefined
-  return { key: lease.labels?.[SANDBOX_KEY_LABEL], orgId: lease.labels?.[SANDBOX_ORG_LABEL] }
+  return recordedKey(lease)
 }
 
 async function leasedOrgKeys(leaseStore: SandboxLeaseStore) {
-  const keys = new Map<string, { key: string; orgId: string; driver: string }>()
+  const keys = new Map<string, Recorded & { driver: string }>()
   for (const lease of await leaseStore.list()) {
-    const { key, orgId } = machineKey(lease) ?? {}
-    if (key && key !== OPERATOR_SANDBOX_KEY && orgId && !keys.has(key)) keys.set(key, { key, orgId, driver: lease.driver })
+    const recorded = machineKey(lease)
+    if (recorded && !keys.has(recorded.key)) keys.set(recorded.key, { ...recorded, driver: lease.driver })
   }
   return [...keys.values()]
 }

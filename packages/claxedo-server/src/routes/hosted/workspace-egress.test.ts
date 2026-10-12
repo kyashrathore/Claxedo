@@ -126,7 +126,7 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
       auditAllow: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => ({})),
     },
-    sandbox: { sandboxManager, defaultDriver: driver.id },
+    sandbox: { sandboxManager },
     telemetry: { capture },
   } as unknown as ControlPlaneServices
   const egress = {

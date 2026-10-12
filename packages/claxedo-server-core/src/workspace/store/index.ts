@@ -6,7 +6,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { dockerSandboxDriverEnabled, isSandboxProvisionerID, type SandboxProvisionerID } from "@claxedo/sandbox-contract"
+import { dockerSandboxDriverEnabled, isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import { isJsonRecord, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/host-connect-contract"
@@ -26,7 +26,7 @@ export type Workspace = {
   workspace_name?: string
   directory: string
   kind: "local" | "cloud"
-  driver?: SandboxProvisionerID
+  driver?: SandboxDriverID
   repo_url?: string
   repo_key?: string
   repo_root?: string
@@ -194,10 +194,10 @@ function textFields<Key extends string>(value: unknown, keys: readonly Key[]): P
   return out
 }
 
-/** A stored provisioner id, when the file names one this build knows. */
-function driverId(value: unknown): SandboxProvisionerID | undefined {
+/** A stored driver id, when the file names one this build knows. */
+function driverId(value: unknown): SandboxDriverID | undefined {
   const id = jsonString(value)
-  return id && isSandboxProvisionerID(id) ? id : undefined
+  return id && isSandboxDriverID(id) ? id : undefined
 }
 
 /** A stored timestamp, or now when the record predates the field or carries a bad one. */
@@ -355,7 +355,7 @@ type EnsureWorkspaceInput = {
   workspace_name?: string
   directory: string
   kind?: "local" | "cloud"
-  driver?: SandboxProvisionerID
+  driver?: SandboxDriverID
   repo_url?: string
   git_branch?: string
   remote_directory?: string

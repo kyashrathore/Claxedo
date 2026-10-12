@@ -44,7 +44,6 @@ describe("hosted deployment profile", () => {
         adapterProfile: "better-auth-d1",
         productPosture: "claxedo-hosted",
         sandboxPosture: "full-hosted",
-        sandboxDriver: "cloudflare",
       }),
     ).toMatchObject({
       adapterProfile: "better-auth-d1",
@@ -52,18 +51,15 @@ describe("hosted deployment profile", () => {
       organizationPolicy: "multi-org",
       multiplayer: true,
       sandboxPosture: "full-hosted",
-      sandboxDriver: "cloudflare",
     })
   })
 
-  test("rejects uncertified product and adapter combinations", () => {
-    expect(() =>
-      resolveDeploymentProfile({
-        adapterProfile: "better-auth-d1",
-        productPosture: "user-deployed",
-        sandboxPosture: "full-hosted",
-      }),
-    ).toThrowError(DeploymentProfileError)
+  test("full-hosted names no sandbox provider: the organizations' keys choose it", () => {
+    expect(resolveDeploymentProfile({ ...userDeployed, sandboxPosture: "full-hosted" })).toEqual({
+      ...resolveDeploymentProfile(userDeployed),
+      sandboxPosture: "full-hosted",
+    })
+    expect(Object.keys(resolveDeploymentProfile({ ...userDeployed, sandboxPosture: "full-hosted" }))).not.toContain("sandboxDriver")
   })
 
   test.each([
@@ -86,30 +82,12 @@ describe("hosted deployment profile", () => {
     }
   })
 
-  test("requires exactly one explicit sandbox driver for full-hosted", () => {
-    expect(() =>
-      resolveDeploymentProfile({
-        adapterProfile: "better-auth-d1",
-        productPosture: "claxedo-hosted",
-        sandboxPosture: "full-hosted",
-      }),
-    ).toThrowError(/full-hosted requires an explicit sandbox driver/)
-
-    expect(() =>
-      resolveDeploymentProfile({
-        ...userDeployed,
-        sandboxDriver: "fetch",
-      }),
-    ).toThrowError(/control-plane-only forbids a sandbox driver/)
-  })
-
   test("rejects unknown values instead of selecting a default", () => {
     expect(() =>
       resolveDeploymentProfile({
         adapterProfile: "auto",
         productPosture: "self-hosted",
         sandboxPosture: "hosted",
-        sandboxDriver: "from-credentials",
       }),
     ).toThrowError(DeploymentProfileError)
   })

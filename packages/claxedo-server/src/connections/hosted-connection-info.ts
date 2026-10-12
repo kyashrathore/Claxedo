@@ -249,8 +249,7 @@ async function firstLeaseMeter(
   return () => lease.usage?.leaseOpened({
     caller: { kind: "signed", auth },
     workspaceId: input.workspaceId,
-    driver: placed?.driver.id ?? "unknown",
-    ...(placed ? { keyOwner: placed.key } : {}),
+    driver: placed?.id ?? "unknown",
     startedAt: Date.now(),
     ...(services ? { services } : {}),
   })

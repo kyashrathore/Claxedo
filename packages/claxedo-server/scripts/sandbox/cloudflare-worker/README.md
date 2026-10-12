@@ -86,17 +86,20 @@ the Worker origin; no wildcard route is required.
 
 Update `wrangler.toml` routes only when deploying behind your own domain.
 
-## Configure claxedo-server
+## Point the control plane at it
 
-Add to `.env`:
+A hosted control plane has no provider account of its own. An organization
+owner or admin adds this Worker as a Cloudflare sandbox key under Settings →
+Models → Sandbox (or in the first run's "Where it runs" step): the Worker URL
+(`https://sandbox.yourdomain.com`) and the `API_TOKEN` you set above. Every
+cloud workspace of that organization then starts on this Worker.
+
+A local machine instead reads its own Cloudflare key from `.env`:
 
 ```
 CLOUDFLARE_API_TOKEN=<the token you set above>
 CLOUDFLARE_SANDBOX_WORKER_URL=https://sandbox.yourdomain.com
 ```
-
-The hosted control plane auto-selects the Cloudflare driver when these values
-are present. You can also set `CLAXEDO_SANDBOX_DRIVER=cloudflare` explicitly.
 
 ## Native credential brokering
 

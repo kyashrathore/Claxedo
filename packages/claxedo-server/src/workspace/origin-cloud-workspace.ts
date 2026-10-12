@@ -1,7 +1,8 @@
-import type { SandboxBrokeredSecret, SandboxManagerInput } from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxDriver, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { sha256Hex } from "@claxedo/helpers/crypto"
+import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
   deleteWorkspace,
@@ -10,7 +11,7 @@ import {
   ensureWorkspace,
   type Workspace,
 } from "@claxedo/server-core/workspace/store/index"
-import type { ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
+import type { ControlPlaneServices } from "../authority/services"
 import { hostedSandboxInput, type WorkspaceSandboxEgress } from "./hosted-sandbox-input"
 
 const log = Log.create({ service: "origin-cloud-workspace" })
@@ -79,8 +80,8 @@ export type OriginCloudWorkspaceInput = {
   prepare?(workspace: Workspace): Promise<OriginCloudWorkspacePreparation>
 }
 
-/** A root this attempt filed carries the driver, and whose key, it was placed on. */
-export type OriginCloudAdmission = { created: true; placed: SandboxKeyedDriver } | { created: false }
+/** A root this attempt filed carries the driver its organization's key placed it on. */
+export type OriginCloudAdmission = { created: true; placed: SandboxDriver } | { created: false }
 
 export type OriginCloudWorkspacePreparation = Readonly<{
   secrets?: readonly SandboxBrokeredSecret[]
@@ -181,12 +182,19 @@ async function allocate(
       detail: `Project ${input.projectId} has no remote this control plane can clone into an isolated cloud root`,
     }
   }
-  const placed = await input.services.sandbox.orgDriver?.(input.orgId)
-  const driver = placed?.driver.id
   // The driver is this root's placement: the provisioner owns the machine it
   // provisions. A row stored without it names no machine at all, and the store
-  // refuses it.
-  if (!placed || !isSandboxProvisionerID(driver)) {
+  // refuses it. The organization's key chooses the driver, so an organization
+  // without one has no placement to offer.
+  let placed: SandboxDriver | undefined
+  try {
+    placed = await input.services.sandbox.orgDriver?.(input.orgId)
+  } catch (error) {
+    if (!isClaxedoError(error) || error.code !== "sandbox_provider_key_missing") throw error
+    return { code: "placement_unsupported", detail: error.message }
+  }
+  const driver = placed?.id
+  if (!placed || !isSandboxDriverID(driver)) {
     return {
       code: "placement_unsupported",
       detail: "This control plane's sandbox provisioner is not one a workspace placement can name",

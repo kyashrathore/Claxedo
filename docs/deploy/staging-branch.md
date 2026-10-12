@@ -10,7 +10,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | 1 | `plan` | nothing — selects components | `.github/actions/detect-ci-changes`, `script/deploy-components.mjs` |
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
-| 3 | `boat-image` | the Boat sandbox image this checkout builds, when the driver is `boat` | `packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts --agent-plugins --push-if-missing` |
+| 3 | `boat-image` | the Boat sandbox image this checkout builds, with every control-plane deploy | `packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts --agent-plugins --push-if-missing` |
 | 3 | `control-plane` | Better Auth + D1 Worker, **the browser app and the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
 | 5 | `sandbox-image` | Cloudflare sandbox Worker container image | `.github/workflows/deploy-cloudflare-sandbox-worker.yml` |
@@ -76,12 +76,11 @@ silent.
 `script/ci-changes.mjs` owns which surfaces a diff reaches, and `sandbox_image`
 is one of its outputs: the Worker and its build script, plus every package
 `build-sandbox-image.ts` bundles into the host it ships. `script/deploy-components.mjs`
-turns that and the driver into the deploy's components (tested by
-`bun run test:ci-policy`): the Cloudflare sandbox Worker's image ships when it
-changed or is named, and a Boat control plane always deploys with the image of
-its own checkout (`boat-image`). A `workflow_dispatch`
-has no base commit, so it selects the ~4.5 GB image build — pick one component
-by name to avoid that.
+turns that into the deploy's components (tested by `bun run test:ci-policy`):
+the Cloudflare sandbox Worker's image ships when it changed or is named, and
+the control plane always deploys with the Boat image of its own checkout
+(`boat-image`). A `workflow_dispatch` has no base commit, so it selects the
+~4.5 GB image build — pick one component by name to avoid that.
 
 ## Staging runs the user deploy
 
@@ -121,18 +120,19 @@ A deploy also drops the `CLAXEDO_CREDENTIALS` KV binding that was added to the
 Worker out of band. That is correct: hosted credentials moved to
 `CONTROL_PLANE_DB` (dev `1ed25c7c4f`) and no source reads the KV namespace.
 
-### The sandbox driver is a staging setting
+### The deploy carries no sandbox provider account
 
-The `control-plane` job deploys the full-hosted Worker, and the `staging`
-environment variable `CLAXEDO_STAGING_SANDBOX_DRIVER` picks the driver it boots
-cloud workspaces with. There is no default: unset or unknown, the job fails at
-"Verify the deploy inputs are configured" before anything is built. Only the
-selected driver's settings reach the deploy:
+The `control-plane` job deploys the full-hosted Worker. Which provider a cloud
+workspace starts on is not a deploy setting: an organization owner or admin
+adds a Cloudflare or Boat key under Settings → Models → Sandbox (or in the first
+run's "Where it runs" step), and every workspace of that organization starts on
+the key it chose. The deploy carries only what those drivers need from the
+deployment itself:
 
-| Driver | `staging` environment variables | `staging` environment secrets |
+| Setting | Where | What it is |
 | - | - | - |
-| `cloudflare` | `CLAXEDO_STAGING_SANDBOX_WORKER_URL` | `CLOUDFLARE_SANDBOX_API_TOKEN` (optional once it is on the Worker) |
-| `boat` | none | `BOAT_API_KEY` |
+| `CLAXEDO_SANDBOX_IMAGE` | set by the `boat-image` job | the workspace-runtime image a Boat sandbox boots |
+| `CLAXEDO_SANDBOX_IDLE_STOP_TOKEN` | `staging` environment secret | the shared secret a Cloudflare sandbox Worker posts idle stops with |
 
 A Boat sandbox `docker run`s the exact workspace-runtime image the control
 plane names in `CLAXEDO_SANDBOX_IMAGE`. The `boat-image` job sets it: it bundles
@@ -144,10 +144,9 @@ when the registry does not hold the tag yet, and hands the tag to
 `control-plane`. A runtime change therefore reaches new Boat sandboxes with the
 deploy that ships it, and an unchanged runtime reuses its image without a
 Docker build. The `sandbox-image` component of this workflow deploys the
-Cloudflare sandbox Worker, which only the `cloudflare` driver uses, so `plan`
-(bound to the `staging` environment to read the driver) selects it for that
-driver alone. Switching drivers
-leaves the other driver's secret on the Worker, where nothing reads it.
+Cloudflare sandbox Worker the staging organization's Cloudflare key points at;
+its URL and API token are that key's fields, entered in the app, not deploy
+inputs.
 
 `bun run --cwd packages/sandbox-manager live:boat -- --yes-live --image=<tag>`
 with `BOAT_API_KEY` in the environment checks a key and an image against the

@@ -2,12 +2,11 @@ import { effectiveSandboxDriver, type SandboxDriverID, type SandboxSecretBrokeri
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { usableSandboxKey } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
 import type { ControlPlaneCredentials } from "../authority/services"
-
-export const OPERATOR_SANDBOX_KEY = "operator"
 
 /** The drivers a full-hosted deployment can build from an organization's key, and where it reads the organization's choice. */
 export type HostedSandboxKeys = {
@@ -16,17 +15,26 @@ export type HostedSandboxKeys = {
   chosenDriver: (orgId: string) => Promise<string | undefined>
 }
 
-/** A driver and the key it spends: the operator's, or one organization credential at one revision. */
+/** A driver and the organization credential it spends, at one revision. */
 export type SandboxKeyBinding = { key: string; revision: number; driver: SandboxDriver }
+
+/** The organization holds no sandbox provider key a new cloud workspace could start on. */
+export class SandboxProviderKeyMissingError extends ClaxedoError<"sandbox_provider_key_missing"> {
+  constructor() {
+    super({
+      code: "sandbox_provider_key_missing",
+      status: 409,
+      message: "Add a sandbox provider key under Settings → Models before creating a cloud workspace",
+    })
+  }
+}
 
 export type OrgSandboxDrivers = ReturnType<typeof orgSandboxDrivers>
 
 export function orgSandboxDrivers(input: {
-  operator: SandboxDriver
   keys: HostedSandboxKeys
   credentials: (orgId: string) => ControlPlaneCredentials
 }) {
-  const operator: SandboxKeyBinding = { key: OPERATOR_SANDBOX_KEY, revision: 0, driver: input.operator }
   const driverOf = (row: CredentialMetadata) => input.keys.drivers.find((id) => id === row.provider_id)
   const orgKeys = async (orgId: string) =>
     (await input.credentials(orgId).listCredentials())
@@ -66,19 +74,22 @@ export function orgSandboxDrivers(input: {
     return available.find((candidate) => candidate.provider_id === chosen)
   }
   return {
-    operator,
     async forOrg(orgId: string): Promise<SandboxKeyBinding> {
       const row = await chosenRow(orgId)
-      return row ? await bind(orgId, row) : operator
+      if (!row) throw new SandboxProviderKeyMissingError()
+      return await bind(orgId, row)
     },
     async forKey(orgId: string, key: string): Promise<SandboxKeyBinding> {
       return await bind(orgId, await keyRow(orgId, key))
     },
-    /** How the driver a key names brokers secrets, from the catalog alone: a read, so a key that cannot build its driver still answers. */
+    /**
+     * How the driver a key names brokers secrets, from the catalog alone: a read, so a key that cannot build its
+     * driver still answers. An organization without a key has nothing that brokers.
+     */
     async secretBrokering(orgId: string, key?: string): Promise<SandboxSecretBrokering> {
       const row = key ? await keyRow(orgId, key) : await chosenRow(orgId)
       const id = row ? driverOf(row) : undefined
-      return id ? sandboxDriverCatalog[id].metadata.secretBrokering : operator.driver.metadata.secretBrokering
+      return id ? sandboxDriverCatalog[id].metadata.secretBrokering : "none"
     },
   }
 }

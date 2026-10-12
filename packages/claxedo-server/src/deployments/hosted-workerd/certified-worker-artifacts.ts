@@ -58,9 +58,9 @@ const ARTIFACTS = Object.freeze({
     entrypointFromPackageRoot: "src/deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.cf.ts",
     agentPlugins: true,
   }),
-  // The Agent Plugins composition plus cloud workspace execution, selected by
-  // CLAXEDO_SANDBOX_DRIVER over the D1 lease store. It is the only artifact
-  // whose closure may carry a sandbox provider SDK.
+  // The Agent Plugins composition plus cloud workspace execution on the
+  // organizations' own provider keys over the D1 lease store. It is the only
+  // artifact whose closure may carry a sandbox provider SDK.
   "user-deployed-better-auth-d1-agent-plugins-full-hosted": Object.freeze({
     artifactId: "user-deployed-better-auth-d1-agent-plugins-full-hosted" as const,
     sandboxPosture: "full-hosted" as const,

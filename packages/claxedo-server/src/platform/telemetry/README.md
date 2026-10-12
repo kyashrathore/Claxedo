@@ -40,7 +40,7 @@ Worker's sink (`platform/auth/worker-telemetry.ts`) forwards everything to PostH
 | `feature_used` | `claxedo-app/src/server/terminals.ts` create, `claxedo-app/src/server/marketplace.ts` activation on, `claxedo-app/src/panel/store.tsx` show and review toggle | `feature`: terminal, marketplace_install, file_open, review |
 | `turn_completed` | `usage/turn-completed-telemetry.ts`, wrapping the hosted usage writer | one per settled usage row the ledger accepts (a turn of several model calls is several rows): `harness`, `model_family`, `outcome`, `settlement`, `location`, `tokens_bucket`, `duration_ms` (since the turn's admission, when the row belongs to the reporting lease's turn) |
 | `workspace_created`, `workspace_deleted` | `routes/hosted/workspace.ts`, `workspace/cloud-workspace-deletion.ts` | `kind`: cloud; created also `private_repository` |
-| `workspace_ready`, `workspace_woken` | `sandbox/sandbox-telemetry.ts` from the sandbox manager's `runtime_ready` phase | `start_ms` (boot start to serving), `boot_mode`, `driver`, `key_owner`, `region`. Opens the metered interval. |
+| `workspace_ready`, `workspace_woken` | `sandbox/sandbox-telemetry.ts` from the sandbox manager's `runtime_ready` phase | `start_ms` (boot start to serving), `boot_mode`, `driver`, `org_id`, `region`. Opens the metered interval. |
 | `workspace_failed` | same, from the manager's `onLifecycle` | `code`: boot_failed, provision_failed |
 | `workspace_stopped` | same | `cause`: explicit, idle, deleted; `active_ms` (the boot's machine time). Closes the metered interval. |
 | `$exception` | `deployments/hosted-workerd/core-worker.cf.ts` `onError` | an unhandled route error: `route` (the matched pattern), `method`, `code`; never the body |

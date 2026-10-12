@@ -1,13 +1,12 @@
 import type { SandboxLifecycleEvent, SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
-import { SANDBOX_KEY_LABEL, SANDBOX_ORG_LABEL, sandboxKeyOwner } from "./org-sandbox-manager"
+import { SANDBOX_ORG_LABEL } from "./org-sandbox-manager"
 
 function machineProperties(event: { workspaceId: string; driver: string; labels: Record<string, string> }) {
   const orgId = event.labels[SANDBOX_ORG_LABEL]
   return {
     workspace_id: event.workspaceId,
     driver: event.driver,
-    key_owner: sandboxKeyOwner(event.labels[SANDBOX_KEY_LABEL]),
     ...(event.labels.projectId ? { project_id: event.labels.projectId } : {}),
     ...(orgId ? { org_id: orgId, $groups: { org: orgId } } : {}),
   }
@@ -17,8 +16,7 @@ function machineProperties(event: { workspaceId: string; driver: string; labels:
  * Each cloud start phase as an ops-plane fact, and the phase that makes a
  * machine serve as the moment its metered interval opens: `workspace_ready`
  * for a cold start, `workspace_woken` for a resume or restore. The repository
- * URL is tenant data and stays out; `key_owner` says only whose provider
- * account it was.
+ * URL and the key id are tenant data and stay out.
  */
 export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
   return (event: SandboxStartPhaseEvent) => {

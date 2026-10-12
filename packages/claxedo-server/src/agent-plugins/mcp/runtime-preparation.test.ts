@@ -117,7 +117,7 @@ async function subject(input: {
     },
     gatewayUrl: "https://mcp-gateway.example/",
     signingEnv: env,
-    secretBrokering: input.brokering ?? "native",
+    workspaceSecretBrokering: async () => input.brokering ?? "native",
     ...(input.imageCommands ? { imageCommands: input.imageCommands } : {}),
   } satisfies Parameters<typeof createHostedMcpRuntimePreparation>[0]
   const prepare = createHostedMcpRuntimePreparation(preparerInput)
@@ -200,7 +200,7 @@ describe("hosted MCP runtime preparation", () => {
       oauth: { fetch: oauthFetch(), resolve: resolvePublic, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
       gatewayUrl: "https://mcp-gateway.example/",
       signingEnv: env,
-      secretBrokering: "native",
+      workspaceSecretBrokering: async () => "native",
     })
 
     const preparation = await prepare("workspace-1")
@@ -252,7 +252,7 @@ describe("hosted MCP runtime preparation", () => {
       oauth: { fetch, resolve: resolvePublic, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
       gatewayUrl: "https://mcp-gateway.example/",
       signingEnv: env,
-      secretBrokering: "native",
+      workspaceSecretBrokering: async () => "native",
     })
     const plan = agentPluginMcpRuntimePlan(await preparer.forSnapshot(snapshot()))
     expect(plan.mcpServers).toHaveLength(4)
@@ -374,7 +374,7 @@ describe("hosted MCP runtime preparation", () => {
       oauth: { fetch: oauthFetch(), resolve: resolvePublic, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
       gatewayUrl: "https://mcp-gateway.example/",
       signingEnv: env,
-      secretBrokering: "native",
+      workspaceSecretBrokering: async () => "native",
     })
 
     const defaults = agentPluginMcpRuntimePlan(await preparer.forSnapshot(both))

@@ -43,7 +43,6 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLease
 import { HostedWorkerCompositionError } from "./composition-error"
 import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
@@ -154,19 +153,18 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
 }
 
 /**
- * A full-hosted deployment's sandbox driver and durable lease store, the
- * start its sandboxes run under, and how a ready sandbox's runtime is handed
- * the pass it publishes session rows with.
+ * A full-hosted deployment's durable lease store, the organization keys it
+ * builds sandbox drivers from, the start its sandboxes run under, and how a
+ * ready sandbox's runtime is handed the pass it publishes session rows with.
  */
 export type HostedSandboxBinding = {
-  driver: SandboxDriver
   leaseStore: SandboxLeaseStore
   start: SandboxStart
   refresh: SandboxStart
   inFlight: SandboxInFlight
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
-  /** Organization keys this deployment can provision with; absent, every workspace runs on `driver`. */
-  keys?: HostedSandboxKeys
+  /** The organization keys every cloud workspace of this deployment starts on. */
+  keys: HostedSandboxKeys
 }
 
 function sandboxManager(
@@ -175,18 +173,11 @@ function sandboxManager(
   sandbox: HostedSandboxBinding | undefined,
   bindings: Pick<HostedControlPlaneAdapterBindings, "authority" | "orgCredentials">,
 ) {
-  const selectedDriver = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)
-  if (!sandbox) {
-    if (!selectedDriver) return undefined
+  if (!sandbox) return undefined
+  if (!bindings.orgCredentials) {
     throw new HostedWorkerCompositionError(
-      "hosted_capability_unavailable",
-      "The selected hosted adapter does not provide the sandbox driver and durable lease store required by CLAXEDO_SANDBOX_DRIVER",
-    )
-  }
-  if (!selectedDriver || sandbox.driver.id !== selectedDriver) {
-    throw new HostedWorkerCompositionError(
-      "hosted_sandbox_driver_mismatch",
-      "The injected sandbox driver must exactly match the statically selected CLAXEDO_SANDBOX_DRIVER",
+      "hosted_dependency_missing",
+      "A sandbox binding needs the per-organization credential store its provider keys are kept in",
     )
   }
   const limits = safetyLimits(env)
@@ -205,18 +196,9 @@ function sandboxManager(
     onStartPhase: sandboxStartPhaseSink(telemetry),
     onLifecycle: sandboxLifecycleSink(telemetry),
   })
-  if (!sandbox.keys || !bindings.orgCredentials) {
-    const operator = { driver: sandbox.driver, key: "operator" as const }
-    return {
-      manager: manager(sandbox.driver),
-      workspaceDriver: async () => operator,
-      workspaceSecretBrokering: async () => sandbox.driver.metadata.secretBrokering,
-      orgDriver: async () => operator,
-    }
-  }
   return createOrgSandboxManager({
     leaseStore: sandbox.leaseStore,
-    drivers: orgSandboxDrivers({ operator: sandbox.driver, keys: sandbox.keys, credentials: bindings.orgCredentials }),
+    drivers: orgSandboxDrivers({ keys: sandbox.keys, credentials: bindings.orgCredentials }),
     workspaceOrg: async (workspaceId) => (await bindings.authority.resolveWorkspaceOwner?.(workspaceId))?.orgId,
     manager,
   })
@@ -363,11 +345,6 @@ export function composeProviderNeutralHostedControlPlane(
   const telemetry = workerTelemetry(env)
   const sandbox = sandboxManager(env, telemetry, bindings.sandbox, bindings)
   const manager = sandbox?.manager
-  // The provisioner this deployment places every cloud workspace on. A driver
-  // whose id names no provisioner leaves it undeclared, and the allocator
-  // refuses rather than storing a root whose machine nothing names.
-  const injectedDriverId = bindings.sandbox?.driver.id
-  const managerDriver = manager && isSandboxProvisionerID(injectedDriverId) ? injectedDriverId : undefined
   const homeRegion = defaultHomeRegion(env)
   const relayUrls = relayEndpointsFromEnv(env, relayUrl)
   const runtimeAccessSigner = runtimeAccessTokenSigner(env)
@@ -411,7 +388,6 @@ export function composeProviderNeutralHostedControlPlane(
           workspaceDriver: sandbox.workspaceDriver,
           workspaceSecretBrokering: sandbox.workspaceSecretBrokering,
           orgDriver: sandbox.orgDriver,
-          ...(managerDriver ? { defaultDriver: managerDriver } : {}),
         }
       : {}),
     telemetry,

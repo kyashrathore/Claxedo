@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 
 import { assertSandboxImageReference, sandboxImageCarriesAgentPlugins } from "@claxedo/sandbox-manager/image-name"
 
-import { resolveDeploymentProfileFromEnv, type SandboxDriver } from "../../src/deployments/hosted-shared/deployment-profile"
+import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-shared/deployment-profile"
 import {
   requireNonLegacyWorkerName,
   selectHostedWorkerArtifact,
@@ -14,12 +14,11 @@ import {
   type BetterAuthMethod,
 } from "../../src/platform/auth/better-auth-configuration"
 
-/** The Worker secret each full-hosted driver needs. */
-const SANDBOX_DRIVER_SECRETS: Readonly<Record<SandboxDriver, readonly string[]>> = Object.freeze({
-  cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN", "CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"],
-  boat: ["BOAT_API_KEY"],
-  fetch: [],
-})
+/**
+ * The secret a full-hosted Worker shares with every Cloudflare sandbox Worker
+ * an organization's key points at: that Worker posts idle stops with it.
+ */
+const FULL_HOSTED_SECRETS = ["CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"] as const
 
 /** Secrets the deploy reads itself: it provisions the native OAuth clients with both. */
 export const DEPLOY_READ_SECRETS = ["BETTER_AUTH_SECRET", "CLAXEDO_AUTH_INTROSPECTION_SECRET"] as const
@@ -47,7 +46,8 @@ export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   d1Location?: D1Location
   /** A cloud region the Worker is pinned to, in Wrangler's `placement.region` form (`aws:us-east-1`). */
   workerPlacementRegion?: string
-  sandbox?: Readonly<{ driver: SandboxDriver; variables: Readonly<Record<string, string>> }>
+  /** The runtime image a full-hosted Worker's Boat sandboxes boot; empty on a control-plane-only deployment. */
+  sandboxVariables: Readonly<Record<string, string>>
   /** Present only when the deploy says `CLAXEDO_TELEMETRY_MODE=on`; the Worker's PostHog key is then a required secret. */
   telemetryVariables: Readonly<Record<string, string>>
   requiredSecrets: readonly string[]
@@ -158,7 +158,7 @@ function productTelemetryVariables(env: NodeJS.ProcessEnv): Record<string, strin
 }
 
 /** A deployment with Agent Plugins applies them in every sandbox, so its image must carry their runtime entry. */
-function boatSandboxImage(env: NodeJS.ProcessEnv, agentPlugins: boolean) {
+function sandboxImage(env: NodeJS.ProcessEnv, agentPlugins: boolean) {
   const image = assertSandboxImageReference(setting(env, "CLAXEDO_SANDBOX_IMAGE"))
   if (agentPlugins && !sandboxImageCarriesAgentPlugins(image)) {
     throw new Error(`CLAXEDO_SANDBOX_IMAGE ${image} is not an Agent Plugins build, and this deployment enables Agent Plugins: build the sandbox image with --agent-plugins (workflow input agent_plugins=true) and deploy its -agent-plugins tag`)
@@ -174,7 +174,6 @@ export function userCloudflareDeployment(
     CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
     CLAXEDO_PRODUCT_POSTURE: "user-deployed",
     CLAXEDO_SANDBOX_POSTURE: env.CLAXEDO_SANDBOX_POSTURE?.trim() || "control-plane-only",
-    CLAXEDO_SANDBOX_DRIVER: env.CLAXEDO_SANDBOX_DRIVER,
   })
   const fullHosted = profile.sandboxPosture === "full-hosted"
   const artifact = selectHostedWorkerArtifact({ agentPlugins: options.agentPlugins, fullHosted })
@@ -202,20 +201,7 @@ export function userCloudflareDeployment(
   const location = d1Location(env)
   const placementRegion = workerPlacementRegion(env)
 
-  const driver = profile.sandboxPosture === "full-hosted" ? profile.sandboxDriver : undefined
-  const sandbox = driver
-    ? {
-        driver,
-        variables: {
-          CLAXEDO_SANDBOX_DRIVER: driver,
-          ...(driver === "cloudflare"
-            ? { CLOUDFLARE_SANDBOX_WORKER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_WORKER_URL") }
-            : {}),
-          ...(driver === "boat" ? { CLAXEDO_SANDBOX_IMAGE: boatSandboxImage(env, artifact.agentPlugins) } : {}),
-          ...(driver === "fetch" ? { CLAXEDO_SANDBOX_DRIVER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_DRIVER_URL") } : {}),
-        },
-      }
-    : undefined
+  const sandboxVariables: Record<string, string> = fullHosted ? { CLAXEDO_SANDBOX_IMAGE: sandboxImage(env, artifact.agentPlugins) } : {}
 
   return Object.freeze({
     ...target,
@@ -236,7 +222,7 @@ export function userCloudflareDeployment(
       : {}),
     ...(location ? { d1Location: location } : {}),
     ...(placementRegion ? { workerPlacementRegion: placementRegion } : {}),
-    ...(sandbox ? { sandbox } : {}),
+    sandboxVariables,
     telemetryVariables,
     requiredSecrets: [
       ...DEPLOY_READ_SECRETS,
@@ -246,7 +232,7 @@ export function userCloudflareDeployment(
       "CLAXEDO_RELAY_HOST_VERIFY_PEM",
       ...authMethods.filter((method) => method !== "email-password").map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
       ...(artifact.agentPlugins ? ["CLAXEDO_CREDENTIALS_KEK"] : []),
-      ...(driver ? SANDBOX_DRIVER_SECRETS[driver] : []),
+      ...(fullHosted ? FULL_HOSTED_SECRETS : []),
       ...(telemetryVariables.CLAXEDO_TELEMETRY_MODE ? ["CLAXEDO_POSTHOG_KEY"] : []),
     ],
     optionalSecrets: ["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET"],
@@ -294,7 +280,7 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     ...(deployment.emailFrom ? { CLAXEDO_EMAIL_FROM: deployment.emailFrom } : {}),
     ...deployment.providerClientIds,
     ...deployment.integrationClientIds,
-    ...deployment.sandbox?.variables,
+    ...deployment.sandboxVariables,
     ...deployment.telemetryVariables,
     ...(deployment.artifact.agentPlugins
       ? { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_PUBLIC_URL: deployment.apiOrigin }

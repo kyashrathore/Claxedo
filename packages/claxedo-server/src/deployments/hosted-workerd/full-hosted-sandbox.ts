@@ -1,5 +1,4 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { HostedSandboxBinding } from "../../authority/provider-neutral-hosted-services"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
@@ -20,7 +19,6 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
   input: {
     database: D1Database
     signingEnv: Record<string, string | undefined>
-    driver: SandboxDriver
     provisioner: SandboxProvisionerNamespace
     keyDrivers: Omit<HostedSandboxKeys, "chosenDriver">
   },
@@ -41,7 +39,6 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
   })
   composed = compose({
     sandbox: {
-      driver: input.driver,
       leaseStore,
       start: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).start(workspaceId),
       refresh: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).refresh(workspaceId),

@@ -1,4 +1,4 @@
-import type { SandboxProvisionerID } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { Workspace } from "./index"
 
 /**
@@ -6,17 +6,11 @@ import type { Workspace } from "./index"
  *
  * This store is one machine's own inventory, so a row is either a worktree on
  * this machine or a sandbox the provisioner owns. A workspace on somebody
- * else's machine is the control plane's record, never a row here. A legacy
- * provisioner row can carry no driver; the deployment's configured default
- * names it at dispatch (`supervisorSandboxDriverId`).
- *
- * The provisioner is named by id rather than by catalog entry so that a
- * deployment provisioning through the fetch bridge can be named at all: that
- * bridge answers to `fetch`, which no driver catalog implements.
+ * else's machine is the control plane's record, never a row here.
  */
 export type WorkspaceHost =
   | { kind: "self" }
-  | { kind: "provisioner"; driver?: SandboxProvisionerID }
+  | { kind: "provisioner"; driver?: SandboxDriverID }
 
 export type WorkspacePlacement = {
   host: WorkspaceHost

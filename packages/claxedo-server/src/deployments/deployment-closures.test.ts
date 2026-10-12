@@ -188,7 +188,7 @@ describe("server deployment entry closures", () => {
   })
 
   it("keeps sandbox providers out of every control-plane-only Worker and inside the full-hosted one", () => {
-    const providerMarkers = ["sandbox-manager/src/drivers/", "src/sandbox/stores/d1.ts", "hosted-sandbox-driver.ts"]
+    const providerMarkers = ["sandbox-manager/src/drivers/", "src/sandbox/stores/d1.ts", "hosted-sandbox-key-drivers.ts"]
     for (const entry of [BETTER_AUTH_D1_ENTRY, BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY]) {
       const files = closure(entry, { runtimeOnly: true }).modules.map((module) => module.relative)
       expect(files.filter((file) => providerMarkers.some((marker) => file.includes(marker)))).toEqual([])
@@ -198,9 +198,9 @@ describe("server deployment entry closures", () => {
     expect(fullHosted.unresolved).toEqual([])
     expect(fullHosted.opaque).toEqual([])
     expect(files).toContain(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY)
-    expect(files).toContain("src/authority/adapters/worker/hosted-sandbox-driver.ts")
+    expect(files).toContain("src/authority/adapters/worker/hosted-sandbox-key-drivers.ts")
     expect(files).toContain("src/sandbox/stores/d1.ts")
-    // The provider SDKs are package edges of the driver composer, not source
+    // The provider SDKs are package edges of the key-driver composer, not source
     // files of this package; the composer itself is the edge that matters.
     expect(fullHosted.packages).toContain("@claxedo/sandbox-manager")
     // Still no desktop product or the retired stack.

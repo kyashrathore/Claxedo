@@ -1,7 +1,5 @@
-import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { createBoatSandboxDriver } from "@claxedo/sandbox-manager/drivers/boat"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
-import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import { sandboxDriverIds, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { HostedSandboxKeys } from "../../../sandbox/org-sandbox-drivers"
@@ -12,11 +10,7 @@ import {
 } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { HostedWorkerCompositionError } from "../../composition-error"
 import { hostedControlPlaneOrigin } from "./control-plane-origin"
-import {
-  positiveInteger,
-  workspaceRuntimePort,
-  type HostedWorkerEnv,
-} from "../../provider-neutral-hosted-services"
+import { workspaceRuntimePort, type HostedWorkerEnv } from "../../provider-neutral-hosted-services"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { provisionedRunnerOption } from "@claxedo/server-core/agent-config/connections"
 
@@ -29,7 +23,7 @@ function trimmedOrigin(value: string) {
  * reach it — the relay (host tunnel) and this control plane (management) — and
  * where it asks the plane to authorize a session. All of it is derived from
  * values the plane already carries for its own routes, so a full-hosted
- * deployment needs no extra configuration beyond the driver's own.
+ * deployment needs no extra configuration beyond the runtime image.
  */
 export function sandboxRuntimeControlEnv(env: HostedWorkerEnv) {
   const relayUrl = trimToUndefined(env.CLAXEDO_WORKSPACE_RELAY_URL)
@@ -69,66 +63,35 @@ function sandboxRuntimeOptions(env: HostedWorkerEnv) {
   }
 }
 
-/**
- * Full-hosted sandbox driver selection for a Better Auth + D1 Worker.
- *
- * Only the full-hosted composition imports this module, so a
- * control-plane-only artifact never bundles a sandbox provider. Returns
- * `undefined` when the selected driver's own configuration is incomplete —
- * the composition turns that into a fail-closed error, because a deployment
- * that promised cloud workspaces must not quietly serve without them.
- */
-export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
-  const name = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)?.toLowerCase()
-  if (!name) return undefined
-  if (name === "cloudflare") {
-    return cloudflareDriver(env, { worker_url: env.CLOUDFLARE_SANDBOX_WORKER_URL, api_token: env.CLOUDFLARE_SANDBOX_API_TOKEN })
-  }
-  if (name === "boat") return boatDriver(env, { api_key: env.BOAT_API_KEY })
-
-  if (name !== "fetch") {
-    throw new HostedWorkerCompositionError(
-      "hosted_sandbox_driver_unsupported",
-      `Hosted Worker sandbox driver must be cloudflare, boat or fetch; got ${name}`,
-    )
-  }
-  const driverUrl = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER_URL)
-  if (!driverUrl) return undefined
-  return createFetchBridgeSandboxDriver({
-    id: "fetch",
-    baseUrl: driverUrl,
-    token: trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER_TOKEN),
-    autoStopMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000),
-    autoDeleteMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_DELETE_MS", 24 * 60 * 60_000),
-  })
-}
-
-function cloudflareDriver(env: HostedWorkerEnv, auth: { worker_url?: string; api_token?: string }) {
-  const workerUrl = trimToUndefined(auth.worker_url)
-  const apiToken = trimToUndefined(auth.api_token)
-  if (!workerUrl || !apiToken) return undefined
-  return createCloudflareSandboxDriver({ workerUrl, apiToken, ...sandboxRuntimeOptions(env) })
-}
-
-function boatDriver(env: HostedWorkerEnv, auth: { api_key?: string }) {
-  const apiKey = trimToUndefined(auth.api_key)
-  const image = trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
-  if (!apiKey || !image) return undefined
-  return createBoatSandboxDriver({ apiKey, image, ...sandboxRuntimeOptions(env) })
-}
+/** The catalog's drivers that run inside a Worker: every one an organization key can start a cloud workspace on here. */
+export const hostedSandboxKeyDriverIds: readonly SandboxDriverID[] =
+  sandboxDriverIds.filter((id) => sandboxDriverCatalog[id].metadata.driverRunsIn.some((runtime) => runtime === "worker"))
 
 /**
- * The drivers an organization's own key can provision with on this Worker:
- * the catalog's drivers that run in a Worker. Each is built with the
- * deployment's runtime settings and the organization's key in place of the
- * operator's.
+ * The drivers an organization's own key provisions with on this Worker, each
+ * built from the deployment's runtime settings and the organization's key.
+ * The deployment has no provider account of its own: a Boat sandbox boots the
+ * runtime image `CLAXEDO_SANDBOX_IMAGE` names, and since every Boat key is
+ * offered on every full-hosted deployment, a deployment without the image is
+ * refused at composition rather than at the first Boat workspace.
  */
 export function hostedSandboxKeyDrivers(env: HostedWorkerEnv): Omit<HostedSandboxKeys, "chosenDriver"> {
+  const image = trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
+  if (!image) {
+    throw new HostedWorkerCompositionError("hosted_dependency_missing", "The full-hosted Worker requires CLAXEDO_SANDBOX_IMAGE, the runtime image a Boat sandbox boots")
+  }
   return {
-    drivers: sandboxDriverIds.filter((id) => sandboxDriverCatalog[id].metadata.driverRunsIn.some((runtime) => runtime === "worker")),
+    drivers: hostedSandboxKeyDriverIds,
     create: (id: SandboxDriverID, fields: Record<string, string>) => {
-      if (id === "cloudflare") return cloudflareDriver(env, fields)
-      if (id === "boat") return boatDriver(env, fields)
+      if (id === "cloudflare") {
+        const workerUrl = trimToUndefined(fields.worker_url)
+        const apiToken = trimToUndefined(fields.api_token)
+        return workerUrl && apiToken ? createCloudflareSandboxDriver({ workerUrl, apiToken, ...sandboxRuntimeOptions(env) }) : undefined
+      }
+      if (id === "boat") {
+        const apiKey = trimToUndefined(fields.api_key)
+        return apiKey ? createBoatSandboxDriver({ apiKey, image, ...sandboxRuntimeOptions(env) }) : undefined
+      }
       return undefined
     },
   }

@@ -81,7 +81,7 @@ function hostedOptions(
       runtimeAccessTokenSigner: vi.fn(),
       hostTunnelTokenSigner: vi.fn(),
     },
-    sandbox: { defaultDriver: "modal" },
+    sandbox: {},
     telemetry: { capture: vi.fn() },
     authority: fakeAuthority(),
     ...overrides,
@@ -205,7 +205,7 @@ describe("control-plane services", () => {
         runtimeAccessTokenSigner,
         hostTunnelTokenSigner,
       },
-      sandbox: { defaultDriver: "modal" },
+      sandbox: {},
       telemetry: { capture },
     })
 
@@ -218,7 +218,7 @@ describe("control-plane services", () => {
     })
     expect(services.relay.runtimeAccessTokenSigner).toBe(runtimeAccessTokenSigner)
     expect(services.relay.hostTunnelTokenSigner).toBe(hostTunnelTokenSigner)
-    expect(services.sandbox).toEqual({ defaultDriver: "modal" })
+    expect(services.sandbox).toEqual({})
     services.telemetry.capture("user_1", "event")
     expect(capture).toHaveBeenCalledWith("user_1", "event")
   })
@@ -281,10 +281,6 @@ describe("control-plane services", () => {
       {
         options: () => ({ ...hostedOptions(), relay: { ...hostedOptions().relay, hostTunnelTokenSigner: undefined } }),
         message: "Hosted Control Plane requires Host Tunnel Token signer",
-      },
-      {
-        options: () => ({ ...hostedOptions(), sandbox: { defaultDriver: undefined } }),
-        message: "Hosted Control Plane requires sandbox driver",
       },
       {
         options: () => ({ ...hostedOptions(), telemetry: { capture: undefined as never } }),

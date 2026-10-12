@@ -126,7 +126,8 @@ export type HostedMcpRuntimePreparerInput = {
   }
   gatewayUrl: string
   signingEnv: Record<string, string | undefined>
-  secretBrokering: SandboxDriverMetadata["secretBrokering"]
+  /** How the driver a workspace's sandbox runs on brokers secrets: the one its organization's key builds. */
+  workspaceSecretBrokering: (workspaceId: string) => Promise<SandboxDriverMetadata["secretBrokering"]>
   /** Where each minted gateway token is written down, so a workspace's deletion can take it back. */
   passes?: SandboxPassRegister
   /**
@@ -161,7 +162,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
     options: {
       /**
        * Who injects the brokered secrets into the runtime that consumes this
-       * plan. Defaults to the deployment's sandbox driver (cloud VMs); a
+       * plan. Defaults to the driver of the snapshot's workspace (cloud VMs); a
        * consumer that carries the secrets itself — the signed desktop, which
        * receives them in the same response — names its own capability here.
        */
@@ -174,7 +175,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
       selection?: AgentPluginExecutionSelection
     } = {},
   ): Promise<WorkspaceRuntimePreparation> => {
-    const secretBrokering = options.secretBrokering ?? input.secretBrokering
+    const secretBrokering = options.secretBrokering ?? await input.workspaceSecretBrokering(snapshot.identity.workspaceId)
     const projection = options.selection
       ? await selectedAgentPluginProjection({ snapshot, artifacts: input.artifacts, selection: options.selection })
       : undefined

@@ -72,7 +72,7 @@ async function plane() {
     oauth: { fetch: oauthFetch(), resolve: async () => ["93.184.216.34"], preRegistered: { "https://login.example": { clientId: "claxedo" } } },
     gatewayUrl: "https://mcp-gateway.example/",
     signingEnv: env,
-    secretBrokering: "none",
+    workspaceSecretBrokering: async () => "none",
     imageCommands: ["local-mcp"],
   })
   const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "session-host-plugins-"))

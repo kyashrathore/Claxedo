@@ -2,21 +2,20 @@
  * Static deployment identity for the hosted control-plane products.
  *
  * These values are build/deploy inputs. They are deliberately independent of
- * credentials: discovering an auth key, a database URL, or a sandbox token
- * must never select a product or adapter. Deployment tooling resolves this
- * contract once and hands the resulting descriptor to a thin composition
- * entrypoint.
+ * credentials: discovering an auth key or a database URL must never select a
+ * product or adapter, and no sandbox provider is selected here at all — a
+ * full-hosted deployment starts cloud workspaces on the provider keys its
+ * organizations add. Deployment tooling resolves this contract once and hands
+ * the resulting descriptor to a thin composition entrypoint.
  */
 
 export const CERTIFIED_ADAPTER_PROFILES = ["better-auth-d1"] as const
 export const PRODUCT_POSTURES = ["claxedo-hosted", "user-deployed"] as const
 export const SANDBOX_POSTURES = ["control-plane-only", "full-hosted"] as const
-export const SANDBOX_DRIVERS = ["cloudflare", "boat", "fetch"] as const
 
 export type CertifiedAdapterProfile = (typeof CERTIFIED_ADAPTER_PROFILES)[number]
 export type ProductPosture = (typeof PRODUCT_POSTURES)[number]
 export type SandboxPosture = (typeof SANDBOX_POSTURES)[number]
-export type SandboxDriver = (typeof SANDBOX_DRIVERS)[number]
 
 export type StaticProductDescriptor =
   | Readonly<{
@@ -48,29 +47,17 @@ export type DeploymentProfileInput = {
   adapterProfile?: unknown
   productPosture?: unknown
   sandboxPosture?: unknown
-  sandboxDriver?: unknown
 }
 
 export type DeploymentProfileEnv = Record<string, string | undefined>
 
 type CommonDeploymentProfile = {
   multiplayer: true
-} & (
-  | {
-      adapterProfile: "better-auth-d1"
-      authAdapter: "better-auth"
-      controlPlaneAdapter: "d1"
-    }
-) &
-  (
-    | {
-        sandboxPosture: "control-plane-only"
-      }
-    | {
-        sandboxPosture: "full-hosted"
-        sandboxDriver: SandboxDriver
-      }
-  )
+  adapterProfile: "better-auth-d1"
+  authAdapter: "better-auth"
+  controlPlaneAdapter: "d1"
+  sandboxPosture: SandboxPosture
+}
 
 export type DeploymentProfile = CommonDeploymentProfile &
   (
@@ -81,9 +68,6 @@ export type DeploymentProfile = CommonDeploymentProfile &
     | {
         productPosture: "user-deployed"
         organizationPolicy: "single-org"
-        adapterProfile: "better-auth-d1"
-        authAdapter: "better-auth"
-        controlPlaneAdapter: "d1"
       }
   )
 
@@ -93,7 +77,6 @@ export class DeploymentProfileError extends Error {
       | "invalid_adapter_profile"
       | "invalid_product_posture"
       | "invalid_sandbox_posture"
-      | "invalid_sandbox_driver"
       | "uncertified_profile",
     message: string,
   ) {
@@ -131,52 +114,24 @@ export function resolveDeploymentProfile(input: DeploymentProfileInput): Deploym
     )
   }
 
-  const sandbox =
-    sandboxPosture === "full-hosted"
-      ? ({
-          sandboxPosture,
-          sandboxDriver:
-            input.sandboxDriver === undefined
-              ? (() => {
-                  throw new DeploymentProfileError(
-                    "invalid_sandbox_driver",
-                    "full-hosted requires an explicit sandbox driver",
-                  )
-                })()
-              : oneOf(input.sandboxDriver, SANDBOX_DRIVERS, "invalid_sandbox_driver", "full-hosted sandbox driver"),
-        } as const)
-      : (() => {
-          if (input.sandboxDriver !== undefined) {
-            throw new DeploymentProfileError("invalid_sandbox_driver", "control-plane-only forbids a sandbox driver")
-          }
-          return { sandboxPosture } as const
-        })()
-
-  const adapters = {
+  return {
     adapterProfile,
     authAdapter: "better-auth",
     controlPlaneAdapter: "d1",
-  } as const
-
-  const product = STATIC_PRODUCT_DESCRIPTORS[productPosture]
-
-  return {
-    ...adapters,
-    ...product,
-    ...sandbox,
+    ...STATIC_PRODUCT_DESCRIPTORS[productPosture],
+    sandboxPosture,
     multiplayer: true,
-  } as DeploymentProfile
+  }
 }
 
 /**
  * Read the three independent deployment axes from their dedicated inputs.
- * Provider and driver credentials are intentionally not inspected here.
+ * Provider credentials are intentionally not inspected here.
  */
 export function resolveDeploymentProfileFromEnv(env: DeploymentProfileEnv): DeploymentProfile {
   return resolveDeploymentProfile({
     adapterProfile: env.CLAXEDO_ADAPTER_PROFILE,
     productPosture: env.CLAXEDO_PRODUCT_POSTURE,
     sandboxPosture: env.CLAXEDO_SANDBOX_POSTURE,
-    sandboxDriver: env.CLAXEDO_SANDBOX_DRIVER,
   })
 }

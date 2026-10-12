@@ -74,7 +74,6 @@ function plane() {
   const sandboxes = createOrgSandboxManager({
     leaseStore,
     drivers: orgSandboxDrivers({
-      operator: providerAccount("cloudflare", "operator", accounts),
       keys: {
         drivers: ["cloudflare", "boat"],
         create: (id, fields) => providerAccount(id, `org-${id}-${Object.values(fields).join("+")}`, accounts),
@@ -97,7 +96,7 @@ function plane() {
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
     changed: async () => {},
     keys: envelopeKeyProviderFromEnv(env),
-    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"], managed: "cloudflare", managedMetadata: { secretBrokering: "native" } }),
+    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"] }),
   })
   const workspaceApp = HostedWorkspaceRoutes(
     { authority: fixture.authority, sandbox: { sandboxManager: sandboxes.manager }, telemetry: { capture: () => {} } } as unknown as ControlPlaneServices,
@@ -158,9 +157,10 @@ describe("removing an organization's sandbox provider key", () => {
     expect(await (await rig.credentials(`/${key}`, "DELETE")).json()).toEqual({ deleted: false })
 
     expect((await rig.sandboxes.manager.garbageCollect()).unreachable).toBeUndefined()
+    // With the organization's only key gone, a new workspace has nothing to start on, and is still deletable.
     await rig.create("ws_after_removal")
-    expect(await rig.ensure("ws_after_removal")).toMatchObject({ status: "ready" })
-    expect(rig.live("operator")).toEqual(["ws_after_removal"])
+    await expect(rig.ensure("ws_after_removal")).rejects.toThrow("Add a sandbox provider key")
+    expect(rig.live(BOAT_ACCOUNT)).toEqual([])
     expect(await rig.deleteWorkspace("ws_after_removal")).toBe(200)
   })
 
@@ -206,7 +206,6 @@ describe("removing an organization's sandbox provider key", () => {
     })
     expect(removal).toEqual({ deleted: true })
     expect(rig.live(BOAT_ACCOUNT)).toEqual([])
-    expect(rig.live("operator")).toEqual([])
     expect((await rig.leaseStore.get("ws_late"))?.labels?.[SANDBOX_KEY_LABEL]).toBe(key)
 
     expect(await rig.deleteWorkspace("ws_late")).toBe(200)

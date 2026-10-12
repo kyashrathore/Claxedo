@@ -62,17 +62,14 @@ export type ControlPlaneServices = ControlPlaneServicesContract & {
   close?: () => void
 }
 
-/** A sandbox driver and whose provider key it spends: the operator's or its organization's. */
-export type SandboxKeyedDriver = { driver: SandboxDriver; key: "operator" | "org" }
-
 export type HostedControlPlaneSandbox = Omit<ControlPlaneSandbox, "sandboxManager"> & {
   sandboxManager?: SandboxManager
-  /** The driver a workspace's sandbox is, or would be, provisioned with. */
-  workspaceDriver?: (workspaceId: string) => Promise<SandboxKeyedDriver>
+  /** The driver a workspace's sandbox is, or would be, provisioned with, built on its organization's key. */
+  workspaceDriver?: (workspaceId: string) => Promise<SandboxDriver>
   /** How that driver brokers secrets, read from the catalog without building it. */
   workspaceSecretBrokering?: (workspaceId: string) => Promise<SandboxSecretBrokering>
-  /** The driver a new workspace of the organization would be provisioned with. */
-  orgDriver?: (orgId: string) => Promise<SandboxKeyedDriver>
+  /** The driver a new workspace of the organization would be provisioned with; refused while the organization holds no key. */
+  orgDriver?: (orgId: string) => Promise<SandboxDriver>
 }
 
 export type ControlPlaneServicesOptions = {
@@ -139,7 +136,6 @@ function validateHostedServices(input: HostedCentralStorePorts, options: HostedC
   requiredHostedDependency(options.relay?.resolverToken, "Relay resolver token")
   requiredHostedDependency(options.relay?.runtimeAccessTokenSigner, "Runtime Access Token signer")
   requiredHostedDependency(options.relay?.hostTunnelTokenSigner, "Host Tunnel Token signer")
-  requiredHostedDependency(options.sandbox?.defaultDriver, "sandbox driver")
   requiredHostedDependency(options.telemetry?.capture, "audit/telemetry capture")
 }
 
