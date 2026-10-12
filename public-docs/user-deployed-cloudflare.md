@@ -140,7 +140,7 @@ are forward-only; restore data to a point in time with
 bucket `CLAXEDO_AGENT_PLUGINS_BUCKET` (default `<worker>-agent-plugins`, created with
 `wrangler r2 bucket create`) and needs a `CLAXEDO_CREDENTIALS_KEK` secret (`openssl rand -base64 32`). With
 `CLAXEDO_SANDBOX_POSTURE=full-hosted` it also runs cloud workspaces: an organization owner or admin adds a Cloudflare
-or Boat provider key under Settings → Models → Sandbox, and every cloud workspace starts on that key. The deploy then
+or Boat provider key under Settings → Sandbox providers, and every cloud workspace starts on that key. The deploy then
 needs `CLAXEDO_SANDBOX_IMAGE` (the workspace-runtime image a Boat sandbox boots, an `-agent-plugins` tag) and the
 `CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN` secret your Cloudflare sandbox Worker posts idle stops with; see
 [Sandbox egress](./sandbox-egress.md).

@@ -11,7 +11,6 @@ import { useSettingsPlacement } from "../model-sources"
 import { useAccounts } from "../store"
 import { MachineScanStatus } from "./harness-accounts"
 import { HarnessSection, type HarnessTab, type ModelsHarness } from "./harness-section"
-import { SandboxSection } from "./sandbox-section"
 
 const NATIVE: readonly ModelsHarness[] = NATIVE_HARNESS_IDS.map((id) => {
   const cli = harnesses.find((harness) => harness.id === id)
@@ -45,7 +44,6 @@ export function ModelsSection() {
           {(harness) => <HarnessSection harness={harness} accounts={accounts} placement={placement()} tab={tabs[harness.slug] ?? "accounts"} onTab={(tab) => setTabs(harness.slug, tab)} />}
         </For>
       </div>
-      <SandboxSection />
     </div>
   )
 }

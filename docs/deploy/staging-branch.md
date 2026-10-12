@@ -123,7 +123,7 @@ Worker out of band. That is correct: hosted credentials moved to
 
 The `control-plane` job deploys the full-hosted Worker. Which provider a cloud
 workspace starts on is not a deploy setting: an organization owner or admin
-adds a Cloudflare or Boat key under Settings → Models → Sandbox (or in the first
+adds a Cloudflare or Boat key under Settings → Sandbox providers (or in the first
 run's "Where it runs" step), and every workspace of that organization starts on
 the key it chose. The deploy carries only what those drivers need from the
 deployment itself:

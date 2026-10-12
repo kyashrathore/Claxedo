@@ -55,8 +55,7 @@ transforms without request matchers.
 and `boat` — and neither enforces egress.**
 
 A full-hosted Worker has no sandbox provider of its own. It builds a driver from
-the provider key an organization owner or admin adds under Settings → Models →
-Sandbox (`packages/claxedo-server/src/authority/adapters/worker/hosted-sandbox-key-drivers.ts`),
+the provider key an organization owner or admin adds under Settings → Sandbox providers (`packages/claxedo-server/src/authority/adapters/worker/hosted-sandbox-key-drivers.ts`),
 and offers exactly the catalog drivers that run inside a Worker:
 
 | Provider key | Fields | Driver | Egress |

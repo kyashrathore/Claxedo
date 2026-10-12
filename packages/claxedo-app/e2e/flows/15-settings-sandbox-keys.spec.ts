@@ -9,8 +9,9 @@ async function sandboxListing(url: string): Promise<SandboxListing> {
 }
 
 test("15 settings: the machine's operator adds a sandbox provider key, sees it in use, and removes it", async ({ stack, app, isMobile }) => {
-  await app.goto(`${stack.url}/settings/models`)
-  const sandbox = app.getByRole("group", { name: "Sandbox", exact: true })
+  await app.goto(`${stack.url}/settings/sandbox`)
+  await expect(app.getByRole("link", { name: "Sandbox providers", exact: true })).toHaveAttribute("aria-current", "page")
+  const sandbox = app
   await expect(sandbox.getByText("No sandbox keys yet.", { exact: true })).toBeVisible()
   await expect(sandbox.getByText("None yet", { exact: true })).toBeVisible()
 

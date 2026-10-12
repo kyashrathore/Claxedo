@@ -24,7 +24,7 @@ export class SandboxProviderKeyMissingError extends ClaxedoError<"sandbox_provid
     super({
       code: "sandbox_provider_key_missing",
       status: 409,
-      message: "Add a sandbox provider key under Settings → Models before creating a cloud workspace",
+      message: "Add a sandbox provider key under Settings → Sandbox providers before creating a cloud workspace",
     })
   }
 }

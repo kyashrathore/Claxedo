@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch } from "solid-js"
 import { useAccess } from "@/access"
-import { SettingsEmpty, SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
+import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote, SettingsRow } from "@/settings"
 import { Select, useDialog } from "@/ui"
 import { useAccountsText } from "../i18n"
 import { useSandboxKeys, type SandboxKeysStore, type SandboxListing } from "../sandbox-store"
@@ -40,7 +40,8 @@ function SandboxKeys(props: { readonly listing: SandboxListing; readonly store: 
     <button type="button" class={LINK} onClick={() => dialog.show(() => <DrawerSandboxKey drivers={props.listing.drivers} store={props.store} />)}>{t("settings.sandbox.add")}</button>
   )
   return (
-    <SettingsGroup title={t("settings.sandbox.title")} description={t("settings.sandbox.description")} action={add}>
+    <>
+      <SettingsIntro description={t("settings.sandbox.description")} action={add} />
       <SettingsList>
         <DefaultDriver listing={props.listing} store={props.store} />
         <For each={props.listing.keys}>{(account) => <SandboxKeyRow account={account} label={label(account.providerId)} store={props.store} />}</For>
@@ -50,7 +51,7 @@ function SandboxKeys(props: { readonly listing: SandboxListing; readonly store: 
           <span>{t("settings.sandbox.empty")}</span>
         </SettingsEmpty>
       </Show>
-    </SettingsGroup>
+    </>
   )
 }
 
@@ -67,9 +68,15 @@ export function SandboxSection() {
     return load.kind === "failed" ? load.error : undefined
   }
   return (
-    <Switch>
-      <Match when={failure()}>{(error) => <SettingsNote tone="danger">{t("settings.sandbox.loadFailed", { reason: error().message })}</SettingsNote>}</Match>
-      <Match when={listing()}>{(ready) => <SandboxKeys listing={ready()} store={store} />}</Match>
-    </Switch>
+    <div class="settings-body">
+      <Switch>
+        <Match when={failure()}>{(error) => <SettingsNote tone="danger">{t("settings.sandbox.loadFailed", { reason: error().message })}</SettingsNote>}</Match>
+        <Match when={listing()}>{(ready) => <SandboxKeys listing={ready()} store={store} />}</Match>
+        <Match when={store.load().kind === "ready"}>
+          <SettingsIntro description={t("settings.sandbox.description")} />
+          <SettingsNote>{t("settings.sandbox.managedByAdmins")}</SettingsNote>
+        </Match>
+      </Switch>
+    </div>
   )
 }
