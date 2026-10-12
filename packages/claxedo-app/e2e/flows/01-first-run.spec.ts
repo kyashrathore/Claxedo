@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Page } from "@playwright/test"
-import { assistantText, cloudWorkspaceNames, expect, gitFolder, installedCli, revokeOwnerMachines, sendPrompt, servingMachineName, showHarnesses, storeOwnerKey, test } from "../harness"
+import { assistantText, cloudWorkspaceNames, expect, gitFolder, installedCli, orgSandboxListing, removeOrgSandboxKeys, revokeOwnerMachines, sendPrompt, servingMachineName, showHarnesses, storeOwnerKey, test } from "../harness"
 import { HOSTED_CODE_HOST_REPOSITORY, HOSTED_CODE_HOST_TOKEN } from "../../../harness/e2e/harness/hosted-scripted-github"
 
 const MARKER = "FIRSTRUN1"
@@ -58,13 +58,31 @@ test("01 first run: onboarding detects the agents, adds a folder project, and th
 test("01 first run on the web: where it runs, a connected repository, the AI, then the first prompt runs in the workspace named after the repository", async ({ signedCloud: signed, page }) => {
   test.setTimeout(240_000)
   await revokeOwnerMachines(signed)
+  await removeOrgSandboxKeys(signed)
   await storeOwnerKey(signed, "openai", "first-run-key")
   await signed.signIn(page, signed.owner)
   await expect(page.getByRole("heading", { level: 1, name: "Where it runs" })).toBeVisible()
+  await expect(page.getByText("Cloud workspaces need a provider account. Add a key for the provider that will run them.")).toBeVisible()
+  await expect(page.getByRole("radiogroup", { name: "Where work runs" })).toHaveCount(0)
+  const next = page.getByRole("button", { name: "Next", exact: true })
+  await expect(next).toBeDisabled()
+  await expect(page.getByText("Add a provider key to create a cloud workspace.")).toBeVisible()
+  const form = page.getByRole("form", { name: "Add a sandbox key" })
+  await expect(form.getByRole("button", { name: "Cancel" })).toHaveCount(0)
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  expect(await pageOverflows(page)).toBe(false)
+  await form.getByRole("button", { name: "Save key", exact: true }).click()
+  await expect(form.getByRole("alert")).toHaveText("Fill in every field")
+  await form.getByRole("textbox", { name: "API Token", exact: true }).fill("hosted-sandbox-test-token")
+  await form.getByRole("textbox", { name: "Worker URL", exact: true }).fill(signed.hosted.sandboxOrigin)
+  await form.getByRole("button", { name: "Save key", exact: true }).click()
+  await expect(form).toHaveCount(0)
   const where = page.getByRole("radiogroup", { name: "Where work runs" })
-  await expect(where.getByRole("radio", { name: /^Claxedo's machines/ })).toBeChecked()
+  await expect(where.getByRole("radio", { name: /^Your Cloudflare account/ })).toBeChecked()
   await expect(where.getByRole("radio")).toHaveCount(1)
-  await expect(page.getByRole("button", { name: "Add your provider key…" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Add another provider key", exact: true })).toBeVisible()
+  await expect(next).toBeEnabled()
+  expect((await orgSandboxListing(signed)).keys.map((key) => key.provider_id)).toEqual(["cloudflare"])
   await expect(page.getByText(/this machine|this computer/i).filter({ visible: true })).toHaveCount(0)
   await page.getByRole("button", { name: "Connect a machine…" }).click()
   const drawer = page.getByRole("dialog", { name: "Connect a machine" })

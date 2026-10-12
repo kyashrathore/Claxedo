@@ -4,7 +4,7 @@ import { safeLabel, startStack, type StackInput } from "./stack"
 import { startHostedStack } from "../../../harness/e2e/harness/hosted-stack"
 import { HOSTED_E2E_PUBLIC_HOSTNAME } from "../../../harness/e2e/harness/hosted-control-plane"
 import { hostedFetch, type HostedPerson } from "../../../harness/e2e/harness/hosted-auth"
-import { hostedRuntimeTransport, type HostedStack } from "../../../harness/e2e/harness/hosted-flow"
+import { hostedRuntimeTransport, seedOrgSandboxKey, type HostedStack } from "../../../harness/e2e/harness/hosted-flow"
 import type { HttpTransport } from "../../../harness/e2e/harness/transport"
 import type { Workspace } from "../../../harness/e2e/harness/workspaces"
 import type { TlsTrust } from "./tls-front"
@@ -99,6 +99,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
       method: "POST", headers: { "content-type": "application/json", "x-claxedo-bootstrap-owner-claim": claim }, body: "{}",
     }, owner.person)
     if (!bootstrap.ok) throw new Error(`Hosted owner bootstrap failed: ${bootstrap.status} ${await bootstrap.text()}`)
+    await seedOrgSandboxKey(hosted, owner.person)
     await configureHostedScriptedAcp(hosted, owner.transport, { bunPath: await bunPath(), scriptDir: local.acp.scriptDir, red: input.red, core: true })
     machine = await startHostedMachine(hosted, local, owner.person)
     const opened = front

@@ -13,7 +13,7 @@ const en = {
   "onboarding.ai.lede.hosted": "Connect an account or provider for the agent you want to run. Accounts are stored on this deployment and can be changed later in Settings → Models.",
   "onboarding.execution.headline": "Where it runs",
   "onboarding.execution.lede.local": "Choose where sessions run. You can add more places later.",
-  "onboarding.execution.lede.hosted": "Cloud workspaces run on Claxedo's machines or on a provider account you add. You can also connect a machine of your own.",
+  "onboarding.execution.lede.hosted": "Cloud workspaces run on a provider account your organization adds. You can also connect a machine of your own.",
   "onboarding.continue": "Continue",
   "onboarding.back": "Back",
   "onboarding.skip": "Skip for now",
@@ -32,6 +32,7 @@ const en = {
   "onboarding.reason.ai.hosted": "Connect an agent account or provider to continue.",
   "onboarding.reason.execution.signIn": "Sign in to Claxedo to create a cloud workspace.",
   "onboarding.reason.execution.folder": "Choose a repository instead of a folder to create a cloud workspace.",
+  "onboarding.reason.execution.providerKey": "Add a provider key to create a cloud workspace.",
   "onboarding.failed.noPlacement": "{{project}} has no folder here to open.",
   "onboarding.failed.open": "Created successfully, but could not open it: {{error}}",
   "onboarding.ai.accounts": "Agent accounts",
@@ -47,12 +48,12 @@ const en = {
   "onboarding.execution.connect": "Connect a machine…",
   "onboarding.cloud.loading": "Checking cloud providers…",
   "onboarding.cloud.loadFailed": "Couldn't load cloud providers: {{reason}}",
-  "onboarding.cloud.managed": "Claxedo's machines",
-  "onboarding.cloud.managed.detail": "Starts on the deployment's {{provider}} account. Nothing to set up.",
+  "onboarding.cloud.none": "Cloud workspaces need a provider account. Add a key for the provider that will run them.",
   "onboarding.cloud.key": "Your {{provider}} account",
   "onboarding.cloud.key.detail": "Starts on the key you added.",
-  "onboarding.cloud.add": "Add your provider key…",
+  "onboarding.cloud.add": "Add another provider key",
   "onboarding.cloud.fixed": "Cloud workspaces run on {{provider}}.",
+  "onboarding.cloud.fixed.none": "Cloud workspaces need a provider key. Ask an organization owner or admin to add one.",
 }
 
 export type OnboardingKey = keyof typeof en

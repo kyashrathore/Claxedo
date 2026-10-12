@@ -10,6 +10,8 @@ import { startScriptedModelServer } from "./scripted-model-server"
 
 export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean; relayPort?: number }
 
+export const HOSTED_SANDBOX_TEST_TOKEN = "hosted-sandbox-test-token"
+
 export async function startHostedStack(label: string, options: HostedStackOptions = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-hosted-${label}-`))
   const workerPort = await reservePort()
@@ -32,7 +34,7 @@ export async function startHostedStack(label: string, options: HostedStackOption
     sandbox = await startHostedSandboxWorker({
       root,
       port: sandboxPort,
-      token: "hosted-sandbox-test-token",
+      token: HOSTED_SANDBOX_TEST_TOKEN,
       certificate: credentials.certificate,
       key: credentials.key,
       controlPlaneUrl: workerUrl,

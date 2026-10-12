@@ -77,7 +77,7 @@ function StepPanels(props: { readonly wizard: Wizard; readonly facts: ExecutionF
       </Show>
       <Show when={wizard().visited().has("execution")}>
         <div hidden={wizard().step() !== "execution"} data-step-panel="execution" inert={wizard().finish.working() || wizard().finish.created() !== undefined}>
-          <ExecutionStep facts={props.facts} choice={wizard().choice()} onChoice={wizard().choose} size={wizard().size} />
+          <ExecutionStep facts={props.facts} choice={wizard().choice()} onChoice={wizard().choose} size={wizard().size} onCloudReady={wizard().setCloudReady} />
         </div>
       </Show>
     </>

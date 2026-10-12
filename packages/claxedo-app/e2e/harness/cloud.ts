@@ -117,6 +117,17 @@ export async function chooseOrgSandboxProvider(signed: SignedStack, driver: stri
   await call("PUT", "/api/claxedo/credentials/sandbox-drivers/default", { driver })
 }
 
+export type OrgSandboxListing = { default_driver: string | null; keys: Array<{ id: string; provider_id: string }> }
+
+export async function orgSandboxListing(signed: SignedStack): Promise<OrgSandboxListing> {
+  return JSON.parse((await asOwner(signed)("GET", "/api/claxedo/credentials/sandbox-drivers")).body) as OrgSandboxListing
+}
+
+export async function removeOrgSandboxKeys(signed: SignedStack) {
+  const call = asOwner(signed)
+  for (const key of (await orgSandboxListing(signed)).keys) await call("DELETE", `/api/claxedo/credentials/${key.id}`)
+}
+
 export async function listedSessions(signed: SignedStack, workspace: CloudWorkspace) {
   const listed = await asOwner(signed)("GET", `/api/control/session-list?scope=workspace&workspaceId=${encodeURIComponent(workspace.id)}`)
   return (JSON.parse(listed.body) as { items: Array<{ sessionId: string; sessionHostRoot?: string }> }).items

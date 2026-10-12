@@ -19,10 +19,11 @@ export function ExecutionStep(props: {
   readonly choice: ExecutionChoice
   readonly onChoice: (choice: ExecutionChoice) => void
   readonly size: MachineSizeChoice | undefined
+  readonly onCloudReady: (ready: boolean) => void
 }) {
   const t = useOnboardingText()
   return (
-    <Show when={props.facts.localExecution} fallback={<CloudPlacement facts={props.facts} size={props.size} />}>
+    <Show when={props.facts.localExecution} fallback={<CloudPlacement facts={props.facts} size={props.size} onReady={props.onCloudReady} />}>
       <div role="radiogroup" aria-label={t("onboarding.execution.label")} class="flex flex-col gap-2">
         <For each={executionChoices(props.facts)}>
           {(id) => <ChoiceRow checked={props.choice === id} title={choiceTitle(t, id, props.facts)} detail={t(ROW_DETAIL[id])} onChoose={() => props.onChoice(id)} />}

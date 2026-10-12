@@ -27,23 +27,23 @@ describe("loading the server's env for development", () => {
     // sign-in looked broken rather than unconfigured.
     const env: NodeJS.ProcessEnv = {}
     const repoRoot = repoWith({
-      env: "GITHUB_CLIENT_ID=abc\nGITHUB_CLIENT_SECRET=shh\nBOAT_API_KEY=boat_1\n",
+      env: "GITHUB_CLIENT_ID=abc\nGITHUB_CLIENT_SECRET=shh\nCLAXEDO_POSTHOG_KEY=phc_1\n",
     })
 
     expect(loadServerEnvForDevelopment({ repoRoot, env })).toBe(3)
     expect(env.GITHUB_CLIENT_ID).toBe("abc")
-    expect(env.BOAT_API_KEY).toBe("boat_1")
+    expect(env.CLAXEDO_POSTHOG_KEY).toBe("phc_1")
   })
 
   test("an explicit export from the caller is never clobbered", () => {
     // `FOO=bar bun dev` is an intention, and the launch script sets the
     // throwaway profile's directories before this runs.
-    const env: NodeJS.ProcessEnv = { BOAT_API_KEY: "from-the-shell" }
-    const repoRoot = repoWith({ env: "BOAT_API_KEY=from-the-file\n" })
+    const env: NodeJS.ProcessEnv = { CLAXEDO_POSTHOG_KEY: "from-the-shell" }
+    const repoRoot = repoWith({ env: "CLAXEDO_POSTHOG_KEY=from-the-file\n" })
 
     loadServerEnvForDevelopment({ repoRoot, env })
 
-    expect(env.BOAT_API_KEY).toBe("from-the-shell")
+    expect(env.CLAXEDO_POSTHOG_KEY).toBe("from-the-shell")
   })
 
   test(".env.local wins over .env, but neither wins over the caller", () => {

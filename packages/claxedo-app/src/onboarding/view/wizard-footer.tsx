@@ -6,7 +6,13 @@ import { Button } from "@/ui"
 const BLOCK_TEXT: Record<FinishBlock, OnboardingKey> = {
   signIn: "onboarding.reason.execution.signIn",
   folder: "onboarding.reason.execution.folder",
+  providerKey: "onboarding.reason.execution.providerKey",
   ai: "onboarding.reason.ai.hosted",
+}
+
+function stepHeld(wizard: OnboardingWizard): boolean {
+  if (wizard.step() === "ai") return !wizard.aiReady()
+  return wizard.step() === "execution" && wizard.blocked() === "providerKey"
 }
 
 function blockedReason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {
@@ -15,6 +21,7 @@ function blockedReason(t: OnboardingText, wizard: OnboardingWizard, localExecuti
   const progress = wizard.progress()
   if (progress) return progress
   if (wizard.step() === "ai" && !wizard.aiReady()) return t(localExecution ? "onboarding.reason.ai.local" : "onboarding.reason.ai.hosted")
+  if (wizard.step() === "execution" && wizard.blocked() === "providerKey") return t(BLOCK_TEXT.providerKey)
   const blocked = wizard.blocked()
   if (wizard.last() && blocked && !wizard.finish.created()) return t(BLOCK_TEXT[blocked])
   return undefined
@@ -68,7 +75,7 @@ export function WizardFooter(props: { readonly wizard: OnboardingWizard; readonl
           <Show
             when={wizard().last()}
             fallback={
-              <Button type="button" variant="contrast" size="normal" disabled={wizard().step() === "ai" && !wizard().aiReady()} onClick={() => wizard().advance()}>
+              <Button type="button" variant="contrast" size="normal" disabled={stepHeld(wizard())} onClick={() => wizard().advance()}>
                 {t("onboarding.next")}
               </Button>
             }

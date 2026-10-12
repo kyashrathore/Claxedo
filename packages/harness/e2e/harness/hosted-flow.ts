@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { ClaxedoApi } from "./api"
 import { hostedFetch, signInHostedPerson, type HostedPerson } from "./hosted-auth"
-import { startHostedStack } from "./hosted-stack"
+import { HOSTED_SANDBOX_TEST_TOKEN, startHostedStack } from "./hosted-stack"
 import type { HttpTransport } from "./transport"
 import { openEventStream } from "./stream"
 
@@ -17,7 +17,17 @@ export async function hostedOwner(stack: HostedStack) {
     body: "{}",
   }, owner)
   if (!result.ok) throw new Error(`hosted owner bootstrap failed: ${result.status} ${await result.text()}`)
+  await seedOrgSandboxKey(stack, owner)
   return owner
+}
+
+export async function seedOrgSandboxKey(stack: HostedStack, owner: HostedPerson) {
+  const stored = await hostedFetch(stack, "/api/claxedo/credentials", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider_id: "cloudflare", kind: "sandbox_driver", secret: JSON.stringify({ api_token: HOSTED_SANDBOX_TEST_TOKEN, worker_url: stack.sandboxOrigin }) }),
+  }, owner)
+  if (!stored.ok) throw new Error(`hosted sandbox key seed failed: ${stored.status} ${await stored.text()}`)
 }
 
 export async function hostedWorkspace(stack: HostedStack, owner: HostedPerson, name: string) {

@@ -30,8 +30,8 @@ export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, 
 export { sessionCookie, type Account, type SignedStack } from "./signed-stack"
 export { ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
 export {
-  chooseOrgSandboxProvider, cloudMessages, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, deleteCloudWorkspace, listedSessions, makeCloudWorkspace, relayedTerminalOutput, sessionConnection, sessionHostTables, startCloudWorkspace, stopCloudWorkspace,
-  storedMessages, storeOwnerKey, type CloudWorkspace,
+  chooseOrgSandboxProvider, cloudMessages, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, deleteCloudWorkspace, listedSessions, makeCloudWorkspace, orgSandboxListing, relayedTerminalOutput, removeOrgSandboxKeys,
+  sessionConnection, sessionHostTables, startCloudWorkspace, stopCloudWorkspace, storedMessages, storeOwnerKey, type CloudWorkspace,
 } from "./cloud"
 export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, UNSET_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
 export { scriptedAgentPids } from "./acp/agent-process"

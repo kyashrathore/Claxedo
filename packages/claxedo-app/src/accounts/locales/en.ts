@@ -88,7 +88,6 @@ export default {
   "settings.sandbox.description": "Keys for the services that run cloud workspaces. Claxedo uses them only to start, stop and save machines; agents and workspaces never see them.",
   "settings.sandbox.default.label": "Default provider",
   "settings.sandbox.default.description": "New cloud workspaces start here.",
-  "settings.sandbox.default.managed": "Claxedo's machines",
   "settings.sandbox.default.none": "None yet",
   "settings.sandbox.empty": "No sandbox keys yet.",
   "settings.sandbox.add": "Add a key…",

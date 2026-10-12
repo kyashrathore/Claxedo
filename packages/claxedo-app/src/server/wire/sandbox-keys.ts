@@ -30,7 +30,6 @@ export function sandboxKeysFromWire(value: unknown): SandboxKeys | undefined {
   const keys = rowsFromWire(value, "keys", accountFromWire)
   if (!row || !drivers || !keys || typeof row.can_manage !== "boolean") return undefined
   const defaultDriver = asString(row.default_driver)
-  const managedDriver = asString(row.managed_driver)
   return {
     kind: "listed",
     drivers,
@@ -38,6 +37,5 @@ export function sandboxKeysFromWire(value: unknown): SandboxKeys | undefined {
     canManage: row.can_manage,
     machineClasses: machineClassesFromWire(row.machine_classes),
     ...(defaultDriver ? { defaultDriver } : {}),
-    ...(managedDriver ? { managedDriver } : {}),
   }
 }

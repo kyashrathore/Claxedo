@@ -2,16 +2,16 @@ import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { createMachineSizeChoice, type MachineSizeChoice } from "@/cloud"
 import { draftProjectName, primaryPlacement } from "@/projects"
-import { useServer } from "@/server"
+import { useServer, type ProjectSource } from "@/server"
 import { draftPath } from "@/shell"
 import { createFinish } from "./finish"
 import { useOnboardingText } from "./i18n"
-import { executionBlock, executionPlan, type ExecutionBlock, type ExecutionChoice, type ExecutionFacts, type OnboardingDraft } from "./model"
+import { executionBlock, executionPlan, type ExecutionBlock, type ExecutionChoice, type ExecutionFacts, type ExecutionPlan, type OnboardingDraft } from "./model"
 import { createOnboardingTarget, finishFailure, openedPlacement, openingDetail, startCreated, type Placing } from "./place"
 import { createOnboardingFunnel, type OnboardingFunnel } from "./funnel"
 import { onboardingSteps, type OnboardingStep, type OnboardingStepId } from "./steps"
 
-export type FinishBlock = ExecutionBlock | "ai"
+export type FinishBlock = ExecutionBlock | "providerKey" | "ai"
 
 export function draftName(draft: OnboardingDraft): string {
   return draft.name ?? draftProjectName(draft.source)
@@ -67,10 +67,19 @@ function createExecution(facts: Accessor<ExecutionFacts>, draft: Accessor<Onboar
   return { choice, choose: setChosen, size, plan: createMemo(() => executionPlan(choice(), name(), size?.chosen())) }
 }
 
+function createStepReadiness(facts: Accessor<ExecutionFacts>, plan: Accessor<ExecutionPlan>, source: Accessor<ProjectSource | undefined>) {
+  const [aiReady, setAiReady] = createSignal(false)
+  const [cloudReady, setCloudReady] = createSignal(false)
+  const blocked = createMemo((): FinishBlock | undefined =>
+    executionBlock(plan(), facts(), source())
+    ?? (facts().localExecution || cloudReady() ? undefined : "providerKey")
+    ?? (facts().localExecution || aiReady() ? undefined : "ai"))
+  return { aiReady, setAiReady, setCloudReady, blocked }
+}
+
 export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
   const stepper = createStepper(createMemo(() => onboardingSteps(facts().localExecution)))
   const [draft, setDraft] = createSignal<OnboardingDraft>()
-  const [aiReady, setAiReady] = createSignal(false)
   const { plan, ...execution } = createExecution(facts, draft)
   const placing = () => {
     const held = draft()
@@ -78,7 +87,7 @@ export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
   }
   const funnel = createOnboardingFunnel(useServer().telemetry, stepper.steps())
   const { finish, progress } = useOnboardingFinish(placing, funnel)
-  const blocked = createMemo((): FinishBlock | undefined => executionBlock(plan(), facts(), draft()?.source) ?? (facts().localExecution || aiReady() ? undefined : "ai"))
+  const { blocked, ...readiness } = createStepReadiness(facts, plan, () => draft()?.source)
   const move = (index: number) => {
     finish.moved()
     const target = stepper.steps()[index]
@@ -91,8 +100,7 @@ export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
     finish,
     progress,
     draft,
-    aiReady,
-    setAiReady,
+    ...readiness,
     blocked,
     ...execution,
     chooseSource: (source: OnboardingDraft) => {

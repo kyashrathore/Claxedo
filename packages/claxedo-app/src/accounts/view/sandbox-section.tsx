@@ -16,7 +16,7 @@ function DefaultDriver(props: { readonly listing: SandboxListing; readonly store
     <SettingsRow title={t("settings.sandbox.default.label")} description={t("settings.sandbox.default.description")}>
       <Show
         when={keyed().length > 0}
-        fallback={<span class="text-13-regular text-text-weak">{t(props.listing.managedDriver ? "settings.sandbox.default.managed" : "settings.sandbox.default.none")}</span>}
+        fallback={<span class="text-13-regular text-text-weak">{t("settings.sandbox.default.none")}</span>}
       >
         <Select
           aria-label={t("settings.sandbox.default.label")}

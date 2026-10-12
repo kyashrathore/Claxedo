@@ -60,7 +60,6 @@ export type SandboxKeys =
     readonly keys: readonly Account[]
     readonly defaultDriver?: string
     readonly machineClasses: readonly MachineClass[]
-    readonly managedDriver?: string
     readonly canManage: boolean
   }
   | { readonly kind: "unsupported" }
