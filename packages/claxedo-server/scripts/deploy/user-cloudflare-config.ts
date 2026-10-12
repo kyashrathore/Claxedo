@@ -14,12 +14,6 @@ import {
   type BetterAuthMethod,
 } from "../../src/platform/auth/better-auth-configuration"
 
-/**
- * The secret a full-hosted Worker shares with every Cloudflare sandbox Worker
- * an organization's key points at: that Worker posts idle stops with it.
- */
-const FULL_HOSTED_SECRETS = ["CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"] as const
-
 /** Secrets the deploy reads itself: it provisions the native OAuth clients with both. */
 export const DEPLOY_READ_SECRETS = ["BETTER_AUTH_SECRET", "CLAXEDO_AUTH_INTROSPECTION_SECRET"] as const
 
@@ -232,10 +226,10 @@ export function userCloudflareDeployment(
       "CLAXEDO_RELAY_HOST_VERIFY_PEM",
       ...authMethods.filter((method) => method !== "email-password").map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
       ...(artifact.agentPlugins ? ["CLAXEDO_CREDENTIALS_KEK"] : []),
-      ...(fullHosted ? FULL_HOSTED_SECRETS : []),
       ...(telemetryVariables.CLAXEDO_TELEMETRY_MODE ? ["CLAXEDO_POSTHOG_KEY"] : []),
     ],
-    optionalSecrets: ["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET"],
+    // A Cloudflare sandbox Worker posts idle stops with the idle-stop secret; unset, every post is refused.
+    optionalSecrets: ["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET", ...(fullHosted ? ["CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"] : [])],
   })
 }
 

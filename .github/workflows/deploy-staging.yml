@@ -42,26 +42,11 @@ jobs:
       boat_image: ${{ steps.select.outputs.boat_image }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0
-
-      # The repository's changed-file policy owns which surfaces a diff reaches;
-      # `sandbox_image` is one of its outputs. A dispatch has no base commit, so
-      # it selects the ~4.5 GB image build — pick one component by name to avoid
-      # that.
-      - name: Select affected surfaces
-        id: changed
-        uses: ./.github/actions/detect-ci-changes
-        with:
-          base: ${{ github.event.before }}
-          head: ${{ github.sha }}
-          force-full: ${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Select components
         id: select
         env:
           REQUESTED: ${{ inputs.components || 'all' }}
-          SANDBOX_CHANGED: ${{ steps.changed.outputs.sandbox_image }}
         run: node script/deploy-components.mjs
 
   gate:
@@ -186,8 +171,8 @@ jobs:
       # beside it; unset, Cloudflare places the database and the Worker.
       CLAXEDO_D1_LOCATION: ${{ vars.CLAXEDO_STAGING_D1_LOCATION }}
       CLAXEDO_WORKER_PLACEMENT_REGION: ${{ vars.CLAXEDO_STAGING_WORKER_PLACEMENT_REGION }}
-      # The Cloudflare sandbox Worker an organization's key points at posts idle
-      # stops to the control plane with this shared secret.
+      # Optional: unset, the control plane refuses every idle-stop post, and only
+      # a Cloudflare sandbox Worker configured with the same secret can send one.
       CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN: ${{ secrets.CLAXEDO_SANDBOX_IDLE_STOP_TOKEN }}
       CLAXEDO_SANDBOX_IMAGE: ${{ needs.boat-image.outputs.image }}
     steps:
@@ -203,7 +188,7 @@ jobs:
             CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME \
             CLAXEDO_DEPLOYMENT_ID CLAXEDO_API_ORIGIN CLAXEDO_APP_ORIGIN CLAXEDO_WORKSPACE_RELAY_URL \
             CLAXEDO_AUTH_D1_DATABASE_NAME CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME \
-            CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN CLAXEDO_SANDBOX_IMAGE; do
+            CLAXEDO_SANDBOX_IMAGE; do
             [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
           done
 

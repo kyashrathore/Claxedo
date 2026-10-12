@@ -7,7 +7,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 
 | # | Job | What it deploys | Reusable workflow / script |
 | - | --- | --- | --- |
-| 1 | `plan` | nothing — selects components | `.github/actions/detect-ci-changes`, `script/deploy-components.mjs` |
+| 1 | `plan` | nothing — selects components | `script/deploy-components.mjs` |
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
 | 3 | `boat-image` | the Boat sandbox image this checkout builds, with every control-plane deploy | `packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts --agent-plugins --push-if-missing` |
@@ -71,16 +71,15 @@ resolver base the host-tunnel serving-generation fence derives from) and
 `CLAXEDO_APP_ORIGINS` (the CORS allowlist) explicitly; dropping either would be
 silent.
 
-### The sandbox image is selected, not scheduled
+### Which images ship
 
-`script/ci-changes.mjs` owns which surfaces a diff reaches, and `sandbox_image`
-is one of its outputs: the Worker and its build script, plus every package
-`build-sandbox-image.ts` bundles into the host it ships. `script/deploy-components.mjs`
-turns that into the deploy's components (tested by `bun run test:ci-policy`):
-the Cloudflare sandbox Worker's image ships when it changed or is named, and
-the control plane always deploys with the Boat image of its own checkout
-(`boat-image`). A `workflow_dispatch` has no base commit, so it selects the
-~4.5 GB image build — pick one component by name to avoid that.
+`script/deploy-components.mjs` picks the deploy's components (tested by
+`bun run test:ci-policy`). The control plane always deploys with the Boat image
+of its own checkout (`boat-image`), since any organization may add a Boat key.
+Staging's own Cloudflare sandbox Worker ships only when `sandbox-image` is
+dispatched by name: a Cloudflare key points at a sandbox Worker its organization
+runs, and that Worker posts idle stops only if it and the control plane share
+`CLAXEDO_SANDBOX_IDLE_STOP_TOKEN`.
 
 ## Staging runs the user deploy
 
@@ -132,7 +131,7 @@ deployment itself:
 | Setting | Where | What it is |
 | - | - | - |
 | `CLAXEDO_SANDBOX_IMAGE` | set by the `boat-image` job | the workspace-runtime image a Boat sandbox boots |
-| `CLAXEDO_SANDBOX_IDLE_STOP_TOKEN` | `staging` environment secret | the shared secret a Cloudflare sandbox Worker posts idle stops with |
+| `CLAXEDO_SANDBOX_IDLE_STOP_TOKEN` | `staging` environment secret, optional | the shared secret a Cloudflare sandbox Worker posts idle stops with; unset, idle stops are refused |
 
 A Boat sandbox `docker run`s the exact workspace-runtime image the control
 plane names in `CLAXEDO_SANDBOX_IMAGE`. The `boat-image` job sets it: it bundles
