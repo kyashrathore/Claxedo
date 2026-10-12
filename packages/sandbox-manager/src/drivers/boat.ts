@@ -63,6 +63,9 @@ const DEFAULT_PROVISION_INTERVAL_MS = 2_000
 // scripts; a container that exited ends the wait at once instead.
 const DEFAULT_HEALTH_TIMEOUT_MS = 10 * 60_000
 const DEFAULT_HEALTH_INTERVAL_MS = 1_000
+// Boat pauses a new sandbox's containers for about a second while it takes the
+// sandbox's first snapshot, 2 s into the runtime's start; the runtime resumes on its own.
+const BOOTING_CONTAINER_STATES: ReadonlySet<string> = new Set(["running", "paused"])
 // An image pull needs Boat's documented command maximum.
 const CONTAINER_START_TIMEOUT_SECONDS = 600
 const DOCKER_DAEMON_WAIT_SECONDS = 120
@@ -247,7 +250,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       const [code, state] = probe.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
       if (code === "200") return
       last = `health probe returned ${code || "no response"}`
-      if (state !== undefined && state !== "running") {
+      if (state !== undefined && !BOOTING_CONTAINER_STATES.has(state)) {
         last = `the runtime container is ${state}`
         break
       }

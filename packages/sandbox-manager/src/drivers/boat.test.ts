@@ -546,6 +546,14 @@ describe("boat sandbox driver", () => {
     expect(boat.healthChecks).toBeGreaterThanOrEqual(2)
   })
 
+  test("a runtime container paused by Boat's snapshot keeps the boot waiting for its health", async () => {
+    const boat = fakeBoat({ failHealthOnce: true, containerState: "paused" })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+    const target = await driver.ensureHost(ensureInput())
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+    expect(boat.healthChecks).toBe(2)
+  })
+
   test("a runtime container that exited fails the boot at the next probe, with its reason, instead of waiting out the health window", async () => {
     const boat = fakeBoat({ failHealthOnce: true, containerState: "exited" })
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, healthTimeoutMs: 60_000, fetchImpl: async (url, init) => {
