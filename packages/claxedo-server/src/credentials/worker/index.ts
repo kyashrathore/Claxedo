@@ -356,6 +356,8 @@ export function hostedOrgCredentials(
         .bind(serializeUsageWindows(windows), at, org, id)
         .run()
     },
+    updateCredentialLabel: (id, label) =>
+      changed(database.prepare("update hosted_provider_credentials set label = ?, updated_at = ? where org_id = ? and id = ?").bind(label, now(), org, id)),
     updateCredentialSecret: async (id, secret, expiresAt) => {
       // `undefined` means the caller does not know the replacement's expiry;
       // `null` means it has none. The stored expiry described the material

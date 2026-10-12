@@ -715,7 +715,7 @@ describe("hosted-core usage", () => {
       locations: [],
     }))
     const cloudUsageFacts = vi.fn(async () => [])
-    const machineTime = vi.fn(async () => ({ activeMs: 600_000, running: 1 }))
+    const machineTime = vi.fn(async () => ({ activeMs: 600_000, running: 1, workspaces: [], providers: [] }))
     const writeRevision = vi.fn(async () => ({ status: "accepted" as const }))
     const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts, machineTime } })
 
@@ -781,6 +781,48 @@ describe("hosted-core usage", () => {
     expect((await bare.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2", {
       headers: { authorization: "Bearer alice" },
     }))).status).toBe(404)
+  })
+
+  test("the usage-limits view reads an unchecked stored login from its vendor before answering, and a vendor that fails leaves its reason on that card", async () => {
+    const base = plane()
+    base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") }
+    const controlPlane = await miniflareControlPlaneDatabase()
+    base.orgCredentials = (orgId) => hostedOrgCredentials(orgId, { database: controlPlane.database, env: base.env })
+    const credentials = hostedOrgCredentials("org-1", { database: controlPlane.database, env: base.env })
+    try {
+      await credentials.putCredential({ owner: "alice", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", label: "claude-sdk", account_id: "acct_claude", secret: "sk-ant-oat01-alice" })
+      await credentials.putCredential({
+        owner: "alice", provider_id: "codex-app-server", kind: "oauth_token", source: "managed", label: "kanusdlp@example.com", account_id: "acct_codex",
+        secret: JSON.stringify({ tokens: { access_token: "codex-access", account_id: "acct_codex" } }),
+      })
+      const vendor = vi.fn(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        if (url === "https://api.anthropic.com/api/oauth/usage") return Response.json({ five_hour: { utilization: 42, resets_at: 400 }, seven_day: { utilization: 7, resets_at: 900 } })
+        if (url === "https://api.anthropic.com/api/oauth/profile") return Response.json({ account: { email_address: "contactyash@example.com" } })
+        throw new Error("chatgpt.com unreachable")
+      })
+      const ledger = { writeRevision: vi.fn(async () => ({ status: "accepted" as const })) }
+      const app = createHostedCoreApp(base, { ...options, usageLedger: ledger, accountSetup: { changed: async () => {}, fetch: vendor as unknown as typeof fetch } })
+      const response = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2&timezone=UTC&view=quota", {
+        headers: { authorization: "Bearer alice" },
+      }))
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.quota.status).toBe("available")
+      expect(body.quota).not.toHaveProperty("refreshing")
+      expect(body.quota.snapshot.accounts.map((account: { harness: string; label: string; windows: unknown[]; usageError?: string }) =>
+        [account.harness, account.label, account.windows, account.usageError])).toEqual([
+        ["claude", "contactyash@example.com", [
+          { window: "session", usedPercent: 42, resetsAt: 400_000 },
+          { window: "weekly", usedPercent: 7, resetsAt: 900_000 },
+        ], undefined],
+        ["codex", "kanusdlp@example.com", [], "This account's limits could not be read: Credential provider request failed"],
+      ])
+      const stored = await controlPlane.database.prepare("select provider_id, health, usage_windows is not null as read from hosted_provider_credentials order by provider_id").all()
+      expect(stored.results).toEqual([{ provider_id: "claude-sdk", health: "ok", read: 1 }, { provider_id: "codex-app-server", health: null, read: 0 }])
+    } finally {
+      await controlPlane.dispose()
+    }
   })
 })
 

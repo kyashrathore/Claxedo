@@ -1,6 +1,7 @@
 /**
- * Plan usage for the dashboard's Usage-limits view, composed from the accounts
- * this installation knows about and the agents installed beside it.
+ * Plan usage for the dashboard's Usage-limits view on the machine the agents
+ * are installed on, composed from the accounts this installation knows about
+ * and the agents installed beside it.
  *
  * Two writes own the figures for an account Claxedo runs turns on: the windows
  * a Check kept against a stored account, and the windows a harness on this
@@ -12,28 +13,23 @@
  * each and the probe waits on its slowest vendor, so a read answers from what
  * the last reads left behind and starts the ones that are due. Each source
  * rings `usage.quota.changed` on `cp/events` as it lands, and the reader
- * re-reads.
+ * re-reads. A hosted plane has no such bell: `createHostedQuotaReader` is the
+ * reader that waits.
  */
 
-import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "@claxedo/agent-runtime-contract"
-import { accountHolderOf } from "../credentials/account-holder"
-import { fanoutEligible } from "../credentials/account-kinds"
 import { agentUsageOrNone } from "../credentials/machine-agent-usage"
-import { credentialReach } from "../credentials/reach"
 import { joinMachineLoginUsage, recordReportedUsage } from "../credentials/machine-login-report"
 import { checkCredential } from "../credentials/operations/check"
 import { isSubscriptionKind } from "../credentials/secret-material"
 import { controlBus } from "../platform/runtime/lib/bus"
 import { Log } from "../platform/runtime/lib/log"
+import { accountsInUse, harnessOf, orderAccounts, quotaStatus, storedAccounts, storedQuotaAccount, visibleTo } from "./quota-accounts"
 import type { ControlPlaneCredentials } from "../authority/control-plane-contract"
 import type { MachineAgentUsage, MachineAgentUsageReader } from "../credentials/machine-agent-usage"
 import type { ReportedMachineLogin } from "../credentials/machine-login-report"
-import type { CredentialMetadata } from "../credentials/types"
 import type { QuotaAccount, QuotaSnapshot, UnifiedUsageResponse } from "@claxedo/usage-contract"
 
 const log = Log.create({ service: "usage-quota" })
-
-const INFERENCE_ONLY_LOGIN = "Setup-tokens are inference-only, so this account runs turns but cannot report its plan usage. Sign the Claude CLI in to this account to see it."
 
 /**
  * A Check spends a vendor request per stored account, so refreshes are spaced,
@@ -43,16 +39,6 @@ const INFERENCE_ONLY_LOGIN = "Setup-tokens are inference-only, so this account r
 const REFRESH_INTERVAL_MS = 60_000
 
 export type UsageQuotaReader = (input: { org: string; person: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
-
-/**
- * The stored rows one person's quota view may draw: their own accounts and the
- * organization's harness accounts any member may choose to spend, never
- * another member's.
- */
-function visibleTo(person: string) {
-  return (row: CredentialMetadata) =>
-    row.owner === null || row.owner === undefined ? fanoutEligible(row) : accountHolderOf(row.owner, person) === person
-}
 
 /** What the last reads of this machine's harnesses and probe left behind. */
 type MachineSources = {
@@ -160,26 +146,6 @@ export function createUsageQuotaReader(input: {
   }
 }
 
-/**
- * Whether there is anything to draw. What is true of one account — unread,
- * refused, reporting no plan — travels on that account, because a view that
- * summarised those into one word could only say something vaguer than each
- * card already says.
- */
-function quotaStatus(snapshot: QuotaSnapshot): UnifiedUsageResponse["quota"]["status"] {
-  return snapshot.accounts.some((account) => account.windows.length > 0) ? "available" : "unavailable"
-}
-
-/** One stored login is one row per binding its harness resolves auth through. */
-type StoredAccount = {
-  harness: string
-  identity: string
-  /** The row the account is keyed by; the others are its other bindings. */
-  first: CredentialMetadata
-  ids: string[]
-  rows: CredentialMetadata[]
-}
-
 async function composeSnapshot(
   credentials: ControlPlaneCredentials,
   org: string,
@@ -195,35 +161,7 @@ async function composeSnapshot(
   // machine login as the one in use.
   const inUse = await accountsInUse(credentials, org, rows, visible)
   const harnessesInUse = new Set(rows.filter((row) => inUse.has(row.id)).map(harnessOf))
-  const stored = storedAccounts(rows)
-  const accounts: QuotaAccount[] = stored.map((account) => {
-    const read = account.rows.find((row) => row.usage_windows?.length)
-    const named = account.rows
-      .map((row) => row.label?.trim())
-      .find((label) => label && label !== account.first.provider_id)
-    const health = account.rows.map((row) => row.health).find((value) => value != null)
-    const checkedAt = account.rows.map((row) => row.last_validated_at).find((value) => value != null)
-    return {
-      harness: account.harness,
-      credentialId: account.first.id,
-      label: named ?? account.identity,
-      inUse: account.ids.some((id) => inUse.has(id)),
-      // Every row of one account is the same login stored per binding, so the
-      // account reaches a cloud sandbox exactly where any of them does.
-      deliverable: account.rows.map((row) => credentialReach(row)).find((reach) => reach.cloud) ?? credentialReach(account.first),
-      ...(health == null ? {} : { health }),
-      windows: read?.usage_windows ?? [],
-      ...(read?.usage_at == null ? {} : { usageAt: read.usage_at }),
-      // A Claude login the provider accepted and that reported no windows is a
-      // `claude setup-token`: minted with the inference scope only, it can run
-      // every turn and cannot read the plan. Said here, or the card asks for a
-      // check that has already happened. Claude only: a ChatGPT usage read that
-      // names no window is an empty answer, not a scope.
-      ...(account.harness === "claude" && health === "ok" && !read && checkedAt != null
-        ? { usageAt: checkedAt, usageError: INFERENCE_ONLY_LOGIN }
-        : {}),
-    }
-  })
+  const accounts: QuotaAccount[] = storedAccounts(rows).map((account) => storedQuotaAccount(account, inUse))
   for (const login of machine.logins) {
     if (login.state !== "signed_in") continue
     accounts.push({
@@ -260,82 +198,6 @@ async function composeSnapshot(
     })
   }
   return { accounts: orderAccounts(accounts) }
-}
-
-/**
- * Harnesses in the order the Providers list shows them, and within each one the
- * account its next turn runs on first. The agents Claxedo cannot run come last
- * whatever they are called: they answer a different question from every card
- * above them, and a reader looking for their own plan reads downwards.
- */
-function orderAccounts(accounts: readonly QuotaAccount[]): QuotaAccount[] {
-  const rank = (account: QuotaAccount) =>
-    account.otherAgent
-      ? HARNESS_IDS.length + 1
-      : isHarnessId(account.harness)
-        ? HARNESS_IDS.indexOf(account.harness)
-        : HARNESS_IDS.length
-  return [...accounts].sort((a, b) =>
-    rank(a) - rank(b)
-    || a.harness.localeCompare(b.harness)
-    || Number(b.inUse) - Number(a.inUse))
-}
-
-/**
- * The stored rows that stand for a plan, folded by the account they name.
- *
- * A key authenticates a project and has no plan window to report, so only the
- * kinds that are a subscription by their metadata alone are listed: an account
- * that cannot have windows must not read as one whose windows are missing.
- */
-function storedAccounts(rows: readonly CredentialMetadata[]): StoredAccount[] {
-  const groups = new Map<string, StoredAccount>()
-  for (const row of rows) {
-    if (!isSubscriptionKind(row.kind)) continue
-    const harness = harnessOf(row)
-    const identity = row.account_id ?? row.id
-    const held = groups.get(`${harness} ${identity}`)
-    if (held) {
-      held.ids.push(row.id)
-      held.rows.push(row)
-      continue
-    }
-    groups.set(`${harness} ${identity}`, { harness, identity, first: row, ids: [row.id], rows: [row] })
-  }
-  return [...groups.values()]
-}
-
-/** The harness a stored row belongs to, or the provider itself where it belongs to none. */
-function harnessOf(row: Pick<CredentialMetadata, "provider_id">): string {
-  return harnessForProviderId(row.provider_id) ?? row.provider_id
-}
-
-/**
- * The stored rows a harness would actually send, which is what "in use" means
- * on the Providers list.
- *
- * `effectiveCredentials` answers it directly, and an empty answer from it is an
- * answer: no stored account is in use, and every harness runs on the login its
- * own CLI holds. A store that does not implement it cannot answer at all, and
- * only there is the active mark the best evidence available — a mark says which
- * account was chosen, not which one is usable.
- */
-async function accountsInUse(
-  credentials: ControlPlaneCredentials,
-  org: string,
-  rows: readonly CredentialMetadata[],
-  visible: (row: CredentialMetadata) => boolean,
-): Promise<Set<string>> {
-  const effective = await credentials.effectiveCredentials?.("local", org)
-  if (effective === undefined) return new Set(rows.filter((row) => row.is_active).map((row) => row.id))
-  const byProvider = new Map(effective.filter(visible).map((row) => [row.provider_id, row.id]))
-  return new Set(
-    [...new Set(rows.map(harnessOf))].flatMap((harness) => {
-      const providerIds = isHarnessId(harness) ? HARNESS_TABLE[harness].providerIds : [harness]
-      const id = providerIds.map((provider) => byProvider.get(provider)).find((value) => value !== undefined)
-      return id === undefined ? [] : [id]
-    }),
-  )
 }
 
 /**

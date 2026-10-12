@@ -88,7 +88,7 @@ import type { CloudRootIdentity } from "../../agent-plugins/runtime/cloud-root-e
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
-import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
+import { createHostedQuotaReader } from "@claxedo/server-core/usage/hosted-quota"
 import { orgRoutedCredentials } from "../../credentials/worker/org-routed"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { privateRepoHosts } from "../private-repo-hosts"
@@ -133,7 +133,7 @@ export type HostedCoreAppOptions = {
    * running workspaces, with the organization's sandbox provider keys on a
    * plane that provisions cloud sandboxes.
    */
-  accountSetup?: Pick<HostedCredentialRoutesInput, "changed" | "sandboxDriverKeys">
+  accountSetup?: Pick<HostedCredentialRoutesInput, "changed" | "sandboxDriverKeys" | "fetch">
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -550,7 +550,12 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         return { org_id: await requireAuthority(services).resolveOrgId(auth), user_id: auth.principal.userId }
       },
       ...(plane.orgCredentials
-        ? { quota: createUsageQuotaReader({ credentials: orgRoutedCredentials(plane.orgCredentials, options.accountSetup?.changed ?? (async () => {})) }) }
+        ? {
+            quota: createHostedQuotaReader({
+              credentials: orgRoutedCredentials(plane.orgCredentials, options.accountSetup?.changed ?? (async () => {})),
+              ...(options.accountSetup?.fetch ? { fetch: options.accountSetup.fetch } : {}),
+            }),
+          }
         : {}),
       // The hosted plane runs in a Worker, which has no home directory for a
       // refreshed catalog's cache.

@@ -87,7 +87,7 @@ export function QuotaAccountCard(props: { readonly account: QuotaAccount }): JSX
           </p>
         )}
       </Show>
-      <Show when={props.account.windows.length > 0}>
+      <Show when={props.account.windows.length > 0} fallback={<Show when={!props.account.usageError}><p class="usage-account-note">{t("usage.quota.noWindows")}</p></Show>}>
         <div class="usage-windows">
           <For each={props.account.windows}>{(window) => <QuotaWindowMeter account={spoken()} window={window} />}</For>
         </div>
