@@ -18,17 +18,6 @@ export const sandboxDriverIds = ["modal", "vercel", "cloudflare", "boat", "docke
 export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 
 /**
- * Every provisioner a workspace placement can name.
- *
- * `fetch` is the HTTP bridge a hosted deployment points at an operator-run
- * provisioning service. It has no catalog entry, no credential fields and no
- * metadata, because this repository implements none of it — but a workspace it
- * provisions still has to record whose machine it runs on, so a placement must
- * be able to name it.
- */
-export type SandboxProvisionerID = SandboxDriverID | "fetch"
-
-/**
  * The machine a sandbox runs on, in the provider's own grades. A driver
  * declares which of these it can place a sandbox on; a workspace that names
  * one its driver does not declare is refused rather than placed elsewhere.
@@ -103,10 +92,6 @@ export const sandboxDriverLabels = {
 
 export function isSandboxDriverID(input: string | undefined): input is SandboxDriverID {
   return !!input && (sandboxDriverIds as readonly string[]).includes(input)
-}
-
-export function isSandboxProvisionerID(input: string | undefined): input is SandboxProvisionerID {
-  return input === "fetch" || isSandboxDriverID(input)
 }
 
 export type SandboxDriverEnv = Record<string, string | undefined>
@@ -321,13 +306,9 @@ export function sandboxDriverSecret(id: SandboxDriverID, input: Record<string, u
 
 /**
  * The driver new workspaces use: the chosen one while it holds a key, else the
- * first driver that holds one, else the deployment's own managed driver.
+ * first driver that holds one; none without a key.
  */
-export function effectiveSandboxDriver<Managed extends string>(input: {
-  chosen?: string
-  keyed: readonly SandboxDriverID[]
-  managed?: Managed
-}): SandboxDriverID | Managed | undefined {
-  return input.keyed.find((id) => id === input.chosen) ?? input.keyed[0] ?? input.managed
+export function effectiveSandboxDriver(input: { chosen?: string; keyed: readonly SandboxDriverID[] }): SandboxDriverID | undefined {
+  return input.keyed.find((id) => id === input.chosen) ?? input.keyed[0]
 }
 export * from "./start-phases"

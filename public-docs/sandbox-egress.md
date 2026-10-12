@@ -32,7 +32,6 @@ everything else.
 | `modal` | `none` | **UNRESTRICTED** | The driver implements `blockNetwork` only and rejects host policies. Modal's domain allowlist and alpha sidecar are not wired. |
 | `boat` | `none` | **UNRESTRICTED** | No egress allowlist. The driver throws if handed one. |
 | `docker` | `none` | **UNRESTRICTED** | Local Docker placement, no per-sandbox network policy wired. The driver throws if handed one. |
-| `fetch` | `none` | **UNRESTRICTED** | The fetch bridge forwards a provisioning request to an external HTTP driver; the wire format carries no egress policy, so whatever contains that sandbox (if anything) is outside Claxedo's knowledge. |
 
 Provider features do not become driver capabilities through an SDK upgrade.
 Cloudflare's native credential handlers are wired; its network allowlist is
@@ -53,15 +52,21 @@ transforms without request matchers.
 ## Which production configurations are unrestricted
 
 **The hosted control-plane Worker composes two of these drivers — `cloudflare`
-and `fetch` — and neither enforces egress.**
+and `boat` — and neither enforces egress.**
 
-The Worker composes the driver `CLAXEDO_SANDBOX_DRIVER` names
-(`packages/claxedo-server/src/authority/adapters/worker/hosted-sandbox-driver.ts`):
+A full-hosted Worker has no sandbox provider of its own. It builds a driver from
+the provider key an organization owner or admin adds under Settings → Models →
+Sandbox (`packages/claxedo-server/src/authority/adapters/worker/hosted-sandbox-key-drivers.ts`),
+and offers exactly the catalog drivers that run inside a Worker:
 
-| `CLAXEDO_SANDBOX_DRIVER` | Also requires | Driver | Egress |
+| Provider key | Fields | Driver | Egress |
 | --- | --- | --- | --- |
-| `cloudflare` | `CLOUDFLARE_SANDBOX_WORKER_URL` + `CLOUDFLARE_SANDBOX_API_TOKEN` | `cloudflare` | **UNRESTRICTED** |
-| `fetch` | `CLAXEDO_SANDBOX_DRIVER_URL` | `fetch` | **UNRESTRICTED** |
+| Cloudflare | API token + the organization's sandbox Worker URL | `cloudflare` | **UNRESTRICTED** |
+| Boat | API key | `boat` | **UNRESTRICTED** |
+
+A Boat sandbox boots the runtime image the deployment names in
+`CLAXEDO_SANDBOX_IMAGE`; that image is deployment configuration, not a provider
+account, and the Worker refuses to compose without it.
 
 Local deployments (`workspace-supervisor-sandbox.ts`) can additionally compose
 `vercel`, `modal`, `box`, and `docker`. They pass a policy only when the

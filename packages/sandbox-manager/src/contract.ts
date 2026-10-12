@@ -1,7 +1,7 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import type { SandboxMachineClass, SandboxPhaseTiming, SandboxSecretBrokering, SandboxStartPhase } from "@claxedo/sandbox-contract"
 
-export type { SandboxMachineClass, SandboxProvisionerID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+export type { SandboxMachineClass, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
   type SandboxCheckpointCaptureInput,
   type SandboxCheckpointRestoreInput,

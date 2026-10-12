@@ -3,10 +3,7 @@
 // Implements the thin `SandboxDriver` seam (ensure/touch/stop/destroy)
 // directly against a user-deployed Cloudflare Sandbox Worker over plain
 // `fetch()` — no Node-only SDK, so it runs inside the hosted control-plane
-// Worker with no separate Node bridge service. This is part of the sandbox-manager
-// driver consolidation:
-// the hosted path composes a `SandboxDriver` impl directly instead of
-// delegating over HTTP via `createFetchBridgeSandboxDriver`.
+// Worker with no separate Node bridge service.
 //
 // Credential channel: the workspace-runtime boot env is sent to the sandbox via
 // the Worker's `ensure-runtime` action (`setEnvVars`). Brokered secrets

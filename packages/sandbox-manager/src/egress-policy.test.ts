@@ -17,7 +17,6 @@ import { createMemoryLeaseStore } from "./stores/memory"
 import { sandboxDriverCatalog } from "./driver-catalog"
 import { sandboxDriverIds } from "@claxedo/sandbox-contract"
 import { createCloudflareSandboxDriver } from "./drivers/cloudflare"
-import { createFetchBridgeSandboxDriver } from "./drivers/fetch-bridge"
 
 /**
  * Sandbox egress containment: enforce where the driver can, document where it
@@ -449,20 +448,7 @@ describe("the egress capability doc cannot drift from the metadata", () => {
     }
   })
   const documented = documentedEgressControls(markdown)
-  // The fetch bridge is a driver factory, not a catalog entry, so it has to be
-  // instantiated to read its declaration.
-  const declared = new Map<string, string>([
-    ...sandboxDriverIds.map((id) => [id, sandboxDriverCatalog[id].metadata.egressControl] as const),
-    [
-      "fetch",
-      createFetchBridgeSandboxDriver({
-        id: "fetch",
-        baseUrl: "https://bridge.test",
-        autoStopMs: 60_000,
-        autoDeleteMs: 3_600_000,
-      }).metadata.egressControl,
-    ],
-  ])
+  const declared = new Map<string, string>(sandboxDriverIds.map((id) => [id, sandboxDriverCatalog[id].metadata.egressControl] as const))
 
   test("the scanner actually finds the matrix (guard against an empty ratchet)", () => {
     expect(documentedEgressControls("nothing to see here").size).toBe(0)

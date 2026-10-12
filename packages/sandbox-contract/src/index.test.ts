@@ -44,10 +44,10 @@ describe("sandbox contract", () => {
     expect(sandboxDriverSecret("vercel", { access_token: "t", team_id: "team", project_id: " " })).toBeUndefined()
   })
 
-  test("new workspaces use the chosen keyed driver, else the first keyed one, else the managed one", () => {
-    expect(effectiveSandboxDriver({ chosen: "boat", keyed: ["cloudflare", "boat"], managed: "fetch" })).toBe("boat")
-    expect(effectiveSandboxDriver({ chosen: "vercel", keyed: ["cloudflare", "boat"], managed: "fetch" })).toBe("cloudflare")
-    expect(effectiveSandboxDriver({ chosen: "boat", keyed: [], managed: "fetch" })).toBe("fetch")
+  test("new workspaces use the chosen keyed driver, else the first keyed one, and none without a key", () => {
+    expect(effectiveSandboxDriver({ chosen: "boat", keyed: ["cloudflare", "boat"] })).toBe("boat")
+    expect(effectiveSandboxDriver({ chosen: "vercel", keyed: ["cloudflare", "boat"] })).toBe("cloudflare")
+    expect(effectiveSandboxDriver({ chosen: "boat", keyed: [] })).toBeUndefined()
     expect(effectiveSandboxDriver({ keyed: [] })).toBeUndefined()
   })
 

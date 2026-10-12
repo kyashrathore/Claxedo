@@ -92,13 +92,6 @@
       "import": "./dist/drivers/local-brokering.mjs",
       "default": "./dist/drivers/local-brokering.mjs"
     },
-    "./drivers/fetch-bridge": {
-      "development": "./src/drivers/fetch-bridge.ts",
-      "bun": "./src/drivers/fetch-bridge.ts",
-      "types": "./dist/drivers/fetch-bridge.d.ts",
-      "import": "./dist/drivers/fetch-bridge.mjs",
-      "default": "./dist/drivers/fetch-bridge.mjs"
-    },
     "./drivers/modal": {
       "development": "./src/drivers/modal.ts",
       "bun": "./src/drivers/modal.ts",

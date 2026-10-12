@@ -17,7 +17,6 @@ const entries = [
   "src/drivers/cloudflare.ts",
   "src/drivers/docker.ts",
   "src/drivers/local-brokering.ts",
-  "src/drivers/fetch-bridge.ts",
   "src/drivers/modal.ts",
   "src/drivers/vercel.ts",
   "src/image.ts",
