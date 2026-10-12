@@ -8,6 +8,7 @@ import { ClaxedoDB } from "../platform/db/index"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import { ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
 import { defaultControlPlaneCredentials } from "../authority/default-credentials"
+import { createTestBackend, setBackendOverride } from "../credentials/backend-registry"
 import { SINGLE_TENANT_ORG } from "../credentials/partition"
 import { projectEnvironment } from "./environment"
 import { localProjectStore, projectsDirectory, type LocalProjectStoreDeps } from "./local-store"
@@ -18,6 +19,10 @@ import { projectSlug } from "./store"
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-projects-route-"))
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
+// A project's environment variables are credential rows. The encrypted-file
+// backend is not this file's subject, and on Windows its first write starts a
+// PowerShell runner.
+setBackendOverride(createTestBackend())
 
 type Deps = LocalProjectStoreDeps & Pick<ProjectRouteOptions, "authority" | "authorizeFolderSource"> & RepositorySourceDeps
 
@@ -51,6 +56,7 @@ function signedBy(verifier: (token: string) => Promise<SignedControlPlaneAuth>):
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  setBackendOverride(undefined)
   ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
 })

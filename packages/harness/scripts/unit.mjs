@@ -18,5 +18,5 @@ function run(command, args) {
 
 if (first) run("bun", ["run", "check"])
 const realCliSuites = process.env.CLAXEDO_REAL_CLI_SUITES === "skip" ? ["--path-ignore-patterns=src/conformance/**"] : []
-run(process.execPath, ["../../script/test-home/run.mjs", "bun", "test", "src", "scripts", "e2e/harness", ...realCliSuites, ...(shard ? [`--shard=${shard}`] : [])])
+run(process.execPath, ["../../script/test-home/run.mjs", process.execPath, "../../script/windows-test-timeout.mjs", "bun", "test", "src", "scripts", "e2e/harness", ...realCliSuites, ...(shard ? [`--shard=${shard}`] : [])])
 if (first) run("bun", ["run", "test:node"])

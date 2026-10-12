@@ -104,7 +104,7 @@
     "typecheck": "bun run generate:codex-protocol && tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
     "test": "node scripts/unit.mjs",
-    "test:files": "node ../../script/test-home/run.mjs bun test",
+    "test:files": "node ../../script/test-home/run.mjs node ../../script/windows-test-timeout.mjs bun test",
     "flows": "bun e2e/flows/run.ts",
     "flows:versions": "bun e2e/flows/version-matrix.ts",
     "corpus": "bun e2e/harness/corpus.ts",
