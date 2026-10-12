@@ -103,8 +103,12 @@ const ENTRIES = [
   // the request through `node:async_hooks`, the one package that adds. Every
   // entry's usage ledger reads a person's cloud machine time from the boots the
   // D1 lease store records, both sides of that table in
-  // `sandbox/stores/d1-boots.ts`.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 158, packages: 21 },
+  // `sandbox/stores/d1-boots.ts`, priced by the published rates beside the
+  // driver catalog (`usage/machine-time-pricing.ts` over
+  // `sandbox-manager/driver-billing.ts`), and reads a stored account's usage
+  // windows from its vendor before answering (`usage/hosted-quota.ts` over
+  // `usage/quota-accounts.ts`, in place of the machine reader `usage/quota.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 159, packages: 21 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -115,7 +119,7 @@ const ENTRIES = [
   // two modules beside it (`activation/d1-activation-snapshots.ts`,
   // `activation/d1-activation-writes.ts`), and both D1 stores key rows by the
   // one `agent-plugins/scope-keys.ts`.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 213, packages: 25 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 214, packages: 25 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -124,7 +128,7 @@ const ENTRIES = [
   // Object a sandbox start runs under (`sandbox/provisioner.cf.ts`) and the
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
   // has a sandbox to start.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 222, packages: 25 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 223, packages: 25 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
