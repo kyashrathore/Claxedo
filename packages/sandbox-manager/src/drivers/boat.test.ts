@@ -45,7 +45,8 @@ function commandFinished(input: { stdout?: string; stderr?: string; exitCode?: n
 }
 
 /**
- * The current Boat v1 API as documented at docs.boat.dev/api/v1: sandbox
+ * The Boat v1 API as it answers, which docs.boat.dev/api/v1 follows except
+ * that the TTL update answers `sandbox.updated`: sandbox
  * creation → readiness polling → command execution (docker run / host /
  * health probe / host url), a stop that archives the sandbox until it is
  * resumed, and the TTL update. Records every call so tests can assert on it;
@@ -76,7 +77,7 @@ function fakeBoat(options: { states?: string[]; hostUrl?: string; failHealthOnce
       return json({ type: "sandbox.info", sandbox: sandboxRecord(state) })
     }
     if (path === `/sandboxes/${ID}` && method === "PATCH") {
-      return json({ type: "sandbox.info", sandbox: { ...sandboxRecord("ready"), archiveAfter: body.ttlSeconds === null ? null : "2026-10-03T12:30:00Z" } })
+      return json({ type: "sandbox.updated", sandbox: { ...sandboxRecord("ready"), archiveAfter: body.ttlSeconds === null ? null : "2026-10-03T12:30:00Z" } })
     }
     if (path === `/sandboxes/${ID}/files` && method === "PUT") {
       return json({ type: "file.written", success: true, path: `/home/user/${body.path}`, encoding: "utf8", size: body.content.length })
@@ -724,6 +725,18 @@ describe("boat sandbox driver", () => {
     } })
     await expect(driver.ensureHost(ensureInput())).rejects.toThrow("trial_auto_stop_required")
     expect(commandsOf(boat.calls).some((command) => command.startsWith("host url"))).toBe(false)
+  })
+
+  test("an answer of a type the call does not expect names the call and the type Boat sent", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, fetchImpl: async (url, init) => {
+      if (init?.method === "PATCH") return Response.json({ ok: true, type: "sandbox.renamed", sandbox: sandboxRecord("ready") })
+      return boat.fetchImpl(url, init)
+    } })
+    await expect(driver.ensureHost(ensureInput())).rejects.toMatchObject({
+      code: "invalid_response",
+      message: `Boat PATCH /sandboxes/${ID} answered "sandbox.renamed", expected sandbox.updated or sandbox.info`,
+    })
   })
 
   test("a boot that fails stops the sandbox, the lease keeps it, and the retry resumes it under the one create", async () => {

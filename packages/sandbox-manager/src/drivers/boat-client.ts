@@ -103,7 +103,10 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
         const code = typeof body?.code === "string" ? body.code : `http_${response.status}`
         throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status)
       }
-      if (body?.ok !== true || !types.includes(requiredText(body.type))) invalid()
+      if (body?.ok !== true || typeof body.type !== "string" || !types.includes(body.type)) {
+        const answered = typeof body?.type === "string" ? `"${body.type}"` : "no envelope type"
+        throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} answered ${answered}, expected ${types.join(" or ")}`, "invalid_response")
+      }
       return body
     })
   }
@@ -124,9 +127,12 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
     async resume(id: string, input: { ttlSeconds: number | null }) {
       await api(`${path(id)}/resume`, ["sandbox.resuming"], { method: "POST", body: { noEnv: true, ttlSeconds: input.ttlSeconds } })
     },
-    /** `ttlSeconds` sets the auto-stop deadline to now plus that many seconds; `null` removes it. */
+    /**
+     * `ttlSeconds` sets the auto-stop deadline to now plus that many seconds; `null` removes it.
+     * Boat's reference example answers `sandbox.info`; the API answers `sandbox.updated` (2026-10-13).
+     */
     async update(id: string, input: { ttlSeconds: number | null }) {
-      const value = sandbox(await api(path(id), ["sandbox.info"], { method: "PATCH", body: input }))
+      const value = sandbox(await api(path(id), ["sandbox.updated", "sandbox.info"], { method: "PATCH", body: input }))
       return value.id === id ? value : invalid()
     },
     async stop(id: string) {
