@@ -123,8 +123,8 @@ CLAXEDO_WORKER_NAME=claxedo-user-deployed-locked-staging \
 CLAXEDO_APP_WORKER_NAME=claxedo-user-deployed-app-staging \
 CLAXEDO_SESSION_HOST_WORKER_NAME=claxedo-session-host-staging \
 CLAXEDO_DEPLOYMENT_ID=acc-stg-260830-232009-3851 \
-CLAXEDO_API_ORIGIN=https://cf-acc-stg-260830-232009-3851.claxedo.dev \
-CLAXEDO_APP_ORIGIN=https://app-acc-stg-260830-232009-3851.claxedo.dev \
+CLAXEDO_API_ORIGIN=https://api.claxedo.dev \
+CLAXEDO_APP_ORIGIN=https://app.claxedo.dev \
 CLAXEDO_AUTH_D1_DATABASE_NAME=claxedo-acc-auth-stg-260830-232009-3851 \
 CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME=claxedo-acc-control-stg-260830-232009-3851 \
 bun run deploy:user-cloudflare:claim-owner --email <your GitHub email>
