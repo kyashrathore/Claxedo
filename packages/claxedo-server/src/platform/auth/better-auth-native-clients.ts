@@ -228,6 +228,13 @@ function betterAuthNativeClientStatementDefinitions(apiOrigin: string, introspec
     throw new Error("Better Auth introspection client secret ciphertext is invalid")
   }
   const definitions: NativeClientStatement[] = [
+    // A deployment whose API origin moved still holds the resource under the old
+    // origin's identifier, the key the client links reference; deleting it
+    // cascades to those links, which the statements below create again.
+    {
+      sql: `delete from "oauthResource" where "id" = ? and "identifier" <> ?`,
+      values: ["resource_control_plane", resource],
+    },
     {
       sql: `insert into "oauthResource"
       ("id", "identifier", "name", "accessTokenTtl", "refreshTokenTtl", "allowedScopes", "disabled", "policyVersion")

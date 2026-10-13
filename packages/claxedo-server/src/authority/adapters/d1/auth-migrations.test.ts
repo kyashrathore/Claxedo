@@ -8,6 +8,8 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { CERTIFIED_ADAPTER_PROFILES } from "../../../deployments/hosted-shared/deployment-profile"
 import {
   betterAuthDatabaseSchemaInspectionSql,
+  betterAuthNativeClientProvisioningStatements,
+  betterAuthNativeResource,
   verifyBetterAuthDatabaseSchemaInspection,
 } from "../../../platform/auth/better-auth-native-clients"
 
@@ -55,5 +57,20 @@ describe("auth D1 migrations", () => {
     verifyBetterAuthDatabaseSchemaInspection(await target.prepare(betterAuthDatabaseSchemaInspectionSql()).first())
     const danglingForeignKeys = await target.prepare("pragma foreign_key_check").all()
     expect(danglingForeignKeys.results).toEqual([])
+  })
+
+  test("a deploy to a moved API origin replaces the control-plane resource and links the native clients to it", async () => {
+    const target = await freshDatabase()
+    const ciphertext = "c".repeat(64)
+    for (const origin of ["https://api-old.example.com", "https://api.example.com"]) {
+      for (const statement of betterAuthNativeClientProvisioningStatements(origin, ciphertext)) await target.prepare(statement).run()
+    }
+    const resources = await target.prepare(`select "id", "identifier" from "oauthResource"`).all()
+    expect(resources.results).toEqual([{ id: "resource_control_plane", identifier: betterAuthNativeResource("https://api.example.com") }])
+    const links = await target.prepare(`select "id", "resourceId" from "oauthClientResource" order by "id"`).all()
+    expect(links.results).toEqual(
+      ["client_resource_cli", "client_resource_control_plane", "client_resource_desktop"].map((id) => ({ id, resourceId: betterAuthNativeResource("https://api.example.com") })),
+    )
+    expect((await target.prepare("pragma foreign_key_check").all()).results).toEqual([])
   })
 })
