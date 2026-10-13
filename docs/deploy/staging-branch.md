@@ -104,12 +104,33 @@ no location), and the job prints where each database runs.
 `CLAXEDO_STAGING_WORKER_PLACEMENT_REGION` pins the Worker beside the databases
 (`aws:us-east-1` for ENAM): smart placement left the staging Worker in LHR
 (`cf-placement: remote-LHR`) with both databases in ENAM, and every signed
-request from India then took 1.5–3 s. `AUTH_DB` is untouched. Claim the
-deployment's owner again afterwards (`bun run deploy:user-cloudflare:claim-owner`):
+request from India then took 1.5–3 s. `AUTH_DB` is untouched.
 
 ```sh
 bunx wrangler d1 delete <CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME>
 ```
+
+Once the job has deployed, sign in to the staging app with GitHub and claim the
+deployment's owner again. The script lives in `packages/claxedo-server` and
+reads the same settings as the `control-plane` job; without them it targets a
+fresh user deployment's Workers and databases. The values are the staging
+environment's variables:
+
+```sh
+cd packages/claxedo-server
+CLOUDFLARE_ACCOUNT_ID=683a2c01a4d43b2fa998cde8ddedaf0e \
+CLAXEDO_WORKER_NAME=claxedo-user-deployed-locked-staging \
+CLAXEDO_APP_WORKER_NAME=claxedo-user-deployed-app-staging \
+CLAXEDO_SESSION_HOST_WORKER_NAME=claxedo-session-host-staging \
+CLAXEDO_DEPLOYMENT_ID=acc-stg-260830-232009-3851 \
+CLAXEDO_API_ORIGIN=https://cf-acc-stg-260830-232009-3851.claxedo.dev \
+CLAXEDO_APP_ORIGIN=https://app-acc-stg-260830-232009-3851.claxedo.dev \
+CLAXEDO_AUTH_D1_DATABASE_NAME=claxedo-acc-auth-stg-260830-232009-3851 \
+CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME=claxedo-acc-control-stg-260830-232009-3851 \
+bun run deploy:user-cloudflare:claim-owner --email <your GitHub email>
+```
+
+It prints one line to paste into the developer console of the signed-in app tab.
 
 Staging's auth database still holds tables no code reads: `deploymentRelease*`,
 `deploymentCutover*` and `deploymentRecoveryEpoch`. Their restrict foreign keys
