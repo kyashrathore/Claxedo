@@ -15,8 +15,9 @@ function machineProperties(event: { workspaceId: string; driver: string; labels:
 /**
  * Each cloud start phase as an ops-plane fact, and the phase that makes a
  * machine serve as the moment its metered interval opens: `workspace_ready`
- * for a cold start, `workspace_woken` for a resume or restore. The repository
- * URL and the key id are tenant data and stay out.
+ * for a cold start, `workspace_woken` for a resume or restore. `start_ms` and
+ * the boot mode are the start the person asked for, across every epoch it
+ * took. The repository URL and the key id are tenant data and stay out.
  */
 export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
   return (event: SandboxStartPhaseEvent) => {
@@ -44,12 +45,14 @@ export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
  * The close of a metered interval is `workspace_stopped` with the boot's
  * `active_ms`, whether the machine was stopped by hand, by idleness, or
  * destroyed while serving. Destroying a machine that was already stopped
- * closes nothing.
+ * closes nothing. An epoch that failed while its start goes on in the next
+ * one is not a failure the person saw; `workspace_failed` is the start's end.
  */
 export function sandboxLifecycleSink(telemetry: ControlPlaneTelemetry) {
   return (event: SandboxLifecycleEvent) => {
     const machine = machineProperties(event)
     if (event.kind === "failed") {
+      if (event.retrying) return
       telemetry.capture("system", "workspace_failed", { ...machine, code: event.bootFailed ? "boot_failed" : "provision_failed" })
       return
     }

@@ -208,6 +208,101 @@ describe("sandbox lease lifecycle", () => {
 
     expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
 
-    expect(lifecycle).toEqual([{ workspaceId: "ws_1", epoch: 1, driver: "test-driver", labels: { projectId: "prj_1" }, kind: "failed", bootFailed: false }])
+    expect(lifecycle).toEqual([{ workspaceId: "ws_1", epoch: 1, driver: "test-driver", labels: { projectId: "prj_1" }, kind: "failed", bootFailed: false, retrying: true }])
+  })
+})
+
+describe("a start across the epochs it takes", () => {
+  const held = (ensure: SandboxDriverEnsureInput) => ensure.onResource?.({ sandboxId: "sb_held", hostId: "host_ws_1", labels: ensure.labels })
+  const resumeAfter = (time: ReturnType<typeof clock>, ms: number): SandboxDriver["resumeHost"] => async ({ ensure }) => {
+    time.advance(ms)
+    return { ...target(ensure), sandboxId: "sb_held" }
+  }
+  function composeStart(driver: SandboxDriver, time: ReturnType<typeof clock>, maxRetryCount?: number) {
+    const starts: SandboxStartPhaseEvent[] = []
+    const lifecycle: SandboxLifecycleEvent[] = []
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore(),
+      driver,
+      now: time.now,
+      ...(maxRetryCount === undefined ? {} : { maxRetryCount }),
+      onStartPhase: (event) => starts.push(event),
+      onLifecycle: (event) => lifecycle.push(event),
+    })
+    const served = () => starts.filter((event) => event.phase === "runtime_ready").map((event) => [event.epoch, event.bootMode, event.sinceStartMs])
+    const failures = () => lifecycle.filter((event) => event.kind === "failed").map((event) => [event.epoch, "retrying" in event && event.retrying])
+    return { manager, starts, lifecycle, served, failures }
+  }
+
+  test("a cold start that fails on a held host and serves on the next epoch is one cold start timed from the first request", async () => {
+    const time = clock()
+    const { manager, served, failures, lifecycle } = composeStart(scriptedDriver([async (ensure) => {
+      time.advance(3_000)
+      await held(ensure)
+      throw new Error("provider said no")
+    }], resumeAfter(time, 40_000)), time)
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
+    time.advance(2_000)
+    expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+
+    expect(failures()).toEqual([[1, true]])
+    expect(served()).toEqual([[2, "cold-start", 45_000]])
+    time.advance(10_000)
+    expect((await manager.stop("ws_1")).ok).toBe(true)
+    expect(lifecycle.at(-1)).toMatchObject({ kind: "stopped", epoch: 2, activeMs: 50_000 })
+  })
+
+  test("a wake that fails on its first epoch and serves on the next is one wake timed from the first request", async () => {
+    const time = clock()
+    let resumes = 0
+    const resumeHost: SandboxDriver["resumeHost"] = async ({ ensure }) => {
+      resumes += 1
+      if (resumes === 1) {
+        time.advance(5_000)
+        throw new Error("provider said no")
+      }
+      time.advance(30_000)
+      return target(ensure)
+    }
+    const { manager, served, failures } = composeStart(scriptedDriver([async (ensure) => target(ensure)], resumeHost), time)
+    await manager.ensure("ws_1", input)
+    expect((await manager.stop("ws_1")).ok).toBe(true)
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
+    time.advance(2_000)
+    expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+
+    expect(failures()).toEqual([[2, true]])
+    expect(served().slice(1)).toEqual([[3, "resume", 37_000]])
+  })
+
+  test("a boot failure ends the start, and the person's next start of a host that never served is a cold start of its own", async () => {
+    const time = clock()
+    const bootFailure = Object.assign(new Error("fatal: couldn't find remote ref"), { runtimeBootFailed: true })
+    const { manager, served, failures } = composeStart(scriptedDriver([async (ensure) => {
+      await held(ensure)
+      time.advance(40_000)
+      throw bootFailure
+    }], resumeAfter(time, 1_000)), time)
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
+    time.advance(60_000)
+    expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+
+    expect(failures()).toEqual([[1, false]])
+    expect(served()).toEqual([[2, "cold-start", 1_000]])
+  })
+
+  test("a provider failure that spends the retry budget ends the start", async () => {
+    const time = clock()
+    const { manager, failures } = composeStart(scriptedDriver([async (ensure) => {
+      await held(ensure)
+      throw new Error("provider said no")
+    }]), time, 1)
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
+
+    expect(failures()).toEqual([[1, false]])
   })
 })

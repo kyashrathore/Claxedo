@@ -902,7 +902,7 @@ describe("sandbox manager", () => {
       lease: expect.objectContaining({ epoch: 2, status: "acquiring", sandboxId: "sandbox_1", hostId: "host_1" }),
       ensure: expect.objectContaining({ machineClass: "large", epoch: 2 }),
     }))
-    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 2, retryCount: 0, start: { startedAt: 15_001, bootMode: "resume" } })
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 2, retryCount: 0, start: { requestedAt: 15_001, startedAt: 15_001, bootMode: "cold-start" } })
     expect(driver.suspend).toHaveBeenCalledTimes(1)
   })
 

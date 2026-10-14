@@ -14,6 +14,7 @@ import {
   type SandboxResource,
   type SandboxMutationResult,
   type SandboxGarbageCollectResult,
+  type SandboxStartProgress,
   isSandboxListingUnsupported,
   SANDBOX_IMAGE_LABEL,
   type SandboxManagerOptions
@@ -304,7 +305,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       && lease.status !== "ready"
       && options.driver.metadata.persistence.resume === "replacement-restore"
     if (restoring) return "restore"
-    if (lease.sandboxId && options.driver.resumeHost) return "resume"
+    if (lease.sandboxId && lease.url && options.driver.resumeHost) return "resume"
     return "cold-start"
   }
 
@@ -344,7 +345,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         }
       }
       const resuming = Boolean(lease.sandboxId && ensure.bootSource?.kind === "default" && options.driver.resumeHost)
-      const bootMode: SandboxBootMode = resuming ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start"
+      // A host that never published a URL never served, so resuming it is the
+      // workspace's first start as the person sees it, not a wake.
+      const bootMode: SandboxBootMode = resuming && lease.url ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start"
       start = starts.observe(lease, { bootMode, enteredAt, labels: ensure.labels })
       ensure.onResource = async (resource) => {
         const recorded = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
@@ -423,7 +426,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       // host as it is, since stopping and resuming it costs minutes.
       const unstopped = bootFailed || retryCapped ? await stopHeldHost(workspaceId, lease.epoch) : undefined
       const recorded = unstopped ? `${error}; ${unstopped}` : error
-      lifecycle.failed(lease, bootFailed)
+      lifecycle.failed(lease, { bootFailed, retrying: !bootFailed && !retryCapped })
       await start?.flush()
       const failed = await options.leaseStore.recordFailure(
         workspaceId,
@@ -516,6 +519,22 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     return lease.sandboxId ? lease.nextRetryAt !== undefined || stale : lease.nextRetryAt !== undefined && !stale
   }
 
+  /**
+   * The start the next epoch continues: the one a stale epoch was taken over
+   * in, or the one a provider failure interrupted while its retry budget
+   * lasts. A boot failure, a spent budget, a lost serving runtime and a stop
+   * all end the start the person was waiting on; the next epoch is a start of
+   * its own.
+   */
+  function continuedStart(lease: SandboxLease | undefined): SandboxStartProgress | undefined {
+    if (!lease?.start) return undefined
+    const failure = sandboxLeaseFailure(lease, { now: now(), maxRetryCount })
+    const continued = lease.status === "acquiring" || (failure?.kind === "provider" && lease.retryCount < maxRetryCount)
+    if (!continued) return undefined
+    const at = now()
+    return { requestedAt: lease.start.requestedAt, bootMode: lease.start.bootMode, startedAt: at, markedAt: at, phases: [] }
+  }
+
   /** The lease a start runs the driver for, or the answer that stands in for one. */
   async function admit(workspaceId: string, input: SandboxManagerInput): Promise<{ lease: SandboxLease } | SandboxEnsureResult> {
     // Egress disposition, decided BEFORE a lease is acquired.
@@ -561,6 +580,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     const wait = waiting(existing)
     if (wait) return wait
     if (existing && continues(existing)) return { lease: existing }
+    const start = continuedStart(existing)
     const acquired = await options.leaseStore.acquire(workspaceId, {
       homeRegion: input.homeRegion,
       driver: options.driver.id,
@@ -568,6 +588,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       now: now(),
       ...(input.labels ? { labels: input.labels } : {}),
       ...(input.machineClass ? { machineClass: input.machineClass } : {}),
+      ...(start ? { start } : {}),
     })
     if (!acquired.acquired) return wanted(acquired.lease, acquired.retryAfterMs)
     if (!existing) input.onLeaseOpened?.()

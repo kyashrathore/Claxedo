@@ -241,6 +241,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       checkpoint: currentLease?.checkpoint,
       persistence: currentLease?.persistence,
       restore: currentLease?.restore,
+      start: acquireInput.start,
     }
     const values = rowValues(next, current)
     // No row observed: only an insert that actually inserts may win. An isolate

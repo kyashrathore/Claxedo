@@ -4,7 +4,9 @@ import type { SandboxLease } from "./contract"
  * The lease transitions a deployment meters. A lease epoch is one boot: a wake
  * acquires a new epoch with its own start, so `activeMs` (the epoch's start to
  * its stop or destroy) is the machine time that boot spent, and is present only
- * when the lease was serving at that moment.
+ * when the lease was serving at that moment. A failed epoch whose start goes
+ * on in the next epoch is `retrying`; the start the person waits on has not
+ * failed until an epoch fails without one.
  */
 export type SandboxLifecycleEvent = {
   workspaceId: string
@@ -14,7 +16,7 @@ export type SandboxLifecycleEvent = {
 } & (
   | { kind: "stopped"; idle: boolean; activeMs?: number }
   | { kind: "destroyed"; activeMs?: number }
-  | { kind: "failed"; bootFailed: boolean }
+  | { kind: "failed"; bootFailed: boolean; retrying: boolean }
 )
 
 export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) => void) | undefined, now: () => number) {
@@ -31,6 +33,6 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
   return {
     stopped: (lease: SandboxLease, idle: boolean) => report({ ...base(lease), kind: "stopped", idle, ...active(lease) }),
     destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", ...active(lease) }),
-    failed: (lease: SandboxLease, bootFailed: boolean) => report({ ...base(lease), kind: "failed", bootFailed }),
+    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean }) => report({ ...base(lease), kind: "failed", ...failure }),
   }
 }

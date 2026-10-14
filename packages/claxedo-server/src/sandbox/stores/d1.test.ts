@@ -371,7 +371,7 @@ describe("d1 sandbox lease store", () => {
     await ownedWorkspace(target, "ws_1")
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW, labels: { placed: "here" }, machineClass: "large" })
     await leaseStore.recordTarget("ws_1", 1, { sandboxId: "sandbox_1", hostId: "host_1", labels: { placed: "here" } })
-    await leaseStore.update("ws_1", 1, { start: { startedAt: NOW, bootMode: "cold-start", markedAt: NOW, phases: ["lease_decision"] } })
+    await leaseStore.update("ws_1", 1, { start: { requestedAt: NOW, startedAt: NOW, bootMode: "cold-start", markedAt: NOW, phases: ["lease_decision"] } })
     await expect(bootRows(target)).resolves.toEqual([])
 
     at = NOW + 90_000

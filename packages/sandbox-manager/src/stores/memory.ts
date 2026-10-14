@@ -48,6 +48,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
         checkpoint: current?.checkpoint,
         persistence: current?.persistence,
         restore: current?.restore,
+        start: input.start,
       }
       leases.set(workspaceId, next)
       return { acquired: true, lease: next }

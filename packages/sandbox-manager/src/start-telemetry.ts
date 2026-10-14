@@ -25,7 +25,7 @@ export function createSandboxStartRecorder(options: {
     try {
       options.onStartPhase?.({
         ...timing,
-        sinceStartMs: Math.max(0, options.now() - progress.startedAt),
+        sinceStartMs: Math.max(0, options.now() - progress.requestedAt),
         workspaceId: lease.workspaceId,
         epoch: lease.epoch,
         driver: options.driver,
@@ -68,10 +68,13 @@ export function createSandboxStartRecorder(options: {
      * once when the call is done, so observing them adds no lease write to
      * the path a start waits on; a failure flushes them first, so the boot the
      * failure ends has its start on the row. A serving lease is not starting.
+     * An epoch acquired with a start it continues has that start and no phase
+     * yet; one acquired without begins its own here.
      */
     observe(lease: SandboxLease, input: { bootMode: SandboxBootMode; enteredAt: number; labels: Record<string, string> }) {
       if (lease.status === "ready") return undefined
-      const progress = lease.start ?? { startedAt: input.enteredAt, bootMode: input.bootMode, markedAt: input.enteredAt, phases: [] }
+      const progress = lease.start
+        ?? { requestedAt: input.enteredAt, startedAt: input.enteredAt, bootMode: input.bootMode, markedAt: input.enteredAt, phases: [] }
       const ended: Timing[] = []
       let markedAt = progress.markedAt
       let flushed = false
@@ -81,7 +84,7 @@ export function createSandboxStartRecorder(options: {
         ended.push({ phase, durationMs: Math.max(0, at - markedAt) })
         markedAt = at
       }
-      if (!lease.start) end("lease_decision")
+      if (!progress.phases.length) end("lease_decision")
       return {
         end,
         flush: async () => {

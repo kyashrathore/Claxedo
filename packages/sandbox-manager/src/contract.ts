@@ -170,8 +170,13 @@ export type SandboxLease = {
  * One lease epoch's start as far as it has been observed. Persisted because a
  * start outlives the ensure call that began it: a driver that answers
  * "provisioning" is polled again from another request, often another isolate.
+ *
+ * `startedAt` is this epoch's boot, the interval the epoch is metered by;
+ * `requestedAt` and `bootMode` are the start the person is waiting on, which
+ * an epoch that retries a failed attempt or takes over a stale one inherits.
  */
 export type SandboxStartProgress = {
+  requestedAt: number
   startedAt: number
   bootMode: SandboxBootMode
   /** When the last phase the control plane itself observed ended; the next one is timed from here. */
@@ -180,6 +185,7 @@ export type SandboxStartProgress = {
 }
 
 export type SandboxStartPhaseEvent = SandboxPhaseTiming<SandboxStartPhase> & {
+  /** Since the start the person is waiting on began, across the epochs it took. */
   sinceStartMs: number
   workspaceId: string
   epoch: number
@@ -198,6 +204,8 @@ export type SandboxLeaseAcquireInput = {
   /** The placement's labels, recorded on a fresh lease before the driver is asked for a resource; a resumed lease keeps its own. */
   labels?: Record<string, string>
   machineClass?: SandboxMachineClass
+  /** The start the new epoch continues, recorded on it before any driver step, so a poll from another isolate times from the same request. */
+  start?: SandboxStartProgress
 }
 
 export type SandboxLeaseAcquireResult =
