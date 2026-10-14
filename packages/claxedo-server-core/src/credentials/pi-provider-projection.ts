@@ -56,8 +56,9 @@ const providerNames: Record<PiLaunchProvider, string> = { "openai-codex": "OpenA
  * Registry connection metadata, from each Pi provider to the account it runs
  * on. A provider connected by another harness's login (Anthropic through
  * Claude Code's) names that harness and is not Pi's to disconnect. Models are
- * the launch catalog the session host runs Pi with, listed only for a usable
- * account; a refused account's provider says `refused` and lists none.
+ * the launch catalog the session host runs Pi with, listed for every provider
+ * a person could connect; only a provider whose account the vendor refused
+ * says `refused` and lists none, since none of them can be run.
  */
 export function projectPiProviderCatalog(accounts: ReadonlyMap<string, PiProviderAccount>) {
   const usable = (id: PiLaunchProvider) => accounts.get(id)?.refused === undefined && accounts.has(id)
@@ -76,7 +77,7 @@ export function projectPiProviderCatalog(accounts: ReadonlyMap<string, PiProvide
     return [key, { id: key, name: model.name }]
   }))
   return {
-    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], ...source(id), ...refusal(id), models: usable(id) ? models(id) : {} })),
+    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], ...source(id), ...refusal(id), models: accounts.get(id)?.refused === undefined ? models(id) : {} })),
     connected: PI_LAUNCH_PROVIDERS.filter(usable),
     default: {},
   }
