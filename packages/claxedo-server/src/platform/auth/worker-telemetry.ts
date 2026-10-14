@@ -90,22 +90,36 @@ function safeString(value: unknown): string {
   }
 }
 
+/** Events held for the next flush; past this the oldest is dropped, so an isolate nothing flushes cannot grow without bound. */
+const QUEUE_LIMIT = 1_000
+
+type QueuedEvent = { event: string; distinctId: string; properties: Record<string, unknown>; capturedAt: Date }
+
+/**
+ * `capture` only queues; `flush` posts the queue as one batch and awaits it.
+ * A Worker cancels the I/O an invocation started once that invocation ends,
+ * and a promise cancelled that way never settles: a POST begun by a capture
+ * inside background work, or in a Durable Object step, would hang every later
+ * flush that awaited it, and with it the invocation keeping that flush alive.
+ * Posting only from the flush keeps each send inside the invocation that
+ * awaits it; what an invocation captured and never flushed goes with the next.
+ */
 export function workerTelemetry(env: TelemetryEnv = {}): ControlPlaneTelemetry {
   const key = resolveTelemetryKey(env)
   const host = resolveTelemetryHost(env)
   if (!key) {
     return { capture: () => {} }
   }
-  const pending = new Set<Promise<void>>()
+  const queued: QueuedEvent[] = []
   return {
     capture: (distinctId, event, properties) => {
-      const send = postCapture(host, key, event, distinctId, properties ?? {}, new Date())
-        .catch(() => {})
-        .finally(() => pending.delete(send))
-      pending.add(send)
+      if (queued.length >= QUEUE_LIMIT) queued.shift()
+      queued.push({ event, distinctId, properties: properties ?? {}, capturedAt: new Date() })
     },
     flush: async () => {
-      await Promise.all(pending)
+      const batch = queued.splice(0)
+      if (!batch.length) return
+      await postEvents(host, key, batch).catch(() => {})
     },
   }
 }
@@ -134,19 +148,24 @@ export function workerErrorCapture(env: TelemetryEnv = {}): WorkerErrorCapture {
       try {
         const { type, value } = exceptionIdentity(error)
         const frames = parseStackFrames(asRecord(error)?.stack)
-        await postCapture(host, key, "$exception", distinctId, {
-          // Tags/extra ride as ordinary top-level properties so alert rules can
-          // match them directly (`page_class = payment` pages the phone).
-          ...properties,
-          $exception_list: [
-            {
-              type,
-              value,
-              mechanism: { handled: false, synthetic: false },
-              stacktrace: { type: "raw", frames },
-            },
-          ],
-        }, new Date())
+        await postEvents(host, key, [{
+          event: "$exception",
+          distinctId,
+          properties: {
+            // Tags/extra ride as ordinary top-level properties so alert rules can
+            // match them directly (`page_class = payment` pages the phone).
+            ...properties,
+            $exception_list: [
+              {
+                type,
+                value,
+                mechanism: { handled: false, synthetic: false },
+                stacktrace: { type: "raw", frames },
+              },
+            ],
+          },
+          capturedAt: new Date(),
+        }])
       } catch {
         // Observability must never take down the request path.
       }
@@ -182,22 +201,17 @@ async function pseudonymousEntries(
   })))
 }
 
-async function postCapture(
-  host: string,
-  key: string,
-  event: string,
-  distinctId: string,
-  properties: Record<string, unknown>,
-  capturedAt: Date,
-): Promise<void> {
+async function postEvents(host: string, key: string, events: readonly QueuedEvent[]): Promise<void> {
   const body = JSON.stringify({
     api_key: key,
-    event,
-    timestamp: capturedAt.toISOString(),
-    distinct_id: await pseudonymousId(distinctId),
-    properties: await pseudonymousEntries(properties, isIdentifierKey),
+    batch: await Promise.all(events.map(async (entry) => ({
+      event: entry.event,
+      timestamp: entry.capturedAt.toISOString(),
+      distinct_id: await pseudonymousId(entry.distinctId),
+      properties: await pseudonymousEntries(entry.properties, isIdentifierKey),
+    }))),
   })
-  await withDeadlineSignal(5_000, (signal) => fetch(`${host}/capture/`, {
+  await withDeadlineSignal(5_000, (signal) => fetch(`${host}/batch/`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,

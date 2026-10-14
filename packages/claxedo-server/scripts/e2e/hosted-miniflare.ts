@@ -105,7 +105,8 @@ async function main(input: Input) {
     httpsCert: readFileSync(input.certificate, "utf8"),
     outboundService: async (request: Request) => {
       if (new URL(request.url).hostname === HOSTED_E2E_ANALYTICS_HOST) {
-        appendFileSync(path.join(input.root, HOSTED_E2E_TELEMETRY_FILE), `${await request.text()}\n`)
+        const batch = ((await request.json()) as { batch: unknown[] }).batch
+        appendFileSync(path.join(input.root, HOSTED_E2E_TELEMETRY_FILE), batch.map((event) => `${JSON.stringify(event)}\n`).join(""))
         return Response.json({ status: 1 })
       }
       const headers = new Headers(request.headers)

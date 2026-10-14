@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest"
+import { afterEach, expect, test } from "vitest"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
@@ -19,7 +19,7 @@ async function captureServer() {
     let body = ""
     request.on("data", (chunk) => { body += chunk })
     request.on("end", () => {
-      if (request.url === "/capture/") captured.push(JSON.parse(body))
+      if (request.url === "/batch/") captured.push(...JSON.parse(body).batch)
       response.end("{}")
     })
   })
@@ -74,7 +74,8 @@ test("a hosted control plane reports each cloud start phase as an ops event tagg
     source: { kind: "git", repoUrl: "https://github.com/acme/private.git" },
   })
 
-  await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "sandbox.start_phase")).toHaveLength(4))
+  await services.telemetry.flush!()
+  expect(telemetry.captured.filter((entry) => entry.event === "sandbox.start_phase")).toHaveLength(4)
   const workspace = await pseudonymousId("ws_1")
   const project = await pseudonymousId("prj_1")
   const phases = telemetry.captured.filter((entry) => entry.event === "sandbox.start_phase")
@@ -85,13 +86,14 @@ test("a hosted control plane reports each cloud start phase as an ops event tagg
     expect(entry.properties).toMatchObject({ workspace_id: workspace, epoch: 1, driver: "test", region: "eu-west", boot_mode: "cold-start", project_id: project, duration_ms: expect.any(Number) })
     expect(JSON.stringify(entry.properties)).not.toContain("acme")
   }
-  await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "workspace_ready")).toHaveLength(1))
+  expect(telemetry.captured.filter((entry) => entry.event === "workspace_ready")).toHaveLength(1)
   expect(telemetry.captured.find((entry) => entry.event === "workspace_ready")?.properties)
     .toMatchObject({ workspace_id: workspace, driver: "test", boot_mode: "cold-start", start_ms: expect.any(Number) })
   expect(JSON.stringify(telemetry.captured)).not.toContain("cred_boat")
 
   expect((await services.sandbox.sandboxManager!.stop("ws_1")).ok).toBe(true)
-  await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "workspace_stopped")).toHaveLength(1))
+  await services.telemetry.flush!()
+  expect(telemetry.captured.filter((entry) => entry.event === "workspace_stopped")).toHaveLength(1)
   expect(telemetry.captured.find((entry) => entry.event === "workspace_stopped")?.properties)
     .toMatchObject({ workspace_id: workspace, cause: "explicit", active_ms: expect.any(Number) })
   expect(JSON.stringify(telemetry.captured)).not.toMatch(/ws_1|prj_1|acme/)

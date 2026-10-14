@@ -90,32 +90,43 @@ describe("workerTelemetry", () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
-  test("both opt-ins → one POST to /capture/ with ids leaving only as digests", async () => {
+  test("both opt-ins → nothing until a flush, then one POST to /batch/ with ids leaving only as digests", async () => {
     const spy = fetchSpy()
-    workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" }).capture("user_1", "thing.happened", {
+    const telemetry = workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" })
+    telemetry.capture("user_1", "thing.happened", {
       a: 1,
       workspace_id: "ws_1",
       hostId: "host_1",
       surface: "app",
       $groups: { org: "org_1" },
     })
-    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1))
+    telemetry.capture("system", "other.thing")
+    expect(spy).not.toHaveBeenCalled()
+    await telemetry.flush!()
+    expect(spy).toHaveBeenCalledTimes(1)
     const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe("https://us.i.posthog.com/capture/")
+    expect(url).toBe("https://us.i.posthog.com/batch/")
     expect(JSON.parse(init.body as string)).toEqual({
       api_key: "phc_w",
-      event: "thing.happened",
-      timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-      distinct_id: await pseudonymousId("user_1"),
-      properties: {
-        a: 1,
-        workspace_id: await pseudonymousId("ws_1"),
-        hostId: await pseudonymousId("host_1"),
-        surface: "app",
-        $groups: { org: await pseudonymousId("org_1") },
-      },
+      batch: [
+        {
+          event: "thing.happened",
+          timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+          distinct_id: await pseudonymousId("user_1"),
+          properties: {
+            a: 1,
+            workspace_id: await pseudonymousId("ws_1"),
+            hostId: await pseudonymousId("host_1"),
+            surface: "app",
+            $groups: { org: await pseudonymousId("org_1") },
+          },
+        },
+        { event: "other.thing", timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), distinct_id: "system", properties: {} },
+      ],
     })
     expect(init.body).not.toMatch(/user_1|ws_1|host_1|org_1/)
+    await telemetry.flush!()
+    expect(spy).toHaveBeenCalledTimes(1)
   })
 
   test("a digest is stable per id, distinct across ids, and the system id stays readable", async () => {
@@ -157,9 +168,11 @@ describe("workerErrorCapture", () => {
 
     expect(spy).toHaveBeenCalledTimes(1)
     const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe("https://eu.i.posthog.com/capture/")
-    const body = JSON.parse(init.body as string)
-    expect(body.api_key).toBe("phc_w")
+    expect(url).toBe("https://eu.i.posthog.com/batch/")
+    const envelope = JSON.parse(init.body as string)
+    expect(envelope.api_key).toBe("phc_w")
+    expect(envelope.batch).toHaveLength(1)
+    const body = envelope.batch[0]
     expect(body.event).toBe("$exception")
     expect(body.distinct_id).toBe(await pseudonymousId("user_7"))
     // Tags ride as top-level properties so an alert rule can match page_class.
@@ -191,7 +204,7 @@ describe("workerErrorCapture", () => {
 })
 
 describe("workerTelemetry flush", () => {
-  test("settles only once every send it started has settled", async () => {
+  test("settles only once the batch it posted has settled, and a flush with nothing queued posts nothing", async () => {
     let answer: () => void = () => {}
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { answer = () => resolve(new Response("ok")) })))
     const telemetry = workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" })
@@ -204,5 +217,28 @@ describe("workerTelemetry flush", () => {
     answer()
     await flush
     expect(flushed).toBe(true)
+    await telemetry.flush!()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  test("a batch the vendor refuses is dropped, and the flush still settles", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down") }))
+    const telemetry = workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" })
+    telemetry.capture("user_1", "thing.happened")
+    await expect(telemetry.flush!()).resolves.toBeUndefined()
+    await telemetry.flush!()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  test("the queue keeps the newest thousand events when nothing flushes", async () => {
+    const spy = fetchSpy()
+    const telemetry = workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" })
+    for (let index = 0; index < 1_005; index += 1) telemetry.capture("system", `event.${index}`)
+    await telemetry.flush!()
+    const [, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
+    const batch = JSON.parse(init.body as string).batch as Array<{ event: string }>
+    expect(batch).toHaveLength(1_000)
+    expect(batch[0].event).toBe("event.5")
+    expect(batch.at(-1)?.event).toBe("event.1004")
   })
 })

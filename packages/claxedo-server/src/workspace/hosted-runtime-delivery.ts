@@ -226,6 +226,9 @@ export function createHostedRuntimeDelivery(input: {
       if (!await live(workspaceId)) return undefined
       return push(workspaceId, await hooks.prepareRuntime({ workspaceId }))
     },
+    flushTelemetry: async () => {
+      await input.services.telemetry.flush?.()
+    },
   }
   const running = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
     const leases = await input.sandboxManager.list()

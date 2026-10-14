@@ -68,28 +68,41 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
   return class SandboxProvisioner extends DurableObject<Env> {
     #driving = false
 
-    async start(workspaceId: string): Promise<SandboxStartAnswer> {
-      const joined = await this.#inFlight()
-      if (joined) return joined
-      const outcome = await this.ctx.storage.get<Outcome>("outcome")
-      if (outcome) {
-        await this.ctx.storage.delete("outcome")
-        if (Date.now() - outcome.settledAt <= outcomeHeldMs && outcome.answer.status !== "ready") return outcome.answer
-      }
-      const live = await drive(this.env).live(workspaceId)
-      if (live) return live
-      return this.#begin(workspaceId)
+    start(workspaceId: string): Promise<SandboxStartAnswer> {
+      return this.#flushed(async () => {
+        const joined = await this.#inFlight()
+        if (joined) return joined
+        const outcome = await this.ctx.storage.get<Outcome>("outcome")
+        if (outcome) {
+          await this.ctx.storage.delete("outcome")
+          if (Date.now() - outcome.settledAt <= outcomeHeldMs && outcome.answer.status !== "ready") return outcome.answer
+        }
+        const live = await drive(this.env).live(workspaceId)
+        if (live) return live
+        return this.#begin(workspaceId)
+      })
     }
 
-    async refresh(workspaceId: string): Promise<SandboxStartAnswer> {
-      const joined = await this.#inFlight()
-      if (joined) return joined
-      await this.ctx.storage.delete("outcome")
-      return this.#begin(workspaceId)
+    refresh(workspaceId: string): Promise<SandboxStartAnswer> {
+      return this.#flushed(async () => {
+        const joined = await this.#inFlight()
+        if (joined) return joined
+        await this.ctx.storage.delete("outcome")
+        return this.#begin(workspaceId)
+      })
     }
 
     async inFlight(): Promise<SandboxStartAnswer | undefined> {
       return this.#inFlight()
+    }
+
+    /** What a step queued leaves with the invocation that ran it; the step's own answer or failure stands. */
+    async #flushed<T>(work: () => Promise<T>): Promise<T> {
+      try {
+        return await work()
+      } finally {
+        await drive(this.env).flushTelemetry?.().catch(() => undefined)
+      }
     }
 
     async #inFlight(): Promise<SandboxStartAnswer | undefined> {
@@ -97,7 +110,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       const run = await storage.get<Run>("run")
       if (!run) return undefined
       if (!this.#driving && (await storage.getAlarm()) === null) await storage.setAlarm(Date.now())
-      return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion }
+      return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true }
     }
 
     async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
@@ -146,7 +159,11 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       await storage.setAlarm(next)
     }
 
-    async alarm() {
+    alarm() {
+      return this.#flushed(() => this.#step())
+    }
+
+    async #step() {
       this.#driving = true
       try {
         const storage = this.ctx.storage
