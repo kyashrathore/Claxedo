@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { hostedFetch, inviteHostedPerson, signInHostedPerson } from "./hosted-auth"
+import { seedOrgSandboxKey } from "./hosted-flow"
 import { startHostedStack } from "./hosted-stack"
 
 test.skipIf(process.platform !== "darwin")("certified hosted Worker signs in two GitHub people and refuses unbrokered repository egress", async () => {
@@ -25,6 +26,7 @@ test.skipIf(process.platform !== "darwin")("certified hosted Worker signs in two
     expect((await bootstrapped.json() as { organizations: Array<{ id: string; name: string }> }).organizations).toEqual([
       { id: "hosted-e2e-organization", name: "Hosted E2E" },
     ])
+    await seedOrgSandboxKey(stack, owner)
 
     const invitationToken = await inviteHostedPerson(stack, owner, second, "hosted-e2e-organization")
     const accepted = await hostedFetch(stack, "/api/control/invitations/accept", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: invitationToken }) }, second)
