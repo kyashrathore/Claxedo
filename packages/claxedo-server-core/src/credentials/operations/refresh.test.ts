@@ -47,16 +47,15 @@ function jwt(expSeconds: number) {
   return `header.${claims}.signature`
 }
 
-function tokenResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
+function tokenResponse(body: unknown, init: { ok?: boolean; status?: number; contentType?: string } = {}) {
   const calls: Array<{ url: string; init: RequestInit }> = []
   const stub = (async (url: string | URL, requestInit?: RequestInit) => {
     calls.push({ url: String(url), init: requestInit ?? {} })
-    return {
-      ok: init.ok ?? true,
-      status: init.status ?? 200,
-      json: async () => body,
-      text: async () => JSON.stringify(body),
-    } as unknown as Response
+    const text = typeof body === "string" ? body : JSON.stringify(body)
+    return new Response(text, {
+      status: init.status ?? (init.ok === false ? 400 : 200),
+      headers: { "content-type": init.contentType ?? "application/json" },
+    })
   }) as unknown as typeof fetch
   return { stub, calls }
 }
@@ -164,11 +163,22 @@ describe("refreshCredentialSecret", () => {
     expect(JSON.parse(result.secret)).toEqual({ type: "oauth", refresh: "refresh_new", access: "opaque-token" })
   })
 
-  test("rejects when the refresh token is refused", async () => {
+  test("rejects when the refresh token is refused, carrying the endpoint's error code", async () => {
     const { stub } = tokenResponse({ error: "invalid_grant" }, { ok: false, status: 400 })
 
     await expect(refreshCredentialSecret(credential(), codexSecret(), { fetch: stub, now: () => NOW })).rejects
-      .toBeInstanceOf(CredentialRefreshError)
+      .toMatchObject({ name: "Error", rejected: { status: 400, type: "invalid_grant" } })
+  })
+
+  test("an answer that is not the token endpoint's is a failure, not a rejection of the grant", async () => {
+    for (const { stub } of [
+      tokenResponse("<html>bad gateway</html>", { status: 502, contentType: "text/html" }),
+      tokenResponse({ error: { message: "Internal error" } }, { status: 500 }),
+    ]) {
+      const failure = await refreshCredentialSecret(credential(), codexSecret(), { fetch: stub, now: () => NOW }).catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(CredentialRefreshError)
+      expect((failure as CredentialRefreshError).rejected).toBeUndefined()
+    }
   })
 
   test("rejects when the response carries no access token", async () => {

@@ -4,18 +4,24 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { CredentialVerificationError } from "../verification-error"
 import {
+  CredentialRefreshError,
   credentialRefreshToken,
   isRefreshableCredential,
   refreshCredentialSecret,
   type RefreshedCredentialSecret,
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
+import { readVendorAnswer, vendorRefusal, vendorReply, type VendorReply } from "./vendor-answer"
 import { clampPercent, codexWindowName, usageResetMs, usageWindowName } from "@claxedo/server-core/credentials/usage-windows"
 import { credentialSecretMaterial, type CredentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
-import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
+import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow, CredentialVerdictEvidence } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-verify" })
 const PROVIDER_REQUEST_TIMEOUT_MS = 10_000
+
+const ANTHROPIC_CATALOG_URL = "https://api.anthropic.com/v1/models"
+const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+const ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 
 export type { CredentialHealth, CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 
@@ -23,6 +29,8 @@ export { CredentialVerificationError } from "../verification-error"
 
 export type CredentialVerificationOutcome = {
   health: CredentialHealth
+  /** The vendor's answer behind every verdict other than `ok`. */
+  evidence?: CredentialVerdictEvidence
   /**
    * Set when a stale access token was renewed during verification. The caller
    * owns persistence — the verifier never writes.
@@ -31,11 +39,18 @@ export type CredentialVerificationOutcome = {
   /** Present only when the probe was a usage read, so API keys never carry it. */
   usage?: CredentialUsageWindow[]
   /**
+   * The usage read's refusal of a token the vendor accepted: the plan's
+   * windows could not be read this time, and this is the vendor's word on why.
+   */
+  usageRefused?: CredentialVerdictEvidence
+  /**
    * The address the subscription is signed in as, when the provider will say.
    * A key authenticates a project, not a person, so it never carries one.
    */
   accountEmail?: string
 }
+
+type OutcomeDetail = Omit<CredentialVerificationOutcome, "health" | "refreshed">
 
 export async function verifyCredential(
   credential: CredentialMetadata,
@@ -58,7 +73,10 @@ export async function verifyCredential(
   if (stale) {
     if (!isRefreshableCredential(credential) || !credentialRefreshToken(secret)) return { health: "expired" }
     const refresh = options.refresh ?? ((row: CredentialMetadata, current: string) => refreshCredentialSecret(row, current, options))
-    const renewed = await refresh(credential, secret).catch((error: unknown) => {
+    let renewed: RefreshedCredentialSecret
+    try {
+      renewed = await refresh(credential, secret)
+    } catch (error: unknown) {
       // Never swallowed: "expired" with no trace of an attempted renewal is
       // indistinguishable from never having tried.
       log.warn("Credential refresh failed", {
@@ -66,11 +84,12 @@ export async function verifyCredential(
         provider_id: credential.provider_id,
         error: error instanceof Error ? error.message : String(error),
       })
-      return undefined
-    })
-    // A rejected refresh token is the real end of the login: the user has to
-    // reconnect, which is exactly what "expired" tells every surface.
-    if (!renewed) return { health: "expired" }
+      // The token endpoint's own refusal of the grant is the real end of the
+      // login: the user has to reconnect, which is exactly what "expired" tells
+      // every surface. An answer that is not the endpoint's decides nothing.
+      if (error instanceof CredentialRefreshError && error.rejected) return { health: "expired", evidence: error.rejected }
+      throw new CredentialVerificationError("credential_provider_unavailable", error instanceof Error ? error.message : "Credential refresh request failed")
+    }
     log.info("Credential refreshed during verification", {
       credential_id: credential.id,
       provider_id: credential.provider_id,
@@ -95,66 +114,67 @@ export async function verifyCredential(
   }
   const auth = credentialSecretMaterial({ kind: credential.kind, secret: material })
   if (!auth) throw new CredentialVerificationError("credential_shape_invalid", "Credential secret has an unsupported shape")
-  const anthropicSubscription = anthropic && auth.form === "subscription"
+  const outcome = (health: CredentialHealth, detail: OutcomeDetail = {}): CredentialVerificationOutcome =>
+    ({ health, ...(refreshed ? { refreshed } : {}), ...detail })
+  const ask = (url: string, init: RequestInit) =>
+    withDeadlineSignal(PROVIDER_REQUEST_TIMEOUT_MS, (signal) =>
+      (options.fetch ?? globalThis.fetch)(url, { ...init, signal }).then(readProbeAnswer).catch(() => {
+        throw new CredentialVerificationError("credential_provider_unavailable", "Credential provider request failed")
+      }))
+
+  if (anthropic && auth.form === "subscription") return outcome(...await anthropicSubscriptionVerdict(auth.token, ask, options.fetch))
+
   const probe = providerProbe(auth, anthropic, cursor, openai && auth.form === "subscription")
-  const outcome = (
-    health: CredentialHealth,
-    detail: { usage?: CredentialUsageWindow[]; accountEmail?: string } = {},
-  ): CredentialVerificationOutcome => ({
-    health,
-    ...(refreshed ? { refreshed } : {}),
-    ...(detail.usage ? { usage: detail.usage } : {}),
-    ...(detail.accountEmail ? { accountEmail: detail.accountEmail } : {}),
-  })
-  const ask = (url: string, init: RequestInit, signal: AbortSignal) =>
-    (options.fetch ?? globalThis.fetch)(url, { ...init, signal }).catch(() => {
-      throw new CredentialVerificationError("credential_provider_unavailable", "Credential provider request failed")
-    })
-  const probed = await withDeadlineSignal(PROVIDER_REQUEST_TIMEOUT_MS, async (signal) => {
-    const response = await ask(probe.url, probe.init, signal)
-    if (!response.ok) return { refused: await refusalVerdict(response) }
-    if (probe.usage) return { usage: probe.usage(await response.json().catch(() => undefined)) }
-    // The OpenAI probe must stream; drop the body rather than leave an open SSE
-    // connection for a completion we never read.
-    await response.body?.cancel().catch(() => undefined)
-    return {}
-  })
-  if (probed.refused === undefined) {
-    if (!probed.usage) return outcome("ok")
-    const accountEmail = anthropicSubscription
-      ? await anthropicAccountEmail(auth.token, options.fetch)
-      : auth.email
-    return outcome("ok", { usage: probed.usage, ...(accountEmail ? { accountEmail } : {}) })
+  const answer = await ask(probe.url, probe.init)
+  if (!answer.ok) {
+    const refusal = vendorRefusal(answer.reply)
+    return outcome(refusal.health, { evidence: refusal.evidence })
   }
-  // A `claude setup-token` is minted with `user:inference` only — the CLI's own
-  // words — so the usage read turns away a token that runs every turn. The
-  // model catalog is the inference scope's own route, and answers the one
-  // question left: whether the provider knows this token at all.
-  if (probed.refused === "auth_failed" && anthropicSubscription) {
-    return outcome(await withDeadlineSignal(PROVIDER_REQUEST_TIMEOUT_MS, async (signal) => {
-      const catalog = await ask("https://api.anthropic.com/v1/models", anthropicInferenceProbe(auth.token), signal)
-      if (!catalog.ok) return refusalVerdict(catalog)
-      await catalog.body?.cancel().catch(() => undefined)
-      return "ok" as const
-    }))
-  }
-  return outcome(probed.refused)
+  if (!probe.usage) return outcome("ok")
+  return outcome("ok", { usage: probe.usage(answer.json), ...(auth.email ? { accountEmail: auth.email } : {}) })
 }
 
-/** What a non-ok probe answer says about the material, or nothing a verdict can carry. */
-async function refusalVerdict(response: Response): Promise<CredentialHealth> {
-  const failure = (await response.text().catch(() => "")).slice(0, 8_192).toLowerCase()
-  if (
-    response.status === 402 ||
-    failure.includes("insufficient_quota") ||
-    failure.includes("usage_not_included") ||
-    failure.includes("billing") ||
-    failure.includes("credit balance")
-  ) return "no_billing"
-  if (failure.includes("token_expired") || failure.includes("expired_token")) return "expired"
-  if (response.status === 429) return "rate_capped"
-  if (response.status === 401 || response.status === 403) return "auth_failed"
-  throw new CredentialVerificationError("credential_verification_failed", "Credential provider verification failed")
+/**
+ * A vendor's answer with its body already taken inside the request deadline:
+ * the JSON of an accepted answer, the status, headers and text of a refusal.
+ * The OpenAI key probe streams, so an accepted body that is not JSON is dropped
+ * rather than left as an open connection for a completion never read.
+ */
+type ProbeAnswer = { ok: true; json: unknown } | { ok: false; reply: VendorReply }
+
+async function readProbeAnswer(response: Response): Promise<ProbeAnswer> {
+  if (!response.ok) return { ok: false, reply: await vendorReply(response) }
+  const text = await response.text().catch(() => "")
+  try {
+    return { ok: true, json: JSON.parse(text) as unknown }
+  } catch {
+    return { ok: true, json: undefined }
+  }
+}
+
+/**
+ * An Anthropic subscription is judged by the model catalog, the inference
+ * scope's own route: it is what every turn on the token spends, and a
+ * `claude setup-token` is minted with `user:inference` and nothing else. The
+ * usage read is auxiliary. It adds the plan's windows when the token carries
+ * `user:profile`, and its refusal — the scope a setup-token lacks, or the
+ * per-token throttle Anthropic puts on this route with a retry-after of nearly
+ * an hour — costs the account its windows and never its verdict.
+ */
+async function anthropicSubscriptionVerdict(
+  token: string,
+  ask: (url: string, init: RequestInit) => Promise<ProbeAnswer>,
+  fetchImpl: typeof fetch | undefined,
+): Promise<[CredentialHealth, OutcomeDetail]> {
+  const catalog = await ask(ANTHROPIC_CATALOG_URL, anthropicInferenceProbe(token))
+  if (!catalog.ok) {
+    const refusal = vendorRefusal(catalog.reply)
+    return [refusal.health, { evidence: refusal.evidence }]
+  }
+  const usage = await ask(ANTHROPIC_USAGE_URL, anthropicOAuthRead(token))
+  if (!usage.ok) return ["ok", { usageRefused: readVendorAnswer(usage.reply).evidence }]
+  const accountEmail = await anthropicAccountEmail(token, fetchImpl)
+  return ["ok", { usage: anthropicUsageWindows(usage.json), ...(accountEmail ? { accountEmail } : {}) }]
 }
 
 function anthropicInferenceProbe(token: string): RequestInit {
@@ -169,28 +189,30 @@ function anthropicInferenceProbe(token: string): RequestInit {
   }
 }
 
+function anthropicOAuthRead(token: string): RequestInit {
+  return {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "anthropic-beta": "oauth-2025-04-20",
+    },
+  }
+}
+
 /**
  * The address an Anthropic subscription is signed in as.
  *
- * Only the usage read decides health; this route is asked afterwards and its
- * answer is never a verdict. `/api/oauth/profile` is not granted to every
- * subscription — some plans answer 403 or 404 to a token the usage read has
- * just accepted — so a non-ok status, an unparseable body or a transport fault
- * all leave the account unnamed rather than marking a working token as
- * rejected. Where the account lives in the body also varies, hence the four
- * spellings.
+ * Asked only after the usage read has answered, and never a verdict:
+ * `/api/oauth/profile` is not granted to every subscription — some plans
+ * answer 403 or 404 to a token the catalog has just accepted — so a non-ok
+ * status, an unparseable body or a transport fault all leave the account
+ * unnamed rather than marking a working token as rejected. Where the account
+ * lives in the body also varies, hence the four spellings.
  */
 async function anthropicAccountEmail(token: string, fetchImpl: typeof fetch | undefined) {
   return withDeadlineSignal(PROVIDER_REQUEST_TIMEOUT_MS, async (signal) => {
-    const response = await (fetchImpl ?? globalThis.fetch)("https://api.anthropic.com/api/oauth/profile", {
-      method: "GET",
-      signal,
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-        "anthropic-beta": "oauth-2025-04-20",
-      },
-    }).catch(() => undefined)
+    const response = await (fetchImpl ?? globalThis.fetch)(ANTHROPIC_PROFILE_URL, { ...anthropicOAuthRead(token), signal }).catch(() => undefined)
     if (!response?.ok) return undefined
     const body = jsonRecord(await response.json().catch(() => undefined))
     const account = jsonRecord(body?.account)
@@ -201,13 +223,11 @@ async function anthropicAccountEmail(token: string, fetchImpl: typeof fetch | un
 }
 
 /**
- * Subscription tokens are checked against the vendor's usage read, the same
- * call each CLI's own status screen makes: it authenticates the token, spends
- * no quota, and answers the question a completion cannot, how much of the
- * plan is left. An Anthropic token the read turns away is asked the model
- * catalog next, in `verifyCredential`. API keys have no usage read, so they
- * keep a minimal completion (Anthropic, OpenAI) or the key-introspection
- * route (Cursor).
+ * A ChatGPT login is checked against the vendor's usage read, the same call
+ * Codex's own status screen makes: it authenticates the token, spends no
+ * quota, and answers the question a completion cannot, how much of the plan
+ * is left. API keys have no usage read, so they keep a minimal completion
+ * (Anthropic, OpenAI) or the key-introspection route (Cursor).
  */
 function providerProbe(
   auth: CredentialSecretMaterial,
@@ -227,20 +247,6 @@ function providerProbe(
         },
       },
       usage: codexUsageWindows,
-    }
-  }
-  if (anthropic && auth.form === "subscription") {
-    return {
-      url: "https://api.anthropic.com/api/oauth/usage",
-      init: {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${auth.token}`,
-          "anthropic-beta": "oauth-2025-04-20",
-        },
-      },
-      usage: anthropicUsageWindows,
     }
   }
   // `GET /v1/me` is Cursor's documented "retrieve information about the API key

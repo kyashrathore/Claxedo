@@ -162,7 +162,7 @@ describe("credential verification integration", () => {
 
     const verified = await app.request(`http://localhost/${credential.id}/verify`, { method: "POST" })
 
-    expect(await verified.json()).toEqual({ result: "expired", health: "expired", verified_at: 2_000 })
+    expect(await verified.json()).toEqual({ result: "expired", health: "expired", verified_at: 2_000, evidence: { status: 400, type: "invalid_grant" } })
     expect(request.mock.calls.every(([url]) => fetchUrl(url) === TOKEN_URL)).toBe(true)
     const stored = JSON.parse((await resolveSecretById(credential.id))!) as Record<string, any>
     expect(stored.access).toBe("access_dead")

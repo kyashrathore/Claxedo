@@ -7,6 +7,7 @@ import {
   type SandboxMachineClass,
 } from "@claxedo/sandbox-contract"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { isRefusedHealth } from "../health"
 import type { HarnessSecretDelivery } from "../reach"
 import type { CredentialMetadata, CredentialWrite } from "../types"
 
@@ -48,11 +49,9 @@ function keyDriver(keys: SandboxDriverKeys, providerId: string) {
   return keys.drivers.find((id) => id === providerId)
 }
 
-const REFUSED_HEALTH: ReadonlySet<string> = new Set(["auth_failed", "no_billing", "expired"])
-
 /** A key the provider has not refused: a rate cap or an unreachable check leaves it in use. */
 export function usableSandboxKey(row: CredentialMetadata) {
-  return row.status !== "revoked" && row.status !== "expired" && !REFUSED_HEALTH.has(row.health ?? "")
+  return row.status !== "revoked" && row.status !== "expired" && (row.health == null || !isRefusedHealth(row.health))
 }
 
 export function isSandboxKey(keys: SandboxDriverKeys, row: CredentialMetadata, context: SandboxDriverKeyContext) {

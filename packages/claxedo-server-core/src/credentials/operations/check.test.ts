@@ -23,7 +23,7 @@ function row(overrides: Partial<CredentialMetadata> = {}): CredentialMetadata {
 
 function store(input: {
   secret?: string | (() => Promise<string | null>)
-  answer?: () => Response
+  answer?: (url: string) => Response
 } = {}) {
   const updateCredentialSecret = vi.fn(async () => true)
   const updateCredentialHealth = vi.fn(async () => {})
@@ -38,8 +38,8 @@ function store(input: {
     updateCredentialLabel,
     resolveCredentialSecretById,
   } as unknown as ControlPlaneCredentials
-  const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
-    (input.answer ?? (() => Response.json({ id: "msg_1" })))())
+  const fetch = vi.fn(async (url: string | URL | Request, _init?: RequestInit) =>
+    (input.answer ?? (() => Response.json({ id: "msg_1" })))(typeof url === "string" ? url : url instanceof URL ? url.href : url.url))
   return {
     credentials,
     fetch: fetch as unknown as typeof globalThis.fetch,
@@ -57,7 +57,41 @@ describe("one stored account's Check", () => {
     const outcome = await checkCredential(host.credentials, row(), options({ fetch: host.fetch }))
 
     expect(outcome).toEqual({ status: "checked", health: "ok", at: NOW })
-    expect(host.calls.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", NOW, "__local__")
+    expect(host.calls.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", NOW, "__local__", undefined)
+  })
+
+  test("the vendor's answer behind a refusal is kept with the verdict, so the row can say why", async () => {
+    const host = store({ answer: () => Response.json({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }, { status: 401 }) })
+
+    const outcome = await checkCredential(host.credentials, row(), options({ fetch: host.fetch }))
+
+    expect(outcome).toEqual({ status: "checked", health: "auth_failed", at: NOW, evidence: { status: 401, type: "authentication_error" } })
+    expect(host.calls.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "auth_failed", NOW, "__local__", { status: 401, type: "authentication_error" })
+  })
+
+  test("an answer that is not the vendor API's leaves the row untouched and names what came back", async () => {
+    const host = store({ answer: () => new Response("<html>Just a moment...</html>", { status: 403, headers: { "content-type": "text/html" } }) })
+
+    const outcome = await checkCredential(host.credentials, row(), options({ fetch: host.fetch }))
+
+    expect(outcome).toMatchObject({ status: "failed", provider: true, detail: { message: expect.stringMatching(/403 with text\/html/) } })
+    expect(host.calls.updateCredentialHealth).not.toHaveBeenCalled()
+    expect(host.calls.updateCredentialUsage).not.toHaveBeenCalled()
+  })
+
+  test("a plan read the vendor refused on a token it accepted is reported, and the token stays ok", async () => {
+    const host = store({
+      secret: "sk-ant-oat01-keychain",
+      answer: (url) => url.endsWith("/v1/models")
+        ? Response.json({ data: [] })
+        : Response.json({ type: "error", error: { type: "rate_limit_error" } }, { status: 429, headers: { "retry-after": "3124" } }),
+    })
+
+    const outcome = await checkCredential(host.credentials, row({ kind: "oauth_token" }), options({ fetch: host.fetch }))
+
+    expect(outcome).toEqual({ status: "checked", health: "ok", at: NOW, usageRefused: { status: 429, type: "rate_limit_error", retryAfterSeconds: 3124 } })
+    expect(host.calls.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", NOW, "__local__", undefined)
+    expect(host.calls.updateCredentialUsage).not.toHaveBeenCalled()
   })
 
   test("a secret backend that refuses is this account's failure, not the caller's", async () => {
@@ -116,7 +150,7 @@ describe("a Check that carries a replacement secret", () => {
   })
 
   test("a refused replacement writes nothing at all", async () => {
-    const host = store({ answer: () => new Response("no", { status: 401 }) })
+    const host = store({ answer: () => Response.json({ type: "error", error: { type: "authentication_error" } }, { status: 401 }) })
 
     const outcome = await checkCredential(
       host.credentials,
@@ -124,7 +158,7 @@ describe("a Check that carries a replacement secret", () => {
       options({ fetch: host.fetch, secret: "sk-ant-api03-typo", replace: true }),
     )
 
-    expect(outcome).toEqual({ status: "checked", health: "auth_failed", at: NOW, stored: false })
+    expect(outcome).toEqual({ status: "checked", health: "auth_failed", at: NOW, evidence: { status: 401, type: "authentication_error" }, stored: false })
     expect(host.calls.updateCredentialSecret).not.toHaveBeenCalled()
     expect(host.calls.updateCredentialHealth).not.toHaveBeenCalled()
     expect(host.calls.updateCredentialLabel).not.toHaveBeenCalled()

@@ -4,7 +4,8 @@ import { fanoutEligible } from "../credentials/account-kinds"
 import { credentialReach } from "../credentials/reach"
 import { isSubscriptionKind } from "../credentials/secret-material"
 import type { ControlPlaneCredentials } from "../authority/control-plane-contract"
-import type { CredentialHealth, CredentialMetadata } from "../credentials/types"
+import type { CredentialCheckOutcome } from "../credentials/operations/check"
+import type { CredentialHealth, CredentialMetadata, CredentialVerdictEvidence } from "../credentials/types"
 import type { QuotaAccount, QuotaSnapshot, UnifiedUsageResponse } from "@claxedo/usage-contract"
 
 export const INFERENCE_ONLY_LOGIN = "Setup-tokens are inference-only, so this account runs turns but cannot report its plan usage. Sign the Claude CLI in to this account to see it."
@@ -14,6 +15,52 @@ const REFUSED_LOGIN: Readonly<Record<Exclude<CredentialHealth, "ok">, string>> =
   expired: "This login has expired, so its limits cannot be read. Sign in to this account again.",
   no_billing: "The provider reports no active plan on this account.",
   rate_capped: "The provider is rate-limiting this account right now; its limits can be read again later.",
+}
+
+/**
+ * What the last Check of an account has to say that its stored row cannot:
+ * a Check that could not conclude, a login whose secret is gone, and a plan
+ * read the vendor refused on an account it accepted. A concluded Check with
+ * windows says nothing here — the windows are the answer.
+ */
+export type CheckWord = { reason: string | undefined; concluded: boolean }
+
+export function checkWord(outcome: CredentialCheckOutcome): CheckWord {
+  if (outcome.status === "checked") {
+    return { reason: outcome.usageRefused ? usageReadRefusedReason(outcome.usageRefused) : undefined, concluded: true }
+  }
+  if (outcome.status === "failed") return { reason: `This account's limits could not be read: ${outcome.detail.message}`, concluded: false }
+  return {
+    reason: outcome.status === "no_secret"
+      ? "This account's stored login is missing, so its limits cannot be read. Sign in to this account again."
+      : "Claxedo cannot read plan usage here.",
+    concluded: false,
+  }
+}
+
+/**
+ * A concluded Check's word on the read it just made outranks what the stored
+ * row implies; a Check that could not conclude leaves the stored verdict's
+ * copy, and windows on the card are the answer whatever the Check said.
+ */
+export function withCheckWord(card: QuotaAccount, checked: CheckWord | undefined): QuotaAccount {
+  if (checked?.reason === undefined || card.windows.length > 0) return card
+  return checked.concluded || card.usageError === undefined ? { ...card, usageError: checked.reason } : card
+}
+
+/**
+ * Anthropic answers the plan read with `permission_error` for a token minted
+ * without `user:profile` — a `claude setup-token` — and throttles the route
+ * per token with a retry-after of nearly an hour while every turn keeps
+ * running. Neither is the account's fault, and the card says which it was.
+ */
+function usageReadRefusedReason(refusal: CredentialVerdictEvidence): string {
+  if (refusal.status === 403 && refusal.type === "permission_error") return INFERENCE_ONLY_LOGIN
+  if (refusal.status === 429) {
+    const minutes = refusal.retryAfterSeconds === undefined ? undefined : Math.max(1, Math.ceil(refusal.retryAfterSeconds / 60))
+    return `The provider is throttling this account's plan read; this account runs turns, and its limits can be read again ${minutes === undefined ? "later" : `in ${minutes} min`}.`
+  }
+  return `The provider answered ${refusal.status}${refusal.type ? ` ${refusal.type}` : ""} to this account's plan read, so its limits could not be read. This account still runs turns.`
 }
 
 /**

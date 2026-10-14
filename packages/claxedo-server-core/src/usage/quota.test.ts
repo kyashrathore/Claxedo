@@ -263,7 +263,7 @@ describe("usage quota reader", () => {
 
     await settle(read, { org: ORG, person: "local", refresh: true })
     expect(credentials.resolveCredentialSecretById).toHaveBeenCalledTimes(1)
-    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("a", "ok", 1_000, ORG)
+    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("a", "ok", 1_000, ORG, undefined)
     expect(credentials.updateCredentialUsage).toHaveBeenCalledWith(
       "a",
       [{ window: "session", usedPercent: 30, resetsAt: 400_000 }],
@@ -359,7 +359,7 @@ describe("usage quota reader", () => {
     await settle(read, { org: ORG, person: "local", refresh: true })
 
     expect(resolve).toHaveBeenCalledTimes(2)
-    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("b", "ok", 1_000, ORG)
+    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("b", "ok", 1_000, ORG, undefined)
   })
 
   test("a plan login the provider accepted without windows says why its card has no bars", async () => {
