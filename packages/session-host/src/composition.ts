@@ -3,12 +3,16 @@ import type { HarnessServices, PluginProjection } from "@claxedo/harness/contrac
 import { PiDurableTransport, type PiPlacement, type PiTurnContext } from "@claxedo/harness/pi-durable"
 import {
   composeSessionRoutes, createAgentRuntime, createSessionCore, createRuntimeEventHub, createStoreBrokerPorts, durableObjectSqliteDatabase,
-  pluginProjectionFor, RuntimeStore, sessionCredentials, sessionEventDeliveryPolicy, type DurableObjectSqlStorage, type LaunchComposer,
-  type SessionAccessPolicy, type TransportResolver,
+  observeTurnOutcomes, pluginProjectionFor, RuntimeStore, sessionCredentials, sessionEventDeliveryPolicy, sessionStatusSnapshot,
+  type DurableObjectSqlStorage, type LaunchComposer, type SessionAccessPolicy, type TransportResolver, type TurnOutcomeObserved,
 } from "@claxedo/session-core"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
+import { createRuntimeSessionRows } from "@claxedo/server-core/session/publish/runtime-session-rows"
+import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
+import { createRuntimeUsageLedger } from "@claxedo/server-core/usage/runtime-usage-ledger"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 import { Hono } from "hono"
+import { sessionRowsUnderTurnLease } from "./session-rows"
 import type { HeldTurn } from "./turn-delivery"
 
 /** The session-core label of the one place a session host's session lives; its files are the workspace machine's. */
@@ -26,6 +30,10 @@ export type SessionHostCompositionInput = {
   placement: PiPlacement
   held: () => HeldTurn | undefined
   beforeDelete: (sessionId: string, credential: string | undefined) => Promise<void>
+  /** The control plane's `/session-authorize`, which also takes the host's usage reports; its origin serves the session rows. */
+  authorityUrl: string
+  controlPlane: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+  onTurnOutcome?: (outcome: TurnOutcomeObserved) => void
 }
 
 function launchFromTurn(workspaceId: string, held: () => HeldTurn | undefined): LaunchComposer {
@@ -75,14 +83,38 @@ function piOnly(transport: PiDurableTransport): TransportResolver {
 /**
  * One session host's session core: the store on the object's SQLite, Pi as
  * its only harness, and the shared session routes and event stream behind the
- * relay's host token, authorized by the control plane.
+ * relay's host token, authorized by the control plane. Its turns are reported
+ * as a sandbox runtime's are, under the same turn lease: usage metered from
+ * its own events into a ledger on the object's SQLite and shipped to the
+ * session authority, and its one list row published to the plane's session
+ * rows ingest when the turn ends.
  */
 export function composeSessionHost(input: SessionHostCompositionInput) {
-  const { root, workspaceId, policy } = input
-  const store = new RuntimeStore({ db: durableObjectSqliteDatabase(input.storage), location: sessionHostId(root), flush: () => {} })
+  const { root, workspaceId } = input
+  const hostId = sessionHostId(root)
+  const db = durableObjectSqliteDatabase(input.storage)
+  const store = new RuntimeStore({ db, location: hostId, flush: () => {} })
   const eventHub = createRuntimeEventHub()
   const ownerGeneration = `session-host_${crypto.randomUUID()}`
   const launch = launchFromTurn(workspaceId, input.held)
+  const usage = cloudTurnUsage({
+    workspaceId, authorityUrl: input.authorityUrl, policy: input.policy, fetch: input.controlPlane, log: console,
+    ledger: createRuntimeUsageLedger({ db, workspaceId: () => workspaceId }),
+  })
+  usage.bindSessionConfig((sessionId) => store.getSessionConfig(sessionId) ?? undefined)
+  const rows = createRuntimeSessionRows({
+    workspaceId, url: new URL("/api/claxedo/host/session-rows", input.authorityUrl).href, fetch: input.controlPlane,
+    store: () => store, sessionStatus: () => sessionStatusSnapshot(store.listEverySession(), (sessionId) => ports.backgroundWork.read(sessionId)),
+  })
+  const policy = sessionRowsUnderTurnLease(usage.sessionAccessPolicy, { hostId, workspaceId, publisher: rows.publisher })
+  observeTurnOutcomes(store, workspaceId, (outcome) => {
+    usage.onTurnOutcome(outcome)
+    input.onTurnOutcome?.(outcome)
+  })
+  eventHub.subscribeGlobal((event) => {
+    usage.onPresentationEvent(event)
+    rows.onPresentationEvent(event)
+  })
   const ports = createStoreBrokerPorts(store, {
     ownerGeneration, patternEvaluator: async () => {}, publishers: eventHub,
     reportOwnerFailure: (sessionId, error) => runtime.recovery.reportOwnerFailure(sessionId, error),
@@ -111,7 +143,7 @@ export function composeSessionHost(input: SessionHostCompositionInput) {
     directory: SESSION_HOST_DIRECTORY, workspaceId, policy: sessionEventDeliveryPolicy(policy), sessionAccessPolicy: policy, sessionStarts: store.sessionStarts,
   })
   const app = new Hono()
-    .use("*", createRelayHostAuthMiddleware({ key: input.key, workspaceId, hostId: sessionHostId(root) }))
+    .use("*", createRelayHostAuthMiddleware({ key: input.key, workspaceId, hostId }))
     .get("/api/wr/events", events)
     .route("/", sessions.routes)
   const turnContext = async (): Promise<PiTurnContext> => {
@@ -121,7 +153,7 @@ export function composeSessionHost(input: SessionHostCompositionInput) {
     return { credentials: sessionCredentials(launch, { owner, config }), projection: launch.projection(config.harness),
       providerDefinitions: launch.providerDefinitions?.() ?? [] }
   }
-  return { store, runtime, sessions, app, turnContext }
+  return { store, runtime, sessions, app, policy, turnContext }
 }
 
 export type SessionHost = ReturnType<typeof composeSessionHost>

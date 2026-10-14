@@ -6,6 +6,7 @@ import type { HarnessCredentialBroker } from "@claxedo/server-core/credentials/n
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { requestClientKeyFromHeaders, type RouteGuardExemption } from "../../platform/auth/request-guard"
+import type { CredentialRefusals } from "../credential-refusals"
 import { hostedBindingAuthority, type HostedBrokerCredentialRead } from "./authority"
 import { brokerBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
 
@@ -109,6 +110,7 @@ export function createHostedEgressBroker(input: {
   now?: () => number
   /** Ceiling on reaching a vendor's response headers, and on a runtime's wait for one of its lanes. */
   upstreamTimeoutMs?: number
+  credentialRefusals?: CredentialRefusals
 }): HostedEgressBroker {
   const now = input.now ?? Date.now
   const readers = new Map<string, HostedBrokerCredentialRead>()
@@ -120,7 +122,10 @@ export function createHostedEgressBroker(input: {
     }
     return reader
   }
-  const authority = hostedBindingAuthority({ credentials: input.credentials, read, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now })
+  const authority = hostedBindingAuthority({
+    credentials: input.credentials, read, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now,
+    ...(input.credentialRefusals ? { credentialRefusals: input.credentialRefusals } : {}),
+  })
   const verified = recent<string, HostedBrokerClaims>(HELD_PLACEHOLDERS)
   const verify = async (token: string): Promise<HostedBrokerClaims | undefined> => {
     const held = verified.get(token)

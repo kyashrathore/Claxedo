@@ -28,11 +28,12 @@ function waitRetryAfter(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * The two control-plane calls a turn makes, each proven by the session's
- * current turn lease: `/turn-delivery` once per lease for its credentials,
- * plugins and provider definitions, and `/turn-execution` for the token that
- * reaches the workspace machine. Both are held for the lease and dropped
- * when its turn ends.
+ * The control-plane calls a turn makes, each proven by the session's current
+ * turn lease: `/turn-delivery` once per lease for its credentials, plugins
+ * and provider definitions, `/turn-execution` for the token that reaches the
+ * workspace machine, and `/turn-credential-refused` when the vendor refused
+ * one of the delivered accounts. The first two are held for the lease and
+ * dropped when its turn ends.
  */
 export class SessionHostTurns {
   private readonly deliveries = new Map<string, Promise<HeldTurn>>()
@@ -84,6 +85,11 @@ export class SessionHostTurns {
     this.executions.delete(key)
   }
 
+  /** Tells the control plane the vendor refused `credentialId` in the session's current turn; the plane decides what that does to the account. */
+  async credentialRefused(sessionId: string, credentialId: string): Promise<void> {
+    await this.post("turn-credential-refused", this.lease(sessionId), { credentialId })
+  }
+
   private async executionAccess(sessionId: string, signal: AbortSignal): Promise<TurnExecutionAccess> {
     for (;;) {
       try {
@@ -103,9 +109,9 @@ export class SessionHostTurns {
     return lease
   }
 
-  private async post(route: "turn-delivery" | "turn-execution", lease: TurnLease): Promise<unknown> {
+  private async post(route: "turn-delivery" | "turn-execution" | "turn-credential-refused", lease: TurnLease, fields: Record<string, unknown> = {}): Promise<unknown> {
     const response = await this.input.fetch(new URL(route, this.input.authorityUrl).href, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turnLease: lease.leaseId }),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ turnLease: lease.leaseId, ...fields }),
     })
     const body: unknown = await response.json().catch(() => undefined)
     if (response.ok) return body

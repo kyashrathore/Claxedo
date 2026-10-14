@@ -73,6 +73,31 @@ describe("POST /api/claxedo/host/session-rows", () => {
     )
   })
 
+  test("publishes a session host's one row as the publisher its turn lease admits, and refuses a lease the admission turns away", async () => {
+    const admit = vi.fn(async () => ({ hostId: "session-do:ses_1", ownerUserId: "user_owner", workspaceIds: ["ws_local"], servedBy: "session-host" as const, sessionId: "ses_1" }))
+    const verify = vi.fn(async () => { throw new Error("not a tunnel token") })
+    const publish = vi.fn(async () => ({ accepted: 1, refused: [], statusNotices: [] }))
+    const services = { relay: { hostTunnelTokenVerifier: verify }, authority: { publishHostSessionRows: publish } } as unknown as ControlPlaneServices
+    const app = HostSessionRowsRoutes(services, { sessionHostRows: { names: (token) => token === "lease-token", admit } })
+    const hosted = { ...body, hostId: "session-do:ses_1" }
+
+    const response = await post(app, hosted, "lease-token")
+
+    expect(response.status).toBe(200)
+    expect(admit).toHaveBeenCalledWith("lease-token", "session-do:ses_1", { rows: hosted.rows, removed: [] })
+    expect(verify).not.toHaveBeenCalled()
+    expect(publish).toHaveBeenCalledWith(
+      { hostId: "session-do:ses_1", ownerUserId: "user_owner", workspaceIds: ["ws_local"], servedBy: "session-host", sessionId: "ses_1" },
+      { rows: hosted.rows, removed: [] },
+    )
+
+    admit.mockResolvedValueOnce(undefined as never)
+    const refused = await post(app, hosted, "lease-token")
+    expect(refused.status).toBe(401)
+    await expect(refused.json()).resolves.toMatchObject({ error: { code: "invalid_session_turn_lease" } })
+    expect(publish).toHaveBeenCalledTimes(1)
+  })
+
   test("refuses a missing or unverifiable token before publishing anything", async () => {
     const missing = routes()
     expect((await post(missing.app, body, null)).status).toBe(401)

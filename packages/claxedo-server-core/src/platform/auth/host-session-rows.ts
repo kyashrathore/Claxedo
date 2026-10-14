@@ -10,7 +10,9 @@ export const MAX_HOST_SESSION_ROWS = 100
  * those workspaces' list rows asks for nothing the token does not grant. A
  * cloud runtime (`servedBy: "sandbox"`) is named by its session rows pass:
  * one workspace, owned by `ownerUserId`, whose sandbox lease held the pass's
- * epoch when the pass was admitted.
+ * epoch when the pass was admitted. A session served by its own host
+ * (`servedBy: "session-host"`) is named by its turn lease: one cloud
+ * workspace, owned by `ownerUserId`, and the one session the lease admits.
  */
 export type HostSessionRowsPublisher = {
   hostId: string
@@ -18,7 +20,7 @@ export type HostSessionRowsPublisher = {
   workspaceIds: readonly string[]
   enrollmentId?: string
   generation?: number
-  servedBy?: "sandbox"
+  servedBy?: "sandbox" | "session-host"
 }
 
 /** A session's list entry as its machine holds it. Never a transcript. */

@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
+import { classifyFirstTurnError, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { TurnExecutionAccess } from "@claxedo/harness/contract"
 import {
   adoptSessionTurnLease, errorBody, remoteWorkspaceSessionAccessPolicy, RuntimeStoreSchemaMismatchError, type SessionAccessPolicy,
@@ -19,6 +20,12 @@ import { TurnLeases, type StoredTurnLease } from "./turn-leases"
 
 /** A request or control-plane call at or past this is logged with its timing, so a slow composer read can be placed. */
 const SLOW_REQUEST_MS = 1_000
+
+/** The stored account a failed turn spent when its failure reads as the vendor refusing that account's credential. */
+function refusedStoredAccount(outcome: AgentTurnOutcome): string | undefined {
+  if (outcome.status !== "failed" || outcome.account?.kind !== "stored") return undefined
+  return (outcome.errorClass ?? classifyFirstTurnError(outcome.error)) === "credential" ? outcome.account.credentialId : undefined
+}
 
 export type SessionHostEnv = {
   CONTROL_PLANE: { fetch(input: string, init?: RequestInit): Promise<Response> }
@@ -149,6 +156,11 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     const hosting = this.hosting ?? this.verificationKey().then((key) => composeSessionHost({
       root: this.root, workspaceId: this.meta.workspaceId()!, storage: this.ctx.storage, key, policy: this.policy,
       placement: this.placement, held: () => this.turns.held(this.root),
+      authorityUrl: this.env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL, controlPlane: this.controlPlane,
+      onTurnOutcome: (observed) => {
+        const refused = refusedStoredAccount(observed.outcome)
+        if (refused) void this.turns.credentialRefused(observed.sessionId, refused).catch((error: unknown) => console.warn("The vendor's refusal of a stored account was not reported", error))
+      },
       beforeDelete: async (sessionId, credential) => {
         const refused = sessionId === this.root ? await this.deleteAtControlPlane(credential) : undefined
         if (refused) throw new HTTPException(refused.status, { message: refused.message })
@@ -181,7 +193,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     const host = await this.host()
     host.store.recoverBusySessions()
     const stored = this.leases.current(this.root)
-    const lease = stored ? await this.adopt(stored) : undefined
+    const lease = stored ? await this.adopt(stored, host.policy) : undefined
     if (lease) this.placement.turnStarted(lease.signal)
     if (host.store.getSession(this.root)) await host.runtime.resumeDurableRuns([this.root])
     const harness = await this.placement.harness()
@@ -189,9 +201,10 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     else if ((await harness.inspect(BACKGROUND_CONTEXT)).tasks.length > 0) await this.abortRun()
   }
 
-  private async adopt(stored: StoredTurnLease) {
+  /** Takes the stored lease over through the composed policy, so the continuation turn is metered and reported as a fresh one is. */
+  private async adopt(stored: StoredTurnLease, policy: SessionAccessPolicy) {
     const lease = adoptSessionTurnLease({
-      policy: this.policy, access: { ...stored.access, operation: "prompt", sessionId: this.root }, lease: stored,
+      policy, access: { ...stored.access, operation: "prompt", sessionId: this.root }, lease: stored,
       onLost: async () => {
         await this.abortRun()
         await lease.release()

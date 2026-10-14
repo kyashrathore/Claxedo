@@ -169,8 +169,14 @@ export const serverWorkerd: Policy = {
   // admits and the CORS it stamps for them, with the broker's carve-out, are
   // their own module (`deployments/hosted-shared/hosted-core-origins.ts`),
   // split from the core app.
-  // 163/22, no headroom.
-  ceilings: { modules: 163, packages: 22 },
+  // +2 modules (owners: the session-rows ingest and the session-host turn
+  // routes): a session served by its own Durable Object publishes its list row
+  // under its turn lease, admitted by `session/session-host-rows.ts`, and
+  // reports a vendor's refusal of a stored account through
+  // `/turn-credential-refused`, judged by `credentials/credential-refusals.ts`,
+  // the one rule the hosted broker's own refusals go through too.
+  // 165/22, no headroom.
+  ceilings: { modules: 165, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
