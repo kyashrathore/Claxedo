@@ -14,7 +14,6 @@ import {
   type SandboxResource,
   type SandboxMutationResult,
   type SandboxGarbageCollectResult,
-  type SandboxStartProgress,
   isSandboxListingUnsupported,
   SANDBOX_IMAGE_LABEL,
   type SandboxManagerOptions
@@ -37,6 +36,7 @@ import {
 import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
 import { createSandboxStartRecorder } from "./start-telemetry"
 import { createLifecycleReporter } from "./lease-lifecycle"
+import { continuedStart, leaseBootMode } from "./lease-start"
 import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
 
 function egressUnenforcedMessage(input: {
@@ -294,21 +294,6 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     return { ...resource, status: "ready", url: resource.url, routingId: lease.routingId, ...(imageOutdated ? { imageOutdated: true as const } : {}) }
   }
 
-  // The boot path this lease is on, derived from the lease row alone, for the
-  // provisioning answers given before provisionLease() runs, so the connect
-  // UI keeps its honest label across the whole wait. Mirrors the predicates
-  // provisionLease() uses when no caller bootSource is set: ensureHostInput's
-  // driver-snapshot default and its `resuming`.
-  function leaseBootMode(lease: SandboxLease): SandboxBootMode {
-    const restoring =
-      Boolean(lease.checkpoint)
-      && lease.status !== "ready"
-      && options.driver.metadata.persistence.resume === "replacement-restore"
-    if (restoring) return "restore"
-    if (lease.sandboxId && lease.url && options.driver.resumeHost) return "resume"
-    return "cold-start"
-  }
-
   // Runs driver ensure/resume for an owned lease epoch and records the
   // outcome. `enteredAt` is when the start that got here began.
   async function provisionLease(
@@ -474,7 +459,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
   }
 
   function wanted(lease: SandboxLease, afterMs = retryAfterMs): SandboxEnsureResult {
-    return { status: "provisioning", retryAfterMs: afterMs, epoch: lease.epoch, homeRegion: lease.homeRegion, bootMode: leaseBootMode(lease) }
+    return { status: "provisioning", retryAfterMs: afterMs, epoch: lease.epoch, homeRegion: lease.homeRegion, bootMode: leaseBootMode(lease, options.driver) }
   }
 
   /** The lease's own answer while nothing may run the driver for it: a retry still ahead, or a spent retry budget. */
@@ -517,22 +502,6 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     if (lease.status !== "acquiring") return false
     const stale = now() - lease.updatedAt >= staleAfterMs
     return lease.sandboxId ? lease.nextRetryAt !== undefined || stale : lease.nextRetryAt !== undefined && !stale
-  }
-
-  /**
-   * The start the next epoch continues: the one a stale epoch was taken over
-   * in, or the one a provider failure interrupted while its retry budget
-   * lasts. A boot failure, a spent budget, a lost serving runtime and a stop
-   * all end the start the person was waiting on; the next epoch is a start of
-   * its own.
-   */
-  function continuedStart(lease: SandboxLease | undefined): SandboxStartProgress | undefined {
-    if (!lease?.start) return undefined
-    const failure = sandboxLeaseFailure(lease, { now: now(), maxRetryCount })
-    const continued = lease.status === "acquiring" || (failure?.kind === "provider" && lease.retryCount < maxRetryCount)
-    if (!continued) return undefined
-    const at = now()
-    return { requestedAt: lease.start.requestedAt, bootMode: lease.start.bootMode, startedAt: at, markedAt: at, phases: [] }
   }
 
   /** The lease a start runs the driver for, or the answer that stands in for one. */
@@ -580,7 +549,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     const wait = waiting(existing)
     if (wait) return wait
     if (existing && continues(existing)) return { lease: existing }
-    const start = continuedStart(existing)
+    const start = continuedStart(existing, { now: now(), maxRetryCount })
     const acquired = await options.leaseStore.acquire(workspaceId, {
       homeRegion: input.homeRegion,
       driver: options.driver.id,
