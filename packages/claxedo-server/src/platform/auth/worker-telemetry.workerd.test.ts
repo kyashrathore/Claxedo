@@ -15,7 +15,7 @@ beforeAll(async () => {
   miniflare = new Miniflare({
     ...hostedWorkerCompatibility(),
     modules: [{ type: "ESModule", path: "worker.js", contents: wranglerBundle(FIXTURE_WORKER) }],
-    outboundService: async (request) => {
+    outboundService: async (request: Request) => {
       batches.push(((await request.json()) as { batch: Array<{ event: string; properties: Record<string, unknown> }> }).batch)
       await new Promise((resolve) => setTimeout(resolve, ANALYTICS_ANSWER_MS))
       return Response.json({ status: 1 })

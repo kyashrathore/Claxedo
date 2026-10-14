@@ -12,6 +12,7 @@ import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import {
   buildAssistantMessage,
   messageCompleted,
+  messagePartUpdated,
   messageUpdated,
   sessionError,
   sessionUsage,
@@ -347,6 +348,23 @@ describe("turn usage meter", () => {
       status: "completed",
       tokens: { input: null, output: null, reasoning: null, cache: { read: null, write: null } },
     })
+  })
+
+  test("the first streamed part of the assistant message times the turn's first token, and a failed turn carries the harness's error class", async () => {
+    const timed = harness()
+    await timed.meter.consume(envelope(messageUpdated(assistant() as never)))
+    await timed.meter.consume(envelope(messagePartUpdated({ id: "part-0", sessionID: "session-1", messageID: "user-1", type: "text", text: "the prompt" } as never, 4_000)))
+    await timed.meter.consume(envelope(messagePartUpdated({ id: "part-1", sessionID: "session-1", messageID: "msg-1", type: "text", text: "the" } as never, 4_200)))
+    await timed.meter.consume(envelope(messagePartUpdated({ id: "part-1", sessionID: "session-1", messageID: "msg-1", type: "text", text: "the answer" } as never, 4_900)))
+    await timed.meter.consume(envelope(messageCompleted("session-1", "msg-1")))
+    expect(timed.facts.at(-1)).toMatchObject({ settlement: "unavailable", status: "completed", firstOutputAt: 4_200 })
+    expect(timed.facts.at(-1)).not.toHaveProperty("errorClass")
+
+    const failed = harness()
+    await failed.meter.consume(envelope(messageUpdated(assistant() as never)))
+    await failed.meter.consume(envelope(sessionError("Invalid API Key", "session-1", { errorClass: "credential" })))
+    expect(failed.facts.at(-1)).toMatchObject({ status: "error", errorClass: "credential" })
+    expect(failed.facts.at(-1)).not.toHaveProperty("firstOutputAt")
   })
 
   test("durable stop, steer, and process-loss outcomes settle partial or unavailable", async () => {

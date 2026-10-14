@@ -8,6 +8,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import type { SandboxDriverKeys, SandboxKeyRemoval } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
 import type { SandboxDriverID, SandboxMachineClass } from "@claxedo/sandbox-contract"
 import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
+import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { orgRoutedCredentials } from "./org-routed"
 
@@ -22,6 +23,7 @@ export type HostedCredentialRoutesInput = {
   fetch?: typeof fetch
   /** Absent on a plane that provisions no cloud sandboxes. */
   sandboxDriverKeys?: HostedSandboxDriverKeys
+  telemetry?: ControlPlaneTelemetry
 }
 
 /** The organization's sandbox provider keys: the only accounts this plane starts cloud workspaces on. */
@@ -69,6 +71,7 @@ export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
       ...auth,
       ...(input.fetch ? { fetch: input.fetch } : {}),
       ...(input.sandboxDriverKeys ? { sandboxDriverKeys: orgSandboxDriverKeys(input.sandboxDriverKeys, signed) } : {}),
+      ...(input.telemetry ? { telemetry: input.telemetry } : {}),
     }))
     .route("/", ProviderAuthRoutes({ service, ...auth }))
 }

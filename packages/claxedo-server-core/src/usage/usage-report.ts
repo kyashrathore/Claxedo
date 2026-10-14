@@ -1,3 +1,4 @@
+import { FIRST_TURN_ERROR_CLASSES } from "@claxedo/agent-runtime-contract"
 import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib/json"
 import { storedSessionRef } from "../session/meta/shape"
 import {
@@ -109,6 +110,8 @@ const REPORT_REVISION_KEYS: ReadonlySet<string> = new Set([
   "revision",
   "observedAt",
   "completedAt",
+  "firstOutputAt",
+  "errorClass",
   "settlement",
   "status",
   "harness",
@@ -139,6 +142,8 @@ export function usageReportRevision(fact: UsageReportRevision): UsageReportRevis
     revision: fact.revision,
     observedAt: fact.observedAt,
     ...(fact.completedAt === undefined ? {} : { completedAt: fact.completedAt }),
+    ...(fact.firstOutputAt === undefined ? {} : { firstOutputAt: fact.firstOutputAt }),
+    ...(fact.errorClass === undefined ? {} : { errorClass: fact.errorClass }),
     settlement: fact.settlement,
     status: fact.status,
     harness: fact.harness,
@@ -189,19 +194,22 @@ export function usageReportFactInBounds(fact: UsageReportFact, window: { admitte
     && fact.revision <= USAGE_REPORT_MAX_REVISION
     && inWindow(fact.observedAt)
     && (fact.completedAt === undefined || inWindow(fact.completedAt))
+    && (fact.firstOutputAt === undefined || inWindow(fact.firstOutputAt))
 }
 
 /** A reported revision, or nothing when it is malformed or names a field the plane owns. */
 export function readUsageReportRevision(value: unknown): UsageReportRevision | undefined {
   if (!isJsonRecord(value) || Object.keys(value).some((key) => !REPORT_REVISION_KEYS.has(key))) return undefined
   const tokens = readTurnUsageTokens(value.tokens)
-  const { messageId, revision, observedAt, completedAt, settlement, status, harness, providerId, modelId, nativeSessionId } = value
+  const { messageId, revision, observedAt, completedAt, firstOutputAt, errorClass, settlement, status, harness, providerId, modelId, nativeSessionId } = value
   if (
     !tokens
     || !isNonEmptyString(messageId)
     || typeof revision !== "number"
     || typeof observedAt !== "number"
     || (completedAt !== undefined && typeof completedAt !== "number")
+    || (firstOutputAt !== undefined && typeof firstOutputAt !== "number")
+    || (errorClass !== undefined && !isOneOf(errorClass, FIRST_TURN_ERROR_CLASSES))
     || !isOneOf(settlement, TURN_USAGE_SETTLEMENTS)
     || !isOneOf(status, TURN_USAGE_STATUSES)
     || !isNonEmptyString(harness)
@@ -215,6 +223,8 @@ export function readUsageReportRevision(value: unknown): UsageReportRevision | u
     revision,
     observedAt,
     ...(completedAt === undefined ? {} : { completedAt }),
+    ...(firstOutputAt === undefined ? {} : { firstOutputAt }),
+    ...(errorClass === undefined ? {} : { errorClass }),
     settlement,
     status,
     harness,

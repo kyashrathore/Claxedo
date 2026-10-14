@@ -1,4 +1,4 @@
-import type { RuntimeTokenUsage } from "@claxedo/agent-runtime-contract"
+import { FIRST_TURN_ERROR_CLASSES, type FirstTurnErrorClass, type RuntimeTokenUsage } from "@claxedo/agent-runtime-contract"
 import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib/json"
 
 // The runtime lists are the single source for these unions: the SQLite schema
@@ -62,7 +62,12 @@ export function readTurnUsageQuality(value: unknown): TurnUsageQuality {
   }
 }
 
-/** The minimal privacy-bounded fact shared by local persistence and central ingest. */
+/**
+ * The minimal privacy-bounded fact shared by local persistence and central
+ * ingest. `firstOutputAt` and `errorClass` describe the turn for the plane's
+ * `turn_completed` event only: neither is part of the revision's identity
+ * (`usageRevisionHash`) and no ledger keeps them.
+ */
 export type TurnUsageRevision = {
   sessionRef: string
   sessionId: string
@@ -70,6 +75,10 @@ export type TurnUsageRevision = {
   revision: number
   observedAt: number
   completedAt?: number
+  /** When the harness streamed the first part of this message. */
+  firstOutputAt?: number
+  /** Why a turn whose status is `error` failed, in the first-turn error vocabulary. */
+  errorClass?: FirstTurnErrorClass
   settlement: TurnUsageSettlement
   status: TurnUsageStatus
   location: TurnUsageLocation
@@ -245,6 +254,8 @@ const REVISION_KEYS: ReadonlySet<string> = new Set<keyof TurnUsageRevision>([
   "revision",
   "observedAt",
   "completedAt",
+  "firstOutputAt",
+  "errorClass",
   "settlement",
   "status",
   "location",
@@ -268,7 +279,7 @@ export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undef
   if (!isJsonRecord(value) || Object.keys(value).some((key) => !REVISION_KEYS.has(key))) return undefined
   const tokens = readTurnUsageTokens(value.tokens)
   const {
-    sessionRef, sessionId, messageId, revision, observedAt, completedAt, settlement, status, location,
+    sessionRef, sessionId, messageId, revision, observedAt, completedAt, firstOutputAt, errorClass, settlement, status, location,
     harness, providerId, modelId, nativeSessionId, workspaceId, hostId,
   } = value
   if (
@@ -279,6 +290,8 @@ export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undef
     || typeof revision !== "number"
     || typeof observedAt !== "number"
     || (completedAt !== undefined && typeof completedAt !== "number")
+    || (firstOutputAt !== undefined && typeof firstOutputAt !== "number")
+    || (errorClass !== undefined && !isOneOf(errorClass, FIRST_TURN_ERROR_CLASSES))
     || !isOneOf(settlement, TURN_USAGE_SETTLEMENTS)
     || !isOneOf(status, TURN_USAGE_STATUSES)
     || !isOneOf(location, TURN_USAGE_LOCATIONS)
@@ -297,6 +310,8 @@ export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undef
     revision,
     observedAt,
     ...(completedAt === undefined ? {} : { completedAt }),
+    ...(firstOutputAt === undefined ? {} : { firstOutputAt }),
+    ...(errorClass === undefined ? {} : { errorClass }),
     settlement,
     status,
     location,

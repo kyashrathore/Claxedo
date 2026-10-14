@@ -20,6 +20,8 @@ export type BrokerOptions<Claims extends RuntimeTokenClaims = RuntimeTokenClaims
   upstreamTimeoutMs?: number
   /** Upstream exchanges in flight at once, counted from authority resolution until the body is spent. */
   maxConcurrentUpstream?: number
+  /** Every refusal this broker answers, by its code and status and nothing of the request. */
+  onRefusal?: (refusal: { code: CredentialBrokerErrorCode; status: number }) => void
 }
 
 const DEFAULT_AUTHORITY_TIMEOUT_MS = 10_000
@@ -198,6 +200,10 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
   const lane = concurrencyGate(options.maxConcurrentUpstream ?? DEFAULT_MAX_CONCURRENT_UPSTREAM)
   const exchangedTokens = new ExchangedTokens()
+  const refuse = (status: number, code: CredentialBrokerErrorCode) => {
+    options.onRefusal?.({ code, status })
+    return brokerErrorResponse(status, code)
+  }
   function authorityRequest<T>(what: string, request: Promise<T>): Promise<T> {
     return settleAtRequestDeadline(what,
       { signal: new AbortController().signal, deadlineAt: Date.now() + authorityTimeoutMs },
@@ -212,52 +218,52 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
     const route = /^\/bindings\/([A-Za-z0-9_-]+)(\/.*)?$/.exec(url.pathname)
-    if (!route) return brokerErrorResponse(404, "binding_route_required")
+    if (!route) return refuse(404, "binding_route_required")
     const token = presentedRuntimeToken(request.headers)
-    if (!token) return brokerErrorResponse(401, "runtime_token_required")
+    if (!token) return refuse(401, "runtime_token_required")
     const claims = await options.verifyToken(token)
-    if (!claims) return brokerErrorResponse(401, "runtime_token_invalid")
+    if (!claims) return refuse(401, "runtime_token_invalid")
     const bindingId = route[1]
-    if (!claims.bindingIds.includes(bindingId)) return brokerErrorResponse(403, "binding_not_permitted")
+    if (!claims.bindingIds.includes(bindingId)) return refuse(403, "binding_not_permitted")
     let release: () => void
     try {
       release = await lane.enter(request.signal, upstreamTimeoutMs)
     } catch {
-      return brokerErrorResponse(503, "broker_authority_unavailable")
+      return refuse(503, "broker_authority_unavailable")
     }
     let forwarded = false
     let lifetime: ReturnType<typeof upstreamLifetime> | undefined
     try {
       const resolved = await authority.resolve(bindingId, claims)
-      if (!resolved) return brokerErrorResponse(403, "binding_unavailable")
+      if (!resolved) return refuse(403, "binding_unavailable")
       const { binding, value } = resolved
       if (binding.id !== bindingId || binding.status !== "active" || !sameRuntime(binding, claims)
-        || !await authority.currentRuntime(claims)) return brokerErrorResponse(403, "binding_unavailable")
-      if (!Number.isSafeInteger(binding.revision) || binding.revision < 1 || !value) return brokerErrorResponse(503, "credential_unavailable")
+        || !await authority.currentRuntime(claims)) return refuse(403, "binding_unavailable")
+      if (!Number.isSafeInteger(binding.revision) || binding.revision < 1 || !value) return refuse(503, "credential_unavailable")
       const origin = new URL(binding.destination.origin)
       if (!secureOrLoopback(origin) || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
-        return brokerErrorResponse(503, "binding_destination_invalid")
+        return refuse(503, "binding_destination_invalid")
       }
       const pathname = route[2] ?? "/"
       // Encoded separators and dot segments can be decoded differently by upstream routers.
-      if (/%(?:2f|5c|2e|25)/i.test(pathname) || pathname.includes("\\")) return brokerErrorResponse(403, "request_outside_policy")
+      if (/%(?:2f|5c|2e|25)/i.test(pathname) || pathname.includes("\\")) return refuse(403, "request_outside_policy")
       const allowedPath = (binding.destination.exactPaths ?? []).includes(pathname)
         || binding.destination.pathPrefixes.some((prefix) => prefix.startsWith("/")
         && (pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`)))
-      if (!binding.destination.methods.includes(request.method) || !allowedPath) return brokerErrorResponse(403, "request_outside_policy")
+      if (!binding.destination.methods.includes(request.method) || !allowedPath) return refuse(403, "request_outside_policy")
       const exchange = binding.destination.exchange
       const exchanging = exchange?.path === pathname
       const accessToken = exchange && !exchanging
         ? exchangedTokens.get(bindingId, token, binding.revision) : undefined
       if (exchange && !exchanging && !accessToken) {
-        return brokerErrorResponse(401, "runtime_token_invalid")
+        return refuse(401, "runtime_token_invalid")
       }
       // The binding's own account is injected at the header this vendor reads.
       // A caller that also fills a slot the vendor honours is presenting a
       // second identity, and deleting it quietly would leave the harness
       // reading the operator's account as the one the vendor refused.
       const querySlots = binding.destination.credentialQuerySlots ?? []
-      if (querySlots.some((name) => url.searchParams.has(name))) return brokerErrorResponse(403, "request_outside_policy")
+      if (querySlots.some((name) => url.searchParams.has(name))) return refuse(403, "request_outside_policy")
       const target = new URL(origin)
       target.pathname = pathname
       target.search = url.search
@@ -274,12 +280,12 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
         headers.delete(name)
       }
       if (injected.some((name) => ["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(name.toLowerCase()))) {
-        return brokerErrorResponse(503, "binding_injection_invalid")
+        return refuse(503, "binding_injection_invalid")
       }
       const credential = accessToken ?? value
       headers.set(injection.header, injection.scheme ? `${injection.scheme} ${credential}` : credential)
       for (const [name, companion] of Object.entries(injection.headers ?? {})) {
-        if (name.toLowerCase() === injection.header.toLowerCase()) return brokerErrorResponse(503, "binding_injection_invalid")
+        if (name.toLowerCase() === injection.header.toLowerCase()) return refuse(503, "binding_injection_invalid")
         if (companion !== null) headers.set(name, companion)
       }
       await authority.markUsed(bindingId)
@@ -297,11 +303,11 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
         } as RequestInit)
         deadline.headersReceived()
       } catch {
-        return brokerErrorResponse(502, "upstream_unavailable")
+        return refuse(502, "upstream_unavailable")
       }
       if (upstream.status >= 300 && upstream.status < 400) {
         await upstream.body?.cancel()
-        return brokerErrorResponse(502, "upstream_redirect_refused")
+        return refuse(502, "upstream_redirect_refused")
       }
       if (upstream.status === 401 || upstream.status === 403) {
         try {
@@ -320,11 +326,11 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
             { signal: deadline.signal, deadlineAt: Date.now() + upstreamTimeoutMs },
             response.json(), deadline.abort, (what) => new Error(`${what} timed out`))
         } catch {
-          return brokerErrorResponse(502, "upstream_unavailable")
+          return refuse(502, "upstream_unavailable")
         }
         const exchanged: unknown = typeof payload === "object" && payload !== null
           ? Object.entries(payload).find(([field]) => field === exchange.tokenField)?.[1] : undefined
-        if (typeof exchanged !== "string" || !exchanged) return brokerErrorResponse(502, "upstream_unavailable")
+        if (typeof exchanged !== "string" || !exchanged) return refuse(502, "upstream_unavailable")
         exchangedTokens.set({ bindingId, runtimeToken: token, accessToken: exchanged, revision: binding.revision, expiresAt: claims.exp * 1000 })
         return Response.json({ [exchange.tokenField]: token })
       }
@@ -336,7 +342,7 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
       }
       return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
     } catch {
-      return brokerErrorResponse(503, "broker_authority_unavailable")
+      return refuse(503, "broker_authority_unavailable")
     } finally {
       if (!forwarded) {
         lifetime?.cleanup()

@@ -40,6 +40,9 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { acceptsSubscriptionToken } from "@claxedo/server-core/credentials/provider-auth/methods"
 import { subscriptionTokenRefusal } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialKind, CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
+import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
+import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
+import { sandboxDriverIds } from "@claxedo/sandbox-contract"
 import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import {
   chosenSandboxKey,
@@ -196,6 +199,8 @@ export type CredentialRoutesOptions = {
   resolveOrg?: (request: Request) => Promise<string> | string
   /** Absent on a host that provisions no sandboxes and keeps no provider keys for them. */
   sandboxDriverKeys?: SandboxDriverKeys
+  /** Where each Check's verdict is recorded as `credential_checked`; absent, verdicts stay in the answer alone. */
+  telemetry?: ControlPlaneTelemetry
 }
 
 type RequestAuthOptions = Pick<CredentialRoutesOptions, "authConfig" | "verifier" | "authentication">
@@ -303,6 +308,21 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   const checkOptions = {
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.now ? { now: options.now } : {}),
+  }
+  /**
+   * The Check's verdict as an event under the person who asked. A custom
+   * provider's id is the person's own text and travels as `custom`; a built-in
+   * vendor's or a sandbox driver's id is the catalogue's word.
+   */
+  const checked = (request: Request, credential: CredentialMetadata, outcome: CredentialCheckOutcome) => {
+    const scope = org(request)
+    const named = builtInProviderRow(credential.provider_id) || (sandboxDriverIds as readonly string[]).includes(credential.provider_id)
+    options.telemetry?.capture(actor(request), "credential_checked", {
+      provider: named ? credential.provider_id : "custom",
+      kind: credential.kind,
+      verdict: outcome.status === "checked" ? outcome.health : outcome.status,
+      ...(scope === SINGLE_TENANT_ORG ? {} : { org_id: scope, $groups: { org: scope } }),
+    })
   }
   /**
    * One Check, in the answer its caller can act on. A host that cannot verify,
@@ -556,7 +576,9 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
-      const [body, status] = checkAnswer(id, await checkCredential(credentials, credential, { org: scope, ...checkOptions }))
+      const outcome = await checkCredential(credentials, credential, { org: scope, ...checkOptions })
+      checked(c.req.raw, credential, outcome)
+      const [body, status] = checkAnswer(id, outcome)
       return c.json(body, status)
     })
     .post("/:id/reconnect", async (c) => {
@@ -579,6 +601,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         replace: true,
         ...checkOptions,
       })
+      checked(c.req.raw, credential, outcome)
       const [answer, status] = checkAnswer(id, outcome)
       if (outcome.status === "checked" && outcome.stored === false) {
         log.warn("Reconnect rejected by the provider; the stored account is unchanged", {

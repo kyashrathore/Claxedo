@@ -1,6 +1,7 @@
 import { bindingBaseUrl, brokerErrorBody, createEgressBroker, presentedRuntimeToken, type RuntimeIdentity } from "@claxedo/egress-broker"
-import type { ProviderBindingSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialBrokerErrorCode, ProviderBindingSource } from "@claxedo/agent-runtime-contract"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { destinationAuthMode } from "@claxedo/server-core/credentials/built-in-destinations"
 import type { HarnessCredentialBroker } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials } from "../../authority/services"
@@ -28,6 +29,31 @@ export const RUNTIME_UPSTREAM_LANES = 16
 
 /** Runtimes with a broker of their own held at once in one isolate; the least recently used is dropped past this. */
 const HELD_RUNTIMES = 256
+
+/** How long one `broker_refused` stands for every refusal of its code in this isolate. */
+const REFUSAL_SAMPLE_MS = 60_000
+
+/**
+ * `broker_refused` for the first refusal of each code per minute per isolate,
+ * carrying how many refusals of that code the previous event stood for. A
+ * flood of unverifiable requests is refused one per request and must not be
+ * reported one per request; the count keeps its size, the sample its shape.
+ * No request detail travels: the code and status say what the broker said.
+ */
+function brokerRefusalSampler(telemetry: ControlPlaneTelemetry | undefined, now: () => number) {
+  const windows = new Map<string, { sentAt: number; suppressed: number }>()
+  return (refusal: { code: CredentialBrokerErrorCode; status: number }) => {
+    if (!telemetry) return
+    const at = now()
+    const window = windows.get(refusal.code)
+    if (window && at - window.sentAt < REFUSAL_SAMPLE_MS) {
+      window.suppressed += 1
+      return
+    }
+    windows.set(refusal.code, { sentAt: at, suppressed: 0 })
+    telemetry.capture("system", "broker_refused", { code: refusal.code, status: refusal.status, suppressed: window?.suppressed ?? 0 })
+  }
+}
 
 /** Verified placeholders held by their text, so a pass costs one signature check per isolate rather than one per request. */
 const HELD_PLACEHOLDERS = 1024
@@ -109,8 +135,10 @@ export function createHostedEgressBroker(input: {
   now?: () => number
   /** Ceiling on reaching a vendor's response headers, and on a runtime's wait for one of its lanes. */
   upstreamTimeoutMs?: number
+  telemetry?: ControlPlaneTelemetry
 }): HostedEgressBroker {
   const now = input.now ?? Date.now
+  const onRefusal = brokerRefusalSampler(input.telemetry, now)
   const readers = new Map<string, HostedBrokerCredentialRead>()
   const read = (orgId: string) => {
     let reader = readers.get(orgId)
@@ -138,6 +166,7 @@ export function createHostedEgressBroker(input: {
         authority,
         verifyToken: verify,
         maxConcurrentUpstream: RUNTIME_UPSTREAM_LANES,
+        onRefusal,
         ...(input.fetch ? { fetch: input.fetch } : {}),
         ...(input.upstreamTimeoutMs ? { upstreamTimeoutMs: input.upstreamTimeoutMs } : {}),
       })
@@ -146,7 +175,7 @@ export function createHostedEgressBroker(input: {
     return broker
   }
   // Answers every request no runtime is known for, which is a refusal in the broker's own words.
-  const refusing = createEgressBroker<HostedBrokerClaims>({ authority, verifyToken: verify, ...(input.fetch ? { fetch: input.fetch } : {}) })
+  const refusing = createEgressBroker<HostedBrokerClaims>({ authority, verifyToken: verify, onRefusal, ...(input.fetch ? { fetch: input.fetch } : {}) })
   const unverified = createFixedWindowConnectionRateLimiter({ limit: UNVERIFIED_REQUESTS_PER_MINUTE, windowMs: 60_000, now })
   const handler = async (request: Request): Promise<Response> => {
     const token = presentedRuntimeToken(request.headers)
@@ -154,6 +183,7 @@ export function createHostedEgressBroker(input: {
     if (claims) return brokerFor(claims)(request)
     const budget = unverified.check({ userId: requestClientKeyFromHeaders(request.headers), workspaceId: "egress-broker" })
     if (!budget.allowed) {
+      onRefusal({ code: "runtime_token_rate_limited", status: 429 })
       return Response.json(brokerErrorBody("runtime_token_rate_limited"), {
         status: 429,
         headers: { "retry-after": String(Math.max(1, Math.ceil((budget.retryAfterMs ?? 60_000) / 1_000))) },

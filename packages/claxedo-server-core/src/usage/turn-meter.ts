@@ -1,5 +1,6 @@
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import {
+  FIRST_TURN_ERROR_CLASSES,
   isRepeatedUsageObservation,
   recordUsageObservation,
   unknownTokenUsage,
@@ -49,6 +50,8 @@ type State = {
   nativeSessionId?: string
   observedAt?: number
   completedAt?: number
+  firstOutputAt?: number
+  errorClass?: TurnUsageRevision["errorClass"]
   settlement?: TurnUsageRevision["settlement"]
   status?: TurnUsageStatus
   quality: TurnUsageRevision["quality"]
@@ -61,6 +64,12 @@ type State = {
 
 function key(sessionId: string, messageId: string) {
   return `${sessionId}\u0000${messageId}`
+}
+
+/** The class a harness error names for the turn's first-turn verdict, when it names a known one. */
+function firstTurnErrorClassOf(error: unknown): TurnUsageRevision["errorClass"] {
+  const named = jsonRecord(jsonRecord(error)?.data)?.firstTurnErrorClass
+  return FIRST_TURN_ERROR_CLASSES.find((errorClass) => errorClass === named)
 }
 
 function numberOrNull(input: unknown) {
@@ -147,6 +156,8 @@ export function createTurnMeter(input: {
                 : [],
           ),
       ...(fact.completedAt === undefined ? {} : { completedAt: fact.completedAt }),
+      ...(fact.firstOutputAt === undefined ? {} : { firstOutputAt: fact.firstOutputAt }),
+      ...(fact.errorClass === undefined ? {} : { errorClass: fact.errorClass }),
       context: {
         sessionRef: fact.sessionRef,
         ...(fact.workspaceId ? { workspaceId: fact.workspaceId } : {}),
@@ -251,6 +262,8 @@ export function createTurnMeter(input: {
         revision,
         observedAt: current.observedAt ?? now(),
         ...(terminal?.completedAt === undefined ? {} : { completedAt: terminal.completedAt }),
+        ...(current.firstOutputAt === undefined ? {} : { firstOutputAt: current.firstOutputAt }),
+        ...(terminal?.status === "error" && current.errorClass ? { errorClass: current.errorClass } : {}),
         settlement: terminal?.settlement ?? "provisional",
         status: terminal?.status ?? "running",
         location: context.location,
@@ -344,12 +357,20 @@ export function createTurnMeter(input: {
       )
       return
     }
+    if (event.payload.type === "message.part.updated") {
+      const part = event.payload.properties.part
+      if (activeBySession.get(sessionId) !== part.messageID) return
+      const current = await state(sessionId, part.messageID)
+      current.firstOutputAt ??= event.payload.properties.time
+      return
+    }
     if (event.payload.type === "message.updated") {
       const info = event.payload.properties.info
       if (info.role !== "assistant") return
       const current = await state(sessionId, info.id)
       current.providerId = info.providerID
       current.modelId = info.modelID
+      current.errorClass ??= firstTurnErrorClassOf(info.error)
       activeBySession.set(sessionId, info.id)
       const tokens = messageTokens(info.tokens)
       // A connected runtime may publish its authoritative token snapshot on the final
@@ -406,6 +427,7 @@ export function createTurnMeter(input: {
         current.status === "process_lost"
       )
         return
+      current.errorClass ??= firstTurnErrorClassOf(event.payload.properties.error)
       await persist(current, {
         settlement: current.hasUsage ? "final" : "unavailable",
         status: "error",

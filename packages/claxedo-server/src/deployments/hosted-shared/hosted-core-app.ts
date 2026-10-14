@@ -353,6 +353,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
       credentials: plane.orgCredentials,
       keys: envelopeKeyProviderFromEnv(plane.env),
+      telemetry: services.telemetry,
       ...options.accountSetup,
     }))
   }

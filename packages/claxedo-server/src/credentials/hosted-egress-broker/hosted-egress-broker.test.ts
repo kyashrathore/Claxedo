@@ -79,6 +79,7 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
   const credentials = (orgId: string) => hostedOrgCredentials(orgId, { database, env: CREDENTIAL_ENV })
   const upstream = vendor()
   const sandboxes = leases()
+  const telemetry = { capture: vi.fn() }
   const broker = createHostedEgressBroker({
     credentials,
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
@@ -86,6 +87,7 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
     env: signing,
     origin: ORIGIN,
     fetch: upstream.fetch,
+    telemetry,
     ...(options.now ? { now: options.now } : {}),
     ...(options.upstreamTimeoutMs ? { upstreamTimeoutMs: options.upstreamTimeoutMs } : {}),
   })
@@ -107,7 +109,7 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
       listWorkspaces: vi.fn(async () => []),
       auditAllow: vi.fn(async () => ({})),
     },
-    telemetry: { capture: vi.fn() },
+    telemetry,
     localExecution: { enabled: false },
   } as unknown as ControlPlaneServices
   const plane = {
@@ -147,7 +149,7 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
     if ("unavailable" in projection || !projection.placeholder) throw new Error("the account was not bound")
     return { baseUrl: projection.baseUrl, placeholder: projection.placeholder, authMode: projection.authMode, expiresAt: projection.expiresAt }
   }
-  return { app, store, upstream, delivered, signing, sandboxes }
+  return { app, store, upstream, delivered, signing, sandboxes, telemetry }
 }
 
 describe("a sandbox spending its owner's account through the hosted broker", () => {
@@ -224,7 +226,7 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
   })
 
   test("an expired placeholder, a forged one, and no placeholder at all are 401", async () => {
-    const { app, store, upstream, delivered } = await composition()
+    const { app, store, upstream, delivered, telemetry } = await composition()
     const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
     const { baseUrl } = await delivered(key, { workspaceId: "ws_root" })
     const expired = await delivered(key, { workspaceId: "ws_root" }, () => Date.now() - 2 * 60 * 60 * 1000)
@@ -236,6 +238,10 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     expect(await refused({ "x-api-key": "sk-ant-api03-guess" })).toEqual([401, "runtime_token_invalid"])
     expect(await refused({})).toEqual([401, "runtime_token_required"])
     expect(upstream.seen).toHaveLength(0)
+    expect(telemetry.capture.mock.calls.filter((call) => call[1] === "broker_refused")).toEqual([
+      ["system", "broker_refused", { code: "runtime_token_invalid", status: 401, suppressed: 0 }],
+      ["system", "broker_refused", { code: "runtime_token_required", status: 401, suppressed: 0 }],
+    ])
   })
 
   test("a placeholder spends only the binding it was minted for: not another workspace's, not another person's", async () => {

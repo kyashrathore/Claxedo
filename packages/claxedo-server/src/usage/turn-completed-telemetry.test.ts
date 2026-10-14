@@ -74,6 +74,22 @@ describe("turn_completed from the filed usage row", () => {
     }])
   })
 
+  test("the first token's latency and a failed turn's class ride the event, both from the turn's admission", async () => {
+    const { writer, captured } = await filed()
+
+    await writer.writeRevision(revision({ firstOutputAt: DAY + 700 }), { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 })
+    await writer.writeRevision(revision({ messageId: "msg_2", status: "error", errorClass: "credential", settlement: "unavailable" }), { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 })
+    await writer.writeRevision(revision({ messageId: "msg_3", errorClass: "credential" }), { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 })
+
+    expect(captured.map((entry) => entry.properties)).toEqual([
+      expect.objectContaining({ outcome: "completed", first_token_ms: 1_700, duration_ms: 5_000 }),
+      expect.objectContaining({ outcome: "error", error_code: "credential" }),
+      expect.not.objectContaining({ error_code: expect.anything() }),
+    ])
+    expect(captured[0]?.properties).not.toHaveProperty("error_code")
+    expect(captured[1]?.properties).not.toHaveProperty("first_token_ms")
+  })
+
   test("a row filed under a later turn's lease carries no duration it cannot know", async () => {
     const { writer, captured } = await filed()
 

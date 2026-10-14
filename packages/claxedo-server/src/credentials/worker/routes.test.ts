@@ -44,6 +44,7 @@ function rig() {
   const changes: string[] = []
   let at = 1_000
   const store = (orgId: string) => hostedOrgCredentials(orgId, { database: database.database, env }, { now: () => ++at })
+  const captured: Array<{ distinctId: string; event: string; properties?: Record<string, unknown> }> = []
   const app = () => hostedCredentialRoutes({
     authentication,
     authConfig,
@@ -52,8 +53,9 @@ function rig() {
     changed: async (orgId) => void changes.push(orgId),
     keys: envelopeKeyProviderFromEnv(env),
     fetch: deviceLogin,
+    telemetry: { capture: (distinctId, event, properties) => void captured.push({ distinctId, event, properties }) },
   })
-  return { org, changes, store: () => store(org), app }
+  return { org, changes, store: () => store(org), app, captured }
 }
 
 const call = (app: ReturnType<ReturnType<typeof rig>["app"]>, path: string, init: { method?: string; body?: unknown; person?: string } = {}) =>
@@ -81,6 +83,20 @@ describe("hosted account setup through the shared credential routes", () => {
     expect((await store().getCredentialByProvider("claude-sdk", { owner: "alice" }))?.kind).toBe("oauth_token")
     const logins = await call(app(), "/api/claxedo/credentials/machine-logins")
     expect([logins.status, (await logins.json()).error.code]).toEqual([501, "credential_machine_login_unavailable"])
+  })
+
+  test("a Check records its verdict under the person and their organization, naming the provider and nothing of the account", async () => {
+    const { org, store, app, captured } = rig()
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("cursor-sdk", "cursor-secret-key") })
+    const [row] = await store().listCredentials()
+    const checked = await call(app(), `/api/claxedo/credentials/${row.id}/verify`, { method: "POST", body: {} })
+    const verdict = checked.status === 200 ? (await checked.json() as { health: string }).health : "failed"
+    expect(captured).toEqual([{
+      distinctId: "alice",
+      event: "credential_checked",
+      properties: { provider: "cursor-sdk", kind: "api_key", verdict, org_id: org, $groups: { org } },
+    }])
+    expect(JSON.stringify(captured)).not.toContain("cursor-secret-key")
   })
 
   test("another person cannot list, check, reconnect or delete someone's account", async () => {

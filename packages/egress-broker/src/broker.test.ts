@@ -31,6 +31,7 @@ async function fixture(tuning: {
   maxConcurrentUpstream?: number
   resolve?: BindingAuthority["resolve"]
   fetch?: typeof fetch
+  onRefusal?: (refusal: { code: string; status: number }) => void
 } = {}) {
   let binding: Binding = {
     ...identity, id: "binding", credentialId: "credential", revision: 1, status: "active",
@@ -57,6 +58,7 @@ async function fixture(tuning: {
     authorityTimeoutMs: tuning.authorityTimeoutMs,
     upstreamTimeoutMs: tuning.upstreamTimeoutMs,
     maxConcurrentUpstream: tuning.maxConcurrentUpstream,
+    onRefusal: tuning.onRefusal,
   })
   const request = (pathname = "/v1/messages", init: RequestInit = {}) => broker(new Request(`http://broker.test/bindings/binding${pathname}`, {
     method: "POST", headers: { "x-api-key": token, cookie: "local=private" }, body: "prompt", ...init,
@@ -66,6 +68,20 @@ async function fixture(tuning: {
 }
 
 describe("binding broker HTTP entrypoint", () => {
+  test("every refusal is reported by code and status, and a request the vendor answers is not", async () => {
+    const refusals: Array<{ code: string; status: number }> = []
+    const f = await fixture({ onRefusal: (refusal) => refusals.push(refusal) })
+    expect((await f.broker404("http://broker.test/elsewhere")).status).toBe(404)
+    expect((await f.request("/v1/messages", { headers: {} })).status).toBe(401)
+    expect((await f.request("/v1/complete")).status).toBe(403)
+    expect((await f.request()).status).toBe(200)
+    expect(refusals).toEqual([
+      { code: "binding_route_required", status: 404 },
+      { code: "runtime_token_required", status: 401 },
+      { code: "request_outside_policy", status: 403 },
+    ])
+  })
+
   test("caller abort after headers cancels upstream and releases its lane", async () => {
     let upstreamSignal: AbortSignal | undefined
     const f = await fixture({ upstreamTimeoutMs: 30, maxConcurrentUpstream: 1, fetch: (async (_url, init) => {

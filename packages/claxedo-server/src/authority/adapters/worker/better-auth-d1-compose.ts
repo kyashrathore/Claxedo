@@ -256,6 +256,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         sandboxManager,
         env: input.env,
         origin,
+        telemetry: plane.services.telemetry,
       })
     : undefined
   const delivery = sandbox && plane.orgCredentials && sandboxManager && workspaceSecretBrokering
