@@ -179,6 +179,24 @@ describe("hosted usage quota reader", () => {
     expect(credentials.updateCredentialHealth).not.toHaveBeenCalled()
   })
 
+  test("a ChatGPT login the edge challenges is proven by its refresh grant, and a row once marked refused is written ok", async () => {
+    const refused = { ...codex, health: "auth_failed" as const, status: "error" as const, last_validated_at: 1, expires_at: 3_600_000 }
+    const credentials = store([refused], { codex: JSON.stringify({ tokens: { access_token: "codex-access", refresh_token: "codex-refresh", account_id: "acct_codex" } }) })
+    const fetchImpl = vendors({
+      [CHATGPT_USAGE]: () => new Response("<!DOCTYPE html><html><title>Just a moment...</title></html>", { status: 403, headers: { "content-type": "text/html; charset=UTF-8" } }),
+      "https://auth.openai.com/oauth/token": () => Response.json({ access_token: "codex-access-2", refresh_token: "codex-refresh-2" }),
+    })
+    const read = createHostedQuotaReader({ credentials, now: () => 400_000, fetch: fetchImpl })
+
+    const { snapshot } = await read({ org: ORG, person: "alice", refresh: false })
+
+    expect(snapshot?.accounts.map((account) => [account.harness, account.health, account.usageError])).toEqual([
+      ["codex", "ok", "The provider answered 403 to this account's plan read, so its limits could not be read. This account still runs turns."],
+    ])
+    expect(credentials.updateCredentialSecret).toHaveBeenCalledWith("codex", expect.stringContaining("codex-access-2"), expect.any(Number), ORG)
+    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("codex", "ok", 400_000, ORG, undefined)
+  })
+
   test("a throttled plan read leaves the login ok and says when its limits can be read again", async () => {
     const credentials = store([claude], secrets)
     const fetchImpl = vendors({

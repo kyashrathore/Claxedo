@@ -9,7 +9,7 @@ import { verifySandboxDriverAuth } from "./sandbox-verify"
  * request is the other half of the point: a probe that bills, mutates, or hits
  * an undocumented route is a defect even when its verdict happens to be right.
  */
-function transport(input: { ok?: boolean; status?: number; body?: string } = {}) {
+function transport(input: { ok?: boolean; status?: number; body?: string; headers?: Record<string, string> } = {}) {
   const calls: Array<{
     url: string
     method?: string
@@ -28,15 +28,17 @@ function transport(input: { ok?: boolean; status?: number; body?: string } = {})
       headers,
       ...(typeof init?.body === "string" ? { body: init.body } : {}),
     })
-    return {
-      ok: input.ok ?? true,
+    const body = input.body ?? ""
+    return new Response(body, {
       status: input.status ?? (input.ok === false ? 400 : 200),
-      text: async () => input.body ?? "",
-      body: undefined,
-    } as unknown as Response
+      headers: { ...(body.startsWith("{") ? { "content-type": "application/json" } : {}), ...input.headers },
+    })
   }) as unknown as typeof fetch
   return { stub, calls, first: () => calls[0] }
 }
+
+/** What an edge answers a request it challenges, or a mistyped URL's site answers a route it lacks: a page, not the provider API's error. */
+const HTML_PAGE = { body: "<!DOCTYPE html><html><head><title>Just a moment...</title></head><body></body></html>", headers: { "content-type": "text/html; charset=UTF-8" } }
 
 const offline = (async () => {
   throw new Error("getaddrinfo ENOTFOUND provider")
@@ -58,14 +60,14 @@ describe("vercel", () => {
       { fetch: transports.stub },
     )
 
-    expect(health).toBe("ok")
+    expect(health).toEqual({ health: "ok" })
     expect(transports.first().url).toBe("https://api.vercel.com/v9/projects/prj_1?teamId=team_1")
     expect(transports.first().method).toBe("GET")
     expect(transports.first().headers.Authorization).toBe("Bearer vc_token")
   })
 
   test("a rejected Vercel token is auth_failed", async () => {
-    const transports = transport({ ok: false, status: 403, body: "forbidden" })
+    const transports = transport({ ok: false, status: 403, body: JSON.stringify({ error: { code: "forbidden", message: "Not authorized" } }) })
 
     await expect(
       verifySandboxDriverAuth(
@@ -73,7 +75,7 @@ describe("vercel", () => {
         { access_token: "vc_token", team_id: "team_1", project_id: "prj_1" },
         { fetch: transports.stub },
       ),
-    ).resolves.toBe("auth_failed")
+    ).resolves.toMatchObject({ health: "auth_failed" })
   })
 
   /**
@@ -82,7 +84,7 @@ describe("vercel", () => {
    * is a verdict — not the "couldn't check" state a network failure earns.
    */
   test("a project the token cannot see is a verdict, not an inconclusive", async () => {
-    const transports = transport({ ok: false, status: 404, body: "not found" })
+    const transports = transport({ ok: false, status: 404, body: JSON.stringify({ error: { code: "not_found", message: "Project not found" } }) })
 
     await expect(
       verifySandboxDriverAuth(
@@ -90,7 +92,7 @@ describe("vercel", () => {
         { access_token: "vc_token", team_id: "team_1", project_id: "prj_missing" },
         { fetch: transports.stub },
       ),
-    ).resolves.toBe("auth_failed")
+    ).resolves.toMatchObject({ health: "auth_failed" })
   })
 
   test("a network failure is inconclusive, never a verdict against the key", async () => {
@@ -146,7 +148,7 @@ describe("cloudflare", () => {
       { fetch: transports.stub },
     )
 
-    expect(health).toBe("ok")
+    expect(health).toEqual({ health: "ok" })
     expect(transports.first().url).toBe("https://sbx.example.com/sandboxes")
     expect(transports.first().method).toBe("GET")
     expect(transports.first().headers.Authorization).toBe("Bearer worker_secret")
@@ -173,7 +175,7 @@ describe("cloudflare", () => {
         { api_token: "wrong_secret", worker_url: "https://sbx.example.com" },
         { fetch: transports.stub },
       ),
-    ).resolves.toBe("auth_failed")
+    ).resolves.toMatchObject({ health: "auth_failed" })
   })
 
   /**
@@ -195,7 +197,7 @@ describe("cloudflare", () => {
         { api_token: "worker_secret", worker_url: "https://sbx.example.com" },
         { fetch: transports.stub },
       ),
-    ).resolves.toBe("ok")
+    ).resolves.toMatchObject({ health: "ok" })
   })
 
   test("an unreachable Worker is inconclusive, never a verdict against the key", async () => {
@@ -228,7 +230,7 @@ describe("boat", () => {
 
     const health = await verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub })
 
-    expect(health).toBe("ok")
+    expect(health).toEqual({ health: "ok" })
     expect(transports.first().url).toBe("https://boat.dev/api/v1/me")
     expect(transports.first().method).toBe("GET")
     expect(transports.first().headers.Authorization).toBe("Bearer boat_key")
@@ -244,7 +246,7 @@ describe("boat", () => {
 
     await expect(
       verifySandboxDriverAuth("boat", { api_key: "boat_revoked" }, { fetch: transports.stub }),
-    ).resolves.toBe("auth_failed")
+    ).resolves.toMatchObject({ health: "auth_failed" })
   })
 
   test("a network failure is inconclusive, never a verdict against the key", async () => {
@@ -325,15 +327,51 @@ describe("shared status mapping", () => {
 
     await expect(
       verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub }),
-    ).resolves.toBe("rate_capped")
+    ).resolves.toEqual({ health: "rate_capped", evidence: { status: 429 } })
   })
 
   test("a provider reporting no billing is distinguished from a bad key", async () => {
-    const transports = transport({ ok: false, status: 402, body: "payment required" })
+    const transports = transport({ ok: false, status: 402, body: JSON.stringify({ error: "payment_required" }) })
 
     await expect(
       verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub }),
-    ).resolves.toBe("no_billing")
+    ).resolves.toEqual({ health: "no_billing", evidence: { status: 402, type: "payment_required" } })
+  })
+
+  /**
+   * Only the provider API's own answer is a verdict. An edge challenging the
+   * request, or a mistyped Worker URL reaching some site's own error page,
+   * answers with HTML; reading that as a refusal condemned a working key, and
+   * reading a page's 501 as the Worker's "no bucket bound" would prove a key
+   * nothing had checked.
+   */
+  test("a page rather than the provider's error is inconclusive, whichever status it carries", async () => {
+    for (const status of [401, 403, 404, 500]) {
+      await expect(
+        verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transport({ status, ...HTML_PAGE }).stub }),
+      ).rejects.toMatchObject({ code: "credential_verification_failed", message: expect.stringMatching(new RegExp(`${status} with text/html`)) })
+    }
+  })
+
+  test("a 501 page from something that is not the Worker proves nothing", async () => {
+    await expect(
+      verifySandboxDriverAuth(
+        "cloudflare",
+        { api_token: "worker_secret", worker_url: "https://not-a-worker.example.com" },
+        { fetch: transport({ status: 501, ...HTML_PAGE }).stub },
+      ),
+    ).rejects.toBeInstanceOf(CredentialVerificationError)
+  })
+
+  test("a refusal carries the provider's status and error code, never its message", async () => {
+    const transports = transport({
+      status: 401,
+      body: JSON.stringify({ ok: false, code: "unauthorized", message: "Missing or invalid bearer token boat_key" }),
+    })
+
+    await expect(
+      verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub }),
+    ).resolves.toEqual({ health: "auth_failed", evidence: { status: 401, type: "unauthorized" } })
   })
 
   test("an unmapped provider status is inconclusive rather than a guess", async () => {

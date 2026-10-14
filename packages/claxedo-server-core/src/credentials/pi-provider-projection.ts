@@ -6,6 +6,7 @@ import {
   type PiLaunchProvider,
 } from "@claxedo/agent-runtime-contract"
 import { piLaunchCatalog } from "@claxedo/harness/pi-catalog"
+import { credentialUnavailableReason } from "./health"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { VENDOR_PROVIDER_NAMES } from "./vendor-providers"
 
@@ -40,7 +41,7 @@ export type PiProviderAccount = { by: string; refused?: string }
 export function piProviderAccount(providerID: string, credential: CredentialMetadata | undefined): PiProviderAccount | undefined {
   if (!credential || !isPiLaunchProvider(providerID) || !acceptedKinds[providerID].includes(credential.kind)) return undefined
   const expired = credential.health === "expired" || (credential.expires_at != null && credential.expires_at <= Date.now())
-  const refused = credential.status !== "available" ? credential.health ?? credential.status : expired ? "expired" : undefined
+  const refused = credentialUnavailableReason(credential) ?? (expired ? "expired" : undefined)
   return { by: credential.provider_id, ...(refused ? { refused } : {}) }
 }
 

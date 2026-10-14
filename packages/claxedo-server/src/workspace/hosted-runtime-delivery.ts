@@ -6,6 +6,7 @@ import { userAgentConfigStore } from "@claxedo/server-core/agent-config/reposito
 import { composeRuntimeConfigSnapshot, type AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/runtime-snapshot"
 import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
+import { credentialUnavailableReason } from "@claxedo/server-core/credentials/health"
 import {
   nativeProviderAuth,
   nativeProviderDeliveriesFromRepository,
@@ -123,7 +124,10 @@ export function createHostedRuntimeDelivery(input: {
     const selected = (await credentials.listCredentials())
       .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token")
         && !!builtInProviderRow(credential.provider_id))
-      .map((credential) => ({ credential, ...(credential.status !== "available" ? { unavailable: credential.status } : {}) }))
+      .map((credential) => {
+        const unavailable = credentialUnavailableReason(credential)
+        return { credential, ...(unavailable ? { unavailable } : {}) }
+      })
     const selections = await credentials.accountSelections()
     const secretBrokering = await input.workspaceSecretBrokering(workspaceId)
     const broker = secretBrokering !== "native" && input.broker
