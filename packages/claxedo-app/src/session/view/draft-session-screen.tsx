@@ -1,12 +1,13 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, useComposerStore, type Draft, type Submission } from "@/composer"
 import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
-import { sessionId, useServer, type PlacementId, type ProjectId, type PromptInput, type ReservationHold, type SessionReservation } from "@/server"
+import { sessionId, useServer, type PlacementId, type PromptInput, type ReservationHold } from "@/server"
 import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
 import type { PaneProps } from "@/shell"
 import { useWorkbench } from "@/workbench"
 import { pendingMessage } from "../transcript/send"
-import { draftSessionPaneKind, newDraft } from "./draft-pane"
+import { draftSessionPaneKind } from "./draft-pane"
+import { draftWhere, newDraft, type DraftSessionState } from "./draft-state"
 import { DraftTranscript } from "./draft-transcript"
 import { createFirstSend, type FirstSendAttempt } from "./first-send"
 import { FirstSendNotice } from "./first-send-notice"
@@ -15,14 +16,6 @@ import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
 import "./session-screen.css"
 
-export type DraftSessionState = {
-  readonly projectId: ProjectId
-  readonly placementId: PlacementId
-  readonly draftId: string
-  readonly where?: PlacementId
-  readonly reservation?: SessionReservation
-}
-
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
   const stores = useSessionStores()
@@ -30,11 +23,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const server = useServer()
   const workbench = useWorkbench()
   const key = () => draftComposerKey(props.state.draftId)
-  const where = () => {
-    const chosen = props.state.where
-    if (!chosen) return props.state.placementId
-    return server.placements.byId(chosen) || !server.placements.complete() ? chosen : props.state.placementId
-  }
+  const where = () => draftWhere(props.state)
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
   let pane: HTMLDivElement | undefined
