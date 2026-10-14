@@ -35,10 +35,13 @@ export async function verifySandboxDriverAuth(
   if (!probe) throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
 
   return withDeadlineSignal(10_000, async (signal): Promise<CredentialHealth> => {
-    const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "error", signal }).catch(() => {
+    // workerd accepts only "follow" and "manual" and throws on "error", which
+    // the catch below would report as the provider being unreachable, so the
+    // 3xx is read back and refused here.
+    const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "manual", signal }).catch(() => {
       throw new CredentialVerificationError("credential_provider_unavailable", "Sandbox provider request failed")
     })
-    if (response.redirected || (response.status >= 300 && response.status < 400)) {
+    if (response.status >= 300 && response.status < 400) {
       throw new CredentialVerificationError("credential_redirect_denied", "Sandbox provider redirects are not allowed")
     }
     if (response.ok) {
