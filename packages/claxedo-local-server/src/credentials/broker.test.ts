@@ -44,6 +44,8 @@ function bound(projection: Projection | undefined) {
 
 const workspaceId = "ws-broker"
 const brokerOrigin = "http://127.0.0.1:2595"
+// The desktop authority holds every binding it minted and resolves from the id alone; the claims it is handed are the broker core's, not its own.
+const unusedClaims = { userId: "local", orgId: "org", workspaceId, leaseId: "lease", leaseGeneration: 1, runtimeId: "runtime", bindingIds: [], exp: 0 }
 /** An `id_token` payload naming the account only in its claims. */
 const CLAIMS = "eyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdC1mcm9tLWNsYWltcyJ9"
 
@@ -124,7 +126,7 @@ describe("local binding authority", () => {
 
     expect(projection).toMatchObject({ authMode: "api-key", apiPath: "/v1" })
     expect(projection.baseUrl.startsWith(`${brokerOrigin}/bindings/`)).toBe(true)
-    const resolved = await local.authority.resolve(bindingIdOf(projection.baseUrl))
+    const resolved = await local.authority.resolve(bindingIdOf(projection.baseUrl), unusedClaims)
     expect(resolved?.value).toBe("sk-ant-api03-first")
     expect(resolved?.binding).toMatchObject({
       credentialId: credential.id,
@@ -167,7 +169,7 @@ describe("local binding authority", () => {
     const second = bindingIdOf(bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
 
     expect(second).toBe(first)
-    expect((await local.authority.resolve(first))?.binding.credentialId).toBe(credential.id)
+    expect((await local.authority.resolve(first, unusedClaims))?.binding.credentialId).toBe(credential.id)
   })
 
   test("a subscription token binds as a bearer, a key as x-api-key", async () => {
@@ -176,7 +178,7 @@ describe("local binding authority", () => {
     const rows = await local.projectAuth({ workspaceId })
 
     expect(rows.accounts.local.anthropic).toMatchObject({ authMode: "bearer" })
-    const resolved = await local.authority.resolve(bindingIdOf(bound(rows.accounts.local.anthropic).baseUrl))
+    const resolved = await local.authority.resolve(bindingIdOf(bound(rows.accounts.local.anthropic).baseUrl), unusedClaims)
     expect(resolved?.binding.injection).toEqual({ header: "Authorization", scheme: "Bearer" })
   })
 
@@ -262,26 +264,26 @@ describe("local binding authority", () => {
     const credential = await activeRow("sk-ant-api03-before")
     const local = broker()
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
-    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-before")
+    expect((await local.authority.resolve(id, unusedClaims))?.value).toBe("sk-ant-api03-before")
 
     await updateCredentialSecret(credential.id, "sk-ant-api03-after")
 
-    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-after")
+    expect((await local.authority.resolve(id, unusedClaims))?.value).toBe("sk-ant-api03-after")
   })
 
   test("a withdrawn row stops resolving, whether it failed auth or was deleted", async () => {
     const failing = await activeRow("sk-ant-api03-failing")
     const local = broker()
     const failingId = bindingIdOf(bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
-    expect(await local.authority.resolve(failingId)).toBeDefined()
+    expect(await local.authority.resolve(failingId, unusedClaims)).toBeDefined()
     updateCredentialHealth(failing.id, "auth_failed", Date.now())
-    expect(await local.authority.resolve(failingId)).toBeUndefined()
+    expect(await local.authority.resolve(failingId, unusedClaims)).toBeUndefined()
 
     const deleted = await activeRow("sk-ant-api03-deleted")
     const deletedId = bindingIdOf(bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
-    expect(await local.authority.resolve(deletedId)).toBeDefined()
+    expect(await local.authority.resolve(deletedId, unusedClaims)).toBeDefined()
     await deleteCredential(deleted.id)
-    expect(await local.authority.resolve(deletedId)).toBeUndefined()
+    expect(await local.authority.resolve(deletedId, unusedClaims)).toBeUndefined()
   })
 
   test("a runtime this process never projected for is not current and resolves nothing", async () => {
@@ -290,7 +292,7 @@ describe("local binding authority", () => {
     const id = bindingIdOf(bound((await projecting.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
 
     const other = broker()
-    expect(await other.authority.resolve(id)).toBeUndefined()
+    expect(await other.authority.resolve(id, unusedClaims)).toBeUndefined()
     expect(await other.authority.currentRuntime(await projecting.runtimeIdentity(workspaceId, "__local__", "local"))).toBe(false)
   })
 
@@ -313,7 +315,7 @@ describe("local binding authority", () => {
 
     expect((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"])
       .toEqual({ unavailable: true, reason: "revoked" })
-    expect(await local.authority.resolve(id)).toBeUndefined()
+    expect(await local.authority.resolve(id, unusedClaims)).toBeUndefined()
   })
 
   /**
@@ -333,7 +335,7 @@ describe("local binding authority", () => {
 
     expect(projection.apiPath).toBe(apiPath)
     expect(projection.authMode).toBe(injection.header === "Authorization" ? "bearer" : "api-key")
-    const resolved = await local.authority.resolve(bindingIdOf(projection.baseUrl))
+    const resolved = await local.authority.resolve(bindingIdOf(projection.baseUrl), unusedClaims)
     expect(resolved?.value).toBe(`key-${providerId}`)
     expect(resolved?.binding).toMatchObject({
       destination: { origin, methods: ["POST", "GET"], pathPrefixes: [`${apiPath}/`] },
@@ -436,7 +438,7 @@ describe("local binding authority", () => {
     const key = bound((await local.projectAuth({ workspaceId })).accounts.local.openai)
 
     expect(key).toMatchObject({ authMode: "bearer", apiPath: "/v1" })
-    expect((await local.authority.resolve(bindingIdOf(key.baseUrl)))?.binding).toMatchObject({
+    expect((await local.authority.resolve(bindingIdOf(key.baseUrl), unusedClaims))?.binding).toMatchObject({
       destination: {
         origin: "https://api.openai.com",
         methods: ["POST", "GET"],
@@ -453,7 +455,7 @@ describe("local binding authority", () => {
     const subscription = bound((await local.projectAuth({ workspaceId })).accounts.local["codex-app-server"])
 
     expect(subscription).toMatchObject({ authMode: "bearer", apiPath: "/backend-api/codex" })
-    const resolved = await local.authority.resolve(bindingIdOf(subscription.baseUrl))
+    const resolved = await local.authority.resolve(bindingIdOf(subscription.baseUrl), unusedClaims)
     expect(resolved?.value).toBe("chatgpt-access")
     expect(resolved?.binding).toMatchObject({
       destination: {
@@ -506,7 +508,7 @@ describe("local binding authority", () => {
     const local = broker()
     const projection = bound((await local.projectAuth({ workspaceId })).accounts.local["codex-app-server"])
 
-    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding.injection)
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl), unusedClaims))?.binding.injection)
       .toEqual({ header: "Authorization", scheme: "Bearer", headers: { "ChatGPT-Account-Id": "acct-from-claims" } })
   })
 
@@ -517,7 +519,7 @@ describe("local binding authority", () => {
 
     expect(projection).toMatchObject({ authMode: "bearer" })
     expect(projection.apiPath).toBeUndefined()
-    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding).toMatchObject({
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl), unusedClaims))?.binding).toMatchObject({
       destination: {
         origin: "https://api2.cursor.sh",
         exchange: { path: "/auth/exchange_user_api_key", tokenField: "accessToken" },
@@ -627,7 +629,7 @@ describe("local binding authority", () => {
       globalThis.fetch = realFetch
     }
     const next = bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"])
-    expect((await local.authority.resolve(bindingIdOf(next.baseUrl)))?.value).toBe("sk-ant-api03-heir")
+    expect((await local.authority.resolve(bindingIdOf(next.baseUrl), unusedClaims))?.value).toBe("sk-ant-api03-heir")
   })
 
   test("the operator's own Check needs no second opinion", async () => {
@@ -662,6 +664,7 @@ describe("local binding authority", () => {
       credentialId: account.id,
       revision: credentialById(account.id, { onOutage: "throw" })!.revision,
       status: 401,
+      runtime: unusedClaims,
     }
 
     await local.authority.reportFailure(refusal)
@@ -685,10 +688,10 @@ describe("local binding authority", () => {
     const local = broker()
     const first = credentialById(account.id, { onOutage: "throw" })!.revision
 
-    await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: first, status: 401 })
+    await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: first, status: 401, runtime: unusedClaims })
     await updateCredentialSecret(account.id, "sk-ant-api03-rotated-again")
     const second = credentialById(account.id, { onOutage: "throw" })!.revision
-    await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: second, status: 401 })
+    await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: second, status: 401, runtime: unusedClaims })
 
     expect(second).not.toBe(first)
     expect(credentialById(account.id, { onOutage: "throw" })).toMatchObject({ is_active: true })
@@ -697,7 +700,7 @@ describe("local binding authority", () => {
   test("reportFailure marks the row only for the revision the request used", async () => {
     const credential = await activeRow("sk-ant-api03-reported")
     const local = broker()
-    const failure = { bindingId: "unused", credentialId: credential.id, status: 401 }
+    const failure = { bindingId: "unused", credentialId: credential.id, status: 401, runtime: unusedClaims }
     const stale = { ...failure, revision: credentialById(credential.id, { onOutage: "throw" })!.revision - 1 }
     const current = { ...failure, revision: credentialById(credential.id, { onOutage: "throw" })!.revision }
 
@@ -720,6 +723,7 @@ describe("local binding authority", () => {
       credentialId: credential.id,
       revision: credentialById(credential.id, { onOutage: "throw" })!.revision,
       status: 403,
+      runtime: unusedClaims,
     })
 
     expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
@@ -734,10 +738,10 @@ describe("local binding authority", () => {
       // Answering `{}` would tell the harness no account is selected, and the
       // next turn would run on the machine's own login.
       await expect(local.projectAuth({ workspaceId })).rejects.toThrow()
-      await expect(local.authority.resolve(id)).rejects.toThrow()
+      await expect(local.authority.resolve(id, unusedClaims)).rejects.toThrow()
     })
 
-    expect(await local.authority.resolve(id)).toBeDefined()
+    expect(await local.authority.resolve(id, unusedClaims)).toBeDefined()
   })
 
   test("the handler answers a registry outage 503, never 403", async () => {
@@ -762,7 +766,7 @@ describe("local binding authority", () => {
     const projection = bound((await local.projectAuth({ workspaceId, orgId: "__local__", scope: "local" })).accounts.local["claude-sdk"])
 
     expect(await local.runtimeIdentity(workspaceId, "__local__", "local")).toMatchObject({ userId: "local", orgId: "__local__" })
-    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding)
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl), unusedClaims))?.binding)
       .toMatchObject({ orgId: "__local__", credentialId: credential.id })
     // Another tenant's projection of the same workspace derives different
     // binding ids, so a placeholder minted here names nothing over there.
@@ -787,6 +791,7 @@ describe("local binding authority", () => {
       credentialId: credential.id,
       revision: credentialById(credential.id, { onOutage: "throw" }, org)!.revision,
       status: 401,
+      runtime: unusedClaims,
     }
     await local.authority.reportFailure(refusal)
     await local.authority.reportFailure(refusal)
@@ -828,20 +833,20 @@ describe("local binding authority", () => {
     const credential = await activeRow("sk-ant-api03-rev-one")
     const local = broker()
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
-    const first = (await local.authority.resolve(id))!.binding.revision
+    const first = (await local.authority.resolve(id, unusedClaims))!.binding.revision
 
     // Two writes inside one millisecond share `updated_at`; only a counter
     // tells the superseded value from the one stored now.
     await updateCredentialSecret(credential.id, "sk-ant-api03-rev-two")
-    const second = (await local.authority.resolve(id))!.binding.revision
+    const second = (await local.authority.resolve(id, unusedClaims))!.binding.revision
     expect(second).toBe(first + 1)
 
-    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
-    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401, runtime: unusedClaims })
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401, runtime: unusedClaims })
     expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
 
-    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
-    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401, runtime: unusedClaims })
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401, runtime: unusedClaims })
     expect(credentialById(credential.id, { onOutage: "throw" })?.health).toBe("auth_failed")
   })
 
@@ -1008,7 +1013,7 @@ describe("local binding authority", () => {
     // One generation for the whole process would move this workspace on a
     // second time here, refusing the placeholder it was just handed.
     await local.projectAuth({ workspaceId: other })
-    await local.authority.resolve(bindingIdOf(renewed.baseUrl))
+    await local.authority.resolve(bindingIdOf(renewed.baseUrl), unusedClaims)
 
     expect((await local.runtimeIdentity(workspaceId, "__local__", "local")).leaseGeneration).toBe(generation)
     const realFetch = globalThis.fetch
@@ -1030,7 +1035,7 @@ describe("local binding authority", () => {
     const local = broker(dataDir)
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
     await activeRow("sk-ant-api03-boot-second")
-    await local.authority.resolve(id)
+    await local.authority.resolve(id, unusedClaims)
     const switched = (await local.runtimeIdentity(workspaceId, "__local__", "local")).leaseGeneration
 
     // A boot that counted only boots would hand out the switched generation
@@ -1042,18 +1047,18 @@ describe("local binding authority", () => {
     const first = await activeRow("sk-ant-api03-withdrawn-turn")
     const local = broker()
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"]).baseUrl)
-    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-withdrawn-turn")
+    expect((await local.authority.resolve(id, unusedClaims))?.value).toBe("sk-ant-api03-withdrawn-turn")
 
     updateCredentialStatus(first.id, "revoked")
 
-    expect(await local.authority.resolve(id)).toBeUndefined()
+    expect(await local.authority.resolve(id, unusedClaims)).toBeUndefined()
   })
 
   test("the anthropic destination reaches the turn's routes and nothing else", async () => {
     await activeRow("sk-ant-api03-narrow")
     const local = broker()
     const projection = bound((await local.projectAuth({ workspaceId })).accounts.local["claude-sdk"])
-    const destination = (await local.authority.resolve(bindingIdOf(projection.baseUrl)))!.binding.destination
+    const destination = (await local.authority.resolve(bindingIdOf(projection.baseUrl), unusedClaims))!.binding.destination
     expect(destination.pathPrefixes).toEqual(["/v1/messages", "/v1/models"])
 
     const realFetch = globalThis.fetch

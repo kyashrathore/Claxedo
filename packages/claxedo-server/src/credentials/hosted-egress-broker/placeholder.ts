@@ -29,9 +29,9 @@ export type HostedBrokerClaims = RuntimeTokenClaims & { credentialId: string }
 
 /**
  * A binding names a provider under a workspace for one identity, never an
- * account: its id survives every account switch and rotation, so the URL a
- * harness froze at launch (the Cursor SDK reads it once) keeps pointing at
- * the binding the next placeholder names.
+ * account: its id survives every account switch and rotation, so a harness
+ * that keys on the binding URL (Codex composes its home per `baseUrl`) keeps
+ * the same URL across the placeholders delivered to it.
  */
 export function brokerBindingId(input: { userId: string; orgId: string; workspaceId: string; providerId: string }): string {
   return createHash("sha256").update(JSON.stringify([input.userId, input.orgId, input.workspaceId, input.providerId])).digest("hex").slice(0, 32)

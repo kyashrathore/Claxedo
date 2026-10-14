@@ -47,9 +47,11 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
   const database = instance.database as unknown as D1Database
   const credentials = (orgId: string) => hostedOrgCredentials(orgId, { database, env: CREDENTIAL_ENV })
   const signing = await signingEnv()
+  const sandboxManager = { target: async () => ({ status: "ready" as const, hostId: "host-a", sandboxId: "sb-a", url: "https://runtime.test", epoch: 3, homeRegion: "us-east" }) }
   const broker = options.broker === false ? undefined : createHostedEgressBroker({
     credentials,
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
+    sandboxManager,
     env: signing,
     origin: ORIGIN,
   })

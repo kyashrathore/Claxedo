@@ -288,7 +288,7 @@ export function projectionRenewalDue(input: { at: number; all?: boolean }, renew
  * renewing.
  */
 export function projectionRenewalDueAt(
-  auth: Record<string, ProviderProjection | ProviderDirect>,
+  auth: Record<string, ProviderProjectionSource | ProviderProjection | ProviderDirect>,
   appliedAt: number,
 ): number | undefined {
   const due = Object.values(auth)
@@ -297,8 +297,22 @@ export function projectionRenewalDueAt(
   return due.length ? Math.min(...due) : undefined
 }
 
+function earliest(rows: Iterable<Record<string, ProviderProjectionSource | ProviderProjection | ProviderDirect>>, appliedAt: number): number | undefined {
+  const due = [...rows].flatMap((row) => projectionRenewalDueAt(row, appliedAt) ?? [])
+  return due.length ? Math.min(...due) : undefined
+}
+
+/**
+ * The earliest renewal any account row of a snapshot needs, across every
+ * person, and none of its direct rows: for an authority whose direct
+ * credentials are renewed by the harness mid-turn and whose placeholders are
+ * its own to re-deliver.
+ */
+export function accountsRenewalDueAt(auth: Pick<CredentialSnapshot, "accounts" | "direct">, appliedAt: number): number | undefined {
+  return earliest(Object.values(auth.accounts), appliedAt)
+}
+
 /** The earliest renewal any row of a snapshot needs, across every person's accounts and direct credentials. */
 export function credentialSnapshotRenewalDueAt(auth: CredentialSnapshot<ProviderProjection>, appliedAt: number): number | undefined {
-  const due = [...Object.values(auth.accounts), ...Object.values(auth.direct ?? {})].flatMap((rows) => projectionRenewalDueAt(rows, appliedAt) ?? [])
-  return due.length ? Math.min(...due) : undefined
+  return earliest([...Object.values(auth.accounts), ...Object.values(auth.direct ?? {})], appliedAt)
 }

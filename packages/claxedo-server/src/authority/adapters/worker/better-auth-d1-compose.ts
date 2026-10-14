@@ -249,10 +249,11 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   // no provider edge serve Claude Code and Codex at all. It needs the public
   // origin a sandbox reaches the plane at, which `hostedSandboxEgress` already
   // requires of such a deployment.
-  const broker = sandbox && plane.orgCredentials && origin
+  const broker = sandbox && plane.orgCredentials && sandboxManager && origin
     ? createHostedEgressBroker({
         credentials: plane.orgCredentials,
         read: (orgId) => hostedBrokerCredentialReader(orgId, { database: input.controlPlaneDatabase, env: input.env }),
+        sandboxManager,
         env: input.env,
         origin,
       })

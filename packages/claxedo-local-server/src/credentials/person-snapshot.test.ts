@@ -3,6 +3,9 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
+// The desktop authority resolves from the binding id alone; the claims are the broker core's to check.
+const unusedClaims = { userId: "A", orgId: "org", workspaceId: "ws", leaseId: "lease", leaseGeneration: 1, runtimeId: "runtime", bindingIds: [], exp: 0 }
+
 test("the credential producer preserves two people's selections and broker identities", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "person-snapshot-"))
   process.env.CLAXEDO_DATA_DIR = root
@@ -23,8 +26,8 @@ test("the credential producer preserves two people's selections and broker ident
       const projection = snapshot.accounts[person].openai
       if ("unavailable" in projection) throw new Error(projection.reason)
       const id = projection.baseUrl.split("/bindings/")[1]
-      expect((await broker.authority.resolve(id))?.binding.userId).toBe(person)
-      expect((await broker.authority.resolve(id))?.value).toBe(`fixture-${person}`)
+      expect((await broker.authority.resolve(id, unusedClaims))?.binding.userId).toBe(person)
+      expect((await broker.authority.resolve(id, unusedClaims))?.value).toBe(`fixture-${person}`)
     }
     const alternate = await putCredential({ owner: "A", provider_id: "openai", kind: "api_key", source: "managed", account_id: "alternate", secret: "alternate-A" })
     const { CredentialRoutes } = await import("@claxedo/server-core/credentials/routes/credential")
@@ -47,7 +50,7 @@ test("the credential producer preserves two people's selections and broker ident
     for (const person of ["A", "B"]) {
       const projection = next.accounts[person].openai
       if ("unavailable" in projection) throw new Error(projection.reason)
-      expect((await broker.authority.resolve(projection.baseUrl.split("/bindings/")[1]))?.value)
+      expect((await broker.authority.resolve(projection.baseUrl.split("/bindings/")[1], unusedClaims))?.value)
         .toBe(person === "A" ? "alternate-A" : "fixture-B")
     }
   } finally {

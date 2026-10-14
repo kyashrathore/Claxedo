@@ -1,9 +1,11 @@
-import { bindingBaseUrl, createEgressBroker, type RuntimeIdentity } from "@claxedo/egress-broker"
+import { bindingBaseUrl, brokerErrorBody, createEgressBroker, presentedRuntimeToken, type RuntimeIdentity } from "@claxedo/egress-broker"
 import type { ProviderBindingSource } from "@claxedo/agent-runtime-contract"
+import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { destinationAuthMode } from "@claxedo/server-core/credentials/built-in-destinations"
 import type { HarnessCredentialBroker } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials } from "../../authority/services"
-import type { RouteGuardExemption } from "../../platform/auth/request-guard"
+import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
+import { requestClientKeyFromHeaders, type RouteGuardExemption } from "../../platform/auth/request-guard"
 import { hostedBindingAuthority, type HostedBrokerCredentialRead } from "./authority"
 import { brokerBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
 
@@ -17,6 +19,26 @@ export { EGRESS_BROKER_PASS_AUDIENCE, brokerBindingId, mintBrokerPlaceholder, ve
  */
 export const DRAFT_PLACEHOLDER = "draft"
 
+/**
+ * Upstream exchanges one sandbox may hold at once. Claude Code runs a handful
+ * of streams in parallel for subagents; past this the sandbox's own requests
+ * queue, and no other tenant's do.
+ */
+export const RUNTIME_UPSTREAM_LANES = 16
+
+/** Runtimes with a broker of their own held at once in one isolate; the least recently used is dropped past this. */
+const HELD_RUNTIMES = 256
+
+/** Verified placeholders held by their text, so a pass costs one signature check per isolate rather than one per request. */
+const HELD_PLACEHOLDERS = 1024
+
+/**
+ * Requests per client address and minute that present no verifiable
+ * placeholder. A verified request never counts: it is bounded by its own
+ * runtime's lanes instead.
+ */
+const UNVERIFIED_REQUESTS_PER_MINUTE = 60
+
 /** The sandbox a placeholder is minted for, as the lease store reports it once the sandbox is ready. */
 export type BrokerLease = { epoch: number; hostId: string }
 
@@ -29,22 +51,48 @@ export type HostedEgressBroker = {
 
 /**
  * The broker's own refusals stand in for the default guard: a request with no
- * verifiable placeholder is turned away before any upstream work, the in-flight
- * ceiling bounds what verified ones can hold, and the vendor's own limits
- * bound a turn's body, which the broker streams rather than buffers.
+ * verifiable placeholder is counted per client address and turned away before
+ * any upstream work, a verified one is bounded by its runtime's own lanes, and
+ * the vendor's own limits bound a turn's body, which the broker streams rather
+ * than buffers.
  */
 export const HOSTED_EGRESS_BROKER_GUARD_EXEMPTION: RouteGuardExemption = {
   prefix: "/bindings",
   bodyCap: true,
   rateLimit: true,
   reason: "A model turn's request body is routinely past 1 MiB and must stream to the vendor unbuffered; sandboxes behind one egress address would share one per-client budget.",
-  enforcedBy: "src/credentials/hosted-egress-broker/index.ts (placeholder verification before any upstream work; @claxedo/egress-broker's in-flight ceiling)",
+  enforcedBy: "src/credentials/hosted-egress-broker/index.ts (per-client budget for unverified requests, per-runtime upstream lanes for verified ones)",
+}
+
+/** A bounded map that forgets its least recently used entry. */
+function recent<K, V>(capacity: number) {
+  const held = new Map<K, V>()
+  return {
+    get(key: K): V | undefined {
+      const value = held.get(key)
+      if (value !== undefined) {
+        held.delete(key)
+        held.set(key, value)
+      }
+      return value
+    },
+    set(key: K, value: V) {
+      held.delete(key)
+      held.set(key, value)
+      if (held.size > capacity) held.delete(held.keys().next().value!)
+    },
+  }
 }
 
 /**
  * The hosted plane's egress broker: `@claxedo/egress-broker` over the
  * organization credential stores, with the plane's runtime signing key
  * minting and verifying the placeholders as sandbox passes.
+ *
+ * Every runtime gets a broker of its own, so one sandbox's streams fill its
+ * own lanes and nobody else's; the authority behind them is shared. A request
+ * is verified before it is routed to one, and the verdict is held for the
+ * pass's life.
  *
  * It serves the drivers whose sandboxes have no provider edge. A driver with
  * one is never pointed here: its deliveries stay edge secrets, and this
@@ -53,11 +101,14 @@ export const HOSTED_EGRESS_BROKER_GUARD_EXEMPTION: RouteGuardExemption = {
 export function createHostedEgressBroker(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
   read: (orgId: string) => HostedBrokerCredentialRead
+  sandboxManager: Pick<SandboxManager, "target">
   env: Record<string, string | undefined>
   /** The public origin sandboxes reach the plane at; a binding's base URL is under it. */
   origin: string
   fetch?: typeof fetch
   now?: () => number
+  /** Ceiling on reaching a vendor's response headers, and on a runtime's wait for one of its lanes. */
+  upstreamTimeoutMs?: number
 }): HostedEgressBroker {
   const now = input.now ?? Date.now
   const readers = new Map<string, HostedBrokerCredentialRead>()
@@ -69,11 +120,47 @@ export function createHostedEgressBroker(input: {
     }
     return reader
   }
-  const handler = createEgressBroker<HostedBrokerClaims>({
-    authority: hostedBindingAuthority({ credentials: input.credentials, read, ...(input.fetch ? { fetch: input.fetch } : {}), now }),
-    verifyToken: (token) => verifyBrokerPlaceholder(token, input.env, { now }),
-    ...(input.fetch ? { fetch: input.fetch } : {}),
-  })
+  const authority = hostedBindingAuthority({ credentials: input.credentials, read, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now })
+  const verified = recent<string, HostedBrokerClaims>(HELD_PLACEHOLDERS)
+  const verify = async (token: string): Promise<HostedBrokerClaims | undefined> => {
+    const held = verified.get(token)
+    if (held && held.exp * 1_000 > now()) return held
+    const claims = await verifyBrokerPlaceholder(token, input.env, { now })
+    if (claims) verified.set(token, claims)
+    return claims
+  }
+  const brokers = recent<string, (request: Request) => Promise<Response>>(HELD_RUNTIMES)
+  const brokerFor = (claims: HostedBrokerClaims) => {
+    const key = `${claims.orgId}\n${claims.workspaceId}\n${claims.leaseId}\n${claims.leaseGeneration}\n${claims.runtimeId}`
+    let broker = brokers.get(key)
+    if (!broker) {
+      broker = createEgressBroker<HostedBrokerClaims>({
+        authority,
+        verifyToken: verify,
+        maxConcurrentUpstream: RUNTIME_UPSTREAM_LANES,
+        ...(input.fetch ? { fetch: input.fetch } : {}),
+        ...(input.upstreamTimeoutMs ? { upstreamTimeoutMs: input.upstreamTimeoutMs } : {}),
+      })
+      brokers.set(key, broker)
+    }
+    return broker
+  }
+  // Answers every request no runtime is known for, which is a refusal in the broker's own words.
+  const refusing = createEgressBroker<HostedBrokerClaims>({ authority, verifyToken: verify, ...(input.fetch ? { fetch: input.fetch } : {}) })
+  const unverified = createFixedWindowConnectionRateLimiter({ limit: UNVERIFIED_REQUESTS_PER_MINUTE, windowMs: 60_000, now })
+  const handler = async (request: Request): Promise<Response> => {
+    const token = presentedRuntimeToken(request.headers)
+    const claims = token ? await verify(token) : undefined
+    if (claims) return brokerFor(claims)(request)
+    const budget = unverified.check({ userId: requestClientKeyFromHeaders(request.headers), workspaceId: "egress-broker" })
+    if (!budget.allowed) {
+      return Response.json(brokerErrorBody("runtime_token_rate_limited"), {
+        status: 429,
+        headers: { "retry-after": String(Math.max(1, Math.ceil((budget.retryAfterMs ?? 60_000) / 1_000))) },
+      })
+    }
+    return refusing(request)
+  }
   return {
     handler,
     binder: ({ orgId, workspaceId, lease }) => ({

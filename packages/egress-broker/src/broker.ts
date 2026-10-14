@@ -3,7 +3,7 @@ import type { CredentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import { sameRuntime, secureOrLoopback, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
 import { brokerErrorBody } from "./errors.js"
 import { ExchangedTokens } from "./exchanged-tokens.js"
-import type { RuntimeTokenClaims } from "./token.js"
+import { API_KEY_HEADERS, presentedRuntimeToken, type RuntimeTokenClaims } from "./token.js"
 
 export type BrokerOptions<Claims extends RuntimeTokenClaims = RuntimeTokenClaims> = {
   authority: BindingAuthority<Claims>
@@ -26,13 +26,6 @@ const DEFAULT_AUTHORITY_TIMEOUT_MS = 10_000
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 60_000
 const DEFAULT_MAX_CONCURRENT_UPSTREAM = 32
 
-/**
- * The headers a harness's own SDK puts an API key in, and therefore the
- * placeholder. `Authorization: Bearer` is handled beside them; a vendor whose
- * client sends the key somewhere else needs its name added here before a
- * binding for it can work.
- */
-const API_KEY_HEADERS = ["x-api-key", "x-goog-api-key"] as const
 
 /**
  * The query names a credential is commonly written into. A vendor that acts on
@@ -220,19 +213,8 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
     const url = new URL(request.url)
     const route = /^\/bindings\/([A-Za-z0-9_-]+)(\/.*)?$/.exec(url.pathname)
     if (!route) return brokerErrorResponse(404, "binding_route_required")
-    const authorization = request.headers.get("authorization")
-    // A scheme the broker does not serve is still a credential presentation:
-    // beside a keyed header it is a second identity, and alone it is no token.
-    if (authorization !== null && !authorization.startsWith("Bearer ")) {
-      return brokerErrorResponse(401, "runtime_token_required")
-    }
-    const keyed = API_KEY_HEADERS.map((name) => request.headers.get(name)).filter((value): value is string => value !== null)
-    const token = authorization?.slice(7) ?? keyed[0]
-    // Two different values mean the caller is presenting two identities and the
-    // binding would be spent under whichever one this happened to pick.
-    if (!token || keyed.some((value) => value !== token)) {
-      return brokerErrorResponse(401, "runtime_token_required")
-    }
+    const token = presentedRuntimeToken(request.headers)
+    if (!token) return brokerErrorResponse(401, "runtime_token_required")
     const claims = await options.verifyToken(token)
     if (!claims) return brokerErrorResponse(401, "runtime_token_invalid")
     const bindingId = route[1]
@@ -286,8 +268,9 @@ export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTo
       const injected = [injection.header, ...Object.keys(injection.headers ?? {})]
       // Every name this binding owns, stripped before anything is set: a
       // companion the row declares but has no value for must not survive from
-      // the client either.
-      for (const name of ["authorization", ...API_KEY_HEADERS, "cookie", ...injected]) {
+      // the client either, and neither does a header the vendor would pick
+      // another account from.
+      for (const name of ["authorization", ...API_KEY_HEADERS, "cookie", ...injected, ...(binding.destination.identityHeaders ?? [])]) {
         headers.delete(name)
       }
       if (injected.some((name) => ["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(name.toLowerCase()))) {

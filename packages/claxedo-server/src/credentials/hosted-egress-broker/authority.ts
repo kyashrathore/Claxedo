@@ -1,4 +1,5 @@
 import type { Binding, BindingAuthority, BindingFailure } from "@claxedo/egress-broker"
+import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { builtInProviderDestination, type ProviderDestination } from "@claxedo/server-core/credentials/built-in-destinations"
 import { hostedBrokerServes } from "@claxedo/server-core/credentials/reach"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
@@ -27,23 +28,27 @@ export function bindingDestination(destination: ProviderDestination): Binding["d
     pathPrefixes: destination.pathPrefixes,
     ...(destination.exactPaths ? { exactPaths: destination.exactPaths } : {}),
     ...(destination.credentialQuerySlots ? { credentialQuerySlots: destination.credentialQuerySlots } : {}),
+    ...(destination.identityHeaders ? { identityHeaders: destination.identityHeaders } : {}),
   }
 }
 
 /**
  * The hosted plane's answer to the broker: the account a placeholder names,
- * read from the organization's store on every request.
+ * read from the organization's store on every request, and the lease the
+ * placeholder was minted for, read from the lease store.
  *
- * Nothing is held between requests. The placeholder's signature is the proof
- * of the runtime identity, the store row is the proof the account is still
- * the owner's to spend, and the pass's expiry is the end of a leaked one: a
- * sandbox replaced under its lease holds placeholders that stop working at
- * their expiry rather than at the replacement, which is the trade for one
- * database read per brokered request instead of two.
+ * Nothing is held between requests: two database reads per brokered request,
+ * the account row with its envelope and the workspace's lease row. The
+ * placeholder's signature proves who minted it; the store row proves the
+ * account is still the owner's to spend; the lease row proves the sandbox it
+ * was minted for is the one still serving, so a placeholder carried out of a
+ * stopped, replaced or deleted sandbox is refused at its next request, not at
+ * its expiry.
  */
 export function hostedBindingAuthority(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
   read: (orgId: string) => HostedBrokerCredentialRead
+  sandboxManager: Pick<SandboxManager, "target">
   fetch?: typeof fetch
   now?: () => number
 }): BindingAuthority<HostedBrokerClaims> {
@@ -88,8 +93,9 @@ export function hostedBindingAuthority(input: {
         value: destination.value,
       }
     },
-    async currentRuntime() {
-      return true
+    async currentRuntime(identity) {
+      const target = await input.sandboxManager.target(identity.workspaceId)
+      return target.status === "ready" && target.epoch === identity.leaseGeneration && target.hostId === identity.runtimeId
     },
     // The hosted store keeps no last-use mark on a row; a delivered account's
     // selection moves only when its owner chooses another.

@@ -343,6 +343,7 @@ export function createLocalCredentialBroker(input: {
         ...(destination.exactPaths ? { exactPaths: destination.exactPaths } : {}),
         ...(destination.exchange ? { exchange: destination.exchange } : {}),
         ...(destination.credentialQuerySlots ? { credentialQuerySlots: destination.credentialQuerySlots } : {}),
+        ...(destination.identityHeaders ? { identityHeaders: destination.identityHeaders } : {}),
       },
       injection: destination.injection,
     }

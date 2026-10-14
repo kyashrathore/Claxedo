@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  accountsRenewalDueAt,
   credentialSnapshot,
   credentialSnapshotRenewalDueAt,
   isProviderDirect,
@@ -133,6 +134,20 @@ describe("provider projection", () => {
     expect(credentialSnapshotRenewalDueAt({ machineOwnerUserId: "local", accounts: { local: { anthropic: { ...minted, expiresAt: appliedAt + 60 * 60 * 1000 } } },
       direct: { local: { openai: direct } } }, appliedAt)).toBe(appliedAt + 10 * 60 * 1000)
     expect(credentialSnapshotRenewalDueAt({ machineOwnerUserId: "local", accounts: {} }, appliedAt)).toBeUndefined()
+  })
+
+  test("the accounts alone renew for their earliest placeholder across every person, a direct credential and an edge placeholder aside", () => {
+    const appliedAt = 1_000_000
+    const direct = { delivery: "direct" as const, baseUrl: "https://api.openai.com", secret: "sk", authKind: "subscription" as const, expiresAt: appliedAt + 20 * 60 * 1000 }
+    const edge = { baseUrl: "https://api.anthropic.com", placeholderEnv: "CLAXEDO_PROVIDER_ANTHROPIC_X", authMode: "api-key" as const }
+    expect(accountsRenewalDueAt({
+      accounts: {
+        A: { anthropic: { ...minted, expiresAt: appliedAt + 60 * 60 * 1000 }, openai: edge },
+        B: { anthropic: { ...minted, expiresAt: appliedAt + 40 * 60 * 1000 } },
+      },
+      direct: { A: { openai: direct } },
+    }, appliedAt)).toBe(appliedAt + 20 * 60 * 1000)
+    expect(accountsRenewalDueAt({ accounts: { A: { openai: edge } } }, appliedAt)).toBeUndefined()
   })
 })
 

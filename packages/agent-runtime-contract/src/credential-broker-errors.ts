@@ -68,6 +68,10 @@ export const CREDENTIAL_BROKER_ERRORS = {
     fault: "harness",
     message: "The credential broker answers loopback callers only",
   },
+  runtime_token_rate_limited: {
+    fault: "harness",
+    message: "Too many requests without a verifiable runtime token from this client",
+  },
 } as const satisfies Record<string, { fault: "credential" | "harness" | "model"; message: string }>
 
 export type CredentialBrokerErrorCode = keyof typeof CREDENTIAL_BROKER_ERRORS

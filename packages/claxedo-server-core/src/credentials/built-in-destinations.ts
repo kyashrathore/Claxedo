@@ -33,6 +33,12 @@ export type ProviderDestination = {
    * the vendor, so it is stated in the vendor's row.
    */
   credentialQuerySlots?: readonly string[]
+  /**
+   * The request headers this vendor picks an account from beside the key.
+   * The broker strips them: the bound account is the identity, and a caller
+   * naming another makes the vendor refuse the operator's key.
+   */
+  identityHeaders?: readonly string[]
   /** What the broker injects, which is the token inside a stored login document. */
   value: string
 }
@@ -102,6 +108,7 @@ const openaiDestination: ProviderRow = (material) => material.form === "subscrip
     pathPrefixes: ["/v1/responses", "/v1/chat/completions", "/v1/models"],
     apiPath: "/v1",
     injection: { header: "Authorization", scheme: "Bearer" },
+    identityHeaders: ["OpenAI-Organization", "OpenAI-Project"],
   }
 
 /**
