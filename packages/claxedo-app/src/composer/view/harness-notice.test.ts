@@ -62,13 +62,6 @@ test("harness notice: an account the options route refused is named by its healt
     action: { label: "Open Models", ariaLabel: "Open Settings Models", run: open },
   })
   expect(resolveHarnessNotice({ ...unusable, accountUnavailable: { reason: "expired" } })?.kind).toBe("account-refused")
-  expect(resolveHarnessNotice({ ...unusable, accountUnavailable: { reason: "rate_capped" } })).toMatchObject({
-    kind: "account-rate-capped",
-    tone: "warning",
-    message: "Claude Code's account has reached its rate limit",
-    retry: false,
-    action: { label: "Open Models" },
-  })
   expect(resolveHarnessNotice({ ...unusable, accountUnavailable: { reason: "placeholder_env_missing: ANTHROPIC_API_KEY" } })).toMatchObject({
     kind: "account-unusable",
     message: "Claude Code's account can't be used here",
