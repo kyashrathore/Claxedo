@@ -1,4 +1,4 @@
-import type { CredentialHealth, CredentialStatus, CredentialVerdictEvidence } from "./types"
+import type { CredentialHealth, CredentialMetadata, CredentialStatus, CredentialVerdictEvidence } from "./types"
 
 /**
  * The verdicts that end an account: the vendor said the material is not
@@ -16,6 +16,17 @@ export function isRefusedHealth(health: CredentialHealth): boolean {
 export function credentialStatusForHealth(health: CredentialHealth): CredentialStatus {
   if (health === "expired") return "expired"
   return isRefusedHealth(health) ? "error" : "available"
+}
+
+/**
+ * Why a stored row cannot be spent, or nothing when it can. The health is
+ * preferred over the status because a health verdict names what the vendor
+ * said (`auth_failed`, `no_billing`) where the status only records that
+ * something went wrong, and every surface that refuses an account names the
+ * reason with this one word.
+ */
+export function credentialUnavailableReason(row: Pick<CredentialMetadata, "status" | "health">): string | undefined {
+  return row.status === "available" ? undefined : row.health ?? row.status
 }
 
 /** The `last_error` a verdict leaves on its row: the verdict and, when the vendor's answer is known, its status and error type. */

@@ -79,6 +79,26 @@ describe("one stored account's Check", () => {
     expect(host.calls.updateCredentialUsage).not.toHaveBeenCalled()
   })
 
+  test("a ChatGPT login the edge will not let the usage read judge is proven through the stored row's own refresh", async () => {
+    const codex = JSON.stringify({ type: "codex_auth", tokens: { access_token: "access_old", refresh_token: "refresh_old", account_id: "acct_1" } })
+    const host = store({
+      secret: codex,
+      answer: (url) => url === "https://auth.openai.com/oauth/token"
+        ? Response.json({ access_token: "access_new", refresh_token: "refresh_new" })
+        : new Response("<html>Just a moment...</html>", { status: 403, headers: { "content-type": "text/html" } }),
+    })
+
+    const outcome = await checkCredential(
+      host.credentials,
+      row({ provider_id: "codex-app-server", kind: "oauth_token", health: "auth_failed", status: "error", expires_at: NOW + 60_000 }),
+      options({ fetch: host.fetch }),
+    )
+
+    expect(outcome).toEqual({ status: "checked", health: "ok", at: NOW, usageRefused: { status: 403 } })
+    expect(host.calls.updateCredentialSecret).toHaveBeenCalledWith("cred_1", expect.stringContaining("access_new"), expect.any(Number), "__local__")
+    expect(host.calls.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", NOW, "__local__", undefined)
+  })
+
   test("a plan read the vendor refused on a token it accepted is reported, and the token stays ok", async () => {
     const host = store({
       secret: "sk-ant-oat01-keychain",

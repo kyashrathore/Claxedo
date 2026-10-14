@@ -11,7 +11,7 @@ import {
   type RefreshedCredentialSecret,
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
-import { readVendorAnswer, vendorRefusal, vendorReply, type VendorReply } from "./vendor-answer"
+import { readVendorAnswer, vendorRefusal, vendorReply, type VendorRefusal, type VendorReply } from "./vendor-answer"
 import { clampPercent, codexWindowName, usageResetMs, usageWindowName } from "@claxedo/server-core/credentials/usage-windows"
 import { credentialSecretMaterial, type CredentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow, CredentialVerdictEvidence } from "@claxedo/server-core/credentials/types"
@@ -70,40 +70,21 @@ export async function verifyCredential(
   // account goes on refreshing outside Claxedo.
   let material = secret
   let refreshed: RefreshedCredentialSecret | undefined
+  const refresh = options.refresh ?? ((row: CredentialMetadata, current: string) => refreshCredentialSecret(row, current, options))
+  const renewable = () => isRefreshableCredential(credential) && credentialRefreshToken(material) !== undefined
   if (stale) {
-    if (!isRefreshableCredential(credential) || !credentialRefreshToken(secret)) return { health: "expired" }
-    const refresh = options.refresh ?? ((row: CredentialMetadata, current: string) => refreshCredentialSecret(row, current, options))
-    let renewed: RefreshedCredentialSecret
-    try {
-      renewed = await refresh(credential, secret)
-    } catch (error: unknown) {
-      // Never swallowed: "expired" with no trace of an attempted renewal is
-      // indistinguishable from never having tried.
-      log.warn("Credential refresh failed", {
-        credential_id: credential.id,
-        provider_id: credential.provider_id,
-        error: error instanceof Error ? error.message : String(error),
-      })
-      // The token endpoint's own refusal of the grant is the real end of the
-      // login: the user has to reconnect, which is exactly what "expired" tells
-      // every surface. An answer that is not the endpoint's decides nothing.
-      if (error instanceof CredentialRefreshError && error.rejected) return { health: "expired", evidence: error.rejected }
-      throw new CredentialVerificationError("credential_provider_unavailable", error instanceof Error ? error.message : "Credential refresh request failed")
-    }
-    log.info("Credential refreshed during verification", {
-      credential_id: credential.id,
-      provider_id: credential.provider_id,
-      expires_at: renewed.expiresAt,
-    })
-    refreshed = renewed
-    material = renewed.secret
+    if (!renewable()) return { health: "expired" }
+    const renewal = await renewLogin(credential, secret, refresh)
+    if ("rejected" in renewal) return { health: "expired", evidence: renewal.rejected }
+    refreshed = renewal.renewed
+    material = renewal.renewed.secret
   }
 
   // Sandbox provider keys probe their own vendors and share nothing with the
   // model-provider auth shapes below, so they branch before the secret is read
   // as a token — a driver credential is a field map, not a bearer token.
   if (credential.kind === "sandbox_driver") {
-    return { health: await verifySandboxDriverCredential(credential.provider_id, material, options) }
+    return await verifySandboxDriverCredential(credential.provider_id, material, options)
   }
 
   const anthropic = ["anthropic", "claude-sdk"].includes(credential.provider_id)
@@ -124,14 +105,66 @@ export async function verifyCredential(
 
   if (anthropic && auth.form === "subscription") return outcome(...await anthropicSubscriptionVerdict(auth.token, ask, options.fetch))
 
-  const probe = providerProbe(auth, anthropic, cursor, openai && auth.form === "subscription")
+  const codex = openai && auth.form === "subscription"
+  const probe = providerProbe(auth, anthropic, cursor, codex)
   const answer = await ask(probe.url, probe.init)
-  if (!answer.ok) {
-    const refusal = vendorRefusal(answer.reply)
-    return outcome(refusal.health, { evidence: refusal.evidence })
+  if (answer.ok) {
+    if (!probe.usage) return outcome("ok")
+    return outcome("ok", { usage: probe.usage(answer.json), ...(auth.email ? { accountEmail: auth.email } : {}) })
   }
-  if (!probe.usage) return outcome("ok")
-  return outcome("ok", { usage: probe.usage(answer.json), ...(auth.email ? { accountEmail: auth.email } : {}) })
+  let refusal: VendorRefusal
+  try {
+    refusal = vendorRefusal(answer.reply)
+  } catch (inconclusive: unknown) {
+    // chatgpt.com answers a Worker with the edge's challenge page, so from
+    // there the usage read can neither accept nor refuse a ChatGPT login. Its
+    // refresh grant can: auth.openai.com answers Worker egress with its own
+    // JSON (probed from Cloudflare colos SIN and WAW, 2026-10-14), so the token
+    // endpoint taking the stored refresh token is the auth server's word that
+    // the login is live, and refusing it is the end of the login the stale
+    // path reports. The windows stay unread, and the card says so.
+    if (!codex || !renewable()) throw inconclusive
+    const unread = { usageRefused: readVendorAnswer(answer.reply).evidence }
+    if (refreshed) return outcome("ok", unread)
+    const renewal = await renewLogin(credential, material, refresh)
+    if ("rejected" in renewal) return outcome("expired", { evidence: renewal.rejected })
+    refreshed = renewal.renewed
+    return outcome("ok", unread)
+  }
+  return outcome(refusal.health, { evidence: refusal.evidence })
+}
+
+/**
+ * The stored login renewed through the one refresh path the runtime uses,
+ * or the token endpoint's own refusal of the grant, which is the real end of
+ * the login: the user has to reconnect, which is exactly what "expired" tells
+ * every surface. An answer that is not the endpoint's decides nothing and is
+ * thrown as the provider being unavailable.
+ */
+async function renewLogin(
+  credential: CredentialMetadata,
+  secret: string,
+  refresh: (credential: CredentialMetadata, secret: string) => Promise<RefreshedCredentialSecret>,
+): Promise<{ renewed: RefreshedCredentialSecret } | { rejected: CredentialVerdictEvidence }> {
+  try {
+    const renewed = await refresh(credential, secret)
+    log.info("Credential refreshed during verification", {
+      credential_id: credential.id,
+      provider_id: credential.provider_id,
+      expires_at: renewed.expiresAt,
+    })
+    return { renewed }
+  } catch (error: unknown) {
+    // Never swallowed: "expired" with no trace of an attempted renewal is
+    // indistinguishable from never having tried.
+    log.warn("Credential refresh failed", {
+      credential_id: credential.id,
+      provider_id: credential.provider_id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    if (error instanceof CredentialRefreshError && error.rejected) return { rejected: error.rejected }
+    throw new CredentialVerificationError("credential_provider_unavailable", error instanceof Error ? error.message : "Credential refresh request failed")
+  }
 }
 
 /**

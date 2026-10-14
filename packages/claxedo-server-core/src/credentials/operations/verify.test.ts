@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { CredentialVerificationError, verifyCredential } from "./verify"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
@@ -258,11 +258,81 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
    * client, not the vendor refusing the login, so it is no verdict at all —
    * the Check fails and the stored row is left as it was.
    */
-  test("a usage read answered with the edge's challenge page is inconclusive, never a refusal of the login", async () => {
+  test("a probe answered with the edge's challenge page is inconclusive, never a refusal of the key", async () => {
     const transports = transport({ probe: CHALLENGE_PAGE })
 
-    await expect(verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), { fetch: transports.stub, now: () => NOW }))
+    await expect(verifyCredential(credential({ provider_id: "openai", kind: "api_key" }), "sk-openai", { fetch: transports.stub, now: () => NOW }))
       .rejects.toMatchObject({ code: "credential_verification_failed", message: expect.stringMatching(/403.*text\/html/) })
+    expect(transports.tokenCalls()).toHaveLength(0)
+  })
+
+  /**
+   * chatgpt.com answers a Worker with Cloudflare's challenge page, so from
+   * there the usage read judges nothing. auth.openai.com answers the same
+   * Worker with its own JSON, so the login's refresh grant is the one
+   * conclusive signal a Worker can get: taken, the login is live; refused,
+   * it is over. Without it, a hosted ChatGPT plan once marked refused by the
+   * old reading could never have been written `ok` again.
+   */
+  describe("a ChatGPT login the edge will not let the usage read judge", () => {
+    test("is proven live by its refresh grant, through the caller's refresh path, and its windows stay unread", async () => {
+      const transports = transport({ probe: CHALLENGE_PAGE })
+      const refresh = vi.fn(async () => ({ secret: codexSecret("access_renewed"), expiresAt: NOW + 3_600_000 }))
+
+      const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+        fetch: transports.stub,
+        now: () => NOW,
+        refresh,
+      })
+
+      expect(outcome).toEqual({ health: "ok", refreshed: { secret: codexSecret("access_renewed"), expiresAt: NOW + 3_600_000 }, usageRefused: { status: 403 } })
+      expect(refresh).toHaveBeenCalledOnce()
+      expect(transports.probeCalls()).toHaveLength(1)
+    })
+
+    test("renews through the token endpoint when no caller path is given", async () => {
+      const transports = transport({ probe: CHALLENGE_PAGE })
+
+      const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), { fetch: transports.stub, now: () => NOW })
+
+      expect(outcome.health).toBe("ok")
+      expect(JSON.parse(outcome.refreshed!.secret).access).toBe("access_new")
+      expect(transports.tokenCalls()).toHaveLength(1)
+    })
+
+    test("is over when the token endpoint refuses the grant", async () => {
+      const transports = transport({ probe: CHALLENGE_PAGE, token: { ok: false } })
+
+      const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), { fetch: transports.stub, now: () => NOW })
+
+      expect(outcome).toEqual({ health: "expired", evidence: { status: 400, type: "invalid_grant" } })
+    })
+
+    test("stays unjudged when the token endpoint's answer is not its own", async () => {
+      const transports = transport({ probe: CHALLENGE_PAGE, token: { status: 502, text: "<html>bad gateway</html>", headers: { "content-type": "text/html" } } })
+
+      await expect(verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), { fetch: transports.stub, now: () => NOW }))
+        .rejects.toMatchObject({ code: "credential_provider_unavailable" })
+    })
+
+    test("stays unjudged when the login carries no refresh token", async () => {
+      const transports = transport({ probe: CHALLENGE_PAGE })
+      const secret = JSON.stringify({ type: "codex_auth", tokens: { access_token: "access_old", account_id: "acct_1" } })
+
+      await expect(verifyCredential(credential({ expires_at: NOW + 60_000 }), secret, { fetch: transports.stub, now: () => NOW }))
+        .rejects.toMatchObject({ code: "credential_verification_failed" })
+      expect(transports.tokenCalls()).toHaveLength(0)
+    })
+
+    test("a login just renewed for being stale is not renewed twice", async () => {
+      const transports = transport({ probe: CHALLENGE_PAGE })
+
+      const outcome = await verifyCredential(credential({ expires_at: NOW - 1 }), codexSecret(), { fetch: transports.stub, now: () => NOW })
+
+      expect(outcome.health).toBe("ok")
+      expect(outcome.refreshed).toBeDefined()
+      expect(transports.tokenCalls()).toHaveLength(1)
+    })
   })
 
   test("OpenAI's 429 for a key out of quota is no billing, not a rate cap", async () => {
@@ -273,11 +343,20 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     expect(outcome).toEqual({ health: "no_billing", evidence: { status: 429, type: "insufficient_quota" } })
   })
 
-  test("a vendor outage is inconclusive, never a refusal of the login", async () => {
+  test("a vendor outage is inconclusive for a key, never a refusal of it", async () => {
     const transports = transport({ probe: { status: 503, json: { error: { type: "server_error" } } } })
 
-    await expect(verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), { fetch: transports.stub, now: () => NOW }))
+    await expect(verifyCredential(credential({ provider_id: "openai", kind: "api_key" }), "sk-openai", { fetch: transports.stub, now: () => NOW }))
       .rejects.toMatchObject({ code: "credential_verification_failed", message: expect.stringMatching(/503 server_error/) })
+  })
+
+  test("a vendor outage on the usage read leaves a ChatGPT login to its refresh grant, which still proves it", async () => {
+    const transports = transport({ probe: { status: 503, json: { error: { type: "server_error" } } } })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), { fetch: transports.stub, now: () => NOW })
+
+    expect(outcome).toMatchObject({ health: "ok", usageRefused: { status: 503, type: "server_error" } })
+    expect(transports.tokenCalls()).toHaveLength(1)
   })
 
   test("an api_key credential verifies with the raw secret", async () => {
@@ -786,8 +865,8 @@ describe("verifyCredential — sandbox providers", () => {
     expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer boat_key")
   })
 
-  test("a rejected sandbox provider key is auth_failed, not an error", async () => {
-    const transports = transport({ probe: { ok: false, status: 401, body: "unauthorized" } })
+  test("a rejected sandbox provider key is auth_failed, not an error, with the provider's word behind it", async () => {
+    const transports = transport({ probe: { status: 401, json: { ok: false, code: "unauthorized" } } })
 
     const outcome = await verifyCredential(
       credential({ provider_id: "boat", kind: "sandbox_driver" }),
@@ -795,7 +874,7 @@ describe("verifyCredential — sandbox providers", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    expect(outcome).toEqual({ health: "auth_failed" })
+    expect(outcome).toEqual({ health: "auth_failed", evidence: { status: 401, type: "unauthorized" } })
   })
 
   test("a bare or non-object sandbox secret is refused without a provider request", async () => {

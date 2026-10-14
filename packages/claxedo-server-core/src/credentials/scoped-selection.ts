@@ -1,5 +1,6 @@
 import type { AccountScope } from "@claxedo/account-contract/vocabulary"
 import { fanoutEligible } from "./account-kinds"
+import { credentialUnavailableReason } from "./health"
 import { SINGLE_TENANT_ORG } from "./partition"
 import { activeCredentials, type CredentialOrgScope, type CredentialRead } from "./registry"
 import { credentialSecretInScope } from "./secret-scope"
@@ -45,12 +46,7 @@ export function usableCredentials(rows: readonly ScopedCredentialSelection[]): C
   return rows.flatMap((row) => (row.unavailable ? [] : [row.credential]))
 }
 
-/**
- * Why an in-scope account cannot be used, or `undefined` when it can. The
- * health is preferred over the status because a health verdict names what the
- * provider said (`auth_failed`, `no_billing`) where the status only records
- * that something went wrong.
- */
+/** Why an in-scope account cannot be used, or `undefined` when it can. */
 export function credentialUnavailableForScope(
   credential: CredentialMetadata,
   scope: AccountScope,
@@ -58,7 +54,8 @@ export function credentialUnavailableForScope(
   if (!credential.secure_ref) return "no_secret"
   if (credential.health === "expired") return "expired"
   if (credential.expires_at != null && credential.expires_at <= Date.now()) return "expired"
-  if (credential.status !== "available") return credential.health ?? credential.status
+  const refused = credentialUnavailableReason(credential)
+  if (refused) return refused
   if (scope === "shared" && !credential.consent) return "consent_required"
   return undefined
 }

@@ -1,5 +1,6 @@
 import { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type ProviderDirect } from "@claxedo/agent-runtime-contract"
 import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
+import { credentialUnavailableReason } from "@claxedo/server-core/credentials/health"
 import { directProviderDeliveriesFromRepository } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { storeRenewal } from "./store-renewal"
@@ -23,7 +24,10 @@ export async function ownerDirectRows(
   const selected = (await credentials.listCredentials())
     .filter((credential) => input.providers.has(credential.provider_id) && !!builtInProviderRow(credential.provider_id)
       && (credential.kind === "api_key" || credential.kind === "oauth_token"))
-    .map((credential) => ({ credential, ...(credential.status !== "available" ? { unavailable: credential.status } : {}) }))
+    .map((credential) => {
+      const unavailable = credentialUnavailableReason(credential)
+      return { credential, ...(unavailable ? { unavailable } : {}) }
+    })
   const renew = storeRenewal(credentials)
   const rows = await directProviderDeliveriesFromRepository({
     owner,

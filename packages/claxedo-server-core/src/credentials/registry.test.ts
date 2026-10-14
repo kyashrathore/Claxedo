@@ -416,6 +416,10 @@ describe("credential registry", () => {
     updateCredentialHealth(cred.id, "auth_failed", 1235, "__local__", { status: 401, type: "authentication_error" })
     expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ status: "error", last_error: "auth_failed: 401 authentication_error" })
     expect(await ownSecret("verify-throttle-test")).toBeNull()
+
+    updateCredentialHealth(cred.id, "ok", 1236)
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ health: "ok", status: "available", last_error: null, last_validated_at: 1236 })
+    expect(await ownSecret("verify-throttle-test")).toBe("verify-secret")
   })
 
   test("clears stale verification health when the same key is saved again", async () => {

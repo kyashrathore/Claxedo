@@ -348,6 +348,10 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     await credentials.updateCredentialHealth?.(meta.id, "auth_failed", 1_600, orgId, { status: 401, type: "invalid_api_key" })
     await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({ status: "error", last_error: "auth_failed: 401 invalid_api_key" })
     await expect(credentials.resolveCredentialSecret?.("openai")).resolves.toBeNull()
+
+    await credentials.updateCredentialHealth?.(meta.id, "ok", 1_700)
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({ health: "ok", status: "available", last_error: null, last_validated_at: 1_700 })
+    await expect(credentials.resolveCredentialSecret?.("openai")).resolves.toBe("sk-hosted-throttled")
   })
 
   test("cross-org isolation: same provider id, disjoint rows, ciphertext at rest, no cross-org listing", async () => {
