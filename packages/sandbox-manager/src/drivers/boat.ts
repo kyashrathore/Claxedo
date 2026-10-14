@@ -7,13 +7,13 @@ import {
   type SandboxTarget,
   type SandboxResource,
 } from "../contract"
-import { SandboxRuntimeBootError } from "../lease-failure"
-import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
+import { SandboxHostGoneError, SandboxRuntimeBootError } from "../lease-failure"
+import { workspaceRuntimeBootEnv, workspaceRuntimeBootSecrets, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { assertSandboxImageReference } from "../image-name"
 import { sandboxDriverCatalog } from "../driver-catalog"
-import { createBoatClient, type BoatFetch } from "./boat-client"
+import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
@@ -96,6 +96,13 @@ const PENDING_STATES = new Set(["init", "provisioning", "provisioned", "cloning"
 
 /** Create is idempotent under its key, so a lost acknowledgement or a create still in flight is retried. */
 const TRANSIENT_MARKERS = ["transport_failed", "idempotency_in_progress"] as const
+/** Boat's answers for a sandbox it no longer has: deleted, or stopped so long its disk was dropped (docs.boat.dev/snapshots/stop). */
+const GONE_CODES: ReadonlySet<string> = new Set(["not_found", "snapshot_data_expired"])
+
+function hostGoneOrThrow(err: unknown): never {
+  if (err instanceof BoatApiError && GONE_CODES.has(err.code)) throw new SandboxHostGoneError(err.message)
+  throw err
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -180,7 +187,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   async function waitUntilReady(sandboxId: string): Promise<boolean> {
     const until = Date.now() + provisionTimeoutMs
     for (;;) {
-      const sandbox = await client.get(sandboxId)
+      const sandbox = await client.get(sandboxId).catch(hostGoneOrThrow)
       if (READY_STATES.has(sandbox.state)) return true
       if (!PENDING_STATES.has(sandbox.state)) {
         throw new BoatDriverError(`Boat ${sandboxId} entered non-ready state: ${sandbox.state}`)
@@ -277,7 +284,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     if (options.registryAuth) {
       await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })
     }
-    const secrets = [...Object.values(env), ...(options.registryAuth ? [options.registryAuth.password] : [])]
+    const secrets = [...workspaceRuntimeBootSecrets(env), ...(options.registryAuth ? [options.registryAuth.password] : [])]
     const failures: unknown[] = []
     try {
       await execOrThrow(sandboxId, script, "container start", { timeoutSeconds: CONTAINER_START_TIMEOUT_SECONDS, secrets })
@@ -373,16 +380,22 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // The lease does not say whether its sandbox is archived: one stopped
     // after serving is, one whose boot failed was stopped too, and one a
     // provider error interrupted still runs.
-    const state = (await client.get(sandboxId)).state
+    const state = (await client.get(sandboxId).catch(hostGoneOrThrow)).state
     if (state === "archiving") return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
-    if (state === "archived") await client.resume(sandboxId, { ttlSeconds: BOOT_TTL_SECONDS })
+    // Only a resume can move a sandbox to another size (docs.boat.dev/machines/change-size); a running one keeps its machine.
+    if (state === "archived") {
+      await client.resume(sandboxId, {
+        ttlSeconds: BOOT_TTL_SECONDS,
+        ...(input.ensure.machineClass ? { type: input.ensure.machineClass } : {}),
+      }).catch(hostGoneOrThrow)
+    }
     const ready = await waitUntilReady(sandboxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
     return boot(sandboxId, input.ensure, hostId)
   }
 
   async function stop(target: SandboxResource) {
-    await client.stop(target.sandboxId)
+    await client.stop(target.sandboxId).catch(hostGoneOrThrow)
   }
 
   async function destroy(target: SandboxResource) {

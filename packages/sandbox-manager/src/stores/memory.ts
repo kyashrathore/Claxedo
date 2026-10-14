@@ -44,7 +44,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
         lastHeartbeatAt: held?.lastHeartbeatAt,
         lastActivityAt: held?.lastActivityAt,
         labels: held ? held.labels : input.labels,
-        machineClass: held ? held.machineClass : input.machineClass,
+        machineClass: input.machineClass ?? held?.machineClass,
         checkpoint: current?.checkpoint,
         persistence: current?.persistence,
         restore: current?.restore,
@@ -119,6 +119,7 @@ export function sandboxLease(input: Partial<SandboxLease> & { workspaceId: strin
     checkpoint: input.checkpoint,
     persistence: input.persistence,
     restore: input.restore,
+    start: input.start,
     machineClass: input.machineClass,
   }
 }

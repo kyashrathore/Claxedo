@@ -61,7 +61,10 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host-a", url: "https://runtime.test", epoch: 3 }) } } } as unknown as Input["services"],
-    sandboxManager: { target: async () => ({ status: "ready", hostId: "host-a", url: "https://runtime.test", epoch: 3 }) } as unknown as Input["sandboxManager"],
+    sandboxManager: {
+      target: async () => ({ status: "ready", hostId: "host-a", url: "https://runtime.test", epoch: 3 }),
+      heartbeat: async () => ({ ok: true, status: "ready" }),
+    } as unknown as Input["sandboxManager"],
     workspaceSecretBrokering: async () => driver === "cloudflare" ? "native" : "none",
     ...(broker ? { broker } : {}),
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },

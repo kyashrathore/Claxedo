@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
-import { createSandboxManager, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, isSandboxHostGone, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -756,5 +756,64 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.filter((c) => c.path === "/sandboxes" && c.method === "POST")).toHaveLength(1)
     expect(boat.calls.find((c) => c.path.endsWith("/resume"))?.body).toEqual({ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS })
     expect(ttlUpdates(boat.calls)).toEqual([{ ttlSeconds: null }])
+  })
+
+  test("a stopped sandbox is resumed onto the machine the lease names now, and onto the one it has when the lease names none", async () => {
+    const lease = (machineClass?: "small" | "default" | "large") => sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", status: "stopped", machineClass })
+    const resized = fakeBoat({ states: ["archived", "ready"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: resized.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
+    await driver.resumeHost!({ lease: lease("small"), ensure: ensureInput({ machineClass: "small" }) })
+    expect(resized.calls.find((c) => c.path.endsWith("/resume"))?.body).toEqual({ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS, type: "small" })
+
+    const kept = fakeBoat({ states: ["archived", "ready"] })
+    const unsized = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: kept.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
+    await unsized.resumeHost!({ lease: lease(), ensure: ensureInput() })
+    expect(kept.calls.find((c) => c.path.endsWith("/resume"))?.body).toEqual({ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS })
+  })
+
+  test.each([
+    ["deleted", "not_found", 404],
+    ["expired", "snapshot_data_expired", 409],
+  ])("a sandbox Boat no longer has (%s) is reported gone from a resume and from a stop, structurally, with no replacement created", async (_kind, code, status) => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, provisionIntervalMs: 0, fetchImpl: async (url, init) => {
+      if (url.endsWith(`/sandboxes/${ID}`) && init?.method === "GET" || url.endsWith("/stop") || url.endsWith("/resume")) {
+        return Response.json({ ok: false, code, message: "gone" }, { status })
+      }
+      return boat.fetchImpl(url, init)
+    } })
+    const lease = sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" })
+    const resumed = await driver.resumeHost!({ lease, ensure: ensureInput() }).catch((error: unknown) => error)
+    expect(isSandboxHostGone(resumed)).toBe(true)
+    expect((resumed as Error).message).toBe(`Boat GET /sandboxes/${ID} was rejected (${code})`)
+
+    const stopped = await driver.stop!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }).catch((error: unknown) => error)
+    expect(isSandboxHostGone(stopped)).toBe(true)
+    expect(boat.calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")).toHaveLength(0)
+  })
+
+  test("a provider refusal that is not about the sandbox's existence is not a host gone", async () => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () =>
+      Response.json({ ok: false, code: "unauthorized", message: "Unauthorized" }, { status: 401 }) })
+    const failure = await driver.stop!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }).catch((error: unknown) => error)
+    expect(isSandboxHostGone(failure)).toBe(false)
+    expect((failure as Error).message).toContain("unauthorized")
+  })
+
+  test("a failed boot keeps the branch and repository readable while every secret stays redacted", async () => {
+    const boat = fakeBoat({
+      failingStderr: "fatal: couldn't find remote ref refs/heads/lane-b-no-such-branch at https://github.com/octocat/git-consortium token synthetic-caller-secret",
+    })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, env: () => ({ RUNTIME_SECRET: "synthetic-runtime-secret" }) })
+    const failure = await driver.ensureHost(ensureInput({
+      source: { kind: "git", repoUrl: "https://github.com/octocat/git-consortium", branch: "lane-b-no-such-branch" },
+      env: { CALLER_SECRET: "synthetic-caller-secret" },
+    })).then(
+      () => { throw new Error("expected the boot to fail") },
+      (error: unknown) => error as Error,
+    )
+    expect(failure.message).toContain("refs/heads/lane-b-no-such-branch at https://github.com/octocat/git-consortium")
+    expect(failure.message).toContain("token [redacted]")
+    expect(failure.message).not.toContain("synthetic-caller-secret")
   })
 })

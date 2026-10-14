@@ -48,6 +48,19 @@ test("workspace start: a refusal with no retry hint fails at once with the serve
   expect(server.calls).toHaveLength(1)
 })
 
+test("workspace start: a read that says the boot failed ends the start with that reason, under the boot-failure code", async () => {
+  const server = answers(json({ status: "failed", workspaceId: "ws_1", error: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git' }))
+
+  const start = startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
+
+  await expect(start).rejects.toMatchObject({
+    class: "conflict",
+    code: "cloud_runtime_boot_failed",
+    message: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git',
+  })
+  expect(server.calls).toHaveLength(1)
+})
+
 test("workspace start: gives up after thirty provisioning answers, and says it is still starting", async () => {
   const server = answers(...Array.from({ length: 31 }, () => json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 })))
 

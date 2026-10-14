@@ -14,10 +14,18 @@ import { workspaceBackingDatabase } from "../test-support/workspace-backing-data
 const pushed = vi.hoisted(() => [] as string[])
 /** When set, the runtime refuses its settings with this reason. */
 const pushRefusal = vi.hoisted(() => ({ reason: undefined as string | undefined }))
-vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({ applyConfig: async () => {
-  if (pushRefusal.reason) throw new Error(pushRefusal.reason)
-  pushed.push("config")
-} }) }))
+/** What the runtime answers about its settings: nothing until a test gives it an answer, the way a runtime that is gone answers nothing. */
+const runtimeStatus = vi.hoisted(() => ({ answer: undefined as { state: "applied" | "applying"; revision: number } | undefined }))
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({
+  applyConfig: async () => {
+    if (pushRefusal.reason) throw new Error(pushRefusal.reason)
+    pushed.push("config")
+  },
+  configStatus: async () => {
+    if (!runtimeStatus.answer) throw new Error("the runtime did not answer")
+    return runtimeStatus.answer
+  },
+}) }))
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
 
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
@@ -27,6 +35,7 @@ const RELAY_URL = "https://relay.claxedo.test"
 const active: ControlPlaneDatabase[] = []
 afterEach(async () => {
   pushRefusal.reason = undefined
+  runtimeStatus.answer = undefined
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
@@ -156,7 +165,7 @@ async function composition() {
     expect(res.status).toBe(200)
     return (await res.json() as { workspaceId: string }).workspaceId
   }
-  return { app, delivery, created, lose, create, secrets, env }
+  return { app, delivery, created, lose, create, secrets, env, sandboxManager }
 }
 
 describe("the steps of a hosted sandbox start", () => {
@@ -213,6 +222,25 @@ describe("the steps of a hosted sandbox start", () => {
     expect(await delivery.start.acquire(workspaceId)).toEqual({ status: "failed", code: "runtime_prepare_failed", message: "gateway signing key unavailable" })
     expect(created).toHaveLength(0)
     expect(await delivery.start.target(workspaceId)).toMatchObject({ status: "unavailable", reason: "runtime_lease_missing" })
+  })
+
+  test("a runtime that answers is proof its host serves, recorded on the lease as its last heartbeat; one that does not answer records nothing and is not live", async () => {
+    const { delivery, create, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    const booted = await sandboxManager.list()
+    expect(booted[0]?.lastHeartbeatAt).toBeUndefined()
+
+    expect(await delivery.start.live(workspaceId)).toBeUndefined()
+    expect((await sandboxManager.list())[0]?.lastHeartbeatAt).toBeUndefined()
+
+    runtimeStatus.answer = { state: "applied", revision: 1 }
+    const before = Date.now()
+    expect(await delivery.start.live(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })
+    const alive = (await sandboxManager.list())[0]
+    expect(alive?.lastHeartbeatAt).toBeGreaterThanOrEqual(before)
+    expect(alive).toMatchObject({ status: "ready", epoch: 1 })
   })
 
   test("a runtime that refuses its settings fails the start after the sandbox is ready, so no token is minted over a half-configured runtime", async () => {

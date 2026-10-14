@@ -14,6 +14,7 @@ export type ConnectionAnswer =
   | { readonly kind: "ready"; readonly link: RelayConnection; readonly sessionHostRoot?: string }
   | { readonly kind: "provisioning"; readonly retryAfterMs?: number; readonly bootMode?: WorkspaceBootMode }
   | { readonly kind: "stopped" }
+  | { readonly kind: "failed"; readonly reason: string }
 
 export type WorkspaceConnections = {
   readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
@@ -23,6 +24,7 @@ export type WorkspaceConnections = {
 
 export const WORKSPACE_STOPPED = "workspace_stopped"
 export const CLOUD_RUNTIME_UNAVAILABLE = "cloud_runtime_unavailable"
+export const CLOUD_RUNTIME_BOOT_FAILED = "cloud_runtime_boot_failed"
 const WORKSPACE_HOST_OFFLINE = "workspace_host_offline"
 const WORKSPACE_CHECKPOINT_FROZEN = "workspace_checkpoint_frozen"
 
@@ -63,6 +65,7 @@ function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnect
 export function connectionAnswerFromWire(body: unknown, workspaceId: string, sessionId?: string): ConnectionAnswer {
   const row = isRecord(body) ? body : {}
   if (row.status === "stopped") return { kind: "stopped" }
+  if (row.status === "failed") return { kind: "failed", reason: typeof row.error === "string" && row.error ? row.error : "The cloud workspace could not start" }
   if (row.status === "provisioning") {
     const retryAfterMs = retryAfterOf(row.retryAfterMs)
     const bootMode = bootModeOf(row.bootMode)
