@@ -10,6 +10,7 @@ import { hostedSandboxInput } from "./hosted-sandbox-input"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { inlineSandboxStart } from "../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
+import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, WORKSPACE_IDLE_MS } from "../sandbox/workspace-idle"
 
 const pushed = vi.hoisted(() => [] as string[])
 /** When set, the runtime refuses its settings with this reason. */
@@ -26,6 +27,8 @@ vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClie
     return runtimeStatus.answer
   },
 }) }))
+/** What the runtime answers an idle read with: its health body, or nothing when it is unreachable. */
+const runtimeIdle = { report: undefined as Record<string, unknown> | undefined }
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
 
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
@@ -36,6 +39,7 @@ const active: ControlPlaneDatabase[] = []
 afterEach(async () => {
   pushRefusal.reason = undefined
   runtimeStatus.answer = undefined
+  runtimeIdle.report = undefined
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
@@ -83,6 +87,7 @@ async function composition() {
   const instance = await workspaceBackingDatabase([])
   active.push(instance)
   const { driver, created, lose } = recreatingDriver()
+  const stops: Array<{ workspaceId: string; epoch: number; idleBefore?: number }> = []
   const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
   const rows = new Map<string, Record<string, unknown>>()
   const authority = {
@@ -143,6 +148,15 @@ async function composition() {
     provisionedRunner: undefined,
     deliverSessionRowsPass: async (workspaceId) => { pushed.push(`session rows pass ${workspaceId}`) },
     sandboxRefresh: (workspaceId) => inlineSandboxStart(delivery.start)(workspaceId),
+    idleStop: (workspaceId, epoch, stop) => {
+      stops.push({ workspaceId, epoch, ...stop })
+      return sandboxManager.stop(workspaceId, { expectedEpoch: epoch, ...stop })
+    },
+    runtimeFetch: async (workspaceId, _orgId, path) => {
+      if (path !== "/api/wr/health") return Response.json({}, { status: 404 })
+      if (!runtimeIdle.report) throw new Error("the runtime is unreachable")
+      return Response.json({ workspaceId, ...runtimeIdle.report })
+    },
   })
   const env = { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" }
   const secrets = [{ name: "ANTHROPIC_API_KEY", value: "sk-ant", hosts: ["api.anthropic.com"] }]
@@ -165,7 +179,7 @@ async function composition() {
     expect(res.status).toBe(200)
     return (await res.json() as { workspaceId: string }).workspaceId
   }
-  return { app, delivery, created, lose, create, secrets, env, sandboxManager }
+  return { app, delivery, created, lose, create, secrets, env, stops, sandboxManager }
 }
 
 describe("the steps of a hosted sandbox start", () => {
@@ -251,6 +265,43 @@ describe("the steps of a hosted sandbox start", () => {
 
     expect(await delivery.start.provision(workspaceId, 1)).toEqual({ status: "failed", code: "runtime_provision_failed", message: "artifact corrupt" })
     expect(await delivery.start.target(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })
+  })
+})
+
+describe("watching a serving hosted sandbox for idleness", () => {
+  test("a ready answer of a driver whose host reads no idleness schedules the first read; the reads stop the sandbox as idle once the window has passed", async () => {
+    const { delivery, create, stops, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    const before = Date.now()
+    const ready = await delivery.start.provision(workspaceId, 1)
+    expect(ready).toMatchObject({ status: "ready", epoch: 1 })
+    expect(ready.status === "ready" ? ready.watchAt : undefined).toBeGreaterThanOrEqual(before + IDLE_CHECK_MS)
+
+    runtimeIdle.report = { idleSince: Date.now() - WORKSPACE_IDLE_MS + 60_000 }
+    const next = await delivery.start.watch(workspaceId, 0)
+    expect(next).toBeGreaterThanOrEqual(Date.now() + IDLE_CHECK_MS - 1_000)
+    expect(stops).toEqual([])
+
+    runtimeIdle.report = { idleSince: Date.now() - WORKSPACE_IDLE_MS }
+    expect(await delivery.start.watch(workspaceId, 0)).toBeUndefined()
+    expect(stops).toEqual([{ workspaceId, epoch: 1, idleBefore: expect.any(Number) }])
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "unavailable", leaseStatus: "stopped" })
+    expect(await delivery.start.watch(workspaceId, 0)).toBeUndefined()
+    expect(stops).toHaveLength(1)
+  })
+
+  test("a runtime that answers nothing is read again, counted, and stopped only once the failure budget is spent", async () => {
+    const { delivery, create, stops } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+
+    await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("unreachable")
+    await expect(delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 2)).rejects.toThrow("unreachable")
+    expect(stops).toEqual([])
+    expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
+    expect(stops).toEqual([{ workspaceId, epoch: 1 }])
   })
 })
 

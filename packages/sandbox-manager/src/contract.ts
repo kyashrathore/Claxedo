@@ -84,6 +84,13 @@ export type SandboxDriverMetadata = {
   hostStopBehavior: "not-supported" | "suspends-host" | "terminates-host"
   /** Whether a stopped/stale lease can resume the same driver-owned resource. */
   hostResumeBehavior: "same-host" | "replacement-host"
+  /**
+   * The host itself reads its runtime's idleness and stops once the idle
+   * window has passed (the Cloudflare sandbox Worker). Absent, nothing on the
+   * host does: the control plane's provisioner watches the runtime over the
+   * relay and stops the host through the driver.
+   */
+  hostWatchesIdle?: true
   /** How the control plane reaches the sandbox target returned by the driver. */
   targetAccess: "relay" | "loopback"
   /**

@@ -37,7 +37,7 @@ import { createSessionHostRows } from "../../session/session-host-rows"
 import type { CredentialRefusals } from "../../credentials/credential-refusals"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
-import { WorkspaceCheckpointRoutes, workspaceCheckpointService } from "../../workspace/routes/checkpoints"
+import { hostedWorkspaceIdleStop, WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { hostConnectEndpointOptions, missingBearerBody, routeAuth, signedOrError } from "../../workspace/route-support"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
@@ -628,12 +628,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       sandboxManager: services.sandbox.sandboxManager,
       telemetry: services.telemetry,
       idleStopToken: plane.env.CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN,
-      idleStop: async (workspaceId, epoch, idleBefore) => {
-        const owner = await services.authority?.resolveWorkspaceOwner?.(workspaceId)
-        if (!owner) return { ok: false, reason: "workspace_owner_unavailable" }
-        return await workspaceCheckpointService(undefined, "owner", owner.orgId, services, { defaultHomeRegion: services.defaultHomeRegion })
-          .stop(workspaceId, { expectedEpoch: epoch, idleBefore, hostStopsItself: true })
-      },
+      idleStop: (workspaceId, epoch, idleBefore) => hostedWorkspaceIdleStop(services)(workspaceId, epoch, { idleBefore, hostStopsItself: true }),
     }),
   )
   if (options.integrationRoutes) app.route("/api/claxedo/integrations", options.integrationRoutes)
