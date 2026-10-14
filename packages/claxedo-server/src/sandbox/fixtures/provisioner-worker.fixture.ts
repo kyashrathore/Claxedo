@@ -31,7 +31,8 @@ async function driverCalls(database: D1Database, workspaceId: string) {
  * that long, `ws_poll_<n>` asks to be polled n times first, `ws_boot_fail`
  * exits before it is ready, `ws_flaky` fails once at the provider,
  * `ws_step_throws` throws out of the start step once the lease is ready (its
- * runtime is not provisioned until a second step), and a workspace named
+ * runtime is not provisioned until a second step), `ws_stopped_under` has its
+ * lease stopped while the driver runs its first boot, and a workspace named
  * `asleep` has a runtime that never answers a ready lease.
  */
 function scriptedDriver(database: D1Database): SandboxDriver {
@@ -49,6 +50,9 @@ function scriptedDriver(database: D1Database): SandboxDriver {
     if (poll && calls <= Number(poll[1])) return { provisioning: true as const, retryAfterMs: 100 }
     if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
     if (input.workspaceId.startsWith("ws_flaky") && calls === 1) throw new Error("provider hiccup")
+    if (input.workspaceId.startsWith("ws_stopped_under") && calls === 1) {
+      await createD1SandboxLeaseStore({ database }).update(input.workspaceId, input.epoch, { status: "stopped" })
+    }
     return ready(input)
   }
   return {

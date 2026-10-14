@@ -381,12 +381,12 @@ describe("d1 sandbox lease store", () => {
       { workspace_id: "ws_1", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test", machine_class: "large", started_at: NOW, stopped_at: NOW + 90_000 },
     ])
 
-    // The next epoch resumes the host on the size and placement it has; the failure's reason is the old epoch's.
+    // The next epoch resumes the host where it is placed, on the size the acquire names; the failure's reason is the old epoch's.
     at += 10_000
     const next = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: at, labels: { placed: "elsewhere" }, machineClass: "small" })
     expect(next).toMatchObject({
       acquired: true,
-      lease: { epoch: 2, status: "acquiring", sandboxId: "sandbox_1", hostId: "host_1", labels: { placed: "here" }, machineClass: "large", retryCount: 1 },
+      lease: { epoch: 2, status: "acquiring", sandboxId: "sandbox_1", hostId: "host_1", labels: { placed: "here" }, machineClass: "small", retryCount: 1 },
     })
     expect(next.lease.lastError).toBeUndefined()
     await expect(bootRows(target)).resolves.toHaveLength(1)
@@ -502,7 +502,7 @@ describe("d1 sandbox lease store", () => {
     }
   })
 
-  test("the machine class a lease was taken with survives the row and a replacement epoch after a stop", async () => {
+  test("the machine class a lease was taken with survives the row and a replacement epoch after a stop, until an acquire names another", async () => {
     const { leaseStore } = await store(() => NOW)
     const { lease } = await leaseStore.acquire("ws_1", { ...ACQUIRE, machineClass: "large" })
     expect(lease.machineClass).toBe("large")
@@ -511,6 +511,29 @@ describe("d1 sandbox lease store", () => {
     await leaseStore.update("ws_1", lease.epoch, { status: "stopped" })
     const resumed = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + 1 })
     expect(resumed).toMatchObject({ acquired: true, lease: { epoch: 2, sandboxId: "sb_1", machineClass: "large" } })
+    await leaseStore.update("ws_1", 2, { status: "stopped" })
+    const resized = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + 2, machineClass: "small" })
+    expect(resized).toMatchObject({ acquired: true, lease: { epoch: 3, sandboxId: "sb_1", machineClass: "small" } })
+    expect(await leaseStore.get("ws_1")).toMatchObject({ epoch: 3, machineClass: "small" })
+  })
+
+  test("a lease ended for a host found gone records its boot to the moment the host was last proven serving, not to the write", async () => {
+    let at = NOW
+    const { target, leaseStore } = await store(() => at)
+    await ownedWorkspace(target, "ws_1")
+    await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW, machineClass: "small" })
+    await leaseStore.recordTarget("ws_1", 1, { sandboxId: "sb_1", url: "https://runtime.test", hostId: "host_1", labels: {} })
+    await leaseStore.update("ws_1", 1, { start: { startedAt: NOW, bootMode: "cold-start", markedAt: NOW + 50_000, phases: ["lease_decision", "runtime_ready"] } })
+
+    at = NOW + 600_000
+    const ended = await leaseStore.update("ws_1", 1, { status: "destroyed", lastError: "runtime_host_gone: not_found", endedAt: NOW + 150_000 })
+    expect(ended).toMatchObject({ status: "destroyed", lastError: "runtime_host_gone: not_found", updatedAt: at })
+    await expect(bootRows(target)).resolves.toEqual([
+      { workspace_id: "ws_1", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test", machine_class: "small", started_at: NOW, stopped_at: NOW + 150_000 },
+    ])
+    const next = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: at, machineClass: "small" })
+    expect(next).toMatchObject({ acquired: true, lease: { epoch: 2, status: "acquiring", machineClass: "small" } })
+    expect(next.lease.sandboxId).toBeUndefined()
   })
 
   test("a sandbox manager provisions and lists a workspace against this store", async () => {

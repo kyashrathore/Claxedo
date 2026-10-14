@@ -627,6 +627,34 @@ describe("hosted connection", () => {
     expect(auth!.recordRuntimeAccessToken).not.toHaveBeenCalled()
   })
 
+  test("GET reports a cloud workspace whose boot failed as failed, with the boot's reason, and a gone host as stopped", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" },
+      })),
+    })
+    const targets = [
+      { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "unavailable" as const, failure: { kind: "boot" as const, message: 'The branch "missing" does not exist in https://github.com/acme/widgets.git', retrying: false } },
+      { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "destroyed" as const },
+    ]
+    const ensure = vi.fn()
+    const sandboxManager = { target: vi.fn(async () => targets.shift()), ensure } as unknown as SandboxManager
+    const { app } = buildApp({ authority, sandboxManager })
+
+    const failed = await app.fetch(get("/ws_1/connection"))
+    expect(failed.status).toBe(200)
+    expect(await failed.json()).toEqual({
+      status: "failed",
+      workspaceId: "ws_1",
+      homeRegion: "us-east",
+      error: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git',
+    })
+    expect(await (await app.fetch(get("/ws_1/connection"))).json()).toEqual({ status: "stopped", workspaceId: "ws_1", homeRegion: "us-east" })
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
   test("GET reports a cloud workspace with no lease as stopped", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({

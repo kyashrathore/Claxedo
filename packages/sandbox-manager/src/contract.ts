@@ -162,7 +162,7 @@ export type SandboxLease = {
   restore?: SandboxRestoreStatus
   /** This epoch's start, recorded while it boots; a new epoch starts without one. */
   start?: SandboxStartProgress
-  /** The machine the sandbox was placed on, from the lease that took it; a resumed lease keeps the machine it has. */
+  /** The machine this epoch's sandbox runs on: the class its acquire named, else the one the host it resumes already has. */
   machineClass?: SandboxMachineClass
 }
 
@@ -197,6 +197,7 @@ export type SandboxLeaseAcquireInput = {
   now?: number
   /** The placement's labels, recorded on a fresh lease before the driver is asked for a resource; a resumed lease keeps its own. */
   labels?: Record<string, string>
+  /** The machine the workspace names now; a held host is resumed onto it, and absent, keeps the machine it has. */
   machineClass?: SandboxMachineClass
 }
 
@@ -244,6 +245,12 @@ export type SandboxLeasePatch = Partial<
   /** `null` clears the stored value; `undefined` leaves it unchanged. */
   restore?: SandboxRestoreStatus | null
   start?: SandboxStartProgress
+  /**
+   * When the host this write takes the epoch off was last proven serving, for
+   * a write that learns of its end after the fact; the boot it records ends
+   * there rather than at the write. Not a lease field.
+   */
+  endedAt?: number
 }
 
 /**

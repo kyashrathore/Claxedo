@@ -54,7 +54,7 @@ describe("workspace runtime request path", () => {
     })
     const invalid = createWorkspaceRuntimeClient({
       baseUrl: "https://server.example",
-      fetch: async () => new Response("not json", { headers: { "Content-Type": "application/json" } }),
+      fetch: async () => new Response("<!DOCTYPE html><title>Sandbox not found</title>", { headers: { "Content-Type": "text/html; charset=utf-8" } }),
     })
     const offline = createWorkspaceRuntimeClient({
       baseUrl: "https://server.example",
@@ -70,7 +70,11 @@ describe("workspace runtime request path", () => {
       code: "denied",
       message: "Not allowed",
     } satisfies Partial<WorkspaceRuntimeClientError>)
-    await expect(invalid.vcs.get()).rejects.toBeInstanceOf(WorkspaceRuntimeClientPayloadError)
+    await expect(invalid.vcs.get()).rejects.toMatchObject({
+      name: "WorkspaceRuntimeClientPayloadError",
+      operation: "vcs.get",
+      message: "The workspace runtime did not answer vcs.get as a runtime: HTTP 200 with text/html; charset=utf-8 content instead of JSON",
+    } satisfies Partial<WorkspaceRuntimeClientPayloadError>)
     await expect(offline.vcs.get()).rejects.toMatchObject({
       name: "WorkspaceRuntimeClientTransportError",
       operation: "vcs.get",

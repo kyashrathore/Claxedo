@@ -184,6 +184,18 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_boot_fail")).toBe(1)
   })
 
+  test("a lease stopped while its run was inside the driver is nobody's failure: the next start begins the run the lease needs, at once", async () => {
+    expect(await start("ws_stopped_under")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => inFlight("ws_stopped_under"), (answer) => answer === null)).toBeNull()
+    expect(await target("ws_stopped_under")).toMatchObject({ status: "unavailable", leaseStatus: "stopped" })
+
+    const next = await start("ws_stopped_under")
+    expect(next).toMatchObject({ status: "provisioning", epoch: 2 })
+    expect(next).not.toHaveProperty("opened")
+    expect(await until(() => start("ws_stopped_under"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
+    expect(await driverCalls("ws_stopped_under")).toBe(2)
+  })
+
   test("a provider failure is retried from the alarm after the lease's own delay, on a fresh epoch the run follows", async () => {
     expect(await start("ws_flaky")).toMatchObject({ status: "provisioning", epoch: 1 })
     expect(await until(() => target("ws_flaky"), (lease) => lease.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })

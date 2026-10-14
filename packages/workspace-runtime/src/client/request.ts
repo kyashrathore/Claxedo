@@ -62,6 +62,19 @@ export class WorkspaceRuntimeClientPayloadError extends Error {
   }
 }
 
+/**
+ * Names the answer rather than quoting the parser: a sandbox host that was
+ * deleted answers its provider's HTML page, and "Unexpected token '<'" told
+ * the person reading it nothing about that.
+ */
+function notJson(operation: string, response: Response) {
+  const type = response.headers.get("content-type")
+  return new WorkspaceRuntimeClientPayloadError(
+    operation,
+    `The workspace runtime did not answer ${operation} as a runtime: HTTP ${response.status} with ${type ? `${type} content` : "no content type"} instead of JSON`,
+  )
+}
+
 export class WorkspaceRuntimeClientTransportError extends Error {
   constructor(readonly operation: string, override readonly cause: unknown) {
     super(errorMessage(cause))
@@ -136,8 +149,8 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
     let body: unknown
     try {
       body = await sent.response.json()
-    } catch (error) {
-      throw new WorkspaceRuntimeClientPayloadError(input.operation, error instanceof Error ? error.message : "Response was not valid JSON")
+    } catch {
+      throw notJson(input.operation, sent.response)
     }
     return { data: body as T, ...sent }
   }
@@ -156,11 +169,18 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
   const decoded = async <T>(input: WorkspaceRuntimeCall & { decode: (body: unknown, status: number) => T }): Promise<WorkspaceRuntimeResponse<T>> => {
     const sent = await dispatch(input)
     const text = await sent.response.text()
+    let body: unknown
     try {
-      return { data: input.decode(JSON.parse(text), sent.response.status), ...sent }
+      body = JSON.parse(text)
+    } catch {
+      if (!sent.response.ok) throw workspaceRuntimeClientErrorFrom(input.operation, sent.response.status, text)
+      throw notJson(input.operation, sent.response)
+    }
+    try {
+      return { data: input.decode(body, sent.response.status), ...sent }
     } catch (error) {
       if (!sent.response.ok) throw workspaceRuntimeClientErrorFrom(input.operation, sent.response.status, text)
-      throw new WorkspaceRuntimeClientPayloadError(input.operation, error instanceof Error ? error.message : "Response was not valid JSON")
+      throw new WorkspaceRuntimeClientPayloadError(input.operation, error instanceof Error ? error.message : "The answer did not decode")
     }
   }
 

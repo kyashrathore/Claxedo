@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
-import { sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
+import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
 import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox-start"
 
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number }
@@ -169,8 +169,13 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
           return
         }
         await storage.delete("run")
-        const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }
-        await storage.put("outcome", outcome)
+        // A lease stopped, destroyed or replaced under the run was somebody's
+        // decision, not the start's failure: the next start reads the lease
+        // and begins what it needs, instead of being told this run's end.
+        if (answer.status !== "unavailable" || !sandboxLeaseEndedUnderStart(answer.error)) {
+          const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }
+          await storage.put("outcome", outcome)
+        }
         await this.#settled(run.workspaceId, answer)
       } finally {
         this.#driving = false

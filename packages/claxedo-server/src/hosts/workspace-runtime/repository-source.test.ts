@@ -42,10 +42,11 @@ describe.skipIf(process.platform === "win32")("sandbox repository preparation", 
     expect(f.git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], f.checkout)).toBe("origin/trunk")
   })
 
-  test("a branch the origin does not have fails the preparation with git's reason", async () => {
+  test("a branch the origin does not have fails the preparation naming the branch and the repository, with git's reason beneath", async () => {
     const f = await origin()
-    await expect(prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_BRANCH: "missing" }))
-      .rejects.toThrow("couldn't find remote ref refs/heads/missing")
+    const failure = prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_BRANCH: "missing" })
+    await expect(failure).rejects.toThrow(`The branch "missing" does not exist in ${f.repoUrl}`)
+    await expect(failure).rejects.toMatchObject({ cause: expect.objectContaining({ message: expect.stringContaining("couldn't find remote ref refs/heads/missing") }) })
   })
 
   test("a boot whose fetch failed leaves nothing that refuses the next boot, which finishes the checkout", async () => {

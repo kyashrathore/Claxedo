@@ -61,9 +61,19 @@ async function originDefaultBranch(run: Git, directory: string) {
   return head[1]
 }
 
+/** git's one line for a ref the remote does not have, under the command echo and before any advice. */
+const MISSING_REMOTE_REF = /couldn't find remote ref/
+
 async function checkOut(run: Git, directory: string, source: RepositorySource) {
   const branch = source.branch ?? await originDefaultBranch(run, directory)
-  await run(["fetch", "--quiet", "--depth=1", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`], directory)
+  try {
+    await run(["fetch", "--quiet", "--depth=1", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`], directory)
+  } catch (error) {
+    if (error instanceof Error && MISSING_REMOTE_REF.test(error.message)) {
+      throw new Error(`The branch "${branch}" does not exist in ${source.repoUrl}`, { cause: error })
+    }
+    throw error
+  }
   await run(["checkout", "--quiet", "--force", "-B", branch, "--track", `origin/${branch}`], directory)
   if (!source.branch) await run(["symbolic-ref", "refs/remotes/origin/HEAD", `refs/remotes/origin/${branch}`], directory)
   return branch

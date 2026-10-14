@@ -202,12 +202,17 @@ export function createHostedRuntimeDelivery(input: {
     }
     return renewAt === undefined ? ensured : { ...ensured, renewAt }
   }
+  // A runtime that answers is the one proof the plane has that its host
+  // serves; the lease records the moment, which is where a host later found
+  // gone stops being billed.
   const live = async (workspaceId: string) => {
     const target = await input.sandboxManager.target(workspaceId)
     if (target.status !== "ready") return undefined
     const { client, options } = await supervisorClientFor(workspaceId, target, input.signingEnv)
     const status = await withTimeout(client.configStatus(options), LIVE_ANSWER_MS).catch(() => undefined)
-    return status && provisioned(status) ? target : undefined
+    if (!status || !provisioned(status)) return undefined
+    await input.sandboxManager.heartbeat(workspaceId, { epoch: target.epoch, ok: true })
+    return target
   }
   const start: SandboxStartDrive = {
     acquire: async (workspaceId) => {

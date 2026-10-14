@@ -29,7 +29,8 @@ export function cloudRuntimeStartFailure(reason: string) {
   return `The cloud workspace could not start: ${reason}`
 }
 
-function lifecycleOf(target: SandboxTargetResult | undefined): CloudRuntimeLifecycle {
+/** One cloud workspace's lifecycle as its lease reads: the catalog row and the connection read answer alike from it. */
+export function cloudRuntimeLifecycle(target: SandboxTargetResult | undefined): CloudRuntimeLifecycle {
   if (!target) return { status: "failed", error: "This server runs no cloud workspaces" }
   if (target.status === "ready") return { status: "ready" }
   if (target.leaseStatus === "acquiring") return { status: "provisioning" }
@@ -53,7 +54,7 @@ export async function cloudWorkspaceLifecycles(
   rows: readonly unknown[],
 ): Promise<ReadonlyMap<string, CloudRuntimeLifecycle>> {
   return new Map(await Promise.all(
-    cloudWorkspaceIds(rows).map(async (id) => [id, lifecycleOf(await manager?.target(id))] as const),
+    cloudWorkspaceIds(rows).map(async (id) => [id, cloudRuntimeLifecycle(await manager?.target(id))] as const),
   ))
 }
 
