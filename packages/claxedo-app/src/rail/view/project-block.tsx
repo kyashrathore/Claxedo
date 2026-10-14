@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, on, Show, untrack, type JSX } f
 import { useTranslator } from "@/i18n"
 import type { SessionId } from "@/server"
 import type { SessionList, SessionRowView } from "@/session"
+import { usePreferences } from "@/settings"
 import type { TerminalItem } from "@/terminal"
 import { railDictionary } from "../i18n"
 import { SESSION_GROUP_PAGE_SIZE, type RailRow } from "../model"
@@ -35,15 +36,17 @@ function createProjectPaging(props: ProjectBlockProps) {
   const hasMore = () => props.list.hasMore(projectId())
   const more = () => props.sessionIds.length > visible() || hasMore()
   const failed = () => props.list.state().kind === "failed" || props.list.pageFailure(projectId()) !== undefined
+  const loadingMore = () => props.list.moreState(projectId()).kind === "loading"
+  const empty = () => props.sessionIds.length === 0
   return {
     shown,
     more,
-    loadingMore: () => props.list.moreState(projectId()).kind === "loading",
+    loadingMore,
     pageError: () => props.list.moreState(projectId()).kind === "failed",
     degraded: () => loaded() && props.list.pageDegraded(projectId()),
-    loadingInitial: () => !loaded() && !failed() && props.sessionIds.length === 0,
-    errorInitial: () => failed() && props.sessionIds.length === 0,
-    emptyLoaded: () => loaded() && !failed() && props.sessionIds.length === 0,
+    loadingInitial: () => (!loaded() || loadingMore()) && !failed() && empty(),
+    errorInitial: () => failed() && empty(),
+    emptyLoaded: () => loaded() && !loadingMore() && !failed() && empty(),
     doneLoaded: () => loaded() && props.sessionIds.length > SESSION_GROUP_PAGE_SIZE && !more(),
     loadMore: () => {
       const next = visible() + SESSION_GROUP_PAGE_SIZE
@@ -57,6 +60,7 @@ function ProjectSessions(
   props: ProjectBlockProps & { readonly paging: ReturnType<typeof createProjectPaging>; readonly terminals: readonly TerminalItem[] },
 ): JSX.Element {
   const t = useTranslator(railDictionary)
+  const preferences = usePreferences()
   return (
     <div class="flex flex-col gap-0.5 pb-1">
       <ProjectRows
@@ -81,7 +85,7 @@ function ProjectSessions(
         </SessionListNotice>
       </Show>
       <Show when={props.paging.emptyLoaded()}>
-        <SessionListNotice variant="empty">{t("rail.noMatches")}</SessionListNotice>
+        <SessionListNotice variant="empty">{t(preferences.sidebar.showSettled ? "rail.noSessions" : "rail.noActiveSessions")}</SessionListNotice>
       </Show>
       <Show when={props.paging.more()}>
         <SessionLoadMore loading={props.paging.loadingMore()} onLoad={props.paging.loadMore} />

@@ -156,6 +156,28 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
   }
 }
 
+function createWindowReads(state: Accessor<ListState>) {
+  return {
+    windows: createMemo(() => state().windows),
+    more: createMemo(() => {
+      const current = state()
+      return current.kind === "live" ? current.more : undefined
+    }),
+    failures: createMemo(() => state().failures),
+    degraded: createMemo(() => state().degraded),
+  }
+}
+
+type WindowReads = Pick<ReturnType<typeof createWindowReads>, "windows" | "more" | "failures">
+
+function readPlacedProjects(server: Server, reads: ListReads, held: WindowReads): void {
+  const placedProjects = createMemo(() => new Set(server.placements.list().map((placement) => placement.projectId)))
+  createEffect(on([placedProjects, held.windows, held.more, held.failures], ([projects, read, phases, failed]) => {
+    if (!phases) return
+    for (const projectId of projects) if (!read.has(projectId) && !phases.get(projectId) && !failed.has(projectId)) void reads.loadMore(projectId)
+  }))
+}
+
 export function createSessionList(server: Server, requests: RequestsInternal, options: SessionListOptions): SessionListInternal {
   const { showSettled } = options
   const list = machine(initialListState, listTransition)
@@ -166,13 +188,8 @@ export function createSessionList(server: Server, requests: RequestsInternal, op
   }, { defer: true }))
   const { state, send } = list
   const turnEnded = createTurnEndReads({ state, showSettled, read: (ref, lastTurn) => void reads.readTurnEndRow(ref, lastTurn) })
-  const windows = createMemo(() => state().windows)
-  const more = createMemo(() => {
-    const current = state()
-    return current.kind === "live" ? current.more : undefined
-  })
-  const failures = createMemo(() => state().failures)
-  const degraded = createMemo(() => state().degraded)
+  const { windows, more, failures, degraded } = createWindowReads(state)
+  readPlacedProjects(server, reads, { windows, more, failures })
   return {
     ...createRowReads(state, requests, windows, showSettled),
     state: createMemo(() => publicState(state())),
