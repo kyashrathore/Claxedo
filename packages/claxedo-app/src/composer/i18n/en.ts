@@ -7,6 +7,9 @@ export type ComposerTextKey =
   | "composer.models.none"
   | "composer.models.none.detail"
   | "composer.models.addAccount"
+  | "composer.models.refused"
+  | "composer.models.refused.detail"
+  | "composer.models.reconnect"
   | "composer.models.empty"
   | "composer.models.asleep"
   | "composer.models.asleep.detail"
@@ -140,6 +143,9 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.models.none": "No models yet",
   "composer.models.none.detail": "Add an account for {{harness}} in Settings → Models to choose a model.",
   "composer.models.addAccount": "Add an account",
+  "composer.models.refused": "{{harness}}'s account was refused by its provider",
+  "composer.models.refused.detail": "Reconnect it in Settings → Models, or add another account.",
+  "composer.models.reconnect": "Open Models",
   "composer.models.empty": "{{harness}} offers no models right now",
   "composer.models.asleep": "{{name}} is asleep",
   "composer.models.asleep.detail": "Its models load when it wakes; your next message wakes it.",

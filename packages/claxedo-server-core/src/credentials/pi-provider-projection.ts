@@ -29,35 +29,55 @@ const acceptedKinds: Record<PiLaunchProvider, readonly CredentialKind[]> = {
   xai: ["api_key"],
 }
 
-export function piCredentialConnected(providerID: string, credential: CredentialMetadata | undefined) {
-  return !!credential && credential.status === "available"
-    && credential.health !== "expired"
-    && (credential.expires_at == null || credential.expires_at > Date.now())
-    && isPiLaunchProvider(providerID) && acceptedKinds[providerID].includes(credential.kind)
+/**
+ * The stored row a Pi provider runs on: the provider id it is stored under,
+ * and, when the row cannot be spent, why — the verdict of its last Check or
+ * its status — so a person whose only account the vendor refused is told that
+ * rather than that they have none.
+ */
+export type PiProviderAccount = { by: string; refused?: string }
+
+export function piProviderAccount(providerID: string, credential: CredentialMetadata | undefined): PiProviderAccount | undefined {
+  if (!credential || !isPiLaunchProvider(providerID) || !acceptedKinds[providerID].includes(credential.kind)) return undefined
+  const expired = credential.health === "expired" || (credential.expires_at != null && credential.expires_at <= Date.now())
+  const refused = credential.status !== "available" ? credential.health ?? credential.status : expired ? "expired" : undefined
+  return { by: credential.provider_id, ...(refused ? { refused } : {}) }
+}
+
+/** The account a Pi provider runs on among the rows its credential provider ids hold: a usable one first, else the first refused one. */
+export function piProviderAccountAmong(providerID: string, rowOf: (credentialProviderId: string) => CredentialMetadata | undefined): PiProviderAccount | undefined {
+  const accounts = piCredentialProviderIDs(providerID).flatMap((id) => piProviderAccount(providerID, rowOf(id)) ?? [])
+  return accounts.find((account) => account.refused === undefined) ?? accounts[0]
 }
 
 const providerNames: Record<PiLaunchProvider, string> = { "openai-codex": "OpenAI Codex", ...VENDOR_PROVIDER_NAMES }
 
 /**
- * Registry connection metadata, from each connected Pi provider to the stored
- * provider id whose row connects it. A provider connected by another harness's
- * login (Anthropic through Claude Code's) names that harness and is not Pi's
- * to disconnect. Models are the launch catalog the session host runs Pi with.
+ * Registry connection metadata, from each Pi provider to the account it runs
+ * on. A provider connected by another harness's login (Anthropic through
+ * Claude Code's) names that harness and is not Pi's to disconnect. Models are
+ * the launch catalog the session host runs Pi with, listed only for a usable
+ * account; a refused account's provider says `refused` and lists none.
  */
-export function projectPiProviderCatalog(connected: ReadonlyMap<string, string>) {
+export function projectPiProviderCatalog(accounts: ReadonlyMap<string, PiProviderAccount>) {
+  const usable = (id: PiLaunchProvider) => accounts.get(id)?.refused === undefined && accounts.has(id)
   const source = (id: PiLaunchProvider) => {
-    const by = connected.get(id)
+    const by = accounts.get(id)?.by
     if (by === undefined) return { source: "config" }
     const harness = by === id ? undefined : harnessForProviderId(by)
     return harness ? { source: "harness", harness } : { source: "api" }
+  }
+  const refusal = (id: PiLaunchProvider) => {
+    const refused = accounts.get(id)?.refused
+    return refused === undefined ? {} : { refused }
   }
   const models = (id: PiLaunchProvider) => Object.fromEntries(piLaunchCatalog([id]).map((model) => {
     const key = model.id.slice(id.length + 1)
     return [key, { id: key, name: model.name }]
   }))
   return {
-    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], ...source(id), models: models(id) })),
-    connected: PI_LAUNCH_PROVIDERS.filter((id) => connected.has(id)),
+    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], ...source(id), ...refusal(id), models: usable(id) ? models(id) : {} })),
+    connected: PI_LAUNCH_PROVIDERS.filter(usable),
     default: {},
   }
 }

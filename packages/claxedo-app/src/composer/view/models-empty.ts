@@ -37,6 +37,9 @@ export function createModelsEmpty(input: ModelsEmptyInput): Accessor<ModelLoadFa
     if (input.account() === "missing") {
       return { message: t("composer.models.none"), detail: t("composer.models.none.detail", { harness: name }), action: { label: t("composer.models.addAccount"), run: input.openProviders } }
     }
+    if (input.account() === "refused") {
+      return { message: t("composer.models.refused", { harness: name }), detail: t("composer.models.refused.detail"), action: { label: t("composer.models.reconnect"), run: input.openProviders } }
+    }
     return input.account() === "present" ? { message: t("composer.models.empty", { harness: name }) } : undefined
   }
 }

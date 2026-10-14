@@ -35,15 +35,18 @@ function liveSourceOffersNoModel(input: SelectorNoticeInput) {
   return input.availability.modelsAnswered() && !input.availability.managedDefaultModel() && !input.availability.modelLoading() && !input.availability.hasModelOptions() && !input.polling() && !input.availability.isError()
 }
 
-function createProviderSetupNeed(input: SelectorNoticeInput) {
-  return createMemo(() => {
-    if (!liveSourceOffersNoModel(input)) return false
+type AccountNeed = "setup" | "reconnect" | undefined
+
+function createAccountNeed(input: SelectorNoticeInput) {
+  return createMemo((): AccountNeed => {
+    if (!liveSourceOffersNoModel(input)) return undefined
     const account = input.account()
-    return account === "missing" || account === "accountless"
+    if (account === "missing" || account === "accountless") return "setup"
+    return account === "refused" ? "reconnect" : undefined
   })
 }
 
-function harnessNoticeInput(input: SelectorNoticeInput, setupRequired: boolean): HarnessNoticeInput {
+function harnessNoticeInput(input: SelectorNoticeInput, need: AccountNeed): HarnessNoticeInput {
   const { selection, harness, catalog, availability } = input
   return {
     harnessLabel: harness() ? input.harnessLabel(harness()!) : "Agent",
@@ -59,7 +62,8 @@ function harnessNoticeInput(input: SelectorNoticeInput, setupRequired: boolean):
         : harness() && isCatalogHarness(harness()) && catalog.providers.resolved() && selection().selectedModel && !input.picked()
           ? selection().selectedModel
           : undefined,
-    setupRequired,
+    setupRequired: need === "setup",
+    accountRefused: need === "reconnect",
     openProviders: input.openProviders,
     unavailableHere: input.unavailableHere(),
   }
@@ -80,10 +84,10 @@ function retryAction(input: SelectorNoticeInput): NonNullable<ComposerNotice["ac
 }
 
 export function createSelectorNotice(input: SelectorNoticeInput) {
-  const needsProviderSetup = createProviderSetupNeed(input)
+  const accountNeed = createAccountNeed(input)
   const notice = createMemo<ComposerNotice | undefined>(() => {
     if (input.active() === false || !input.selection().isHarnessMode || input.selection().readiness === "unresolved") return undefined
-    const resolved = resolveHarnessNotice(harnessNoticeInput(input, needsProviderSetup()))
+    const resolved = resolveHarnessNotice(harnessNoticeInput(input, accountNeed()))
     if (!resolved) return undefined
     const { retry, action, ...rest } = resolved
     if (action) return { ...rest, action }

@@ -92,7 +92,7 @@ describe("a Claude subscription token on a hosted Pi turn", () => {
     expect(delivery?.auth.direct).toEqual({ [ownerId]: { "claude-sdk": expect.objectContaining({ authKind: "subscription", secret: SETUP_TOKEN, baseUrl: "https://api.anthropic.com" }) } })
 
     const resolved = sessionAccountCredentials(
-      { ...delivery!.auth, placement: "cloud", canUseOwnLogin: false, leaseGeneration: "turn_subscription" },
+      { machineOwnerUserId: delivery!.auth.machineOwnerUserId, accounts: {}, direct: delivery!.auth.direct, placement: "cloud", canUseOwnLogin: false, leaseGeneration: "turn_subscription" },
       { kind: "person", userId: ownerId },
       { harness: { id: "pi", access: "native" }, model: MODEL },
     )

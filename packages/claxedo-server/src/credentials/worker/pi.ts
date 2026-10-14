@@ -1,5 +1,5 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { PI_LAUNCH_PROVIDERS, piCredentialConnected, piCredentialProviderIDs, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
+import { PI_LAUNCH_PROVIDERS, piProviderAccountAmong, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 
@@ -21,10 +21,9 @@ export function hostedPiCredentials(input: {
       const sources = holderAccountSources(await store.accountSelections(), person, person)
       const account = (id: string) => rows.find((row) => row.provider_id === id && spendsAccount(row, person, sources, person))
       return projectPiProviderCatalog(new Map(PI_LAUNCH_PROVIDERS.flatMap((provider) => {
-        const by = piCredentialProviderIDs(provider).find((id) => piCredentialConnected(provider, account(id)))
-        return by === undefined ? [] : [[provider, by] as const]
+        const found = piProviderAccountAmong(provider, account)
+        return found === undefined ? [] : [[provider, found] as const]
       })))
     },
   }
 }
-

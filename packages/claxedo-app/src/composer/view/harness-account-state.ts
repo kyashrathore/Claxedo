@@ -4,7 +4,7 @@ import { HARNESS_IDS, HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runti
 import type { Server } from "@/server"
 import type { HarnessType } from "../harness/profile"
 
-export type HarnessAccountState = "present" | "missing" | "unknown" | "accountless"
+export type HarnessAccountState = "present" | "refused" | "missing" | "unknown" | "accountless"
 
 const PROVIDER_CATALOG_HARNESSES: ReadonlySet<string> = new Set(["pi"])
 
@@ -25,7 +25,9 @@ export function createHarnessAccountState(server: Server, harness: Accessor<Harn
   const effective = useQuery(() => ({ ...server.queries.accounts.effective(), enabled: accountHarnessId(harness()) !== undefined }))
   return createMemo((): HarnessAccountState => {
     if (providerCatalogHarness(harness())) {
-      return catalog.data ? (catalog.data.connected.length > 0 ? "present" : "missing") : "unknown"
+      if (!catalog.data) return "unknown"
+      if (catalog.data.connected.length > 0) return "present"
+      return catalog.data.all.some((provider) => provider.refused) ? "refused" : "missing"
     }
     const id = accountHarnessId(harness())
     if (!id) return "accountless"

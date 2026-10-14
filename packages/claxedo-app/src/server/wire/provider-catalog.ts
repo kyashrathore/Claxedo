@@ -16,6 +16,7 @@ export type CatalogProvider = {
   readonly name: string
   readonly source?: ProviderSource
   readonly harness?: string
+  readonly refused?: string
   readonly models: Readonly<Record<string, CatalogModel>>
 }
 
@@ -55,6 +56,7 @@ function providerOf(value: unknown): CatalogProvider | undefined {
     name: typeof value.name === "string" ? value.name : value.id,
     ...(isProviderSource(value.source) ? { source: value.source } : {}),
     ...(typeof value.harness === "string" ? { harness: value.harness } : {}),
+    ...(typeof value.refused === "string" && value.refused ? { refused: value.refused } : {}),
     models,
   }
 }

@@ -44,7 +44,10 @@ export function accountQueries(transport: Transport) {
 
 export function createAccountsApi(transport: Transport, queryClient: QueryClient): AccountsApi {
   const server = transport.serverUrl
-  const changed = () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
+  const changed = async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.providerCatalogs(server) })
+  }
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
   return {
     ...createAccountSourceWrites(transport, changed),

@@ -2,7 +2,7 @@
  * The forms `/agent-config/providers` answers in. The full catalog stays the
  * default because today's app reads it whole; opencode's is 2.3 MB.
  */
-type CatalogProvider = { id: string; name: string; source?: string; models: Record<string, unknown> }
+type CatalogProvider = { id: string; name: string; source?: string; refused?: string; models: Record<string, unknown> }
 
 type Catalog<P extends CatalogProvider> = { all: P[]; connected: string[]; default: Record<string, string> }
 
@@ -38,7 +38,8 @@ export function readProviderCatalogView(query: { provider?: string; view?: strin
 /**
  * `provider` answers that provider alone with every provider's `connected` and
  * `default`, which a caller merges over the summary. `summary` keeps connected
- * providers whole and names the rest with no models.
+ * providers whole and names the rest, with the refusal of an account the
+ * vendor turned away, and no models.
  */
 export function projectProviderCatalog<P extends CatalogProvider>(catalog: Catalog<P>, view: ProviderCatalogView) {
   if (view.kind === "full") return catalog
@@ -55,7 +56,7 @@ export function projectProviderCatalog<P extends CatalogProvider>(catalog: Catal
     all: catalog.all.map((provider) =>
       connected.has(provider.id)
         ? provider
-        : { id: provider.id, name: provider.name, ...(provider.source ? { source: provider.source } : {}), models: {} },
+        : { id: provider.id, name: provider.name, ...(provider.source ? { source: provider.source } : {}), ...(provider.refused ? { refused: provider.refused } : {}), models: {} },
     ),
   }
 }
