@@ -132,11 +132,11 @@ test("accounts: a rate-capped account says when its soonest window resets, is ma
     { window: "7d", usedPercent: 40, resetsAt: 3_600_000 * 50 },
   ] })
   const [merged] = harnessAccounts(claude, [row])
-  const said = storedAccountWords({ ...words, locale: "en", now: 0 }, merged!, undefined)
+  const said = storedAccountWords({ ...words, locale: "en", now: 0 }, merged, undefined)
   expect(said.detail).toBe("Rate limit reached · Resets in 3 hours · 5h 100% used · 7d 40% used")
   expect(said.alert).toBe("Rate limit reached · Resets in 3 hours")
   expect(said.refused).toBe(false)
   expect(harnessRunnable(claude, snapshot({ stored: [{ ...row, active: true }] }), {})).toBe(true)
-  const noReset = storedAccountWords({ ...words, now: 0 }, harnessAccounts(claude, [{ ...row, usage: [{ window: "5h", usedPercent: 100, resetsAt: null }] }])[0]!, undefined)
+  const noReset = storedAccountWords({ ...words, now: 0 }, harnessAccounts(claude, [{ ...row, usage: [{ window: "5h", usedPercent: 100, resetsAt: null }] }])[0], undefined)
   expect(noReset.alert).toBe("Rate limit reached")
 })

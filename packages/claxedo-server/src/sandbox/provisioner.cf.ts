@@ -20,7 +20,7 @@ const FOLLOW_UPS = {
 } as const satisfies Record<string, { due: keyof ReadyAnswer; step: (drive: SandboxStartDrive, workspaceId: string, failures: number) => Promise<number | undefined> }>
 
 type FollowUpKey = keyof typeof FOLLOW_UPS
-const FOLLOW_UP_KEYS = Object.keys(FOLLOW_UPS) as FollowUpKey[]
+const FOLLOW_UP_KEYS: readonly FollowUpKey[] = ["renewal", "watch"]
 
 /** A start still not settled this long after it began ends with that as its reason. */
 const START_WALL_MS = 15 * 60_000
@@ -145,7 +145,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         for (const key of FOLLOW_UP_KEYS) {
           const at = answer[FOLLOW_UPS[key].due]
           if (at === undefined) await storage.delete(key)
-          else await storage.put<FollowUp>(key, { workspaceId, at, failures: 0 })
+          else await storage.put(key, { workspaceId, at, failures: 0 } satisfies FollowUp)
         }
       }
       await this.#armFollowUps()
@@ -165,7 +165,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         const next = await FOLLOW_UPS[key].step(drive(this.env), record.workspaceId, record.failures)
           .then((at) => (at === undefined ? undefined : { at, failures: 0 }), () => ({ at: Date.now() + followUpRetryMs, failures: record.failures + 1 }))
         if (next === undefined) await storage.delete(key)
-        else await storage.put<FollowUp>(key, { workspaceId: record.workspaceId, ...next })
+        else await storage.put(key, { workspaceId: record.workspaceId, ...next } satisfies FollowUp)
       }
       await this.#armFollowUps()
     }
