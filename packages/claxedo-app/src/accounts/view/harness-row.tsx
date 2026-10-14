@@ -6,7 +6,7 @@ import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Sw
 import { useWindowName } from "@/usage"
 import { machineLoginWords, orgAccountWords, storedAccountWords, type AccountWords, type CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
-import { harnessAccounts, machineLoginOf, ORG_ACCOUNT_KEY, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
+import { harnessAccounts, machineLoginOf, ORG_ACCOUNT_KEY, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AccountActions, LabelHint, Reach } from "./account-actions"
 import { CheckedAge } from "./account-status"
@@ -172,8 +172,9 @@ export function AgentHarnessRow(props: HarnessRowProps) {
   const openConnect = (credentialId?: string) => {
     setConnecting(true)
     const context = harnessConnectContext(props.harness.id, props.harness.label)
+    const replaces = (methodType: string) => replacedAccountLabel(props.harness.connectProvider, props.snapshot, methodType)
     void dialog.show(
-      () => <DialogProviderConnect provider={props.harness.connectProvider} context={context} harness={props.harness.id} {...(credentialId ? { credentialId } : {})} onConnected={() => props.accounts.rescan()} />,
+      () => <DialogProviderConnect provider={props.harness.connectProvider} context={context} harness={props.harness.id} {...(credentialId ? { credentialId } : {})} replaces={replaces} onConnected={() => props.accounts.rescan()} />,
       () => setConnecting(false),
     )
   }

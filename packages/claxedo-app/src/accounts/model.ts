@@ -72,6 +72,12 @@ export function accountLabel(row: Account): string {
   return identity?.readable ? identity.text : (row.kind ?? row.providerId)
 }
 
+export function replacedAccountLabel(providerId: string, snapshot: AccountsSnapshot, methodType: string): string | undefined {
+  const rows = snapshot.stored.filter((row) => row.providerId === providerId)
+  const replaced = snapshot.cloudOnly ? rows[0] : methodType === "token" ? rows.find((row) => row.kind === "oauth_token") : undefined
+  return replaced ? accountLabel(replaced) : undefined
+}
+
 function mergeGroup(ordered: readonly Account[]): HarnessAccount | undefined {
   const first = ordered[0]
   if (first === undefined) return undefined

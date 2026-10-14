@@ -16,6 +16,8 @@ export default {
   "provider.connect.token.copyCommand": "Copy the command",
   "provider.connect.oauth.start": "Sign in",
   "provider.connect.oauth.hint": "Opens a code to enter in your browser.",
+  "provider.connect.replaces": "This replaces {{label}}: Claxedo keeps one {{vendor}} account of this kind per person, so its token and label are overwritten.",
+  "provider.connect.replace": "Replace account",
   "provider.connect.methods.loading": "Loading sign-in methods…",
   "provider.connect.methods.unavailable": "This deployment does not offer a way to connect {{vendor}}.",
   "provider.connect.oauth.code.visit.prefix": "Visit ",

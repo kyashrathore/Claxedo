@@ -1,10 +1,10 @@
-import { createMemo } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createMemo, on, untrack } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { connectSubject, connectVars, type ConnectContext } from "@/lib/harness-catalog"
-import { toAppError, useServer, type ProviderAuthMethod, type ProviderAuthorization } from "@/server"
+import { toAppError, useServer, type ProviderAuthMethod } from "@/server"
 import { showToast } from "@/ui"
 import { connectMethodOptions, type ConnectMethodOption } from "./connect-methods"
+import { createConnectState } from "./connect-state"
 import { useAccountsText, type AccountsKey } from "./i18n"
 
 export type ConnectFormInput = {
@@ -12,6 +12,7 @@ export type ConnectFormInput = {
   readonly harness: string
   readonly context: ConnectContext
   readonly credentialId?: string
+  readonly replaces?: (methodType: string) => string | undefined
   readonly onConnected?: () => void | Promise<void>
 }
 
@@ -35,23 +36,6 @@ function useConnectMethods(input: ConnectFormInput) {
     authProviderId: () => (codexBundle() ? "codex-app-server" : input.provider),
     options: createMemo(() => connectMethodOptions(input.provider, methods())),
   }
-}
-
-function createConnectState() {
-  const [store, setStore] = createStore({
-    methodIndex: undefined as number | undefined,
-    authorization: undefined as ProviderAuthorization | undefined,
-    state: undefined as "pending" | "auto" | "code" | "error" | undefined,
-    value: "",
-    label: "",
-    code: "",
-    error: undefined as string | undefined,
-    saving: false,
-  })
-  const pickMethod = (index: number) =>
-    setStore({ methodIndex: index < 0 ? undefined : index, authorization: undefined, state: undefined, error: undefined, value: "", code: "" })
-  const fail = (error: unknown) => setStore({ state: "error", saving: false, error: toAppError(error).message })
-  return { store, setStore, pickMethod, fail }
 }
 
 function useComplete(input: ConnectFormInput) {
@@ -132,12 +116,20 @@ export function createProviderConnect(input: ConnectFormInput) {
     return list.length === 1 ? list[0] : undefined
   })
   const vars = () => connectVars(input.context)
+  const replaces = createMemo(() => {
+    const method = selected()
+    return method && !input.credentialId ? input.replaces?.(method.type) : undefined
+  })
+  createEffect(on(replaces, (label) => {
+    if (label && !untrack(() => state.store.label)) state.setStore("label", label)
+  }))
   return {
     ...state,
     options: methods.options,
     loadingMethods: methods.loading,
     methodsError: methods.error,
     selected,
+    replaces,
     vars,
     subject: () => connectSubject(input.context),
     methodCopy: (option: ConnectMethodOption, part: "title" | "for" | "how") => t(option.spec.copy[part], vars()),

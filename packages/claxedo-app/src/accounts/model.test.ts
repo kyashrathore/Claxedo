@@ -5,7 +5,7 @@ import type { Account } from "@/server"
 import { orgAccountWords, storedAccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
-import { harnessAccounts, harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, selectedAccountKey, type AccountsSnapshot } from "./model"
+import { harnessAccounts, harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
 
 const t: AccountsText = (key, params) => Object.entries(params ?? {}).reduce((text, [name, value]) => text.replace(`{{${name}}}`, String(value)), en[key])
 const words = { t, windowName: (window: { readonly window: string }) => window.window }
@@ -112,4 +112,16 @@ test("accounts: an account the org's cloud provider cannot hand a harness says w
   expect(storedAccountWords(words, cursorKey, undefined).cloudNote).toBe("Works on your machines; your organization's cloud provider can't run it")
   const [usable] = harnessAccounts(claude, [account("c", "claude-sdk", { delivery: brokered })])
   expect(storedAccountWords(words, usable, undefined).cloudNote).toBeUndefined()
+})
+
+test("accounts: a pasted login names the stored account it replaces, on the web any of the person's rows for the provider and on a machine only the token row", () => {
+  const token = account("tok-1", "claude-sdk", { kind: "oauth_token", label: "contactyash" })
+  const key = account("key-1", "claude-sdk", { kind: "api_key", label: "work key" })
+  expect(replacedAccountLabel("claude-sdk", snapshot({ cloudOnly: true, stored: [token] }), "api")).toBe("contactyash")
+  expect(replacedAccountLabel("claude-sdk", snapshot({ cloudOnly: true, stored: [token] }), "token")).toBe("contactyash")
+  expect(replacedAccountLabel("claude-sdk", snapshot({ stored: [token, key] }), "token")).toBe("contactyash")
+  expect(replacedAccountLabel("claude-sdk", snapshot({ stored: [token, key] }), "api")).toBeUndefined()
+  expect(replacedAccountLabel("claude-sdk", snapshot({ stored: [key] }), "token")).toBeUndefined()
+  expect(replacedAccountLabel("anthropic", snapshot({ cloudOnly: true, stored: [token] }), "token")).toBeUndefined()
+  expect(replacedAccountLabel("claude-sdk", snapshot({ cloudOnly: true, stored: [token], org: [account("org-1", "claude-sdk", { kind: "oauth_token", label: "Acme" })] }), "token")).toBe("contactyash")
 })
