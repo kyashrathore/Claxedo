@@ -351,6 +351,7 @@
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/channels": "workspace:*",
         "@claxedo/connections": "workspace:*",
+        "@claxedo/egress-broker": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/local-server": "workspace:*",

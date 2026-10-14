@@ -4,7 +4,6 @@ import { ownerDirectRows, PI_DIRECT_PROVIDERS } from "../../credentials/direct-r
 import { defaultSessionHarnessId } from "../../session/default-session-harness"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
-import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { responseTiming } from "../../platform/http/server-timing"
@@ -93,6 +92,8 @@ import { orgRoutedCredentials } from "../../credentials/worker/org-routed"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { privateRepoHosts } from "../private-repo-hosts"
 import { hostedSandboxEgress } from "./hosted-sandbox-egress"
+import { configuredCoreAppOrigins, coreAppHomeOrigin, corsMiddleware } from "./hosted-core-origins"
+import { BROKER_ROUTE_PATTERN, isBrokerPath } from "@claxedo/egress-broker"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { withTurnCompletedTelemetry } from "../../usage/turn-completed-telemetry"
@@ -176,49 +177,12 @@ export type HostedCoreAppOptions = {
    * served and a runtime's usage report answers 503.
    */
   usageLedger?: UsageReportWriter & UsageProjectionLedger
-}
-
-/**
- * Where to send a human who lands on the control plane's root.
- *
- * The first EXACT origin in the allow-list, ignoring `https://*.` wildcard
- * entries — a wildcard names a shape, not a destination, and redirecting to
- * one produces a URL with a literal asterisk in it.
- */
-export function coreAppHomeOrigin(raw: string | undefined) {
-  return (raw ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .find((item) => item.startsWith("https://") && !item.startsWith("https://*."))
-}
-
-export function configuredCoreAppOrigins(raw: string | undefined) {
-  const entries = (raw ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean)
-  const exact = new Set<string>()
-  const suffixes: string[] = []
-  for (const entry of entries) {
-    if (entry.startsWith("https://*.")) suffixes.push(entry.slice("https://*".length))
-    else exact.add(entry)
-  }
-  return (origin: string) => {
-    if (exact.has(origin)) return true
-    if (!origin.startsWith("https://")) return false
-    return suffixes.some((suffix) => origin.endsWith(suffix) && origin.length > "https://".length + suffix.length)
-  }
-}
-
-function corsMiddleware(appOriginAllowed: (origin: string) => boolean, originPatterns: RegExp[]) {
-  return cors({
-    origin: (origin) => {
-      if (!origin) return undefined
-      if (originPatterns.some((pattern) => pattern.test(origin))) return origin
-      return appOriginAllowed(origin) ? origin : undefined
-    },
-    maxAge: 86400,
-  })
+  /**
+   * The plane's egress broker (`/bindings/*`), which a cloud sandbox whose
+   * driver has no provider edge spends its owner's accounts through. Absent
+   * on a plane with no sandbox; its routes are then not served at all.
+   */
+  egressBroker?: (request: Request) => Promise<Response>
 }
 
 export function assertHostedCoreBootConfig(plane: HostedControlPlane, options: Partial<HostedCoreAppOptions>) {
@@ -270,7 +234,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     })
   }
   if (options.authentication.descriptor.browser.transport === "cookie") {
-    app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser))
+    app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser, { withholdFrom: isBrokerPath }))
   } else {
     app.use(
       corsMiddleware(
@@ -331,6 +295,10 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   }
 
+  if (options.egressBroker) {
+    const broker = options.egressBroker
+    app.all(BROKER_ROUTE_PATTERN, (context) => broker(context.req.raw))
+  }
   app.get("/api/claxedo/health", (context) =>
     context.json({ ok: true, mode: "hosted-core", localExecution: services.localExecution.enabled }),
   )

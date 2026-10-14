@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto"
 import { accountHolderOf, holderAccountSources, ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
-import { HARNESS_NEEDS_BROKERING, type CredentialSnapshot, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { HARNESS_NEEDS_BROKERING, type CredentialSnapshot, type ProviderBindingSource, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { destinationAuthMode, builtInProviderDestination, builtInProviderDestinationShape, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { isSubscriptionKind } from "./secret-material"
-import { deliveredDirect } from "./reach"
+import { deliveredDirect, hostedBrokerServes } from "./reach"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 
 /**
@@ -234,16 +234,49 @@ async function walkDeliverableAccounts(
 }
 
 /**
+ * The control plane's own egress broker, standing in for a sandbox driver
+ * that has no provider edge: it binds an account to a placeholder the sandbox
+ * spends against a URL on the plane, and holds the value itself.
+ */
+export type HarnessCredentialBroker = {
+  bind(credential: CredentialMetadata, destination: ProviderDestination): Promise<ProviderBindingSource>
+}
+
+async function brokeredDelivery(credential: CredentialMetadata, destination: ProviderDestination, broker: HarnessCredentialBroker): Promise<NativeProviderDelivery> {
+  // The broker holds the value, so the companion header a plan needs is one
+  // more header it sets; only an exchanging vendor stays out of its reach.
+  if (!hostedBrokerServes(destination)) return undeliverable(credential, HARNESS_NEEDS_BROKERING)
+  return {
+    providerId: credential.provider_id,
+    credentialId: credential.id,
+    userId: credential.owner ?? null,
+    revision: credential.revision,
+    projection: await broker.bind(credential, destination),
+  }
+}
+
+/**
  * What one person's sandbox is delivered: the account they chose for each
  * provider, their own or the org's. Nobody else's account reaches it, because
  * anything delivered can be spent by any code it runs.
+ *
+ * A driver with its own edge is handed each account as the edge's secret and
+ * the sandbox the env var that edge fills. A driver without one is handed
+ * nothing; its sandbox gets a binding on the plane's broker when the plane
+ * has one, and otherwise the refusal that keeps the harness off the account.
  */
 export async function nativeProviderDeliveriesFromRepository(input: DeliveryWalk & {
   secretBrokering?: SandboxSecretBrokering
+  broker?: HarnessCredentialBroker
 }): Promise<NativeProviderDelivery[]> {
+  const native = input.secretBrokering === "native"
   const walked = await walkDeliverableAccounts(input, (credential) =>
-    input.secretBrokering === "native" || deliveredDirect(credential) ? undefined : HARNESS_NEEDS_BROKERING)
-  return walked.map((row) => "refused" in row ? row.refused : delivery(row.credential, row.destination))
+    native || input.broker || deliveredDirect(credential) ? undefined : HARNESS_NEEDS_BROKERING)
+  return Promise.all(walked.map((row) => {
+    if ("refused" in row) return row.refused
+    if (native || !input.broker || deliveredDirect(row.credential)) return delivery(row.credential, row.destination)
+    return brokeredDelivery(row.credential, row.destination, input.broker)
+  }))
 }
 
 /** One account handed to a harness that calls its vendor in process, or the reason it cannot be. */

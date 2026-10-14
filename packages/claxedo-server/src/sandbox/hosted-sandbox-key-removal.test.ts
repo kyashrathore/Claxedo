@@ -96,7 +96,7 @@ function plane() {
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
     changed: async () => {},
     keys: envelopeKeyProviderFromEnv(env),
-    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"] }),
+    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"], hostedBroker: false }),
   })
   const workspaceApp = HostedWorkspaceRoutes(
     { authority: fixture.authority, sandbox: { sandboxManager: sandboxes.manager }, telemetry: { capture: () => {} } } as unknown as ControlPlaneServices,

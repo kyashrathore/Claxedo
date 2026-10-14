@@ -4,11 +4,14 @@ import { timed } from "../platform/http/server-timing"
 /**
  * What a cloud workspace's start answers. The sandbox manager's own answers
  * pass through; `opened` marks the start whose acquire created the
- * workspace's first lease, and `failed` is a runtime preparation or
- * settings delivery that refused the start before or after the sandbox.
+ * workspace's first lease, `renewAt` says when a ready sandbox's delivered
+ * placeholders must be delivered again, and `failed` is a runtime
+ * preparation or settings delivery that refused the start before or after
+ * the sandbox.
  */
 export type SandboxStartAnswer =
-  | Exclude<SandboxEnsureResult, { status: "provisioning" }>
+  | (Extract<SandboxEnsureResult, { status: "ready" }> & { renewAt?: number })
+  | Extract<SandboxEnsureResult, { status: "unavailable" }>
   | (Extract<SandboxEnsureResult, { status: "provisioning" }> & { opened?: true })
   | { status: "failed"; code: "runtime_prepare_failed" | "runtime_provision_failed"; message: string }
 
@@ -28,6 +31,8 @@ export type SandboxStartDrive = {
   target(workspaceId: string): Promise<SandboxTargetResult>
   /** The ready target whose runtime answers right now; nothing while the lease is ready in the store but its sandbox sleeps or is gone. */
   live(workspaceId: string): Promise<ReadySandboxTarget | undefined>
+  /** Delivers a serving sandbox its settings again and answers the next time they are due; nothing when the sandbox is not serving. */
+  renew(workspaceId: string): Promise<number | undefined>
 }
 
 export type SandboxProvisionerStub = {

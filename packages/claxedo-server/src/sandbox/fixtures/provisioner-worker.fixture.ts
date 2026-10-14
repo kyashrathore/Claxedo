@@ -83,9 +83,28 @@ function manager(env: Env) {
   })
 }
 
+const RENEWALS_TABLE = "fixture_renewals"
+
+async function recordRenewal(database: D1Database, workspaceId: string) {
+  await database.prepare(`create table if not exists ${RENEWALS_TABLE} (workspace_id text not null)`).run()
+  await database.prepare(`insert into ${RENEWALS_TABLE} (workspace_id) values (?)`).bind(workspaceId).run()
+  return renewals(database, workspaceId)
+}
+
+async function renewals(database: D1Database, workspaceId: string) {
+  const table = await database.prepare(`select count(*) as n from sqlite_master where type = 'table' and name = ?`).bind(RENEWALS_TABLE).first<{ n: number }>()
+  if (!table?.n) return 0
+  const row = await database.prepare(`select count(*) as n from ${RENEWALS_TABLE} where workspace_id = ?`).bind(workspaceId).first<{ n: number }>()
+  return row?.n ?? 0
+}
+
+/** `ws_renew_<n>`: its settings are due again 200 ms after every delivery, and it keeps serving through n renewals. */
+const RENEWAL_DUE_MS = 200
+
 function drive(env: Env): SandboxStartDrive {
   const sandboxes = manager(env)
   const input = { homeRegion: "us-east", labels: {} }
+  const renewing = (workspaceId: string) => /^ws_renew_(\d+)/.exec(workspaceId)
   return {
     acquire: (workspaceId) => sandboxes.acquire(workspaceId, input),
     provision: async (workspaceId, epoch) => {
@@ -93,7 +112,14 @@ function drive(env: Env): SandboxStartDrive {
       if (workspaceId.startsWith("ws_step_throws") && answer.status === "ready" && await driverCalls(env.CONTROL_PLANE_DB, workspaceId) === 1) {
         throw Object.assign(new Error("the runtime refused its settings"), { code: "runtime_provision_failed" })
       }
+      if (renewing(workspaceId) && answer.status === "ready") return { ...answer, renewAt: Date.now() + RENEWAL_DUE_MS }
       return answer
+    },
+    renew: async (workspaceId) => {
+      const scripted = renewing(workspaceId)
+      if (!scripted) return undefined
+      const count = await recordRenewal(env.CONTROL_PLANE_DB, workspaceId)
+      return count < Number(scripted[1]) ? Date.now() + RENEWAL_DUE_MS : undefined
     },
     target: (workspaceId) => sandboxes.target(workspaceId),
     live: async (workspaceId) => {
@@ -117,6 +143,7 @@ export default {
     if (url.pathname === "/in-flight") return Response.json((await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).inFlight()) ?? null)
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })
+    if (url.pathname === "/renewals") return Response.json({ renewals: await renewals(env.CONTROL_PLANE_DB, workspaceId) })
     return new Response("not found", { status: 404 })
   },
 }

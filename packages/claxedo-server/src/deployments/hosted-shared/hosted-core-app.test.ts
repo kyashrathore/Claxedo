@@ -6,7 +6,7 @@ import { PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
 import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
-import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
+import { createHostedCoreApp } from "./hosted-core-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
@@ -312,6 +312,19 @@ describe("resource-closed hosted core app", () => {
     } finally {
       await controlPlane.dispose()
     }
+  })
+
+  test("serves the egress broker only when an entry composed one", async () => {
+    const reached: string[] = []
+    const withBroker = createHostedCoreApp(plane(), {
+      ...options,
+      egressBroker: async (request: Request) => { reached.push(new URL(request.url).pathname); return new Response(null, { status: 204 }) },
+    }) as unknown as Hono
+    expect((await withBroker.request("https://core.test/bindings/abc/v1/messages", { method: "POST" })).status).toBe(204)
+    expect(reached).toEqual(["/bindings/abc/v1/messages"])
+    const without = createHostedCoreApp(plane(), options) as unknown as Hono
+    expect(without.routes.map((route) => route.path)).not.toContain("/bindings/*")
+    expect((await without.request("https://core.test/bindings/abc/v1/messages", { method: "POST" })).status).toBe(404)
   })
 
   test("mounts core multiplayer routes and no optional-service or billing route", () => {
@@ -884,23 +897,6 @@ describe("control-plane root and unrouted paths", () => {
     const response = await appWith(undefined).request("/")
     expect(response.status).toBe(404)
     expect(await response.json()).toMatchObject({ error: { code: "route_not_found" } })
-  })
-})
-
-describe("coreAppHomeOrigin", () => {
-  test("takes the first exact origin", () => {
-    expect(coreAppHomeOrigin("https://a.test,https://b.test")).toBe("https://a.test")
-  })
-
-  /** A wildcard names a SHAPE, not a destination — redirecting to one emits a literal asterisk. */
-  test("skips wildcard entries", () => {
-    expect(coreAppHomeOrigin("https://*.example.test,https://real.test")).toBe("https://real.test")
-    expect(coreAppHomeOrigin("https://*.example.test")).toBeUndefined()
-  })
-
-  test("is absent when nothing is configured", () => {
-    expect(coreAppHomeOrigin(undefined)).toBeUndefined()
-    expect(coreAppHomeOrigin("")).toBeUndefined()
   })
 })
 

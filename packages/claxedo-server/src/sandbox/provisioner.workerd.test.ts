@@ -50,6 +50,10 @@ async function driverCalls(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/driver-calls?ws=${workspaceId}`)).json()) as { calls: number }).calls
 }
 
+async function renewals(workspaceId: string) {
+  return ((await (await miniflare.dispatchFetch(`${ORIGIN}/renewals?ws=${workspaceId}`)).json()) as { renewals: number }).renewals
+}
+
 /** Polls `read` until `settled` admits its answer, within 10 s. */
 async function until<T>(read: () => Promise<T>, settled: (value: T) => boolean): Promise<T> {
   const deadline = Date.now() + 10_000
@@ -151,6 +155,16 @@ describe("a sandbox start on workerd", () => {
     expect(await start("ws_step_throws")).toMatchObject({ status: "provisioning", epoch: 1 })
     expect(await until(() => start("ws_step_throws"), (answer) => answer.status !== "provisioning")).toMatchObject({ status: "ready", epoch: 1 })
     expect(await driverCalls("ws_step_throws")).toBe(2)
+  })
+
+  test("a ready sandbox whose delivered placeholders expire is delivered them again from the alarm, with no driver step, until it stops serving", async () => {
+    await start("ws_renew_2")
+    await until(() => target("ws_renew_2"), (lease) => lease.status === "ready")
+    expect(await until(() => renewals("ws_renew_2"), (count) => count >= 2)).toBe(2)
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(await renewals("ws_renew_2")).toBe(2)
+    expect(await driverCalls("ws_renew_2")).toBe(1)
+    expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
   })
 
   test("polls a driver that asks to be polled, from the alarm, until it is ready", async () => {

@@ -11,12 +11,14 @@ import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-
 import { D1WorkspaceAuthority, type D1ActorProfile, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
-import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
+import { hostedBrokerCredentialReader, hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
+import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION } from "../../../credentials/hosted-egress-broker"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
 import { ownerSessionList } from "../../../session/list"
 import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
+import { hostedControlPlaneOrigin } from "./control-plane-origin"
 import { hostedWorkspaceSandboxInput } from "./hosted-workspace-sandbox-input"
 import { HostedWorkerCompositionError } from "../../composition-error"
 import {
@@ -242,6 +244,19 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   const settings = d1UserAgentConfigRepository(input.controlPlaneDatabase)
   const { sandboxManager, workspaceSecretBrokering } = plane.services.sandbox
   const sandbox = input.sandbox
+  const origin = hostedControlPlaneOrigin(input.env)
+  // The broker exists wherever a sandbox can: it is what lets a driver with
+  // no provider edge serve Claude Code and Codex at all. It needs the public
+  // origin a sandbox reaches the plane at, which `hostedSandboxEgress` already
+  // requires of such a deployment.
+  const broker = sandbox && plane.orgCredentials && origin
+    ? createHostedEgressBroker({
+        credentials: plane.orgCredentials,
+        read: (orgId) => hostedBrokerCredentialReader(orgId, { database: input.controlPlaneDatabase, env: input.env }),
+        env: input.env,
+        origin,
+      })
+    : undefined
   const delivery = sandbox && plane.orgCredentials && sandboxManager && workspaceSecretBrokering
     ? createHostedRuntimeDelivery({
         authority,
@@ -249,6 +264,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         services: plane.services,
         sandboxManager,
         workspaceSecretBrokering,
+        ...(broker ? { broker } : {}),
         sandboxInput: hostedWorkspaceSandboxInput({ database: input.controlPlaneDatabase, egress: hostedSandboxEgress(plane) }),
         settings,
         credentials: plane.orgCredentials,
@@ -280,6 +296,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
             database: input.controlPlaneDatabase,
             authority,
             drivers: sandbox.keys.drivers,
+            hostedBroker: broker !== undefined,
             ...(input.now ? { now: input.now } : {}),
           }),
         },
@@ -305,7 +322,8 @@ export function composeBetterAuthD1UserDeployedControlPlane(
             },
           }),
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
-      requestGuardExemptions: [],
+      requestGuardExemptions: broker ? [HOSTED_EGRESS_BROKER_GUARD_EXEMPTION] : [],
+      ...(broker ? { egressBroker: broker.handler } : {}),
       usageLedger: createD1UsageLedger({ database: input.controlPlaneDatabase, ...(input.now ? { now: input.now } : {}) }),
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),

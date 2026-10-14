@@ -415,6 +415,32 @@ export function hostedOrgCredentials(
 }
 
 /**
+ * One account with its secret, as the hosted egress broker reads it on every
+ * brokered request: a single statement, because that read is the one database
+ * round trip on the request path of every turn a Boat sandbox runs. Only an
+ * available row answers, so a revoked or expired account refuses the request
+ * that would have spent it. Construct once per org and keep it: the cipher
+ * caches its derived key.
+ */
+export function hostedBrokerCredentialReader(orgId: string, input: HostedCredentialStoreInput) {
+  if (!hostedCredentialsEnabled(input.env)) {
+    throw new Error(`${HOSTED_CREDENTIALS_FLAG} is not enabled — hosted credential access stays fail-closed`)
+  }
+  const org = orgId?.trim()
+  if (!org) throw new Error("hostedBrokerCredentialReader requires a non-empty orgId")
+  const cipher = envelopeCipher(envelopeKeyProviderFromEnv(input.env), { orgId: org })
+  return async (id: string): Promise<{ credential: CredentialMetadata; secret: string } | undefined> => {
+    const row = await input.database
+      .prepare(`select ${METADATA_COLUMNS}, secret_envelope from hosted_provider_credentials where org_id = ? and id = ? and status = 'available'`)
+      .bind(org, id)
+      .first()
+    if (!row) return undefined
+    const secret = await cipher.open(id, requiredTextColumn(row, "secret_envelope"))
+    return secret ? { credential: credentialMetadataRow(row), secret } : undefined
+  }
+}
+
+/**
  * One org's secret column as a `SecretBackend`, for the KEK rotation sweep
  * (`credentials/operations/rotate.ts`). Refs are `d1:<credential id>`. `put`
  * only ever updates an existing row, so the sweep can re-seal a secret but

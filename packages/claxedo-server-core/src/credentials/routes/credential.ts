@@ -38,7 +38,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
-import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import {
   chosenSandboxKey,
   isSandboxKey,
@@ -106,7 +106,7 @@ const accountSourcesBody = z.object({
   source: z.enum(ACCOUNT_SOURCES),
 }).strict()
 
-function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>, brokering?: SandboxSecretBrokering) {
+function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>, brokering?: HarnessSecretDelivery) {
   if (!cred) return null
   return {
     id: cred.id,

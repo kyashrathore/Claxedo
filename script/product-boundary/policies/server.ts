@@ -157,8 +157,20 @@ export const serverWorkerd: Policy = {
   // is priced by the published rates beside the driver catalog
   // (`usage/machine-time-pricing.ts` over `sandbox-manager/driver-billing.ts`),
   // which is data and reaches no sandbox provider.
-  // 159/21, no headroom.
-  ceilings: { modules: 159, packages: 21 },
+  // +3 modules, +1 package (owner: the hosted egress broker composition,
+  // `credentials/hosted-egress-broker/`): a cloud sandbox whose driver has no
+  // provider edge spends its owner's model accounts through the plane's own
+  // broker at `/bindings/*` — the mount and account binder (`index.ts`), the
+  // store-backed binding authority (`authority.ts`) and the placeholder pass
+  // (`placeholder.ts`) — over `@claxedo/egress-broker`, the request policy and
+  // header injection the desktop's loopback broker runs on. A driver with its
+  // own edge never passes through it.
+  // +1 module (owner: the hosted core app): the browser origins the plane
+  // admits and the CORS it stamps for them, with the broker's carve-out, are
+  // their own module (`deployments/hosted-shared/hosted-core-origins.ts`),
+  // split from the core app.
+  // 163/22, no headroom.
+  ceilings: { modules: 163, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

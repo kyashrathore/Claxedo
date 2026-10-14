@@ -5,9 +5,9 @@ import {
   sandboxDriverSecret,
   type SandboxDriverID,
   type SandboxMachineClass,
-  type SandboxSecretBrokering,
 } from "@claxedo/sandbox-contract"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
+import type { HarnessSecretDelivery } from "../reach"
 import type { CredentialMetadata, CredentialWrite } from "../types"
 
 export type SandboxDriverKeyContext = { org: string; person: string; localOperator: boolean }
@@ -35,7 +35,7 @@ export type SandboxDriverKeys = {
    */
   removeKey?: (request: Request, context: SandboxDriverKeyContext, keyId: string) => Promise<SandboxKeyRemoval>
   /** Whether a driver keeps a delivered secret out of its sandbox; absent where the host cannot tell. */
-  brokering?: (driver: SandboxDriverID) => SandboxSecretBrokering | undefined
+  brokering?: (driver: SandboxDriverID) => HarnessSecretDelivery | undefined
   /** The machine sizes a driver lets a new workspace choose; absent or empty, the provider's one size. */
   machineClasses?: (driver: SandboxDriverID) => readonly SandboxMachineClass[] | undefined
 }
