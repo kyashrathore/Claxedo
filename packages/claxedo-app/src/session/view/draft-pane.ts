@@ -1,21 +1,13 @@
 import { prefixedRandomId } from "@claxedo/helpers/crypto"
 import { readField, readString } from "@claxedo/helpers/readers"
-import { placementId, projectId, type SessionReservation } from "@/server"
+import { placementId, projectId } from "@/server"
 import type { Json, PaneKind } from "@/shell"
 import { DraftSessionScreen, type DraftSessionState } from "./draft-session-screen"
+import { decodeHeldReservation, encodeHeldReservation } from "./held-reservation"
 import { useSessionScreenText } from "./text"
 
 export function newDraft(target: Omit<DraftSessionState, "draftId">): DraftSessionState {
   return { ...target, draftId: prefixedRandomId("draft") }
-}
-
-function decodeHeldReservation(value: unknown): SessionReservation | undefined {
-  const workspaceId = readString(value, "workspaceId")
-  const sessionId = readString(value, "sessionId")
-  const operationId = readString(value, "operationId")
-  const sessionHostRoot = readString(value, "sessionHostRoot")
-  if (!workspaceId || !sessionId || !operationId) return undefined
-  return { workspaceId, sessionId, operationId, ...(sessionHostRoot ? { sessionHostRoot } : {}) }
 }
 
 function decodeDraft(value: Json): DraftSessionState | undefined {
@@ -38,7 +30,7 @@ export const draftSessionPaneKind: PaneKind<DraftSessionState> = {
     placementId: state.placementId,
     draftId: state.draftId,
     ...(state.where ? { where: state.where } : {}),
-    ...(state.reservation ? { reservation: { ...state.reservation } } : {}),
+    ...(state.reservation ? { reservation: encodeHeldReservation(state.reservation) } : {}),
   }),
   decode: decodeDraft,
   fromRoute: (route) => (route.kind === "draft" ? newDraft({ projectId: route.projectId, placementId: route.placementId }) : undefined),

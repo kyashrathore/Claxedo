@@ -12,6 +12,7 @@ import type {
   SessionLastTurn,
   PromptDeliveryRequest,
   RuntimeGoalSnapshot,
+  SessionHarness,
 } from "@claxedo/agent-runtime-contract"
 import type { BackgroundWork, ListedStatus, SessionStatus } from "./status-types"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
@@ -220,7 +221,9 @@ export type PromptInput = {
   readonly delivery?: PromptDeliveryRequest
 }
 
-export type SessionReservation = { readonly workspaceId: string; readonly sessionId: string; readonly operationId: string; readonly sessionHostRoot?: string }
+export type SessionReservationIntent = { readonly workspaceId: string; readonly title?: string; readonly harness?: SessionHarness }
+
+export type SessionReservation = SessionReservationIntent & { readonly sessionId: string; readonly operationId: string; readonly sessionHostRoot?: string }
 
 export type ReservationHold = {
   readonly held: () => SessionReservation | undefined

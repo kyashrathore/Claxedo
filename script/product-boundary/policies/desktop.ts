@@ -602,8 +602,11 @@ export const desktopRenderer: Policy = {
   // size with its minutes, published rate and cost, merged with the cloud
   // domain's running rows (owner: the app's usage domain, `usage/cloud-rows.ts`,
   // `usage/view/cloud-workspace-table.tsx`). They add no package edge.
-  // 1358/36, no headroom.
-  ceilings: { modules: 1358, packages: 36 },
+  // A draft's held session reservation as the pane persists it, with the
+  // harness and title it was reserved for (owner: the app's session domain,
+  // `session/view/held-reservation.ts`). It adds no package edge.
+  // 1359/36, no headroom.
+  ceilings: { modules: 1359, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

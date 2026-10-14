@@ -119,7 +119,7 @@ function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
     case "readerChanged":
       return list.send({ type: "readerChanged", ref: event.ref, reader: event.reader, at: Date.now() })
     case "streamGap":
-      return reads.requestReread("replace")
+      return event.ref ? undefined : reads.requestReread("replace")
     case "sessionsChanged":
       return reads.requestReread("refresh")
     default:

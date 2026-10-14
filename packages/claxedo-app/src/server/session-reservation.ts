@@ -1,19 +1,23 @@
 import { prefixedRandomId } from "@claxedo/helpers/crypto"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { HostedAccount } from "./account"
 import { ServerError } from "./errors"
-import type { ReservationHold, SessionReservation } from "./types"
+import type { ReservationHold, SessionReservation, SessionReservationIntent } from "./types"
 
 export const RESERVATION_HEADER = "x-claxedo-session-registration-operation"
 
 const SESSION_RESERVATION_SPENT = "session_reservation_spent"
 
-type ReserveInput = { readonly workspaceId: string; readonly title?: string; readonly harness?: SessionHarness }
+function reservedFor(reservation: SessionReservation, intent: SessionReservationIntent): boolean {
+  return reservation.workspaceId === intent.workspaceId
+    && reservation.title === intent.title
+    && reservation.harness?.id === intent.harness?.id
+    && reservation.harness?.access === intent.harness?.access
+}
 
-export async function reserveSession(account: HostedAccount, input: ReserveInput): Promise<SessionReservation> {
-  const reservation = { workspaceId: input.workspaceId, operationId: prefixedRandomId("session_registration"), sessionId: prefixedRandomId("ses") }
-  const body = await account.run("session.reserve", { ...input, operationId: reservation.operationId, sessionId: reservation.sessionId })
+export async function reserveSession(account: HostedAccount, intent: SessionReservationIntent): Promise<SessionReservation> {
+  const reservation = { ...intent, operationId: prefixedRandomId("session_registration"), sessionId: prefixedRandomId("ses") }
+  const body = await account.run("session.reserve", { ...intent, operationId: reservation.operationId, sessionId: reservation.sessionId })
   const answer = isRecord(body) ? body : {}
   if (answer.sessionId !== reservation.sessionId || answer.operationId !== reservation.operationId || answer.state !== "reserved") {
     throw new ServerError({ class: "internal", message: "The session reservation answered for a different session" })
@@ -21,19 +25,19 @@ export async function reserveSession(account: HostedAccount, input: ReserveInput
   return typeof answer.sessionHostRoot === "string" ? { ...reservation, sessionHostRoot: answer.sessionHostRoot } : reservation
 }
 
-async function reserveHeld(account: HostedAccount, hold: ReservationHold | undefined, input: ReserveInput) {
-  const reservation = await reserveSession(account, input)
+async function reserveHeld(account: HostedAccount, hold: ReservationHold | undefined, intent: SessionReservationIntent) {
+  const reservation = await reserveSession(account, intent)
   hold?.hold(reservation)
   return reservation
 }
 
-export async function createReserved<Created>(account: HostedAccount, hold: ReservationHold | undefined, input: ReserveInput, create: (reservation: SessionReservation) => Promise<Created>): Promise<Created> {
+export async function createReserved<Created>(account: HostedAccount, hold: ReservationHold | undefined, intent: SessionReservationIntent, create: (reservation: SessionReservation) => Promise<Created>): Promise<Created> {
   const held = hold?.held()
-  const reservation = held?.workspaceId === input.workspaceId ? held : await reserveHeld(account, hold, input)
+  const reservation = held && reservedFor(held, intent) ? held : await reserveHeld(account, hold, intent)
   try {
     return await create(reservation)
   } catch (error) {
     if (!(error instanceof ServerError && error.code === SESSION_RESERVATION_SPENT)) throw error
-    return await create(await reserveHeld(account, hold, input))
+    return await create(await reserveHeld(account, hold, intent))
   }
 }
