@@ -125,3 +125,18 @@ test("accounts: a pasted login names the stored account it replaces, on the web 
   expect(replacedAccountLabel("anthropic", snapshot({ cloudOnly: true, stored: [token] }), "token")).toBeUndefined()
   expect(replacedAccountLabel("claude-sdk", snapshot({ cloudOnly: true, stored: [token], org: [account("org-1", "claude-sdk", { kind: "oauth_token", label: "Acme" })] }), "token")).toBe("contactyash")
 })
+
+test("accounts: a rate-capped account says when its soonest window resets, is marked but not refused, and still runs", () => {
+  const row = account("cap-1", "claude-sdk", { label: "contactyash", health: "rate_capped", lastValidatedAt: 5, usageAt: 5, usage: [
+    { window: "5h", usedPercent: 100, resetsAt: 3_600_000 * 3 },
+    { window: "7d", usedPercent: 40, resetsAt: 3_600_000 * 50 },
+  ] })
+  const [merged] = harnessAccounts(claude, [row])
+  const said = storedAccountWords({ ...words, locale: "en", now: 0 }, merged!, undefined)
+  expect(said.detail).toBe("Rate limit reached · Resets in 3 hours · 5h 100% used · 7d 40% used")
+  expect(said.alert).toBe("Rate limit reached · Resets in 3 hours")
+  expect(said.refused).toBe(false)
+  expect(harnessRunnable(claude, snapshot({ stored: [{ ...row, active: true }] }), {})).toBe(true)
+  const noReset = storedAccountWords({ ...words, now: 0 }, harnessAccounts(claude, [{ ...row, usage: [{ window: "5h", usedPercent: 100, resetsAt: null }] }])[0]!, undefined)
+  expect(noReset.alert).toBe("Rate limit reached")
+})

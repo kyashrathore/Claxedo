@@ -8,6 +8,7 @@ import {
 import { harnessMode, type HarnessReadiness } from "./selection"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
+import type { AccountUnavailable } from "./options-state"
 import { isCatalogHarnessId, sameHarnessSelection } from "@/lib/harness-selection"
 
 export type HarnessStoreState = {
@@ -27,6 +28,7 @@ export type HarnessStoreState = {
   optionsStale: boolean
   optionsLoading: boolean
   configError?: string
+  accountUnavailable?: AccountUnavailable
   unavailableHere?: HarnessUnavailableHere
   workspaceId?: string
   draftDefaultAuthority?: DraftDefaultAuthority
@@ -132,6 +134,7 @@ export function pollingHarnessHydrationPatch(type?: HarnessType): HarnessStorePa
       : {}),
     readiness: "polling",
     configError: undefined,
+    accountUnavailable: undefined,
   }
 }
 
@@ -150,6 +153,7 @@ export function harnessSwitchStartPatch(input: {
     serviceTiers: null,
     selectedServiceTier: undefined,
     configError: undefined,
+    accountUnavailable: undefined,
     unavailableHere: undefined,
     readiness: "ready",
     optionsSource: "empty",

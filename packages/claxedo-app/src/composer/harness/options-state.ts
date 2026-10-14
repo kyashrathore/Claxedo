@@ -16,8 +16,11 @@ export type HarnessOptionsStatePatch = {
   optionsStale?: boolean
   optionsLoading?: boolean
   configError?: string
+  accountUnavailable?: AccountUnavailable
   unavailableHere?: HarnessUnavailableHere
 }
+
+export type AccountUnavailable = { readonly reason?: string }
 
 export type HarnessOptionsDecision = {
   patch: HarnessOptionsStatePatch
@@ -45,6 +48,7 @@ function optionsBase(input: OptionsResponseInput) {
     thoughtLevels: thought?.choices ?? [],
     serviceTiers: input.payload.serviceTiers,
     selectedThoughtLevel: input.sessionModel || input.preserveSelectedModel || kept ? input.selectedThoughtLevel : thought?.current,
+    accountUnavailable: undefined,
     unavailableHere: input.payload.unavailableHere,
   } satisfies HarnessOptionsStatePatch
 }

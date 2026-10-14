@@ -1,5 +1,8 @@
 import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { isRefusal } from "@/lib/account-health"
 import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin } from "@/server"
+
+export { isRefusal, isUnavailable } from "@/lib/account-health"
 
 export type AccountReach = "local-and-cloud" | "local-only"
 
@@ -46,10 +49,6 @@ export const harnesses: readonly Harness[] = HARNESS_IDS.map((id) => ({
 export const MACHINE_LOGIN_KEY = "machine"
 
 export const ORG_ACCOUNT_KEY = "org"
-
-export const isRefusal = (verdict: string) => verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
-
-export const isUnavailable = (verdict: string) => verdict === "rate_capped" || verdict === "unknown"
 
 export function accountReach(delivery: AccountDelivery | undefined): AccountReach | undefined {
   if (delivery === undefined) return "local-only"

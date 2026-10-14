@@ -23,9 +23,10 @@ export type HarnessRowProps = {
 function useAccountRows(props: HarnessRowProps) {
   const access = useAccess()
   const t = useAccountsText()
+  const i18n = useI18n()
   const windowName = useWindowName()
   return createMemo((): AccountWords[] => {
-    const words = { t, windowName, machineName: props.accounts.machineName() }
+    const words = { t, windowName, machineName: props.accounts.machineName(), locale: i18n.intlTag() }
     const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
     const org = orgAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === ORG_ACCOUNT_KEY, access.can("accounts.removeOrg", props.snapshot.sources))

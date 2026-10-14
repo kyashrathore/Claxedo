@@ -83,6 +83,7 @@ export default {
   "settings.providers.live.authFailed": "Rejected by the provider",
   "settings.providers.live.noBilling": "No active billing",
   "settings.providers.live.rateCapped": "Rate limit reached",
+  "settings.providers.live.resets": "Resets {{when}}",
   "settings.providers.live.expired": "Expired",
   "settings.providers.live.unknown": "Couldn't check",
   "settings.providers.live.window": "{{name}} {{used}}% used",
