@@ -75,6 +75,7 @@ export type SettingsSection = {
   readonly title: () => string
   readonly group: "account" | "workspace" | "app"
   readonly order?: number
+  readonly available?: () => boolean
   readonly view: Component
 }
 

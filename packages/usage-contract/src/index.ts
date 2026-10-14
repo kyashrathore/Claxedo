@@ -195,6 +195,8 @@ export type MachineTimeWorkspace = {
   activeMs: number
   /** Set while an epoch is still serving: when it started. */
   runningSince?: number
+  /** When this workspace's latest boot in the period ended on this provider and size, where one did. */
+  lastStoppedAt?: number
   /** Absent where the provider's rate for this size is not established; then `costUsd` is absent too. */
   rate?: MachineTimeRate
   costUsd?: number

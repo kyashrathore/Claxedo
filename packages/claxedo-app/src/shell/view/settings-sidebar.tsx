@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router"
-import { createMemo, For, Show, type JSX } from "solid-js"
+import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { shellDictionary } from "../i18n"
 import { byOrder, useShellRegistries } from "../registries"
@@ -15,15 +15,19 @@ export function activeSectionId(params: Readonly<Record<string, string>>): strin
   return params.section
 }
 
+export function useSettingsSections(): Accessor<readonly SettingsSection[]> {
+  const registries = useShellRegistries()
+  return createMemo(() => byOrder(registries.settingsSections.list()).filter((section) => section.available?.() ?? true))
+}
+
 export function SettingsSidebar(): JSX.Element {
   const t = useTranslator(shellDictionary)
-  const registries = useShellRegistries()
   const routing = useShellRoute()
   const active = createMemo(() => {
     const route = routing.route()
     return route.kind === "page" ? activeSectionId(route.params) : undefined
   })
-  const sections = createMemo(() => byOrder(registries.settingsSections.list()))
+  const sections = useSettingsSections()
   return (
     <div class="settings-nav" data-testid="settings-sidebar">
       <A href={homePath} class="sidebar-row settings-nav-row">

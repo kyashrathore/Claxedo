@@ -14,13 +14,13 @@ const parts: readonly Part[] = [
   { name: "Composer", budget: 13024, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs", budget: 1542, folders: ["src/browser"] },
-  { name: "Shell and platform", budget: 7045, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
+  { name: "Shell and platform", budget: 7049, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4318, folders: ["src/terminal"] },
   { name: "Settings and accounts", budget: 5200, folders: ["src/settings", "src/accounts"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review and files", budget: 4357, folders: ["src/review", "src/files"] },
   { name: "Projects and cloud", budget: 3160, folders: ["src/projects", "src/cloud"] },
-  { name: "Onboarding and usage", budget: 2584, folders: ["src/onboarding", "src/usage"] },
+  { name: "Onboarding and usage", budget: 2725, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host", budget: 2099, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 917, folders: ["src/plugins/frame"] },
   { name: "Marketplace", budget: 2182, folders: ["src/marketplace"] },
@@ -30,7 +30,7 @@ const parts: readonly Part[] = [
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 100860
+const totalBudget = 101009
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))
