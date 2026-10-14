@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { executionBlock, executionChoices, executionPlan, offersConnectMachine } from "./model"
+import { executionBlock, executionChoices, executionPlan, finishBlock, offersConnectMachine } from "./model"
 
 const repository = { kind: "repository", url: "https://github.com/acme/widgets" } as const
 const folder = { kind: "folder", path: "/home/me/widgets" } as const
@@ -34,4 +34,13 @@ test("the cloud plan carries the workspace name and the chosen machine size, and
   expect(executionPlan("cloud", "widgets", "large")).toEqual({ kind: "cloud", name: "widgets", machineClass: "large" })
   expect(executionPlan("cloud", "widgets", undefined)).toEqual({ kind: "cloud", name: "widgets" })
   expect(executionPlan("local", "widgets", "large")).toEqual({ kind: "local" })
+})
+
+test("finishing waits on the organization's provider key for a cloud workspace and on nothing else: an agent account is for running turns, not for adding a project", () => {
+  const cloud = executionPlan("cloud", "widgets", undefined)
+  expect(finishBlock(cloud, hosted, repository, false)).toBe("providerKey")
+  expect(finishBlock(cloud, hosted, repository, true)).toBeUndefined()
+  expect(finishBlock(cloud, desktop, repository, false)).toBe("signIn")
+  expect(finishBlock(cloud, signedDesktop, folder, true)).toBe("folder")
+  expect(finishBlock(executionPlan("local", "", undefined), desktop, folder, false)).toBeUndefined()
 })

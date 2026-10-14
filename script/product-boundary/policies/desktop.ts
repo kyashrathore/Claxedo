@@ -604,9 +604,14 @@ export const desktopRenderer: Policy = {
   // `usage/view/cloud-workspace-table.tsx`). They add no package edge.
   // A draft's held session reservation as the pane persists it, with the
   // harness and title it was reserved for (owner: the app's session domain,
-  // `session/view/held-reservation.ts`). It adds no package edge.
-  // 1359/36, no headroom.
-  ceilings: { modules: 1359, packages: 36 },
+  // `session/view/held-reservation.ts`); the draft pane's state and route
+  // contract, split from the pane kind so the chosen Where can be tested without
+  // the screen (owner: the app's session domain, `session/view/draft-state.ts`);
+  // and the repository name a hosted project create names its first workspace by
+  // (owner: the app's server adapter, `server/repository-name.ts`). They add no
+  // package edge.
+  // 1361/36, no headroom.
+  ceilings: { modules: 1361, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

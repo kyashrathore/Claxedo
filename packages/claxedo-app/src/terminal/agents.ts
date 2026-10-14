@@ -46,7 +46,7 @@ export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRu
     case "wakeFailed":
       return t("terminal.creator.agentsWakeFailed", { name, reason: runtime.error.message })
     case "waking":
-      return t("terminal.creator.agentsLoading")
+      return t("terminal.creator.waking", { name })
     case "live":
       if (agents.isError) return t("terminal.creator.agentsFailed")
       return agents.isPending ? t("terminal.creator.agentsLoading") : undefined

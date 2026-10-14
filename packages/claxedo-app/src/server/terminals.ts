@@ -6,6 +6,7 @@ import type { TerminalsApi } from "./api"
 import type { Terminal, TerminalAgentId, TerminalAttachInput, TerminalCreateInput, TerminalPresence, TerminalStream } from "./terminal-types"
 import { jsonInit, withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
+import type { WorkspaceWakes } from "./workspace-wakes"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import type { FetchQuery } from "./types"
@@ -73,7 +74,7 @@ export function terminalQueries(transport: Transport, workspaces: Workspaces) {
   return { agents }
 }
 
-export function createTerminalsApi(transport: Transport, workspaces: Workspaces, telemetry: ProductTelemetry): TerminalsApi {
+export function createTerminalsApi(transport: Transport, workspaces: Workspaces, telemetry: ProductTelemetry, wakes: Pick<WorkspaceWakes, "wakeIfStopped">): TerminalsApi {
   const route = (placementId: PlacementId) => workspaces.route(placementId)
   return {
     list: async (placementId) => {
@@ -82,6 +83,7 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces,
       return rows.flatMap((row) => terminalFromWire(row, placementId) ?? [])
     },
     create: async (input) => {
+      await wakes.wakeIfStopped(input.placementId)
       const terminal = await createPty(transport, await route(input.placementId), input)
       telemetry.record({ event: "feature_used", properties: { feature: "terminal" } })
       return terminal
