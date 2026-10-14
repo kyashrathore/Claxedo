@@ -602,8 +602,12 @@ export const desktopRenderer: Policy = {
   // size with its minutes, published rate and cost, merged with the cloud
   // domain's running rows (owner: the app's usage domain, `usage/cloud-rows.ts`,
   // `usage/view/cloud-workspace-table.tsx`). They add no package edge.
-  // 1358/36, no headroom.
-  ceilings: { modules: 1358, packages: 36 },
+  // The account health predicates both the accounts and the composer domains
+  // read (owner: `lib/account-health.ts`), and the connect form's state apart
+  // from its server reads (owner: the app's accounts domain,
+  // `accounts/connect-state.ts`). They add no package edge.
+  // 1360/36, no headroom.
+  ceilings: { modules: 1360, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
