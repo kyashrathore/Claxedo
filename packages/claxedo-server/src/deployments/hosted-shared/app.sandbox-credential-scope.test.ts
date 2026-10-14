@@ -358,7 +358,6 @@ const NAME_FREE_ROUTES: readonly string[] = [
   "GET /api/claxedo/compatibility",
   "GET /api/claxedo/health",
   "GET /api/claxedo/mode",
-  "GET /api/workspace",
   "GET /api/workspace/resolve",
   "GET /global/health",
 ]

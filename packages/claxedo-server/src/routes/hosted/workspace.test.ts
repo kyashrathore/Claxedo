@@ -1142,13 +1142,13 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     expect(ensure).not.toHaveBeenCalled()
   })
 
-  test("unsigned (no host query) returns an empty list and never touches the authority", async () => {
+  test("a list request with no credential is 401 missing_bearer_token with or without a host and never touches the authority", async () => {
     const { app, authority } = buildApp({})
-    const res = await app.fetch(new Request("http://cp.test/"))
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ workspaces: [] })
-    // Hosted has no local projects list — no authority read on the unsigned path.
-    expect(authority!.usersMe).not.toHaveBeenCalled()
+    for (const url of ["http://cp.test/", "http://cp.test/?host=machine"]) {
+      const res = await app.fetch(new Request(url))
+      expect(res.status).toBe(401)
+      expect(await res.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    }
     expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
 

@@ -112,9 +112,9 @@ describe("hosted canonical auth profile", () => {
   })
 
   test.each([
-    ["missing", undefined],
-    ["invalid", "Bearer opaque-invalid-token"],
-  ])("rejects %s bearer credentials before reading authority", async (_name, authorization) => {
+    ["missing", undefined, { code: "missing_bearer_token", message: "Authorization: Bearer token is required" }],
+    ["invalid", "Bearer opaque-invalid-token", { code: "invalid_bearer_token", message: "Authentication credential is invalid" }],
+  ])("rejects %s bearer credentials before reading authority", async (_name, authorization, expected) => {
     const listOrgs = vi.fn(async () => [])
     const app = HostedAuthProfileRoutes({ authentication: authentication(), listOrgs })
     const headers = authorization ? { authorization } : undefined
@@ -123,7 +123,7 @@ describe("hosted canonical auth profile", () => {
 
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({
-      error: { code: "invalid_bearer_token", message: "Authentication credential is invalid", retryable: false },
+      error: { ...expected, retryable: false },
     })
     expect(listOrgs).not.toHaveBeenCalled()
   })

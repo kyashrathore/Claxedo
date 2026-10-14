@@ -292,6 +292,15 @@ describe("hosted agent connection deletion", () => {
 })
 
 describe("resource-closed hosted core app", () => {
+  test("the session inventory answers 401 to a request with no credential, with or without a workspace", async () => {
+    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+    for (const url of ["/api/control/sessions", "/api/control/sessions?workspaceId=ws"]) {
+      const response = await app.request(url)
+      expect(response.status).toBe(401)
+      expect(await response.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    }
+  })
+
   test("message reads preserve the stored authority ordinal and hide denied sessions", async () => {
     const controlPlane = await miniflareControlPlaneDatabase()
     const { database } = controlPlane

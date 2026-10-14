@@ -4,6 +4,7 @@ import type { ExecutionContext } from "hono"
 import {
   requestIsHttps,
   securityHeaderEntries,
+  withApiResponseHeaders,
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
 import { BROWSER_ALLOWED_REQUEST_HEADERS } from "@claxedo/server-core/platform/http/browser-auth-security"
@@ -254,7 +255,12 @@ export function createBetterAuthD1Worker(input: {
           )
         }
         const selected = composition(env)
-        if (authRoute(url.pathname)) return await selected.authHandler(request)
+        if (authRoute(url.pathname)) {
+          return withApiResponseHeaders(await selected.authHandler(request), {
+            url: request.url,
+            header: (name) => request.headers.get(name) ?? undefined,
+          })
+        }
         return await core.fetch(request, env, context)
       } catch (error) {
         console.error("[better-auth-d1] deployment is unavailable", error)

@@ -36,7 +36,7 @@ import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes, workspaceCheckpointService } from "../../workspace/routes/checkpoints"
-import { hostConnectEndpointOptions, routeAuth, signedOrError } from "../../workspace/route-support"
+import { hostConnectEndpointOptions, missingBearerBody, routeAuth, signedOrError } from "../../workspace/route-support"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
@@ -685,8 +685,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
 function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentication: RequestAuthenticationAdapter) {
   const { services } = plane
   app.get("/api/control/sessions", async (context) => {
-    const workspaceId = context.req.query("workspaceId")
-    if (!workspaceId || !services.authority?.listSessions) return context.json(sessionInventoryResponse([]))
     const authResult = await signedOrError(
       context.req.raw,
       {
@@ -696,7 +694,9 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       services,
     )
     if ("error" in authResult) return context.json(authResult.error, authResult.status)
-    if (!authResult.auth) return context.json(sessionInventoryResponse([]))
+    if (!authResult.auth) return context.json(missingBearerBody(), 401)
+    const workspaceId = context.req.query("workspaceId")
+    if (!workspaceId || !services.authority?.listSessions) return context.json(sessionInventoryResponse([]))
     return context.json(
       sessionInventoryResponse(await services.authority.listSessions(authResult.auth, { workspaceId })),
     )

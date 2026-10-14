@@ -10,6 +10,7 @@ import {
   requestIsHttps,
   securityHeaderEntries,
   securityHeaders,
+  withApiResponseHeaders,
   withSecurityHeaders,
 } from "./security-headers"
 
@@ -41,6 +42,21 @@ function appWithMiddleware() {
 }
 
 describe("hosted security headers middleware", () => {
+  test("a response naming no cache policy is no-store; an explicit policy is kept", async () => {
+    const app = appWithMiddleware()
+    app.get("/public", (c) => c.json({}, 200, { "cache-control": "public, max-age=60" }))
+    expect((await app.request("https://cp.test/ok")).headers.get("cache-control")).toBe("no-store")
+    expect((await app.request("https://cp.test/boom")).headers.get("cache-control")).toBe("no-store")
+    expect((await app.request("https://cp.test/public")).headers.get("cache-control")).toBe("public, max-age=60")
+  })
+
+  test("withApiResponseHeaders stamps a bare response with the full set and no-store", () => {
+    const res = withApiResponseHeaders(new Response("{}"), { url: "https://cp.test/api/auth/x", header: () => undefined })
+    for (const header of REQUIRED) expect(res.headers.get(header)).toBeTruthy()
+    expect(res.headers.get("strict-transport-security")).toBe(HSTS_VALUE)
+    expect(res.headers.get("cache-control")).toBe("no-store")
+  })
+
   test("stamps every required header on a normal response", async () => {
     const res = await appWithMiddleware().request("https://cp.test/ok")
 
