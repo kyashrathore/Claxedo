@@ -22,9 +22,9 @@ describe("Claude session credentials", () => {
       CLAUDE_CODE_OAUTH_TOKEN: "operator-own", CLAUDE_CODE_OAUTH_SCOPES: "operator-own",
       CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "local-secret", CLAXEDO_OTHER_SECRET: "other-secret" }, selected, "/claxedo/claude")
     expect(env.ANTHROPIC_BASE_URL).toBe(binding.baseUrl)
-    expect(env[authMode === "api-key" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN"]).toBe("placeholder")
-    expect(env[authMode === "api-key" ? "ANTHROPIC_AUTH_TOKEN" : "ANTHROPIC_API_KEY"]).toBeUndefined()
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(env[authMode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN"]).toBe("placeholder")
+    expect(env[authMode === "api-key" ? "CLAUDE_CODE_OAUTH_TOKEN" : "ANTHROPIC_API_KEY"]).toBeUndefined()
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
     expect(env.CLAUDE_CODE_OAUTH_SCOPES).toBeUndefined()
     expect(env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN).toBe("local-secret")
     expect(env.CLAXEDO_OTHER_SECRET).toBe("other-secret")
