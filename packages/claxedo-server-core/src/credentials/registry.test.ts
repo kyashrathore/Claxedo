@@ -28,11 +28,10 @@ const {
   updateCredentialLabel,
   deleteCredential,
   deleteCredentialsByProvider,
-  activeCredentialsForScope,
-  usableCredentials,
   setActiveCredentials,
   clearActiveCredentials,
 } = await import("./registry")
+const { activeCredentialsForScope, usableCredentials } = await import("./scoped-selection")
 const { ClaxedoProviderCredentialTable } = await import("./provider-credential.sql")
 /** The local operator's own rows: person-path reads, since the by-provider helpers answer for the org's own rows. */
 const ownRow = (providerId: string) => credentialByProvider(providerId, { onOutage: "throw", owner: "local" })
@@ -395,6 +394,28 @@ describe("credential registry", () => {
     })
     expect(await ownSecret("verify-persistence-test")).toBeNull()
     expect(await resolveSecretById(cred.id)).toBe("verify-secret")
+  })
+
+  test("a throttled account stays available and records the vendor's answer; a refusal records it too", async () => {
+    const cred = await putCredential({ owner: "local",
+      provider_id: "verify-throttle-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "verify-secret",
+    })
+
+    updateCredentialHealth(cred.id, "rate_capped", 1234, "__local__", { status: 429, type: "rate_limit_error", retryAfterSeconds: 3124 })
+
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({
+      health: "rate_capped",
+      status: "available",
+      last_error: "rate_capped: 429 rate_limit_error, retry after 3124 s",
+    })
+    expect(await ownSecret("verify-throttle-test")).toBe("verify-secret")
+
+    updateCredentialHealth(cred.id, "auth_failed", 1235, "__local__", { status: 401, type: "authentication_error" })
+    expect(credentialById(cred.id, { onOutage: "throw" })).toMatchObject({ status: "error", last_error: "auth_failed: 401 authentication_error" })
+    expect(await ownSecret("verify-throttle-test")).toBeNull()
   })
 
   test("clears stale verification health when the same key is saved again", async () => {

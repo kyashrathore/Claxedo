@@ -11,9 +11,20 @@
  */
 
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
-import { checkCredential, type CredentialCheckOutcome } from "../credentials/operations/check"
+import { checkCredential } from "../credentials/operations/check"
 import { Log } from "../platform/runtime/lib/log"
-import { accountsInUse, orderAccounts, quotaStatus, storedAccounts, storedQuotaAccount, visibleTo, type StoredAccount } from "./quota-accounts"
+import {
+  accountsInUse,
+  checkWord,
+  orderAccounts,
+  quotaStatus,
+  storedAccounts,
+  storedQuotaAccount,
+  visibleTo,
+  withCheckWord,
+  type CheckWord,
+  type StoredAccount,
+} from "./quota-accounts"
 import type { ControlPlaneCredentials } from "../authority/control-plane-contract"
 import type { UsageQuotaReader } from "./quota"
 
@@ -43,15 +54,15 @@ export function createHostedQuotaReader(input: {
   const checkTimeout = input.checkTimeoutMs ?? CHECK_TIMEOUT_MS
   const lastRefresh = new Map<string, number>()
 
-  const check = async (org: string, account: StoredAccount): Promise<string | undefined> => {
+  const check = async (org: string, account: StoredAccount): Promise<CheckWord> => {
     try {
       const outcome = await withDeadlineSignal(checkTimeout, (signal) => settleBefore(signal,
         checkCredential(credentials, account.first, { org, now, ...(input.fetch ? { fetch: input.fetch } : {}) })))
       if (outcome.status === "failed") log.warn("quota check failed", { credential_id: account.first.id, ...outcome.detail })
-      return checkReason(outcome)
+      return checkWord(outcome)
     } catch (error) {
       log.warn("quota check did not finish", { credential_id: account.first.id, detail: error instanceof Error ? error.message : String(error) })
-      return "The provider did not answer in time, so this account's limits could not be read. Refresh to try again."
+      return { reason: "The provider did not answer in time, so this account's limits could not be read. Refresh to try again.", concluded: false }
     }
   }
 
@@ -67,11 +78,7 @@ export function createHostedQuotaReader(input: {
     const reasons = new Map(await Promise.all(due.map(async (account) => [account.first.id, await check(org, account)] as const)))
     const current = due.length ? (await credentials.listCredentials(org)).filter(visible) : rows
     const inUse = await accountsInUse(credentials, org, current, visible)
-    const accounts = storedAccounts(current).map((account) => {
-      const card = storedQuotaAccount(account, inUse)
-      const reason = reasons.get(account.first.id)
-      return reason !== undefined && card.windows.length === 0 && card.usageError === undefined ? { ...card, usageError: reason } : card
-    })
+    const accounts = storedAccounts(current).map((account) => withCheckWord(storedQuotaAccount(account, inUse), reasons.get(account.first.id)))
     const snapshot = { accounts: orderAccounts(accounts) }
     return {
       status: quotaStatus(snapshot),
@@ -91,13 +98,4 @@ function settleBefore<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
     signal.addEventListener("abort", () => reject(signal.reason), { once: true })
     work.then(resolve, reject)
   })
-}
-
-/** What the card says when the Check left it no windows to draw; the stored verdict says the rest. */
-function checkReason(outcome: CredentialCheckOutcome): string | undefined {
-  if (outcome.status === "checked") return undefined
-  if (outcome.status === "failed") return `This account's limits could not be read: ${outcome.detail.message}`
-  return outcome.status === "no_secret"
-    ? "This account's stored login is missing, so its limits cannot be read. Sign in to this account again."
-    : "Claxedo cannot read plan usage here."
 }

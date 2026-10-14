@@ -331,7 +331,9 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       result: outcome.health,
       health: outcome.health,
       verified_at: outcome.at,
+      ...(outcome.evidence ? { evidence: outcome.evidence } : {}),
       ...(outcome.usage ? { usage: outcome.usage } : {}),
+      ...(outcome.usageRefused ? { usage_refused: outcome.usageRefused } : {}),
     }, 200]
   }
   if (options.authenticate) {
@@ -584,6 +586,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         log.warn("Reconnect rejected by the provider; the stored account is unchanged", {
           credential_id: id,
           health: outcome.health,
+          ...outcome.evidence,
         })
       }
       return c.json(

@@ -303,7 +303,7 @@ describe("credential routes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG, undefined)
     expect(request).toHaveBeenCalledOnce()
     expect(jsonBody(request.mock.calls[0]?.[1]?.body)).toMatchObject({ max_output_tokens: 1 })
     expect(request.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
@@ -362,7 +362,7 @@ describe("credential routes", () => {
     const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
 
     await expect(response.json()).resolves.toMatchObject({ verified_at: 2 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 2, SINGLE_TENANT_ORG)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 2, SINGLE_TENANT_ORG, undefined)
   })
 
   test("classifies provider authentication failures without returning provider or secret text", async () => {
@@ -381,10 +381,10 @@ describe("credential routes", () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(body).toEqual({ result: "auth_failed", health: "auth_failed", verified_at: 43 })
+    expect(body).toEqual({ result: "auth_failed", health: "auth_failed", verified_at: 43, evidence: { status: 401 } })
     expect(JSON.stringify(body)).not.toContain("sk-auth-secret")
     expect(JSON.stringify(body)).not.toContain("rejected")
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "auth_failed", 43, SINGLE_TENANT_ORG)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "auth_failed", 43, SINGLE_TENANT_ORG, { status: 401 })
   })
 
   test("classifies forbidden provider credentials as authentication failures", async () => {
@@ -423,9 +423,9 @@ describe("credential routes", () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(body).toEqual({ result: "no_billing", health: "no_billing", verified_at: 44 })
+    expect(body).toEqual({ result: "no_billing", health: "no_billing", verified_at: 44, evidence: { status: 429, type: "insufficient_quota" } })
     expect(JSON.stringify(body)).not.toContain("sk-billing-secret")
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "no_billing", 44, SINGLE_TENANT_ORG)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "no_billing", 44, SINGLE_TENANT_ORG, { status: 429, type: "insufficient_quota" })
   })
 
   test("classifies a temporary provider rate cap", async () => {
@@ -443,8 +443,8 @@ describe("credential routes", () => {
     const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ result: "rate_capped", health: "rate_capped", verified_at: 45 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "rate_capped", 45, SINGLE_TENANT_ORG)
+    await expect(response.json()).resolves.toEqual({ result: "rate_capped", health: "rate_capped", verified_at: 45, evidence: { status: 429, type: "rate_limit_exceeded" } })
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "rate_capped", 45, SINGLE_TENANT_ORG, { status: 429, type: "rate_limit_exceeded" })
   })
 
   test("classifies an expired provider token", async () => {
@@ -462,8 +462,8 @@ describe("credential routes", () => {
     const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ result: "expired", health: "expired", verified_at: 46 })
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "expired", 46, SINGLE_TENANT_ORG)
+    await expect(response.json()).resolves.toEqual({ result: "expired", health: "expired", verified_at: 46, evidence: { status: 401, type: "token_expired" } })
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "expired", 46, SINGLE_TENANT_ORG, { status: 401, type: "token_expired" })
   })
 
   test("does not contact a provider for metadata that is already expired", async () => {
@@ -984,7 +984,7 @@ describe("replacing the token on a stored account", () => {
     // `null`, not `undefined`: the stored expiry described the material that
     // was just replaced, and carrying it over expires a live secret.
     expect(registry.updateCredentialSecret).toHaveBeenCalledWith("cred_1", "sk-fresh", null, SINGLE_TENANT_ORG)
-    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG, undefined)
     // The new material is what the provider was asked about, not the one the
     // row was rejected for.
     expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer sk-fresh" })
@@ -1066,7 +1066,7 @@ describe("replacing the token on a stored account", () => {
       updateCredentialLabel: vi.fn(async () => true),
     })
     const app = CredentialRoutes(registry, {
-      fetch: providerFetch(() => new Response("nope", { status: 401 })) as unknown as typeof fetch,
+      fetch: providerFetch(() => Response.json({ type: "error", error: { type: "authentication_error" } }, { status: 401 })) as unknown as typeof fetch,
       now: () => 42,
     })
 
@@ -1080,6 +1080,7 @@ describe("replacing the token on a stored account", () => {
       result: "auth_failed",
       health: "auth_failed",
       verified_at: 42,
+      evidence: { status: 401, type: "authentication_error" },
       stored: false,
     })
     expect(registry.updateCredentialSecret).not.toHaveBeenCalled()

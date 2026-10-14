@@ -44,11 +44,11 @@ import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-run
 import {
   markCredentialUsed,
   readSecretById,
-  activeCredentialsForScope,
   credentialById,
   updateCredentialHealth,
   updateCredentialSecret,
 } from "@claxedo/server-core/credentials/registry"
+import { activeCredentialsForScope } from "@claxedo/server-core/credentials/scoped-selection"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { renewedCredential } from "@claxedo/server-core/credentials/operations/refresh"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"

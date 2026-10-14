@@ -69,8 +69,8 @@ export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?:
   return {
     listCredentials: async (org) => (await credentialRegistry()).listCredentials(org),
     effectiveCredentials: async (scope, org) => {
-      const registry = await credentialRegistry()
-      return registry.usableCredentials(registry.activeCredentialsForScope(scope, { onOutage: "empty" }, org))
+      const selection = await import("../credentials/scoped-selection")
+      return selection.usableCredentials(selection.activeCredentialsForScope(scope, { onOutage: "empty" }, org))
     },
     setActiveCredentials: async (ids, org, actor) => {
       const result = (await credentialRegistry()).setActiveCredentials(ids, org, actor)
@@ -117,9 +117,9 @@ export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?:
       // leaves the delivered set, and one restored rejoins it.
       await deliver()
     },
-    updateCredentialHealth: async (id, health, validatedAt, org) => {
+    updateCredentialHealth: async (id, health, validatedAt, org, evidence) => {
       const registry = await credentialRegistry()
-      registry.updateCredentialHealth(id, health, validatedAt, org)
+      registry.updateCredentialHealth(id, health, validatedAt, org, evidence)
       // A verdict that ends an account hands its mark to an heir inside the
       // write, which is a delivered-set change like any other.
       await deliver()

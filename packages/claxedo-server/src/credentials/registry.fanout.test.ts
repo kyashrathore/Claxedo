@@ -17,11 +17,10 @@ const {
   readSecretById,
   resolveSecretById,
   credentialByProvider,
-  activeCredentialsForScope,
-  usableCredentials,
   setActiveCredentials,
   updateCredentialHealth,
 } = await import("@claxedo/server-core/credentials/registry")
+const { activeCredentialsForScope, usableCredentials } = await import("@claxedo/server-core/credentials/scoped-selection")
 const { ClaxedoDB } = await import("../platform/db")
 ClaxedoDB.Drizzle()
 
