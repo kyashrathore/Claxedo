@@ -51,7 +51,7 @@ export type ServerEvent =
   | { readonly type: "filesChanged"; readonly placementId: PlacementId }
   | { readonly type: "projectChanged"; readonly projectId: ProjectId }
   | { readonly type: "pluginsChanged" }
-  | { readonly type: "streamGap"; readonly placementId?: PlacementId }
+  | { readonly type: "streamGap"; readonly placementId?: PlacementId; readonly ref?: SessionLocation }
   | { readonly type: "sessionsChanged"; readonly placementId?: PlacementId }
   | { readonly type: "placementsChanged" }
   | { readonly type: "usageChanged" }
