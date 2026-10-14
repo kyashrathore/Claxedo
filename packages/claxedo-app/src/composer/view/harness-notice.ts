@@ -59,10 +59,6 @@ function accountUnavailableNotice(input: HarnessNoticeInput, account: AccountUna
   const label = input.harnessLabel
   if (account.reason === undefined) return setupRequiredNotice(label, open)
   if (isRefusal(account.reason)) return accountRefusedNotice(label, open)
-  if (account.reason === "rate_capped") {
-    const detail = "Its plan's limit resets later. Wait for the reset, or choose another account in Settings → Models."
-    return { kind: "account-rate-capped", tone: "warning", message: `${label}'s account has reached its rate limit`, detail, retry: false, action: openModels(open) }
-  }
   return { kind: "account-unusable", tone: "warning", message: `${label}'s account can't be used here`, detail: input.configError, retry: false, action: openModels(open) }
 }
 
