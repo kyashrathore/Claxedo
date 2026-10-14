@@ -6,7 +6,8 @@ import { createProviderAuthService } from "@claxedo/server-core/credentials/prov
 import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { SandboxDriverKeys, SandboxKeyRemoval } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
-import type { SandboxDriverID, SandboxMachineClass, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID, SandboxMachineClass } from "@claxedo/sandbox-contract"
+import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { orgRoutedCredentials } from "./org-routed"
 
@@ -30,7 +31,7 @@ export type HostedSandboxDriverKeys = {
   chosen(orgId: string): Promise<string | undefined>
   choose(auth: SignedControlPlaneAuth, orgId: string, driver: SandboxDriverID | undefined): Promise<void>
   remove(auth: SignedControlPlaneAuth, orgId: string, keyId: string): Promise<SandboxKeyRemoval>
-  brokering(driver: SandboxDriverID): SandboxSecretBrokering | undefined
+  brokering(driver: SandboxDriverID): HarnessSecretDelivery | undefined
   machineClasses(driver: SandboxDriverID): readonly SandboxMachineClass[] | undefined
 }
 

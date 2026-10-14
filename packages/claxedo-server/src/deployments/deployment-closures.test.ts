@@ -108,7 +108,15 @@ const ENTRIES = [
   // `sandbox-manager/driver-billing.ts`), and reads a stored account's usage
   // windows from its vendor before answering (`usage/hosted-quota.ts` over
   // `usage/quota-accounts.ts`, in place of the machine reader `usage/quota.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 159, packages: 21 },
+  // Every entry composes the plane's egress broker for a cloud sandbox whose
+  // driver has no provider edge (`credentials/hosted-egress-broker/`: the
+  // mount and account binder, the store-backed binding authority, and the
+  // placeholder pass), which brings `@claxedo/egress-broker`, the request
+  // policy and header injection the desktop's loopback broker runs on. The
+  // browser origins the core app admits and the CORS it stamps, with the
+  // broker's carve-out, are a module of their own
+  // (`hosted-shared/hosted-core-origins.ts`), split from the core app.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 163, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -119,7 +127,7 @@ const ENTRIES = [
   // two modules beside it (`activation/d1-activation-snapshots.ts`,
   // `activation/d1-activation-writes.ts`), and both D1 stores key rows by the
   // one `agent-plugins/scope-keys.ts`.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 214, packages: 25 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 218, packages: 26 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -128,7 +136,7 @@ const ENTRIES = [
   // Object a sandbox start runs under (`sandbox/provisioner.cf.ts`) and the
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
   // has a sandbox to start.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 223, packages: 25 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 227, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

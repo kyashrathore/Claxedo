@@ -129,7 +129,11 @@ readable env. Only `native` keeps the value out of the sandbox and provisions
 normally; a `none` driver makes the manager refuse to provision (`status:
 "unavailable", error: "secret_brokering_unsupported"`) rather than expose or
 drop the credential. Brokered secret values are also never written to labels,
-never logged, and never captured in a driver snapshot.
+never logged, and never captured in a driver snapshot. A `none` driver's
+sandbox is handed no provider secret at all: on the hosted control plane its
+owner's model accounts reach the harness as placeholders spent through the
+plane's own egress broker (`@claxedo/server`'s
+`credentials/hosted-egress-broker/`), which the driver never sees.
 
 > Native brokering keeps the original upstream URL. Cloudflare accepts its
 > named placeholder as the complete credential header, or with a Bearer prefix

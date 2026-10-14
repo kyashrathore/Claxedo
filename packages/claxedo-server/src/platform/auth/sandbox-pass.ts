@@ -24,9 +24,11 @@ import type { SandboxPassRegister } from "./sandbox-pass-register"
  * audience, the operation vocabulary, and any claims beyond the scope — is
  * the audience's own rule, applied over the result of {@link verifySandboxPass}.
  *
- * The runtime's own HS256 session credential and the egress broker's
- * placeholder token are not passes: neither is minted by the control plane,
- * and neither is ever presented to it.
+ * The hosted egress broker's placeholder is one of them: a pass for the
+ * `claxedo-egress-broker` audience naming the binding and the stored account
+ * it spends (`credentials/hosted-egress-broker/placeholder.ts`). The
+ * runtime's own HS256 session credential is not: it is minted inside the
+ * sandbox and never presented to this plane.
  */
 export type SandboxPassScope = Readonly<{
   userId: string

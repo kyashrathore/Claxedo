@@ -4,6 +4,24 @@ import { isSubscriptionKind } from "./secret-material"
 import type { CredentialKind } from "./types"
 
 /**
+ * How a harness inside a workspace's sandbox is kept from reading the account
+ * it spends. The driver's own `secretBrokering` is two of the answers; the
+ * third is the control plane's own egress broker standing in for a driver
+ * that has no provider edge, so the sandbox holds a placeholder and the plane
+ * holds the value.
+ */
+export type HarnessSecretDelivery = SandboxSecretBrokering | "hosted-broker"
+
+/**
+ * The delivery a workspace's harness gets, from the driver's fact and whether
+ * the plane serving the workspace brokers. A driver with its own edge keeps
+ * it: the broker never enters a native driver's request path.
+ */
+export function harnessSecretDelivery(driver: SandboxSecretBrokering, hostedBroker: boolean): HarnessSecretDelivery {
+  return driver === "native" ? "native" : hostedBroker ? "hosted-broker" : "none"
+}
+
+/**
  * Where an account can actually be spent.
  *
  * `local` is always true: the loopback broker holds the value in this process
@@ -22,9 +40,9 @@ export type CredentialReach = {
   reason?: string
   /**
    * Whether a harness running inside a cloud workspace can be handed the
-   * account on the driver new workspaces get. Asked only where that driver is
-   * known; a driver that cannot broker leaves the account to Pi, which calls
-   * the vendor from outside the sandbox.
+   * account on the driver new workspaces get. Asked only where that delivery
+   * is known; a driver that cannot broker on a plane that does not either
+   * leaves the account to Pi, which calls the vendor from outside the sandbox.
    */
   cloudHarness?: boolean
 }
@@ -42,11 +60,23 @@ export function deliveredDirect(row: { provider_id: string; kind: CredentialKind
   return isSubscriptionKind(row.kind) && DIRECT_PLAN_PROVIDERS.has(row.provider_id)
 }
 
-export function credentialReach(row: { provider_id: string; kind: CredentialKind }, brokering?: SandboxSecretBrokering): CredentialReach {
+/**
+ * Whether the hosted broker can stand in for a destination. One that exchanges
+ * the stored key for a session token cannot be served from a Worker: the
+ * exchanged token lives in the broker's memory, and the next request can land
+ * on an isolate that never saw the exchange.
+ */
+export function hostedBrokerServes(destination: { exchange?: unknown }): boolean {
+  return destination.exchange === undefined
+}
+
+export function credentialReach(row: { provider_id: string; kind: CredentialKind }, delivery?: HarnessSecretDelivery): CredentialReach {
   const destination = builtInProviderDestinationShape({ providerId: row.provider_id, kind: row.kind })
   if (!destination) return { local: true, cloud: false, reason: "no_destination" }
   if (destination.injection.headers && !deliveredDirect(row)) {
     return { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }
   }
-  return { local: true, cloud: true, ...(brokering ? { cloudHarness: brokering === "native" || deliveredDirect(row) } : {}) }
+  if (!delivery) return { local: true, cloud: true }
+  const cloudHarness = delivery === "native" || deliveredDirect(row) || (delivery === "hosted-broker" && hostedBrokerServes(destination))
+  return { local: true, cloud: true, cloudHarness }
 }

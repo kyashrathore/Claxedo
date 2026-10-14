@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { directProviderDeliveriesFromRepository } from "./native-delivery-plan"
+import { directProviderDeliveriesFromRepository, nativeProviderDeliveriesFromRepository, type HarnessCredentialBroker } from "./native-delivery-plan"
 import type { CredentialMetadata } from "./types"
 
 function credential(input: Partial<CredentialMetadata> & Pick<CredentialMetadata, "id" | "provider_id" | "kind">): CredentialMetadata {
@@ -58,5 +58,60 @@ describe("direct provider delivery", () => {
       .toEqual([{ providerId: "anthropic", credentialId: "key", unavailable: "revoked" }])
     expect(await deliver([credential({ id: "missing", provider_id: "anthropic", kind: "api_key" })]))
       .toEqual([{ providerId: "anthropic", credentialId: "missing", unavailable: "unreadable_secret" }])
+  })
+})
+
+describe("native provider delivery through the plane's broker", () => {
+  const cursor = "key_user_01234567890123456789012345678901234567890123456789012345678901234567"
+  function recordingBroker() {
+    const bound: string[] = []
+    const broker: HarnessCredentialBroker = {
+      async bind(row, destination) {
+        bound.push(row.id)
+        return { baseUrl: `https://api.claxedo.test/bindings/${row.id}`, placeholder: `placeholder-${row.id}`, authMode: destination.injection.header === "Authorization" ? "bearer" : "api-key", apiPath: destination.apiPath, expiresAt: 10_000 }
+      },
+    }
+    return { broker, bound }
+  }
+  const walk = (rows: CredentialMetadata[], input: { secretBrokering: "native" | "none"; broker?: HarnessCredentialBroker }) =>
+    nativeProviderDeliveriesFromRepository({
+      owner: "user_owner",
+      machineOwnerUserId: "user_owner",
+      selections: {},
+      selected: rows.map((row) => ({ credential: row })),
+      readSecret: async (row) => ({ ...secrets, cursor })[row.id],
+      ...input,
+    })
+
+  test("a driver without an edge hands the harness a binding on the plane and no edge secret, and a plan login still travels direct", async () => {
+    const { broker, bound } = recordingBroker()
+    const rows = await walk([
+      credential({ id: "key", provider_id: "anthropic", kind: "api_key" }),
+      credential({ id: "plan", provider_id: "codex-app-server", kind: "oauth_token", expires_at: 9_000_000_000_000 }),
+    ], { secretBrokering: "none", broker })
+    expect(rows).toEqual([
+      { providerId: "anthropic", credentialId: "key", userId: "user_owner", revision: 1, projection: {
+        baseUrl: "https://api.claxedo.test/bindings/key", placeholder: "placeholder-key", authMode: "api-key", apiPath: "/v1", expiresAt: 10_000,
+      } },
+      expect.objectContaining({ providerId: "codex-app-server", direct: expect.objectContaining({ authKind: "subscription" }) }),
+    ])
+    expect(rows[0]).not.toHaveProperty("secret")
+    expect(bound).toEqual(["key"])
+  })
+
+  test("a driver with its own edge never meets the broker", async () => {
+    const { broker, bound } = recordingBroker()
+    const [row] = await walk([credential({ id: "key", provider_id: "anthropic", kind: "api_key" })], { secretBrokering: "native", broker })
+    expect(row).toMatchObject({ secret: { value: "sk-ant-api03-owner", hosts: ["api.anthropic.com"] }, projection: { placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_ANTHROPIC_/) } })
+    expect(bound).toEqual([])
+  })
+
+  test("a vendor that exchanges the key for a session stays refused, and so does everything without a broker", async () => {
+    const { broker, bound } = recordingBroker()
+    expect(await walk([credential({ id: "cursor", provider_id: "cursor-sdk", kind: "api_key" })], { secretBrokering: "none", broker }))
+      .toEqual([expect.objectContaining({ providerId: "cursor-sdk", projection: { unavailable: true, reason: "harness_needs_brokering" } })])
+    expect(bound).toEqual([])
+    expect(await walk([credential({ id: "key", provider_id: "anthropic", kind: "api_key" })], { secretBrokering: "none" }))
+      .toEqual([expect.objectContaining({ projection: { unavailable: true, reason: "harness_needs_brokering" } })])
   })
 })

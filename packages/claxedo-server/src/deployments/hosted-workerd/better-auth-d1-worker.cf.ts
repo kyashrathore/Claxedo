@@ -7,7 +7,7 @@ import {
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
 import { BROWSER_ALLOWED_REQUEST_HEADERS } from "@claxedo/server-core/platform/http/browser-auth-security"
-import { configuredCoreAppOrigins } from "../hosted-shared/hosted-core-app"
+import { configuredCoreAppOrigins } from "../hosted-shared/hosted-core-origins"
 
 import {
   composeBetterAuthD1UserDeployedControlPlane,

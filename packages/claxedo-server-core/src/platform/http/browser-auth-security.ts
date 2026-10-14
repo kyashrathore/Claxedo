@@ -106,10 +106,15 @@ function hasSupportedMutationContentType(request: Request) {
  * adapter. Cookie transports receive exact-origin credentialed CORS and
  * application-route CSRF protection. Bearer
  * transports deliberately retain their own non-cookie request posture.
+ *
+ * `withholdFrom` names paths no browser is granted whatever the trusted
+ * origins: a page that could call the credential broker with a placeholder
+ * would spend the operator's key from the browser, so those paths answer with
+ * no CORS grant at all, preflight included.
  */
-export function browserAuthHttpSecurity(browser: BrowserAuthDescriptor): MiddlewareHandler {
+export function browserAuthHttpSecurity(browser: BrowserAuthDescriptor, options: { withholdFrom?: (path: string) => boolean } = {}): MiddlewareHandler {
   return async (context, next) => {
-    if (browser.transport !== "cookie") return next()
+    if (browser.transport !== "cookie" || options.withholdFrom?.(context.req.path)) return next()
     const origin = trustedRequestOrigin(context.req.raw, browser)
     if (isCorsPreflight(context.req.raw)) {
       if (!origin) return originForbidden(context)

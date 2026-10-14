@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { credentialReach } from "./reach"
+import { credentialReach, harnessSecretDelivery } from "./reach"
 
 test("a harness inside a cloud workspace spends an account only where the driver brokers it, or where the account is handed over itself", () => {
   const key = { provider_id: "claude-sdk", kind: "api_key" as const }
@@ -7,4 +7,16 @@ test("a harness inside a cloud workspace spends an account only where the driver
   expect(credentialReach(key, "native")).toEqual({ local: true, cloud: true, cloudHarness: true })
   expect(credentialReach(key, "none")).toEqual({ local: true, cloud: true, cloudHarness: false })
   expect(credentialReach({ provider_id: "codex-app-server", kind: "oauth_token" }, "none")).toMatchObject({ cloud: true, cloudHarness: true })
+})
+
+test("the plane's own broker reaches a harness on a driver without an edge, except for a vendor that exchanges the key for a session", () => {
+  expect(credentialReach({ provider_id: "claude-sdk", kind: "api_key" }, "hosted-broker")).toEqual({ local: true, cloud: true, cloudHarness: true })
+  expect(credentialReach({ provider_id: "codex-app-server", kind: "api_key" }, "hosted-broker")).toMatchObject({ cloudHarness: true })
+  expect(credentialReach({ provider_id: "cursor-sdk", kind: "api_key" }, "hosted-broker")).toEqual({ local: true, cloud: true, cloudHarness: false })
+})
+
+test("a driver with its own edge keeps it; the plane brokers only for one without", () => {
+  expect(harnessSecretDelivery("native", true)).toBe("native")
+  expect(harnessSecretDelivery("none", true)).toBe("hosted-broker")
+  expect(harnessSecretDelivery("none", false)).toBe("none")
 })

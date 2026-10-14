@@ -5,9 +5,9 @@ import { brokerErrorBody } from "./errors.js"
 import { ExchangedTokens } from "./exchanged-tokens.js"
 import type { RuntimeTokenClaims } from "./token.js"
 
-export type BrokerOptions = {
-  authority: BindingAuthority
-  verifyToken(token: string): Promise<RuntimeTokenClaims | undefined>
+export type BrokerOptions<Claims extends RuntimeTokenClaims = RuntimeTokenClaims> = {
+  authority: BindingAuthority<Claims>
+  verifyToken(token: string): Promise<Claims | undefined>
   fetch?: typeof fetch
   /** Ceiling on one authority round-trip — resolve, currentRuntime, markUsed, reportFailure. */
   authorityTimeoutMs?: number
@@ -200,7 +200,7 @@ function laneBody(body: ReadableStream<Uint8Array>, signal: AbortSignal, release
   })
 }
 
-export function createEgressBroker(options: BrokerOptions) {
+export function createEgressBroker<Claims extends RuntimeTokenClaims = RuntimeTokenClaims>(options: BrokerOptions<Claims>) {
   const authorityTimeoutMs = options.authorityTimeoutMs ?? DEFAULT_AUTHORITY_TIMEOUT_MS
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
   const lane = concurrencyGate(options.maxConcurrentUpstream ?? DEFAULT_MAX_CONCURRENT_UPSTREAM)
@@ -210,8 +210,8 @@ export function createEgressBroker(options: BrokerOptions) {
       { signal: new AbortController().signal, deadlineAt: Date.now() + authorityTimeoutMs },
       request, () => {}, (operation) => new Error(`${operation} timed out`))
   }
-  const authority: BindingAuthority = {
-    resolve: (bindingId) => authorityRequest("resolve", options.authority.resolve(bindingId)),
+  const authority: BindingAuthority<Claims> = {
+    resolve: (bindingId, claims) => authorityRequest("resolve", options.authority.resolve(bindingId, claims)),
     currentRuntime: (identity: RuntimeIdentity) => authorityRequest("currentRuntime", options.authority.currentRuntime(identity)),
     markUsed: (bindingId) => authorityRequest("markUsed", options.authority.markUsed(bindingId)),
     reportFailure: (failure: BindingFailure) => authorityRequest("reportFailure", options.authority.reportFailure(failure)),
@@ -246,7 +246,7 @@ export function createEgressBroker(options: BrokerOptions) {
     let forwarded = false
     let lifetime: ReturnType<typeof upstreamLifetime> | undefined
     try {
-      const resolved = await authority.resolve(bindingId)
+      const resolved = await authority.resolve(bindingId, claims)
       if (!resolved) return brokerErrorResponse(403, "binding_unavailable")
       const { binding, value } = resolved
       if (binding.id !== bindingId || binding.status !== "active" || !sameRuntime(binding, claims)
@@ -322,7 +322,7 @@ export function createEgressBroker(options: BrokerOptions) {
       }
       if (upstream.status === 401 || upstream.status === 403) {
         try {
-          await authority.reportFailure({ bindingId, credentialId: binding.credentialId, revision: binding.revision, status: upstream.status })
+          await authority.reportFailure({ bindingId, credentialId: binding.credentialId, revision: binding.revision, status: upstream.status, runtime: claims })
         } catch (error) {
           await upstream.body?.cancel()
           throw error

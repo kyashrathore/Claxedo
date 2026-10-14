@@ -4,6 +4,8 @@ import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox
 
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number }
 type Outcome = { epoch: number; answer: SandboxStartAnswer; settledAt: number }
+/** The next re-delivery a serving sandbox's expiring placeholders need. */
+type Renewal = { workspaceId: string; at: number }
 
 /** A start still not settled this long after it began ends with that as its reason. */
 const START_WALL_MS = 15 * 60_000
@@ -16,6 +18,9 @@ const START_WALL_MS = 15 * 60_000
  * since stopped on its own.
  */
 const OUTCOME_HELD_MS = 2 * 60_000
+
+/** A renewal that threw is tried again this much later; one that found no serving sandbox is not tried again. */
+const RENEWAL_RETRY_MS = 60_000
 
 /** How long the start waits before its next driver step; nothing when this answer ends it. */
 function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
@@ -53,6 +58,11 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * needs; a ready outcome believed on the lease alone minted tokens for a
  * sandbox that had been deleted underneath it. `refresh` begins the run even
  * for a live sandbox, because its settings must be delivered again.
+ *
+ * The same alarm renews what a ready sandbox was delivered: a settling that
+ * names `renewAt` is re-delivered then, through `renew`, for as long as the
+ * sandbox keeps serving. The run owns the alarm while one is in flight; the
+ * renewal takes it back when the run settles.
  */
 export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, outcomeHeldMs = OUTCOME_HELD_MS) {
   return class SandboxProvisioner extends DurableObject<Env> {
@@ -92,7 +102,10 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
 
     async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
       const admitted = await drive(this.env).acquire(workspaceId)
-      if (admitted.status !== "provisioning") return admitted
+      if (admitted.status !== "provisioning") {
+        await this.#settled(workspaceId, admitted)
+        return admitted
+      }
       const begun: Run = {
         workspaceId,
         epoch: admitted.epoch,
@@ -105,12 +118,40 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       return admitted
     }
 
+    /** A ready answer's renewal replaces the one on record; the alarm is the renewal's again now that no run holds it. */
+    async #settled(workspaceId: string, answer: SandboxStartAnswer) {
+      const storage = this.ctx.storage
+      if (answer.status === "ready") {
+        if (answer.renewAt === undefined) await storage.delete("renewal")
+        else await storage.put<Renewal>("renewal", { workspaceId, at: answer.renewAt })
+      }
+      const renewal = await storage.get<Renewal>("renewal")
+      if (renewal) await storage.setAlarm(Math.max(Date.now(), renewal.at))
+    }
+
+    async #renew() {
+      const storage = this.ctx.storage
+      const renewal = await storage.get<Renewal>("renewal")
+      if (!renewal) return
+      if (renewal.at > Date.now()) {
+        await storage.setAlarm(renewal.at)
+        return
+      }
+      const next = await drive(this.env).renew(renewal.workspaceId).catch((): number => Date.now() + RENEWAL_RETRY_MS)
+      if (next === undefined) {
+        await storage.delete("renewal")
+        return
+      }
+      await storage.put<Renewal>("renewal", { workspaceId: renewal.workspaceId, at: next })
+      await storage.setAlarm(next)
+    }
+
     async alarm() {
       this.#driving = true
       try {
         const storage = this.ctx.storage
         const run = await storage.get<Run>("run")
-        if (!run) return
+        if (!run) return this.#renew()
         const answer: SandboxStartAnswer = Date.now() - run.startedAt >= START_WALL_MS
           ? {
               status: "unavailable",
@@ -130,6 +171,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         await storage.delete("run")
         const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }
         await storage.put("outcome", outcome)
+        await this.#settled(run.workspaceId, answer)
       } finally {
         this.#driving = false
       }

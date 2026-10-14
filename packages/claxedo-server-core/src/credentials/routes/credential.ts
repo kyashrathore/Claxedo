@@ -40,7 +40,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { acceptsSubscriptionToken } from "@claxedo/server-core/credentials/provider-auth/methods"
 import { subscriptionTokenRefusal } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialKind, CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
-import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import {
   chosenSandboxKey,
   isSandboxKey,
@@ -108,7 +108,7 @@ const accountSourcesBody = z.object({
   source: z.enum(ACCOUNT_SOURCES),
 }).strict()
 
-function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>, brokering?: SandboxSecretBrokering) {
+function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>, brokering?: HarnessSecretDelivery) {
   if (!cred) return null
   return {
     id: cred.id,

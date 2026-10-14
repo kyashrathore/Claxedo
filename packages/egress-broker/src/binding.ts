@@ -1,3 +1,5 @@
+import type { RuntimeTokenClaims } from "./token.js"
+
 export type RuntimeIdentity = Readonly<{
   userId: string
   orgId: string
@@ -51,10 +53,18 @@ export type BindingFailure = Readonly<{
   credentialId: string
   revision: number
   status: number
+  /** Whose runtime spent the binding, which is also where an authority serving many tenants finds the account. */
+  runtime: RuntimeIdentity
 }>
 
-export interface BindingAuthority {
-  resolve(bindingId: string): Promise<{ binding: Binding; value: string } | undefined>
+/**
+ * `Claims` is what the composition's `verifyToken` read off the runtime token.
+ * An authority that holds every binding it minted in memory resolves from the
+ * id alone; one serving many isolates holds nothing between requests and reads
+ * which account the binding names from the token's own claims.
+ */
+export interface BindingAuthority<Claims extends RuntimeTokenClaims = RuntimeTokenClaims> {
+  resolve(bindingId: string, claims: Claims): Promise<{ binding: Binding; value: string } | undefined>
   currentRuntime(identity: RuntimeIdentity): Promise<boolean>
   /**
    * Called for a request the broker is about to forward, never from `resolve`:
