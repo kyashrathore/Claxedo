@@ -95,7 +95,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     return admittedTurn(c, parsed.data.turnLease, { live: true })
   }
 
-  const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: input.credentials })
+  const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: (orgId) => input.credentials(orgId) })
 
   return new Hono()
     .onError((error, c) => {

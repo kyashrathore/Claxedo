@@ -217,17 +217,17 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(settled.providerId, MODEL.providerID)
     assert.equal(settled.modelId, MODEL.modelID)
     assert.equal(settled.turnId, "msg_reported")
-    const tokens = settled.tokens as { input: number | null; output: number | null }
-    assert.ok((tokens.input ?? 0) >= 1 && (tokens.output ?? 0) >= 1, JSON.stringify(settled))
-    assert.deepEqual((settled.quality as { source: string }).source, "provider")
+    assert.ok(atLeastOne(at(settled.tokens, "input")) && atLeastOne(at(settled.tokens, "output")), JSON.stringify(settled))
+    assert.equal(at(settled.quality, "source"), "provider")
     const final = host.controlPlane.calls.rows.at(-1)!
     assert.equal(final.turnId, "msg_reported")
     assert.equal(final.hostId, `session-do:${root}`)
-    const row = final.rows.find((candidate) => candidate.sessionId === root) as Record<string, unknown> & { status: { kind: string }; lastTurn: { status: string } }
-    assert.ok(typeof row.lastHumanTurnAt === "number" && row.lastHumanTurnAt >= sentAt, JSON.stringify(row))
-    assert.equal(row.status.kind, "idle")
-    assert.equal(row.lastTurn.status, "completed")
-    assert.ok(typeof row.createdAt === "number" && typeof row.updatedAt === "number")
+    const row = final.rows.find((candidate) => candidate.sessionId === root)
+    const lastHumanTurnAt = at(row, "lastHumanTurnAt")
+    assert.ok(typeof lastHumanTurnAt === "number" && lastHumanTurnAt >= sentAt, JSON.stringify(row))
+    assert.equal(at(at(row, "status"), "kind"), "idle")
+    assert.equal(at(at(row, "lastTurn"), "status"), "completed")
+    assert.ok(typeof at(row, "createdAt") === "number" && typeof at(row, "updatedAt") === "number")
   })
 
   void it("reports the stored account the vendor refused, under the turn's lease, and the failed turn's row and usage", { timeout: 120_000 }, async () => {
@@ -241,7 +241,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(host.controlPlane.calls.refusals, [{ turnId: "msg_refused_key", credentialId: OPENAI_ACCOUNT.credentialId }])
     await eventually("the failed turn's row and usage", async () =>
       host.controlPlane.calls.usage.some((report) => report.turnId === "msg_refused_key")
-        && host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => (row.lastTurn as { status?: string } | undefined)?.status === "failed")) ? true : undefined)
+        && host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => at(row.lastTurn, "status") === "failed")) ? true : undefined)
     const fact = host.controlPlane.calls.usage.flatMap((report) => report.facts).find((candidate) => candidate.turnId === "msg_refused_key")
     assert.equal(fact?.status, "error", JSON.stringify(fact))
   })
@@ -522,3 +522,13 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(assistantText(await host.messages()).includes("PIWAIT"), false)
   })
 })
+
+function at(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined
+  const field: unknown = Reflect.get(value, key)
+  return field
+}
+
+function atLeastOne(value: unknown) {
+  return typeof value === "number" && value >= 1
+}

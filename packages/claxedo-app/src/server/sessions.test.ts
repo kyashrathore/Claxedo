@@ -194,8 +194,8 @@ test("sessions: a draft reserved under Codex that switches to Pi before it lands
 
   const id = String(row.ref.sessionId)
   expect(reservations.map((reserved) => reserved.harness?.id)).toEqual(["codex", "pi"])
-  expect(id).toBe(reservations[1]!.sessionId)
-  expect(id).not.toBe(reservations[0]!.sessionId)
+  expect(id).toBe(reservations[1].sessionId)
+  expect(id).not.toBe(reservations[0].sessionId)
   expect(held).toMatchObject({ sessionId: id, sessionHostRoot: id, harness: { id: "pi", access: "native" } })
   expect(minted).toEqual([{ session: { sessionId: id } }])
   expect(hosted).toEqual([expect.objectContaining({ method: "POST", path: `/relay/workspaces/ws_cloud/session/${id}` })])
