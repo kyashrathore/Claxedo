@@ -252,6 +252,7 @@ async function invalidatePlacementReads(queryClient: QueryClient, serverUrl: str
   await queryClient.invalidateQueries({ queryKey: queryKeys.placements(serverUrl) })
   await queryClient.invalidateQueries({ queryKey: queryKeys.projects(serverUrl) })
   await queryClient.invalidateQueries({ queryKey: queryKeys.cloud(serverUrl) })
+  await queryClient.invalidateQueries({ queryKey: queryKeys.machineTimeAll(serverUrl) })
 }
 
 export function createWorkspaces(transport: Transport, queryClient: QueryClient, account?: HostedAccount): Workspaces {

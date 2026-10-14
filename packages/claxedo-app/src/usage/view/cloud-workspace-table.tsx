@@ -5,7 +5,7 @@ import { useI18n, useTranslator } from "@/i18n"
 import { formatDateTimeMed } from "@/lib/relative-time"
 import { useServer, type MachineRate, type PlacementId, type ProjectId } from "@/server"
 import { Button } from "@/ui"
-import { isRunningRow, type CloudRow } from "../cloud-rows"
+import type { CloudRow } from "../cloud-rows"
 import { usageDictionary } from "../i18n"
 import { wholeMinutes } from "../model"
 import { useUsageFormats } from "./usage-formats"
@@ -27,7 +27,7 @@ function useRowWords() {
     const failure = row.live ? failureText(row.live.commandFailure) : undefined
     if (failure) return failure
     const since = row.time?.runningSince
-    if (since !== undefined && (!row.live || row.live.state.kind === "ready")) return t("usage.cloud.runningSince", { time: formatDateTimeMed(since, i18n.intlTag()) })
+    if (row.running && since !== undefined && (!row.live || row.live.state.kind === "ready")) return t("usage.cloud.runningSince", { time: formatDateTimeMed(since, i18n.intlTag()) })
     return row.live ? statusText(row.live.state) : undefined
   }
   return { machine, status }
@@ -56,7 +56,7 @@ export function CloudWorkspaceTable(props: { readonly rows: readonly CloudRow[];
       <tbody>
         <For each={props.rows}>
           {(row) => (
-            <tr class="usage-cloud-row" data-workspace-id={row.id} data-running={isRunningRow(row)}>
+            <tr class="usage-cloud-row" data-workspace-id={row.id} data-running={row.running}>
               <th scope="row" class="usage-table-lead">
                 <span class="usage-table-name" title={row.id}>{workspaceName(row.name, row.branch)}</span>
                 <span class="usage-cloud-detail">{detail(row)}</span>
@@ -66,7 +66,7 @@ export function CloudWorkspaceTable(props: { readonly rows: readonly CloudRow[];
               <td>{row.time?.rate ? format.hourlyRate(row.time.rate.usdPerHour) : row.time ? t("usage.unknown") : "–"}</td>
               <td>{row.time?.costUsd !== undefined ? format.money(row.time.costUsd) : "–"}</td>
               <td class="usage-cloud-action">
-                <Show when={isRunningRow(row) && row.live?.state.kind !== "stopping"}>
+                <Show when={row.running && row.live?.state.kind !== "stopping"}>
                   <Button size="small" variant="neutral" onClick={() => props.onStop(row.id)}>{t("usage.cloud.stop")}</Button>
                 </Show>
               </td>
