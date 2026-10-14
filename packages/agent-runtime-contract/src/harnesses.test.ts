@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import {
   AGENT_HARNESS_DEFINITIONS,
+  cloudHarnessHost,
   harnessKey,
   isAcpConnectionId,
   normalizeAgentHarnessTransport,
@@ -17,6 +18,12 @@ describe("agent harness process catalog", () => {
     expect(new Set(AGENT_HARNESS_DEFINITIONS.map((row) => row.id))).toEqual(
       new Set(["claude", "codex", "cursor", "pi", "opencode"]),
     )
+  })
+
+  test("on a cloud workspace only Pi runs in the session's own host; every other harness and any connection runs in the sandbox", () => {
+    expect(cloudHarnessHost("pi")).toBe("session-host")
+    expect(AGENT_HARNESS_DEFINITIONS.filter((row) => row.id !== "pi").map((row) => cloudHarnessHost(row.id))).toEqual(["workspace-runtime", "workspace-runtime", "workspace-runtime", "workspace-runtime"])
+    expect(cloudHarnessHost("acme-acp")).toBe("workspace-runtime")
   })
 })
 

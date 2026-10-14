@@ -43,6 +43,7 @@ function fixture(input: { holdFirstTurn?: Promise<void>; store?: RuntimeStore } 
     connectionId: runner.id, providerKey: "fixture", enabled: true, configRevision: 1, config: {}, secretRefs: { token: "ref" },
   }
   const transports = createWorkspaceTransports({
+    placement: "loopback",
     connections: () => new Map([[runner.id, descriptor]]),
     resolveSecrets: (_descriptor, _directory, { authority }) => {
       authorities.push(authority)

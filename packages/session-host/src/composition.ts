@@ -4,6 +4,7 @@ import { PiDurableTransport, type PiPlacement, type PiTurnContext } from "@claxe
 import {
   composeSessionRoutes, createAgentRuntime, createSessionCore, createRuntimeEventHub, createStoreBrokerPorts, durableObjectSqliteDatabase,
   observeTurnOutcomes, pluginProjectionFor, RuntimeStore, sessionCredentials, sessionEventDeliveryPolicy, sessionStatusSnapshot,
+  WorkspaceHarnessUnavailableError,
   type DurableObjectSqlStorage, type LaunchComposer, type SessionAccessPolicy, type TransportResolver, type TurnOutcomeObserved,
 } from "@claxedo/session-core"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
@@ -72,7 +73,7 @@ function piOnly(transport: PiDurableTransport): TransportResolver {
   const handle = { key: "native:pi", runner: PI, kind: transport.kind, transport, locality: "remote" as const, retired: () => false, pin: () => () => {} }
   return {
     forHarness: async (harness) => {
-      if (harness.id !== PI.id || harness.access !== PI.access) throw new Error(`A session host runs Pi, not ${harness.access} ${harness.id}`)
+      if (harness.id !== PI.id || harness.access !== PI.access) throw new WorkspaceHarnessUnavailableError(harness, { runsIn: "the workspace's runtime", notIn: "this session's host" })
       return handle
     },
     composed: () => [handle],

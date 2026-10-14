@@ -169,6 +169,20 @@ void describe("SessionDO under workerd with PiHarness", () => {
     return eventually(`${file} written`, async () => existsSync(file) ? Number(await readFile(file, "utf8")) || undefined : undefined, 30_000)
   }
 
+  void it("refuses a switch to Claude Code, which a cloud workspace runs in its runtime, telling the person to start a new session for it and leaving the session on Pi", { timeout: 120_000 }, async () => {
+    const root = "ses_switch"
+    const host = await session(root)
+    const response = await host.as(OWNER).fetch(`/session/${root}/config`, {
+      method: "PATCH", body: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } },
+    })
+    assert.equal(response.status, 409)
+    assert.deepEqual(await response.json(), { error: {
+      code: "workspace_harness_hosted_elsewhere",
+      message: "Claude Code runs in the workspace's runtime on a cloud workspace, not in this session's host. Start a new Claude Code session to use it here.",
+    } })
+    assert.deepEqual((await host.json<{ harness: unknown }>(`/session/${root}/config`)).harness, { id: "pi", access: "native" })
+  })
+
   void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for one delivery", { timeout: 120_000 }, async () => {
     const root = "ses_turn"
     const host = await session(root)

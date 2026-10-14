@@ -225,6 +225,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     }), options.connectionProviders ?? [])
     const transports = createWorkspaceTransports({
       composer,
+      placement: options.placement.placement,
       connections: () => appliedConnections,
       resolveSecrets: (descriptor, directory, access) => (options.resolveConnectionSecrets ?? resolveSnapshotConnectionSecrets)({
         descriptor, directory, ...(access.authority ? { authority: access.authority } : {}),

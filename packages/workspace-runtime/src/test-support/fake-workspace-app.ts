@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { HarnessConnectionCapabilities, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import type { HarnessTransport } from "@claxedo/harness/contract"
+import type { HarnessTransport, MachineLoginPolicy } from "@claxedo/harness/contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import {
@@ -39,6 +39,8 @@ export type FakeWorkspaceAppOptions = {
   defaultConnectionId?: string
   sessionAccessPolicy?: SessionAccessPolicy
   workspaceId?: string
+  /** Where this runtime runs; loopback unless told otherwise. */
+  placement?: MachineLoginPolicy["placement"]
   /** Reopens a store an earlier host wrote instead of a fresh one. */
   root?: string
   eventHub?: RuntimeEventHub
@@ -71,7 +73,7 @@ export async function createFakeWorkspaceApp(options: FakeWorkspaceAppOptions = 
     ...(options.connections ?? []),
   ]
   const host = createWorkspaceHost({
-    placement: loopbackMachineLoginPolicy(),
+    placement: { ...loopbackMachineLoginPolicy(), ...(options.placement ? { placement: options.placement } : {}) },
     target: { workspaceId, directory },
     storeRoot: join(root, "state"),
     harnessStateRoot: join(root, "harness"),
