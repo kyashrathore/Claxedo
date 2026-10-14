@@ -36,6 +36,16 @@ test("provider connect: a custom provider is declared with the header its key ri
   ])
 })
 
+test("provider connect: a pasted secret is saved under its method's kind, so the server can refuse a subscription token that is not one", async () => {
+  const { seen, api } = serve()
+  await api.saveKey({ providerId: "claude-sdk", label: "me", secret: "sk-ant-oat01-setup", kind: "oauth_token" })
+  await api.saveKey({ providerId: "anthropic", label: "me", secret: "sk-ant-api03-key", kind: "api_key" })
+  expect(seen).toEqual([
+    'PUT /api/claxedo/credentials {"provider_id":"claude-sdk","kind":"oauth_token","source":"managed","label":"me","secret":"sk-ant-oat01-setup"}',
+    'PUT /api/claxedo/credentials {"provider_id":"anthropic","kind":"api_key","source":"managed","label":"me","secret":"sk-ant-api03-key"}',
+  ])
+})
+
 test("provider connect: disconnecting removes the provider's own account, and a custom provider's declaration too", async () => {
   const { seen, api } = serve()
   await api.disconnect("opencode", { id: "acme", source: "custom" })

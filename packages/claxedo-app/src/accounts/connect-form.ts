@@ -91,14 +91,14 @@ function useOAuth(input: ConnectFormInput, methods: ReturnType<typeof useConnect
   return { start, finish }
 }
 
-function useSaveKey(input: ConnectFormInput, state: ReturnType<typeof createConnectState>) {
+function useSaveKey(input: ConnectFormInput, state: ReturnType<typeof createConnectState>, method: () => ConnectMethodOption | undefined) {
   const server = useServer()
   const t = useAccountsText()
   const complete = useComplete(input)
   const { store, setStore } = state
   const write = (secret: string, label: string) => {
     if (input.credentialId) return server.providerConnect.reconnect(input.credentialId, secret)
-    return server.providerConnect.saveKey({ providerId: input.provider, label, secret })
+    return server.providerConnect.saveKey({ providerId: input.provider, label, secret, kind: method()?.type === "token" ? "oauth_token" : "api_key" })
   }
   return async (event: SubmitEvent) => {
     event.preventDefault()
@@ -144,7 +144,7 @@ export function createProviderConnect(input: ConnectFormInput) {
     pastes: () => selected()?.type === "api" || selected()?.type === "token",
     startOAuth: oauth.start,
     finishOAuth: oauth.finish,
-    saveApiKey: useSaveKey(input, state),
+    saveApiKey: useSaveKey(input, state, selected),
   }
 }
 

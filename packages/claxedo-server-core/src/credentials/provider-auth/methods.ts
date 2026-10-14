@@ -58,6 +58,11 @@ function allProviderAuthMethods(): ProviderAuthMethods {
   }
 }
 
+/** Whether a provider's accounts can be connected by pasting the token its CLI prints. */
+export function acceptsSubscriptionToken(providerId: string): boolean {
+  return allProviderAuthMethods()[providerId]?.some((method) => method.type === "token") ?? false
+}
+
 /** A pasted subscription token is stored as the plan login it is, like an OAuth sign-in. */
 function reachesCloud(providerId: string, method: ProviderAuthMethod) {
   return credentialReach({ provider_id: providerId, kind: method.type === "api" ? "api_key" : "oauth_token" }).cloud

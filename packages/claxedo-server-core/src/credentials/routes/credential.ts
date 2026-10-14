@@ -37,7 +37,9 @@ import {
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import type { CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
+import { acceptsSubscriptionToken } from "@claxedo/server-core/credentials/provider-auth/methods"
+import { subscriptionTokenRefusal } from "@claxedo/server-core/credentials/secret-material"
+import type { CredentialKind, CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
   chosenSandboxKey,
@@ -153,6 +155,13 @@ function sandboxKeyInUse(workspaces: number) {
 
 function invalidBody(error: z.ZodError) {
   return errorBody("credential_invalid_body", "Invalid credential request body", error.flatten())
+}
+
+/** A value saved as a provider's subscription token that is not one, said in the words the person can act on. */
+function subscriptionTokenRefused(providerId: string, kind: CredentialKind, secret: string) {
+  if (kind !== "oauth_token" || !acceptsSubscriptionToken(providerId)) return undefined
+  const reason = subscriptionTokenRefusal(secret)
+  return reason ? errorBody("credential_subscription_token_invalid", reason) : undefined
 }
 
 export type CredentialRoutesOptions = {
@@ -463,6 +472,8 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     .put("/", async (c) => {
       const body = putBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
+      const refusal = subscriptionTokenRefused(body.data.provider_id, body.data.kind, body.data.secret)
+      if (refusal) return c.json(refusal, 400)
       let write: CredentialWrite = {
         ...body.data,
         owner: actor(c.req.raw),
@@ -560,6 +571,8 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       if (!credentials.updateCredentialSecret || !credentials.updateCredentialHealth) {
         return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)
       }
+      const refusal = subscriptionTokenRefused(credential.provider_id, credential.kind, body.data.secret)
+      if (refusal) return c.json(refusal, 400)
       const outcome = await checkCredential(credentials, credential, {
         org: scope,
         secret: body.data.secret,

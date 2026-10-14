@@ -83,6 +83,12 @@
       "types": "./dist/transports/pi-durable/shell.d.ts",
       "import": "./dist/transports/pi-durable/shell.js"
     },
+    "./pi-durable/credentials": {
+      "development": "./src/transports/pi-durable/credentials.ts",
+      "bun": "./src/transports/pi-durable/credentials.ts",
+      "types": "./dist/transports/pi-durable/credentials.d.ts",
+      "import": "./dist/transports/pi-durable/credentials.js"
+    },
     "./opencode-sdk": {
       "development": "./src/transports/opencode-sdk/index.ts",
       "bun": "./src/transports/opencode-sdk/index.ts",
