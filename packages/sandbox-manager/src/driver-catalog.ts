@@ -119,6 +119,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     metadata: {
       driverRunsIn: ["worker"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
+      hostWatchesIdle: true,
       targetAccess: "relay",
       secretBrokering: "native",
       // Credential handlers do not restrict unrelated destinations.

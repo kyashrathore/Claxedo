@@ -4,8 +4,23 @@ import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox
 
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number }
 type Outcome = { epoch: number; answer: SandboxStartAnswer; settledAt: number }
-/** The next re-delivery a serving sandbox's expiring placeholders need. */
-type Renewal = { workspaceId: string; at: number }
+/** A step the alarm owes a serving sandbox: when it is next due, and how many steps in a row threw before it. */
+type FollowUp = { workspaceId: string; at: number; failures: number }
+
+type ReadyAnswer = Extract<SandboxStartAnswer, { status: "ready" }>
+
+/**
+ * The steps a ready sandbox is followed up with from the alarm, each recorded
+ * under its own storage key: the field of a ready answer that first schedules
+ * it, and the drive step that runs it and answers when it is due again.
+ */
+const FOLLOW_UPS = {
+  renewal: { due: "renewAt", step: (drive: SandboxStartDrive, workspaceId: string) => drive.renew(workspaceId) },
+  watch: { due: "watchAt", step: (drive: SandboxStartDrive, workspaceId: string, failures: number) => drive.watch(workspaceId, failures) },
+} as const satisfies Record<string, { due: keyof ReadyAnswer; step: (drive: SandboxStartDrive, workspaceId: string, failures: number) => Promise<number | undefined> }>
+
+type FollowUpKey = keyof typeof FOLLOW_UPS
+const FOLLOW_UP_KEYS = Object.keys(FOLLOW_UPS) as FollowUpKey[]
 
 /** A start still not settled this long after it began ends with that as its reason. */
 const START_WALL_MS = 15 * 60_000
@@ -19,8 +34,10 @@ const START_WALL_MS = 15 * 60_000
  */
 const OUTCOME_HELD_MS = 2 * 60_000
 
-/** A renewal that threw is tried again this much later; one that found no serving sandbox is not tried again. */
-const RENEWAL_RETRY_MS = 60_000
+/** A follow-up step that threw is tried again this much later, counted; one that found no serving sandbox is not tried again. */
+const FOLLOW_UP_RETRY_MS = 30_000
+
+export type SandboxProvisionerTiming = { outcomeHeldMs?: number; followUpRetryMs?: number }
 
 /** How long the start waits before its next driver step; nothing when this answer ends it. */
 function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
@@ -59,12 +76,15 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * sandbox that had been deleted underneath it. `refresh` begins the run even
  * for a live sandbox, because its settings must be delivered again.
  *
- * The same alarm renews what a ready sandbox was delivered: a settling that
- * names `renewAt` is re-delivered then, through `renew`, for as long as the
- * sandbox keeps serving. The run owns the alarm while one is in flight; the
- * renewal takes it back when the run settles.
+ * The same alarm follows a ready sandbox up for as long as it keeps serving: a
+ * settling that names `renewAt` is re-delivered then, through `renew`, and
+ * one that names `watchAt` has its idleness read then, through `watch`, which
+ * stops a sandbox whose host reads none itself. The run owns the alarm while
+ * one is in flight; the follow-ups take it back when the run settles.
  */
-export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, outcomeHeldMs = OUTCOME_HELD_MS) {
+export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, timing: SandboxProvisionerTiming = {}) {
+  const outcomeHeldMs = timing.outcomeHeldMs ?? OUTCOME_HELD_MS
+  const followUpRetryMs = timing.followUpRetryMs ?? FOLLOW_UP_RETRY_MS
   return class SandboxProvisioner extends DurableObject<Env> {
     #driving = false
 
@@ -118,32 +138,36 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       return admitted
     }
 
-    /** A ready answer's renewal replaces the one on record; the alarm is the renewal's again now that no run holds it. */
+    /** A ready answer's follow-ups replace the ones on record; the alarm is theirs again now that no run holds it. */
     async #settled(workspaceId: string, answer: SandboxStartAnswer) {
       const storage = this.ctx.storage
       if (answer.status === "ready") {
-        if (answer.renewAt === undefined) await storage.delete("renewal")
-        else await storage.put("renewal", { workspaceId, at: answer.renewAt })
+        for (const key of FOLLOW_UP_KEYS) {
+          const at = answer[FOLLOW_UPS[key].due]
+          if (at === undefined) await storage.delete(key)
+          else await storage.put<FollowUp>(key, { workspaceId, at, failures: 0 })
+        }
       }
-      const renewal = await storage.get<Renewal>("renewal")
-      if (renewal) await storage.setAlarm(Math.max(Date.now(), renewal.at))
+      await this.#armFollowUps()
     }
 
-    async #renew() {
+    async #armFollowUps() {
       const storage = this.ctx.storage
-      const renewal = await storage.get<Renewal>("renewal")
-      if (!renewal) return
-      if (renewal.at > Date.now()) {
-        await storage.setAlarm(renewal.at)
-        return
+      const due = (await Promise.all(FOLLOW_UP_KEYS.map((key) => storage.get<FollowUp>(key)))).flatMap((record) => (record ? [record.at] : []))
+      if (due.length) await storage.setAlarm(Math.max(Date.now(), Math.min(...due)))
+    }
+
+    async #followUp() {
+      const storage = this.ctx.storage
+      for (const key of FOLLOW_UP_KEYS) {
+        const record = await storage.get<FollowUp>(key)
+        if (!record || record.at > Date.now()) continue
+        const next = await FOLLOW_UPS[key].step(drive(this.env), record.workspaceId, record.failures)
+          .then((at) => (at === undefined ? undefined : { at, failures: 0 }), () => ({ at: Date.now() + followUpRetryMs, failures: record.failures + 1 }))
+        if (next === undefined) await storage.delete(key)
+        else await storage.put<FollowUp>(key, { workspaceId: record.workspaceId, ...next })
       }
-      const next = await drive(this.env).renew(renewal.workspaceId).catch((): number => Date.now() + RENEWAL_RETRY_MS)
-      if (next === undefined) {
-        await storage.delete("renewal")
-        return
-      }
-      await storage.put("renewal", { workspaceId: renewal.workspaceId, at: next })
-      await storage.setAlarm(next)
+      await this.#armFollowUps()
     }
 
     async alarm() {
@@ -151,7 +175,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       try {
         const storage = this.ctx.storage
         const run = await storage.get<Run>("run")
-        if (!run) return this.#renew()
+        if (!run) return this.#followUp()
         const answer: SandboxStartAnswer = Date.now() - run.startedAt >= START_WALL_MS
           ? {
               status: "unavailable",

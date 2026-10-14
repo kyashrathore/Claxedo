@@ -16,7 +16,7 @@ import type { ControlPlaneDatabase } from "../../test-support/control-plane-migr
 import { inlineSandboxStart } from "../../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "../../workspace/hosted-runtime-delivery"
-import { unusedSandboxStart } from "../../test-support/inline-sandbox-start"
+import { unusedSandboxStart, unusedWorkspaceIdleStop } from "../../test-support/inline-sandbox-start"
 import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 
@@ -138,6 +138,7 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
   // the manager is what `hostedSandboxInput` rebuilds from the workspace row.
   const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
+      idleStop: unusedWorkspaceIdleStop,
     authority: services.authority as unknown as WorkspaceAuthority,
     database: backing.database,
     services,

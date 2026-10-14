@@ -16,6 +16,7 @@ import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION } from "
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
+import { hostedWorkspaceIdleStop } from "../../../workspace/routes/checkpoints"
 import { ownerSessionList } from "../../../session/list"
 import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
 import { hostedControlPlaneOrigin } from "./control-plane-origin"
@@ -273,6 +274,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         provisionedRunner: provisionedRunner(input.env),
         ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
         sandboxRefresh: sandbox.refresh,
+        idleStop: hostedWorkspaceIdleStop(plane.services),
       })
     : undefined
 

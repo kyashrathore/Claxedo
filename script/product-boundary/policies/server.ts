@@ -169,8 +169,13 @@ export const serverWorkerd: Policy = {
   // admits and the CORS it stamps for them, with the broker's carve-out, are
   // their own module (`deployments/hosted-shared/hosted-core-origins.ts`),
   // split from the core app.
-  // 163/22, no headroom.
-  ceilings: { modules: 163, packages: 22 },
+  // +1 module (owner: the hosted runtime delivery, `workspace/hosted-runtime-delivery.ts`):
+  // the one idle policy every cloud sandbox stops under (`sandbox/workspace-idle.ts`),
+  // which the provisioner's idle watch applies over the relay for a driver
+  // whose host reads no idleness (Boat) and the Cloudflare sandbox Worker
+  // bundles from the same file; it imports nothing.
+  // 164/22, no headroom.
+  ceilings: { modules: 164, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

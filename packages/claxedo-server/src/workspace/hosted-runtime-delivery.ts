@@ -27,8 +27,19 @@ import { recordRuntimeStartPhases } from "./runtime-start-phases"
 import type { ReadySandboxTarget, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
 import { accountsRenewalDueAt, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import type { BrokerLease, HostedEgressBroker } from "../credentials/hosted-egress-broker"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, workspaceIdleStopDue } from "../sandbox/workspace-idle"
+import type { WorkspaceIdleStop } from "./routes/checkpoints"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
+
+const RUNTIME_HEALTH_PATH = "/api/wr/health"
+
+/** Whether the sandbox's own host reads its idleness; a driver outside the catalog has a host that reads none. */
+const hostWatchesIdle = (target: { driver?: { id: string } }) =>
+  isSandboxDriverID(target.driver?.id) && sandboxDriverCatalog[target.driver.id].metadata.hostWatchesIdle === true
 
 /**
  * How long a ready lease's runtime gets to answer before the start treats the
@@ -89,7 +100,12 @@ export function createHostedRuntimeDelivery(input: {
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** The workspace's provisioner's refresh, which re-delivers a running sandbox's settings without racing a start on the same epoch. */
   sandboxRefresh: SandboxStart
+  /** Stops a lease generation the idle watch found idle, or unreachable for the whole failure budget. */
+  idleStop: WorkspaceIdleStop
+  /** A request to a ready sandbox's runtime over the relay; a test hands in its own runtime. */
+  runtimeFetch?: (workspaceId: string, orgId: string, path: string, init: RequestInit) => Promise<Response>
 }) {
+  const runtimeFetch = input.runtimeFetch ?? createHostedRuntimeFetch(input.services)
   const owner = async (workspaceId: string) => {
     const person = await input.authority.resolveWorkspaceOwner?.(workspaceId)
     if (!person) throw new Error(`workspace ${workspaceId} has no active owner`)
@@ -165,7 +181,7 @@ export function createHostedRuntimeDelivery(input: {
     await recordRuntimeStartPhases({
       sandboxManager: input.sandboxManager,
       workspaceId,
-      runtimeFetch: (path, init) => createHostedRuntimeFetch(input.services)(workspaceId, person.orgId, path, init),
+      runtimeFetch: (path, init) => runtimeFetch(workspaceId, person.orgId, path, init),
     }).catch((error: unknown) => {
       log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
     })
@@ -200,7 +216,37 @@ export function createHostedRuntimeDelivery(input: {
     } catch (cause) {
       return refused("runtime_provision_failed", cause, "Runtime provisioning failed")
     }
-    return renewAt === undefined ? ensured : { ...ensured, renewAt }
+    return {
+      ...ensured,
+      ...(renewAt === undefined ? {} : { renewAt }),
+      ...(hostWatchesIdle(ensured) ? {} : { watchAt: Date.now() + IDLE_CHECK_MS }),
+    }
+  }
+  /**
+   * One read of a serving runtime's idleness over the relay. A runtime that
+   * answered nothing for the whole failure budget is stopped too: its host is
+   * metered while nobody reaches what it serves.
+   */
+  const watch = async (workspaceId: string, failures: number): Promise<number | undefined> => {
+    const target = await input.sandboxManager.target(workspaceId)
+    if (target.status !== "ready") return undefined
+    const person = await owner(workspaceId)
+    let report: Record<string, unknown> | undefined
+    try {
+      const response = await withTimeout(runtimeFetch(workspaceId, person.orgId, RUNTIME_HEALTH_PATH, { method: "GET" }), LIVE_ANSWER_MS)
+      if (!response.ok) throw new Error(`the runtime answered ${response.status} for its idleness`)
+      report = asRecord(await response.json())
+      if (report?.workspaceId !== workspaceId) throw new Error("the runtime answered for another workspace")
+    } catch (error) {
+      if (failures + 1 < IDLE_CHECK_FAILURE_LIMIT) throw error
+      log.warn("sandbox stopped: its runtime answered no idle check for the whole failure budget", { workspaceId, epoch: target.epoch, error: String(error) })
+      await input.idleStop(workspaceId, target.epoch, {})
+      return undefined
+    }
+    const idleBefore = workspaceIdleStopDue(report ?? {}, Date.now())
+    if (idleBefore === undefined) return Date.now() + IDLE_CHECK_MS
+    const stopped = await input.idleStop(workspaceId, target.epoch, { idleBefore })
+    return stopped.ok ? undefined : Date.now() + IDLE_CHECK_MS
   }
   const live = async (workspaceId: string) => {
     const target = await input.sandboxManager.target(workspaceId)
@@ -226,6 +272,7 @@ export function createHostedRuntimeDelivery(input: {
       if (!await live(workspaceId)) return undefined
       return push(workspaceId, await hooks.prepareRuntime({ workspaceId }))
     },
+    watch,
   }
   const running = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
     const leases = await input.sandboxManager.list()
