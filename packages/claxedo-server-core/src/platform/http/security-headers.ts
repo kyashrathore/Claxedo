@@ -131,6 +131,21 @@ export function withSecurityHeaders(
 }
 
 /**
+ * The hosted API's response hardening: the security headers plus
+ * `cache-control: no-store` on every response that names no cache policy of its
+ * own, so a body carrying a token is never stored by a shared cache or the
+ * browser. A route that is cacheable on purpose sets its own `cache-control`.
+ */
+export function withApiResponseHeaders(
+  response: Response,
+  request: { url: string; header: (name: string) => string | undefined },
+): Response {
+  const stamped = withSecurityHeaders(response, securityHeaderEntries({ https: requestIsHttps(request) }))
+  if (stamped.headers.has("cache-control")) return stamped
+  return withSecurityHeaders(stamped, [["cache-control", "no-store"]])
+}
+
+/**
  * Outermost hosted middleware.
  *
  * The header write happens AFTER `next()`. Hono's `compose` handles a thrown
@@ -142,8 +157,7 @@ export function withSecurityHeaders(
 export function securityHeaders(): MiddlewareHandler {
   return async (c: Context, next) => {
     await next()
-    const entries = securityHeaderEntries({ https: requestIsHttps(c.req) })
-    const stamped = withSecurityHeaders(c.res, entries)
+    const stamped = withApiResponseHeaders(c.res, c.req)
     // Assigning is only needed when the immutable-headers fallback produced a
     // new Response; Hono's `res` setter merges the previous headers back on
     // top, which is harmless here because the previous response is exactly the

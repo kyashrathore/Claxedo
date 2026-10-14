@@ -82,15 +82,7 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
     const orgId = await this.adminOrganization(who, args.orgId)
     const userId = requireText(args.userPublicId, "userPublicId")
     const current = await this.membership(orgId, userId)
-    if (current.role === null) {
-      return {
-        removed: false,
-        team_memberships_revoked: 0,
-        project_memberships_revoked: 0,
-        session_shares_revoked: 0,
-        runtime_tokens_revoked: 0,
-      }
-    }
+    if (current.role === null) throw new D1AccessAuthorityError("org_member_not_found")
     await this.assertOwnershipChange(who, orgId, current, null)
     const now = this.context.now()
     const guard = this.changeGuard(who, orgId, userId, null)

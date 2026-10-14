@@ -74,6 +74,10 @@ describe("Better Auth D1 Worker", () => {
   test("dispatches auth routes to Better Auth and every other route to the core app", async () => {
     const auth = await worker.fetch(new Request("https://api.example.test/api/auth/get-session"), env())
     expect(await auth.json()).toEqual({ auth: true })
+    for (const header of ["content-security-policy", "x-content-type-options", "x-frame-options", "strict-transport-security"]) {
+      expect(auth.headers.get(header)).toBeTruthy()
+    }
+    expect(auth.headers.get("cache-control")).toBe("no-store")
     const product = await worker.fetch(new Request("https://api.example.test/api/claxedo/mode"), env())
     expect(await product.json()).toEqual({ core: true })
     expect(mocks.authHandler).toHaveBeenCalledTimes(1)

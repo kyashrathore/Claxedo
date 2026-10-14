@@ -179,7 +179,11 @@ export async function routeAuth(
     requireSigned?: boolean
   },
 ) {
+  const presentsCredential = !!request.headers.get("authorization") || !!request.headers.get("cookie")
   if (!options.requireSigned && !bearerToken(request.headers.get("authorization"))) return undefined
+  if (options.requireSigned && !presentsCredential) {
+    throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+  }
   const context = await controlPlaneAuthContext(request, {
     authentication: options.authentication,
     config: options.authConfig,
