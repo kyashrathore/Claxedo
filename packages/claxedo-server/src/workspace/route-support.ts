@@ -146,22 +146,35 @@ export function parsedBody<Schema extends z.ZodTypeAny>(
   }
 }
 
+/** The organization a workspace row names, whichever spelling the authority or a route handed it in. */
+export function workspaceOrgId(workspace: unknown): string | undefined {
+  const row = workspace && typeof workspace === "object" ? (workspace as Record<string, unknown>) : undefined
+  return txt(row?.org_id) ?? txt(row?.orgId)
+}
+
+/**
+ * A route's event about a workspace, under the signed person and their
+ * organization, keyed the way the machine events are (`workspace_id`,
+ * `org_id`, `$groups.org`) so one query joins a workspace's whole life. A
+ * denial has no person and goes out as the plane's own.
+ */
 export function captureWorkspaceTelemetry(input: {
   services?: ControlPlaneServices
   auth?: SignedControlPlaneAuth
   event: string
   workspaceId?: string
+  orgId?: string
   properties?: Record<string, unknown>
 }) {
   try {
-    const orgId = input.auth?.user.orgId
+    const orgId = input.orgId ?? input.auth?.user.orgId
     input.services?.telemetry.capture(
-      input.auth?.user.subject ?? "local",
+      input.auth?.user.subject ?? "system",
       input.event,
       {
-        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
         ...input.properties,
-        ...(orgId ? { $groups: { org: orgId } } : {}),
+        ...(orgId ? { org_id: orgId, $groups: { org: orgId } } : {}),
       },
     )
   } catch {

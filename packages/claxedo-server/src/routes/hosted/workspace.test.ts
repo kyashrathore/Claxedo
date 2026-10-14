@@ -266,7 +266,7 @@ describe("host assignment (POST /:id/host-assignment)", () => {
       }),
     )
     expect(capture).toHaveBeenCalledWith("user_1", "host_workspace_assignment.assigned", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       hostId: "host_1",
     })
     expect(json.assignment).toMatchObject({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })
@@ -434,7 +434,7 @@ describe("hosted connection", () => {
       runtimeAccessToken: "rat-token",
     })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       backing: "local-worktree",
       homeRegion: "us-east",
       hostId: "host_1",
@@ -442,7 +442,7 @@ describe("hosted connection", () => {
     expect(capture).toHaveBeenCalledWith(
       "user_1",
       "runtime_access_token.minted",
-      { workspaceId: "ws_1", backing: "local-worktree", role: "owner" },
+      { workspace_id: "ws_1", backing: "local-worktree", role: "owner", org_id: "user_1", $groups: { org: "user_1" } },
     )
     expect(JSON.stringify(capture.mock.calls)).not.toMatch(/rat-token|jti_rat|relay\.test/)
   })
@@ -507,12 +507,12 @@ describe("hosted connection", () => {
     expect(res.status).toBe(200)
     expect(sandboxStart).toHaveBeenCalledWith("ws_1")
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       backing: "cloud-vm",
       homeRegion: "apac-south",
     })
     expect(capture).toHaveBeenCalledWith("user_1", "sandbox.ensure", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       status: "provisioning",
       homeRegion: "apac-south",
       leaseEpoch: 3,
@@ -549,7 +549,7 @@ describe("hosted connection", () => {
     expect(res.status).toBe(200)
     expect(sandboxManager.target).toHaveBeenCalledWith("ws_1")
     expect(capture).toHaveBeenCalledWith("user_1", "sandbox.target", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       status: "unavailable",
       homeRegion: "apac-south",
       reason: "runtime_lease_not_ready",
@@ -694,7 +694,7 @@ describe("hosted connection", () => {
       }),
     )
     expect(capture).toHaveBeenCalledWith("user_1", "sandbox.target", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       status: "ready",
       homeRegion: "eu-west",
       hostId: "host_cloud_1",
@@ -703,7 +703,7 @@ describe("hosted connection", () => {
     expect(capture).toHaveBeenCalledWith(
       "user_1",
       "runtime_access_token.minted",
-      { workspaceId: "ws_1", backing: "cloud-vm", role: "editor", homeRegion: "eu-west", leaseEpoch: 8 },
+      { workspace_id: "ws_1", backing: "cloud-vm", role: "editor", homeRegion: "eu-west", leaseEpoch: 8, org_id: "user_1", $groups: { org: "user_1" } },
     )
     expect(JSON.stringify(capture.mock.calls)).not.toMatch(/rat-token|jti_rat|relay\.test|driver-resource-secret-id/)
     const body = await res.json()
@@ -722,6 +722,32 @@ describe("hosted connection", () => {
     expect(body).not.toHaveProperty("sandboxId")
     expect(body).not.toHaveProperty("runtimeUrl")
     expect(body).not.toHaveProperty("driverResourceId")
+  })
+
+  test("a connect poll that joined the run in flight records no ensure of its own", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", org_id: "org_1", backing: "cloud-vm", home_region: "apac-south" },
+      })),
+    })
+    const sandboxManager = {
+      target: vi.fn(async () => ({ status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "acquiring" as const })),
+    } as unknown as SandboxManager
+    const sandboxStart = vi.fn(async () => ({ status: "provisioning" as const, retryAfterMs: 2_000, epoch: 3, homeRegion: "apac-south", joined: true as const }))
+    const { app, capture } = buildApp({ authority: authority, sandboxManager, options: { sandboxStart } })
+    const res = await app.fetch(post("/ws_1/connection", {}))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ status: "provisioning", retryAfterMs: 2_000 })
+    expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
+      workspace_id: "ws_1",
+      backing: "cloud-vm",
+      homeRegion: "apac-south",
+      org_id: "org_1",
+      $groups: { org: "org_1" },
+    })
+    expect(capture.mock.calls.map((call) => call[1])).not.toContain("sandbox.ensure")
   })
 
   test("emits structured telemetry when a cloud runtime is unavailable", async () => {
@@ -754,13 +780,13 @@ describe("hosted connection", () => {
       },
     })
     expect(capture).toHaveBeenCalledWith("user_1", "sandbox.ensure", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       status: "unavailable",
       homeRegion: "eu-west",
       retryAfterMs: 5_000,
     })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.unavailable", {
-      workspaceId: "ws_1",
+      workspace_id: "ws_1",
       backing: "cloud-vm",
       homeRegion: "eu-west",
       retryAfterMs: 5_000,
@@ -1191,7 +1217,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(ensure).not.toHaveBeenCalled()
     expect(prepareRuntime).not.toHaveBeenCalled()
     const { workspaceId } = await res.json() as { workspaceId: string }
-    expect(capture).toHaveBeenCalledWith("user_1", "workspace_created", { workspaceId, kind: "cloud", private_repository: false })
+    expect(capture).toHaveBeenCalledWith("user_1", "workspace_created", { workspace_id: workspaceId, kind: "cloud", private_repository: false, org_id: "org_1", $groups: { org: "org_1" } })
   })
 
   test("a create names the machine its sandboxes run on when the organization's driver has that grade", async () => {

@@ -2,7 +2,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { apiError, txt } from "./route-support"
+import { apiError, txt, workspaceOrgId } from "./route-support"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 export async function runtimeTokenOrgId(
@@ -10,8 +10,7 @@ export async function runtimeTokenOrgId(
   auth: SignedControlPlaneAuth,
   workspace: unknown,
 ) {
-  const row = asRecord(workspace)
-  const fromWorkspace = txt(row?.org_id) ?? txt(row?.orgId)
+  const fromWorkspace = workspaceOrgId(workspace)
   if (fromWorkspace) return fromWorkspace
   if (typeof authority.resolveOrgId === "function") return await authority.resolveOrgId(auth)
   return auth.user.orgId ?? auth.user.subject

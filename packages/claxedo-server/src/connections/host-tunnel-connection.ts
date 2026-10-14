@@ -5,6 +5,7 @@ import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/re
 import {
   apiError,
   captureWorkspaceTelemetry,
+  workspaceOrgId,
   configuredRelayUrl,
   configuredRuntimeAccessTokenSigner,
   relayRole,
@@ -84,6 +85,7 @@ export async function hostTunnelConnectionInfo(
     auth,
     event: "workspace.connection.requested",
     workspaceId,
+    orgId: workspaceOrgId(result.workspace),
     properties: {
       backing: "local-worktree",
       homeRegion,
@@ -135,6 +137,7 @@ export async function hostTunnelConnectionInfo(
     auth,
     event: "runtime_access_token.minted",
     workspaceId,
+    orgId,
     properties: { backing: "local-worktree", role },
   })
   if (previousJti) {

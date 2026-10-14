@@ -6,6 +6,7 @@ import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core
 import {
   apiError,
   captureWorkspaceTelemetry,
+  workspaceOrgId,
   configuredRelayUrl,
   configuredRuntimeAccessTokenSigner,
   relayRole,
@@ -104,6 +105,7 @@ async function cloudConnectionIngress(
     auth,
     event: "workspace.connection.requested",
     workspaceId,
+    orgId: workspaceOrgId(result.workspace),
     properties: {
       backing: "cloud-vm",
       homeRegion,
@@ -200,6 +202,7 @@ async function mintCloudConnection(
     auth,
     event: "runtime_access_token.minted",
     workspaceId,
+    orgId,
     properties: { backing: "cloud-vm", role, homeRegion, leaseEpoch: target.epoch },
   })
   if (previousJti) {
@@ -288,24 +291,25 @@ export async function hostedConnectionInfo(
     await Promise.resolve(lease.usage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId }))
       .catch((cause: unknown) => console.error(`[workspace] the lease tenant of ${workspaceId} was not recorded`, cause instanceof Error ? cause.message : String(cause)))
   }
-  captureWorkspaceTelemetry({
-    services,
-    auth,
-    event: "sandbox.ensure",
-    workspaceId,
-    properties: {
-      status: started.status,
-      homeRegion,
-      ...(started.status === "provisioning" ? { leaseEpoch: started.epoch, retryAfterMs: started.retryAfterMs } : {}),
-      ...(started.status === "unavailable" ? { retryAfterMs: started.retryAfterMs } : {}),
-      ...(started.status === "failed" ? { code: started.code } : {}),
-      ...(started.status === "ready" ? {
-        hostId: started.hostId,
-        leaseEpoch: started.epoch,
-        ...(started.driverResourceId ? { driverResourceId: started.driverResourceId } : {}),
-      } : {}),
-    },
-  })
+  // A poll that joined the run in flight decided nothing; the start's own
+  // steps and its outcome are what the ensure record is for.
+  if (!(started.status === "provisioning" && started.joined)) {
+    captureWorkspaceTelemetry({
+      services,
+      auth,
+      event: "sandbox.ensure",
+      workspaceId,
+      orgId: workspaceOrgId(result.workspace),
+      properties: {
+        status: started.status,
+        homeRegion,
+        ...(started.status === "provisioning" ? { leaseEpoch: started.epoch, retryAfterMs: started.retryAfterMs } : {}),
+        ...(started.status === "unavailable" ? { retryAfterMs: started.retryAfterMs } : {}),
+        ...(started.status === "failed" ? { code: started.code } : {}),
+        ...(started.status === "ready" ? { hostId: started.hostId, leaseEpoch: started.epoch } : {}),
+      },
+    })
+  }
   if (started.status === "provisioning") {
     return {
       connection: {
@@ -330,6 +334,7 @@ export async function hostedConnectionInfo(
       auth,
       event: "workspace.connection.unavailable",
       workspaceId,
+      orgId: workspaceOrgId(result.workspace),
       properties: {
         backing: "cloud-vm",
         homeRegion,
@@ -427,6 +432,7 @@ export async function hostedConnectionStatus(
     auth,
     event: "sandbox.target",
     workspaceId,
+    orgId: workspaceOrgId(result.workspace),
     properties: {
       status: target.status,
       homeRegion,
