@@ -602,8 +602,13 @@ export const desktopRenderer: Policy = {
   // size with its minutes, published rate and cost, merged with the cloud
   // domain's running rows (owner: the app's usage domain, `usage/cloud-rows.ts`,
   // `usage/view/cloud-workspace-table.tsx`). They add no package edge.
-  // 1358/36, no headroom.
-  ceilings: { modules: 1358, packages: 36 },
+  // The draft pane's state and route contract, split from the pane kind so the
+  // chosen Where can be tested without the screen (owner: the app's session
+  // domain, `session/view/draft-state.ts`), and the repository name a hosted
+  // project create names its first workspace by (owner: the app's server
+  // adapter, `server/repository-name.ts`). They add no package edge.
+  // 1360/36, no headroom.
+  ceilings: { modules: 1360, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -87,21 +87,35 @@ for (const [options, failure] of [
   })
 }
 
-for (const action of ["create", "update", "remove", "reclone"] as const) {
+for (const action of ["update", "remove", "reclone"] as const) {
   test(`hosted project ${action} refuses daemon configuration without a request`, async () => {
     const calls = worker()
     const server = createServer({ serverUrl: "https://worker.test", cookies: true })
     try {
       await server.ready
       const id = projectId("prj_app")
-      const result = action === "create" ? server.projects.create({ source: { kind: "repository", url: "https://github.com/owner/app" } })
-        : action === "update" ? server.projects.update(id, { icon: { color: "pink" } })
-        : server.projects[action](id)
+      const result = action === "update" ? server.projects.update(id, { icon: { color: "pink" } }) : server.projects[action](id)
       await expect(result).rejects.toMatchObject({ class: "invalid", code: "project_configuration_unavailable" })
       expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
     } finally { server.dispose() }
   })
 }
+
+test("a hosted project create from a repository URL is that repository's first cloud workspace, named after it, answered as the account project the catalog lists, with no daemon request", async () => {
+  const calls = worker()
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
+    try {
+      await server.ready
+      const project = await server.projects.create({ source: { kind: "repository", url: "https://github.com/owner/app.git" } })
+      expect([String(project.id), project.name]).toEqual(["prj_app", "App"])
+      const request = calls.find((call) => call.path === "/api/workspace/create")
+      const body = request?.init?.body
+      expect(typeof body === "string" ? JSON.parse(body) : body).toEqual({ workspaceName: "app", repoUrl: "https://github.com/owner/app.git" })
+      expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
+    } finally { server.dispose(); dispose() }
+  })
+})
 
 test("a signed browser creates a cloud workspace from a connected repository through its own session, with no project created first", async () => {
   const calls = worker()

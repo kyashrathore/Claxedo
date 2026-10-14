@@ -29,7 +29,7 @@ const en = {
   "onboarding.opening.resuming": "Resuming the machine",
   "onboarding.opening.restoring": "Restoring files",
   "onboarding.reason.ai.local": "Connect a login above, or skip and connect at your first message.",
-  "onboarding.reason.ai.hosted": "Connect an agent account or provider to continue.",
+  "onboarding.reason.ai.hosted": "Connect an account or provider now, or later in Settings → Models. The workspace is created either way.",
   "onboarding.reason.execution.signIn": "Sign in to Claxedo to create a cloud workspace.",
   "onboarding.reason.execution.folder": "Choose a repository instead of a folder to create a cloud workspace.",
   "onboarding.reason.execution.providerKey": "Add a provider key to create a cloud workspace.",

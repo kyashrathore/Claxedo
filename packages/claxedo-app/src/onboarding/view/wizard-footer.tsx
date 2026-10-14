@@ -1,13 +1,13 @@
 import { Show } from "solid-js"
 import { useOnboardingText, type OnboardingKey, type OnboardingText } from "../i18n"
-import type { FinishBlock, OnboardingWizard } from "../wizard"
+import type { FinishBlock } from "../model"
+import type { OnboardingWizard } from "../wizard"
 import { Button } from "@/ui"
 
 const BLOCK_TEXT: Record<FinishBlock, OnboardingKey> = {
   signIn: "onboarding.reason.execution.signIn",
   folder: "onboarding.reason.execution.folder",
   providerKey: "onboarding.reason.execution.providerKey",
-  ai: "onboarding.reason.ai.hosted",
 }
 
 function stepHeld(wizard: OnboardingWizard): boolean {

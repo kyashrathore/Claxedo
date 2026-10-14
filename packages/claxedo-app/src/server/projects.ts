@@ -5,8 +5,10 @@ import type { ProjectsApi } from "./api"
 import { queryKeys } from "./query-keys"
 import { jsonInit, type Transport } from "./transport"
 import type { FetchQuery, Project } from "./types"
+import type { CloudSourceCreateInput, CloudWorkspace } from "./cloud-types"
 import type { Workspaces } from "./workspaces"
 import { ServerError } from "./errors"
+import { repositoryName } from "./repository-name"
 import { oneProjectFromWire, projectsFromWire, projectSourceBody } from "./wire/projects"
 
 const PROJECTS_PATH = "/api/claxedo/projects"
@@ -42,22 +44,38 @@ function projectCache(queryClient: QueryClient, serverUrl: string) {
   }
 }
 
-export function createProjectsApi(transport: Transport, queryClient: QueryClient, workspaces: Pick<Workspaces, "catalog" | "load" | "refresh">): ProjectsApi {
-  const remember = projectCache(queryClient, transport.serverUrl)
-  const configurationAvailable = () => workspaces.catalog()?.declaration.serverKind === "daemon"
-  const requireConfiguration = async () => {
-    if ((await workspaces.load()).declaration.serverKind !== "daemon") throw new ServerError({ class: "invalid", code: "project_configuration_unavailable", message: "Project configuration requires a daemon" })
+type CreateCloudWorkspace = (input: CloudSourceCreateInput) => Promise<CloudWorkspace>
+
+type ProjectCreateInput = Parameters<ProjectsApi["create"]>[0]
+
+function hostedProjectCreator(workspaces: Pick<Workspaces, "accountProjects">, createCloudWorkspace: CreateCloudWorkspace) {
+  return async (input: ProjectCreateInput): Promise<Project> => {
+    const source = input.source
+    if (source.kind === "folder") throw new ServerError({ class: "invalid", code: "project_folder_unavailable", message: "A hosted plane holds no folders; a project here is made from a repository" })
+    const workspace = await createCloudWorkspace({ source, name: input.name ?? repositoryName(source) })
+    const project = (await workspaces.accountProjects()).find((candidate) => candidate.id === workspace.projectId)
+    if (!project) throw new ServerError({ class: "internal", message: `The catalog does not list project ${workspace.projectId} of the new workspace ${workspace.id}` })
+    return project
   }
+}
+
+function daemonProjectCreator(transport: Transport, workspaces: Pick<Workspaces, "refresh">) {
+  return async (input: ProjectCreateInput): Promise<Project> => {
+    const body = { source: projectSourceBody(input.source), ...(input.name ? { name: input.name } : {}) }
+    const project = oneProjectFromWire(await transport.json(PROJECTS_PATH, jsonInit("POST", body)))
+    await workspaces.refresh()
+    return project
+  }
+}
+
+function projectConfiguration(
+  transport: Transport,
+  queryClient: QueryClient,
+  workspaces: Pick<Workspaces, "refresh">,
+  remember: (project: Project) => void,
+  requireConfiguration: () => Promise<void>,
+): Pick<ProjectsApi, "update" | "remove" | "reclone"> {
   return {
-    configurationAvailable,
-    create: async (input) => {
-      await requireConfiguration()
-      const body = { source: projectSourceBody(input.source), ...(input.name ? { name: input.name } : {}) }
-      const project = oneProjectFromWire(await transport.json(PROJECTS_PATH, jsonInit("POST", body)))
-      remember(project)
-      await workspaces.refresh()
-      return project
-    },
     update: async (id, patch) => {
       await requireConfiguration()
       const project = oneProjectFromWire(await transport.json(projectPath(id), jsonInit("PATCH", patch)))
@@ -78,5 +96,29 @@ export function createProjectsApi(transport: Transport, queryClient: QueryClient
       await workspaces.refresh()
       return project
     },
+  }
+}
+
+export function createProjectsApi(
+  transport: Transport,
+  queryClient: QueryClient,
+  workspaces: Pick<Workspaces, "catalog" | "load" | "refresh" | "accountProjects">,
+  createCloudWorkspace: CreateCloudWorkspace,
+): ProjectsApi {
+  const remember = projectCache(queryClient, transport.serverUrl)
+  const hosted = async () => (await workspaces.load()).declaration.serverKind !== "daemon"
+  const requireConfiguration = async () => {
+    if (await hosted()) throw new ServerError({ class: "invalid", code: "project_configuration_unavailable", message: "Project configuration requires a daemon" })
+  }
+  const hostedCreate = hostedProjectCreator(workspaces, createCloudWorkspace)
+  const daemonCreate = daemonProjectCreator(transport, workspaces)
+  return {
+    configurationAvailable: () => workspaces.catalog()?.declaration.serverKind === "daemon",
+    create: async (input) => {
+      const project = await ((await hosted()) ? hostedCreate(input) : daemonCreate(input))
+      remember(project)
+      return project
+    },
+    ...projectConfiguration(transport, queryClient, workspaces, remember, requireConfiguration),
   }
 }
