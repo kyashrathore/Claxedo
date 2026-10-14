@@ -106,6 +106,8 @@ export default {
   "settings.notifications.agent.description": "Show system notification when the agent is complete or needs attention",
   "settings.notifications.permissions.description": "Show system notification when a permission is required",
   "settings.notifications.errors.description": "Show system notification when an error occurs",
+  "settings.notifications.blocked": "Notifications are blocked for Claxedo in this browser. Allow them in the browser's site settings, then turn an alert on.",
+  "settings.notifications.unsupported": "This browser does not offer system notifications.",
   "settings.sounds.agent.description": "Play sound when the agent is complete or needs attention",
   "settings.sounds.permissions.description": "Play sound when a permission is required",
   "settings.sounds.errors.description": "Play sound when an error occurs",

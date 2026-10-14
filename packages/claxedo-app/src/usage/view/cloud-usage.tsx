@@ -29,7 +29,7 @@ export function CloudUsage(): JSX.Element {
   }
   const live = () => {
     const state = running.list()
-    return state.kind === "ready" ? state.rows : []
+    return state.kind === "ready" ? state.rows : undefined
   }
   const rows = createMemo(() => cloudRows(time(), live()))
   const loaded = () => machineTime.load().kind !== "loading" || running.list().kind !== "loading"

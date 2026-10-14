@@ -1,10 +1,10 @@
-import { For } from "solid-js"
+import { For, Show } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { createSoundPlayer, requestSystemNotifications, SOUNDS, type AlertKind, type SoundChoice } from "@/notifications"
+import { createSoundPlayer, createSystemNotificationPermission, SOUNDS, type AlertKind, type SoundChoice, type SystemNotificationPermission } from "@/notifications"
 import { Select, Switch } from "@/ui"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { usePreferences } from "../preferences"
-import { SettingsGroup, SettingsList, SettingsRow } from "./section"
+import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "./section"
 
 type AlertRow = { readonly kind: AlertKind; readonly title: SettingsKey; readonly notify: SettingsKey; readonly sound: SettingsKey }
 
@@ -21,12 +21,20 @@ const ALERT_ROWS: readonly AlertRow[] = [
 
 const SOUND_CHOICES: readonly SoundChoice[] = ["none", ...SOUNDS.map((sound) => sound.id)]
 
+const PERMISSION_NOTE: Partial<Record<SystemNotificationPermission, SettingsKey>> = {
+  denied: "settings.notifications.blocked",
+  unsupported: "settings.notifications.unsupported",
+}
+
 export function NotificationsSection() {
   const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
-  const change = (kind: AlertKind, checked: boolean) => {
+  const access = createSystemNotificationPermission()
+  const granted = () => access.permission() === "granted"
+  const note = () => PERMISSION_NOTE[access.permission()]
+  const change = async (kind: AlertKind, checked: boolean) => {
     preferences.setAlertNotify(kind, checked)
-    if (checked) void requestSystemNotifications()
+    if (checked) await access.request()
   }
   return (
     <div class="settings-body">
@@ -36,7 +44,12 @@ export function NotificationsSection() {
             {(row) => (
               <SettingsRow title={t(row.title)} description={t(row.notify)}>
                 <div data-action={`settings-notifications-${row.kind}`}>
-                  <Switch hideLabel checked={preferences.alerts.notify[row.kind]} onChange={(checked) => change(row.kind, checked)}>
+                  <Switch
+                    hideLabel
+                    checked={preferences.alerts.notify[row.kind] && granted()}
+                    disabled={access.permission() === "unsupported"}
+                    onChange={(checked) => void change(row.kind, checked)}
+                  >
                     {t(row.title)}
                   </Switch>
                 </div>
@@ -44,6 +57,7 @@ export function NotificationsSection() {
             )}
           </For>
         </SettingsList>
+        <Show when={note()}>{(key) => <SettingsNote>{t(key())}</SettingsNote>}</Show>
       </SettingsGroup>
     </div>
   )

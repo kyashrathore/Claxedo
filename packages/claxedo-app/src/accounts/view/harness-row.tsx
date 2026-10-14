@@ -6,7 +6,7 @@ import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Sw
 import { useWindowName } from "@/usage"
 import { machineLoginWords, orgAccountWords, storedAccountWords, type AccountWords, type CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
-import { harnessAccounts, machineLoginOf, ORG_ACCOUNT_KEY, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
+import { harnessAccounts, machineLoginOf, ORG_ACCOUNT_KEY, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AccountActions, LabelHint, Reach } from "./account-actions"
 import { CheckedAge } from "./account-status"
@@ -23,9 +23,10 @@ export type HarnessRowProps = {
 function useAccountRows(props: HarnessRowProps) {
   const access = useAccess()
   const t = useAccountsText()
+  const i18n = useI18n()
   const windowName = useWindowName()
   return createMemo((): AccountWords[] => {
-    const words = { t, windowName, machineName: props.accounts.machineName() }
+    const words = { t, windowName, machineName: props.accounts.machineName(), locale: i18n.intlTag() }
     const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
     const org = orgAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === ORG_ACCOUNT_KEY, access.can("accounts.removeOrg", props.snapshot.sources))
@@ -100,7 +101,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
     <div class="flex flex-col">
       <div class="group flex flex-wrap items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
         <RadioItem
-          class="min-w-0 flex-1"
+          class="min-w-0 flex-1 basis-56"
           value={account().key}
           disabled={account().disabled}
           data-invalid={account().refused ? "" : undefined}
@@ -108,7 +109,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           label={<AccountLabel account={account()} onMachine={accounts().onMachine()} machineName={accounts().machineName()} />}
           description={account().detail === undefined && account().cloudNote === undefined ? undefined : <AccountDescription account={account()} />}
         />
-        <span class="flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
+        <span class="ml-auto flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
           <Show when={!confirming() && account().checkedAt}>
             {(at) => (
               <CheckedAge
@@ -172,8 +173,9 @@ export function AgentHarnessRow(props: HarnessRowProps) {
   const openConnect = (credentialId?: string) => {
     setConnecting(true)
     const context = harnessConnectContext(props.harness.id, props.harness.label)
+    const replaces = (methodType: string) => replacedAccountLabel(props.harness.connectProvider, props.snapshot, methodType)
     void dialog.show(
-      () => <DialogProviderConnect provider={props.harness.connectProvider} context={context} harness={props.harness.id} {...(credentialId ? { credentialId } : {})} onConnected={() => props.accounts.rescan()} />,
+      () => <DialogProviderConnect provider={props.harness.connectProvider} context={context} harness={props.harness.id} {...(credentialId ? { credentialId } : {})} replaces={replaces} onConnected={() => props.accounts.rescan()} />,
       () => setConnecting(false),
     )
   }

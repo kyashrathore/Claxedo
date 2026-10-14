@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test"
 import type { CloudWorkspaceRow } from "@/cloud"
 import { placementId, projectId, type MachineTime, type MachineTimeWorkspace } from "@/server"
-import { cloudCost, cloudRows, isRunningRow } from "./cloud-rows"
+import { cloudCost, cloudRows } from "./cloud-rows"
 
 const MINUTE = 60_000
 const rate = { size: "small", vcpu: 2, memoryGb: 4, usdPerHour: 0.018 }
@@ -36,13 +36,18 @@ describe("cloudRows", () => {
       ["ws_old boat small", "Old", "ws_old", undefined],
       ["ws_new", "New", undefined, "starting"],
     ])
-    expect(rows.map(isRunningRow)).toEqual([true, false, true])
+    expect(rows.map((row) => row.running)).toEqual([true, false, true])
   })
 
-  test("a workspace that ran on two sizes is two rows, and a running one without a live row yet still counts as running", () => {
-    const rows = cloudRows(time([timed({ id: "ws_a", machineClass: "large", runningSince: 9 }), timed({ id: "ws_a", machineClass: "small" })]), [])
+  test("a workspace that ran on two sizes is two rows, and before the cloud catalog has loaded the machine time's running mark counts", () => {
+    const rows = cloudRows(time([timed({ id: "ws_a", machineClass: "large", runningSince: 9 }), timed({ id: "ws_a", machineClass: "small" })]), undefined)
     expect(rows.map((row) => row.key)).toEqual(["ws_a boat large", "ws_a boat small"])
-    expect(rows.map(isRunningRow)).toEqual([true, false])
+    expect(rows.map((row) => row.running)).toEqual([true, false])
+  })
+
+  test("once the cloud catalog has loaded, a workspace it no longer lists is stopped even while the last machine-time read says running since", () => {
+    const rows = cloudRows(time([timed({ id: "ws_stopped", runningSince: 9 }), timed({ id: "ws_run", runningSince: 9 })]), [live("ws_run", { kind: "ready" })])
+    expect(rows.map((row) => [row.id, row.running])).toEqual([[placementId("ws_stopped"), false], [placementId("ws_run"), true]])
   })
 
   test("before the machine time has loaded, the live rows are the table", () => {

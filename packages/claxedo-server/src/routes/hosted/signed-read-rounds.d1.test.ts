@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "vitest"
 import { countD1Rounds, type D1Rounds } from "../../test-support/d1-rounds"
 import { hostedCoreD1App } from "../../test-support/hosted-core-d1-app"
+import { hostedSandboxDriverKeys } from "../../sandbox/hosted-sandbox-driver-keys"
 
 const disposers: Array<() => Promise<void>> = []
 
@@ -10,7 +11,7 @@ afterEach(async () => {
 
 const READY = { status: "ready" as const, hostId: "host_1", epoch: 1, sandboxId: "sb_1", url: "https://sandbox.test", homeRegion: "us-east" }
 
-async function signedReader() {
+async function signedReader(workspace = true) {
   let counted: D1Rounds | undefined
   const app = await hostedCoreD1App(disposers, {
     database: (database) => {
@@ -21,18 +22,30 @@ async function signedReader() {
       relay: { relayUrl: "https://relay.test", runtimeAccessTokenSigner: async () => ({ runtimeAccessToken: "runtime-token", tokenExpiresAt: Date.now() + 60_000, jti: `jti_${Date.now()}` }) },
       sandbox: { sandboxManager: { target: async () => READY } },
     } as never,
-    routes: { productWorkspace: { sandboxStart: async () => READY } },
+    routes: ({ authority, database }) => ({
+      productWorkspace: { sandboxStart: async () => READY },
+      accountSetup: {
+        changed: async () => undefined,
+        sandboxDriverKeys: hostedSandboxDriverKeys({ database, authority, drivers: ["boat"], hostedBroker: true }),
+      },
+    }),
   })
   const alice = await app.person("alice")
-  const orgId = ((await app.call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
-  await app.authority.createWorkspace(alice.auth, { workspaceId: "ws_acme", orgId, displayName: "acme", backing: "cloud-vm", repoUrl: "https://github.com/acme/app" })
+  if (workspace) {
+    const orgId = ((await app.call(alice.token, "POST", "/api/control/orgs", { name: "Acme" })).body as { org_id: string }).org_id
+    await app.authority.createWorkspace(alice.auth, { workspaceId: "ws_acme", orgId, displayName: "acme", backing: "cloud-vm", repoUrl: "https://github.com/acme/app" })
+  }
   const rounds = async (method: string, path: string, body?: unknown) => {
     counted!.reset()
     const response = await app.call(alice.token, method, path, body)
     expect(response.status, `${method} ${path} ${JSON.stringify(response.body)}`).toBe(200)
     return { rounds: counted!.rounds(), statements: counted!.statements() }
   }
-  return { app, alice, rounds }
+  const traced = async (method: string, path: string) => {
+    const measured = await rounds(method, path)
+    return { ...measured, trace: counted!.trace().map((entry) => `${entry.round}: ${entry.sql}`) }
+  }
+  return { app, alice, rounds, traced }
 }
 
 /**
@@ -62,4 +75,31 @@ test("the catalog reads the first run makes answer in two serial control-plane r
 test("a connect to a live sandbox pays four control-plane rounds", async () => {
   const { rounds } = await signedReader()
   expect(await rounds("POST", "/api/workspace/ws_acme/connection", {})).toEqual({ rounds: 4, statements: 7 })
+})
+
+/**
+ * Settings → Models reads the person's accounts, the ones in use and their
+ * account sources at once, and the Add dialog reads the sign-in methods, so the
+ * deepest of those chains is the time the page waits. Every one pays the
+ * principal row and the organization resolution first; the route's own reads
+ * follow them one at a time (list, then the organization's sandbox driver for
+ * the reach of each row; selections, then the list). The sign-in methods are
+ * a table in the Worker and read nothing.
+ */
+test("the account reads Settings → Models makes answer in few serial control-plane rounds", async () => {
+  const { app, alice, traced } = await signedReader(false)
+  const saved = await app.call(alice.token, "PUT", "/api/claxedo/credentials", { provider_id: "claude-sdk", kind: "oauth_token", source: "managed", label: "plan", secret: "sk-ant-oat01-rounds" })
+  expect(saved.status, JSON.stringify(saved.body)).toBe(200)
+  const measured = {
+    accounts: await traced("GET", "/api/claxedo/credentials"),
+    effective: await traced("GET", "/api/claxedo/credentials/effective"),
+    sources: await traced("GET", "/api/claxedo/credentials/account-sources"),
+    signInMethods: await traced("GET", "/api/claxedo/agent-config/providers/auth?nativeHarness=claude"),
+  }
+  expect(Object.fromEntries(Object.entries(measured).map(([route, { rounds, statements }]) => [route, { rounds, statements }]))).toEqual({
+    accounts: { rounds: 4, statements: 4 },
+    effective: { rounds: 4, statements: 4 },
+    sources: { rounds: 5, statements: 5 },
+    signInMethods: { rounds: 0, statements: 0 },
+  })
 })

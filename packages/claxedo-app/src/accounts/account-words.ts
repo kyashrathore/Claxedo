@@ -1,4 +1,5 @@
 import { piProviderSpending } from "@claxedo/agent-runtime-contract"
+import { formatRelativeTime } from "@/lib/relative-time"
 import type { QuotaWindow } from "@/usage"
 import type { AccountsKey, AccountsText } from "./i18n"
 import {
@@ -45,7 +46,7 @@ export type AccountWords = {
   readonly disabled: boolean
 }
 
-type Words = { readonly t: AccountsText; readonly windowName: (window: QuotaWindow) => string; readonly machineName?: string }
+type Words = { readonly t: AccountsText; readonly windowName: (window: QuotaWindow) => string; readonly machineName?: string; readonly locale?: string; readonly now?: number }
 
 export const VERDICT_KEY = {
   ok: "settings.providers.live.ok",
@@ -64,9 +65,16 @@ function windowWords(words: Words, windows: readonly QuotaWindow[] | undefined) 
   return (windows ?? []).map((window) => words.t("settings.providers.live.window", { name: words.windowName(window), used: Math.round(window.usedPercent) }))
 }
 
-function verdictWords(t: Words["t"], live: LiveCheck | undefined) {
+function rateCapReset(words: Words, live: LiveCheck) {
+  if (live.verdict !== "rate_capped") return []
+  const resets = (live.usage ?? []).flatMap((window) => (window.resetsAt === null ? [] : [window.resetsAt]))
+  if (resets.length === 0) return []
+  return [words.t("settings.providers.live.resets", { when: formatRelativeTime(Math.min(...resets), words.locale, words.now) })]
+}
+
+function verdictWords(words: Words, live: LiveCheck | undefined) {
   if (live?.verdict === undefined) return []
-  return [t(VERDICT_KEY[live.verdict]), ...(live.reason === undefined ? [] : [live.reason])]
+  return [words.t(VERDICT_KEY[live.verdict]), ...rateCapReset(words, live), ...(live.reason === undefined ? [] : [live.reason])]
 }
 
 function cloudNoteOf(t: Words["t"], row: HarnessAccount) {
@@ -85,10 +93,10 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
   const identity = accountIdentity(row)
   const label = accountLabel(row)
   const readable = identity && identity.readable && identity.text !== label ? identity.text : undefined
-  const details = [...(readable === undefined ? [] : [readable]), ...verdictWords(t, check), ...windowWords(words, check?.usage)]
+  const details = [...(readable === undefined ? [] : [readable]), ...verdictWords(words, check), ...windowWords(words, check?.usage)]
   const cloudConsent = cloudConsentOf(row)
   const refused = check?.verdict !== undefined && isRefusal(check.verdict)
-  const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(t, check).join(" · ") : undefined
+  const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(words, check).join(" · ") : undefined
   const reach = accountReach(row.delivery)
   return {
     key: row.id,
@@ -126,13 +134,13 @@ export function orgAccountWords(words: Words, harness: Harness, snapshot: Accoun
     }
   }
   const check = storedCheck(row, undefined)
-  const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(t, check).join(" · ") : undefined
+  const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(words, check).join(" · ") : undefined
   const reach = accountReach(row.delivery)
   return {
     key: ORG_ACCOUNT_KEY,
     ids: removable ? row.ids : [],
     label: accountLabel(row),
-    detail: [t("settings.providers.accountSource.org"), ...verdictWords(t, check), ...windowWords(words, check?.usage)].join(" · "),
+    detail: [t("settings.providers.accountSource.org"), ...verdictWords(words, check), ...windowWords(words, check?.usage)].join(" · "),
     ...(alert === undefined ? {} : { alert }),
     ...(check === undefined ? {} : { checkedAt: check.at }),
     refused: check?.verdict !== undefined && isRefusal(check.verdict),

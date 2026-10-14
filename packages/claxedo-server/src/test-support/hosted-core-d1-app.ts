@@ -46,6 +46,8 @@ async function authDatabase(disposers: Array<() => Promise<void>>) {
   return database
 }
 
+type HostedCoreD1Routes = Partial<Pick<Parameters<typeof createHostedCoreApp>[1], "productWorkspace" | "accountSetup">>
+
 /**
  * The hosted core app over a real D1 control plane and its encrypted
  * credential store. The bearer token names a
@@ -58,7 +60,7 @@ export async function hostedCoreD1App(
     database?: (database: D1Database) => D1Database
     /** Service ports a test supplies over the plane's bare ones, such as a sandbox manager and a token signer. */
     services?: Partial<Pick<ControlPlaneServices, "relay" | "sandbox">>
-    routes?: Partial<Pick<Parameters<typeof createHostedCoreApp>[1], "productWorkspace">>
+    routes?: HostedCoreD1Routes | ((plane: { authority: ReturnType<typeof composeBetterAuthD1Authority>; database: D1Database }) => HostedCoreD1Routes)
   } = {},
 ) {
   const migrated = await miniflareControlPlaneDatabase()
@@ -111,7 +113,7 @@ export async function hostedCoreD1App(
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
     privateSessionAuthority: authority,
     runtimeSessionAuthority: authority,
-    env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
+    env: { CLAXEDO_DEPLOYMENT_MODE: "hosted", ...CREDENTIAL_ENV },
     orgCredentials: credentials,
   } as unknown as HostedControlPlane
   const app = createHostedCoreApp(plane, {
@@ -124,7 +126,7 @@ export async function hostedCoreD1App(
     cloudWorkspaceAdmission: async () => undefined,
     product: STATIC_PRODUCT_DESCRIPTORS["claxedo-hosted"],
     requestGuardExemptions: [],
-    ...options.routes,
+    ...(typeof options.routes === "function" ? options.routes({ authority, database: controlPlane.database }) : options.routes),
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as Hono
 
   const person = async (subject: string) => {

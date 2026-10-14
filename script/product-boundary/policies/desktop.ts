@@ -610,8 +610,12 @@ export const desktopRenderer: Policy = {
   // and the repository name a hosted project create names its first workspace by
   // (owner: the app's server adapter, `server/repository-name.ts`). They add no
   // package edge.
-  // 1361/36, no headroom.
-  ceilings: { modules: 1361, packages: 36 },
+  // The account health predicates both the accounts and the composer domains
+  // read (owner: `lib/account-health.ts`), and the connect form's state apart
+  // from its server reads (owner: the app's accounts domain,
+  // `accounts/connect-state.ts`). They add no package edge.
+  // 1363/36, no headroom.
+  ceilings: { modules: 1363, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

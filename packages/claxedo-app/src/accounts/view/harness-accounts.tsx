@@ -44,7 +44,7 @@ export function MachineScanStatus(props: { readonly accounts: Accounts }) {
       <span>{label()}</span>
       <Show when={!props.accounts.scanning()}>
         <span aria-hidden="true">·</span>
-        <button type="button" class="border-none bg-transparent p-0 text-12-regular text-text-interactive-base" data-action="settings-providers-rescan" onClick={() => void props.accounts.rescan()}>
+        <button type="button" class="min-h-8 border-none bg-transparent px-1 py-0 text-12-regular text-text-interactive-base" data-action="settings-providers-rescan" onClick={() => void props.accounts.rescan()}>
           {t("settings.providers.agents.rescan")}
         </button>
       </Show>

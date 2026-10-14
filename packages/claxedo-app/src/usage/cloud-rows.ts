@@ -9,6 +9,7 @@ export type CloudRow = {
   readonly branch?: string
   readonly time?: MachineTimeWorkspace
   readonly live?: CloudWorkspaceRow
+  readonly running: boolean
 }
 
 export type CloudCost = {
@@ -22,8 +23,8 @@ function machineTimeRowKey(time: MachineTimeWorkspace): string {
   return `${time.id} ${time.provider} ${time.machineClass ?? ""}`
 }
 
-export function cloudRows(time: MachineTime | undefined, live: readonly CloudWorkspaceRow[]): readonly CloudRow[] {
-  const liveById = new Map(live.map((row) => [row.id, row]))
+export function cloudRows(time: MachineTime | undefined, live: readonly CloudWorkspaceRow[] | undefined): readonly CloudRow[] {
+  const liveById = new Map((live ?? []).map((row) => [row.id, row]))
   const timed = (time?.workspaces ?? []).map((workspace): CloudRow => {
     const current = liveById.get(workspace.id)
     return {
@@ -34,22 +35,20 @@ export function cloudRows(time: MachineTime | undefined, live: readonly CloudWor
       ...(workspace.branch ?? current?.branch ? { branch: workspace.branch ?? current?.branch } : {}),
       time: workspace,
       ...(current ? { live: current } : {}),
+      running: live ? current !== undefined : workspace.runningSince !== undefined,
     }
   })
   const timedIds = new Set(timed.map((row) => row.id))
-  const starting = live.filter((row) => !timedIds.has(row.id)).map((row): CloudRow => ({
+  const starting = (live ?? []).filter((row) => !timedIds.has(row.id)).map((row): CloudRow => ({
     key: row.id,
     id: row.id,
     projectId: row.projectId,
     ...(row.name ? { name: row.name } : {}),
     ...(row.branch ? { branch: row.branch } : {}),
     live: row,
+    running: true,
   }))
   return [...timed, ...starting]
-}
-
-export function isRunningRow(row: CloudRow): boolean {
-  return row.live !== undefined || row.time?.runningSince !== undefined
 }
 
 export function cloudCost(workspaces: readonly MachineTimeWorkspace[]): CloudCost {

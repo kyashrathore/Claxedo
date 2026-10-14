@@ -1,5 +1,8 @@
 import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { isRefusal } from "@/lib/account-health"
 import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin } from "@/server"
+
+export { isRefusal, isUnavailable } from "@/lib/account-health"
 
 export type AccountReach = "local-and-cloud" | "local-only"
 
@@ -47,10 +50,6 @@ export const MACHINE_LOGIN_KEY = "machine"
 
 export const ORG_ACCOUNT_KEY = "org"
 
-export const isRefusal = (verdict: string) => verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
-
-export const isUnavailable = (verdict: string) => verdict === "rate_capped" || verdict === "unknown"
-
 export function accountReach(delivery: AccountDelivery | undefined): AccountReach | undefined {
   if (delivery === undefined) return "local-only"
   if (delivery.cloud) return "local-and-cloud"
@@ -70,6 +69,12 @@ export function accountLabel(row: Account): string {
   if (row.label && row.label !== row.providerId) return row.label
   const identity = accountIdentity(row)
   return identity?.readable ? identity.text : (row.kind ?? row.providerId)
+}
+
+export function replacedAccountLabel(providerId: string, snapshot: AccountsSnapshot, methodType: string): string | undefined {
+  const rows = snapshot.stored.filter((row) => row.providerId === providerId)
+  const replaced = snapshot.cloudOnly ? rows[0] : methodType === "token" ? rows.find((row) => row.kind === "oauth_token") : undefined
+  return replaced ? accountLabel(replaced) : undefined
 }
 
 function mergeGroup(ordered: readonly Account[]): HarnessAccount | undefined {
