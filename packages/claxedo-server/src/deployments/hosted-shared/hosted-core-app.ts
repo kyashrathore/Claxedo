@@ -33,6 +33,8 @@ import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../r
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
+import { createSessionHostRows } from "../../session/session-host-rows"
+import type { CredentialRefusals } from "../../credentials/credential-refusals"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes, workspaceCheckpointService } from "../../workspace/routes/checkpoints"
@@ -183,6 +185,12 @@ export type HostedCoreAppOptions = {
    * on a plane with no sandbox; its routes are then not served at all.
    */
   egressBroker?: (request: Request) => Promise<Response>
+  /**
+   * The rule a vendor's refusal of a stored account is judged by, the one the
+   * broker counts with, so a session host's reported refusal adds to the
+   * broker's. Absent, the session host routes count on their own.
+   */
+  credentialRefusals?: CredentialRefusals
 }
 
 export function assertHostedCoreBootConfig(plane: HostedControlPlane, options: Partial<HostedCoreAppOptions>) {
@@ -407,6 +415,15 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {
     notify: (orgId, notices) => nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ orgId }), notices),
     ...(options.sessionRowsPasses ? { sessionRowsPasses: options.sessionRowsPasses } : {}),
+    ...(services.sessionHosts && services.authority?.resolveWorkspaceOwner
+      ? {
+          sessionHostRows: createSessionHostRows({
+            env: plane.env,
+            sessionHosts: services.sessionHosts,
+            resolveWorkspaceOwner: services.authority.resolveWorkspaceOwner.bind(services.authority),
+          }),
+        }
+      : {}),
   }))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
@@ -562,6 +579,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         credentials: plane.orgCredentials,
         ...(options.sessionHostPlugins ? { plugins: options.sessionHostPlugins } : {}),
         ...(sessionMcp ? { sessionMcp } : {}),
+        ...(options.credentialRefusals ? { credentialRefusals: options.credentialRefusals } : {}),
       }
     : undefined
   if (plane.runtimeSessionAuthority) {

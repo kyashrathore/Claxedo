@@ -27,7 +27,9 @@ import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
-import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
+import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { openSandboxUsageLedger } from "./sandbox-usage-ledger"
 import { cloudSessionRows } from "./cloud-session-rows"
 import {
   sandboxLeaseEnv,
@@ -181,14 +183,15 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
   const sessionRows = relayOptions.relayHostAuth && authorityUrl ? cloudSessionRows(env) : undefined
   const usageLedger = relayOptions.relayHostAuth && authorityUrl
-    ? createSandboxUsageLedger({ path: path.join(workspaceRuntimeStoreDir(env), "usage.sqlite"), workspaceId: workspaceId(env) })
+    ? openSandboxUsageLedger({ path: path.join(workspaceRuntimeStoreDir(env), "usage.sqlite"), workspaceId: workspaceId(env) })
     : undefined
   const usage = usageLedger && authorityUrl
-    ? cloudWorkspaceUsage({
+    ? cloudTurnUsage({
         workspaceId: workspaceId(env),
         authorityUrl,
         ledger: usageLedger,
         policy: remoteWorkspaceSessionAccessPolicyFromEnv(env),
+        log: Log.create({ service: "claxedo-cloud-usage" }),
       })
     : undefined
   const options: WorkspaceRuntimeServerOptions = {

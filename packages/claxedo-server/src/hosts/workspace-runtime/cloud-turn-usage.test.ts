@@ -5,7 +5,9 @@ import path from "node:path"
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { USAGE_REPORT_MAX_FACTS } from "@claxedo/server-core/usage/usage-report"
-import { cloudWorkspaceUsage, createSandboxUsageLedger, type SandboxUsageLedger } from "./cloud-usage"
+import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
+import type { RuntimeUsageLedger } from "@claxedo/server-core/usage/runtime-usage-ledger"
+import { openSandboxUsageLedger } from "./sandbox-usage-ledger"
 import { usageReportPlane, USAGE_REPORT_URL, type UsageReportPlane } from "../../test-support/usage-report-plane"
 import {
   buildAssistantMessage,
@@ -28,7 +30,7 @@ function ledgerPath() {
 }
 
 function openLedger(file: string) {
-  const ledger = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
+  const ledger = openSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
   cleanups.push(() => ledger.close())
   return ledger
 }
@@ -42,12 +44,13 @@ async function openPlane() {
 type Fetch = (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 /** `parents` maps a child session to the session it was filed under. */
-function sandbox(ledger: SandboxUsageLedger, fetch: Fetch, parents: Record<string, string> = {}, flushIntervalMs?: number) {
-  const usage = cloudWorkspaceUsage({
+function sandbox(ledger: RuntimeUsageLedger, fetch: Fetch, parents: Record<string, string> = {}, flushIntervalMs?: number) {
+  const usage = cloudTurnUsage({
     workspaceId: "ws_real",
     ledger,
     authorityUrl: USAGE_REPORT_URL,
     policy: remoteWorkspaceSessionAccessPolicy({ url: USAGE_REPORT_URL, fetch }),
+    log: console,
     fetch,
     ...(flushIntervalMs === undefined ? {} : { flushIntervalMs }),
   })
@@ -319,7 +322,7 @@ describe("cloud workspace usage metering", () => {
     await plane.session("ses_unrelated")
     const file = ledgerPath()
     const parents = { ses_unleased_child: "ses_unleased_root" }
-    const beforeRestart = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
+    const beforeRestart = openSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
     const idle = sandbox(beforeRestart, plane.fetch, parents)
     for (const event of [
       ...turnEvents("ses_unleased_root", "msg_root_unleased", { completed: true }),
@@ -384,7 +387,7 @@ describe("cloud workspace usage metering", () => {
     const file = ledgerPath()
     let refuseReports = true
     const flaky = refusingReports(plane, () => refuseReports)
-    const beforeRestart = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
+    const beforeRestart = openSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
     await runTurn(plane, sandbox(beforeRestart, flaky), {
       by: plane.owner,
       sessionId: "ses_retried",
@@ -455,7 +458,7 @@ describe("cloud workspace usage delivery", () => {
     const plane = await openPlane()
     await plane.session("ses_between")
     const file = ledgerPath()
-    const beforeRestart = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
+    const beforeRestart = openSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
     await runTurn(plane, sandbox(beforeRestart, plane.fetch), {
       by: plane.owner,
       sessionId: "ses_between",
@@ -536,7 +539,7 @@ describe("cloud workspace usage delivery", () => {
     await plane.session("ses_full")
     const ledger = openLedger(ledgerPath())
     const full = (): never => { throw Object.assign(new Error("database or disk is full"), { code: "SQLITE_FULL" }) }
-    const failing: SandboxUsageLedger = { ...ledger, recordTurn: full, adoptUnattributed: full, pending: full }
+    const failing: RuntimeUsageLedger = { ...ledger, recordTurn: full, adoptUnattributed: full, pending: full }
     const usage = sandbox(failing, plane.fetch)
 
     const turn = await startTurn(plane, usage, { by: plane.owner, sessionId: "ses_full", turnId: "msg_user_1" })
@@ -557,7 +560,7 @@ describe("cloud workspace usage delivery", () => {
     const scopeA = { input: 100, output: 10, reasoning: 0, cache: { read: 0, write: 0 } }
     const scopeB = { input: 40, output: 4, reasoning: 0, cache: { read: 0, write: 0 } }
     const scopeALater = { input: 150, output: 15, reasoning: 0, cache: { read: 0, write: 0 } }
-    const beforeRestart = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
+    const beforeRestart = openSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
     const first = sandbox(beforeRestart, plane.fetch)
     for (const event of [usageEvent("ses_scoped", "msg_scoped", "a", scopeA), usageEvent("ses_scoped", "msg_scoped", "b", scopeB)]) {
       first.onPresentationEvent(event)

@@ -202,6 +202,40 @@ describe("/turn-delivery", () => {
   })
 })
 
+describe("/turn-credential-refused", () => {
+  test("two refusals of the account the turn spent mark it, after its lease was released too; another person's, another harness's or an unknown account marks nothing", async () => {
+    const root = "ses_pi_refused"
+    const proof = await plane.createHostedSession(root)
+    const accounts = plane.credentials(plane.orgId)
+    const ownerId = plane.owner.principal!.userId
+    const spent = await accounts.putCredential({ owner: ownerId, provider_id: "groq", kind: "api_key", source: "managed", secret: "gsk-owner" })
+    const members = await accounts.putCredential({ owner: plane.member.principal!.userId, provider_id: "groq", kind: "api_key", source: "managed", secret: "gsk-member" })
+    const cursor = await accounts.putCredential({ owner: ownerId, provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "cursor-owner-2" })
+    const health = async (id: string) => (await accounts.getCredential!(id))?.health ?? null
+    const lease = await plane.acquire(proof, root, "turn_refused")
+    const refused = (credentialId: string, turnLease = lease.leaseId) => plane.post("/turn-credential-refused", { turnLease, credentialId })
+
+    const first = await refused(spent.id)
+    expect(first.status).toBe(200)
+    expect(await first.json()).toEqual({ refusal: "waiting" })
+    expect(await health(spent.id)).toBeNull()
+
+    await release(proof, root, lease)
+    const second = await refused(spent.id)
+    expect(second.status).toBe(200)
+    expect(await second.json()).toEqual({ refusal: "marked" })
+    expect(await health(spent.id)).toBe("auth_failed")
+
+    expect((await refused(members.id)).status).toBe(403)
+    expect((await refused(cursor.id)).status).toBe(403)
+    expect((await refused("cred_unknown")).status).toBe(403)
+    expect(await health(members.id)).toBeNull()
+    expect(await health(cursor.id)).toBeNull()
+    expect((await refused(spent.id, await expiredLease())).status).toBe(401)
+    expect((await plane.post("/turn-credential-refused", { turnLease: lease.leaseId })).status).toBe(400)
+  })
+})
+
 describe("/turn-execution", () => {
   test("answers a provisioning machine with its retry, then a token for this session on that machine", async () => {
     const root = "ses_pi_execution"

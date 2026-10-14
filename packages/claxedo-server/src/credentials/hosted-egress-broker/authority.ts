@@ -3,21 +3,10 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { builtInProviderDestination, type ProviderDestination } from "@claxedo/server-core/credentials/built-in-destinations"
 import { hostedBrokerServes } from "@claxedo/server-core/credentials/reach"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
-import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { ControlPlaneCredentials } from "../../authority/services"
+import { createCredentialRefusals, type CredentialRefusals } from "../credential-refusals"
 import { storeRenewal } from "../store-renewal"
 import { brokerBindingId, type HostedBrokerClaims } from "./placeholder"
-
-const log = Log.create({ service: "hosted-egress-broker" })
-
-/**
- * How long one vendor refusal counts towards the next. Two 401s a coffee
- * break apart are two independent events, not a login going bad.
- */
-const FAILURE_WINDOW_MS = 5 * 60 * 1000
-
-/** Refusals before the broker alone takes the account off the provider. */
-const FAILURES_BEFORE_YIELDING = 2
 
 export type HostedBrokerCredentialRead = (credentialId: string) => Promise<{ credential: CredentialMetadata; secret: string } | undefined>
 
@@ -51,10 +40,11 @@ export function hostedBindingAuthority(input: {
   sandboxManager: Pick<SandboxManager, "target">
   fetch?: typeof fetch
   now?: () => number
+  /** The plane's rule for a vendor refusing a stored account, shared with every other path that spends one. */
+  credentialRefusals?: CredentialRefusals
 }): BindingAuthority<HostedBrokerClaims> {
   const now = input.now ?? Date.now
-  /** Consecutive vendor refusals per credential, in this isolate. */
-  const refusals = new Map<string, { revision: number; count: number; at: number }>()
+  const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: input.credentials, now })
   return {
     async resolve(bindingId, claims) {
       const read = await input.read(claims.orgId)(claims.credentialId)
@@ -100,33 +90,11 @@ export function hostedBindingAuthority(input: {
     // The hosted store keeps no last-use mark on a row; a delivered account's
     // selection moves only when its owner chooses another.
     async markUsed() {},
-    /**
-     * One vendor 401 does not take an account off its provider; a second on
-     * the same stored value inside the window, with no Check in between, is
-     * the account having stopped working. The count lives in this isolate, so
-     * a second refusal that lands elsewhere counts as a first there; the
-     * account is then marked by the next one, or by the owner's own Check.
-     */
     async reportFailure({ credentialId, revision, status, runtime }: BindingFailure) {
       // A 403 from a model vendor is a permission or region refusal, not a rejected credential.
       if (status !== 401) return
-      const orgId = runtime.orgId
-      const credentials = input.credentials(orgId)
-      const credential = await credentials.getCredential?.(credentialId)
-      if (!credential || credential.revision !== revision) return
-      const at = now()
-      const key = `${orgId}\n${credentialId}`
-      const seen = refusals.get(key)
-      const checkedSince = credential.last_validated_at != null && seen !== undefined && credential.last_validated_at >= seen.at
-      const runs = seen !== undefined && seen.revision === revision && at - seen.at < FAILURE_WINDOW_MS && !checkedSince
-      const count = runs ? seen.count + 1 : 1
-      if (count < FAILURES_BEFORE_YIELDING) {
-        refusals.set(key, { revision, count, at })
-        log.info("Vendor refused a brokered credential once; waiting for a second before acting", { credential_id: credentialId, provider_id: credential.provider_id })
-        return
-      }
-      refusals.delete(key)
-      await credentials.updateCredentialHealth?.(credentialId, "auth_failed", at)
+      const credential = await input.credentials(runtime.orgId).getCredential?.(credentialId)
+      if (credential) await refusals.refused(runtime.orgId, credential, revision)
     },
   }
 }

@@ -16,7 +16,7 @@ import { finiteTimestamp, positiveInteger } from "./runtime-authority-request"
 const streamLeaseIssuer = "claxedo-control-plane"
 const streamLeaseAudience = "workspace-runtime-session-stream"
 const turnLeaseIssuer = "claxedo-control-plane"
-const turnLeaseAudience = "workspace-runtime-session-turn"
+export const TURN_LEASE_AUDIENCE = "workspace-runtime-session-turn"
 
 /**
  * How the runtime holding a lease proved its identity, and therefore what a
@@ -194,7 +194,7 @@ export function turnLeaseMinter(env: Record<string, string | undefined>) {
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(turnLeaseIssuer)
-      .setAudience(turnLeaseAudience)
+      .setAudience(TURN_LEASE_AUDIENCE)
       .setIssuedAt(now)
       .setExpirationTime(expiry)
       .setJti(crypto.randomUUID())
@@ -210,7 +210,7 @@ export function turnLeaseVerifier(env: Record<string, string | undefined>) {
     const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
       algorithms: ["EdDSA"],
       issuer: turnLeaseIssuer,
-      audience: turnLeaseAudience,
+      audience: TURN_LEASE_AUDIENCE,
     })
     const principalKind = payload.principal_kind
     const actorKind = payload.actor_kind

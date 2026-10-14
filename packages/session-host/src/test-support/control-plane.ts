@@ -45,7 +45,15 @@ export type ControlPlaneInput = {
 export function controlPlaneStandIn(input: ControlPlaneInput) {
   const leaseSecret = crypto.getRandomValues(new Uint8Array(32))
   const leases = new Map<string, Lease>()
-  const calls = { deliveries: [] as string[], executions: [] as string[], releases: [] as string[], deletes: [] as string[], renewals: 0, mcpBearers: [] as string[] }
+  const calls = {
+    deliveries: [] as string[], executions: [] as string[], releases: [] as string[], deletes: [] as string[], renewals: 0, mcpBearers: [] as string[],
+    /** Each usage report: the turn whose lease proved it and the facts it carried. */
+    usage: [] as Array<{ turnId: string; released: boolean; facts: Record<string, unknown>[] }>,
+    /** Each session rows publication: the turn whose lease was its bearer and the rows it carried. */
+    rows: [] as Array<{ turnId: string; released: boolean; hostId: string; rows: Record<string, unknown>[] }>,
+    /** Each stored account the host reported the vendor refusing, with the turn that spent it. */
+    refusals: [] as Array<{ turnId: string; credentialId: string }>,
+  }
   const mcpBearers = new Set<string>()
   let fencing = 0
   let creator: string | undefined
@@ -61,11 +69,16 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       .setProtectedHeader({ alg: "HS256" }).setExpirationTime(Math.floor(expiresAt / 1000)).sign(leaseSecret)
     return { allowed: true, turnId: lease.turnId, leaseId: token, fencingToken: lease.fencingToken, acquiredAt: Date.now(), expiresAt }
   }
-  const liveLease = async (token: unknown): Promise<Lease | undefined> => {
+  /** The lease a token stands for, released or not: what a usage report or a row publication after the release is proven by. */
+  const issuedLease = async (token: unknown): Promise<Lease | undefined> => {
     if (typeof token !== "string") return undefined
     const verified = await jwtVerify(token, leaseSecret).catch(() => undefined)
     const lease = verified ? leases.get(String(verified.payload.turnId)) : undefined
-    return lease && !lease.released && lease.fencingToken === verified?.payload.fencingToken ? lease : undefined
+    return lease && lease.fencingToken === verified?.payload.fencingToken ? lease : undefined
+  }
+  const liveLease = async (token: unknown): Promise<Lease | undefined> => {
+    const lease = await issuedLease(token)
+    return lease && !lease.released ? lease : undefined
   }
   const relayCaller = async (c: Context) => {
     const token = bearerToken(c.req.header("authorization"))
@@ -108,6 +121,13 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     .post("/session-authorize", async (c) => {
       const body = await c.req.json<Record<string, unknown>>()
       const action = String(body.action)
+      if (action === "usage_report") {
+        const lease = await issuedLease(body.leaseId)
+        const facts = Array.isArray(body.facts) ? body.facts as Record<string, unknown>[] : []
+        if (!lease || body.sessionId !== lease.sessionId || body.turnId !== lease.turnId || body.fencingToken !== lease.fencingToken) return refused(c, 401, "session_turn_lease_invalid")
+        calls.usage.push({ turnId: lease.turnId, released: lease.released, facts })
+        return c.json({ results: facts.map((fact) => ({ messageId: fact.messageId, revision: fact.revision, status: "accepted" })) })
+      }
       if (action === "turn_renew" || action === "turn_release") {
         const lease = await liveLease(body.leaseId)
         if (!lease) return refused(c, 401, "session_turn_lease_invalid")
@@ -158,6 +178,13 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       const access: TurnExecutionAccess = { ...input.machine(), workspaceId: WORKSPACE_ID, hostId: MACHINE_HOST, runtimeAccessToken, expiresAt }
       return c.json(access)
     })
+    .post("/turn-credential-refused", async (c) => {
+      const body = await c.req.json<{ turnLease?: string; credentialId?: string }>()
+      const lease = await issuedLease(body.turnLease)
+      if (!lease || typeof body.credentialId !== "string") return refused(c, 401, "session_turn_lease_invalid")
+      calls.refusals.push({ turnId: lease.turnId, credentialId: body.credentialId })
+      return c.json({ refusal: "waiting" })
+    })
     .post("/session-host-delete", async (c) => {
       const userId = await relayCaller(c)
       if (!userId || (await c.req.json<{ sessionId?: string }>()).sessionId !== input.root || deleted) return refused(c, 403, "session_host_delete_denied")
@@ -167,7 +194,19 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       deleted = true
       return c.json({ deleted: true })
     })
-  const app = new Hono().route("/api/runtime-authority", authority).all(CLAXEDO_MCP_PATH, (c) => mcp.fetch(c.req.raw))
+  const sessionRows = new Hono().post("/", async (c) => {
+    const lease = await issuedLease(bearerToken(c.req.header("authorization")))
+    const body = await c.req.json<{ hostId: string; rows: Record<string, unknown>[]; removed: unknown[] }>()
+    if (!lease || body.hostId !== sessionHostId(input.root) || body.removed.length || body.rows.some((row) => row.sessionId !== input.root || row.workspaceId !== WORKSPACE_ID)) {
+      return refused(c, 401, "invalid_session_turn_lease")
+    }
+    calls.rows.push({ turnId: lease.turnId, released: lease.released, hostId: body.hostId, rows: body.rows })
+    return c.json({ accepted: body.rows.length, refused: [] })
+  })
+  const app = new Hono()
+    .route("/api/runtime-authority", authority)
+    .route("/api/claxedo/host/session-rows", sessionRows)
+    .all(CLAXEDO_MCP_PATH, (c) => mcp.fetch(c.req.raw))
   /** Every later MCP request lands on an endpoint that shares no memory with the one before, as on another Worker isolate. */
   const newMcpIsolate = () => { mcp = mcpIsolate() }
   return { fetch: (request: Request) => app.fetch(request), calls, control, newMcpIsolate }

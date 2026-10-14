@@ -20,7 +20,8 @@ type ServedWorkspace = { workspace_id: string; owner_actor_id: string; org_id: s
  * credential, so a machine that lost the assignment or was superseded by a
  * newer serving generation stops publishing on its next call. A cloud
  * runtime's row is admitted only for the one live cloud workspace its pass
- * names, still owned by the pass's user. A session the registry has never
+ * names, still owned by the pass's user, and a session host's for the one its
+ * turn lease names, by the same rule. A session the registry has never
  * seen is adopted for the workspace owner, as `adoptRuntimeSession` adopts
  * one: the host held it before anyone reached it through the plane.
  *
@@ -40,9 +41,9 @@ export async function publishD1HostSessionRows(
 ): Promise<HostSessionRowsOutcome> {
   const touched = [...publication.rows, ...publication.removed]
   const claimed = [...new Set(touched.map((row) => row.workspaceId))].filter((id) => publisher.workspaceIds.includes(id))
-  const served = publisher.servedBy === "sandbox"
-    ? await sandboxD1Workspaces(database, publisher, claimed)
-    : await servedD1Workspaces(database, now, publisher, claimed)
+  const served = publisher.servedBy === undefined
+    ? await servedD1Workspaces(database, now, publisher, claimed)
+    : await cloudD1Workspaces(database, publisher, claimed)
   const existing = await registeredD1Sessions(database, [...new Set(touched.map((row) => row.sessionId))])
   const plan = planHostSessionRows(publication, served, existing)
   const adoptions = plan.adopt.flatMap(({ row, workspace }) => adoptionStatements(database, now, workspace, row))
@@ -101,7 +102,7 @@ async function servedD1Workspaces(
   return new Map(result.results.map((row) => [row.workspace_id, row]))
 }
 
-async function sandboxD1Workspaces(database: D1Database, publisher: HostSessionRowsPublisher, claimed: string[]) {
+async function cloudD1Workspaces(database: D1Database, publisher: HostSessionRowsPublisher, claimed: string[]) {
   if (!claimed.length) return new Map<string, ServedWorkspace>()
   const result = await database
     .prepare(`
