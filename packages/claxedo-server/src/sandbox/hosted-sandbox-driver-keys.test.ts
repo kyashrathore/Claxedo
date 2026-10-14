@@ -17,8 +17,19 @@ const authConfig = { enabled: true as const, issuer: "https://auth.test", jwksUr
 let fixture: Awaited<ReturnType<typeof d1Authority>>
 let people: Record<"owner" | "member", SignedControlPlaneAuth>
 let orgId: string
-let boatAnswer = 200
+/** What the fake Boat answers `GET /api/v1/me`: a status it answers as the real vendor does, or the edge's challenge page. */
+let boatAnswer: 200 | 401 | 429 | "challenge" = 200
 const probed: string[] = []
+
+/** Real Boat, probed 2026-10-14 with a bogus key: 401 application/json {"ok":false,"type":"sandbox.error","status":401,"code":"unauthorized",…}. */
+function boatReply(answer: typeof boatAnswer): Response {
+  if (answer === "challenge") {
+    return new Response("<!DOCTYPE html><html><head><title>Just a moment...</title></head><body></body></html>", { status: 401, headers: { "content-type": "text/html; charset=UTF-8" } })
+  }
+  if (answer === 200) return Response.json({})
+  const code = answer === 401 ? "unauthorized" : "rate_limited"
+  return Response.json({ ok: false, type: "sandbox.error", status: answer, code, message: `Boat says ${code}` }, { status: answer })
+}
 
 beforeAll(async () => {
   fixture = await d1Authority()
@@ -40,7 +51,7 @@ const authentication: RequestAuthenticationAdapter = {
 
 const provider: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => {
   probed.push(String(input instanceof Request ? input.url : input))
-  return new Response(boatAnswer === 200 ? "{}" : "unauthorized", { status: boatAnswer })
+  return boatReply(boatAnswer)
 }, { preconnect() {} })
 
 function app() {
@@ -105,8 +116,14 @@ describe("organization sandbox provider keys on the hosted plane", () => {
     boatAnswer = 429
     expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "rate_capped" })
     expect((await listing("owner")).default_driver).toBe("boat")
+    // An edge challenging the Worker answers a page, not Boat's error: no verdict, and the key stays in use.
+    boatAnswer = "challenge"
+    const challenged = await call("owner", `/${row.id}/verify`, "POST", {})
+    expect(challenged.status).toBe(502)
+    expect(await challenged.json()).toMatchObject({ error: { code: "credential_verification_failed", details: { detail: { message: expect.stringMatching(/401 with text\/html/) } } } })
+    expect((await listing("owner")).default_driver).toBe("boat")
     boatAnswer = 401
-    expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "auth_failed" })
+    expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "auth_failed", evidence: { status: 401, type: "unauthorized" } })
     expect((await listing("owner")).default_driver).toBeNull()
     boatAnswer = 200
     await call("owner", `/${row.id}/verify`, "POST", {})
