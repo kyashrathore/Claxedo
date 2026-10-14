@@ -25,26 +25,10 @@ import { createHostedRuntimeFetch } from "./relay-runtime-client"
 import { withTimeout } from "../platform/runtime/timeout"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
 import type { ReadySandboxTarget, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
-import { isProviderUnavailable, projectionRenewalDueAt, type CredentialSnapshot, type ProviderBinding } from "@claxedo/agent-runtime-contract"
+import { accountsRenewalDueAt, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import type { BrokerLease, HostedEgressBroker } from "../credentials/hosted-egress-broker"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
-
-/**
- * When the placeholders a push delivered must be delivered again: the
- * brokered rows alone. A direct plan token is renewed by the harness mid-turn
- * through the credential refresh route, and an edge placeholder never expires.
- */
-function placeholderRenewalDueAt(auth: CredentialSnapshot, appliedAt: number): number | undefined {
-  const due = Object.values(auth.accounts).flatMap((rows) => {
-    const bound: Record<string, ProviderBinding> = {}
-    for (const [providerId, row] of Object.entries(rows)) {
-      if (!isProviderUnavailable(row) && row.placeholder !== undefined) bound[providerId] = row
-    }
-    return projectionRenewalDueAt(bound, appliedAt) ?? []
-  })
-  return due.length ? Math.min(...due) : undefined
-}
 
 /**
  * How long a ready lease's runtime gets to answer before the start treats the
@@ -171,7 +155,10 @@ export function createHostedRuntimeDelivery(input: {
       plugins: hooks.pluginRuntime ? await hooks.pluginRuntime(workspaceId, preparation) : { mcp: {}, harnessLaunch: {} },
     })
     await client.applyConfig(snapshot, options)
-    const renewAt = placeholderRenewalDueAt(snapshot.auth, appliedAt)
+    // The brokered rows alone: a direct plan token is renewed by the harness
+    // mid-turn through the credential refresh route, and an edge placeholder
+    // never expires.
+    const renewAt = accountsRenewalDueAt(snapshot.auth, appliedAt)
     await input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
       log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
     })

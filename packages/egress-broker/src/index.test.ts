@@ -17,6 +17,7 @@ test("the package exposes request policy and token minting, and no binding autho
     "isBrokerPath",
     "loopbackBrokerRoutes",
     "mintRuntimeToken",
+    "presentedRuntimeToken",
     "sameRuntime",
     "substituteNativeSecrets",
     "verifyRuntimeToken",

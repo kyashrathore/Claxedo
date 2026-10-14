@@ -3,11 +3,24 @@ import { CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
 import {
   createEgressBroker,
   mintRuntimeToken,
+  presentedRuntimeToken,
   verifyRuntimeToken,
   type Binding,
   type BindingAuthority,
   type BindingFailure,
 } from "./index.js"
+
+describe("the runtime token a request presents", () => {
+  test("is the bearer or the keyed header, and nothing when two identities or a foreign scheme are presented", () => {
+    expect(presentedRuntimeToken(new Headers({ authorization: "Bearer one" }))).toBe("one")
+    expect(presentedRuntimeToken(new Headers({ "x-api-key": "one" }))).toBe("one")
+    expect(presentedRuntimeToken(new Headers({ authorization: "Bearer one", "x-api-key": "one" }))).toBe("one")
+    expect(presentedRuntimeToken(new Headers({ authorization: "Bearer one", "x-api-key": "two" }))).toBeUndefined()
+    expect(presentedRuntimeToken(new Headers({ authorization: "Basic one" }))).toBeUndefined()
+    expect(presentedRuntimeToken(new Headers({ authorization: "Basic one", "x-api-key": "one" }))).toBeUndefined()
+    expect(presentedRuntimeToken(new Headers())).toBeUndefined()
+  })
+})
 
 const key = new Uint8Array(32).fill(7)
 const identity = { userId: "user", orgId: "org", workspaceId: "workspace", leaseId: "lease", leaseGeneration: 1, runtimeId: "runtime" }
@@ -108,6 +121,18 @@ describe("binding broker HTTP entrypoint", () => {
     const forged = await f.request(connectPath, { headers: { authorization: "Bearer forged-cursor-placeholder" } })
     expect([forged.status, (await forged.json()).error.code]).toEqual([401, "runtime_token_invalid"])
     expect(f.upstream).toHaveLength(2)
+  })
+
+  test("a header the destination names as picking an account is stripped, and the rest of the request travels", async () => {
+    const f = await fixture()
+    f.update({ destination: { origin: "https://api.openai.com", methods: ["POST"], pathPrefixes: ["/v1/responses"], identityHeaders: ["OpenAI-Organization", "OpenAI-Project"] },
+      injection: { header: "Authorization", scheme: "Bearer" } })
+    const response = await f.request("/v1/responses", { headers: { authorization: `Bearer ${f.token}`, "openai-organization": "org-other", "openai-project": "proj_other", "openai-beta": "responses=v1" } })
+    expect(response.status).toBe(200)
+    expect(f.upstream[0].headers.get("openai-organization")).toBeNull()
+    expect(f.upstream[0].headers.get("openai-project")).toBeNull()
+    expect(f.upstream[0].headers.get("openai-beta")).toBe("responses=v1")
+    expect(f.upstream[0].headers.get("authorization")).toBe("Bearer real-key")
   })
 
   test("a destination without exchange forwards its stored credential", async () => {
@@ -268,7 +293,7 @@ describe("binding broker HTTP entrypoint", () => {
       return new Response("unauthorized", { status: 401 })
     })
     expect((await f.request()).status).toBe(401)
-    expect(f.failures).toEqual([{ bindingId: "binding", credentialId: "credential", revision: 1, status: 401 }])
+    expect(f.failures).toEqual([{ bindingId: "binding", credentialId: "credential", revision: 1, status: 401, runtime: expect.objectContaining(identity) }])
   })
 
   test.each([401, 403])("cancels the upstream response when recording %s fails", async (status) => {

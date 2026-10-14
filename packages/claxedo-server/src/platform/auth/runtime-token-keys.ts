@@ -37,8 +37,23 @@ export async function runtimeTokenSigningKey(env: Record<string, string | undefi
   return { alg, key: await importPKCS8(key, alg, { extractable: true }) }
 }
 
+/**
+ * Imported public keys by algorithm and PEM, for the isolate's life. The
+ * broker verifies a pass on every brokered request, and `importSPKI` parses
+ * the PEM each time; the key never changes under one PEM, and a rotated PEM is
+ * a new entry.
+ */
+const verificationKeys = new Map<string, Promise<CryptoKey>>()
+
 export async function runtimeTokenVerificationKey(env: Record<string, string | undefined>, fault: CredentialFault) {
   const alg = runtimeAccessTokenAlgorithm(env)
   const key = requiredCredentialField(pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM), "runtime verification key", fault)
-  return { alg, key: await importSPKI(key, alg) }
+  const id = `${alg}\n${key}`
+  let imported = verificationKeys.get(id)
+  if (!imported) {
+    imported = importSPKI(key, alg)
+    verificationKeys.set(id, imported)
+    imported.catch(() => verificationKeys.delete(id))
+  }
+  return { alg, key: await imported }
 }

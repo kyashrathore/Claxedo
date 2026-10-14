@@ -9,6 +9,8 @@ import { CredentialSelectionError, selectSessionCredentials } from "@claxedo/har
 
 const WS = "11111111-1111-4111-8111-111111111111"
 const OWNER = "usr_machine_owner"
+// The desktop authority resolves from the binding id alone; the claims are the broker core's to check.
+const unusedClaims = { userId: OWNER, orgId: "org", workspaceId: WS, leaseId: "lease", leaseGeneration: 1, runtimeId: "runtime", bindingIds: [], exp: 0 }
 
 const relayed = new Map([
   ["owner-rht", { actor_id: "actor:owner", user_id: OWNER }],
@@ -81,7 +83,7 @@ test("the enrolled owner's first relayed session spends the machine owner's acco
     expect(relayedSession.machineLoginAllowed).toBe(true)
     const openai = relayedSession.providers.openai
     if (!openai || "unavailable" in openai) throw new Error("the machine owner's account was not projected")
-    expect((await broker.authority.resolve(openai.baseUrl.split("/bindings/")[1]))?.value).toBe("machine-owner-openai")
+    expect((await broker.authority.resolve(openai.baseUrl.split("/bindings/")[1], unusedClaims))?.value).toBe("machine-owner-openai")
 
     const member = await localHostRelayActor(request("member-rht"), WS)
     await expect(select({ kind: "person", userId: member!.userId! })).rejects.toThrow(CredentialSelectionError)

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { D1Database } from "@cloudflare/workers-types"
+import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { builtInProviderDestination } from "@claxedo/server-core/credentials/built-in-destinations"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
@@ -13,7 +14,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { HOSTED_CREDENTIALS_FLAG, hostedBrokerCredentialReader, hostedOrgCredentials } from "../worker/index"
-import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, verifyBrokerPlaceholder } from "./index"
+import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, RUNTIME_UPSTREAM_LANES, verifyBrokerPlaceholder } from "./index"
 
 /**
  * A Boat sandbox's turn, end to end through the composed control plane: the
@@ -53,20 +54,40 @@ function vendor() {
   return { seen, fetch: vendorFetch, answer: (next: typeof answer) => { answer = next } }
 }
 
-async function composition(options: { now?: () => number } = {}) {
+type Lease = { epoch: number; hostId: string }
+const SERVING: Lease = { epoch: 1, hostId: "host_1" }
+
+/** The lease store as the broker reads it: every workspace serving on `SERVING` until a test stops or replaces it. */
+function leases() {
+  const held = new Map<string, Lease | undefined>()
+  const sandboxManager: Pick<SandboxManager, "target"> = {
+    target: async (workspaceId) => {
+      const lease = held.has(workspaceId) ? held.get(workspaceId) : SERVING
+      return lease
+        ? { status: "ready", ...lease, sandboxId: `sb_${workspaceId}`, url: "https://runtime.test", homeRegion: "us-east" }
+        : { status: "unavailable", reason: "runtime_lease_missing" }
+    },
+  }
+  return { sandboxManager, stop: (workspaceId: string) => held.set(workspaceId, undefined), replace: (workspaceId: string, lease: Lease) => held.set(workspaceId, lease) }
+}
+
+async function composition(options: { now?: () => number; upstreamTimeoutMs?: number } = {}) {
   const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   const database = instance.database as unknown as D1Database
   const signing = await signingEnv()
   const credentials = (orgId: string) => hostedOrgCredentials(orgId, { database, env: CREDENTIAL_ENV })
   const upstream = vendor()
+  const sandboxes = leases()
   const broker = createHostedEgressBroker({
     credentials,
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
+    sandboxManager: sandboxes.sandboxManager,
     env: signing,
     origin: ORIGIN,
     fetch: upstream.fetch,
     ...(options.now ? { now: options.now } : {}),
+    ...(options.upstreamTimeoutMs ? { upstreamTimeoutMs: options.upstreamTimeoutMs } : {}),
   })
   const authentication = testRequestAuthenticationAdapter()
   const sessionAuthority = {
@@ -120,13 +141,13 @@ async function composition(options: { now?: () => number } = {}) {
     const secret = await store.resolveCredentialSecretById?.(credential.id)
     const destination = builtInProviderDestination({ providerId: credential.provider_id, kind: credential.kind, secret: secret ?? "" })
     if (!destination) throw new Error("the account has no destination")
-    const binder = (at ? createHostedEgressBroker({ credentials, read: () => async () => undefined, env: signing, origin: ORIGIN, now: at }) : broker)
-      .binder({ orgId: "org-1", workspaceId: workspace.workspaceId, lease: workspace.lease ?? { epoch: 1, hostId: "host_1" } })
+    const binder = (at ? createHostedEgressBroker({ credentials, read: () => async () => undefined, sandboxManager: sandboxes.sandboxManager, env: signing, origin: ORIGIN, now: at }) : broker)
+      .binder({ orgId: "org-1", workspaceId: workspace.workspaceId, lease: workspace.lease ?? SERVING })
     const projection = await binder.bind(credential, destination)
     if ("unavailable" in projection || !projection.placeholder) throw new Error("the account was not bound")
     return { baseUrl: projection.baseUrl, placeholder: projection.placeholder, authMode: projection.authMode, expiresAt: projection.expiresAt }
   }
-  return { app, store, upstream, delivered, signing }
+  return { app, store, upstream, delivered, signing, sandboxes }
 }
 
 describe("a sandbox spending its owner's account through the hosted broker", () => {
@@ -282,6 +303,74 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull()
     const health = await app.request(`${ORIGIN}/api/claxedo/health`, { headers: { origin: "https://app.test" } })
     expect(health.headers.get("access-control-allow-origin")).toBe("https://app.test")
+  })
+
+  test("a placeholder spends nothing once its sandbox stopped, or was replaced under its lease, and works again only on the sandbox it names", async () => {
+    const { app, store, upstream, delivered, sandboxes } = await composition()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    const { baseUrl, placeholder } = await delivered(key, { workspaceId: "ws_root", lease: { epoch: 2, hostId: "host_2" } })
+    const spend = async () => {
+      const response = await app.request(`${baseUrl}/v1/messages`, { method: "POST", headers: { "x-api-key": placeholder }, body: "{}" })
+      return response.status === 200 ? 200 : [response.status, (await response.json() as { error: { code: string } }).error.code]
+    }
+    sandboxes.replace("ws_root", { epoch: 2, hostId: "host_2" })
+    expect(await spend()).toBe(200)
+    sandboxes.stop("ws_root")
+    expect(await spend()).toEqual([403, "binding_unavailable"])
+    sandboxes.replace("ws_root", { epoch: 3, hostId: "host_3" })
+    expect(await spend()).toEqual([403, "binding_unavailable"])
+    sandboxes.replace("ws_root", { epoch: 2, hostId: "host_2" })
+    expect(await spend()).toBe(200)
+    expect(upstream.seen).toHaveLength(2)
+  })
+
+  test("a header the vendor would pick another account from never reaches the vendor", async () => {
+    const { app, store, upstream, delivered } = await composition()
+    const key = await store.putCredential({ owner: "alice", provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-openai-real" })
+    const { baseUrl, placeholder } = await delivered(key, { workspaceId: "ws_root" })
+    const response = await app.request(`${baseUrl}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${placeholder}`, "openai-organization": "org-somebody-else", "openai-project": "proj_other", "openai-beta": "responses=v1" },
+      body: "{}",
+    })
+    expect(response.status).toBe(200)
+    const [sent] = upstream.seen
+    expect(sent.request.headers.get("authorization")).toBe("Bearer sk-openai-real")
+    expect(sent.request.headers.get("openai-organization")).toBeNull()
+    expect(sent.request.headers.get("openai-project")).toBeNull()
+    expect(sent.request.headers.get("openai-beta")).toBe("responses=v1")
+  })
+
+  test("one sandbox's streams fill its own lanes and nobody else's", async () => {
+    const { app, store, upstream, delivered } = await composition({ upstreamTimeoutMs: 300 })
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    const root = await delivered(key, { workspaceId: "ws_root" })
+    const other = await delivered(key, { workspaceId: "ws_other" })
+    upstream.answer(async () => new Response(new ReadableStream({ start() {} }), { headers: { "content-type": "text/event-stream" } }))
+    const spend = (bound: typeof root) => app.request(`${bound.baseUrl}/v1/messages`, { method: "POST", headers: { "x-api-key": bound.placeholder }, body: "{}" })
+    const held: Response[] = []
+    for (let lane = 0; lane < RUNTIME_UPSTREAM_LANES; lane += 1) held.push(await spend(root))
+    expect(held.every((response) => response.status === 200)).toBe(true)
+    const saturated = await spend(root)
+    expect([saturated.status, (await saturated.json() as { error: { code: string } }).error.code]).toEqual([503, "broker_authority_unavailable"])
+    const elsewhere = await spend(other)
+    expect(elsewhere.status).toBe(200)
+    await Promise.all([...held, elsewhere].map((response) => response.body?.cancel()))
+    expect((await spend(root)).status).toBe(200)
+  })
+
+  test("a client sending requests no placeholder verifies is budgeted by its address, and a verified one from the same address is not", async () => {
+    const { app, store, delivered } = await composition()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    const { baseUrl, placeholder } = await delivered(key, { workspaceId: "ws_root" })
+    const forged = (ip: string) => app.request(`${baseUrl}/v1/messages`, { method: "POST", headers: { "x-api-key": "sk-ant-api03-guess", "cf-connecting-ip": ip }, body: "{}" })
+    for (let sent = 0; sent < 60; sent += 1) expect((await forged("198.51.100.9")).status).toBe(401)
+    const refused = await forged("198.51.100.9")
+    expect([refused.status, (await refused.json() as { error: { code: string } }).error.code]).toEqual([429, "runtime_token_rate_limited"])
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect((await forged("203.0.113.7")).status).toBe(401)
+    const verified = await app.request(`${baseUrl}/v1/messages`, { method: "POST", headers: { "x-api-key": placeholder, "cf-connecting-ip": "198.51.100.9" }, body: "{}" })
+    expect(verified.status).toBe(200)
   })
 
   test("the placeholder is a pass naming the runtime, the binding and the account, and expires within the hour", async () => {

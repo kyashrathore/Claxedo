@@ -44,6 +44,14 @@ export type Binding = Readonly<RuntimeIdentity & {
      * than letting it reach the vendor beside the injected account.
      */
     credentialQuerySlots?: readonly string[]
+    /**
+     * The request headers this vendor picks an account from beside the
+     * credential (OpenAI's organization and project). The binding's account
+     * is the identity, so the broker strips these: a caller that could name
+     * another one would make the vendor refuse the operator's key, and two
+     * such refusals read as the key having died.
+     */
+    identityHeaders?: readonly string[]
   }>
   injection: BindingInjection
 }>

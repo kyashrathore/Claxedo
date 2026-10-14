@@ -31,6 +31,29 @@ export async function mintRuntimeToken(input: RuntimeIdentity & {
     .setIssuedAt(Math.floor(now / 1000)).setExpirationTime(Math.floor(expiresAt / 1000)).sign(key)
 }
 
+/**
+ * The headers a harness's own SDK puts an API key in, and therefore the
+ * placeholder. `Authorization: Bearer` is handled beside them; a vendor whose
+ * client sends the key somewhere else needs its name added here before a
+ * binding for it can work.
+ */
+export const API_KEY_HEADERS = ["x-api-key", "x-goog-api-key"] as const
+
+/**
+ * The one runtime token a request presents, or the reason it presents none.
+ * A scheme the broker does not serve is still a credential presentation:
+ * beside a keyed header it is a second identity, and alone it is no token. Two
+ * different values mean the caller is presenting two identities, and the
+ * binding would be spent under whichever one happened to be picked.
+ */
+export function presentedRuntimeToken(headers: Headers): string | undefined {
+  const authorization = headers.get("authorization")
+  if (authorization !== null && !authorization.startsWith("Bearer ")) return undefined
+  const keyed = API_KEY_HEADERS.map((name) => headers.get(name)).filter((value): value is string => value !== null)
+  const token = authorization?.slice(7) ?? keyed[0]
+  return token && keyed.every((value) => value === token) ? token : undefined
+}
+
 export async function verifyRuntimeToken(token: string, key: Uint8Array, now = Date.now()): Promise<RuntimeTokenClaims | undefined> {
   if (key.byteLength < 32) return undefined
   try {

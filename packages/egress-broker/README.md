@@ -32,8 +32,12 @@ and nothing else. Two compositions mount it:
   Modal, Docker). Its placeholders are sandbox passes signed with the plane's
   runtime key, and its authority holds nothing between requests: `resolve`
   receives the verified claims beside the binding id and reads the account
-  they name from the organization's store. Drivers with a native edge
-  (Cloudflare, Vercel) never pass through it.
+  they name from the organization's store, and `currentRuntime` reads the
+  workspace's lease, so a placeholder from a stopped or replaced sandbox is
+  refused at its next request. Each runtime gets a broker of its own, so its
+  streams fill its own lanes and no other tenant's; requests presenting no
+  verifiable placeholder are budgeted per client address. Drivers with a
+  native edge (Cloudflare, Vercel) never pass through it.
 
 `verifyToken` decides what a claims object is; `authority.resolve(bindingId,
 claims)` receives exactly what it returned, so an authority may carry claims
