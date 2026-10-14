@@ -6,12 +6,10 @@ import { useServer, type ProjectSource } from "@/server"
 import { draftPath } from "@/shell"
 import { createFinish } from "./finish"
 import { useOnboardingText } from "./i18n"
-import { executionBlock, executionPlan, type ExecutionBlock, type ExecutionChoice, type ExecutionFacts, type ExecutionPlan, type OnboardingDraft } from "./model"
+import { executionPlan, finishBlock, type ExecutionChoice, type ExecutionFacts, type ExecutionPlan, type FinishBlock, type OnboardingDraft } from "./model"
 import { createOnboardingTarget, finishFailure, openedPlacement, openingDetail, startCreated, type Placing } from "./place"
 import { createOnboardingFunnel, type OnboardingFunnel } from "./funnel"
 import { onboardingSteps, type OnboardingStep, type OnboardingStepId } from "./steps"
-
-export type FinishBlock = ExecutionBlock | "providerKey" | "ai"
 
 export function draftName(draft: OnboardingDraft): string {
   return draft.name ?? draftProjectName(draft.source)
@@ -70,10 +68,7 @@ function createExecution(facts: Accessor<ExecutionFacts>, draft: Accessor<Onboar
 function createStepReadiness(facts: Accessor<ExecutionFacts>, plan: Accessor<ExecutionPlan>, source: Accessor<ProjectSource | undefined>) {
   const [aiReady, setAiReady] = createSignal(false)
   const [cloudReady, setCloudReady] = createSignal(false)
-  const blocked = createMemo((): FinishBlock | undefined =>
-    executionBlock(plan(), facts(), source())
-    ?? (facts().localExecution || cloudReady() ? undefined : "providerKey")
-    ?? (facts().localExecution || aiReady() ? undefined : "ai"))
+  const blocked = createMemo((): FinishBlock | undefined => finishBlock(plan(), facts(), source(), cloudReady()))
   return { aiReady, setAiReady, setCloudReady, blocked }
 }
 

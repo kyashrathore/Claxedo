@@ -7,12 +7,14 @@ import type { ReservationHold, SessionReservation } from "./types"
 
 function reservingAccount() {
   const reserved: string[] = []
+  const harnesses: (string | undefined)[] = []
   const account = createHostedAccount(async (operation, input) => {
-    const body = resolveHostedOperation(operation, input).body as { sessionId: string }
+    const body = resolveHostedOperation(operation, input).body as { sessionId: string; harness?: { id: string } }
     reserved.push(body.sessionId)
+    harnesses.push(body.harness?.id)
     return { ...body, state: "reserved" }
   })
-  return { account, reserved }
+  return { account, reserved, harnesses }
 }
 
 function draftHold(): ReservationHold & { current: () => SessionReservation | undefined } {
@@ -50,6 +52,23 @@ test("a draft keeps its reservation through failed creates, Edit and reload, so 
   await createReserved(account, hold, { workspaceId: "ws_other" }, async (reservation) => reservation)
   expect(reserved).toHaveLength(2)
   expect(hold.current()?.workspaceId).toBe("ws_other")
+})
+
+test("a draft that switches harness after a failed first send reserves again, since the control plane placed the held reservation by the harness it was reserved for", async () => {
+  const { account, reserved, harnesses } = reservingAccount()
+  const hold = draftHold()
+  const claude = { workspaceId: "ws_cloud", harness: { id: "claude-sdk", access: "native" as const } }
+  const pi = { workspaceId: "ws_cloud", harness: { id: "pi", access: "native" as const } }
+  await expect(createReserved(account, hold, claude, async () => { throw refused("account_unavailable", 403) })).rejects.toMatchObject({ status: 403 })
+  expect(hold.current()).toMatchObject({ sessionId: reserved[0], harness: claude.harness })
+  const created = await createReserved(account, hold, pi, async (reservation) => reservation)
+  expect(reserved).toHaveLength(2)
+  expect(harnesses).toEqual(["claude-sdk", "pi"])
+  expect(created.sessionId).toBe(reserved[1])
+  expect(hold.current()).toMatchObject({ sessionId: reserved[1], harness: pi.harness })
+  const again = await createReserved(account, { held: () => structuredClone(hold.current()), hold: hold.hold }, pi, async (reservation) => reservation)
+  expect(again.sessionId).toBe(reserved[1])
+  expect(reserved).toHaveLength(2)
 })
 
 test("a create refused because its reservation was spent reserves again once and creates under the new one", async () => {

@@ -60,7 +60,7 @@ function hostLearningTransport(seen: string[]) {
   return { transport, opened, announce: (sessionHost: string) => announce?.("ws_cloud", "ses_pi", sessionHost) }
 }
 
-test("a session whose stream opened against its workspace moves to its own host once the host becomes known, and the reader re-reads what the move missed", async () => {
+test("a session whose stream opened against its workspace moves to its own host once the host becomes known, and the reader re-reads at each connection: what ran beside the first open, and what the move missed", async () => {
   await createRoot(async (dispose) => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const seen: string[] = []
@@ -78,7 +78,7 @@ test("a session whose stream opened against its workspace moves to its own host 
       expect(opened.map((entry) => entry.route.sessionHost?.sessionId)).toEqual([undefined, "root_pi"])
       expect(opened[0]?.signal.aborted).toBe(true)
       expect(streams.streams(session)).toBe(true)
-      expect(seen).toEqual(["opened workspace", "opened root_pi", "re-read"])
+      expect(seen).toEqual(["opened workspace", "re-read", "opened root_pi", "re-read"])
     } finally { detach(); streams.close(); workspaces.dispose(); queryClient.clear(); dispose() }
   })
 })

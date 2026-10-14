@@ -28,6 +28,7 @@ import type {
   CredentialMetadata,
   CredentialStatus,
   CredentialUsageWindow,
+  CredentialVerdictEvidence,
   CredentialWrite,
   SetActiveCredentialsResult,
 } from "../credentials/types"
@@ -114,7 +115,8 @@ export type ControlPlaneCredentials = {
   deleteCredential: (id: string, org?: string) => Promise<boolean>
   deleteCredentialsByProvider: (providerId: string, kind?: CredentialKind, org?: string) => Promise<number>
   updateCredentialStatus: (id: string, status: CredentialStatus, error?: string, org?: string) => Promise<void>
-  updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number, org?: string) => Promise<void>
+  /** Keep a Check's verdict; `evidence` is the vendor's status and error type behind it, written to `last_error`. */
+  updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number, org?: string, evidence?: CredentialVerdictEvidence) => Promise<void>
   /**
    * Keep the quota windows a verification read, so a surface can show them
    * again without spending another read. Optional: a store that cannot hold

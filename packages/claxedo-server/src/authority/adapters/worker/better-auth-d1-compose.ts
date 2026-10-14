@@ -12,10 +12,12 @@ import { D1WorkspaceAuthority, type D1ActorProfile, type D1AuthorityProductPolic
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedBrokerCredentialReader, hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
+import { createCredentialRefusals } from "../../../credentials/credential-refusals"
 import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION } from "../../../credentials/hosted-egress-broker"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
+import { hostedWorkspaceIdleStop } from "../../../workspace/routes/checkpoints"
 import { ownerSessionList } from "../../../session/list"
 import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
 import { hostedControlPlaneOrigin } from "./control-plane-origin"
@@ -249,7 +251,13 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   // no provider edge serve Claude Code and Codex at all. It needs the public
   // origin a sandbox reaches the plane at, which `hostedSandboxEgress` already
   // requires of such a deployment.
-  const broker = sandbox && plane.orgCredentials && sandboxManager && origin
+  // One counter of vendor refusals for the whole isolate: a stored account spent
+  // through the broker by one harness and directly by a session host's Pi turn
+  // is one account, and its two refusals add up.
+  const credentialRefusals = plane.orgCredentials
+    ? createCredentialRefusals({ credentials: plane.orgCredentials, ...(input.now ? { now: input.now } : {}) })
+    : undefined
+  const broker = sandbox && plane.orgCredentials && sandboxManager && origin && credentialRefusals
     ? createHostedEgressBroker({
         credentials: plane.orgCredentials,
         read: (orgId) => hostedBrokerCredentialReader(orgId, { database: input.controlPlaneDatabase, env: input.env }),
@@ -257,6 +265,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         env: input.env,
         origin,
         telemetry: plane.services.telemetry,
+        credentialRefusals,
       })
     : undefined
   const delivery = sandbox && plane.orgCredentials && sandboxManager && workspaceSecretBrokering
@@ -274,6 +283,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         provisionedRunner: provisionedRunner(input.env),
         ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
         sandboxRefresh: sandbox.refresh,
+        idleStop: hostedWorkspaceIdleStop(plane.services),
       })
     : undefined
 
@@ -326,6 +336,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: broker ? [HOSTED_EGRESS_BROKER_GUARD_EXEMPTION] : [],
       ...(broker ? { egressBroker: broker.handler } : {}),
+      ...(credentialRefusals ? { credentialRefusals } : {}),
       usageLedger: createD1UsageLedger({ database: input.controlPlaneDatabase, ...(input.now ? { now: input.now } : {}) }),
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),

@@ -381,6 +381,7 @@ export function createCloudflareSandboxDriver(
       driverRunsIn: ["worker"],
       hostStopBehavior: "terminates-host",
       hostResumeBehavior: "same-host",
+      hostWatchesIdle: true,
       targetAccess: "relay",
       secretBrokering: "native",
       egressControl: "none",

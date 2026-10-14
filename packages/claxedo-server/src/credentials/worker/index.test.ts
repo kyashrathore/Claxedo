@@ -331,6 +331,29 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     await expect(credentials.resolveCredentialSecretById?.(meta.id)).resolves.toBe("sk-hosted-verification-secret")
   })
 
+  test("a throttled account stays available for delivery and keeps the vendor's answer; a refusal keeps it too", async () => {
+    const orgId = freshOrg("throttle")
+    const credentials = store(orgId, () => 2_000)
+    const meta = await credentials.putCredential({ ...write, provider_id: "openai", secret: "sk-hosted-throttled" })
+
+    await credentials.updateCredentialHealth?.(meta.id, "rate_capped", 1_500, orgId, { status: 429, type: "rate_limit_error", retryAfterSeconds: 3124 })
+
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({
+      health: "rate_capped",
+      status: "available",
+      last_error: "rate_capped: 429 rate_limit_error, retry after 3124 s",
+    })
+    await expect(credentials.resolveCredentialSecret?.("openai")).resolves.toBe("sk-hosted-throttled")
+
+    await credentials.updateCredentialHealth?.(meta.id, "auth_failed", 1_600, orgId, { status: 401, type: "invalid_api_key" })
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({ status: "error", last_error: "auth_failed: 401 invalid_api_key" })
+    await expect(credentials.resolveCredentialSecret?.("openai")).resolves.toBeNull()
+
+    await credentials.updateCredentialHealth?.(meta.id, "ok", 1_700)
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({ health: "ok", status: "available", last_error: null, last_validated_at: 1_700 })
+    await expect(credentials.resolveCredentialSecret?.("openai")).resolves.toBe("sk-hosted-throttled")
+  })
+
   test("cross-org isolation: same provider id, disjoint rows, ciphertext at rest, no cross-org listing", async () => {
     const a = freshOrg("iso-a")
     const b = freshOrg("iso-b")

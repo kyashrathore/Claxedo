@@ -43,7 +43,7 @@ function RestingActions(props: AccountActionsProps) {
     <>
       <Show when={props.account.key !== ORG_ACCOUNT_KEY && props.account.refused && props.account.ids[0]}>
         {(credentialId) => (
-          <Button size="small" variant="neutral" data-action="agent-reconnect" onClick={() => props.onReconnect(credentialId())}>
+          <Button class="min-h-8" size="small" variant="neutral" data-action="agent-reconnect" onClick={() => props.onReconnect(credentialId())}>
             {t("settings.providers.agents.reconnectAccount")}
           </Button>
         )}

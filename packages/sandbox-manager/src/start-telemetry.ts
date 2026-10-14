@@ -39,22 +39,24 @@ export function createSandboxStartRecorder(options: {
     }
   }
 
+  /** The progress as written, or nothing when there was nothing new to write or the lease had moved on. */
   async function append(
     lease: SandboxLease,
     progress: SandboxStartProgress,
     timings: readonly Timing[],
     extra: { labels: Record<string, string>; markedAt?: number; repoSizeBytes?: number },
-  ) {
+  ): Promise<SandboxStartProgress | undefined> {
     const fresh = timings.filter((timing, index) =>
       !progress.phases.includes(timing.phase) && timings.findIndex((other) => other.phase === timing.phase) === index)
-    if (!fresh.length) return
+    if (!fresh.length) return undefined
     const next = {
       ...progress,
       markedAt: extra.markedAt ?? progress.markedAt,
       phases: [...progress.phases, ...fresh.map((timing) => timing.phase)],
     }
-    if (!await options.leaseStore.update(lease.workspaceId, lease.epoch, { start: next })) return
+    if (!await options.leaseStore.update(lease.workspaceId, lease.epoch, { start: next })) return undefined
     for (const timing of fresh) emit(lease, next, timing, extra)
+    return next
   }
 
   async function started(workspaceId: string, epoch: number) {
@@ -64,34 +66,35 @@ export function createSandboxStartRecorder(options: {
 
   return {
     /**
-     * The phases one provision call observes, timed as they end and written
-     * once when the call is done, so observing them adds no lease write to
-     * the path a start waits on; a failure flushes them first, so the boot the
-     * failure ends has its start on the row. A serving lease is not starting.
-     * An epoch acquired with a start it continues has that start and no phase
-     * yet; one acquired without begins its own here.
+     * The phases one provision call observes, timed as they end. The epoch's
+     * first call writes the start before the driver runs (`opened`), so a stop
+     * that lands mid-boot finds the boot it ends on the row; every later phase
+     * is written once when the call is done (`flush`), adding no lease write to
+     * the path a start waits on. A serving lease is not starting. An epoch
+     * acquired with a start it continues has that start and no phase yet; one
+     * acquired without begins its own here.
      */
     observe(lease: SandboxLease, input: { bootMode: SandboxBootMode; enteredAt: number; labels: Record<string, string> }) {
       if (lease.status === "ready") return undefined
-      const progress = lease.start
+      let progress = lease.start
         ?? { requestedAt: input.enteredAt, startedAt: input.enteredAt, bootMode: input.bootMode, markedAt: input.enteredAt, phases: [] }
       const ended: Timing[] = []
       let markedAt = progress.markedAt
-      let flushed = false
       const end = (phase: SandboxStartPhase) => {
         if (progress.phases.includes(phase) || ended.some((timing) => timing.phase === phase)) return
         const at = options.now()
         ended.push({ phase, durationMs: Math.max(0, at - markedAt) })
         markedAt = at
       }
+      const write = async () => {
+        const written = await append(lease, progress, ended.splice(0), { labels: input.labels, markedAt }).catch(() => undefined)
+        if (written) progress = written
+      }
       if (!progress.phases.length) end("lease_decision")
       return {
         end,
-        flush: async () => {
-          if (flushed) return
-          flushed = true
-          await append(lease, progress, ended, { labels: input.labels, markedAt }).catch(() => undefined)
-        },
+        opened: () => (lease.start ? Promise.resolve() : write()),
+        flush: write,
       }
     },
     async report(workspaceId: string, input: SandboxStartPhasesReport) {

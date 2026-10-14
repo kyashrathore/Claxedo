@@ -6,12 +6,13 @@ import { timed } from "../platform/http/server-timing"
  * pass through; `opened` marks the start whose acquire created the
  * workspace's first lease, `joined` a poll answered from the run already in
  * flight with no step of its own, `renewAt` says when a ready sandbox's
- * delivered placeholders must be delivered again, and `failed` is a runtime
+ * delivered placeholders must be delivered again, `watchAt` when its idleness
+ * is first read because its host reads none, and `failed` is a runtime
  * preparation or settings delivery that refused the start before or after
  * the sandbox.
  */
 export type SandboxStartAnswer =
-  | (Extract<SandboxEnsureResult, { status: "ready" }> & { renewAt?: number })
+  | (Extract<SandboxEnsureResult, { status: "ready" }> & { renewAt?: number; watchAt?: number })
   | Extract<SandboxEnsureResult, { status: "unavailable" }>
   | (Extract<SandboxEnsureResult, { status: "provisioning" }> & { opened?: true; joined?: true })
   | { status: "failed"; code: "runtime_prepare_failed" | "runtime_provision_failed"; message: string }
@@ -34,6 +35,12 @@ export type SandboxStartDrive = {
   live(workspaceId: string): Promise<ReadySandboxTarget | undefined>
   /** Delivers a serving sandbox its settings again and answers the next time they are due; nothing when the sandbox is not serving. */
   renew(workspaceId: string): Promise<number | undefined>
+  /**
+   * Reads a serving sandbox's idleness, stops it once the idle policy says so,
+   * and answers the next time to read; nothing once the sandbox no longer
+   * serves. `failures` counts the reads in a row before this one that threw.
+   */
+  watch(workspaceId: string, failures: number): Promise<number | undefined>
   /** Sends the telemetry a step queued, inside the Durable Object invocation that ran it; no request flushes a step for it. */
   flushTelemetry?(): Promise<void>
 }

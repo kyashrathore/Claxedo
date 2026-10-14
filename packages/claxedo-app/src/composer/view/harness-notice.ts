@@ -1,5 +1,7 @@
+import { isRefusal } from "@/lib/account-health"
 import type { ComposerNoticeTone } from "./notice-slot"
 import type { HarnessConnectionState } from "@/server"
+import type { AccountUnavailable } from "../harness/options-state"
 
 export type HarnessNoticeInput = {
   harnessLabel: string
@@ -12,6 +14,7 @@ export type HarnessNoticeInput = {
   savedModelUnavailable?: string
   setupRequired?: boolean
   accountRefused?: boolean
+  accountUnavailable?: AccountUnavailable
   openProviders?: () => void
   unavailableHere?: { message: string; detail?: string; action?: { label: string; run: () => void } }
 }
@@ -43,6 +46,22 @@ function openModels(run: () => void) {
   return { label: "Open Models", ariaLabel: "Open Settings Models", run }
 }
 
+function setupRequiredNotice(label: string, open: () => void): HarnessNotice {
+  return { kind: "setup-required", tone: "warning", message: `${label} is not set up`, detail: "Add an account in Settings → Models.", retry: false, action: openModels(open) }
+}
+
+function accountRefusedNotice(label: string, open: () => void): HarnessNotice {
+  const detail = "Reconnect it in Settings → Models, or add another account."
+  return { kind: "account-refused", tone: "warning", message: `${label}'s account was refused by its provider`, detail, retry: false, action: openModels(open) }
+}
+
+function accountUnavailableNotice(input: HarnessNoticeInput, account: AccountUnavailable, open: () => void): HarnessNotice {
+  const label = input.harnessLabel
+  if (account.reason === undefined) return setupRequiredNotice(label, open)
+  if (isRefusal(account.reason)) return accountRefusedNotice(label, open)
+  return { kind: "account-unusable", tone: "warning", message: `${label}'s account can't be used here`, detail: input.configError, retry: false, action: openModels(open) }
+}
+
 export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice | undefined {
   const connection = connectionNotice(input)
   if (connection) return connection
@@ -58,14 +77,9 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       retry: true,
     }
   }
-  if ((input.setupRequired || isProviderSetupError(input.configError)) && input.openProviders) {
-    const detail = "Add an account in Settings → Models."
-    return { kind: "setup-required", tone: "warning", message: `${input.harnessLabel} is not set up`, detail, retry: false, action: openModels(input.openProviders) }
-  }
-  if (input.accountRefused && input.openProviders) {
-    const detail = "Reconnect it in Settings → Models, or add another account."
-    return { kind: "account-refused", tone: "warning", message: `${input.harnessLabel}'s account was refused by its provider`, detail, retry: false, action: openModels(input.openProviders) }
-  }
+  if ((input.setupRequired || isProviderSetupError(input.configError)) && input.openProviders) return setupRequiredNotice(input.harnessLabel, input.openProviders)
+  if (input.accountUnavailable && input.openProviders) return accountUnavailableNotice(input, input.accountUnavailable, input.openProviders)
+  if (input.accountRefused && input.openProviders) return accountRefusedNotice(input.harnessLabel, input.openProviders)
   if (input.optionsFailed || (input.configError && input.noModels)) {
     return { kind: "models-failed", tone: "critical", message: `Couldn't load ${input.harnessLabel} models`, detail: input.configError, retry: true }
   }

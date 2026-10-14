@@ -1,7 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { toAppError, useServer } from "@/server"
-import { localMonthStart, usageRequest, type MachineTimeLoad, type UsageLoad, type UsageOptions, type UsageRead } from "./model"
+import { machineTimeSince, usageRequest, type MachineTimeLoad, type UsageDays, type UsageLoad, type UsageOptions, type UsageRead } from "./model"
 
 function readOf<Data>(query: { readonly data: Data | undefined; readonly isError: boolean; readonly error: unknown }): UsageRead<Data> {
   if (query.data !== undefined) return { kind: "ready", data: query.data }
@@ -33,9 +33,9 @@ export type MachineTimeRead = {
   readonly refresh: () => void
 }
 
-export function useMachineTime(): MachineTimeRead {
+export function useMachineTime(days: Accessor<UsageDays>): MachineTimeRead {
   const server = useServer()
-  const query = useQuery(() => server.queries.usage.machineTime(localMonthStart(Date.now())))
+  const query = useQuery(() => server.queries.usage.machineTime(machineTimeSince(days(), Date.now())))
   const load = createMemo((): MachineTimeLoad => readOf(query))
   return { load, refresh: () => void query.refetch() }
 }

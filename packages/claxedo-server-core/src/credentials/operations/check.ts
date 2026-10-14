@@ -12,8 +12,9 @@
 import { CredentialVerificationError, verifyCredential } from "./verify"
 import { refreshStoredCredential, type StoredCredentialSecret } from "./refresh"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { isRefusedHealth } from "../health"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
-import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow } from "../types"
+import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow, CredentialVerdictEvidence } from "../types"
 
 const log = Log.create({ service: "credentials-check" })
 
@@ -22,7 +23,11 @@ export type CredentialCheckOutcome =
     status: "checked"
     health: CredentialHealth
     at: number
+    /** The vendor's answer behind every verdict other than `ok`. */
+    evidence?: CredentialVerdictEvidence
     usage?: CredentialUsageWindow[]
+    /** The vendor's refusal of the plan read on an account it accepted, so the card can say why it has no windows. */
+    usageRefused?: CredentialVerdictEvidence
     /** Whether a `replace` check kept the secret it was given. Absent on an ordinary check. */
     stored?: boolean
   }
@@ -31,9 +36,6 @@ export type CredentialCheckOutcome =
   /** The row is there and its secret is not, so there is nothing to ask with. */
   | { status: "no_secret" }
   | { status: "failed"; detail: { name: string; message: string }; provider: boolean }
-
-/** The verdicts that say the provider took the material, rather than refused it. */
-const ACCEPTED = new Set<CredentialHealth>(["ok", "rate_capped", "no_billing"])
 
 export async function checkCredential(
   credentials: Pick<ControlPlaneCredentials, "updateCredentialHealth" | "resolveCredentialSecretById" | "updateCredentialSecret" | "updateCredentialUsage" | "updateCredentialLabel">,
@@ -76,10 +78,11 @@ export async function checkCredential(
       read: async () => options.secret ?? await resolveCredentialSecretById?.(credential.id, options.org),
       write: (next) => updateCredentialSecret?.(credential.id, next.secret, next.expiresAt, options.org) ?? Promise.resolve(),
     }
-    const { health, refreshed, usage, accountEmail } = await verifyCredential(subject, secret, options.replace ? verifyOptions
+    const { health, evidence, refreshed, usage, usageRefused, accountEmail } = await verifyCredential(subject, secret, options.replace ? verifyOptions
       : { ...verifyOptions, refresh: (row) => refreshStoredCredential(row, stored, verifyOptions) })
     const at = (options.now ?? Date.now)()
-    if (options.replace && !ACCEPTED.has(health)) return { status: "checked", health, at, stored: false }
+    const verdict = { health, at, ...(evidence ? { evidence } : {}) }
+    if (options.replace && isRefusedHealth(health)) return { status: "checked", ...verdict, stored: false }
     // A stored row's renewed token was written inside the shared refresh. A
     // replacement is written here, once the provider has taken it.
     if (options.replace) {
@@ -87,10 +90,16 @@ export async function checkCredential(
       // provider just said, and keeping the old one would expire a live secret.
       await updateCredentialSecret?.(credential.id, refreshed?.secret ?? secret, refreshed?.expiresAt ?? null, options.org)
     }
-    await updateCredentialHealth(credential.id, health, at, options.org)
+    await updateCredentialHealth(credential.id, health, at, options.org, evidence)
     if (usage?.length) await credentials.updateCredentialUsage?.(credential.id, usage, at, options.org)
     await nameAccount(credentials, credential, accountEmail, options.org)
-    return { status: "checked", health, at, ...(usage ? { usage } : {}), ...(options.replace ? { stored: true } : {}) }
+    return {
+      status: "checked",
+      ...verdict,
+      ...(usage ? { usage } : {}),
+      ...(usageRefused ? { usageRefused } : {}),
+      ...(options.replace ? { stored: true } : {}),
+    }
   } catch (error: unknown) {
     return {
       status: "failed",

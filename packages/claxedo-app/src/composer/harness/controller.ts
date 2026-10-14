@@ -1,3 +1,4 @@
+import type { AccountUnavailable } from "./options-state"
 import type { HarnessConnectionState, HarnessOptionChoice, HarnessUnavailableHere, ModelChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
@@ -38,6 +39,7 @@ export type HarnessSelectionControllerStore = {
   optionsLoading(scope: string): boolean
   optionsAnswered(scope: string): boolean
   configError(scope: string): string | undefined
+  accountUnavailable?(scope: string): AccountUnavailable | undefined
   unavailableHere(scope: string): HarnessUnavailableHere | undefined
   draftDefaultState(scope: string): DraftDefaultResult["state"] | undefined
   draftDefaultLabels(scope: string): DraftDefaultLabels | undefined
@@ -72,6 +74,7 @@ export type HarnessSelectionSnapshot = {
   optionsLoading: boolean
   optionsAnswered: boolean
   configError: string | undefined
+  accountUnavailable?: AccountUnavailable
   unavailableHere?: HarnessUnavailableHere
   draftDefaultState?: DraftDefaultResult["state"]
   draftDefaultLabels?: DraftDefaultLabels
@@ -99,6 +102,7 @@ function readSelection(store: HarnessSelectionControllerStore, scope: string): H
     optionsLoading: store.optionsLoading(scope),
     optionsAnswered: store.optionsAnswered(scope),
     configError: store.configError(scope),
+    accountUnavailable: store.accountUnavailable?.(scope),
     unavailableHere: store.unavailableHere(scope),
     draftDefaultState: store.draftDefaultState(scope),
     draftDefaultLabels: store.draftDefaultLabels(scope),

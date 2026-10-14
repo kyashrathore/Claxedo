@@ -595,15 +595,29 @@ export const desktopRenderer: Policy = {
   // (owner: the app's onboarding domain: `onboarding/cloud-provider.ts`,
   // `onboarding/view/choice-row.tsx`, `onboarding/view/cloud-placement.tsx`).
   // They add no package edge.
-  // The VM minutes this month above Usage → Cloud's running workspaces
-  // (owner: the app's usage domain, `usage/view/machine-time.tsx`). It adds no
+  // Usage limits and AI usage, two settings pages over one usage summary read
+  // (owner: the app's usage domain, `usage/view/summary-sections.tsx`, with the
+  // range choices both usage ranges share, `usage/view/ranges.ts`). Sandbox
+  // usage, a third page: the range's totals, one row per workspace merged with
+  // the cloud domain's running rows, and where each provider's prices were read
+  // (owner: the app's usage domain, `usage/sandbox-rows.ts`,
+  // `usage/view/sandbox-usage-section.tsx`, `usage/view/sandbox-totals.tsx`,
+  // `usage/view/sandbox-table.tsx`, `usage/view/sandbox-prices.tsx`). They add
+  // no package edge.
+  // A draft's held session reservation as the pane persists it, with the
+  // harness and title it was reserved for (owner: the app's session domain,
+  // `session/view/held-reservation.ts`); the draft pane's state and route
+  // contract, split from the pane kind so the chosen Where can be tested without
+  // the screen (owner: the app's session domain, `session/view/draft-state.ts`);
+  // and the repository name a hosted project create names its first workspace by
+  // (owner: the app's server adapter, `server/repository-name.ts`). They add no
   // package edge.
-  // Usage → Cloud's per-workspace table, each row a workspace on one machine
-  // size with its minutes, published rate and cost, merged with the cloud
-  // domain's running rows (owner: the app's usage domain, `usage/cloud-rows.ts`,
-  // `usage/view/cloud-workspace-table.tsx`). They add no package edge.
-  // 1358/36, no headroom.
-  ceilings: { modules: 1358, packages: 36 },
+  // The account health predicates both the accounts and the composer domains
+  // read (owner: `lib/account-health.ts`), and the connect form's state apart
+  // from its server reads (owner: the app's accounts domain,
+  // `accounts/connect-state.ts`). They add no package edge.
+  // 1365/36, no headroom.
+  ceilings: { modules: 1365, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -15,6 +15,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import type { SandboxMutationResult } from "@claxedo/sandbox-manager"
 
 type CheckpointRouteOptions = {
   loopbackRelayUrl?: string
@@ -262,4 +263,24 @@ function lifecycleError(c: { json: (body: unknown, status: 409 | 503) => Respons
   const message = error instanceof Error ? error.message : String(error)
   const unavailable = statusOf(error) === 503
   return c.json(encodeApiError({ ...asRecord(error), code: unavailable ? "workspace_checkpoint_unavailable" : "workspace_checkpoint_conflict", message }), unavailable ? 503 : 409)
+}
+
+export type WorkspaceIdleStop = (
+  workspaceId: string,
+  epoch: number,
+  stop: { idleBefore?: number; hostStopsItself?: true },
+) => Promise<SandboxMutationResult>
+
+/**
+ * Stops lease generation `epoch` of a workspace as its owner, the way an idle
+ * watcher does: `idleBefore` meters the stop as idle, and `hostStopsItself`
+ * leaves the host to the watcher that is the host.
+ */
+export function hostedWorkspaceIdleStop(services: ControlPlaneServices): WorkspaceIdleStop {
+  return async (workspaceId, epoch, stop) => {
+    const owner = await services.authority?.resolveWorkspaceOwner?.(workspaceId)
+    if (!owner) return { ok: false, reason: "workspace_owner_unavailable" }
+    return await workspaceCheckpointService(undefined, "owner", owner.orgId, services, { defaultHomeRegion: services.defaultHomeRegion })
+      .stop(workspaceId, { expectedEpoch: epoch, ...stop })
+  }
 }

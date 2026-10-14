@@ -10,8 +10,6 @@ export type BreakdownRow = NonNullable<UsageSummary["breakdown"]>["rows"][number
 
 export type UsageView = "quota" | "claxedo"
 
-export type UsageTab = UsageView | "cloud"
-
 export type UsageMetric = "tokens" | "cost"
 
 export type UsageGroup = "provider" | "model"
@@ -40,13 +38,6 @@ export const BREAKDOWN_PAGE_SIZE = 25
 
 const MINUTE_MS = 60_000
 
-export function localMonthStart(now: number): number {
-  const start = new Date(now)
-  start.setDate(1)
-  start.setHours(0, 0, 0, 0)
-  return start.getTime()
-}
-
 export function wholeMinutes(ms: number): number {
   return Math.floor(ms / MINUTE_MS)
 }
@@ -58,6 +49,10 @@ export function inclusiveLocalRange(days: number, now: number): { readonly since
   const until = new Date(now)
   until.setHours(23, 59, 59, 999)
   return { since: since.getTime(), until: until.getTime() }
+}
+
+export function machineTimeSince(days: UsageDays, now: number): number {
+  return inclusiveLocalRange(days, now).since
 }
 
 export function usageRequest(options: UsageOptions, now: number, timeZone: string): UsageRequest {

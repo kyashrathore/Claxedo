@@ -33,10 +33,12 @@ import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../r
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
+import { createSessionHostRows } from "../../session/session-host-rows"
+import type { CredentialRefusals } from "../../credentials/credential-refusals"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
-import { WorkspaceCheckpointRoutes, workspaceCheckpointService } from "../../workspace/routes/checkpoints"
-import { hostConnectEndpointOptions, routeAuth, signedOrError } from "../../workspace/route-support"
+import { hostedWorkspaceIdleStop, WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
+import { hostConnectEndpointOptions, missingBearerBody, routeAuth, signedOrError } from "../../workspace/route-support"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
@@ -183,6 +185,12 @@ export type HostedCoreAppOptions = {
    * on a plane with no sandbox; its routes are then not served at all.
    */
   egressBroker?: (request: Request) => Promise<Response>
+  /**
+   * The rule a vendor's refusal of a stored account is judged by, the one the
+   * broker counts with, so a session host's reported refusal adds to the
+   * broker's. Absent, the session host routes count on their own.
+   */
+  credentialRefusals?: CredentialRefusals
 }
 
 export function assertHostedCoreBootConfig(plane: HostedControlPlane, options: Partial<HostedCoreAppOptions>) {
@@ -408,6 +416,15 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {
     notify: (orgId, notices) => nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ orgId }), notices),
     ...(options.sessionRowsPasses ? { sessionRowsPasses: options.sessionRowsPasses } : {}),
+    ...(services.sessionHosts && services.authority?.resolveWorkspaceOwner
+      ? {
+          sessionHostRows: createSessionHostRows({
+            env: plane.env,
+            sessionHosts: services.sessionHosts,
+            resolveWorkspaceOwner: services.authority.resolveWorkspaceOwner.bind(services.authority),
+          }),
+        }
+      : {}),
   }))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
@@ -563,6 +580,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         credentials: plane.orgCredentials,
         ...(options.sessionHostPlugins ? { plugins: options.sessionHostPlugins } : {}),
         ...(sessionMcp ? { sessionMcp } : {}),
+        ...(options.credentialRefusals ? { credentialRefusals: options.credentialRefusals } : {}),
       }
     : undefined
   if (plane.runtimeSessionAuthority) {
@@ -611,12 +629,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       sandboxManager: services.sandbox.sandboxManager,
       telemetry: services.telemetry,
       idleStopToken: plane.env.CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN,
-      idleStop: async (workspaceId, epoch, idleBefore) => {
-        const owner = await services.authority?.resolveWorkspaceOwner?.(workspaceId)
-        if (!owner) return { ok: false, reason: "workspace_owner_unavailable" }
-        return await workspaceCheckpointService(undefined, "owner", owner.orgId, services, { defaultHomeRegion: services.defaultHomeRegion })
-          .stop(workspaceId, { expectedEpoch: epoch, idleBefore, hostStopsItself: true })
-      },
+      idleStop: (workspaceId, epoch, idleBefore) => hostedWorkspaceIdleStop(services)(workspaceId, epoch, { idleBefore, hostStopsItself: true }),
     }),
   )
   if (options.integrationRoutes) app.route("/api/claxedo/integrations", options.integrationRoutes)
@@ -686,8 +699,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
 function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentication: RequestAuthenticationAdapter) {
   const { services } = plane
   app.get("/api/control/sessions", async (context) => {
-    const workspaceId = context.req.query("workspaceId")
-    if (!workspaceId || !services.authority?.listSessions) return context.json(sessionInventoryResponse([]))
     const authResult = await signedOrError(
       context.req.raw,
       {
@@ -697,7 +708,9 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       services,
     )
     if ("error" in authResult) return context.json(authResult.error, authResult.status)
-    if (!authResult.auth) return context.json(sessionInventoryResponse([]))
+    if (!authResult.auth) return context.json(missingBearerBody(), 401)
+    const workspaceId = context.req.query("workspaceId")
+    if (!workspaceId || !services.authority?.listSessions) return context.json(sessionInventoryResponse([]))
     return context.json(
       sessionInventoryResponse(await services.authority.listSessions(authResult.auth, { workspaceId })),
     )

@@ -3,7 +3,8 @@ import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { asRecord } from "@claxedo/helpers/guards"
 import { expiryFromJwt } from "@claxedo/agent-runtime-contract"
 import { OPENAI_CLIENT_ID, OPENAI_TOKEN_URL } from "../provider-auth/openai-oauth"
-import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
+import { readVendorAnswer, vendorReply } from "./vendor-answer"
+import type { CredentialMetadata, CredentialVerdictEvidence } from "@claxedo/server-core/credentials/types"
 
 /**
  * Non-interactive refresh for imported OAuth credentials.
@@ -17,7 +18,16 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
  * `verifyCredential` never mistakes an idle Codex login for an expired one.
  */
 
-export class CredentialRefreshError extends Error {}
+export class CredentialRefreshError extends Error {
+  /**
+   * Set when the token endpoint itself refused the grant (`invalid_grant`,
+   * `invalid_client`, …), which ends the login. Absent when the answer was not
+   * the endpoint's — a gateway page, a 5xx, no network — and so said nothing.
+   */
+  constructor(message: string, readonly rejected?: CredentialVerdictEvidence) {
+    super(message)
+  }
+}
 
 export type RefreshedCredentialSecret = {
   secret: string
@@ -75,12 +85,16 @@ export async function refreshCredentialSecret(
     })
 
     if (!response.ok) {
-      // OAuth error codes (`invalid_grant`, `invalid_client`, …) are not secret
-      // and are the only thing that distinguishes "revoked" from "misconfigured".
-      const reason = await response.text().then(oauthErrorCode).catch(() => undefined)
-      throw new CredentialRefreshError(
-        `Credential refresh was rejected (${response.status}${reason ? `: ${reason}` : ""})`,
-      )
+      // RFC 6749 §5.2: the endpoint refuses a grant with a 4xx carrying a JSON
+      // `error` code. Any other answer is not the endpoint's word on the token.
+      const answer = readVendorAnswer(await vendorReply(response))
+      const refused = response.status >= 400 && response.status < 500 && answer.evidence.type !== undefined
+      if (!refused) {
+        throw new CredentialRefreshError(
+          `Credential refresh was not concluded (${response.status} ${answer.contentType ?? "no content type"})`,
+        )
+      }
+      throw new CredentialRefreshError(`Credential refresh was rejected (${response.status}: ${answer.evidence.type})`, answer.evidence)
     }
 
     const body = jsonRecord(await response.json().catch(() => undefined))
@@ -210,11 +224,5 @@ function rewriteSecret(
   }
 
   return JSON.stringify(updated)
-}
-
-function oauthErrorCode(body: string) {
-  const value = parseJsonRecord(body)
-  const code = jsonString(value?.error) ?? jsonString(value?.error_description)
-  return code?.slice(0, 120)
 }
 

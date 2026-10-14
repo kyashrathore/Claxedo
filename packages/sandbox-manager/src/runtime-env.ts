@@ -36,6 +36,30 @@ export function assertWorkspaceRuntimeIdentityEnv(env: Record<string, string> | 
   )
 }
 
+/**
+ * The boot env a driver may echo in a diagnostic: what the runtime is and
+ * serves, and where it reaches the control plane. Everything else the boot env
+ * carries (the caller's project env, control-plane bearer material) is a secret
+ * a driver redacts from command output before it reports a failure.
+ */
+const WORKSPACE_RUNTIME_PUBLIC_ENV_KEYS: ReadonlySet<string> = new Set([
+  ...WORKSPACE_RUNTIME_IDENTITY_ENV_KEYS,
+  "WORKSPACE_RUNTIME_DIRECTORY",
+  "WORKSPACE_RUNTIME_PORT",
+  "WORKSPACE_RUNTIME_HOST",
+  "WORKSPACE_RUNTIME_SOURCE_KIND",
+  "WORKSPACE_RUNTIME_GIT_REPO_URL",
+  "WORKSPACE_RUNTIME_GIT_BRANCH",
+  "WORKSPACE_RUNTIME_NATIVE_HARNESS",
+  "WORKSPACE_RUNTIME_RELAY_JWKS_URL",
+  "WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL",
+  "WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL",
+])
+
+export function workspaceRuntimeBootSecrets(env: Record<string, string>): string[] {
+  return Object.entries(env).flatMap(([key, value]) => (WORKSPACE_RUNTIME_PUBLIC_ENV_KEYS.has(key) ? [] : [value]))
+}
+
 export function workspaceRuntimeBootEnv(input: Parameters<typeof workspaceRuntimeTargetEnv>[0] &
   Parameters<typeof workspaceRuntimeSourceEnv>[0] & {
     env?: Record<string, string>

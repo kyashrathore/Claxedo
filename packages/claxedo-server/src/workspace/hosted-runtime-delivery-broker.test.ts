@@ -4,7 +4,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { unusedSandboxStart } from "../test-support/inline-sandbox-start"
+import { unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 import { hostedBrokerCredentialReader, hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { createHostedEgressBroker, DRAFT_PLACEHOLDER, verifyBrokerPlaceholder } from "../credentials/hosted-egress-broker"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
@@ -58,10 +58,14 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
   type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
+    idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host-a", url: "https://runtime.test", epoch: 3 }) } } } as unknown as Input["services"],
-    sandboxManager: { target: async () => ({ status: "ready", hostId: "host-a", url: "https://runtime.test", epoch: 3 }) } as unknown as Input["sandboxManager"],
+    sandboxManager: {
+      target: async () => ({ status: "ready", hostId: "host-a", url: "https://runtime.test", epoch: 3 }),
+      heartbeat: async () => ({ ok: true, status: "ready" }),
+    } as unknown as Input["sandboxManager"],
     workspaceSecretBrokering: async () => driver === "cloudflare" ? "native" : "none",
     ...(broker ? { broker } : {}),
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },

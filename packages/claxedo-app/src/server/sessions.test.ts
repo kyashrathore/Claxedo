@@ -176,6 +176,32 @@ test("sessions: a create the control plane reserves in its own host connects the
   workspaces.dispose()
 })
 
+test("sessions: a draft reserved under Codex that switches to Pi before it lands reserves again as Pi and is created in the control plane's host, not in the workspace's runtime", async () => {
+  const minted: unknown[] = []
+  const hosted: HostedRequest[] = []
+  const reservations: Array<{ sessionId: string; harness?: { id: string } }> = []
+  const origin = sessionHostServer(minted, hosted, reservations)
+  const transport = createTransport({ serverUrl: origin, cookies: true })
+  const account = createBrowserHostedAccount(transport)
+  const workspaces = createWorkspaces(transport, new QueryClient())
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(workspaces, account), telemetry, account)
+  let held: SessionReservation | undefined
+  const reservation = { held: () => held, hold: (next: SessionReservation) => { held = next } }
+
+  await expect(sessions.create({ placementId: placementId("ws_cloud"), harness: "codex", reservation })).rejects.toMatchObject({ message: "/workspaces/ws_cloud/session" })
+  expect(held).toMatchObject({ sessionId: reservations[0]?.sessionId, harness: { id: "codex", access: "native" } })
+  const row = await sessions.create({ placementId: placementId("ws_cloud"), harness: "pi", reservation })
+
+  const id = String(row.ref.sessionId)
+  expect(reservations.map((reserved) => reserved.harness?.id)).toEqual(["codex", "pi"])
+  expect(id).toBe(reservations[1].sessionId)
+  expect(id).not.toBe(reservations[0].sessionId)
+  expect(held).toMatchObject({ sessionId: id, sessionHostRoot: id, harness: { id: "pi", access: "native" } })
+  expect(minted).toEqual([{ session: { sessionId: id } }])
+  expect(hosted).toEqual([expect.objectContaining({ method: "POST", path: `/relay/workspaces/ws_cloud/session/${id}` })])
+  workspaces.dispose()
+})
+
 test("sessions: a create the control plane places in the workspace's runtime mints no session connection", async () => {
   const minted: unknown[] = []
   const hosted: HostedRequest[] = []

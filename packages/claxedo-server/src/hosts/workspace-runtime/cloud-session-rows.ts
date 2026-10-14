@@ -1,15 +1,10 @@
 import { decodeJwt } from "jose"
 import { Hono } from "hono"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
-import type { RuntimeStore } from "@claxedo/session-core"
 import type { WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { workspaceId } from "@claxedo/workspace-runtime/host"
-import type { HostSessionRow } from "@claxedo/server-core/platform/auth/host-session-rows"
-import type { SessionRowStatus } from "@claxedo/server-core/session/navigation-list"
 import { SESSION_ROWS_PASS_PATH, type SessionRowsPassHeld } from "@claxedo/server-core/hosts/workspace-runtime/env"
-import { createRuntimeSessionStatus } from "@claxedo/server-core/session/publish/runtime-session-status"
-import { createSessionRowsPublisher, type SessionRowSource } from "@claxedo/server-core/session/publish/session-rows-publisher"
+import { createRuntimeSessionRows } from "@claxedo/server-core/session/publish/runtime-session-rows"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { controlPlaneOrigin } from "./tasks-grant"
@@ -19,28 +14,11 @@ import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type
 const log = Log.create({ service: "cloud-session-rows" })
 
 type SessionReads = Parameters<NonNullable<WorkspaceRuntimeServerOptions["bindSessionReads"]>>[0]
-type RuntimeSession = ReturnType<RuntimeStore["listEverySession"]>[number]
-type FrameListener = (frame: unknown) => void
 
 export type CloudSessionRows = Required<Pick<WorkspaceRuntimeServerOptions, "onPresentationEvent" | "bindSessionReads" | "beforeStoreClose">> & {
   /** Where the control plane hands this runtime its pass, and asks which one it holds. */
   routes: WorkspaceRuntimeRouteContribution
   stop: () => void
-}
-
-function hostSessionRow(workspaceId: string, session: RuntimeSession, status: SessionRowStatus): HostSessionRow {
-  const { time, lastTurn } = session
-  return {
-    workspaceId,
-    sessionId: session.id,
-    ...(session.title ? { title: session.title } : {}),
-    createdAt: time.created,
-    updatedAt: time.updated,
-    ...(time.lastHumanTurn !== undefined ? { lastHumanTurnAt: time.lastHumanTurn } : {}),
-    ...(time.archived !== undefined ? { archivedAt: time.archived } : {}),
-    status,
-    ...(lastTurn ? { lastTurn: { status: lastTurn.status, completedAt: lastTurn.completedAt } } : {}),
-  }
 }
 
 function held(token: string | undefined): SessionRowsPassHeld {
@@ -56,13 +34,11 @@ function held(token: string | undefined): SessionRowsPassHeld {
 }
 
 /**
- * A cloud runtime's publisher of its sessions' list rows: the shared
- * publisher and status tracker, fed from this runtime's own presentation
- * events and store, every session of the workspace whatever directory it is
- * filed under (a worktree session's is its worktree). It publishes nothing
- * until the control plane, as its service actor over the relay, hands it a
- * session rows pass for its lease epoch; it renews that pass at half-life,
- * and a pass the control plane hands it later replaces it.
+ * A cloud runtime's publisher of its sessions' list rows: the shared runtime
+ * rows over this runtime's own store and presentation events. It publishes
+ * nothing until the control plane, as its service actor over the relay, hands
+ * it a session rows pass for its lease epoch; it renews that pass at
+ * half-life, and a pass the control plane hands it later replaces it.
  */
 export function cloudSessionRows(
   env: NodeJS.ProcessEnv,
@@ -75,7 +51,6 @@ export function cloudSessionRows(
   const url = new URL("/api/claxedo/host/session-rows", origin).toString()
   const workspace = workspaceId(env)
   const hostId = env.WORKSPACE_RUNTIME_HOST_ID?.trim() || workspace
-  const frames = new Set<FrameListener>()
   let reads: SessionReads | undefined
   let token: string | undefined
 
@@ -83,34 +58,14 @@ export function cloudSessionRows(
     if (!reads) throw new Error("the workspace runtime has not bound its session reads yet")
     return reads
   }
-  const status = createRuntimeSessionStatus({
-    observe: (listener) => {
-      listener({ workspace: { id: workspace }, frames: { subscribe: (fn) => (frames.add(fn), () => frames.delete(fn)) } }, "mounted")
-      return () => frames.clear()
-    },
-    read: async (_workspaceId, path) => {
-      if (!reads) return undefined
-      if (path === "/session/status") return Response.json(reads.sessionStatus())
-      return Response.json(path === "/permission" ? reads.store().listEveryPermission() : reads.store().listEveryQuestion())
-    },
-    onChange: (workspaceId, sessionId) => publisher.sessionChanged(workspaceId, sessionId),
+  const rows = createRuntimeSessionRows({
+    workspaceId: workspace,
+    url,
+    store: () => mounted().store(),
+    sessionStatus: () => mounted().sessionStatus(),
+    ...(options.fetch ? { fetch: options.fetch } : {}),
   })
-  const source: SessionRowSource = {
-    listRows: async (workspaceId) => {
-      const store = mounted().store()
-      const live = await status.snapshot(workspaceId)
-      return store.listEverySession()
-        .filter((session) => !session.parentID)
-        .map((session) => hostSessionRow(workspaceId, session, live.get(session.id) ?? status.current(workspaceId, session.id)))
-    },
-    readRow: async (workspaceId, sessionId) => {
-      const session = mounted().store().getSession(sessionId)
-      if (!session) return { kind: "absent" }
-      if (session.parentID) return { kind: "child" }
-      return { kind: "row", row: hostSessionRow(workspaceId, session, status.current(workspaceId, sessionId)) }
-    },
-  }
-  const publisher = createSessionRowsPublisher({ source, url: () => url, ...(options.fetch ? { fetch: options.fetch } : {}) })
+  const { publisher } = rows
 
   const adopt = (next: string) => {
     const expiresAt = expiryOf(next)
@@ -152,12 +107,7 @@ export function cloudSessionRows(
   })
 
   return {
-    onPresentationEvent: (event: AgentEventEnvelope) => {
-      for (const listener of frames) listener(event)
-      const payload = event.payload
-      if (payload.type === "session.updated") publisher.sessionChanged(workspace, payload.properties.sessionID)
-      if (payload.type === "session.deleted" && !payload.properties.info.parentID) publisher.sessionRemoved(workspace, payload.properties.info.id)
-    },
+    onPresentationEvent: rows.onPresentationEvent,
     bindSessionReads: (bound) => {
       reads = bound
     },
@@ -178,8 +128,7 @@ export function cloudSessionRows(
     },
     stop: () => {
       renewal.stop()
-      publisher.stop()
-      status.stop()
+      rows.stop()
     },
   }
 }

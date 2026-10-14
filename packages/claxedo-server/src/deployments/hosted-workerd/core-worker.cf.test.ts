@@ -155,7 +155,9 @@ describe("hosted core Worker root", () => {
     expect(response.status).toBe(500)
     expect(waits).toHaveLength(1)
     expect(posted).toHaveLength(1)
-    const capture = JSON.parse(posted[0])
+    const { batch } = JSON.parse(posted[0]) as { batch: Array<Record<string, unknown> & { properties: Record<string, unknown> }> }
+    expect(batch).toHaveLength(1)
+    const capture = batch[0]
     expect(capture.event).toBe("$exception")
     expect(capture.distinct_id).toBe("system")
     expect(capture.properties).toMatchObject({ route: "/api/things/:thingId", method: "POST", code: "thing_store_unavailable" })

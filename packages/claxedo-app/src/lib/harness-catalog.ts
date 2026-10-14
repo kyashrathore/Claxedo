@@ -21,12 +21,8 @@ function entry(id: string): HarnessEntry | undefined {
   return (HARNESS_CATALOG as Record<string, HarnessEntry | undefined>)[id]
 }
 
-export function harnessLabel(id: string): string | undefined {
-  return entry(id)?.label
-}
-
 export function harnessDisplayLabel(key: string): string {
-  const known = harnessLabel(key)
+  const known = entry(key)?.label
   if (known) return known
   return key
     .split(/[-_]/g)
@@ -56,7 +52,7 @@ export function harnessConnectContext(harness: string, fallbackLabel?: string): 
 }
 
 function engineConnectContext(engine: string, vendor: string): ConnectContext {
-  return { kind: "engine", engine: harnessLabel(engine) ?? engine, vendor }
+  return { kind: "engine", engine: entry(engine)?.label ?? engine, vendor }
 }
 
 export function harnessIcon(id: string): string {
@@ -64,7 +60,7 @@ export function harnessIcon(id: string): string {
 }
 
 export function harnessLabelForProviderId(providerId: string): string | undefined {
-  return harnessLabel(harnessForProviderId(providerId) ?? providerId)
+  return entry(harnessForProviderId(providerId) ?? providerId)?.label
 }
 
 function harnessForConnectProvider(providerId: string): string | undefined {

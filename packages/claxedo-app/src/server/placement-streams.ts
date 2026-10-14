@@ -22,7 +22,7 @@ type StreamsInput = {
   readonly workspaces: Workspaces
   readonly queryClient: QueryClient
   readonly onFrame: (frame: unknown) => void
-  readonly onGap: () => void
+  readonly onGap: (ref?: SessionLocation) => void
 }
 
 type Refusal = { readonly kind: "outdated"; readonly current: boolean } | { readonly kind: "unavailable"; readonly row: string }
@@ -32,6 +32,7 @@ type OpenStream = { readonly stream: Stream; readonly route: string; readonly wo
 type StreamsState = {
   readonly input: StreamsInput
   readonly attached: Map<string, Map<string, number>>
+  readonly refs: Map<string, SessionLocation>
   readonly sessions: Map<string, OpenStream>
   readonly watched: Map<PlacementId, number>
   readonly workspaces: Map<PlacementId, OpenStream>
@@ -50,11 +51,12 @@ function sessionKey(placement: string, session: string) {
 }
 
 function wanted(state: StreamsState) {
-  const sessions = new Map<string, { placement: PlacementId; session: string; route: RuntimeRoute }>()
+  const sessions = new Map<string, { placement: PlacementId; session: string; route: RuntimeRoute; ref: SessionLocation }>()
   for (const [placement, attachedSessions] of state.attached) {
     for (const session of attachedSessions.keys()) {
       const route = liveRemoteRoute(state.input.workspaces, placement, session)
-      if (route) sessions.set(sessionKey(placement, session), { placement: placementId(placement), session, route })
+      const ref = state.refs.get(sessionKey(placement, session))
+      if (route && ref) sessions.set(sessionKey(placement, session), { placement: placementId(placement), session, route, ref })
     }
   }
   return sessions
@@ -73,16 +75,16 @@ function reopens(input: StreamsInput, open: OpenStream) {
   return open.refused?.kind === "unavailable" && open.refused.row !== placementRow(input, open.placement)
 }
 
-function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: RuntimeRoute, path: string, rerouted: boolean): OpenStream {
-  let missed = rerouted
+function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: RuntimeRoute, path: string, rerouted: boolean, session?: SessionLocation): OpenStream {
+  let missed = rerouted || session !== undefined
   const open: OpenStream = { route: routeKey(route), workspaceId: route.workspaceId, placement, stream: openEventStream({
     open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
     onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
-    onGap: input.onGap,
+    onGap: () => input.onGap(session),
     onState: (connection) => {
       if (missed && connection.kind === "connected") {
         missed = false
-        input.onGap()
+        input.onGap(session)
       }
       if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
     },
@@ -91,7 +93,7 @@ function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: R
       else if (isRuntimeUnavailable(error)) {
         open.refused = { kind: "unavailable", row: placementRow(input, placement) }
         refreshCatalog(input)
-      } else if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
+      } else if (route.sharedSession) void input.workspaces.shared.refresh().then(() => input.onGap(session), (error) => console.error("Shared sessions could not be refreshed", error))
       else refreshCatalog(input)
     },
   }) }
@@ -119,8 +121,8 @@ function watchedWorkspaces(state: StreamsState) {
 
 function reconcileStreams(state: StreamsState) {
   const { input } = state
-  reconcileKeyed(input, state.sessions, wanted(state), ({ placement, session, route }, rerouted) =>
-    openRuntimeStream(input, placement, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`, rerouted))
+  reconcileKeyed(input, state.sessions, wanted(state), ({ placement, session, route, ref }, rerouted) =>
+    openRuntimeStream(input, placement, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`, rerouted, ref))
   reconcileKeyed(input, state.workspaces, watchedWorkspaces(state), ({ id, route }, rerouted) =>
     openRuntimeStream(input, id, route, `${RUNTIME_EVENTS_PATH}?sessions=none`, rerouted))
 }
@@ -157,26 +159,30 @@ function followCatalog(state: StreamsState): () => void {
   }
 }
 
+function attachSession(state: StreamsState, ref: SessionLocation): () => void {
+  const placement = String(ref.placementId)
+  const session = String(ref.sessionId)
+  const counts = state.attached.get(placement) ?? new Map<string, number>()
+  state.attached.set(placement, counts)
+  state.refs.set(sessionKey(placement, session), ref)
+  const release = retain(counts, session)
+  reconcileStreams(state)
+  void state.input.workspaces.home(ref).then(() => reconcileStreams(state), (error: unknown) => {
+    console.warn("A session's host could not be resolved for its live stream", { sessionId: session, error: toAppError(error) })
+  })
+  return () => {
+    release()
+    if (!counts.has(session)) state.refs.delete(sessionKey(placement, session))
+    if (counts.size === 0) state.attached.delete(placement)
+    reconcileStreams(state)
+  }
+}
+
 export function createPlacementStreams(input: StreamsInput): PlacementStreams {
-  const state: StreamsState = { input, attached: new Map(), sessions: new Map(), watched: new Map(), workspaces: new Map() }
+  const state: StreamsState = { input, attached: new Map(), refs: new Map(), sessions: new Map(), watched: new Map(), workspaces: new Map() }
   const unfollow = followCatalog(state)
   return {
-    attach: (ref) => {
-      const placement = String(ref.placementId)
-      const session = String(ref.sessionId)
-      const counts = state.attached.get(placement) ?? new Map<string, number>()
-      state.attached.set(placement, counts)
-      const release = retain(counts, session)
-      reconcileStreams(state)
-      void input.workspaces.home(ref).then(() => reconcileStreams(state), (error: unknown) => {
-        console.warn("A session's host could not be resolved for its live stream", { sessionId: session, error: toAppError(error) })
-      })
-      return () => {
-        release()
-        if (counts.size === 0) state.attached.delete(placement)
-        reconcileStreams(state)
-      }
-    },
+    attach: (ref) => attachSession(state, ref),
     watch: (id) => {
       const release = retain(state.watched, id)
       reconcileStreams(state)
@@ -192,6 +198,7 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
     close: () => {
       unfollow()
       state.attached.clear()
+      state.refs.clear()
       state.watched.clear()
       reconcileStreams(state)
     },

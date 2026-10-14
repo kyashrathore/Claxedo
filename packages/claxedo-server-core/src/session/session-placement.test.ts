@@ -6,8 +6,11 @@ describe("sessionPlacement", () => {
     expect(sessionPlacement({ backing: "cloud-vm", harnessId: "pi" })).toBe("durable-object")
   })
 
-  test("keeps every other session in the workspace runtime", () => {
+  test("keeps every other session in the workspace runtime, as the harness table says", () => {
     expect(sessionPlacement({ backing: "local-worktree", harnessId: "pi" })).toBe("runtime")
     expect(sessionPlacement({ backing: "cloud-vm", harnessId: "codex" })).toBe("runtime")
+    expect(sessionPlacement({ backing: "cloud-vm", harnessId: "claude" })).toBe("runtime")
+    expect(sessionPlacement({ backing: "cloud-vm", harnessId: "acme-acp" })).toBe("runtime")
+    expect(sessionPlacement({ backing: "cloud-vm", harnessId: "" })).toBe("runtime")
   })
 })

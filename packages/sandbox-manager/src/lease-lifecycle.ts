@@ -21,8 +21,8 @@ export type SandboxLifecycleEvent = {
 
 export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) => void) | undefined, now: () => number) {
   const base = (lease: SandboxLease) => ({ workspaceId: lease.workspaceId, epoch: lease.epoch, driver: lease.driver, labels: lease.labels ?? {} })
-  const active = (lease: SandboxLease) =>
-    lease.status === "ready" && lease.start ? { activeMs: Math.max(0, now() - lease.start.startedAt) } : {}
+  const active = (lease: SandboxLease, endedAt = now()) =>
+    lease.status === "ready" && lease.start ? { activeMs: Math.max(0, endedAt - lease.start.startedAt) } : {}
   const report = (event: SandboxLifecycleEvent) => {
     try {
       sink?.(event)
@@ -32,7 +32,8 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
   }
   return {
     stopped: (lease: SandboxLease, idle: boolean) => report({ ...base(lease), kind: "stopped", idle, ...active(lease) }),
-    destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", ...active(lease) }),
+    /** `endedAt` is when the host was last proven serving, for a destroy that learns of its end after the fact. */
+    destroyed: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "destroyed", ...active(lease, endedAt) }),
     failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean }) => report({ ...base(lease), kind: "failed", ...failure }),
   }
 }

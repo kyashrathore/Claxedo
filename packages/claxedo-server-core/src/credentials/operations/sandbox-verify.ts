@@ -7,7 +7,8 @@ import {
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { CredentialVerificationError } from "../verification-error"
-import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
+import { readVendorAnswer, vendorReply } from "./vendor-answer"
+import type { CredentialHealth, CredentialVerdictEvidence } from "@claxedo/server-core/credentials/types"
 
 /**
  * Probe a sandbox provider's credential against that provider.
@@ -22,19 +23,21 @@ import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
  * `CredentialVerificationError` so callers render "couldn't check", the same
  * discipline `verifyCredential` follows for model providers.
  */
+export type SandboxDriverVerdict = { health: CredentialHealth; evidence?: CredentialVerdictEvidence }
+
 export async function verifySandboxDriverAuth(
   id: SandboxDriverID,
   // A decoded credential blob: `probeAuth` establishes which fields are usable
   // strings, so the parameter does not have to promise what the blob cannot.
   auth: Record<string, unknown>,
   options: { fetch?: typeof fetch } = {},
-): Promise<CredentialHealth> {
+): Promise<SandboxDriverVerdict> {
   const values = probeAuth(id, auth)
   if (!values) throw new CredentialVerificationError("credential_shape_invalid", "Sandbox provider credential has an unsupported shape")
   const probe = sandboxDriverProbe(id, values)
   if (!probe) throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
 
-  return withDeadlineSignal(10_000, async (signal): Promise<CredentialHealth> => {
+  return withDeadlineSignal(10_000, async (signal): Promise<SandboxDriverVerdict> => {
     // workerd accepts only "follow" and "manual" and throws on "error", which
     // the catch below would report as the provider being unreachable, so the
     // 3xx is read back and refused here.
@@ -46,19 +49,36 @@ export async function verifySandboxDriverAuth(
     }
     if (response.ok) {
       await response.body?.cancel().catch(() => undefined)
-      return "ok"
+      return { health: "ok" }
     }
-    const failure = (await response.text().catch(() => "")).slice(0, 8_192).toLowerCase()
-    if (probe.ok?.(response.status, failure)) return "ok"
+    // Only the provider API's own answer is a verdict, as for model vendors: a
+    // wrong `worker_url` reaching some site's HTML 501, or an edge challenging
+    // the request, must neither prove nor condemn the key. A 429 is the one
+    // exception, since a throttle never ends an account.
+    const reply = await vendorReply(response)
+    const answer = readVendorAnswer(reply)
+    const { evidence } = answer
+    if (!answer.api) {
+      if (reply.status === 429) return { health: "rate_capped", evidence }
+      throw new CredentialVerificationError(
+        "credential_verification_failed",
+        `Sandbox provider answered ${reply.status} with ${answer.contentType ?? "no content type"} rather than an API error`,
+      )
+    }
+    const failure = reply.text.toLowerCase()
+    if (probe.ok?.(reply.status, failure)) return { health: "ok" }
     if (
-      response.status === 402 ||
+      reply.status === 402 ||
       failure.includes("insufficient_quota") ||
       failure.includes("billing") ||
       failure.includes("credit balance")
-    ) return "no_billing"
-    if (response.status === 429) return "rate_capped"
-    if (probe.rejected(response.status)) return "auth_failed"
-    throw new CredentialVerificationError("credential_verification_failed", "Sandbox provider verification failed")
+    ) return { health: "no_billing", evidence }
+    if (reply.status === 429) return { health: "rate_capped", evidence }
+    if (probe.rejected(reply.status)) return { health: "auth_failed", evidence }
+    throw new CredentialVerificationError(
+      "credential_verification_failed",
+      `Sandbox provider answered ${reply.status}${evidence.type ? ` ${evidence.type}` : ""}`,
+    )
   })
 }
 
@@ -66,7 +86,7 @@ export async function verifySandboxDriverCredential(
   providerId: string,
   secret: string,
   options: { fetch?: typeof fetch } = {},
-): Promise<CredentialHealth> {
+): Promise<SandboxDriverVerdict> {
   if (!isSandboxDriverID(providerId)) {
     throw new CredentialVerificationError("credential_verification_unsupported", "Sandbox provider does not support verification")
   }

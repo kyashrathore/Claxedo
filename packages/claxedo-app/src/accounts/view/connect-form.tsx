@@ -91,7 +91,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
         placeholder={token() ? t("provider.connect.token.placeholder") : t("provider.connect.apiKey.placeholder")}
         name="apiKey"
         value={form().store.value}
-        onChange={(value) => form().setStore("value", value)}
+        onChange={(value) => form().setValue(value)}
         invalid={!!form().store.error}
         error={form().store.error}
       />
@@ -105,8 +105,15 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
           onChange={(value) => form().setStore("label", value)}
         />
       </Show>
+      <Show when={form().replaces()}>
+        {(label) => (
+          <p role="note" class="text-13-regular text-text-weak">
+            {t("provider.connect.replaces", { label: label(), vendor: vendor() })}
+          </p>
+        )}
+      </Show>
       <Button class="w-auto" type="submit" size="large" variant="contrast" disabled={form().store.saving}>
-        {t("common.continue")}
+        {form().replaces() ? t("provider.connect.replace") : t("common.continue")}
       </Button>
     </form>
   )
@@ -156,7 +163,7 @@ function OAuthCode(props: { readonly form: ProviderConnect; readonly kind: Conne
         label={t("provider.connect.oauth.code.label", { method: form().selected()?.label ?? "" })}
         placeholder={t("provider.connect.oauth.code.placeholder")}
         value={form().store.code}
-        onChange={(value) => form().setStore("code", value)}
+        onChange={(value) => form().setCode(value)}
         invalid={!!form().store.error}
         error={form().store.error}
       />

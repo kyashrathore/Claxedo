@@ -6,11 +6,11 @@ import { failureMessage } from "@/lib/failure"
 import { useServer } from "@/server"
 import { settingsPath, useShellRoute } from "@/shell"
 import { showToast, ClaxedoIcon as Icon, Avatar, DropdownMenu, Spinner } from "@/ui"
+import { USAGE_LIMITS_SECTION } from "@/usage"
 import { railDictionary } from "../i18n"
 import { openExternal } from "@/lib/external-link"
 
 const HELP_URL = "https://github.com/kyashrathore/Claxedo"
-export const USAGE_SECTION = "usage"
 
 type AccountView = {
   readonly signed: boolean
@@ -112,7 +112,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
       <DropdownMenu.Portal>
         <DropdownMenu.Content style={{ "max-width": "calc(100vw - 16px)" }}>
           <DropdownMenu.Group>
-            <DropdownMenu.Item onSelect={select(() => routing.navigate(settingsPath(USAGE_SECTION)))}>
+            <DropdownMenu.Item onSelect={select(() => routing.navigate(settingsPath(USAGE_LIMITS_SECTION)))}>
               <Icon name="gauge" size="small" />
               {t("rail.account.usage")}
             </DropdownMenu.Item>

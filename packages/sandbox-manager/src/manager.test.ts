@@ -3,10 +3,12 @@ import {
   brokeredPlaceholderEnv,
   brokeredSecretPlaceholder,
   createSandboxManager,
+  SandboxHostGoneError,
   SandboxRuntimeBootError,
   sandboxRuntimeBootFailure,
   type SandboxCheckpointRuntime,
   type SandboxDriver,
+  type SandboxLifecycleEvent,
   type SandboxTarget,
 } from "."
 import { createMemoryLeaseStore, sandboxLease } from "./stores/memory"
@@ -1963,5 +1965,163 @@ describe("sandbox garbage collection visibility (W1)", () => {
     const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
 
     await expect(manager.garbageCollect()).resolves.not.toHaveProperty("listingUnsupported", true)
+  })
+})
+
+describe("a host the provider no longer has", () => {
+  const serving = () => sandboxLease({
+    routingId: "routing_test",
+    workspaceId: "ws_1",
+    status: "ready",
+    epoch: 3,
+    sandboxId: "sandbox_gone",
+    url: "https://runtime.test/gone",
+    hostId: "host_1",
+    machineClass: "small",
+    start: { requestedAt: 1_000, startedAt: 1_000, bootMode: "cold-start", markedAt: 5_000, phases: ["lease_decision", "runtime_ready"] },
+    lastHeartbeatAt: 8_000,
+  })
+
+  function recording(store: ReturnType<typeof createMemoryLeaseStore>) {
+    const patches: Array<Record<string, unknown>> = []
+    const update = store.update.bind(store)
+    vi.spyOn(store, "update").mockImplementation(async (workspaceId, epoch, patch, expectedStatus) => {
+      patches.push({ epoch, ...patch })
+      return update(workspaceId, epoch, patch, expectedStatus)
+    })
+    return patches
+  }
+
+  test("a start that finds its sandbox gone ends the lease destroyed, closing its boot at the last proof of life, and places a replacement in the same start", async () => {
+    const store = createMemoryLeaseStore([serving()])
+    const patches = recording(store)
+    const events: SandboxLifecycleEvent[] = []
+    const phases: string[] = []
+    const driver = fakeDriver({
+      metadata: { machineClasses: ["small", "default"] } as Partial<SandboxDriver["metadata"]> as SandboxDriver["metadata"],
+      resumeHost: vi.fn(async () => { throw new SandboxHostGoneError("Boat GET /sandboxes/sandbox_gone was rejected (not_found)") }),
+    })
+    const manager = createSandboxManager({
+      leaseStore: store,
+      driver,
+      now: () => 20_000,
+      onLifecycle: (event) => events.push(event),
+      onStartPhase: (event) => phases.push(`${event.epoch}:${event.bootMode}:${event.phase}`),
+    })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east", machineClass: "default" })).resolves.toMatchObject({
+      status: "ready",
+      epoch: 4,
+      sandboxId: "sandbox_ws_1",
+      url: "https://runtime.test/ws_1",
+    })
+    expect(driver.resumeHost).toHaveBeenCalledTimes(1)
+    expect(driver.ensureHost).toHaveBeenCalledWith(expect.objectContaining({ epoch: 4, machineClass: "default", bootSource: { kind: "default" } }))
+    expect(patches).toContainEqual(expect.objectContaining({
+      epoch: 3,
+      status: "destroyed",
+      lastError: "runtime_host_gone: Boat GET /sandboxes/sandbox_gone was rejected (not_found)",
+      endedAt: 8_000,
+    }))
+    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", epoch: 3, activeMs: 7_000 })])
+    expect(phases).toEqual(["4:cold-start:lease_decision", "4:cold-start:runtime_ready"])
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 4, sandboxId: "sandbox_ws_1", machineClass: "default", retryCount: 0 })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 4, url: "https://runtime.test/ws_1" })
+  })
+
+  test("a sleeping sandbox found gone on its resume was serving nothing: its lease ends destroyed with no machine time, and the start places anew", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ ...serving(), status: "stopped", start: undefined, lastHeartbeatAt: undefined })])
+    const patches = recording(store)
+    const events: SandboxLifecycleEvent[] = []
+    const driver = fakeDriver({ resumeHost: vi.fn(async () => { throw new SandboxHostGoneError("snapshot_data_expired") }) })
+    const manager = createSandboxManager({ leaseStore: store, driver, onLifecycle: (event) => events.push(event) })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready", epoch: 5, sandboxId: "sandbox_ws_1" })
+    const ended = patches.find((patch) => patch.status === "destroyed")
+    expect(ended).toMatchObject({ epoch: 4, lastError: "runtime_host_gone: snapshot_data_expired" })
+    expect(ended).not.toHaveProperty("endedAt")
+    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", epoch: 4 })])
+    expect(events[0]).not.toHaveProperty("activeMs")
+  })
+
+  test("a driver that reports a host gone before any host was reported is a provider failure, retried as one", async () => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver({ ensureHost: vi.fn(async () => { throw new SandboxHostGoneError("not_found") }) })
+    const manager = createSandboxManager({ leaseStore: store, driver, retryDelayMs: () => 5_000 })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "not_found", retryAfterMs: 5_000, epoch: 1 })
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", epoch: 1, retryCount: 1 })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(1)
+  })
+
+  test("stopping a sandbox the provider no longer has succeeds: the lease ends destroyed at its last proof of life, and relay routing to it stops", async () => {
+    const store = createMemoryLeaseStore([serving()])
+    const patches = recording(store)
+    const events: SandboxLifecycleEvent[] = []
+    const driver = fakeDriver({ stop: vi.fn(async () => { throw new SandboxHostGoneError("Boat POST /sandboxes/sandbox_gone/stop was rejected (not_found)") }) })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => 20_000, onLifecycle: (event) => events.push(event) })
+
+    await expect(manager.stop("ws_1")).resolves.toEqual({ ok: true, status: "destroyed" })
+    expect(patches).toContainEqual(expect.objectContaining({ epoch: 3, status: "destroyed", lastError: "runtime_host_gone: sandbox_gone is gone", endedAt: 8_000 }))
+    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", epoch: 3, activeMs: 7_000 })])
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "destroyed", epoch: 3 })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ status: "unavailable", leaseStatus: "destroyed" })
+    await expect(manager.stop("ws_1")).resolves.toEqual({ ok: false, reason: "runtime_lease_not_ready" })
+  })
+
+  test("stopping a sandbox still booting on a host the provider no longer has ends the lease destroyed", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", status: "acquiring", epoch: 2, sandboxId: "sandbox_gone", hostId: "host_1" })])
+    const driver = fakeDriver({ stop: vi.fn(async () => { throw new SandboxHostGoneError("not_found") }) })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    await expect(manager.stop("ws_1")).resolves.toEqual({ ok: true, status: "destroyed" })
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "destroyed", epoch: 2, lastError: "runtime_host_gone: sandbox_gone is gone" })
+  })
+
+  test("a stop the provider refuses for any other reason still fails the stop and keeps the lease", async () => {
+    const store = createMemoryLeaseStore([serving()])
+    const driver = fakeDriver({ stop: vi.fn(async () => { throw new Error("Boat POST /sandboxes/sandbox_gone/stop was rejected (http_500)") }) })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    await expect(manager.stop("ws_1")).rejects.toThrow("http_500")
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 3 })
+  })
+})
+
+describe("the start a lease epoch records", () => {
+  test("the epoch's start is on the row before the driver runs, so a stop that lands mid-boot finds the boot it ends", async () => {
+    const store = createMemoryLeaseStore()
+    let seen: unknown
+    const driver = fakeDriver({ ensureHost: vi.fn(async (input) => {
+      seen = (await store.get(input.workspaceId))?.start
+      return { sandboxId: "sb_1", url: "https://runtime.test", hostId: "host_1", labels: input.labels }
+    }) })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => 10_000 })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready" })
+    expect(seen).toEqual({ requestedAt: 10_000, startedAt: 10_000, bootMode: "cold-start", markedAt: 10_000, phases: ["lease_decision"] })
+    await expect(store.get("ws_1")).resolves.toMatchObject({ start: { startedAt: 10_000, phases: ["lease_decision", "runtime_ready"] } })
+  })
+})
+
+describe("the machine a resumed sandbox runs on", () => {
+  test("a stopped sandbox is resumed onto the machine the workspace names now, and keeps its machine when none is named", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({
+      workspaceId: "ws_1", status: "stopped", epoch: 1, sandboxId: "sb_1", url: "https://runtime.test", hostId: "host_1", machineClass: "default",
+    })])
+    const driver = fakeDriver({
+      metadata: { machineClasses: ["small", "default", "large"] } as Partial<SandboxDriver["metadata"]> as SandboxDriver["metadata"],
+      resumeHost: vi.fn(async ({ lease, ensure }) => ({ sandboxId: lease.sandboxId!, url: "https://runtime.test", hostId: lease.hostId!, labels: ensure.labels })),
+    })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east", machineClass: "small" })).resolves.toMatchObject({ status: "ready", epoch: 2 })
+    expect(driver.resumeHost).toHaveBeenLastCalledWith(expect.objectContaining({ ensure: expect.objectContaining({ machineClass: "small" }) }))
+    await expect(store.get("ws_1")).resolves.toMatchObject({ epoch: 2, machineClass: "small" })
+
+    await manager.stop("ws_1")
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready", epoch: 3 })
+    expect(driver.resumeHost).toHaveBeenLastCalledWith(expect.objectContaining({ ensure: expect.objectContaining({ machineClass: "small" }) }))
+    await expect(store.get("ws_1")).resolves.toMatchObject({ epoch: 3, machineClass: "small" })
   })
 })

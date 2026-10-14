@@ -10,6 +10,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -148,7 +149,7 @@ export function parsedBody<Schema extends z.ZodTypeAny>(
 
 /** The organization a workspace row names, whichever spelling the authority or a route handed it in. */
 export function workspaceOrgId(workspace: unknown): string | undefined {
-  const row = workspace && typeof workspace === "object" ? (workspace as Record<string, unknown>) : undefined
+  const row = asRecord(workspace)
   return txt(row?.org_id) ?? txt(row?.orgId)
 }
 
@@ -192,7 +193,11 @@ export async function routeAuth(
     requireSigned?: boolean
   },
 ) {
+  const presentsCredential = !!request.headers.get("authorization") || !!request.headers.get("cookie")
   if (!options.requireSigned && !bearerToken(request.headers.get("authorization"))) return undefined
+  if (options.requireSigned && !presentsCredential) {
+    throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+  }
   const context = await controlPlaneAuthContext(request, {
     authentication: options.authentication,
     config: options.authConfig,

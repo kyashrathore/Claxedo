@@ -38,7 +38,7 @@ export function ProjectTree(): JSX.Element {
   }
   return (
     <div class="flex-1 flex flex-col py-1.5 gap-0.5">
-      <Show when={sections().length > 0} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noMatches")}</div>}>
+      <Show when={sections().length > 0} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noProjects")}</div>}>
         <For each={sections().map((section) => section.key)}>
           {(key) => {
             const section = () => sectionByKey().get(key)

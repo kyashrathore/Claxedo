@@ -1,4 +1,4 @@
-import type { AgentTurnOutcome, ConnectionSecretResolver, DirectCredentialRefresh } from "@claxedo/agent-runtime-contract"
+import type { ConnectionSecretResolver, DirectCredentialRefresh } from "@claxedo/agent-runtime-contract"
 import type { WorkspaceHostOptions, WorkspaceRuntimeStoreFactory } from "./host-options"
 import path from "node:path"
 import { mountWorkspaceVcs } from "./vcs"
@@ -24,6 +24,7 @@ import {
   harnessHealthChanged,
   composeSessionRoutes,
   sessionStatusSnapshot,
+  observeTurnOutcomes,
 } from "@claxedo/session-core"
 import { deriveChildSessionId } from "../host/child-identity"
 import { readSessionAttachment } from "../host/attachment-files"
@@ -91,25 +92,9 @@ const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => ope
 
 function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeStoreFactory {
   const factory = options.storeFactory ?? defaultStoreFactory
-  if (!options.onTurnOutcome) return factory
-  return (input) => {
-    const store = factory(input)
-    const finish = store.finishTurn.bind(store)
-    store.finishTurn = (value) => {
-      const finished = finish(value)
-      if (!finished.events.length) return finished
-      const session = store.getSession(value.sessionId) as { lastTurn?: AgentTurnOutcome } | null
-      options.onTurnOutcome?.({
-        ...value,
-        workspaceId: options.target.workspaceId,
-        ...(value.assistantMessageId ?? session?.lastTurn?.assistantMessageId
-          ? { assistantMessageId: value.assistantMessageId ?? session?.lastTurn?.assistantMessageId }
-          : {}),
-      })
-      return finished
-    }
-    return store
-  }
+  const observe = options.onTurnOutcome
+  if (!observe) return factory
+  return (input) => observeTurnOutcomes(factory(input), options.target.workspaceId, observe)
 }
 
 export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHost {
@@ -240,6 +225,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     }), options.connectionProviders ?? [])
     const transports = createWorkspaceTransports({
       composer,
+      placement: options.placement.placement,
       connections: () => appliedConnections,
       resolveSecrets: (descriptor, directory, access) => (options.resolveConnectionSecrets ?? resolveSnapshotConnectionSecrets)({
         descriptor, directory, ...(access.authority ? { authority: access.authority } : {}),

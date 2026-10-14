@@ -36,6 +36,7 @@ function pricedWorkspace(row: MachineTimeRow): MachineTimeWorkspace {
     machineClass: row.machine_class,
     activeMs: row.active_ms,
     ...(row.running_since === null ? {} : { runningSince: row.running_since }),
+    ...(row.last_stopped_at === null ? {} : { lastStoppedAt: row.last_stopped_at }),
     ...(rate ? { rate, costUsd: sandboxMachineCostUsd(rate, row.active_ms) } : {}),
   }
 }

@@ -15,6 +15,8 @@ export type ExecutionFacts = {
 
 export type ExecutionBlock = "signIn" | "folder"
 
+export type FinishBlock = ExecutionBlock | "providerKey"
+
 export function executionChoices(facts: ExecutionFacts): readonly ExecutionChoice[] {
   return [...(facts.localExecution ? (["local"] as const) : []), ...(facts.cloudAvailable ? (["cloud"] as const) : [])]
 }
@@ -31,6 +33,10 @@ export function executionBlock(plan: ExecutionPlan, facts: ExecutionFacts, sourc
   if (plan.kind === "local") return undefined
   if (!facts.cloudAvailable) return "signIn"
   return source?.kind === "folder" ? "folder" : undefined
+}
+
+export function finishBlock(plan: ExecutionPlan, facts: ExecutionFacts, source: ProjectSource | undefined, cloudReady: boolean): FinishBlock | undefined {
+  return executionBlock(plan, facts, source) ?? (facts.localExecution || cloudReady ? undefined : "providerKey")
 }
 
 export type Created =

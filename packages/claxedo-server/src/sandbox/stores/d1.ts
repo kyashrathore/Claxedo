@@ -184,6 +184,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     columns: readonly typeof COLUMNS[number][],
     expectedStatus?: string,
     lastHealthFailureAt?: number,
+    endedAt?: number,
   ) {
     const values = rowValues(next, current, { lastHealthFailureAt })
     const guard: SandboxLeaseGuard = {
@@ -200,7 +201,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       .bind(...columns.map((column) => values[COLUMNS.indexOf(column)] ?? null), ...guard.binds)
     const endsHosting = columns.includes("status") && next.status !== "ready" && next.status !== "acquiring"
     const result = endsHosting
-      ? (await database.batch<Record<string, unknown>>([closeBoot(database, guard, next.updatedAt), write]))[1]?.results[0]
+      ? (await database.batch<Record<string, unknown>>([closeBoot(database, guard, endedAt ?? next.updatedAt), write]))[1]?.results[0]
       : await write.first()
     return result ? toSandboxLease(toLeaseRow(result)) : undefined
   }
@@ -237,7 +238,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       lastHeartbeatAt: held?.lastHeartbeatAt,
       lastActivityAt: held?.lastActivityAt,
       labels: held ? held.labels : acquireInput.labels,
-      machineClass: held ? held.machineClass : acquireInput.machineClass,
+      machineClass: acquireInput.machineClass ?? held?.machineClass,
       checkpoint: currentLease?.checkpoint,
       persistence: currentLease?.persistence,
       restore: currentLease?.restore,
@@ -306,6 +307,8 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
         current,
         [...columns],
         expectedStatus === undefined ? undefined : current.status,
+        undefined,
+        patch.endedAt,
       )
     },
 

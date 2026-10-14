@@ -6,6 +6,7 @@ import { MAX_HOST_SESSION_ROWS } from "@claxedo/server-core/platform/auth/host-s
 import type { SessionStatusChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { HostSessionRowsPublisher } from "@claxedo/server-core/platform/auth/host-session-rows"
 import type { ControlPlaneServices } from "../../authority/services"
+import type { SessionHostRows } from "../../session/session-host-rows"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
 
 const MAX_BODY_BYTES = 512 * 1024
@@ -78,9 +79,11 @@ function markFirstSession(services: ControlPlaneServices, lease: { workspaceId: 
  * rows. A machine sends the Host Tunnel Token its last heartbeat gave it,
  * which names the host, its owner and the workspaces it may serve; a cloud
  * runtime sends its session rows pass, which names one workspace and the
- * lease epoch it was launched under. The authority admits each row against
- * what that host serves right now. A cloud runtime's empty publication past
- * half its pass's life asks for a fresh pass, answered beside the result.
+ * lease epoch it was launched under; a session served by its own host sends
+ * its turn lease, which names that one session. The authority admits each
+ * row against what that host serves right now. A cloud runtime's empty
+ * publication past half its pass's life asks for a fresh pass, answered
+ * beside the result.
  *
  * The rows are committed before any notice goes out. Each room's notices go
  * in one nudge, all rooms at once, after the answer where the Worker can keep
@@ -89,7 +92,7 @@ function markFirstSession(services: ControlPlaneServices, lease: { workspaceId: 
  */
 export function HostSessionRowsRoutes(
   services: ControlPlaneServices,
-  options: { notify?: SessionStatusNoticeSink; sessionRowsPasses?: SessionRowsPasses } = {},
+  options: { notify?: SessionStatusNoticeSink; sessionRowsPasses?: SessionRowsPasses; sessionHostRows?: SessionHostRows } = {},
 ) {
   const app = new Hono()
   app.post(
@@ -103,10 +106,11 @@ export function HostSessionRowsRoutes(
       const publish = services.authority?.publishHostSessionRows
       const token = bearerToken(c.req.header("authorization"))
       const cloud = token && options.sessionRowsPasses?.names(token) ? options.sessionRowsPasses : undefined
-      if (!publish || (!cloud && !verify)) {
+      const sessionHost = token && options.sessionHostRows?.names(token) ? options.sessionHostRows : undefined
+      if (!publish || (!cloud && !sessionHost && !verify)) {
         return c.json({ error: { code: "host_session_rows_unavailable", message: "This control plane takes no host session rows" } }, 501)
       }
-      if (!token) return c.json({ error: { code: "missing_bearer_token", message: "A Host Tunnel Token or session rows pass is required" } }, 401)
+      if (!token) return c.json({ error: { code: "missing_bearer_token", message: "A Host Tunnel Token, session rows pass or turn lease is required" } }, 401)
       const parsed = publication.safeParse(await c.req.json().catch(() => undefined))
       if (!parsed.success) {
         return c.json({ error: { code: "invalid_session_rows", message: parsed.error.issues[0]?.message ?? "Invalid session rows" } }, 400)
@@ -114,7 +118,11 @@ export function HostSessionRowsRoutes(
       const { hostId, rows, removed } = parsed.data
       let publisher: HostSessionRowsPublisher
       let firstSession: Promise<unknown> | undefined
-      if (cloud) {
+      if (sessionHost) {
+        const holder = await sessionHost.admit(token, hostId, { rows, removed })
+        if (!holder) return c.json({ error: { code: "invalid_session_turn_lease", message: "Turn lease refused for these rows" } }, 401)
+        publisher = holder
+      } else if (cloud) {
         const holder = await cloud.admit(token, hostId)
         if (!holder) return c.json({ error: { code: "invalid_session_rows_pass", message: "Session rows pass refused" } }, 401)
         if (!rows.length && !removed.length) {

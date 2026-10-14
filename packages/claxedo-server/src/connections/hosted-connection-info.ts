@@ -19,7 +19,7 @@ import {
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import { cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
+import { cloudRuntimeLifecycle, cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import { sandboxRuntimeBootFailure, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
@@ -441,11 +441,14 @@ export async function hostedConnectionStatus(
     },
   })
   if (target.status !== "ready") {
+    // The same reading the catalog row gives: a boot that failed says so, with its reason, rather than reading as asleep.
+    const lifecycle = cloudRuntimeLifecycle(target)
     return {
       connection: {
-        status: target.leaseStatus === "acquiring" ? ("provisioning" as const) : ("stopped" as const),
+        status: lifecycle.status,
         workspaceId,
         homeRegion,
+        ...(lifecycle.status === "failed" ? { error: lifecycle.error } : {}),
         ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
       },
     } as const

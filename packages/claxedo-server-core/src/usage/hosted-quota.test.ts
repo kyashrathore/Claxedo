@@ -50,6 +50,8 @@ const vendors = (answers: Record<string, () => Response | Promise<Response>>) =>
     return await answer()
   }) as unknown as typeof fetch & ReturnType<typeof vi.fn>
 
+const ANTHROPIC_MODELS = "https://api.anthropic.com/v1/models"
+const anthropicModels = () => Response.json({ data: [] })
 const anthropicUsage = () => Response.json({ five_hour: { utilization: 30, resets_at: 400 }, seven_day: { utilization: 61, resets_at: 900 } })
 const chatgptUsage = () => Response.json({ rate_limit: { primary_window: { used_percent: 12, limit_window_seconds: 18_000, reset_at: 500 } } })
 
@@ -61,6 +63,7 @@ describe("hosted usage quota reader", () => {
   test("the first read of unchecked logins asks each vendor before answering, and the cards carry their windows", async () => {
     const credentials = store([claude, codex], secrets)
     const fetchImpl = vendors({
+      [ANTHROPIC_MODELS]: anthropicModels,
       [ANTHROPIC_USAGE]: anthropicUsage,
       "https://api.anthropic.com/api/oauth/profile": () => Response.json({ account: { email_address: "ada@example.com" } }),
       [CHATGPT_USAGE]: chatgptUsage,
@@ -109,7 +112,7 @@ describe("hosted usage quota reader", () => {
   test("a vendor that fails leaves its reason on that card and the other account's windows still land", async () => {
     const credentials = store([claude, codex], secrets)
     const fetchImpl = vendors({
-      [ANTHROPIC_USAGE]: () => { throw new Error("offline") },
+      [ANTHROPIC_MODELS]: () => { throw new Error("offline") },
       [CHATGPT_USAGE]: chatgptUsage,
     })
     const read = createHostedQuotaReader({ credentials, now: () => 1_000, fetch: fetchImpl })
@@ -126,7 +129,7 @@ describe("hosted usage quota reader", () => {
   test("a vendor that does not answer in time costs its own card, not the view", async () => {
     const credentials = store([claude, codex], secrets)
     const fetchImpl = vendors({
-      [ANTHROPIC_USAGE]: () => new Promise<Response>(() => {}),
+      [ANTHROPIC_MODELS]: () => new Promise<Response>(() => {}),
       [CHATGPT_USAGE]: chatgptUsage,
     })
     const read = createHostedQuotaReader({ credentials, now: () => 1_000, fetch: fetchImpl, checkTimeoutMs: 20 })
@@ -142,8 +145,7 @@ describe("hosted usage quota reader", () => {
   test("a login the vendor refuses and one whose secret is gone each say so on their card", async () => {
     const credentials = store([claude, codex], { claude: secrets.claude, codex: null })
     const fetchImpl = vendors({
-      [ANTHROPIC_USAGE]: () => new Response("unauthorized", { status: 401 }),
-      "https://api.anthropic.com/v1/models": () => new Response("unauthorized", { status: 401 }),
+      [ANTHROPIC_MODELS]: () => Response.json({ type: "error", error: { type: "authentication_error" } }, { status: 401 }),
     })
     const read = createHostedQuotaReader({ credentials, now: () => 1_000, fetch: fetchImpl })
 
@@ -154,13 +156,71 @@ describe("hosted usage quota reader", () => {
       ["claude", "auth_failed", 1_000, "The provider refused this login, so its limits cannot be read. Sign in to this account again."],
       ["codex", undefined, undefined, "This account's stored login is missing, so its limits cannot be read. Sign in to this account again."],
     ])
+    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("claude", "auth_failed", 1_000, ORG, { status: 401, type: "authentication_error" })
+  })
+
+  /**
+   * chatgpt.com answers a Worker's request with Cloudflare's challenge page.
+   * Before, that 403 was read as the vendor refusing the login, and every
+   * Usage view load re-marked a working ChatGPT plan `auth_failed`.
+   */
+  test("an answer that is not the vendor API's writes no verdict and says what came back", async () => {
+    const credentials = store([codex], secrets)
+    const fetchImpl = vendors({
+      [CHATGPT_USAGE]: () => new Response("<!DOCTYPE html><html><title>Just a moment...</title></html>", { status: 403, headers: { "content-type": "text/html; charset=UTF-8" } }),
+    })
+    const read = createHostedQuotaReader({ credentials, now: () => 1_000, fetch: fetchImpl })
+
+    const { snapshot } = await read({ org: ORG, person: "alice", refresh: false })
+
+    expect(snapshot?.accounts.map((account) => [account.harness, account.health, account.usageError])).toEqual([
+      ["codex", undefined, "This account's limits could not be read: Credential provider answered 403 with text/html; charset=UTF-8 rather than an API error"],
+    ])
+    expect(credentials.updateCredentialHealth).not.toHaveBeenCalled()
+  })
+
+  test("a ChatGPT login the edge challenges is proven by its refresh grant, and a row once marked refused is written ok", async () => {
+    const refused = { ...codex, health: "auth_failed" as const, status: "error" as const, last_validated_at: 1, expires_at: 3_600_000 }
+    const credentials = store([refused], { codex: JSON.stringify({ tokens: { access_token: "codex-access", refresh_token: "codex-refresh", account_id: "acct_codex" } }) })
+    const fetchImpl = vendors({
+      [CHATGPT_USAGE]: () => new Response("<!DOCTYPE html><html><title>Just a moment...</title></html>", { status: 403, headers: { "content-type": "text/html; charset=UTF-8" } }),
+      "https://auth.openai.com/oauth/token": () => Response.json({ access_token: "codex-access-2", refresh_token: "codex-refresh-2" }),
+    })
+    const read = createHostedQuotaReader({ credentials, now: () => 400_000, fetch: fetchImpl })
+
+    const { snapshot } = await read({ org: ORG, person: "alice", refresh: false })
+
+    expect(snapshot?.accounts.map((account) => [account.harness, account.health, account.usageError])).toEqual([
+      ["codex", "ok", "The provider answered 403 to this account's plan read, so its limits could not be read. This account still runs turns."],
+    ])
+    expect(credentials.updateCredentialSecret).toHaveBeenCalledWith("codex", expect.stringContaining("codex-access-2"), expect.any(Number), ORG)
+    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("codex", "ok", 400_000, ORG, undefined)
+  })
+
+  test("a throttled plan read leaves the login ok and says when its limits can be read again", async () => {
+    const credentials = store([claude], secrets)
+    const fetchImpl = vendors({
+      [ANTHROPIC_MODELS]: anthropicModels,
+      [ANTHROPIC_USAGE]: () => Response.json({ type: "error", error: { type: "rate_limit_error" } }, { status: 429, headers: { "retry-after": "3124" } }),
+    })
+    const read = createHostedQuotaReader({ credentials, now: () => 1_000, fetch: fetchImpl })
+
+    const { snapshot } = await read({ org: ORG, person: "alice", refresh: false })
+
+    expect(snapshot?.accounts[0]).toMatchObject({
+      harness: "claude",
+      health: "ok",
+      windows: [],
+      usageError: "The provider is throttling this account's plan read; this account runs turns, and its limits can be read again in 53 min.",
+    })
+    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("claude", "ok", 1_000, ORG, undefined)
   })
 
   test("a setup-token the vendor accepts without windows is explained and not asked again until its figures are stale", async () => {
     const credentials = store([claude], secrets)
     const fetchImpl = vendors({
-      [ANTHROPIC_USAGE]: () => new Response("unauthorized", { status: 401 }),
-      "https://api.anthropic.com/v1/models": () => Response.json({ data: [] }),
+      [ANTHROPIC_MODELS]: anthropicModels,
+      [ANTHROPIC_USAGE]: () => Response.json({ type: "error", error: { type: "permission_error", details: { error_code: "oauth_scope_insufficient" } } }, { status: 403 }),
     })
     let clock = 1_000
     const read = createHostedQuotaReader({ credentials, now: () => clock, fetch: fetchImpl, staleAfterMs: 300_000 })

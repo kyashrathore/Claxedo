@@ -42,6 +42,8 @@ export type MachineTimeRow = {
   active_ms: number
   /** The start of the epoch still on a host at `until`, where one is. */
   running_since: number | null
+  /** When the latest boot in the range ended, where one did. */
+  last_stopped_at: number | null
 }
 
 /**
@@ -55,13 +57,13 @@ export async function readMachineTime(database: D1Database, query: MachineTimeQu
     with hosted as (
       select l.workspace_id, l.driver, l.machine_class,
         ?4 - max(json_extract(l.start_json, '$.startedAt'), ?3) as active_ms,
-        json_extract(l.start_json, '$.startedAt') as running_since
+        json_extract(l.start_json, '$.startedAt') as running_since, null as last_stopped_at
       from workspaces w join sandbox_leases l on l.workspace_id = w.workspace_id
       where w.owner_user_id = ?2 and w.org_id = ?1 and ${HOSTED}
         and json_extract(l.start_json, '$.startedAt') < ?4
     ),
     ended as (
-      select workspace_id, driver, machine_class, min(stopped_at, ?4) - max(started_at, ?3) as active_ms, null as running_since
+      select workspace_id, driver, machine_class, min(stopped_at, ?4) - max(started_at, ?3) as active_ms, null as running_since, stopped_at as last_stopped_at
       from sandbox_boots
       where org_id = ?1 and owner_user_id = ?2 and stopped_at > ?3 and started_at < ?4
     ),
@@ -69,7 +71,7 @@ export async function readMachineTime(database: D1Database, query: MachineTimeQu
       select * from ended union all select * from hosted
     )
     select s.workspace_id, w.project_id, w.display_name, w.git_branch, s.driver, s.machine_class,
-      sum(s.active_ms) as active_ms, max(s.running_since) as running_since
+      sum(s.active_ms) as active_ms, max(s.running_since) as running_since, max(s.last_stopped_at) as last_stopped_at
     from spent s left join workspaces w on w.workspace_id = s.workspace_id
     group by s.workspace_id, s.driver, s.machine_class
   `).bind(query.org_id, query.user_id, query.since, query.until).all<MachineTimeRow>()

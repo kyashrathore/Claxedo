@@ -11,7 +11,7 @@ import { frameFromWire, frameSessionId, placementDirectory, serverEventFromFrame
 
 export type EventIntake = {
   readonly frame: (raw: unknown) => void
-  readonly gap: () => void
+  readonly gap: (ref?: SessionLocation) => void
   readonly subscribe: (listener: (event: ServerEvent) => void) => () => void
   readonly dispose: () => void
 }
@@ -61,7 +61,7 @@ function unplacedDirectory(workspaces: Workspaces, frame: Frame): string | undef
 function mapFrame(input: IntakeInput, publish: Publish, frame: Frame): void {
   const event = serverEventFromFrame(frame, input.workspaces.address)
   if (!event) return
-  if (frame.type === STATUS_NOTICE && "ref" in event && input.streamed(event.ref)) return
+  if (frame.type === STATUS_NOTICE && "ref" in event && event.ref && input.streamed(event.ref)) return
   publish(event)
 }
 
@@ -97,7 +97,7 @@ export function createEventIntake(input: IntakeInput): EventIntake {
       if (!frame) return console.error("The event stream sent a frame without a type", raw)
       intake(frame)
     },
-    gap: () => publish({ type: "streamGap" }),
+    gap: (ref) => publish(ref ? { type: "streamGap", ref } : { type: "streamGap" }),
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)

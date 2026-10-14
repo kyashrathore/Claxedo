@@ -124,8 +124,12 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
       const value = sandbox(await api(path(id), ["sandbox.info"]))
       return value.id === id ? value : invalid()
     },
-    async resume(id: string, input: { ttlSeconds: number | null }) {
-      await api(`${path(id)}/resume`, ["sandbox.resuming"], { method: "POST", body: { noEnv: true, ttlSeconds: input.ttlSeconds } })
+    /** `type` resumes the sandbox onto that machine size; omitted, it keeps the size it has (docs.boat.dev/machines/change-size). */
+    async resume(id: string, input: { ttlSeconds: number | null; type?: SandboxMachineClass }) {
+      await api(`${path(id)}/resume`, ["sandbox.resuming"], {
+        method: "POST",
+        body: { noEnv: true, ttlSeconds: input.ttlSeconds, ...(input.type ? { type: input.type } : {}) },
+      })
     },
     /**
      * `ttlSeconds` sets the auto-stop deadline to now plus that many seconds; `null` removes it.

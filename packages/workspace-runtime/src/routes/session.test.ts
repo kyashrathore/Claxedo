@@ -726,6 +726,39 @@ describe("session prompt route", () => {
     expect(wa.transport().closed).toEqual([])
   })
 
+  it("a cloud runtime refuses to create a Pi session at all, since the control plane places one in the session's own host", async () => {
+    const wa = await workspaceApp({ placement: "cloud" })
+    const res = await wa.json("/session", { id: "s-pi", harness: { id: "pi", access: "native" } }, { params: { nativeHarness: "pi" } })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({
+      error: {
+        code: "workspace_harness_hosted_elsewhere",
+        message: "Pi runs in its own session host on a cloud workspace, not in the workspace's runtime. Start a new Pi session to use it here.",
+      },
+    })
+    expect((await wa.app.request(wa.url("/session/s-pi"))).status).toBe(404)
+  })
+
+  it("a cloud runtime refuses a session config switch to Pi, which a cloud workspace runs in the session's own host, telling the person to start a new Pi session and leaving the session untouched", async () => {
+    const wa = await workspaceApp({ placement: "cloud" })
+    await wa.createSession("s1")
+
+    const res = await wa.json("/session/s1/config", {
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "pi", modelID: "openai/gpt-4.1" },
+    }, { method: "PATCH" })
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({
+      error: {
+        code: "workspace_harness_hosted_elsewhere",
+        message: "Pi runs in its own session host on a cloud workspace, not in the workspace's runtime. Start a new Pi session to use it here.",
+      },
+    })
+    expect(await (await wa.app.request(wa.url("/session/s1/config"))).json()).toEqual({ harness: { id: "fake", access: "connection" }, variant: null, agent: null })
+    expect(wa.transport().closed).toEqual([])
+  })
+
   it("hands a session over to another configured harness through the runtime's handoff", async () => {
     const other = new FakeTransport({ upstreamSessionId: () => "upstream-other" })
     const wa = await workspaceApp({ connections: [{ connectionId: "other", transport: () => other }] })

@@ -90,6 +90,25 @@ test("a shared placement streams with session scope and a revoked share closes t
   } finally { detach(); streams.close() }
 })
 
+test("a session stream's first connection raises a gap for that session alone, since a cursor-less connection is served nothing from before it; a watched workspace stream raises none", async () => {
+  const gaps: unknown[] = []
+  const transport = streamTransport({ serverUrl: "http://127.0.0.1:1", runtime: async () => openBody() })
+  const watching = { ...workspaces, workspaceStreamRoute: () => record.route } as unknown as Workspaces
+  const streams = createPlacementStreams({ transport, workspaces: watching, queryClient: new QueryClient(), onFrame: () => undefined, onGap: (ref) => gaps.push(ref) })
+
+  const unwatch = streams.watch(placement)
+  await settle()
+  expect(gaps).toEqual([])
+  const detach = streams.attach(ref("ses_first"))
+  await settle()
+  expect(gaps).toEqual([ref("ses_first")])
+  await settle()
+  expect(gaps).toHaveLength(1)
+  detach()
+  unwatch()
+  streams.close()
+})
+
 test("remote streams request only attached session scopes, and a revoked session stream stays closed", async () => {
   const paths: string[] = []
   const transport = streamTransport({

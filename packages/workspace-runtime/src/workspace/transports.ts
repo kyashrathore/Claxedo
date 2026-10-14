@@ -1,9 +1,9 @@
-import { asRecord, type SessionHarness } from "@claxedo/agent-runtime-contract"
+import { asRecord, cloudHarnessHost, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { ConnectionSecretLease } from "@claxedo/agent-runtime-contract"
 import type { createHarnessComposer } from "@claxedo/harness/compose"
 import type { HarnessConnectionDescriptor } from "@claxedo/harness/providers"
 import { harnessRecord } from "@claxedo/harness/registry"
-import type { HarnessTransport, Locality } from "@claxedo/harness/contract"
+import type { HarnessTransport, Locality, RuntimePlacement } from "@claxedo/harness/contract"
 import {
   WorkspaceHarnessUnavailableError,
   type HarnessHandle,
@@ -19,6 +19,7 @@ const log = Log.create({ service: "workspace-runtime" })
 
 export type WorkspaceTransportsInput = {
   composer: ReturnType<typeof createHarnessComposer>
+  placement: RuntimePlacement
   /** The descriptors the last accepted snapshot applied, by connection id. */
   connections: () => ReadonlyMap<string, RuntimeConnectionDescriptor>
   resolveSecrets: (descriptor: RuntimeConnectionDescriptor, directory: string, access: TransportAccess) =>
@@ -100,6 +101,9 @@ export function createWorkspaceTransports(input: WorkspaceTransportsInput) {
   const buildNative = (runner: SessionHarness): Held => {
     const record = harnessRecord(runner.id)
     if (!record || record.access !== "native") throw new WorkspaceHarnessUnavailableError(runner)
+    if (input.placement === "cloud" && cloudHarnessHost(runner.id) === "session-host") {
+      throw new WorkspaceHarnessUnavailableError(runner, { runsIn: "its own session host", notIn: "the workspace's runtime" })
+    }
     return hold(`native:${runner.id}`, runner, input.composer.builtIn(record.id), "local")
   }
 

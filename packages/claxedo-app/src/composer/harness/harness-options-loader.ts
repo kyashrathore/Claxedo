@@ -1,5 +1,6 @@
+import { asString } from "@claxedo/helpers/guards"
 import { ServerError, type HarnessOptions } from "@/server"
-import { applyHarnessOptionsResponse, type HarnessOptionsDecision, type HarnessOptionsStatePatch } from "./options-state"
+import { applyHarnessOptionsResponse, type AccountUnavailable, type HarnessOptionsDecision, type HarnessOptionsStatePatch } from "./options-state"
 import { harnessSelectionId, type HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
@@ -49,6 +50,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
         optionsLoading: false,
         unavailableHere: undefined,
         configError: error instanceof ServerError ? error.message : "Failed to load model options",
+        accountUnavailable: accountUnavailableOf(error),
       })
       return undefined
     }
@@ -59,6 +61,12 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
     applyOptions(input, { scope, type, id: input.cache.nextSeq(scope) }, payload)
   }
   return { load, receive }
+}
+
+function accountUnavailableOf(error: unknown): AccountUnavailable | undefined {
+  if (!(error instanceof ServerError) || error.code !== "account_unavailable") return undefined
+  const reason = asString(error.details?.reason)
+  return reason === undefined ? {} : { reason }
 }
 
 function abandonOptionsRequest<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request) {

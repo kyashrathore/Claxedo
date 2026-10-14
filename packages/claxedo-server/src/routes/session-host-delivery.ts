@@ -12,6 +12,7 @@ import { sessionHostAdmits, type SessionHostPlacement } from "../authority/sessi
 import type { SessionMcpCredentials } from "../mcp/session-mcp-credentials"
 import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 import { sessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
+import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
 import { ownerDirectRows, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
@@ -24,24 +25,31 @@ export type SessionHostDeliveryOptions = SessionHostMachineDeps & {
   credentials(orgId: string): ControlPlaneCredentials
   plugins?(workspaceId: string): Promise<RuntimeConfigSnapshotPlugins>
   sessionMcp?: Pick<SessionMcpCredentials, "issue">
+  /** The plane's one rule for a vendor refusing a stored account; the broker's by default. */
+  credentialRefusals?: CredentialRefusals
 }
 
 const EXECUTION_TTL_SECONDS = 10 * 60
 const UNAVAILABLE_RETRY_MS = 2_000
 const requestSchema = z.object({ turnLease: z.string().min(1) }).strict()
+const refusedSchema = z.object({ turnLease: z.string().min(1), credentialId: z.string().min(1) }).strict()
 const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
 
 /**
- * The calls a session's Durable Object makes of the control plane. Two per
- * turn, each proven by the turn lease the session authority issued it:
- * `/turn-delivery` hands it the provider accounts of the session's creator as
- * direct secrets and, for a turn the workspace owner drives in their own
- * session, the first-party MCP server with that turn's bearer; `/turn-execution` mints it a
- * session-scoped token for the workspace's machine, where its tools run. Both
- * answer only that session's own host, only while its lease is the live one,
- * and only while the turn's actor may still send its turns.
- * `/session-host-delete` deletes the session's row for a request the host was
- * relayed, as that request's actor, before the host erases itself.
+ * The calls a session's Durable Object makes of the control plane, each
+ * proven by the turn lease the session authority issued it: `/turn-delivery`
+ * hands it the provider accounts of the session's creator as direct secrets
+ * and, for a turn the workspace owner drives in their own session, the
+ * first-party MCP server with that turn's bearer; `/turn-execution` mints it
+ * a session-scoped token for the workspace's machine, where its tools run.
+ * Both answer only that session's own host, only while its lease is the live
+ * one, and only while the turn's actor may still send its turns.
+ * `/turn-credential-refused` takes the host's word that the vendor refused
+ * one of the accounts it was handed, under the same rule the plane's broker
+ * applies to its own refusals; the lease may be released by then, since the
+ * turn ends on the refusal. `/session-host-delete` deletes the session's row
+ * for a request the host was relayed, as that request's actor, before the
+ * host erases itself.
  */
 export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
   authority: RuntimeSessionAuthorityOptions["authority"]
@@ -61,12 +69,10 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     }
   }
 
-  async function admittedTurn(c: Context): Promise<{ claims: TurnLeaseClaims; placement: SessionHostPlacement } | Response> {
-    const parsed = requestSchema.safeParse(await c.req.json().catch(() => undefined))
-    if (!parsed.success) return c.json({ error: { code: "turn_delivery_request_invalid" } }, 400)
+  async function admittedTurn(c: Context, turnLease: string, options: { live: boolean }): Promise<{ claims: TurnLeaseClaims; placement: SessionHostPlacement } | Response> {
     let claims: TurnLeaseClaims
     try {
-      claims = await input.verifyTurnLease(parsed.data.turnLease)
+      claims = await input.verifyTurnLease(turnLease)
     } catch {
       return c.json({ error: { code: "session_turn_lease_invalid" } }, 401)
     }
@@ -75,11 +81,21 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     const { sessionId, workspaceId } = claims
     const placement = await input.sessionHosts.readSessionHostPlacement({ workspaceId, sessionId })
     if (!placement?.session || !sessionHostAdmits(placement, { workspaceId, sessionId })) return denied(c)
-    const live = await input.sessionHosts.turnLeaseLive({ sessionId, turnId: claims.turnId, leaseId: claims.authorityLeaseId, fencingToken: claims.fencingToken })
-    if (!live) return c.json({ error: { code: "session_turn_lease_invalid" } }, 401)
+    if (options.live) {
+      const live = await input.sessionHosts.turnLeaseLive({ sessionId, turnId: claims.turnId, leaseId: claims.authorityLeaseId, fencingToken: claims.fencingToken })
+      if (!live) return c.json({ error: { code: "session_turn_lease_invalid" } }, 401)
+    }
     if (!await mayWrite(sessionLeasePrincipal(claims), sessionId, workspaceId, "agent_turn")) return denied(c)
     return { claims, placement }
   }
+
+  async function liveTurn(c: Context) {
+    const parsed = requestSchema.safeParse(await c.req.json().catch(() => undefined))
+    if (!parsed.success) return c.json({ error: { code: "turn_delivery_request_invalid" } }, 400)
+    return admittedTurn(c, parsed.data.turnLease, { live: true })
+  }
+
+  const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: (orgId) => input.credentials(orgId) })
 
   return new Hono()
     .onError((error, c) => {
@@ -89,7 +105,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     })
     .post("/turn-delivery", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       c.header("cache-control", "no-store")
-      const admitted = await admittedTurn(c)
+      const admitted = await liveTurn(c)
       if (admitted instanceof Response) return admitted
       const { claims, placement } = admitted
       const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
@@ -118,7 +134,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     })
     .post("/turn-execution", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       c.header("cache-control", "no-store")
-      const admitted = await admittedTurn(c)
+      const admitted = await liveTurn(c)
       if (admitted instanceof Response) return admitted
       const { claims } = admitted
       const directory = admitted.placement.workspace.directory
@@ -134,6 +150,19 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       }
       const access: TurnExecutionAccess = { ...machine, workspaceId: claims.workspaceId, directory }
       return c.json(access)
+    })
+    .post("/turn-credential-refused", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
+      const parsed = refusedSchema.safeParse(await c.req.json().catch(() => undefined))
+      if (!parsed.success) return c.json({ error: { code: "turn_delivery_request_invalid" } }, 400)
+      const admitted = await admittedTurn(c, parsed.data.turnLease, { live: false })
+      if (admitted instanceof Response) return admitted
+      const { claims, placement } = admitted
+      const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
+      if (!owner || owner.orgId !== claims.orgId) return denied(c)
+      const holder = placement.session!.creatorUserId ?? owner.userId
+      const credential = await input.credentials(owner.orgId).getCredential?.(parsed.data.credentialId)
+      if (!credential || credential.owner !== holder || !PI_DIRECT_PROVIDERS.has(credential.provider_id)) return denied(c)
+      return c.json({ refusal: await refusals.refused(owner.orgId, credential, credential.revision) })
     })
     .post("/session-host-delete", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       const refused = () => c.json({ error: { code: "session_host_delete_denied" } }, 403)

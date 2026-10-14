@@ -16,7 +16,7 @@ import {
   CURSOR_PERMISSION_MODES,
   type HarnessPermissionModes,
 } from "./harness-permission-modes"
-import { harnessKey, type SessionHarness } from "./harnesses"
+import { AGENT_HARNESS_DEFINITIONS, harnessKey, type SessionHarness } from "./harnesses"
 
 export const HARNESS_IDS = ["claude", "codex", "cursor"] as const
 
@@ -98,6 +98,11 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
 
 export function isHarnessId(value: string): value is HarnessId {
   return (HARNESS_IDS as readonly string[]).includes(value)
+}
+
+/** The name every surface writes for a native harness: the product's own for the table's, the catalog's for the engines. */
+export function harnessProductLabel(id: string): string | undefined {
+  return isHarnessId(id) ? HARNESS_TABLE[id].label : AGENT_HARNESS_DEFINITIONS.find((item) => item.id === id)?.label
 }
 
 function tableHarness(harness: SessionHarness): HarnessId | undefined {

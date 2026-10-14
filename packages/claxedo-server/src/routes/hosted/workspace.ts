@@ -246,17 +246,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (host !== undefined && host !== "machine" && host !== "provisioner") {
           return c.json({ error: apiError("workspace_host_invalid", "workspace host is invalid") }, 400)
         }
-        const requireSigned = host !== undefined
-        const authResult = await signedOrError(
-          c.req.raw,
-          {
-            ...authOptions(),
-            requireSigned,
-          },
-          services,
-        )
+        const authResult = await signedOrError(c.req.raw, authOptions(), services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        if (authResult.auth && requireSigned) {
+        if (!authResult.auth) return c.json(missingBearerBody(), 401)
+        if (host !== undefined) {
           const auth = authResult.auth
           try {
             const authority = requireAuthority(services)
@@ -465,7 +458,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (opened.workspace?.backing !== "cloud-vm") {
             return c.json({ error: apiError("workspace_not_cloud", "Only a cloud workspace names the machine its sandboxes run on") }, 409)
           }
-          // The class the next sandbox is created on; a sleeping sandbox keeps the machine its lease has until it is destroyed.
+          // The machine the next start runs on: a sleeping sandbox is resumed onto it; one running keeps its machine until it stops.
           if (body.body.machineClass) {
             const unsupported = machineClassUnsupported(await services?.sandbox.workspaceDriver?.(workspaceId), body.body.machineClass)
             if (unsupported) return c.json(unsupported, 400)

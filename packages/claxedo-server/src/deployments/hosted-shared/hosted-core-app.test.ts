@@ -292,6 +292,15 @@ describe("hosted agent connection deletion", () => {
 })
 
 describe("resource-closed hosted core app", () => {
+  test("the session inventory answers 401 to a request with no credential, with or without a workspace", async () => {
+    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+    for (const url of ["/api/control/sessions", "/api/control/sessions?workspaceId=ws"]) {
+      const response = await app.request(url)
+      expect(response.status).toBe(401)
+      expect(await response.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    }
+  })
+
   test("message reads preserve the stored authority ordinal and hide denied sessions", async () => {
     const controlPlane = await miniflareControlPlaneDatabase()
     const { database } = controlPlane
@@ -810,6 +819,7 @@ describe("hosted-core usage", () => {
       })
       const vendor = vi.fn(async (input: string | URL | Request) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        if (url === "https://api.anthropic.com/v1/models") return Response.json({ data: [] })
         if (url === "https://api.anthropic.com/api/oauth/usage") return Response.json({ five_hour: { utilization: 42, resets_at: 400 }, seven_day: { utilization: 7, resets_at: 900 } })
         if (url === "https://api.anthropic.com/api/oauth/profile") return Response.json({ account: { email_address: "contactyash@example.com" } })
         throw new Error("chatgpt.com unreachable")

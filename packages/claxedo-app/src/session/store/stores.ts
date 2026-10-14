@@ -13,6 +13,11 @@ function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requ
   list.apply(event)
   requests.apply(event)
   if (event.type === "streamGap") {
+    if (event.ref) {
+      open.forgetCached(event.ref.sessionId)
+      open.byId(event.ref.sessionId)?.gap()
+      return attention
+    }
     open.forgetCached()
     open.forEach((session) => session.gap())
     return attention

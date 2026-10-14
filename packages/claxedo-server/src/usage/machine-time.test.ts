@@ -255,9 +255,9 @@ test("the period is split per workspace, provider and size, priced at the provid
   const large = { size: "large", vcpu: 8, memoryGb: 16, usdPerHour: 0.072 }
   expect(time).toMatchObject({ activeMs: (60 + 35 + 30) * MINUTE, running: 2 })
   expect(time.workspaces).toEqual([
-    { workspaceId: "ws_cross", projectId: "prj_app", name: "ws_cross", provider: "boat", providerLabel: "Boat", machineClass: "large", activeMs: 35 * MINUTE, runningSince: PERIOD + 130 * MINUTE, rate: large, costUsd: (0.072 * 35 * MINUTE) / 3_600_000 },
+    { workspaceId: "ws_cross", projectId: "prj_app", name: "ws_cross", provider: "boat", providerLabel: "Boat", machineClass: "large", activeMs: 35 * MINUTE, runningSince: PERIOD + 130 * MINUTE, lastStoppedAt: PERIOD + 120 * MINUTE, rate: large, costUsd: (0.072 * 35 * MINUTE) / 3_600_000 },
     { workspaceId: "ws_running", projectId: "prj_app", name: "ws_running", provider: "test-provider", providerLabel: "test-provider", machineClass: "small", activeMs: 30 * MINUTE, runningSince: PERIOD + 115 * MINUTE },
-    { workspaceId: "ws_old", projectId: "prj_app", name: "ws_old", provider: "boat", providerLabel: "Boat", machineClass: "small", activeMs: 60 * MINUTE, rate: small, costUsd: (0.018 * 60 * MINUTE) / 3_600_000 },
+    { workspaceId: "ws_old", projectId: "prj_app", name: "ws_old", provider: "boat", providerLabel: "Boat", machineClass: "small", activeMs: 60 * MINUTE, lastStoppedAt: PERIOD + 70 * MINUTE, rate: small, costUsd: (0.018 * 60 * MINUTE) / 3_600_000 },
   ])
   expect(time.providers).toEqual([{
     provider: "boat",

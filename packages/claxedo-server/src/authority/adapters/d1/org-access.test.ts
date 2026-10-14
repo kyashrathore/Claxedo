@@ -201,7 +201,9 @@ describe("D1 organization members", () => {
         sessionSharesRevoked: 0,
       },
     ])
-    expect(await authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) })).toMatchObject({ removed: false })
+    await expect(authority.removeOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob) })).rejects.toMatchObject({
+      code: "org_member_not_found",
+    })
 
     await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     expect(await authority.projectRole(bob, { projectId: projectId as never })).toMatchObject({ ok: true, role: "viewer" })

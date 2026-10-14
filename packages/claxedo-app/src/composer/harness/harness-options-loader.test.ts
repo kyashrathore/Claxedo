@@ -61,6 +61,14 @@ test("options loader: a failed read names the server's reason, or a plain failur
   const offline = harness([new TypeError("fetch failed")])
   await offline.loader.load("draft:a", codex)
   expect(offline.patches.at(-1)?.configError).toBe("Failed to load model options")
+  const refusedAccount = harness([new ServerError({ class: "conflict", code: "account_unavailable", message: "The account chosen for this harness can't be used here.", status: 409, details: { reason: "auth_failed", retryable: false } })])
+  await refusedAccount.loader.load("draft:d", codex)
+  expect(refusedAccount.patches.at(-1)).toMatchObject({ configError: "The account chosen for this harness can't be used here.", accountUnavailable: { reason: "auth_failed" } })
+  const noAccount = harness([new ServerError({ class: "conflict", code: "account_unavailable", message: "No account is chosen for this harness.", status: 409 })])
+  await noAccount.loader.load("draft:e", codex)
+  expect(noAccount.patches.at(-1)).toMatchObject({ accountUnavailable: {} })
+  expect(refused.patches.at(-1)?.accountUnavailable).toBeUndefined()
+  await refusedAccount.loader.load("draft:d", codex)
 })
 
 

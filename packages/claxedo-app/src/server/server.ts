@@ -70,11 +70,12 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
+  const cloud = createCloudApi(transport, workspaces, wakes, project, account)
   return {
     telemetry,
     sessions: createSessionsApi(transport, workspaces, status, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
-    projects: { ...createProjectsApi(transport, queryClient, workspaces), ...createProjectEnvironmentApi(transport, queryClient, workspaces, account) },
+    projects: { ...createProjectsApi(transport, queryClient, workspaces, cloud.create), ...createProjectEnvironmentApi(transport, queryClient, workspaces, account) },
     placements: {
       byId: workspaces.byId,
       list: workspaces.list,
@@ -86,9 +87,9 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
       },
       createWorktree: createWorktreeCreator(transport, workspaces),
     },
-    terminals: createTerminalsApi(transport, workspaces, telemetry),
+    terminals: createTerminalsApi(transport, workspaces, telemetry, wakes),
     git: createGitApi(transport, workspaces, queryClient),
-    cloud: createCloudApi(transport, workspaces, wakes, project, account),
+    cloud,
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient, telemetry),
     tasks: createTasksApi(transport),

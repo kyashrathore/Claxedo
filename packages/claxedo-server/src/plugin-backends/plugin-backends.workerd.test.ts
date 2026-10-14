@@ -189,7 +189,7 @@ describe("a plugin backend on workerd", () => {
   })
 
   test("refuses a request with no credential", async () => {
-    expect(await call(undefined, "GET", "/counter/count")).toEqual(refusal(401, "invalid_bearer_token"))
+    expect(await call(undefined, "GET", "/counter/count")).toEqual(refusal(401, "missing_bearer_token"))
   })
 
   test("refuses a credential the authority does not know", async () => {

@@ -1,3 +1,4 @@
+import { readField } from "@claxedo/helpers/readers"
 import assert from "node:assert/strict"
 import { existsSync } from "node:fs"
 import { createServer } from "node:http"
@@ -112,7 +113,8 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await rm(persist, { recursive: true, force: true })
   })
 
-  const openai = (secret: string) => ({ openai: { delivery: "direct" as const, baseUrl: model.url, apiPath: "/v1", secret, authKind: "api-key" as const } })
+  const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key" }
+  const openai = (secret: string) => ({ openai: { delivery: "direct" as const, baseUrl: model.url, apiPath: "/v1", secret, authKind: "api-key" as const, account: OPENAI_ACCOUNT } })
 
   async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>> } = {}) {
     const creator = options.creator ?? OWNER
@@ -168,6 +170,20 @@ void describe("SessionDO under workerd with PiHarness", () => {
     return eventually(`${file} written`, async () => existsSync(file) ? Number(await readFile(file, "utf8")) || undefined : undefined, 30_000)
   }
 
+  void it("refuses a switch to Claude Code, which a cloud workspace runs in its runtime, telling the person to start a new session for it and leaving the session on Pi", { timeout: 120_000 }, async () => {
+    const root = "ses_switch"
+    const host = await session(root)
+    const response = await host.as(OWNER).fetch(`/session/${root}/config`, {
+      method: "PATCH", body: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } },
+    })
+    assert.equal(response.status, 409)
+    assert.deepEqual(await response.json(), { error: {
+      code: "workspace_harness_hosted_elsewhere",
+      message: "Claude Code runs in the workspace's runtime on a cloud workspace, not in this session's host. Start a new Claude Code session to use it here.",
+    } })
+    assert.deepEqual((await host.json<{ harness: unknown }>(`/session/${root}/config`)).harness, { id: "pi", access: "native" })
+  })
+
   void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for one delivery", { timeout: 120_000 }, async () => {
     const root = "ses_turn"
     const host = await session(root)
@@ -183,6 +199,52 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.ok(host.controlPlane.calls.executions.length >= 1)
     const spent = new Set(model.requests.filter((request) => request.prompt.includes("PIWRITE")).map((request) => request.authorization))
     assert.deepEqual(spent, new Set([`Bearer ${SECRET}`]))
+  })
+
+  void it("reports the turn's usage with the model's token counts, and its session row with the human turn and outcome, under the turn's lease once it ends", { timeout: 120_000 }, async () => {
+    const root = "ses_reported"
+    const host = await session(root)
+    const sentAt = Date.now()
+    await host.prompt("msg_reported", "Reply with exactly this one token: PIREPORTED")
+    await host.settled("PIREPORTED")
+    await eventually("the turn's usage report and session row", async () =>
+      host.controlPlane.calls.usage.length && host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => row.lastTurn)) ? true : undefined)
+    const facts = host.controlPlane.calls.usage.flatMap((report) => report.facts)
+    const settled = facts.find((fact) => fact.settlement === "final")
+    assert.ok(settled, JSON.stringify(facts))
+    assert.deepEqual(host.controlPlane.calls.usage.map((report) => report.turnId), ["msg_reported"])
+    assert.equal(settled.status, "completed")
+    assert.equal(settled.harness, "pi")
+    assert.equal(settled.providerId, MODEL.providerID)
+    assert.equal(settled.modelId, MODEL.modelID)
+    assert.equal(settled.turnId, "msg_reported")
+    assert.ok(atLeastOne(readField(settled.tokens, "input")) && atLeastOne(readField(settled.tokens, "output")), JSON.stringify(settled))
+    assert.equal(readField(settled.quality, "source"), "provider")
+    const final = host.controlPlane.calls.rows.at(-1)!
+    assert.equal(final.turnId, "msg_reported")
+    assert.equal(final.hostId, `session-do:${root}`)
+    const row = final.rows.find((candidate) => candidate.sessionId === root)
+    const lastHumanTurnAt = readField(row, "lastHumanTurnAt")
+    assert.ok(typeof lastHumanTurnAt === "number" && lastHumanTurnAt >= sentAt, JSON.stringify(row))
+    assert.equal(readField(readField(row, "status"), "kind"), "idle")
+    assert.equal(readField(readField(row, "lastTurn"), "status"), "completed")
+    assert.ok(typeof readField(row, "createdAt") === "number" && typeof readField(row, "updatedAt") === "number")
+  })
+
+  void it("reports the stored account the vendor refused, under the turn's lease, and the failed turn's row and usage", { timeout: 120_000 }, async () => {
+    const root = "ses_refused_account"
+    const host = await session(root)
+    const restore = model.scriptError({ marker: "PIREFUSEDKEY", status: 401, message: "Incorrect API key provided" })
+    try {
+      await host.prompt("msg_refused_key", "Reply with exactly this one token: PIREFUSEDKEY")
+      await eventually("the refused account reported", async () => host.controlPlane.calls.refusals.length ? true : undefined, 30_000)
+    } finally { restore() }
+    assert.deepEqual(host.controlPlane.calls.refusals, [{ turnId: "msg_refused_key", credentialId: OPENAI_ACCOUNT.credentialId }])
+    await eventually("the failed turn's row and usage", async () =>
+      host.controlPlane.calls.usage.some((report) => report.turnId === "msg_refused_key")
+        && host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => readField(row.lastTurn, "status") === "failed")) ? true : undefined)
+    const fact = host.controlPlane.calls.usage.flatMap((report) => report.facts).find((candidate) => candidate.turnId === "msg_refused_key")
+    assert.equal(fact?.status, "error", JSON.stringify(fact))
   })
 
   void it("keeps delivered model options after an idle object restart without requesting another secret delivery", { timeout: 120_000 }, async () => {
@@ -461,3 +523,8 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(assistantText(await host.messages()).includes("PIWAIT"), false)
   })
 })
+
+
+function atLeastOne(value: unknown) {
+  return typeof value === "number" && value >= 1
+}

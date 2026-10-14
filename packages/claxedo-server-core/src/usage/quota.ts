@@ -23,7 +23,18 @@ import { checkCredential } from "../credentials/operations/check"
 import { isSubscriptionKind } from "../credentials/secret-material"
 import { controlBus } from "../platform/runtime/lib/bus"
 import { Log } from "../platform/runtime/lib/log"
-import { accountsInUse, harnessOf, orderAccounts, quotaStatus, storedAccounts, storedQuotaAccount, visibleTo } from "./quota-accounts"
+import {
+  accountsInUse,
+  checkWord,
+  harnessOf,
+  orderAccounts,
+  quotaStatus,
+  storedAccounts,
+  storedQuotaAccount,
+  visibleTo,
+  withCheckWord,
+  type CheckWord,
+} from "./quota-accounts"
 import type { ControlPlaneCredentials } from "../authority/control-plane-contract"
 import type { MachineAgentUsage, MachineAgentUsageReader } from "../credentials/machine-agent-usage"
 import type { ReportedMachineLogin } from "../credentials/machine-login-report"
@@ -40,10 +51,11 @@ const REFRESH_INTERVAL_MS = 60_000
 
 export type UsageQuotaReader = (input: { org: string; person: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
 
-/** What the last reads of this machine's harnesses and probe left behind. */
+/** What the last reads of this machine's harnesses and probe, and the last Check of each stored account, left behind. */
 type MachineSources = {
   logins: readonly ReportedMachineLogin[]
   agents: readonly MachineAgentUsage[]
+  checks: Map<string, CheckWord>
 }
 
 export function createUsageQuotaReader(input: {
@@ -59,7 +71,7 @@ export function createUsageQuotaReader(input: {
   const interval = input.refreshIntervalMs ?? REFRESH_INTERVAL_MS
   const lastRefresh = new Map<string, number>()
   const checking = new Set<string>()
-  const held: MachineSources = { logins: [], agents: [] }
+  const held: MachineSources = { logins: [], agents: [], checks: new Map() }
   let machineReadAt: number | undefined
   let machinePending = 0
 
@@ -107,7 +119,7 @@ export function createUsageQuotaReader(input: {
 
   const check = (org: string, person: string, key: string) => {
     checking.add(key)
-    void runChecks(credentials, org, person, { now, ...(input.fetch ? { fetch: input.fetch } : {}) })
+    void runChecks(credentials, org, person, { now, ...(input.fetch ? { fetch: input.fetch } : {}) }, held.checks)
       .catch((error: unknown) => {
         log.warn("quota checks failed", { org, detail: error instanceof Error ? error.message : String(error) })
       })
@@ -161,7 +173,8 @@ async function composeSnapshot(
   // machine login as the one in use.
   const inUse = await accountsInUse(credentials, org, rows, visible)
   const harnessesInUse = new Set(rows.filter((row) => inUse.has(row.id)).map(harnessOf))
-  const accounts: QuotaAccount[] = storedAccounts(rows).map((account) => storedQuotaAccount(account, inUse))
+  const accounts: QuotaAccount[] = storedAccounts(rows).map((account) =>
+    withCheckWord(storedQuotaAccount(account, inUse), machine.checks.get(account.first.id)))
   for (const login of machine.logins) {
     if (login.state !== "signed_in") continue
     accounts.push({
@@ -212,6 +225,7 @@ async function runChecks(
   org: string,
   person: string,
   options: { now: () => number; fetch?: typeof fetch },
+  checks: Map<string, CheckWord>,
 ) {
   const visible = visibleTo(person)
   const rows = (await credentials.listCredentials(org)).filter((row) => isSubscriptionKind(row.kind) && visible(row))
@@ -220,5 +234,6 @@ async function runChecks(
     if (outcome.status === "failed") {
       log.warn("quota check failed", { credential_id: row.id, ...outcome.detail })
     }
+    checks.set(row.id, checkWord(outcome))
   }))
 }

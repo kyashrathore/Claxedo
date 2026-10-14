@@ -20,6 +20,19 @@ export type CredentialStatus = (typeof CREDENTIAL_STATUSES)[number]
 export const CREDENTIAL_HEALTHS = ["ok", "auth_failed", "no_billing", "rate_capped", "expired"] as const
 export type CredentialHealth = (typeof CREDENTIAL_HEALTHS)[number]
 
+/**
+ * The vendor's answer behind a verdict, so a stored `auth_failed` can be told
+ * apart from another. Never the body: an error message can quote the request,
+ * and this is written to a row and to an HTTP answer.
+ */
+export type CredentialVerdictEvidence = {
+  status: number
+  /** The vendor's error type or code (`authentication_error`, `invalid_grant`); absent when it named none. */
+  type?: string
+  /** The `retry-after` the vendor sent with a throttle, in seconds. */
+  retryAfterSeconds?: number
+}
+
 /** One quota window the provider reports for a subscription. */
 export type CredentialUsageWindow = {
   /** `session` (5 h), `weekly`, `weekly_opus`, or the vendor's slot name when it matches none. */

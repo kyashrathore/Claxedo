@@ -1,21 +1,9 @@
 import { unreachable } from "@/lib/machine"
-import type { ProjectSource } from "@/server"
-
-function lastSegment(value: string) {
-  return value.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? ""
-}
+import { repositoryName, type ProjectSource } from "@/server"
 
 export function draftProjectName(source: ProjectSource): string {
-  switch (source.kind) {
-    case "folder":
-      return lastSegment(source.path)
-    case "repository":
-      return lastSegment(source.url).replace(/\.git$/, "")
-    case "connectedRepository":
-      return lastSegment(source.fullName)
-    default:
-      return unreachable(source)
-  }
+  if (source.kind === "folder") return source.path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? ""
+  return repositoryName(source)
 }
 
 export function sourceLabel(source: ProjectSource | undefined): string {

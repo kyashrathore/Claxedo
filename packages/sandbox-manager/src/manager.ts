@@ -3,7 +3,6 @@ import {
   validateSandboxPersistenceCapabilities,
   type SandboxLease,
   type SandboxDriverEnsureInput,
-  type SandboxTarget,
   type SandboxDriver,
   type SandboxManager,
   type SandboxManagerInput,
@@ -13,18 +12,19 @@ import {
   type SandboxTargetResult,
   type SandboxResource,
   type SandboxMutationResult,
-  type SandboxGarbageCollectResult,
-  isSandboxListingUnsupported,
   SANDBOX_IMAGE_LABEL,
   type SandboxManagerOptions
 } from "./contract"
+import { sandboxEgressDisposition, sandboxNetworkPolicyWithBrokeredHosts } from "./egress-policy"
+import { createEgressWarnings } from "./egress-warnings"
+import { sweepSandboxes } from "./garbage-collect"
 import {
-  sandboxEgressDisposition,
-  type SandboxEgressUnenforcedEvent,
-  type SandboxNetworkPolicy,
-  sandboxNetworkPolicyWithBrokeredHosts,
-} from "./egress-policy"
-import { isSandboxRuntimeBootFailure, sandboxLeaseFailure, sandboxRuntimeBootFailedError } from "./lease-failure"
+  isSandboxHostGone,
+  isSandboxRuntimeBootFailure,
+  sandboxHostGoneError,
+  sandboxLeaseFailure,
+  sandboxRuntimeBootFailedError,
+} from "./lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import {
   captureSandboxCheckpoint,
@@ -38,47 +38,6 @@ import { createSandboxStartRecorder } from "./start-telemetry"
 import { createLifecycleReporter } from "./lease-lifecycle"
 import { continuedStart, leaseBootMode } from "./lease-start"
 import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
-
-function egressUnenforcedMessage(input: {
-  phase: "composition" | "ensure"
-  driver: string
-  workspaceId?: string
-  requested?: SandboxNetworkPolicy
-}) {
-  const scope = input.workspaceId ? `workspace ${input.workspaceId}` : "every sandbox it provisions"
-  const withheld = input.requested
-    ? ` The requested allowlist (${(input.requested.hosts ?? []).length} host(s), ` +
-      `${(input.requested.cidrs ?? []).length} cidr(s)) was withheld, not applied.`
-    : ""
-  return (
-    `[sandbox-manager] SANDBOX EGRESS IS UNRESTRICTED: driver "${input.driver}" declares ` +
-    `egressControl: "none", so ${scope} can reach ANY host on the internet, including ` +
-    `attacker-controlled buckets — agent-authored code inside the sandbox has an unmonitored ` +
-    `exfiltration path.${withheld} Select a driver that can enforce egress (vercel) ` +
-    `to close it. See public-docs/sandbox-egress.md.`
-  )
-}
-
-/**
- * Drivers already warned about at composition time, so a control plane that
- * composes its services per request (the hosted Worker does) logs the boot
- * warning once per isolate instead of once per request. Keyed by driver id +
- * declared capability, never by workspace.
- */
-const compositionEgressWarnings = new Set<string>()
-
-/**
- * Drivers whose withheld policy was already reported from a start in this
- * isolate. Every connection to a sleeping or starting cloud workspace runs
- * `admit`, so without this the hosted Worker logged the same paragraph on
- * each of them; the first start names the driver, one workspace and the
- * allowlist it withheld, which is what an operator needs to act.
- */
-const ensureEgressWarnings = new Set<string>()
-
-function defaultEgressUnenforcedSink(event: SandboxEgressUnenforcedEvent) {
-  console.warn(event.message)
-}
 
 /**
  * The lifecycle operations that coalesce per workspace. Two result shapes cover
@@ -172,8 +131,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     options.retryDelayMs ?? ((retryCount) => Math.min(60_000, 1_000 * 2 ** Math.max(0, retryCount - 1)))
   const maxRetryCount = options.maxRetryCount ?? Number.POSITIVE_INFINITY
   const retryCapCooldownMs = options.retryCapCooldownMs ?? 10 * 60_000
-  const egressControl = options.driver.metadata.egressControl
-  const onEgressUnenforced = options.onEgressUnenforced ?? defaultEgressUnenforcedSink
+  const egressWarnings = createEgressWarnings({
+    driver: { id: options.driver.id, egressControl: options.driver.metadata.egressControl },
+    ...(options.onEgressUnenforced ? { sink: options.onEgressUnenforced } : {}),
+  })
   /**
    * At most one lifecycle operation per workspace: a second request of the SAME
    * kind joins the one in flight, a different kind queues behind it. The entry
@@ -189,44 +150,6 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     now,
     ...(options.onStartPhase ? { onStartPhase: options.onStartPhase } : {}),
   })
-
-  function reportEgressUnenforced(input: { workspaceId: string; requested: SandboxNetworkPolicy }) {
-    const key = `${options.driver.id}|${egressControl}`
-    if (ensureEgressWarnings.has(key)) return
-    ensureEgressWarnings.add(key)
-    onEgressUnenforced({
-      phase: "ensure",
-      reason: "sandbox_egress_uncontained",
-      driver: options.driver.id,
-      egressControl,
-      message: egressUnenforcedMessage({
-        phase: "ensure",
-        driver: options.driver.id,
-        workspaceId: input.workspaceId,
-        requested: input.requested,
-      }),
-      workspaceId: input.workspaceId,
-      requested: input.requested,
-    })
-  }
-
-  // Boot-time half of the warning. A per-create line lands in request logs and
-  // is easy to miss; this one lands wherever the process starts, so an operator
-  // who composed cloudflare/boat/docker/modal learns that this deployment
-  // runs sandboxes with unrestricted egress BEFORE the first workspace exists.
-  if (egressControl === "none") {
-    const key = `${options.driver.id}|${egressControl}`
-    if (!compositionEgressWarnings.has(key)) {
-      compositionEgressWarnings.add(key)
-      onEgressUnenforced({
-        phase: "composition",
-        reason: "sandbox_egress_uncontained",
-        driver: options.driver.id,
-        egressControl,
-        message: egressUnenforcedMessage({ phase: "composition", driver: options.driver.id }),
-      })
-    }
-  }
 
   /** A different kind queues behind whatever is already running for the workspace. */
   function lifecycleQueue(current: LifecycleOperation | undefined) {
@@ -334,6 +257,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       // workspace's first start as the person sees it, not a wake.
       const bootMode: SandboxBootMode = resuming && lease.url ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start"
       start = starts.observe(lease, { bootMode, enteredAt, labels: ensure.labels })
+      await start?.opened()
       ensure.onResource = async (resource) => {
         const recorded = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
           ...resource,
@@ -390,6 +314,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      if (isSandboxHostGone(err) && lease.sandboxId) {
+        await start?.flush()
+        return hostGone(workspaceId, lease, managerInput, message, enteredAt)
+      }
       const bootFailed = isSandboxRuntimeBootFailure(err)
       const error = bootFailed ? sandboxRuntimeBootFailedError(message) : message
       if (lease.status === "ready" && !bootFailed) {
@@ -428,6 +356,58 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       }
     } finally {
       await start?.flush()
+    }
+  }
+
+  /**
+   * The provider says the host the lease names no longer exists. The lease
+   * ends destroyed, its boot closing at the last moment the host was proven
+   * serving, and the same start goes on to place a replacement: the person
+   * who began it gets a sandbox, not a report about one that is gone. A lease
+   * that never had a host is not here; its driver error is a provider failure.
+   */
+  async function hostGone(
+    workspaceId: string,
+    lease: SandboxLease,
+    managerInput: SandboxManagerInput,
+    message: string,
+    enteredAt: number,
+  ): Promise<SandboxEnsureResult> {
+    const endedAt = hostLastProvenAliveAt(lease)
+    const ended = await options.leaseStore.update(workspaceId, lease.epoch, {
+      status: "destroyed",
+      lastError: sandboxHostGoneError(message),
+      ...(endedAt === undefined ? {} : { endedAt }),
+    })
+    if (!ended) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion: lease.homeRegion }
+    lifecycle.destroyed(lease, endedAt)
+    const admitted = await admit(workspaceId, managerInput)
+    if (!("lease" in admitted)) return admitted
+    return provisionLease(workspaceId, admitted.lease, admitted.lease.homeRegion, managerInput, enteredAt)
+  }
+
+  /**
+   * The latest moment the lease's own record proves its host served: the last
+   * start phase observed on it, the last liveness report, the last activity.
+   * Nothing for a lease that was not serving, whose host cost nothing after
+   * the moment it was found gone.
+   */
+  function hostLastProvenAliveAt(lease: SandboxLease): number | undefined {
+    if (lease.status !== "ready" || !lease.start) return undefined
+    return Math.max(lease.start.markedAt, lease.lastHeartbeatAt ?? 0, lease.lastActivityAt ?? 0)
+  }
+
+  /** Stops the host, or learns from the provider that it is already gone. */
+  async function hostStopped(
+    stopHost: SandboxDriver["stop"] | undefined,
+    resource: SandboxResource & { epoch?: number; checkpoint?: string },
+  ): Promise<"stopped" | "destroyed"> {
+    try {
+      await stopHost?.(resource)
+      return "stopped"
+    } catch (err) {
+      if (!isSandboxHostGone(err)) throw err
+      return "destroyed"
     }
   }
 
@@ -518,7 +498,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     // raised here, once per driver per isolate.
     const egress = sandboxEgressDisposition(options.driver.metadata.egressControl, input.net)
     if (egress.action === "withhold" && input.net) {
-      reportEgressUnenforced({ workspaceId, requested: input.net })
+      egressWarnings.withheld({ workspaceId, requested: input.net })
     }
     if (egress.action === "refuse") {
       // Still fail-closed, and deliberately so: this driver DOES enforce
@@ -631,15 +611,25 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         if (lease?.status === "stopped") return stopped(lease.checkpoint?.providerReference)
         const target = await this.target(workspaceId)
         const stopHost = input.hostStopsItself ? undefined : options.driver.suspend ?? options.driver.stop
+        // A host the provider no longer has cannot be stopped and is not held: the lease ends destroyed, and the next start places anew.
+        const ended = async (resource: SandboxResource & { epoch: number; checkpoint?: string }, status: "stopped" | "destroyed") => {
+          if (!lease) return undefined
+          const endedAt = status === "destroyed" ? hostLastProvenAliveAt(lease) : undefined
+          const updated = await options.leaseStore.update(workspaceId, resource.epoch, {
+            status,
+            ...(status === "destroyed" ? { lastError: sandboxHostGoneError(`${resource.sandboxId} is gone`) } : {}),
+            ...(endedAt === undefined ? {} : { endedAt }),
+          })
+          if (!updated) return undefined
+          if (status === "destroyed") lifecycle.destroyed(lease, endedAt)
+          else lifecycle.stopped(lease, input.idleBefore !== undefined)
+          return { ok: true as const, status, ...(status === "stopped" && lease.checkpoint ? { checkpoint: lease.checkpoint.providerReference } : {}) }
+        }
         if (target.status !== "ready") {
           // A lease still booting on a host it holds has nothing serving to drain, and the host costs all the same.
           const held = lease?.status === "acquiring" ? leaseResource(lease) : undefined
           if (!lease || !held) return { ok: false, reason: target.reason }
-          await stopHost?.(held)
-          const updated = await options.leaseStore.update(workspaceId, held.epoch, { status: "stopped" })
-          if (!updated) return { ok: false, reason: "runtime_lease_changed" }
-          lifecycle.stopped(lease, input.idleBefore !== undefined)
-          return stopped(lease.checkpoint?.providerReference)
+          return (await ended(held, await hostStopped(stopHost, held))) ?? { ok: false, reason: "runtime_lease_changed" }
         }
         const persistence = lease?.persistence
         if (input.runtime && persistence && persistence.capture !== "none") {
@@ -651,11 +641,8 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           return stopped(checkpoint)
         }
         const checkpoint = lease?.checkpoint?.providerReference
-        await stopHost?.({ ...target, ...(checkpoint ? { checkpoint } : {}) })
-        const updated = await options.leaseStore.update(workspaceId, target.epoch, { status: "stopped" })
-        if (!updated) return { ok: false, reason: "runtime_lease_changed" }
-        if (lease) lifecycle.stopped(lease, input.idleBefore !== undefined)
-        return stopped(checkpoint)
+        const resource = { ...target, ...(checkpoint ? { checkpoint } : {}) }
+        return (await ended(resource, await hostStopped(stopHost, resource))) ?? { ok: false, reason: "runtime_lease_changed" }
       })
     },
     async destroy(workspaceId) {
@@ -681,95 +668,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       await options.leaseStore.release(workspaceId)
       return { released: true }
     },
-    async garbageCollect() {
-      if (!options.driver.list) {
-        // A driver that cannot enumerate provider state cannot answer "what is
-        // running that shouldn't be?" — so it must not answer "nothing".
-        return {
-          destroyed: [],
-          kept: [],
-          skipped: [],
-          failed: [],
-          listingUnsupported: true as const,
-          driver: options.driver.id,
-        }
-      }
-      // Enumerate BEFORE reading leases, and treat a declared listing gap the
-      // same as a missing `list()`. A driver whose backing service cannot
-      // enumerate (e.g. a sandbox Worker predating its registry route) must not
-      // reach the sweep below with an empty list, or every live sandbox looks
-      // like an orphan and GC destroys the fleet.
-      let listed: SandboxTarget[]
-      try {
-        listed = await options.driver.list()
-      } catch (err) {
-        if (!isSandboxListingUnsupported(err)) throw err
-        return {
-          destroyed: [],
-          kept: [],
-          skipped: [],
-          failed: [],
-          listingUnsupported: true as const,
-          driver: options.driver.id,
-        }
-      }
-      const leases = new Map((await options.leaseStore.list()).map((lease) => [lease.workspaceId, lease]))
-      const result: SandboxGarbageCollectResult = {
-        destroyed: [],
-        kept: [],
-        skipped: [],
-        failed: [],
-      }
-      const appLabel = options.appLabel ?? DEFAULT_APP_LABEL
-      for (const target of listed) {
-        if (target.labels?.app !== appLabel) {
-          result.skipped.push({ target, reason: "unmanaged_app_label" })
-          continue
-        }
-        const workspaceId = target.labels.workspaceId
-        const epoch = target.labels.epoch
-        if (!workspaceId || !epoch) {
-          result.skipped.push({ target, reason: "missing_runtime_labels" })
-          continue
-        }
-        const lease = leases.get(workspaceId)
-        // Provider labels are create-time state: a driver that reuses a
-        // resource across an epoch bump (a restore that keeps the same
-        // provider sandbox, a resume after stop) cannot retag it atomically
-        // with the reuse, so `labels.epoch` can lag the lease even after the
-        // driver rewrote it — the sweep can simply land first. The lease
-        // store is authoritative for which provider resource a workspace
-        // owns: a listed sandbox the lease still names is in service whatever
-        // its labels claim. Only a "destroyed" lease disclaims the resource —
-        // a remnant of it is exactly what this sweep exists to finish.
-        const leaseOwnsResource =
-          lease !== undefined && lease.status !== "destroyed" && (
-            lease.sandboxId === target.sandboxId ||
-            (lease.driverResourceId !== undefined && lease.driverResourceId === target.driverResourceId)
-          )
-        if (leaseOwnsResource) {
-          result.kept.push(target)
-          continue
-        }
-        if (lease?.status === "acquiring" && String(lease.epoch) === epoch) {
-          // An in-flight provision for the current epoch is live even though
-          // the lease does not carry host/sandbox identity yet.
-          result.kept.push(target)
-          continue
-        }
-        if (!options.driver.destroy) {
-          result.skipped.push({ target, reason: "destroy_unsupported" })
-          continue
-        }
-        try {
-          await options.driver.destroy(target)
-          result.destroyed.push(target)
-        } catch (err) {
-          result.failed.push({ target, error: err instanceof Error ? err.message : String(err) })
-        }
-      }
-      return result
-    },
+    garbageCollect: () => sweepSandboxes({ driver: options.driver, leaseStore: options.leaseStore, appLabel: options.appLabel ?? DEFAULT_APP_LABEL }),
     list: () => options.leaseStore.list(),
     recordStartPhases: (workspaceId, input) => starts.report(workspaceId, input),
     markStartPhase: (workspaceId, input) => starts.markAfter(workspaceId, input),

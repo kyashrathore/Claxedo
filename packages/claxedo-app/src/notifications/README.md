@@ -12,7 +12,7 @@ Alerts are derived from a session's state, not from its transitions. The session
 
 Any row the list holds alerts, open or not: a session that is not open reaches the app as a hosted `session.status.changed` notice, the same `statusChanged` a runtime frame becomes. Nothing alerts that the row already held: a list read or re-read, on open, reload or reconnect, never passes through the derivation, a turn the row already shows is not newer, and a notice the live-sync room replays to a reconnecting reader is marked replayed and raises nothing.
 
-A subagent's session never alerts, and neither does a session the list store does not hold. The sound plays when the session is not the one on screen; the system notification needs the browser's permission, which only a Notifications switch turned on asks for, and it is skipped while the window is visible and focused. Clicking it opens the session.
+A subagent's session never alerts, and neither does a session the list store does not hold. The sound plays when the session is not the one on screen; the system notification needs the browser's permission, which only a Notifications switch turned on asks for (`createSystemNotificationPermission`, whose signal Settings reads so a switch never shows on while the browser would deliver nothing), and it is skipped while the window is visible and focused. Clicking it opens the session.
 
 Alerts mark nothing: whether a turn's outcome is unseen is the reader's seen mark on the server, which the session list owns (`src/session/README.md`, reader marks).
 

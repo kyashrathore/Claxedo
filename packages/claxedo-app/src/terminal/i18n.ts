@@ -35,6 +35,7 @@ const en = {
   "terminal.creator.agentsAsleep": "{{name}} is asleep. Its agents show here once it wakes.",
   "terminal.creator.agentsOutdated": "{{name}} runs an older version. Its agents show here once it restarts to update.",
   "terminal.creator.agentsWakeFailed": "Couldn't wake {{name}}: {{reason}}",
+  "terminal.creator.waking": "Waking {{name}}…",
   "terminal.creator.starting": "Starting…",
   "terminal.command.new.description": "Create a new terminal tab",
   "terminal.command.toggle": "Toggle terminal",

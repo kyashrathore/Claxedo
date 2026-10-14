@@ -18,7 +18,7 @@ export type ModelsHarness = { readonly slug: string; readonly label: string; rea
 
 const TABS: readonly HarnessTab[] = ["accounts", "models"]
 
-const LINK = "rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base"
+const LINK = "min-h-8 rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base"
 
 function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void; readonly actions: JSX.Element }) {
   const t = useAccountsText()
@@ -30,7 +30,7 @@ function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: Ha
             type="button"
             role="tab"
             aria-selected={props.tab === value}
-            class="rounded-md px-2.5 py-1 text-13-regular"
+            class="min-h-8 rounded-md px-2.5 py-1 text-13-regular"
             classList={{ "text-text-strong bg-surface-base": props.tab === value, "text-text-weak": props.tab !== value }}
             data-action={`settings-models-tab-${value}`}
             onClick={() => props.onTab(value)}

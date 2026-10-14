@@ -1,4 +1,10 @@
+import type { WorkspaceIdleStop } from "../workspace/routes/checkpoints"
 import type { SandboxProvisionerNamespace, SandboxStart, SandboxStartDrive } from "../workspace/sandbox-start"
+
+/** The idle stop a composition test hands a delivery whose sandboxes it never watches. */
+export const unusedWorkspaceIdleStop: WorkspaceIdleStop = async () => {
+  throw new Error("this test composed no idle stop")
+}
 
 /** A start that runs its lease step and one driver step inside the caller, which is how a Node test watches a driver through the route. */
 export function inlineSandboxStart(drive: SandboxStartDrive): SandboxStart {

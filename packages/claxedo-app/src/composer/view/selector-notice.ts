@@ -57,6 +57,7 @@ function harnessNoticeInput(input: SelectorNoticeInput, unserved: HarnessAccount
           : undefined,
     setupRequired: unserved === "missing" || unserved === "accountless",
     accountRefused: unserved === "refused",
+    accountUnavailable: selection().accountUnavailable,
     openProviders: input.openProviders,
     unavailableHere: input.unavailableHere(),
   }

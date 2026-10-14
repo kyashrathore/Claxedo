@@ -54,6 +54,11 @@ async function renewals(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/renewals?ws=${workspaceId}`)).json()) as { renewals: number }).renewals
 }
 
+/** The failures the provisioner counted before each idle read of the workspace, in order. */
+async function watches(workspaceId: string) {
+  return ((await (await miniflare.dispatchFetch(`${ORIGIN}/watches?ws=${workspaceId}`)).json()) as { watches: number[] }).watches
+}
+
 /** Polls `read` until `settled` admits its answer, within 10 s. */
 async function until<T>(read: () => Promise<T>, settled: (value: T) => boolean): Promise<T> {
   const deadline = Date.now() + 10_000
@@ -167,6 +172,24 @@ describe("a sandbox start on workerd", () => {
     expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
   })
 
+  test("a ready sandbox whose host reads no idleness has it read from the alarm until a read stops it, and the next start resumes it", async () => {
+    await start("ws_watch_3")
+    await until(() => target("ws_watch_3"), (lease) => lease.status === "ready")
+    expect(await until(() => target("ws_watch_3"), (lease) => lease.status === "unavailable")).toMatchObject({ leaseStatus: "stopped" })
+    expect(await watches("ws_watch_3")).toEqual([0, 0, 0])
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect(await watches("ws_watch_3")).toHaveLength(3)
+    expect(await driverCalls("ws_watch_3")).toBe(1)
+    expect(await until(() => start("ws_watch_3"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
+    expect(await driverCalls("ws_watch_3")).toBe(2)
+  })
+
+  test("an idle read that throws is counted and tried again, and the count reaches the read that stops the sandbox as unreachable", async () => {
+    await start("ws_watchfail_2")
+    expect(await until(() => target("ws_watchfail_2"), (lease) => lease.status === "unavailable")).toMatchObject({ leaseStatus: "stopped" })
+    expect(await watches("ws_watchfail_2")).toEqual([0, 1, 2])
+  })
+
   test("polls a driver that asks to be polled, from the alarm, until it is ready", async () => {
     expect(await start("ws_poll_2")).toMatchObject({ status: "provisioning", epoch: 1 })
     await until(() => target("ws_poll_2"), (lease) => lease.status === "ready")
@@ -182,6 +205,18 @@ describe("a sandbox start on workerd", () => {
       failure: { kind: "boot", message: "the image has no runtime", retrying: false },
     })
     expect(await driverCalls("ws_boot_fail")).toBe(1)
+  })
+
+  test("a lease stopped while its run was inside the driver is nobody's failure: the next start begins the run the lease needs, at once", async () => {
+    expect(await start("ws_stopped_under")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => inFlight("ws_stopped_under"), (answer) => answer === null)).toBeNull()
+    expect(await target("ws_stopped_under")).toMatchObject({ status: "unavailable", leaseStatus: "stopped" })
+
+    const next = await start("ws_stopped_under")
+    expect(next).toMatchObject({ status: "provisioning", epoch: 2 })
+    expect(next).not.toHaveProperty("opened")
+    expect(await until(() => start("ws_stopped_under"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
+    expect(await driverCalls("ws_stopped_under")).toBe(2)
   })
 
   test("a provider failure is retried from the alarm after the lease's own delay, on a fresh epoch the run follows", async () => {

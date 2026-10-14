@@ -4,11 +4,8 @@ import { Log } from "../platform/runtime/lib/log"
 import {
   providerDestination,
 } from "./destinations"
-import {
-  readSecretById,
-  activeCredentialsForScope,
-  type CredentialOrgScope,
-} from "./registry"
+import { readSecretById, type CredentialOrgScope } from "./registry"
+import { activeCredentialsForScope } from "./scoped-selection"
 import { SINGLE_TENANT_ORG } from "./partition"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { AccountSelections } from "./account-holder"

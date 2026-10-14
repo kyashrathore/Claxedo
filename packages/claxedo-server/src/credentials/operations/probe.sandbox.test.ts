@@ -24,12 +24,11 @@ function respond(input: { ok?: boolean; status?: number; body?: string } = {}) {
   const calls: Array<{ url: string; init: RequestInit | undefined }> = []
   const stub = (async (url: string | URL, init?: RequestInit) => {
     calls.push({ url: String(url), init })
-    return {
-      ok: input.ok ?? true,
+    const body = input.body ?? ""
+    return new Response(body, {
       status: input.status ?? (input.ok === false ? 400 : 200),
-      text: async () => input.body ?? "",
-      body: undefined,
-    } as unknown as Response
+      headers: body.startsWith("{") ? { "content-type": "application/json" } : {},
+    })
   }) as unknown as typeof fetch
   return { stub, calls }
 }
@@ -55,7 +54,7 @@ describe("discovered sandbox provider keys get live verdicts", () => {
   })
 
   test("a rejected key reads as broken, with a reason the row can show", async () => {
-    const transport = respond({ ok: false, status: 401, body: "unauthorized" })
+    const transport = respond({ ok: false, status: 401, body: JSON.stringify({ ok: false, code: "unauthorized", message: "Missing or invalid bearer token" }) })
 
     const probe = await probeDiscoveredCredential(item(), { fetch: transport.stub })
 

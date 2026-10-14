@@ -35,12 +35,13 @@ import {
   type CredentialKind,
   type CredentialMetadata,
   type CredentialUsageWindow,
+  type CredentialVerdictEvidence,
   type CredentialWrite,
   type CredentialStatus,
   type SetActiveCredentialsResult,
 } from "./types"
+import { credentialLastError, credentialStatusForHealth, isRefusedHealth } from "./health"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { credentialSecretInScope } from "./secret-scope"
 import { storedCredentialKind } from "./secret-material"
 import { parseUsageWindows, serializeUsageWindows } from "./usage-windows"
 
@@ -689,8 +690,6 @@ export function updateCredentialStatus(
  * A rate cap is not one of them: the same login works again once the window
  * resets, and moving off it would spend the next account's quota for nothing.
  */
-const YIELDS_ACTIVE_MARK: readonly CredentialHealth[] = ["auth_failed", "no_billing", "expired"]
-
 /** Provider health and token rotation cannot undo the operator's revocation. */
 function statusAfterVerification(status: CredentialStatus) {
   return sql`case when ${ClaxedoProviderCredentialTable.status} = 'revoked' then 'revoked' else ${status} end`
@@ -712,20 +711,21 @@ export function updateCredentialHealth(
   health: CredentialHealth,
   validatedAt: number,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
+  evidence?: CredentialVerdictEvidence,
 ): void {
   ClaxedoDB.transaction((db) => {
     db
       .update(ClaxedoProviderCredentialTable)
       .set({
         health,
-        status: statusAfterVerification(health === "ok" ? "available" : health === "expired" ? "expired" : "error"),
+        status: statusAfterVerification(credentialStatusForHealth(health)),
         last_validated_at: validatedAt,
-        last_error: health === "ok" ? null : health,
+        last_error: credentialLastError(health, evidence),
         updated_at: now(),
       })
       .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .run()
-    if (!YIELDS_ACTIVE_MARK.includes(health)) return
+    if (!isRefusedHealth(health)) return
     const refused = db
       .select()
       .from(ClaxedoProviderCredentialTable)
@@ -911,72 +911,16 @@ export async function deleteCredentialsByProvider(
  * at most one row per (owner, provider), so every fanout reads one account per
  * provider without ranking anything: a provider whose accounts are all unmarked
  * sends nothing, and the harness runs on the login it holds on the machine.
+ * Which of them a scope may spend is `scoped-selection.ts`'s question.
  */
-function readActiveCredentials(org: CredentialOrgScope): CredentialMetadata[] {
-  return ClaxedoDB.use((db) =>
-    db
-      .select()
-      .from(ClaxedoProviderCredentialTable)
-      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.is_active, true)))
-      .all()
-      .map(toMetadata),
-  )
-}
-
-export type ScopedCredentialSelection = {
-  credential: CredentialMetadata
-  /** Absent when the account can be used; otherwise why it cannot. */
-  unavailable?: string
-}
-
-/**
- * Every account the operator marked for a provider in this scope, usable or
- * not, without secrets. This is the only place "which credential runs" is
- * answered, so a surface that shows it reads the same selection.
- *
- * The scope filter runs after the mark, not instead of it: a user whose active
- * account is not shared sends nothing into a sandbox even when another of their
- * accounts would qualify, because silently running a sandbox on an account the
- * user did not choose is the thing the mark exists to stop.
- *
- * A withdrawn row stays in the answer with its reason. Dropping it would make
- * "no account chosen" and "the chosen account is unusable" indistinguishable,
- * and the harness then runs on whatever login its machine holds. A caller that
- * can only consume a working credential passes the answer through
- * `usableCredentials`.
- */
-export function activeCredentialsForScope(
-  scope: AccountScope,
-  { onOutage }: CredentialRead,
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): ScopedCredentialSelection[] {
-  return readWithPolicy("active credential list", onOutage, [], () => readActiveCredentials(org))
-    .filter((credential) => fanoutEligible(credential) && credentialSecretInScope(credential, scope))
-    .map((credential) => {
-      const unavailable = credentialUnavailableForScope(credential, scope)
-      return unavailable ? { credential, unavailable } : { credential }
-    })
-}
-
-/** The rows of a selection the fanout can send, one per provider. */
-export function usableCredentials(rows: readonly ScopedCredentialSelection[]): CredentialMetadata[] {
-  return rows.flatMap((row) => (row.unavailable ? [] : [row.credential]))
-}
-
-/**
- * Why an in-scope account cannot be used, or `undefined` when it can. The
- * health is preferred over the status because a health verdict names what the
- * provider said (`auth_failed`, `no_billing`) where the status only records
- * that something went wrong.
- */
-export function credentialUnavailableForScope(
-  credential: CredentialMetadata,
-  scope: AccountScope,
-): string | undefined {
-  if (!credential.secure_ref) return "no_secret"
-  if (credential.health === "expired") return "expired"
-  if (credential.expires_at != null && credential.expires_at <= now()) return "expired"
-  if (credential.status !== "available") return credential.health ?? credential.status
-  if (scope === "shared" && !credential.consent) return "consent_required"
-  return undefined
+export function activeCredentials({ onOutage }: CredentialRead, org: CredentialOrgScope = SINGLE_TENANT_ORG): CredentialMetadata[] {
+  return readWithPolicy("active credential list", onOutage, [], () =>
+    ClaxedoDB.use((db) =>
+      db
+        .select()
+        .from(ClaxedoProviderCredentialTable)
+        .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.is_active, true)))
+        .all()
+        .map(toMetadata),
+    ))
 }

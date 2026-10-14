@@ -5,6 +5,7 @@ import { createRoot } from "solid-js"
 import { createHostedAccount } from "./account"
 import { cloudQueries, createCloudApi } from "./cloud"
 import { placementId, projectId, type ProjectId } from "./ids"
+import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
 import type { Project } from "./types"
 import type { WorkspaceWakes } from "./workspace-wakes"
@@ -68,16 +69,19 @@ function world(signed: boolean, catalog: () => void = () => {}, project: Project
   const inventory = () => queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })
   const listed = async () => (await inventory()).map((workspace) => workspace.id)
   const statuses = async () => (await inventory()).map((workspace) => workspace.status.kind)
-  return { cloud, workspaces, posted, listed, statuses, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
+  return { cloud, workspaces, posted, listed, statuses, queryClient, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
 }
 
 test("a completed stop refreshes the cached authoritative cloud lifecycle without an event or page reload", async () => {
   await createRoot(async (dispose) => {
-    const { cloud, workspaces, statuses } = world(false)
+    const { cloud, workspaces, statuses, queryClient } = world(false)
     await cloud.create({ projectId: projectId("prj_widgets"), name: "Payments" })
     expect(await statuses()).toEqual(["ready"])
+    const machineTime = queryKeys.machineTime("http://127.0.0.1:1", 0)
+    queryClient.setQueryData(machineTime, { since: 0, until: 1, activeMs: 1, running: 1, workspaces: [], providers: [] })
     await cloud.stop(placementId("ws_new"))
     expect(await statuses()).toEqual(["stopped"])
+    expect(queryClient.getQueryState(machineTime)?.isInvalidated).toBe(true)
     workspaces.dispose()
     dispose()
   })

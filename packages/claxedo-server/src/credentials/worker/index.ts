@@ -37,10 +37,10 @@ import {
   CREDENTIAL_STATUSES,
   type CredentialKind,
   type CredentialMetadata,
-  type CredentialStatus,
   type CredentialWrite,
   type SecretBackend,
 } from "@claxedo/server-core/credentials/types"
+import { credentialLastError, credentialStatusForHealth } from "@claxedo/server-core/credentials/health"
 import {
   encryptedSecretBackend,
   envelopeCipher,
@@ -335,8 +335,7 @@ export function hostedOrgCredentials(
         .bind(status, status === "expired" ? "expired" : null, error ?? null, now(), org, id)
         .run()
     },
-    updateCredentialHealth: async (id, health, validatedAt) => {
-      const verdict: CredentialStatus = health === "ok" ? "available" : health === "expired" ? "expired" : "error"
+    updateCredentialHealth: async (id, health, validatedAt, _org, evidence) => {
       await database
         .prepare(
           `update hosted_provider_credentials
@@ -347,7 +346,7 @@ export function hostedOrgCredentials(
                updated_at = ?
            where org_id = ? and id = ?`,
         )
-        .bind(health, verdict, validatedAt, health === "ok" ? null : health, now(), org, id)
+        .bind(health, credentialStatusForHealth(health), validatedAt, credentialLastError(health, evidence), now(), org, id)
         .run()
     },
     updateCredentialUsage: async (id, windows, at) => {

@@ -27,6 +27,7 @@ function fixture(options: { lease?: () => Promise<ConnectionSecretLease> | Conne
   }]])
   const created: FakeTransport[] = []
   const transports = createWorkspaceTransports({
+    placement: "loopback",
     connections: () => connections,
     resolveSecrets: options.lease ?? (() => ({ secrets: { token: "secret" }, secretLeaseGeneration: "one" })),
     composer: {
@@ -187,6 +188,7 @@ test("each session owner's connection spends that owner's lease, and one owner's
   const owners: unknown[] = []
   const created: FakeTransport[] = []
   const transports = createWorkspaceTransports({
+    placement: "loopback",
     connections: () => new Map([[runner.id, {
       connectionId: runner.id, providerKey: "fixture", enabled: true, configRevision: 1, config: {}, secretRefs: { token: "ref" },
     }]]),
@@ -233,6 +235,7 @@ test("a held turn ends as soon as its connection's transport is retired", async 
   const { transport, release } = refusedThenThrows()
   const transports = createWorkspaceTransports({
     composer: { connection: () => transport, builtIn: () => transport } as unknown as WorkspaceTransportsInput["composer"],
+    placement: "loopback",
     connections: () => new Map([["conn", { providerKey: "test", connectionId: "conn", configRevision: 1, enabled: true, config: {} } as unknown as RuntimeConnectionDescriptor]]),
     resolveSecrets: () => ({ secrets: {}, secretLeaseGeneration: "none" }),
   })
@@ -247,4 +250,39 @@ test("a held turn ends as soon as its connection's transport is retired", async 
     expect(f.store.getSession("s")?.lastTurn?.status).toBe("failed")
     expect(f.runtime.recovery.inspect("s").failures.some((failure) => failure.code === "exit_unverified")).toBe(false)
   } finally { release(); await f.dispose(); await transports.disposeAll() }
+})
+
+for (const placement of ["loopback", "desktop", "self-hosted"] as const) {
+  test(`a ${placement} runtime composes Pi itself`, async () => {
+    const transport = new FakeTransport()
+    const transports = createWorkspaceTransports({
+      composer: { connection: () => transport, builtIn: () => transport } as unknown as WorkspaceTransportsInput["composer"],
+      placement,
+      connections: () => new Map(),
+      resolveSecrets: () => ({ secrets: {}, secretLeaseGeneration: "none" }),
+    })
+    try {
+      expect((await transports.forHarness({ id: "pi", access: "native" }, "/repo", { owner: MACHINE_OWNER })).transport).toBe(transport)
+    } finally { await transports.disposeAll() }
+  })
+}
+
+test("a cloud runtime refuses to host Pi, which a cloud workspace runs in the session's own host, before any transport is built", async () => {
+  let built = 0
+  const transports = createWorkspaceTransports({
+    composer: { connection: () => new FakeTransport(), builtIn: () => { built += 1; return new FakeTransport() } } as unknown as WorkspaceTransportsInput["composer"],
+    placement: "cloud",
+    connections: () => new Map(),
+    resolveSecrets: () => ({ secrets: {}, secretLeaseGeneration: "none" }),
+  })
+  try {
+    await expect(transports.forHarness({ id: "pi", access: "native" }, "/repo", { owner: MACHINE_OWNER })).rejects.toMatchObject({
+      name: "WorkspaceHarnessUnavailableError",
+      code: "workspace_harness_hosted_elsewhere",
+      message: "Pi runs in its own session host on a cloud workspace, not in the workspace's runtime. Start a new Pi session to use it here.",
+    })
+    expect(built).toBe(0)
+    expect((await transports.forHarness({ id: "claude", access: "native" }, "/repo", { owner: MACHINE_OWNER })).runner).toEqual({ id: "claude", access: "native" })
+    expect(built).toBe(1)
+  } finally { await transports.disposeAll() }
 })

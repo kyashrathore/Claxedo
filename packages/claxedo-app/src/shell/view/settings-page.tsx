@@ -2,15 +2,14 @@ import { createMemo, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useI18n, useTranslator } from "@/i18n"
 import { shellDictionary } from "../i18n"
-import { byOrder, useShellRegistries } from "../registries"
 import type { PageEntry, PageProps } from "../types"
-import { activeSectionId } from "./settings-sidebar"
+import { activeSectionId, useSettingsSections } from "./settings-sidebar"
 
 export function SettingsPage(props: PageProps): JSX.Element {
   const t = useTranslator(shellDictionary)
-  const registries = useShellRegistries()
+  const available = useSettingsSections()
   const section = createMemo(() => {
-    const sections = byOrder(registries.settingsSections.list())
+    const sections = available()
     const wanted = activeSectionId(props.params)
     return sections.find((candidate) => candidate.id === wanted) ?? sections[0]
   })

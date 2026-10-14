@@ -627,6 +627,34 @@ describe("hosted connection", () => {
     expect(auth!.recordRuntimeAccessToken).not.toHaveBeenCalled()
   })
 
+  test("GET reports a cloud workspace whose boot failed as failed, with the boot's reason, and a gone host as stopped", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" },
+      })),
+    })
+    const targets = [
+      { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "unavailable" as const, failure: { kind: "boot" as const, message: 'The branch "missing" does not exist in https://github.com/acme/widgets.git', retrying: false } },
+      { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "destroyed" as const },
+    ]
+    const ensure = vi.fn()
+    const sandboxManager = { target: vi.fn(async () => targets.shift()), ensure } as unknown as SandboxManager
+    const { app } = buildApp({ authority, sandboxManager })
+
+    const failed = await app.fetch(get("/ws_1/connection"))
+    expect(failed.status).toBe(200)
+    expect(await failed.json()).toEqual({
+      status: "failed",
+      workspaceId: "ws_1",
+      homeRegion: "us-east",
+      error: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git',
+    })
+    expect(await (await app.fetch(get("/ws_1/connection"))).json()).toEqual({ status: "stopped", workspaceId: "ws_1", homeRegion: "us-east" })
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
   test("GET reports a cloud workspace with no lease as stopped", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
@@ -1168,13 +1196,13 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     expect(ensure).not.toHaveBeenCalled()
   })
 
-  test("unsigned (no host query) returns an empty list and never touches the authority", async () => {
+  test("a list request with no credential is 401 missing_bearer_token with or without a host and never touches the authority", async () => {
     const { app, authority } = buildApp({})
-    const res = await app.fetch(new Request("http://cp.test/"))
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ workspaces: [] })
-    // Hosted has no local projects list — no authority read on the unsigned path.
-    expect(authority!.usersMe).not.toHaveBeenCalled()
+    for (const url of ["http://cp.test/", "http://cp.test/?host=machine"]) {
+      const res = await app.fetch(new Request(url))
+      expect(res.status).toBe(401)
+      expect(await res.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    }
     expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
 
