@@ -1,5 +1,16 @@
 import { asRecord } from "./values"
 
+/**
+ * Where a harness's session runs on a cloud workspace. A `session-host`
+ * harness runs in the session's own Durable Object, which holds the owner's
+ * credential itself; a `workspace-runtime` harness runs inside the sandbox,
+ * which never holds a secret and reaches the vendor through a placeholder.
+ * The control plane places a session by this when it reserves it, and the
+ * sandbox runtime refuses to host a `session-host` harness, so neither side
+ * can run a harness where its credential cannot follow.
+ */
+export type CloudHarnessHost = "session-host" | "workspace-runtime"
+
 export const AGENT_HARNESS_DEFINITIONS = [
   {
     key: "claude",
@@ -8,6 +19,7 @@ export const AGENT_HARNESS_DEFINITIONS = [
     label: "Claude",
     authEnv: "ANTHROPIC_API_KEY",
     authSlot: "anthropic",
+    cloudHost: "workspace-runtime",
   },
   {
     key: "codex",
@@ -16,6 +28,7 @@ export const AGENT_HARNESS_DEFINITIONS = [
     label: "Codex",
     authEnv: "OPENAI_API_KEY",
     authSlot: "openai",
+    cloudHost: "workspace-runtime",
   },
   {
     key: "cursor",
@@ -24,6 +37,7 @@ export const AGENT_HARNESS_DEFINITIONS = [
     label: "Cursor",
     authEnv: "CURSOR_API_KEY",
     authSlot: "cursor",
+    cloudHost: "workspace-runtime",
   },
   {
     key: "pi",
@@ -32,6 +46,7 @@ export const AGENT_HARNESS_DEFINITIONS = [
     label: "Pi",
     authEnv: null,
     authSlot: null,
+    cloudHost: "session-host",
   },
   {
     // The public embedded OpenCode SDK, composed by `@claxedo/harness/opencode-sdk`.
@@ -42,8 +57,14 @@ export const AGENT_HARNESS_DEFINITIONS = [
     label: "OpenCode",
     authEnv: null,
     authSlot: null,
+    cloudHost: "workspace-runtime",
   },
 ] as const
+
+/** A connection's agent runs inside the sandbox, as does any harness the table does not name. */
+export function cloudHarnessHost(harnessId: string): CloudHarnessHost {
+  return AGENT_HARNESS_DEFINITIONS.find((item) => item.id === harnessId)?.cloudHost ?? "workspace-runtime"
+}
 
 export const AGENT_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 export const AGENT_HARNESS_ACCESSES = ["connection", "native"] as const

@@ -29,7 +29,6 @@ import {
   isAgentRuntimeTurnAdmissionError as isAgentRuntimeTurnConflictError,
   type HarnessTarget,
 } from "../host/runtime"
-import { PreviewModelInvalidError } from "../host/config-ops"
 import {
   envelopeDirectory,
   runRuntimePromptTurn,
@@ -66,6 +65,7 @@ import {
 } from "./session-harness-refusal"
 import { sessionOperationGuard, sessionPromptAdmitted } from "./session-operation-guard"
 import { goalMutationResponse, goalRoute, goalRuntimeErrorResponse, goalStartInvocation, invokeGoalRuntime, resolveGoalRuntime } from "./session-goal-route"
+import { sessionConfigOptionsRead, sessionConfigRead } from "./session-config-read"
 import { sessionConfigWrite } from "./session-config-write"
 import {
   admitQuestionOperation,
@@ -1122,29 +1122,8 @@ export function createSessionRoutes(opts: Opts) {
       if (view === "open") return noStoreJson(c, await sessionOpenView(opts, c, directory, sessionId))
       return noStoreJson(c, session)
     })
-    .get("/session/:id/config-options", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_read")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await opts.runtime(c)
-      let preview: Awaited<ReturnType<typeof runtime.reads.configOptions>>
-      try {
-        preview = await runtime.reads.configOptions(sessionTarget(c, sessionId, directory), c.req.query("model") || undefined)
-      } catch (cause) {
-        if (cause instanceof PreviewModelInvalidError) return noStoreJson(c, errorBody("preview_model_invalid", cause.message), 400)
-        throw cause
-      }
-      if (!preview) return noStoreJson(c, { error: "Session harness does not expose config options" }, 404)
-      return noStoreJson(c, preview)
-    })
-    .get("/session/:id/config", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_read")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      return noStoreJson(c, await sessionConfigOf(opts, c, directory, sessionId))
-    })
+    .get("/session/:id/config-options", (c) => sessionConfigOptionsRead(opts, c))
+    .get("/session/:id/config", (c) => sessionConfigRead(opts, c))
     .patch("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_write")

@@ -486,8 +486,13 @@ only settle once its harness stops.
 Resolution is fail-closed: a connection with no applied descriptor, or one
 whose secret references no host resolves, raises
 `WorkspaceHarnessUnavailableError` (`workspace_harness_not_configured`), which
-the session routes answer with 409. It never falls back to a bundled
-first-party binary. A descriptor, including a process environment, only enters
+the session routes answer with 409. A cloud runtime (`placement: "cloud"`)
+raises the same error (`workspace_harness_hosted_elsewhere`) for a native
+harness the shared harness table places in the session's own host — Pi — so a
+create, a config switch or a config-options read naming it is refused before
+any transport is built, with a message that tells the person to start a new
+session for that harness; the session host refuses every other harness the
+same way. It never falls back to a bundled first-party binary. A descriptor, including a process environment, only enters
 through the trusted config-apply path (`POST /api/wr/config` / `host.apply`),
 so session callers can never supply one. Operator-facing semantics live in
 [`public-docs/acp-connections.md`](../../public-docs/acp-connections.md).

@@ -372,7 +372,7 @@ async function runtimeDefaultHarness(ctx: McpToolContext) {
     const { harness, effortLevels } = (await (await ownRuntimeClient(ctx)).session.harnessCapabilities()).data
     return { harness, ...(effortLevels ? { effortLevels } : {}) }
   } catch (error) {
-    if (error instanceof WorkspaceRuntimeClientError && error.code === "workspace_harness_not_configured") {
+    if (error instanceof WorkspaceRuntimeClientError && (error.code === "workspace_harness_not_configured" || error.code === "workspace_harness_hosted_elsewhere")) {
       return { unconfigured: error.message }
     }
     throw error
