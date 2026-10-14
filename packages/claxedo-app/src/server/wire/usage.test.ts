@@ -13,7 +13,7 @@ test("a machine-time answer keeps its period, totals, priced and unpriced worksp
     activeMs: 600_000,
     running: 1,
     workspaces: [
-      { workspaceId: "ws_a", projectId: "prj_1", name: "Checkout", branch: "main", provider: "boat", providerLabel: "Boat", machineClass: "small", activeMs: 600_000, runningSince: 1, rate, costUsd: 0.003 },
+      { workspaceId: "ws_a", projectId: "prj_1", name: "Checkout", branch: "main", provider: "boat", providerLabel: "Boat", machineClass: "small", activeMs: 600_000, runningSince: 1, lastStoppedAt: 0, rate, costUsd: 0.003 },
       { workspaceId: "ws_b", name: "ws_b", provider: "modal", providerLabel: "Modal", machineClass: null, activeMs: 60_000 },
     ],
     providers: [{ ...boat, excludes: "nothing" }],
@@ -25,7 +25,7 @@ test("a machine-time answer keeps its period, totals, priced and unpriced worksp
     activeMs: 600_000,
     running: 1,
     workspaces: [
-      { id: placementId("ws_a"), projectId: projectId("prj_1"), name: "Checkout", branch: "main", provider: "boat", providerLabel: "Boat", machineClass: "small", activeMs: 600_000, runningSince: 1, rate, costUsd: 0.003 },
+      { id: placementId("ws_a"), projectId: projectId("prj_1"), name: "Checkout", branch: "main", provider: "boat", providerLabel: "Boat", machineClass: "small", activeMs: 600_000, runningSince: 1, lastStoppedAt: 0, rate, costUsd: 0.003 },
       { id: placementId("ws_b"), provider: "modal", providerLabel: "Modal", activeMs: 60_000 },
     ],
     providers: [{ ...boat, excludes: "nothing" }],

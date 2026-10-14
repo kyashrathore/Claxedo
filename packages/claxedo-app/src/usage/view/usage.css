@@ -19,6 +19,10 @@
   margin-top: -8px;
 }
 
+.usage-refresh {
+  margin-left: auto;
+}
+
 .usage-status,
 .usage-empty,
 .usage-hint {
@@ -124,12 +128,6 @@
   }
 }
 
-.usage-machine-time {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .usage-billing {
   display: flex;
   flex-direction: column;
@@ -145,24 +143,24 @@
   text-underline-offset: 2px;
 }
 
-.usage-cloud {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.usage-cloud-workspaces {
+.usage-sandbox-workspaces {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.usage-cloud-table .usage-table-lead {
+.usage-sandbox-table .usage-table-lead {
   max-width: 0;
 }
 
-.usage-cloud-detail,
-.usage-cloud-status {
+.usage-sandbox-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.usage-sandbox-detail {
   display: block;
   font-size: var(--font-size-small);
   line-height: var(--line-height-18);
@@ -170,11 +168,7 @@
   overflow-wrap: anywhere;
 }
 
-.usage-cloud-row[data-running="true"] .usage-cloud-status {
-  color: var(--v2-text-text-base);
-}
-
-.usage-cloud-action {
+.usage-sandbox-action {
   width: 1px;
 }
 

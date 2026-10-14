@@ -1,7 +1,7 @@
 import type { SettingsSection } from "@/shell"
 import { useTranslator } from "@/i18n"
 import { organizationSettingsSection } from "@/access"
-import { usageSettingsSection } from "@/usage"
+import { aiUsageSettingsSection, sandboxUsageSettingsSection, usageLimitsSettingsSection } from "@/usage"
 import { settingsDictionary, type SettingsKey } from "./i18n"
 import { lazyView } from "@/lib/lazy-view"
 
@@ -22,7 +22,9 @@ export { MachineConnectSteps, useConnectMachine } from "./view/machines"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsNote, SettingsRow } from "./view/section"
 
 export const settingsSections: readonly SettingsSection[] = [
-  usageSettingsSection,
+  usageLimitsSettingsSection,
+  aiUsageSettingsSection,
+  sandboxUsageSettingsSection,
   organizationSettingsSection,
   section("connections", "settings.section.connections", "account", 40, lazyView(() => import("./view/connections").then((module) => module.ConnectionsSection))),
   section("machines", "settings.section.machines", "account", 45, lazyView(() => import("./view/machines").then((module) => module.MachinesSection))),

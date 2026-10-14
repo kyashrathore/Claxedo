@@ -27,7 +27,7 @@ export function ClaxedoUsage(props: {
   const points = createMemo(() => (props.metric === "cost" ? dailyCost(dates(), claxedo().cost.daily) : dailyTokens(dates(), claxedo().daily)))
   const empty = () => claxedo().status === "available" && claxedo().totals.turnCount === 0 && (claxedo().totals.unavailableTurnCount ?? 0) === 0
   return (
-    <section class="usage-claxedo" aria-label={t("usage.view.claxedo")}>
+    <div class="usage-claxedo">
       <Show when={claxedo().status !== "available" && claxedo().error}>
         {(error) => <FailureNotice title={t("usage.claxedo.unavailable")} message={error()} retryLabel={t("usage.refresh")} onRetry={props.onRefresh} />}
       </Show>
@@ -49,6 +49,6 @@ export function ClaxedoUsage(props: {
           onGroup={props.onGroup}
         />
       </Show>
-    </section>
+    </div>
   )
 }

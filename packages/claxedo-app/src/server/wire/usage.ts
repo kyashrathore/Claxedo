@@ -43,6 +43,7 @@ function workspaceFromWire(row: MachineTimeWorkspaceWire): MachineTimeWorkspace 
     ...(machineClass ? { machineClass } : {}),
     activeMs: row.activeMs,
     ...(finite(row.runningSince) ? { runningSince: row.runningSince } : {}),
+    ...(finite(row.lastStoppedAt) ? { lastStoppedAt: row.lastStoppedAt } : {}),
     ...(row.rate && row.costUsd !== undefined ? { rate: rateFromWire(row.rate), costUsd: row.costUsd } : {}),
   }
 }

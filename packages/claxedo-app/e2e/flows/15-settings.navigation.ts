@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test"
 import { expect, expectNothingAnimating, UI } from "../harness"
 
-export type Section = "Appearance" | "Keyboard shortcuts" | "Organization" | "Models" | "Machines" | "Connections" | "Usage" | "Projects"
+export type Section = "Appearance" | "Keyboard shortcuts" | "Organization" | "Models" | "Machines" | "Connections" | "Usage limits" | "AI usage" | "Sandbox usage" | "Projects"
 
 export const SECTIONS: readonly Section[] = ["Appearance", "Keyboard shortcuts", "Organization", "Models", "Machines"]
 
@@ -21,7 +21,7 @@ export async function revealRail(app: Page, isMobile: boolean) {
 }
 
 async function showSettingsNav(app: Page, isMobile: boolean) {
-  const nav = app.getByRole("group", { name: "App" })
+  const nav = app.getByRole("group", { name: "Account" })
   await expect(async () => {
     await expectNothingAnimating(app)
     const open = app.getByRole("button", { name: UI.openRail })

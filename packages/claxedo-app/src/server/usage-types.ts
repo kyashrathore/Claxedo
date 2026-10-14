@@ -34,6 +34,7 @@ export type MachineTimeWorkspace = {
   readonly machineClass?: string
   readonly activeMs: number
   readonly runningSince?: number
+  readonly lastStoppedAt?: number
   readonly rate?: MachineRate
   readonly costUsd?: number
 }

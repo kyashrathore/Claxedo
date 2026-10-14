@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test"
 import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type Stack } from "../harness"
+import { openSection } from "./15-settings.navigation"
 
 type QuotaRead = {
   readonly harness: string
@@ -30,9 +31,9 @@ async function openUsage(stack: Stack, app: Page, isMobile: boolean) {
   if (isMobile) await app.getByRole("button", { name: UI.openRail }).click()
   await app.getByRole("button", { name: UI.signedOutAccount }).click()
   await app.getByRole("menuitem", { name: "Usage" }).click()
-  return await test.step("Usage opens Settings → Usage (DECISIONS Owner, 20:00)", async () => {
-    await expect(app).toHaveURL(/\/settings\/usage$/)
-    return app.getByRole("region", { name: "Usage" })
+  return await test.step("Usage opens Settings → Usage limits (DECISIONS Owner, 20:00; owner, 2026-10-14)", async () => {
+    await expect(app).toHaveURL(/\/settings\/usage-limits$/)
+    return app.getByRole("region", { name: "Usage limits" })
   })
 }
 
@@ -54,8 +55,12 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   const dialog = await openUsage(stack, app, isMobile)
-  const views = dialog.getByRole("group", { name: "Usage view" })
-  await expect(views.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
+  await test.step("usage limits, AI usage and sandbox usage are pages of their own, and sandbox usage is hidden where cloud sandboxes are not offered (owner, 2026-10-14)", async () => {
+    await expect(app.getByRole("link", { name: "Usage limits", exact: true })).toHaveAttribute("aria-current", "page")
+    await expect(app.getByRole("link", { name: "AI usage", exact: true })).toHaveCount(1)
+    await expect(app.getByRole("link", { name: "Sandbox usage", exact: true })).toHaveCount(0)
+    await expect(dialog.getByRole("group", { name: "Usage view" })).toHaveCount(0)
+  })
   const limits = dialog.getByRole("region", { name: "Quota windows" })
   await expect(limits.getByRole("article")).toHaveCount(shown.length)
   for (const account of shown) {
@@ -72,14 +77,15 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
     for (const agent of notConnected) if (agent.usageError) await expect(limits).toContainText(agent.usageError)
   })
 
-  await views.getByRole("button", { name: "Usage through Claxedo" }).click()
-  await expect(views.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
-  const range = dialog.getByRole("group", { name: "Range" })
-  const measure = dialog.getByRole("group", { name: "Measure" })
+  await openSection(app, isMobile, "AI usage")
+  await expect(app).toHaveURL(/\/settings\/ai-usage$/)
+  const ai = app.getByRole("region", { name: "AI usage" })
+  const range = ai.getByRole("group", { name: "Range" })
+  const measure = ai.getByRole("group", { name: "Measure" })
   await test.step("range and measure share one control row at this width (owner, 2026-09-28)", async () => {
     expect(await top(measure)).toBe(await top(range))
   })
-  const totals = dialog.getByRole("definition")
+  const totals = ai.getByRole("definition")
   await test.step("the chosen measure leads the totals, then turns (DECISIONS Owner, 00:50)", async () => {
     await expect(totals.nth(1)).toHaveText("1")
   })
@@ -88,20 +94,20 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
     expect(read.claxedo.cost.pricedTokens).toBe(0)
     await expect(totals.nth(2)).toHaveText("Unknown")
   })
-  await expect(dialog.getByRole("group", { name: "Daily usage" })).toBeVisible()
-  await expect(dialog.getByRole("region", { name: "Where the tokens went" })).toBeVisible()
-  const byProvider = dialog.getByRole("table", { name: "Usage grouped by provider" })
+  await expect(ai.getByRole("group", { name: "Daily usage" })).toBeVisible()
+  await expect(ai.getByRole("region", { name: "Where the tokens went" })).toBeVisible()
+  const byProvider = ai.getByRole("table", { name: "Usage grouped by provider" })
   await expect(byProvider.getByRole("row")).toHaveCount(2)
   await expect(byProvider.getByRole("row").nth(1).getByRole("cell").last()).toHaveText("Unknown")
 
-  await dialog.getByRole("group", { name: "Group by" }).getByRole("button", { name: "Model", exact: true }).click()
-  await expect(dialog.getByRole("table", { name: "Usage grouped by model" }).getByRole("row")).toHaveCount(2)
+  await ai.getByRole("group", { name: "Group by" }).getByRole("button", { name: "Model", exact: true }).click()
+  await expect(ai.getByRole("table", { name: "Usage grouped by model" }).getByRole("row")).toHaveCount(2)
   await expect(byProvider).toHaveCount(0)
 
   await measure.getByRole("button", { name: "Cost", exact: true }).click()
   await test.step("the cost measure leads with the estimated cost (DECISIONS Owner, 00:50)", async () => {
-    await expect(dialog.getByRole("term").first()).toHaveText("Estimated cost")
-    await expect(dialog.getByRole("table", { name: "Usage grouped by model" }).getByRole("columnheader", { name: "Estimated cost" })).toBeVisible()
+    await expect(ai.getByRole("term").first()).toHaveText("Estimated cost")
+    await expect(ai.getByRole("table", { name: "Usage grouped by model" }).getByRole("columnheader", { name: "Estimated cost" })).toBeVisible()
   })
   await expect(range.getByRole("button", { name: "90 days", exact: true })).toBeVisible()
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
