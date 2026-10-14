@@ -14,7 +14,7 @@ describe("Claude session credentials", () => {
     expect(() => claudeBinding({ ...empty, machineLoginAllowed: false, accountOwner: "fixture-owner" })).toThrow("no selected credentials")
   })
 
-  test.each(["api-key", "bearer"])("a %s binding replaces inherited provider credentials before spawn", (authMode) => {
+  test.each(["api-key", "bearer"])("a %s binding replaces inherited provider credentials before spawn, a plan login in the one variable Claude Code sends the oauth beta for", (authMode) => {
     const binding = { baseUrl: "http://127.0.0.1:47800", placeholder: "placeholder", authMode }
     const selected = claudeBinding({ ...empty, providers: { anthropic: binding } })
     expect(selected).toEqual(binding)

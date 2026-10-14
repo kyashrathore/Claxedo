@@ -20,10 +20,6 @@ export function claudeEnvironment(parent: NodeJS.ProcessEnv, binding?: ProviderB
   for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_SCOPES",
     "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]) delete env[name]
   env.ANTHROPIC_BASE_URL = binding.baseUrl
-  // A bearer binding is a Claude plan login. Claude Code sends the `oauth-2025-04-20`
-  // beta a plan token needs only for a token in CLAUDE_CODE_OAUTH_TOKEN, whatever
-  // the token looks like; ANTHROPIC_AUTH_TOKEN goes out as a bare gateway bearer,
-  // which the API refuses for a plan login (Claude Code 2.1.292).
   env[binding.authMode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN"] = binding.placeholder
   if (configHome) env.CLAUDE_CONFIG_DIR = configHome
   return env
