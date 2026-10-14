@@ -12,6 +12,7 @@ import {
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
 import { readVendorAnswer, vendorRefusal, vendorReply, type VendorRefusal, type VendorReply } from "./vendor-answer"
+import { credentialUndeliverable } from "@claxedo/server-core/credentials/health"
 import { clampPercent, codexWindowName, usageResetMs, usageWindowName } from "@claxedo/server-core/credentials/usage-windows"
 import { credentialSecretMaterial, type CredentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow, CredentialVerdictEvidence } from "@claxedo/server-core/credentials/types"
@@ -122,10 +123,15 @@ export async function verifyCredential(
     // JSON (probed from Cloudflare colos SIN and WAW, 2026-10-14), so the token
     // endpoint taking the stored refresh token is the auth server's word that
     // the login is live, and refusing it is the end of the login the stale
-    // path reports. The windows stay unread, and the card says so.
+    // path reports. The exchange rotates a single-use refresh token, so it is
+    // spent only where a verdict is needed: a login renewed for being stale is
+    // already proven, a row the vendor refused can be recovered by it, and a
+    // deliverable row is left as it is. The windows stay unread either way,
+    // and the card says so.
     if (!codex || !renewable()) throw inconclusive
     const unread = { usageRefused: readVendorAnswer(answer.reply).evidence }
     if (refreshed) return outcome("ok", unread)
+    if (!credentialUndeliverable(credential)) throw inconclusive
     const renewal = await renewLogin(credential, material, refresh)
     if ("rejected" in renewal) return outcome("expired", { evidence: renewal.rejected })
     refreshed = renewal.renewed

@@ -29,6 +29,11 @@ export function credentialUnavailableReason(row: Pick<CredentialMetadata, "statu
   return row.status === "available" ? undefined : row.health ?? row.status
 }
 
+/** Whether a stored row is kept from every harness right now: its status is not available, or its last verdict refused it. */
+export function credentialUndeliverable(row: Pick<CredentialMetadata, "status" | "health">): boolean {
+  return credentialUnavailableReason(row) !== undefined || (row.health != null && isRefusedHealth(row.health))
+}
+
 /** The `last_error` a verdict leaves on its row: the verdict and, when the vendor's answer is known, its status and error type. */
 export function credentialLastError(health: CredentialHealth, evidence?: CredentialVerdictEvidence): string | null {
   if (health === "ok") return null
