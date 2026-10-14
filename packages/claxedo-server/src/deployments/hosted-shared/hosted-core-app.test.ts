@@ -810,6 +810,7 @@ describe("hosted-core usage", () => {
       })
       const vendor = vi.fn(async (input: string | URL | Request) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        if (url === "https://api.anthropic.com/v1/models") return Response.json({ data: [] })
         if (url === "https://api.anthropic.com/api/oauth/usage") return Response.json({ five_hour: { utilization: 42, resets_at: 400 }, seven_day: { utilization: 7, resets_at: 900 } })
         if (url === "https://api.anthropic.com/api/oauth/profile") return Response.json({ account: { email_address: "contactyash@example.com" } })
         throw new Error("chatgpt.com unreachable")
