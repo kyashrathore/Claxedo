@@ -184,6 +184,22 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(await anthropic()).not.toHaveProperty("harness")
   })
 
+  test("a Pi account the vendor refused at its Check is named refused with no models, not absent, until it is usable again", async () => {
+    const orgId = freshOrg("pi-refused")
+    const credentials = store(orgId)
+    const pi = hostedPiCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials })
+    const as = { mode: "signed" as const, user: { subject: "A", tokenIdentifier: "A", issuer: "test" } }
+    const anthropic = async () => (await pi.piProviderCatalog(as)).all.find((provider) => provider.id === "anthropic")!
+    const row = await credentials.putCredential({ owner: "A", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-a" })
+    await credentials.updateCredentialHealth?.(row.id, "auth_failed", 1_500)
+    expect((await pi.piProviderCatalog(as)).connected).toEqual([])
+    expect(await anthropic()).toMatchObject({ source: "harness", harness: "claude", refused: "auth_failed", models: {} })
+    await credentials.updateCredentialHealth?.(row.id, "ok", 1_600)
+    expect((await pi.piProviderCatalog(as)).connected).toEqual(["anthropic"])
+    expect(await anthropic()).not.toHaveProperty("refused")
+    expect(Object.keys((await anthropic()).models).length).toBeGreaterThan(0)
+  })
+
   test("fails closed: flag off, blank org, or missing KEK all throw", () => {
     const database = controlPlane.database
     expect(() => hostedOrgCredentials("org-a", { database, env: KEK_ENV })).toThrow(new RegExp(HOSTED_CREDENTIALS_FLAG))

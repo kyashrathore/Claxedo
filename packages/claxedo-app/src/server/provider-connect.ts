@@ -18,7 +18,9 @@ export type ProviderAuthMethods = Readonly<Record<string, readonly ProviderAuthM
 
 export type ProviderAuthorization = { readonly url: string; readonly method: "auto" | "code"; readonly instructions: string; readonly attempt?: string }
 
-export type ProviderKeyInput = { readonly providerId: string; readonly label: string; readonly secret: string }
+export type ProviderKeyKind = "api_key" | "oauth_token"
+
+export type ProviderKeyInput = { readonly providerId: string; readonly label: string; readonly secret: string; readonly kind: ProviderKeyKind }
 
 export type CustomProviderConfig = {
   readonly providerId: string
@@ -88,7 +90,7 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
       await changed()
     },
     saveKey: async (input) => {
-      await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: input.providerId, kind: "api_key", source: "managed", label: input.label, secret: input.secret }))
+      await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: input.providerId, kind: input.kind, source: "managed", label: input.label, secret: input.secret }))
       await changed()
     },
     reconnect: async (credentialId, secret) => {

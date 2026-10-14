@@ -25,8 +25,37 @@ export type CredentialSecretMaterial = {
   form: "api-key" | "subscription"
 }
 
-/** Anthropic's OAuth access token; every other secret on that provider is a key. */
-const OAUTH_TOKEN_PREFIX = /^sk-ant-o/i
+/**
+ * Anthropic's OAuth access token, as `claude setup-token` prints it. pi-ai's
+ * Anthropic client sends a credential as a bearer only when it contains this
+ * (`isOAuthToken` in its anthropic-messages API) and as `x-api-key` otherwise,
+ * so a value that passes here is one every consumer puts in the same header.
+ */
+const OAUTH_ACCESS_TOKEN_PREFIX = "sk-ant-oat"
+const OAUTH_REFRESH_TOKEN_PREFIX = "sk-ant-ort"
+const API_KEY_PREFIX = "sk-ant-api"
+
+export function isAnthropicOAuthToken(secret: string): boolean {
+  return secret.trim().startsWith(OAUTH_ACCESS_TOKEN_PREFIX)
+}
+
+/**
+ * Why a value pasted as a Claude subscription token is not one, or nothing
+ * when it is. Said before the row exists: a refresh token or a key stored as a
+ * subscription is sent as the wrong header on every turn and refused by the
+ * vendor with a message that names neither.
+ */
+export function subscriptionTokenRefusal(secret: string): string | undefined {
+  const value = secret.trim()
+  const document = parseJsonRecord(value)
+  const token = document ? loginDocumentToken(document) : value
+  if (token && isAnthropicOAuthToken(token)) return undefined
+  if (value.startsWith(API_KEY_PREFIX)) return "This is an Anthropic API key. Add it under API Key."
+  if (value.startsWith(OAUTH_REFRESH_TOKEN_PREFIX)) {
+    return "This is a Claude login's refresh token, not its access token. Paste the token `claude setup-token` prints; it starts with sk-ant-oat01-."
+  }
+  return "A Claude subscription token starts with sk-ant-oat01-. Paste the token `claude setup-token` prints."
+}
 
 const SUBSCRIPTION_KINDS = new Set<CredentialKind>(["oauth_token", "subscription_session"])
 
@@ -43,11 +72,12 @@ export function isSubscriptionKind(kind: CredentialKind): boolean {
 /**
  * The kind a row keeps once its secret has been read.
  *
- * A pasted `claude setup-token` arrives under the key field's kind, and the
- * row is what every listing that never opens the secret reads — the usage
- * snapshot and the reach marks — so a plan login stored as `api_key` is a plan
- * with no card and no windows. Only this direction is decidable: a bare secret
- * under `oauth_token` reads as a subscription whatever it looks like.
+ * A `claude setup-token` pasted into the API Key field arrives under that
+ * field's kind, and the row is what every listing that never opens the secret
+ * reads — the usage snapshot and the reach marks — so a plan login stored as
+ * `api_key` is a plan with no card and no windows. Only this direction is
+ * decidable: a bare secret under `oauth_token` reads as a subscription
+ * whatever it looks like, which is why the token field refuses one first.
  */
 export function storedCredentialKind(input: { kind: CredentialKind; secret: string }): CredentialKind {
   if (input.kind !== "api_key") return input.kind
@@ -65,23 +95,12 @@ export function credentialSecretMaterial(input: {
   if (!secret) return undefined
   const document = parseJsonRecord(secret)
   if (!document) {
-    const subscription = SUBSCRIPTION_KINDS.has(input.kind) || OAUTH_TOKEN_PREFIX.test(secret)
+    const subscription = SUBSCRIPTION_KINDS.has(input.kind) || isAnthropicOAuthToken(secret)
     return { token: secret, form: subscription ? "subscription" : "api-key" }
   }
   const tokens = jsonRecord(document.tokens)
   const oauth = jsonRecord(document.oauth)
-  const claude = jsonRecord(document.claudeAiOauth)
-  const token = [
-    document.access,
-    document.access_token,
-    tokens?.access_token,
-    oauth?.access,
-    oauth?.access_token,
-    claude?.accessToken,
-    claude?.access_token,
-  ]
-    .map(jsonString)
-    .find((item) => item !== undefined)
+  const token = loginDocumentToken(document)
   if (!token) return undefined
   // A ChatGPT login often names its account only inside the `id_token` claims,
   // and the header that account id fills is what tells the backend which plan
@@ -97,4 +116,22 @@ export function credentialSecretMaterial(input: {
     ...(email ? { email } : {}),
     form: "subscription",
   }
+}
+
+/** The access token inside a login document a CLI wrote, in whichever of its mirrored positions holds one. */
+function loginDocumentToken(document: Record<string, unknown>): string | undefined {
+  const tokens = jsonRecord(document.tokens)
+  const oauth = jsonRecord(document.oauth)
+  const claude = jsonRecord(document.claudeAiOauth)
+  return [
+    document.access,
+    document.access_token,
+    tokens?.access_token,
+    oauth?.access,
+    oauth?.access_token,
+    claude?.accessToken,
+    claude?.access_token,
+  ]
+    .map(jsonString)
+    .find((item) => item !== undefined)
 }

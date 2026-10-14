@@ -100,7 +100,7 @@ describe("sign-in methods", () => {
 })
 
 describe("the Pi provider catalog", () => {
-  const plan = () => projectPiProviderCatalog(new Map([["openai-codex", "openai-codex"]]))
+  const plan = () => projectPiProviderCatalog(new Map([["openai-codex", { by: "codex-app-server" }]]))
 
   test("provider catalog uses the verified owner and explicit unavailable states", async () => {
     const calls: string[] = []

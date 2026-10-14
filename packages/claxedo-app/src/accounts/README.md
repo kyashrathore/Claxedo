@@ -40,7 +40,7 @@ Provider model groups render one `SettingsList` card: the header owns provider i
 
 "Add an account" and "Reconnect" open `DialogProviderConnect`, whose subtitle says the account is saved to Claxedo. `createProviderConnect` (`connect-form.ts`) lists only the methods the server returns for the provider (`server.queries.providerConnect.authMethods(harness)`; a hosted server returns only those whose account a cloud sandbox can be delivered, which includes Codex's ChatGPT plan sign-in), joined by type to the vendor copy in `connect-methods.ts`; while they load, when the read fails, and when the server offers none, the dialog says so instead of offering setup. Then:
 
-- a key or subscription token is saved as a managed credential with the user's label (`saveKey`, the same route on the desktop and the web) or replaces the token of the account being reconnected (`reconnect`);
+- a key or subscription token is saved as a managed credential with the user's label (`saveKey`, the same route on the desktop and the web) under its method's kind, `api_key` or `oauth_token`, so the server can refuse a subscription token that is not the access token `claude setup-token` prints and say what it is instead; or it replaces the token of the account being reconnected (`reconnect`);
 - a sign-in runs `authorize`, then `callback` (at once for an `auto` grant, after the pasted code for a `code` grant), handing back the `attempt` the authorize answered: the server keeps no state between the two, so the callback can land on another instance.
 
 Success shows "{vendor} connected", rescans (on the web, rereads the accounts) and closes the dialog.

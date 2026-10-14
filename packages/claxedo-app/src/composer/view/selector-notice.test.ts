@@ -127,6 +127,13 @@ test("selector notice: a harness whose account source holds an account is never 
   pi.dispose()
 })
 
+test("selector notice: a Pi draft whose only account the provider refused asks for a reconnect, not a retry of a load that answered", () => {
+  const view = harnessNotice(nativeHarness("pi"), piAnsweredEmpty, { account: "refused" })
+  view.answerOptions()
+  expect(view.kind()).toBe("account-refused")
+  view.dispose()
+})
+
 test("selector notice: an account source still loading claims nothing", () => {
   const view = harnessNotice(nativeHarness("codex"), undefined, { account: "unknown" })
   view.answerOptions()

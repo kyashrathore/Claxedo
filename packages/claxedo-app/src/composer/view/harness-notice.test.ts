@@ -24,6 +24,14 @@ test("harness notice: a dead runtime outranks setup, models and the saved model"
 
 test("harness notice: setup, then failed models, then an unavailable saved model", () => {
   expect(resolveHarnessNotice({ ...base, configError: "missing cursor-sdk API key", openProviders: open })).toMatchObject({ kind: "setup-required", detail: "Add an account in Settings → Models.", action: { label: "Open Models", ariaLabel: "Open Settings Models" } })
+  expect(resolveHarnessNotice({ ...base, harnessLabel: "Pi", accountRefused: true, configError: "No model options available", noModels: true, openProviders: open })).toEqual({
+    kind: "account-refused",
+    tone: "warning",
+    message: "Pi's account was refused by its provider",
+    detail: "Reconnect it in Settings → Models, or add another account.",
+    retry: false,
+    action: { label: "Open Models", ariaLabel: "Open Settings Models", run: open },
+  })
   expect(resolveHarnessNotice({ ...base, configError: "boom", noModels: true, savedModelUnavailable: "Opus" })).toEqual({ kind: "models-failed", tone: "critical", message: "Couldn't load Cursor models", detail: "boom", retry: true })
   expect(resolveHarnessNotice({ ...base, savedModelUnavailable: "Opus" })).toEqual({
     kind: "saved-model-unavailable",
