@@ -101,7 +101,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
     <div class="flex flex-col">
       <div class="group flex flex-wrap items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
         <RadioItem
-          class="min-w-0 flex-1"
+          class="min-w-0 flex-1 basis-56"
           value={account().key}
           disabled={account().disabled}
           data-invalid={account().refused ? "" : undefined}
@@ -109,7 +109,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           label={<AccountLabel account={account()} onMachine={accounts().onMachine()} machineName={accounts().machineName()} />}
           description={account().detail === undefined && account().cloudNote === undefined ? undefined : <AccountDescription account={account()} />}
         />
-        <span class="flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
+        <span class="ml-auto flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
           <Show when={!confirming() && account().checkedAt}>
             {(at) => (
               <CheckedAge
