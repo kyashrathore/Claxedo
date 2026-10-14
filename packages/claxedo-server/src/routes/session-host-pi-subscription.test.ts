@@ -66,7 +66,7 @@ async function anthropicRequest(credentials: PiCredentials) {
   const answer = await credentials.models.streamSimple(model, { messages: [{ role: "user", content: "hi", timestamp: Date.now() }] }, { fetch: vendor, maxRetries: 0 }).result()
   expect(answer.stopReason).toBe("error")
   expect(requests).toHaveLength(1)
-  return requests[0]!
+  return requests[0]
 }
 
 describe("a Claude subscription token on a hosted Pi turn", () => {

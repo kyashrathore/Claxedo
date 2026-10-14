@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { D1Database } from "@cloudflare/workers-types"
-import { isProviderUnavailable, type ProviderBindingSource } from "@claxedo/agent-runtime-contract"
+import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { unusedSandboxStart } from "../test-support/inline-sandbox-start"
@@ -85,15 +85,14 @@ test("a Boat sandbox is handed a binding on the plane's broker and no edge secre
 
   expect(secrets).toEqual([])
   if (!row || isProviderUnavailable(row)) throw new Error(`the account was not delivered: ${JSON.stringify(row)}`)
-  const bound = row as ProviderBindingSource
-  expect(bound).toMatchObject({
+  expect(row).toMatchObject({
     baseUrl: expect.stringMatching(new RegExp(`^${ORIGIN}/bindings/[0-9a-f]{32}$`)),
     authMode: "api-key",
     apiPath: "/v1",
     account: { credentialId: key.id, providerId: "anthropic", label: "Work key" },
   })
-  expect(bound.placeholderEnv).toBeUndefined()
-  expect(await verifyBrokerPlaceholder(bound.placeholder!, signing)).toMatchObject({
+  expect(row.placeholderEnv).toBeUndefined()
+  expect(await verifyBrokerPlaceholder(row.placeholder!, signing)).toMatchObject({
     userId: "owner", orgId: "org", workspaceId: "ws-a", leaseId: "sandbox:ws-a", leaseGeneration: 3, runtimeId: "host-a", credentialId: key.id,
   })
   expect(JSON.stringify(snapshot)).not.toContain("sk-ant-api03-owner-key")
@@ -109,7 +108,7 @@ test("a draft on a Boat workspace learns the account is deliverable without a pl
   const draft = await delivery.credentialSnapshot("ws-a")
   const row = draft?.accounts.owner?.anthropic
   if (!row || isProviderUnavailable(row)) throw new Error(`the draft was refused: ${JSON.stringify(row)}`)
-  expect((row as ProviderBindingSource).placeholder).toBe(DRAFT_PLACEHOLDER)
+  expect(row.placeholder).toBe(DRAFT_PLACEHOLDER)
   expect(row.expiresAt).toBeUndefined()
 })
 

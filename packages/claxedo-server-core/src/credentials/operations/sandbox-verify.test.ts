@@ -12,7 +12,7 @@ function workerdFetch(answer: () => Response) {
     if (init?.redirect !== undefined && init.redirect !== "follow" && init.redirect !== "manual") {
       throw new TypeError(`Invalid redirect value, must be one of "follow" or "manual" ("${init.redirect}" won't be implemented since it does not make sense at the edge; use "manual" and check the response status code).`)
     }
-    calls.push({ url: String(input), redirect: init?.redirect, authorization: new Headers(init?.headers).get("authorization") })
+    calls.push({ url: input instanceof Request ? input.url : input.toString(), redirect: init?.redirect, authorization: new Headers(init?.headers).get("authorization") })
     return answer()
   }, { preconnect() {} }) as typeof fetch
   return { calls, fetchImpl }

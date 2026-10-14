@@ -272,7 +272,7 @@ export async function nativeProviderDeliveriesFromRepository(input: DeliveryWalk
   const native = input.secretBrokering === "native"
   const walked = await walkDeliverableAccounts(input, (credential) =>
     native || input.broker || deliveredDirect(credential) ? undefined : HARNESS_NEEDS_BROKERING)
-  return Promise.all(walked.map((row) => {
+  return Promise.all(walked.map(async (row) => {
     if ("refused" in row) return row.refused
     if (native || !input.broker || deliveredDirect(row.credential)) return delivery(row.credential, row.destination)
     return brokeredDelivery(row.credential, row.destination, input.broker)

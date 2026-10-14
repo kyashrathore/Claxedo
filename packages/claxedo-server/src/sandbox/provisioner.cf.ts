@@ -123,7 +123,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       const storage = this.ctx.storage
       if (answer.status === "ready") {
         if (answer.renewAt === undefined) await storage.delete("renewal")
-        else await storage.put<Renewal>("renewal", { workspaceId, at: answer.renewAt })
+        else await storage.put("renewal", { workspaceId, at: answer.renewAt })
       }
       const renewal = await storage.get<Renewal>("renewal")
       if (renewal) await storage.setAlarm(Math.max(Date.now(), renewal.at))
@@ -142,7 +142,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         await storage.delete("renewal")
         return
       }
-      await storage.put<Renewal>("renewal", { workspaceId: renewal.workspaceId, at: next })
+      await storage.put("renewal", { workspaceId: renewal.workspaceId, at: next })
       await storage.setAlarm(next)
     }
 
