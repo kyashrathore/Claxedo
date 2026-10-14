@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
@@ -113,44 +113,67 @@ const BOOT_TTL_SECONDS = 30 * 60
 
 const ttlUpdates = (calls: Call[]) => calls.filter((c) => c.path === `/sandboxes/${ID}` && c.method === "PATCH").map((c) => c.body)
 
+const IMAGE_TREES = ["root", "usr", "etc", "var", "opt", "home", "srv"]
+const treesDirectory = (image: string) => `image-${image.replace(/[^A-Za-z0-9._-]/g, "-")}`
+
 /**
- * Runs the driver's container start command under a real `sh`, with `docker`
- * and `timeout` replaced by a recorder over one container slot: `docker info`
- * fails until the daemon has been asked `daemonUpAfter` times, `inspect`
- * answers the slot's image, and `run` fills the slot unless Boat's own
+ * Runs the driver's container start command under a real `sh`, with `docker`,
+ * `timeout` and `sudo` replaced by a recorder over one container slot: `docker
+ * info` fails until the daemon has been asked `daemonUpAfter` times, `inspect`
+ * answers the slot's image, `cp` streams a tree of the image's rootfs stand-in
+ * (one marker file per tree), and `run` fills the slot unless Boat's own
  * recreation (`recreatedDuringRun`) fills it first and the create conflicts.
+ * `seededImages` are the images whose trees an earlier start left complete.
  */
 // The start command is the sh script Boat runs on its Linux VM.
 const onVm = test.skipIf(process.platform === "win32")
 
-function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number; recreatedDuringRun?: string }) {
+function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number; recreatedDuringRun?: string; seededImages?: string[] }) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
   mkdirSync(bin)
   const log = path.join(dir, "docker.log")
   const slot = path.join(dir, "container")
+  const rootfs = path.join(dir, "rootfs")
   writeFileSync(log, "")
   writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
+  writeFileSync(path.join(dir, "docker-init"), "")
   if (vm.existingImage) writeFileSync(slot, vm.existingImage)
+  for (const tree of IMAGE_TREES) {
+    mkdirSync(path.join(rootfs, tree), { recursive: true })
+    writeFileSync(path.join(rootfs, tree, `${tree}-from-image`), "")
+  }
+  mkdirSync(path.join(rootfs, "root", ".cache"), { recursive: true })
+  writeFileSync(path.join(rootfs, "root", ".cache", "cached"), "")
+  for (const image of vm.seededImages ?? []) {
+    const trees = path.join(dir, "claxedo-persistent", treesDirectory(image))
+    mkdirSync(trees, { recursive: true })
+    writeFileSync(path.join(trees, ".complete"), "")
+  }
   const tool = (name: string, body: string) => {
     writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(path.join(bin, name), 0o755)
   }
   tool("timeout", 'shift\nexec "$@"')
+  tool("sudo", 'exec "$@"')
   tool("docker", [
     `echo "$*" >> ${log}`,
     `case "$1" in`,
     `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
     `  inspect) cat ${slot} 2>/dev/null ;;`,
-    `  rm) rm -f ${slot} ;;`,
+    `  rm) case "$*" in *claxedo-seed*) ;; *) rm -f ${slot} ;; esac ;;`,
+    `  create) ;;`,
+    `  cp) tree=\${2#claxedo-seed:/}; tar -cf - -C ${rootfs} "$tree" ;;`,
     `  run) if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo "${vm.recreatedDuringRun ?? ""}" > ${slot}; echo Conflict >&2; exit 125; fi; echo ${IMAGE} > ${slot} ;;`,
     `  start) [ -f ${slot} ] ;;`,
     `esac`,
   ].join("\n"))
   tool("sleep", "exit 0")
-  const result = spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
+  // The VM's init binary lives at a fixed path the script checks; the test's copy stands in through the directory the script is run from.
+  const result = spawnSync("sh", ["-c", command.replace(/\[ -x \/usr\/libexec\/docker\/docker-init \]/, `[ -f ${path.join(dir, "docker-init")} ]`)], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
   const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" "))
-  return { status: result.status, calls, dir }
+  const trees = (image: string) => path.join(dir, "claxedo-persistent", treesDirectory(image))
+  return { status: result.status, stderr: result.stderr, calls, dir, trees }
 }
 
 async function startCommand() {
@@ -361,9 +384,12 @@ describe("boat sandbox driver", () => {
     const run = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker run"))
     expect(run?.body.timeoutSeconds).toBe(600)
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
-    expect(run?.body.command).toContain("docker run -d --init ")
-    expect(run?.body.command).toContain("-p 2593:2593")
+    expect(run?.body.command).toContain("docker run -d --name claxedo-runtime --hostname 'ws1' -p 2593:2593 -v /usr/libexec/docker/docker-init:/claxedo-init:ro ")
+    expect(run?.body.command).toContain("--entrypoint /claxedo-init 'ghcr.io/test/sandbox:1' -- sh -lc ")
     expect(run?.body.command).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
+    for (const tree of IMAGE_TREES) {
+      expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"/${tree}:/${tree} `)
+    }
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace":'/workspace'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
@@ -395,11 +421,35 @@ describe("boat sandbox driver", () => {
     expect(failure?.message).not.toContain("synthetic-host-token")
   })
 
-  onVm("a fresh VM waits for the Docker daemon, then creates the runtime container, leaving its bind sources for Docker to create", async () => {
+  onVm("a fresh VM waits for the Docker daemon, seeds the image's trees from a created container of the image, then creates the runtime container, leaving the workspace bind source for Docker to create", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
-    expect(existsSync(path.join(run.dir, "claxedo-persistent"))).toBe(false)
+    expect(run.calls).toEqual([
+      "info", "info", "info", "inspect --format", "rm -f", "rm -f", "create --name",
+      ...IMAGE_TREES.map((tree) => `cp claxedo-seed:/${tree}`), "rm claxedo-seed", "run -d",
+    ])
+    for (const tree of IMAGE_TREES) expect(existsSync(path.join(run.trees(IMAGE), tree, `${tree}-from-image`))).toBe(true)
+    expect(existsSync(path.join(run.trees(IMAGE), "root", ".cache"))).toBe(false)
+    expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(true)
+    expect(existsSync(path.join(run.dir, "claxedo-persistent", "workspace"))).toBe(false)
+  })
+
+  onVm("a resume finds the image's trees seeded and only creates the container again", async () => {
+    const run = runStartCommand(await startCommand(), { seededImages: [IMAGE] })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "rm -f", "run -d"])
+  })
+
+  onVm("a seed that was interrupted before it was marked complete is redone from scratch", async () => {
+    const command = await startCommand()
+    const partial = runStartCommand(command, { seededImages: [IMAGE] })
+    rmSync(path.join(partial.dir, "container"))
+    rmSync(path.join(partial.trees(IMAGE), ".complete"))
+    writeFileSync(path.join(partial.trees(IMAGE), "half-written"), "")
+    const result = spawnSync("sh", ["-c", command.replace(/\[ -x \/usr\/libexec\/docker\/docker-init \]/, "true")], { cwd: partial.dir, env: { PATH: `${path.join(partial.dir, "bin")}:/usr/bin:/bin` }, encoding: "utf8" })
+    expect(result.status).toBe(0)
+    expect(existsSync(path.join(partial.trees(IMAGE), "half-written"))).toBe(false)
+    expect(existsSync(path.join(partial.trees(IMAGE), "usr", "usr-from-image"))).toBe(true)
   })
 
   test("a sandbox booted from an older image reads as outdated until its next start boots the deployment's image", async () => {
@@ -425,22 +475,26 @@ describe("boat sandbox driver", () => {
     expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
   })
 
-  onVm("a container of another image is replaced by one of the image this boot names", async () => {
-    const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
+  onVm("a container of another image is replaced by one of the image this boot names, seeded from that image, and the other image's trees are removed", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0", seededImages: ["ghcr.io/test/sandbox:0"] })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls.slice(0, 4)).toEqual(["info", "inspect --format", "rm -f", "rm -f"])
+    expect(run.calls).toContain("create --name")
+    expect(run.calls.at(-1)).toBe("run -d")
+    expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(true)
+    expect(existsSync(run.trees("ghcr.io/test/sandbox:0"))).toBe(false)
   })
 
   onVm("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {
-    const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE })
+    const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE, seededImages: [IMAGE] })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
   })
 
   onVm("a create that fails for any other reason fails the start", async () => {
-    const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0" })
+    const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0", seededImages: [IMAGE] })
     expect(run.status).not.toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format"])
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "rm -f", "run -d", "inspect --format"])
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {
@@ -677,16 +731,21 @@ describe("boat sandbox driver", () => {
     ).rejects.toThrow(/network policy/)
   })
 
-  test("stop archives and destroy deletes the sandbox", async () => {
+  test("stop ends and removes the runtime container with Boat's own grace, then archives the sandbox; destroy deletes it", async () => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl })
     const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
     await driver.stop?.(target)
     await driver.destroy?.(target)
     expect(boat.calls.map(({ method, path }) => ({ method, path }))).toEqual([
+      { method: "POST", path: `/sandboxes/${ID}/commands` },
       { method: "POST", path: `/sandboxes/${ID}/stop` },
       { method: "DELETE", path: `/sandboxes/${ID}` },
     ])
+    expect(boat.calls[0].body).toEqual({
+      command: "docker stop -t 30 claxedo-runtime >/dev/null 2>&1; docker rm -f claxedo-runtime >/dev/null 2>&1; true",
+      timeoutSeconds: 60,
+    })
   })
 
   test("resume brings an archived sandbox back under the boot deadline, re-establishes the runtime, and removes the deadline", async () => {

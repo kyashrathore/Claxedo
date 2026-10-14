@@ -123,6 +123,13 @@ Column meanings:
   *same* driver-owned resource (`"same-host"`) or must always get a
   replacement (`"replacement-host"`, e.g. Modal/Vercel sandboxes are
   ephemeral compute, not resumable containers).
+- **`hostWatchesIdle`** — set when the host itself reads its runtime's
+  idleness and stops once the idle window has passed (the Cloudflare sandbox
+  Worker does, from inside the host). Absent, the control plane's provisioner
+  reads `idleSince` from the runtime's `/api/wr/health` over the relay every
+  30 s and stops the lease as idle through `SandboxManager.stop()` after ten
+  idle minutes, or after ten minutes of reads that reached no runtime. One
+  idle policy, one watcher per sandbox.
 - **`targetAccess`** — how the control plane reaches the resolved
   `SandboxTarget.url`: `"relay"` (all hosted providers) or `"loopback"`
   (Docker, since it runs on the same machine as the manager).

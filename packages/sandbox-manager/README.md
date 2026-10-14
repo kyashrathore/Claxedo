@@ -83,6 +83,39 @@ tail and container exit information, with staged environment and registry secret
 values redacted before truncation. A diagnostic request failure preserves the
 original health failure.
 
+### Boat: what survives a stop, and what survives an image update
+
+A Boat sandbox is a Linux VM whose disk Boat snapshots at every stop; the
+runtime runs inside it as a Docker container of the canonical sandbox image.
+Boat's snapshot keeps a container's settings but not its writable layer, and a
+resume creates every container again from its image
+([what a snapshot saves](https://docs.boat.dev/snapshots/whats-saved#docker);
+confirmed on a live sandbox 2026-10-14), so the driver keeps the machine's
+state on the VM's disk and mounts it into the container:
+
+| Path in the machine | Source on the VM disk | Stop and resume | Image update |
+| --- | --- | --- | --- |
+| `/workspace` | `claxedo-persistent/workspace` | kept | kept |
+| `~/.claxedo`, `~/.workspace-runtime` (runtime stores, harness homes) | `claxedo-persistent/claxedo`, `claxedo-persistent/workspace-runtime` | kept | kept |
+| `/root`, `/usr`, `/etc`, `/var`, `/opt`, `/home`, `/srv` | `claxedo-persistent/image-<image>/<tree>`, seeded from the image once per image | kept: dotfiles, `npm i -g`, `pip install`, `apt install`, anything written there | replaced by the new image's trees; the old image's are removed |
+| the container's hostname | `--hostname <workspace id>` | kept | kept |
+| everything else (`/tmp`, `/run`, processes) | none | gone, as on any reboot | gone |
+
+The seed streams the trees out of a created container of the image with
+`docker cp` and unpacks them as root, leaving out `~/.cache` (which Boat's own
+snapshots leave out too) and npm's cache; it is marked complete only after
+every tree landed, and a seed that did not complete is redone. Docker named
+volumes were measured and rejected: Boat saves them through a path of its own,
+and a stop with 3.7 GB of them had not finished after ten minutes, while the
+same bytes under the work directory archived in 27 s.
+
+`stop` ends the runtime container with the 30 s grace Boat's own stop gives
+and removes it before Boat archives the sandbox, so the resume creates it once:
+left in place, Boat recreates it and pulls its image while the start chain pulls
+the same image, and the two pulls shared one VM (48–74 s where one takes 31–36 s,
+staging 2026-10-13). Every resume still pulls the image, because Boat pulls
+registry images again rather than saving them; that pull is the floor of a wake.
+
 ## Credentials & secrets
 
 There are two distinct channels for getting values into a sandbox, chosen by
