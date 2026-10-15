@@ -2,7 +2,8 @@ import { promptEcho, toAppError, type PromptInput } from "@/server"
 import type { SentPrompt } from "@/session"
 import type { OptimisticUserMessage } from "@/transcript"
 import type { TranscriptContext } from "./context"
-import { removeMessage, upsertMessage } from "./conversation"
+import { removeOptimisticMessage, upsertMessage } from "./conversation"
+import { isRuntimeMessage, searchById } from "./merge"
 
 export function pendingMessage(sessionId: string, prompt: SentPrompt): OptimisticUserMessage | undefined {
   if (prompt.goal) return undefined
@@ -16,6 +17,12 @@ export function showSent(context: TranscriptContext, prompt: SentPrompt): void {
   context.deps.list.sendStarted(context.ref.sessionId, prompt.clientRequestId, prompt.sentAt)
 }
 
+function runtimeHolds(context: TranscriptContext, messageId: string): boolean {
+  const { found, index } = searchById(context.data.messages, messageId)
+  if (found && isRuntimeMessage(context.data.messages[index])) return true
+  return context.queue.items().some((item) => item.messageId === messageId)
+}
+
 export async function sendPrompt(context: TranscriptContext, input: PromptInput): Promise<void> {
   const { server, ref, deps, setData } = context
   const prompt = { ...input, messageId: input.messageId ?? server.sessions.newMessageId(), sentAt: Date.now() }
@@ -23,7 +30,8 @@ export async function sendPrompt(context: TranscriptContext, input: PromptInput)
   try {
     await server.sessions.prompt(ref, prompt)
   } catch (cause) {
-    removeMessage(setData, prompt.messageId)
+    if (runtimeHolds(context, prompt.messageId)) return void context.queue.reread()
+    removeOptimisticMessage(setData, prompt.messageId)
     deps.list.sendFailed(ref.sessionId, input.clientRequestId)
     throw toAppError(cause)
   }

@@ -54,6 +54,16 @@ export function removeMessage(set: SetTranscript, messageId: string): void {
   )
 }
 
+export function removeOptimisticMessage(set: SetTranscript, messageId: string): void {
+  set("messages", (messages) => {
+    const { found, index } = searchById(messages, messageId)
+    if (!found || !isOptimisticMessage(messages[index])) return messages
+    const next = messages.slice()
+    next.splice(index, 1)
+    return next
+  })
+}
+
 export function upsertPart(set: SetTranscript, part: TranscriptPart): void {
   let stored = part
   set("parts", part.messageID, (parts) => {

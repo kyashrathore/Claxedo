@@ -2,7 +2,6 @@ import { HTTPException } from "hono/http-exception"
 import type { RecoveryOutcome, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
 import { errorMessage } from "@claxedo/helpers"
-import { asRecord } from "@claxedo/helpers/guards"
 import {
   AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -250,11 +249,15 @@ type PromptAdmission = { answer: Response; turn?: Promise<void>; failed?: { erro
 
 /**
  * `prompt_async`'s admission, which a create's first prompt goes through too.
- * Retries are deduplicated by message id and nothing more: the per-session
+ * A prompt is deduplicated by message id and nothing more: the per-session
  * concurrency lease is the runtime host's. The checkpoint-freeze middleware
  * runs before these routes, so a 423 may preempt admission entirely. A live
- * entry is the owning request's pending answer: a retry that finds one joins
- * it instead of deduplicating on sight or admitting the same prompt twice.
+ * entry is the owning request's pending answer: a resend that finds one joins
+ * it instead of admitting the same prompt twice. A resend this instance holds
+ * no entry for, after a restart or an evicted object, is answered from what
+ * the session durably holds under that id, its transcript or its queue, so a
+ * client whose answer was lost can send the same message again and it runs
+ * once.
  */
 export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: unknown, c: Ctx) => Response) {
   const promptAdmissions = new Map<string, Map<string, Promise<Response>>>()
@@ -314,20 +317,10 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
     let failed: { error: unknown } | undefined
     const admit = async (): Promise<Response> => {
       const runtime = await opts.runtime(c)
-      if (body.messageID && c.req.header("x-claxedo-idempotency-retry") === "1") {
-        const messages = await opts.getMessages?.(c, directory, id) ?? await runtime.events.list(id, directory)
-        const projected = messages.some((message) => asRecord(message.info)?.id === body.messageID)
-        const session = projected
-          ? undefined
-          : await readSession(opts, c, directory, id)
-        if (
-          projected
-          || session?.status === "busy"
-          || session?.status === "retry"
-        ) {
-          admittedForExecution = true
-          return c.body(null, 204)
-        }
+      const held = body.messageID ? opts.queuedPrompts?.heldDelivery(id, body.messageID) : undefined
+      if (held) {
+        admittedForExecution = true
+        return held === "start" ? c.body(null, 204) : c.json({ delivery: held })
       }
       body.messageID ??= `msg_${crypto.randomUUID()}`
       if (body.delivery) {
