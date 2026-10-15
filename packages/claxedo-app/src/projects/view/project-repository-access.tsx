@@ -2,6 +2,7 @@ import { For, Match, Switch, type JSX } from "solid-js"
 import type { CodeHostRepositoryAccess } from "@/server"
 import { useProjectsText } from "../i18n"
 
+const APP_INSTALLATIONS_URL = "https://github.com/settings/installations"
 const LINK = "underline underline-offset-2 text-text-strong"
 
 export function RepositoryAccessHint(props: { access: CodeHostRepositoryAccess; host: string }): JSX.Element {
@@ -34,7 +35,10 @@ export function RepositoryAccessHint(props: { access: CodeHostRepositoryAccess; 
             </>
           )}
         </Match>
-        <Match when={props.access.kind === "app"}>{t("projects.add.access.notInstalled", { host: props.host })}</Match>
+        <Match when={props.access.kind === "app"}>
+          {t("projects.add.access.notInstalled", { host: props.host })}{" "}
+          <a href={APP_INSTALLATIONS_URL} target="_blank" rel="noreferrer" class={LINK}>{t("projects.add.access.installSettings", { host: props.host })}</a>
+        </Match>
       </Switch>
     </p>
   )

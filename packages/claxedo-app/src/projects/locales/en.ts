@@ -125,6 +125,7 @@ export default {
   "projects.add.access.app": "Only repositories Claxedo's {{host}} App is installed on are listed. To add private ones, choose them in its installation settings:",
   "projects.add.access.configure": "Configure on {{account}}",
   "projects.add.access.notInstalled": "Claxedo's {{host}} App isn't installed on any account you can reach, so only public repositories are listed. Install it on {{host}} and give it the private repositories you want.",
+  "projects.add.access.installSettings": "Open {{host}} installation settings",
   "projects.add.access.token": "Your {{host}} token lists only the repositories it was granted.",
   "projects.add.access.tokenSettings": "Change the token's repository access",
   "projects.add.private": "private",
