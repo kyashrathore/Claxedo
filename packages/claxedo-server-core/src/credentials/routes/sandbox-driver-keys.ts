@@ -35,6 +35,8 @@ export type SandboxDriverKeys = {
    * stop and destroy need it.
    */
   removeKey?: (request: Request, context: SandboxDriverKeyContext, keyId: string) => Promise<SandboxKeyRemoval>
+  /** Present on a host whose failed starts wait out a retry: a key saved or chosen ends the wait of the starts it may have fixed. */
+  keyChanged?: (context: SandboxDriverKeyContext, keyId: string) => Promise<void>
   /** Whether a driver keeps a delivered secret out of its sandbox; absent where the host cannot tell. */
   brokering?: (driver: SandboxDriverID) => HarnessSecretDelivery | undefined
   /** The machine sizes a driver lets a new workspace choose; absent or empty, the provider's one size. */

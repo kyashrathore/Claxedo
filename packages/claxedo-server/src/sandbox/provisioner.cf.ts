@@ -41,10 +41,10 @@ const FOLLOW_UP_RETRY_MS = 30_000
 
 export type SandboxProvisionerTiming = { outcomeHeldMs?: number; followUpRetryMs?: number }
 
-/** How long the start waits before its next driver step; nothing when this answer ends it. */
+/** How long the start waits before its next driver step; nothing when this answer ends it, as a spent retry budget does. */
 function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
   if (answer.status === "provisioning") return answer.retryAfterMs
-  if (answer.status !== "unavailable" || answer.retryAfterMs === undefined) return undefined
+  if (answer.status !== "unavailable" || answer.retryAfterMs === undefined || answer.exhausted) return undefined
   return sandboxRuntimeBootFailure(answer.error) === undefined ? answer.retryAfterMs : undefined
 }
 
@@ -239,8 +239,11 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         await storage.delete("run")
         // A lease stopped, destroyed or replaced under the run was somebody's
         // decision, not the start's failure: the next start reads the lease
-        // and begins what it needs, instead of being told this run's end.
-        if (answer.status !== "unavailable" || !sandboxLeaseEndedUnderStart(answer.error)) {
+        // and begins what it needs, instead of being told this run's end. A
+        // spent budget is the lease's own answer to every start until its
+        // cooldown ends or a key change lifts it, so holding it would outlive
+        // the lift and freeze the time left.
+        if (answer.status !== "unavailable" || !(sandboxLeaseEndedUnderStart(answer.error) || answer.exhausted)) {
           const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }
           await storage.put("outcome", outcome)
         }

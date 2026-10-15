@@ -21,9 +21,10 @@ export function leaseBootMode(lease: SandboxLease, driver: Pick<SandboxDriver, "
 
 /**
  * The start the next epoch continues: the one a stale epoch was taken over
- * in, or the one a provider failure interrupted while its retry budget lasts.
- * A boot failure, a spent budget, a lost serving runtime and a stop all end
- * the start the person was waiting on; the next epoch is a start of its own.
+ * in, or the one a provider failure interrupted while its retry is scheduled
+ * and its budget lasts. A boot failure, a spent budget, a lifted retry wait, a
+ * lost serving runtime and a stop all end the start the person was waiting
+ * on; the next epoch is a start of its own.
  */
 export function continuedStart(
   lease: SandboxLease | undefined,
@@ -31,7 +32,8 @@ export function continuedStart(
 ): SandboxStartProgress | undefined {
   if (!lease?.start) return undefined
   const failure = sandboxLeaseFailure(lease, input)
-  const continued = lease.status === "acquiring" || (failure?.kind === "provider" && lease.retryCount < input.maxRetryCount)
+  const continued = lease.status === "acquiring"
+    || (failure?.kind === "provider" && lease.nextRetryAt !== undefined && lease.retryCount < input.maxRetryCount)
   if (!continued) return undefined
   return { requestedAt: lease.start.requestedAt, bootMode: lease.start.bootMode, startedAt: input.now, markedAt: input.now, phases: [] }
 }

@@ -33,6 +33,8 @@ export type HostedSandboxDriverKeys = {
   chosen(orgId: string): Promise<string | undefined>
   choose(auth: SignedControlPlaneAuth, orgId: string, driver: SandboxDriverID | undefined): Promise<void>
   remove(auth: SignedControlPlaneAuth, orgId: string, keyId: string): Promise<SandboxKeyRemoval>
+  /** The organization saved `keyId`: the workspace starts waiting out a failure it may have fixed run at once. */
+  changed(orgId: string, keyId: string): Promise<void>
   brokering(driver: SandboxDriverID): HarnessSecretDelivery | undefined
   machineClasses(driver: SandboxDriverID): readonly SandboxMachineClass[] | undefined
 }
@@ -45,6 +47,7 @@ function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: R
     chosenDriver: ({ org }) => keys.chosen(org),
     chooseDriver: async (request, { org }, driver) => keys.choose(await signed(request), org, driver),
     removeKey: async (request, { org }, keyId) => keys.remove(await signed(request), org, keyId),
+    keyChanged: ({ org }, keyId) => keys.changed(org, keyId),
     brokering: (driver) => keys.brokering(driver),
     machineClasses: (driver) => keys.machineClasses(driver),
   }

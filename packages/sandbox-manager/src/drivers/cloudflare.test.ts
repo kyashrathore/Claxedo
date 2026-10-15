@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { createCloudflareSandboxDriver } from "./cloudflare"
-import { createSandboxManager } from ".."
+import { createSandboxManager, isSandboxProviderKeyRefused } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { url: string; method: string; body: any }
@@ -287,6 +287,15 @@ describe("CloudflareSandboxDriver", () => {
     const { fetch } = harness(() => ({ status: 400, json: { error: "bad request" } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     await expect(driver.ensureHost(createInput)).rejects.toThrow(/ensure-runtime failed/)
+  })
+
+  test.each([[401, true], [403, true], [400, false]] as const)("an ensure-runtime %s is a refusal of the Worker token only when it is 401 or 403", async (status, refused) => {
+    const { fetch } = harness(() => ({ status, json: { error: "unauthorized" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    const error = await driver.ensureHost(createInput).then(() => undefined, (cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(`Cloudflare ensure-runtime failed (${status}): unauthorized`)
+    expect(isSandboxProviderKeyRefused(error)).toBe(refused)
   })
 
   test("destroy issues DELETE and tolerates 404", async () => {

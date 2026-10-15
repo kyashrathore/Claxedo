@@ -512,13 +512,15 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         if (!key) return c.json(errorBody("sandbox_driver_key_invalid", "Fill in every field this sandbox provider needs"), 400)
         write = key
       }
+      let cred: CredentialMetadata
       try {
-        const cred = await credentials.putCredential(write, org(c.req.raw))
-        return c.json({ credential: redact(cred) })
+        cred = await credentials.putCredential(write, org(c.req.raw))
       } catch (error) {
         if (error instanceof CredentialDeliveryError) throw error
         return c.json(errorBody("credential_store_failed", "Failed to store credential"), 500)
       }
+      if (write.kind === "sandbox_driver") await sandboxKeys?.keyChanged?.(keyContext(c.req.raw), cred.id)
+      return c.json({ credential: redact(cred) })
     })
     .post("/discover", async (c) => {
       // Discovery reads this machine's env and agent config; on signed

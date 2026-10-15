@@ -309,6 +309,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
             authority,
             drivers: sandbox.keys.drivers,
             hostedBroker: broker !== undefined,
+            leaseStore: sandbox.leaseStore,
             ...(input.now ? { now: input.now } : {}),
           }),
         },

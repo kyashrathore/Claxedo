@@ -1,3 +1,4 @@
+import { isSandboxDriverID, sandboxDriverLabels } from "@claxedo/sandbox-contract"
 import type { SandboxLease } from "./contract"
 
 /**
@@ -38,6 +39,31 @@ export class SandboxHostGoneError extends Error implements SandboxHostGone {
     super(reason)
     this.name = "SandboxHostGoneError"
   }
+}
+
+/**
+ * A driver throws this shape when its provider refused the key the driver was
+ * made with (an HTTP 401 or 403 to the key itself). Retrying cannot heal it;
+ * a new key can, which is why the person is told where keys are kept.
+ */
+export type SandboxProviderKeyRefused = { providerKeyRefused: true; message: string }
+
+export function isSandboxProviderKeyRefused(err: unknown): err is SandboxProviderKeyRefused {
+  return !!err && typeof err === "object" && (err as { providerKeyRefused?: unknown }).providerKeyRefused === true
+}
+
+export class SandboxProviderKeyRefusedError extends Error implements SandboxProviderKeyRefused {
+  readonly providerKeyRefused = true as const
+  constructor(reason: string) {
+    super(reason)
+    this.name = "SandboxProviderKeyRefusedError"
+  }
+}
+
+/** The error a lease keeps when `driver`'s provider refused its key. */
+export function sandboxProviderKeyRefusedError(driver: string, reason: string) {
+  const provider = isSandboxDriverID(driver) ? sandboxDriverLabels[driver] : driver
+  return `${provider} refused the sandbox provider key: ${reason}. Fix the key in Settings → Sandbox providers.`
 }
 
 /** Leads the error an ensure reports, and a lease keeps, for a runtime whose boot failed. */

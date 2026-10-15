@@ -22,9 +22,12 @@ const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const SANDBOX_STATES = new Set<string>(["init", "provisioning", "provisioned", "cloning", "ready", "idle", "running", "archiving", "archived", "error", "cancelled"])
 
 export class BoatApiError extends Error {
+  /** Boat answers 401 or 403 to the API key itself, never to a sandbox it was asked about. */
+  readonly providerKeyRefused: boolean
   constructor(message: string, readonly code: string, readonly status?: number) {
     super(message)
     this.name = "BoatApiError"
+    this.providerKeyRefused = status === 401 || status === 403
   }
 }
 

@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { createSandboxManager, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
+import { createSandboxManager, liftSandboxRetryWait, SandboxProviderKeyRefusedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createD1SandboxLeaseStore } from "../stores/d1"
 import { sandboxProvisionerClass } from "../provisioner.cf"
 import { FIXTURE_OUTCOME_HELD_MS } from "./provisioner-outcome-held"
@@ -26,11 +26,25 @@ async function driverCalls(database: D1Database, workspaceId: string) {
   return calls?.n ?? 0
 }
 
+const FIXED_KEYS_TABLE = "fixture_fixed_keys"
+
+async function keyFixed(database: D1Database, workspaceId: string) {
+  await database.prepare(`create table if not exists ${FIXED_KEYS_TABLE} (workspace_id text not null)`).run()
+  return !!(await database.prepare(`select 1 from ${FIXED_KEYS_TABLE} where workspace_id = ?`).bind(workspaceId).first())
+}
+
+/** The person replaces the key `ws_key_refused` starts on, and the key change lifts the lease's wait. */
+async function fixKey(database: D1Database, workspaceId: string) {
+  await keyFixed(database, workspaceId)
+  await database.prepare(`insert into ${FIXED_KEYS_TABLE} (workspace_id) values (?)`).bind(workspaceId).run()
+  return liftSandboxRetryWait(createD1SandboxLeaseStore({ database }), workspaceId)
+}
+
 /**
  * A driver scripted by the workspace id: `ws_slow_<ms>` becomes ready after
  * that long, `ws_poll_<n>` asks to be polled n times first, `ws_boot_fail`
  * exits before it is ready, `ws_flaky` fails once at the provider and
- * `ws_flaky_<n>` n times,
+ * `ws_flaky_<n>` n times, `ws_key_refused` has its key refused until `/fix-key`,
  * `ws_step_throws` throws out of the start step once the lease is ready (its
  * runtime is not provisioned until a second step), `ws_stopped_under` has its
  * lease stopped while the driver runs its first boot, and a workspace named
@@ -50,6 +64,9 @@ function scriptedDriver(database: D1Database): SandboxDriver {
     const poll = /^ws_poll_(\d+)/.exec(input.workspaceId)
     if (poll && calls <= Number(poll[1])) return { provisioning: true as const, retryAfterMs: 100 }
     if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
+    if (input.workspaceId.startsWith("ws_key_refused") && !(await keyFixed(database, input.workspaceId))) {
+      throw new SandboxProviderKeyRefusedError("the key was rejected (unauthorized)")
+    }
     const flaky = /^ws_flaky(?:_(\d+))?/.exec(input.workspaceId)
     if (flaky && calls <= Number(flaky[1] ?? 1)) throw new Error("provider hiccup")
     if (input.workspaceId.startsWith("ws_stopped_under") && calls === 1) {
@@ -80,12 +97,17 @@ function scriptedDriver(database: D1Database): SandboxDriver {
   }
 }
 
+const FIXTURE_MAX_RETRY_COUNT = 4
+const FIXTURE_RETRY_CAP_COOLDOWN_MS = 60_000
+
 function manager(env: Env) {
   return createSandboxManager({
     leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
     driver: scriptedDriver(env.CONTROL_PLANE_DB),
     retryAfterMs: 100,
     retryDelayMs: () => 200,
+    maxRetryCount: FIXTURE_MAX_RETRY_COUNT,
+    retryCapCooldownMs: FIXTURE_RETRY_CAP_COOLDOWN_MS,
   })
 }
 
@@ -208,6 +230,7 @@ export default {
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/renewals") return Response.json({ renewals: await renewals(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/notices") return Response.json({ notices: await notices(env.CONTROL_PLANE_DB, workspaceId) })
+    if (url.pathname === "/fix-key") return Response.json({ lifted: await fixKey(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/watches") return Response.json({ watches: await watches(env.CONTROL_PLANE_DB, workspaceId) })
     return new Response("not found", { status: 404 })
   },

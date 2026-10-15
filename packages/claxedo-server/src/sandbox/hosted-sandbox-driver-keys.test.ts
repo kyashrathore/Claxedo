@@ -7,6 +7,7 @@ import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/wo
 import { hostedCredentialRoutes } from "../credentials/worker/routes"
 import { d1Authority } from "../test-support/d1-authority"
 import { hostedSandboxDriverKeys } from "./hosted-sandbox-driver-keys"
+import { createD1SandboxLeaseStore } from "./stores/d1"
 import { d1OrgSandboxDriver } from "./stores/d1-org-driver"
 
 const env = { [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 9).toString("base64") }
@@ -68,6 +69,7 @@ function app() {
       database: fixture.database,
       authority: fixture.authority,
       drivers: hostedSandboxKeyDrivers(workerEnv).drivers,
+      leaseStore: createD1SandboxLeaseStore({ database: fixture.database }),
     }),
   })
 }
