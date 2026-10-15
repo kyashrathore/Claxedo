@@ -33,6 +33,7 @@ import { SHELL_READY_MARKER } from "./shell-ready"
 import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
 import { SESSION_RESTORED_NOTICE, shouldMarkRestored } from "./restored-notice"
 import { createModeTracker } from "./mode-tracker"
+import { createOutputBatch } from "./output-batch"
 import { currentSessionCore } from "../session-context"
 import { ensureSpawnHelper } from "./spawn-helper-fix"
 import { prependWorkspaceRuntimeBin } from "../runtime-bin"
@@ -491,13 +492,15 @@ export async function startTerminal(
     if (filtered) session.history.append(filtered)
   }
   earlyOutputSubscription.dispose()
-  ptyProcess.onData(output)
-  for (const data of earlyOutput.splice(0)) output(data)
+  const batch = createOutputBatch(output)
+  ptyProcess.onData((data) => batch.push(data))
+  for (const data of earlyOutput.splice(0)) batch.push(data)
   if (initialCommand) {
     initialCommandTimer = setTimeout(() => sendInitialCommand("fallback"), 1200)
   }
   handleExit = async ({ exitCode }) => {
     exitSubscription.dispose()
+    batch.flush()
     if (session.exited || session.removed) return
     if (initialCommandTimer) {
       clearTimeout(initialCommandTimer)
