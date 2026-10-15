@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import {
+  SandboxProviderRateLimitedError,
   createSandboxManager,
   type SandboxDriver,
   type SandboxDriverEnsureInput,

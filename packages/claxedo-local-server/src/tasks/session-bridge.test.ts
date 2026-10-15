@@ -602,7 +602,7 @@ describe("local tasks session bridge", () => {
     expect(previewed.preview.available).toBe(false)
     expect(previewed.preview.blockers).toEqual([{
       code: "source_unavailable",
-      detail: expect.stringContaining("prj_ambiguous has 2 workspaces"),
+      detail: expect.stringContaining("This project has 2 workspaces"),
     }])
 
     const started = await host.bridge.start(await startCommand({
