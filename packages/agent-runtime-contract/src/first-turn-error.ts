@@ -20,7 +20,7 @@ const credential = /\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credenti
 const usageLimit = /(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted|quota/i
 const rateLimit = /\b429\b|\brate[ _-]?limit|too many requests|try again later/i
 const session = /(thread not found|session not found|conversation not found|no such (thread|session))/i
-const harness = /(harness|adapter|acp|agent process|spawn|executable|binary|capabilit(?:y|ies)|unsupported operation)/i
+const harness = /(harness|adapter|acp|agent process|process exited|spawn|executable|binary|capabilit(?:y|ies)|unsupported operation)/i
 const model = /(model|provider\/model|model id|deployment)/i
 const workspace = /(workspace|worktree|repository|directory|sandbox|provision|filesystem|eacces|enoent|permission denied)/i
 
