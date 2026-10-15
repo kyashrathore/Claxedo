@@ -41,7 +41,7 @@ slice 5, when a workspace has one.
 | `lease_decision` | The manager has chosen resume, restore or cold start | `SandboxManager.ensure` |
 | `provider_ready` | The driver reports the provider resource (`onResource`) | sandbox manager |
 | `machine_ready` | The provider's machine, created or resumed, takes commands (`onMachineReady`: Boat once the sandbox reports ready, before the image is prepared) | sandbox manager |
-| `image_ready` | The driver sees the sandbox running from its image or snapshot (`onImageReady`: Boat after the image is pulled and its container started, Vercel after create) | sandbox manager |
+| `image_ready` | The driver sees the sandbox running from its image or snapshot (`onImageReady`: Boat once its runtime container started, after the image is pulled and seeded on a first start or its stub loaded on a wake; Vercel after create) | sandbox manager |
 | `repository_checkout` | The runtime has checked out the repository, timed inside the sandbox | runtime, taken by the control plane after provisioning |
 | `start_script` | `.claxedo/start.sh` or the detected install has finished (slice 3) | runtime |
 | `runtime_ready` | The driver returns a serving target | sandbox manager |
@@ -50,7 +50,8 @@ slice 5, when a workspace has one.
 The control-plane phases are timed from the previous one, so `lease_decision + provider_ready + machine_ready +
 image_ready + runtime_ready` is the wall time from the first `ensure` to a serving runtime (`start_ms` of
 `workspace_ready`/`workspace_woken`). On Boat a wake has no `provider_ready`: `machine_ready` is the resume of the
-archived VM and `image_ready` the image pull and container start on it. A driver that cannot tell a phase apart
+archived VM and `image_ready` the stub image load and container start on it (seconds; a first start pulls and seeds
+the image in it). A driver that cannot tell a phase apart
 (Modal's create returns only once the runtime is up) leaves it out, and its time falls into the next phase.
 `repository_checkout` and `start_script` happen inside the `runtime_ready` span and break it down.
 `first_session_ready` is timed from `runtime_ready`.

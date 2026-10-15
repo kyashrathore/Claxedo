@@ -86,9 +86,9 @@ original health failure.
 ### Boat: what survives a stop, and what survives an image update
 
 A Boat sandbox is a Linux VM whose disk Boat snapshots at every stop; the
-runtime runs inside it as a Docker container of the canonical sandbox image.
-Boat's snapshot keeps a container's settings but not its writable layer, and a
-resume creates every container again from its image
+runtime runs inside it as a Docker container over the canonical sandbox image's
+trees. Boat's snapshot keeps a container's settings but not its writable layer,
+and a resume creates every container again from its image
 ([what a snapshot saves](https://docs.boat.dev/snapshots/whats-saved#docker);
 confirmed on a live sandbox 2026-10-14), so the driver keeps the machine's
 state on the VM's disk and mounts it into the container:
@@ -101,26 +101,66 @@ state on the VM's disk and mounts it into the container:
 | the container's hostname | `--hostname <workspace id>` | kept | kept |
 | everything else (`/tmp`, `/run`, processes) | none | gone, as on any reboot | gone |
 
-The seed streams the trees out of a created container of the image with
-`docker cp` and unpacks them as root, leaving out `~/.cache` (which Boat's own
-snapshots leave out too) and npm's cache; it is marked complete only after
-every tree landed, and a seed that did not complete is redone. The persistent
-root is created as root too: Docker made it as root on every sandbox that
-booted before the trees existed, and the VM user cannot create inside it. A
-start runs as two commands: the preparation (daemon, login, pull, seed) changes
-nothing a running container serves from, so its failure leaves a runtime of the
-previous image serving and the lease ready; the container start that follows
-replaces that container, so its failure is a boot failure the manager demotes. Docker named
-volumes were measured and rejected: Boat saves them through a path of its own,
-and a stop with 3.7 GB of them had not finished after ten minutes, while the
-same bytes under the work directory archived in 27 s.
+The seed runs once per image, at the start that first names it: it pulls the
+image, streams the trees out of a created container of it with `docker cp` and
+unpacks them as root, leaving out `~/.cache` (which Boat's own snapshots leave
+out too) and npm's cache. The persistent root is created as root too: Docker
+made it as root on every sandbox that booted before the trees existed, and the
+VM user cannot create inside it. The seed then saves beside the trees what the
+container needs besides them: the image's env (`image.env`, given to the
+container with `--env-file`) and a stub image (`stub.tar`, 67 kB) holding the
+image's top level outside the trees (Debian's merged-`/usr` links and empty
+directories), its working directory, and a `claxedo.image` label naming the
+image. The seed starts no container of the image: Boat records the containers
+it sees, and one the seed ran for a second to read the image's root was
+recreated by a later restore as soon as the image was back, so the next seed
+could not remove the image. The trees are marked complete once they all
+landed, and a seed whose trees did not complete is redone from the pull; trees
+marked complete are never seeded again, since they hold what was changed since,
+so a seed missing only `stub.tar` or `image.env` (as one an earlier driver left)
+pulls the image and builds those alone. Once the runtime container runs from the
+stub, the start removes the image, any leftover container of it, and the archive
+Boat keeps of it in `/var/lib/ascii-docker-images` (Boat loads that archive
+again at every resume, 16–19 s for this image, and removing the image leaves it
+behind). It waits for the start because the container being replaced may run
+from the image itself, as an earlier driver's did.
+
+Every start then runs the container from the stub, loading `stub.tar` when
+Docker does not hold this image's stub, with every path above mounted. A wake
+therefore pulls nothing: on Boat, 2026-10-15, a cold start took 55–96 s (the
+pull and seed nearly all of it, as fast as ghcr served the image) and a wake
+8–20 s from the resume call to a healthy runtime: `machine_ready` (the resume)
+4–5 s, then `image_ready` (the stub and the container start) 1–3 s, or 7 s when
+Boat's own create of the container raced the start's; the rest is the runtime
+reading its files while Boat still downloads them. A wake that pulled took
+57–77 s, and failed when ghcr reset the connection. An image update re-seeds:
+the new image is pulled and seeded as above, its stub replaces the old one, and
+the old image's trees are removed.
+
+A start runs as two commands: the preparation (daemon, login, seed, stub)
+changes nothing a running container serves from, so its failure leaves a
+runtime of the previous image serving and the lease ready; the container start
+that follows replaces that container, so its failure is a boot failure the
+manager demotes. The container carries the stub's label, so a start finds a
+container of its own image (one Boat created again after a stop that was not
+this driver's, or the one the stop kept) and starts it rather than replacing
+it. Boat's restore creates a resumed sandbox's containers again about 2 s after
+Docker answers; when that create takes the runtime's name after the start looked
+for it, Docker answers that the name is in use, and the start waits a second
+(Docker holds the name from the start of Boat's create), removes it and creates
+again, up to five creates. Docker named volumes were measured and rejected: Boat
+saves them through a path of its own, and a stop with 3.7 GB of them had not
+finished after ten minutes, while the same bytes under the work directory
+archived in 27 s.
 
 `stop` ends the runtime container with the 30 s grace Boat's own stop gives
-and removes it before Boat archives the sandbox, so the resume creates it once:
-left in place, Boat recreates it and pulls its image while the start chain pulls
-the same image, and the two pulls shared one VM (48–74 s where one takes 31–36 s,
-staging 2026-10-13). Every resume still pulls the image, because Boat pulls
-registry images again rather than saving them; that pull is the floor of a wake.
+and keeps it, so Boat's snapshot records it stopped: the restore creates it
+again without starting it, and the start starts it after writing this boot's
+env file (each wake's runtime read that wake's env, 2026-10-15). Removed, it
+left Boat the set an earlier snapshot recorded, and Boat created and started the
+runtime again from it on the previous boot's env file. `host <port> --public` is
+sent once more when Boat answers that it could not stop the port's localhost
+relay, which is Boat's own request to try again.
 
 ## Credentials & secrets
 

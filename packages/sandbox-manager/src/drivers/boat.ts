@@ -17,10 +17,11 @@ import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
-// VM's own kernel but no workspace-runtime baked in, so this driver delivers
-// the canonical sandbox OCI image by `docker run`-ing it inside the sandbox
-// and publishes the runtime port with Boat's in-sandbox `host` command. The
-// control plane reaches that URL over the relay like the other remote drivers.
+// VM's own kernel but no workspace-runtime baked in, so this driver unpacks
+// the canonical sandbox OCI image onto the VM's disk, runs it inside the
+// sandbox as a container of a stub image over those trees, and publishes the
+// runtime port with Boat's in-sandbox `host` command. The control plane
+// reaches that URL over the relay like the other remote drivers.
 
 export type { BoatFetch }
 
@@ -107,6 +108,32 @@ const IMAGE_TREES = ["root", "usr", "etc", "var", "opt", "home", "srv"] as const
 const IMAGE_TREE_SEED_EXCLUDES = ["root/.cache", "root/.npm/_cacache"] as const
 const IMAGE_TREES_COMPLETE_MARKER = ".complete"
 const SEED_CONTAINER_NAME = "claxedo-seed"
+// With every tree mounted, the container needs only the image's top-level
+// entries and its config, so it runs from a stub of 67 kB saved beside the
+// trees, which a start loads when Docker lacks it (0.3 s), where pulling the
+// image takes 47–67 s and fails when ghcr resets the connection (measured
+// 2026-10-15). The stub's label names the image it stands for; the container
+// inherits it, which tells this driver's container from another.
+const STUB_IMAGE = "claxedo-runtime-stub"
+const STUB_IMAGE_ARCHIVE = "stub.tar"
+const IMAGE_LABEL = "claxedo.image"
+// The image's env, one entry per line, for `docker run --env-file`, which
+// takes each line as it is; an import's ENV change would expand `$` and quotes.
+const IMAGE_ENV_FILE = "image.env"
+// The image's top level outside its trees: Debian's merged-/usr links and its
+// empty directories (/workspace, the image's only other entry, is mounted).
+// It is written on the VM, not read out of a started container of the image:
+// Boat recorded a container the seed ran for a second, and a later restore
+// recreated it as soon as the image was back, so the next seed could not
+// remove the image (2026-10-15).
+const ROOT_LINKS = ["bin", "lib", "lib64", "sbin"] as const
+const ROOT_DIRECTORIES = ["boot", "dev", "media", "mnt", "proc", "run", "sys", "tmp", ...IMAGE_TREES] as const
+// Boat keeps an archive of an image a container used at a snapshot here, named
+// by the image's id, and loads it again at every resume (16–19 s for this
+// image, measured 2026-10-15); removing the image leaves the archive behind.
+const BOAT_SAVED_IMAGES = "/var/lib/ascii-docker-images"
+const DOCKER_NAME_IN_USE = "is already in use by container"
+const CONTAINER_CREATE_ATTEMPTS = 5
 const CONTAINER_SECURITY_OPTIONS = "--security-opt seccomp=unconfined --security-opt apparmor=unconfined"
 // `--init` mounts Docker's init at /sbin/docker-init, which the image's merged
 // /usr resolves into the bind-mounted /usr, where it does not exist; the VM's
@@ -115,6 +142,9 @@ const VM_DOCKER_INIT = "/usr/libexec/docker/docker-init"
 const CONTAINER_INIT_PATH = "/claxedo-init"
 // Boat gives a container 30 s to exit at its own stop (docs.boat.dev/snapshots/stop).
 const CONTAINER_STOP_GRACE_SECONDS = 30
+
+// Boat's own answer to a `host` it could not complete, which asks for another try (2026-10-15).
+const HOST_RELAY_NOT_STOPPED = "The sandbox could not stop the localhost relay of this port. Try again."
 
 const STDERR_TAIL_CHARS = 600
 const REDACTED_VALUE_MIN_LENGTH = 8
@@ -214,9 +244,11 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     sandboxId: string,
     command: string,
     label: string,
-    input: { timeoutSeconds?: number; secrets?: readonly string[] } = {},
+    input: { timeoutSeconds?: number; secrets?: readonly string[]; retryOnceOn?: string } = {},
   ) {
-    const result = await client.command(sandboxId, { command, ...(input.timeoutSeconds ? { timeoutSeconds: input.timeoutSeconds } : {}) })
+    const send = () => client.command(sandboxId, { command, ...(input.timeoutSeconds ? { timeoutSeconds: input.timeoutSeconds } : {}) })
+    let result = await send()
+    if (input.retryOnceOn && result.exitCode !== 0 && result.stderr.includes(input.retryOnceOn)) result = await send()
     if (result.timedOut || result.exitCode !== 0) {
       const outcome = result.timedOut ? "timed out" : `failed (exit ${result.exitCode ?? "signal"})`
       const stderr = scrubbedTail(result.stderr, input.secrets ?? [])
@@ -247,19 +279,25 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    *
    * Two commands. `prepare` changes nothing a running container serves from:
    * it waits for the daemon (a resume reboots the VM, and Docker comes up as a
-   * systemd service after Boat reports the sandbox ready), logs in, pulls the
-   * image, seeds its trees and removes other images' trees; a failure there
-   * leaves a runtime of the previous image serving. `start` then replaces
-   * another image's container with one of this image, or starts the one of
-   * this image Boat itself recreated after a stop that was not this driver's;
-   * a create that loses a race with that recreation starts the one that won.
-   * A failure there leaves nothing serving.
+   * systemd service after Boat reports the sandbox ready), logs in, and, when
+   * the image's trees, stub or env are missing, pulls it and seeds what is
+   * missing; it loads the stub when Docker does not hold this image's, and
+   * removes other images' trees. A failure there leaves a runtime of the
+   * previous image serving. `start` then replaces another image's container
+   * with one of this image, or starts this image's container that is already
+   * there: the one the stop kept, which Boat's restore creates again stopped,
+   * or one Boat recreated after a stop that was not this driver's; then it
+   * removes the image if a seed left it. A failure there leaves nothing
+   * serving.
    */
   function containerScripts(input: SandboxDriverEnsureInput): { prepare: string; start: string } {
     const port = runtimePort(input)
     const directory = workspaceDirectory(input)
-    const image = shell(resolveImage(input))
-    const trees = `"$(pwd)/${PERSISTENT_ROOT}/${imageTreesDirectory(resolveImage(input))}"`
+    const reference = resolveImage(input)
+    const image = shell(reference)
+    const trees = `"$(pwd)/${PERSISTENT_ROOT}/${imageTreesDirectory(reference)}"`
+    const labelledWithImage = (object: "image" | "container", name: string) =>
+      `[ "$(docker ${object} inspect --format '{{index .Config.Labels "${IMAGE_LABEL}"}}' ${name} 2>/dev/null)" = ${image} ]`
     const bootScript = [
       `. ${CONTAINER_ENV_PATH}`,
       `mkdir -p ${shell(directory)}`,
@@ -278,25 +316,41 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const run = `docker run -d --name ${containerName} --hostname ${shell(containerHostname(input.workspaceId))} -p ${port}:${port} `
       + `-v ${VM_DOCKER_INIT}:${CONTAINER_INIT_PATH}:ro `
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
+      + `--env-file ${trees}/${IMAGE_ENV_FILE} `
       + IMAGE_TREES.map((tree) => `-v ${trees}/${tree}:/${tree} `).join("")
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
-      + `${CONTAINER_SECURITY_OPTIONS} --entrypoint ${CONTAINER_INIT_PATH} ${image} -- sh -lc ${shell(bootScript)}`
+      + `${CONTAINER_SECURITY_OPTIONS} --entrypoint ${CONTAINER_INIT_PATH} ${STUB_IMAGE} -- sh -lc ${shell(bootScript)}`
     // Streamed out of a created container of the image and unpacked as root so
     // the image's owners and setuid bits survive the copy (the command runs as
     // the VM user). The persistent root is made as root too: Docker made it as
     // root on every sandbox that booted before the trees existed, and the VM
     // user cannot create inside it. A stream that broke leaves no tree and
     // ends the seed before it is marked complete.
-    const seed = `if [ ! -f ${trees}/${IMAGE_TREES_COMPLETE_MARKER} ]; then `
-      + `sudo rm -rf ${trees} && sudo mkdir -p ${trees} `
+    const seedTrees = `sudo rm -rf ${trees} && sudo mkdir -p ${trees} `
       + `&& { docker rm -f ${SEED_CONTAINER_NAME} >/dev/null 2>&1 || true; } `
       + `&& docker create --name ${SEED_CONTAINER_NAME} ${image} true >/dev/null `
       + `&& for tree in ${IMAGE_TREES.join(" ")}; do `
       + `docker cp ${SEED_CONTAINER_NAME}:/$tree - | sudo tar -xf - -C ${trees} ${IMAGE_TREE_SEED_EXCLUDES.map((exclude) => `--exclude=${exclude}`).join(" ")} `
       + `&& [ -d ${trees}/$tree ] || exit 1; done `
-      + `&& docker rm ${SEED_CONTAINER_NAME} >/dev/null && sudo touch ${trees}/${IMAGE_TREES_COMPLETE_MARKER}; fi `
-      + `&& sudo find "$(pwd)/${PERSISTENT_ROOT}" -mindepth 1 -maxdepth 1 -name 'image-*' ! -path ${trees} -exec rm -rf {} +`
-    const ours = `[ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]`
+      + `&& docker rm ${SEED_CONTAINER_NAME} >/dev/null && sudo touch ${trees}/${IMAGE_TREES_COMPLETE_MARKER}`
+    const seedStub = `stub=$(mktemp -d) `
+      + `&& docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' ${image} > "$stub/${IMAGE_ENV_FILE}" `
+      + `&& workdir=$(docker image inspect --format '{{or .Config.WorkingDir "/"}}' ${image}) `
+      + `&& mkdir "$stub/root" ${ROOT_DIRECTORIES.map((directory) => `"$stub/root/${directory}"`).join(" ")} `
+      + `&& ${ROOT_LINKS.map((link) => `ln -s usr/${link} "$stub/root/${link}"`).join(" && ")} && chmod 1777 "$stub/root/tmp" `
+      + `&& tar --owner=0 --group=0 --numeric-owner -cf "$stub/skeleton.tar" -C "$stub/root" . `
+      + `&& docker import --change "WORKDIR $workdir" --change ${shell(`LABEL ${IMAGE_LABEL}=${reference}`)} "$stub/skeleton.tar" ${STUB_IMAGE} >/dev/null `
+      + `&& docker save -o "$stub/${STUB_IMAGE_ARCHIVE}" ${STUB_IMAGE} `
+      + `&& sudo mv "$stub/${IMAGE_ENV_FILE}" "$stub/${STUB_IMAGE_ARCHIVE}" ${trees}/ && rm -rf "$stub"`
+    // Run by the start once the runtime container is this image's stub's: until
+    // then it may be one of the image itself (an earlier driver ran the image),
+    // and any other container of the image is a leftover, such as a seed
+    // container Boat created again.
+    const removeImage = `if docker image inspect ${image} >/dev/null 2>&1; then `
+      + `leftovers=$(docker ps -aq --filter ancestor=${image}) && { [ -z "$leftovers" ] || docker rm -f $leftovers >/dev/null; } `
+      + `&& id=$(docker image inspect --format '{{.Id}}' ${image}) && docker rmi ${image} >/dev/null `
+      + `&& sudo rm -f ${BOAT_SAVED_IMAGES}/"\${id#sha256:}".tar; fi`
+    const seeded = [IMAGE_TREES_COMPLETE_MARKER, STUB_IMAGE_ARCHIVE, IMAGE_ENV_FILE].map((file) => `[ -f ${trees}/${file} ]`).join(" && ")
     const prepare = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
@@ -306,12 +360,23 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
-      `{ docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image} >/dev/null; }`,
-      seed,
+      // Trees an earlier start marked complete hold what a person or a harness
+      // changed since, so a seed missing only its stub or env builds those alone.
+      `if ! { ${seeded}; }; then { docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image} >/dev/null; } `
+        + `&& { [ -f ${trees}/${IMAGE_TREES_COMPLETE_MARKER} ] || { ${seedTrees}; }; } && ${seedStub}; fi`,
+      `{ ${labelledWithImage("image", STUB_IMAGE)} || docker load -i ${trees}/${STUB_IMAGE_ARCHIVE} >/dev/null; }`,
+      `sudo find "$(pwd)/${PERSISTENT_ROOT}" -mindepth 1 -maxdepth 1 -name 'image-*' ! -path ${trees} -exec rm -rf {} +`,
     ]
-    const start = `if ${ours}; then docker start ${containerName} >/dev/null; `
-      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } `
-      + `&& { ${run} || { ${ours} && docker start ${containerName} >/dev/null; }; }; fi`
+    // Boat's restore creates the containers its snapshot recorded 2 s after
+    // Docker answers (2026-10-15), so a start that looked before it finds the
+    // name taken. Docker holds the name from the start of that create, so a
+    // removal right after the clash finds nothing and the next create clashes
+    // again; the 0.8 s the create took is waited out before each retry.
+    const start = `if ${labelledWithImage("container", containerName)}; then docker start ${containerName} >/dev/null; `
+      + `else created=; for attempt in $(seq ${CONTAINER_CREATE_ATTEMPTS}); do [ "$attempt" = 1 ] || sleep 1; `
+      + `docker rm -f ${containerName} >/dev/null 2>&1; failure=$(${run} 2>&1 >/dev/null) && { created=1; break; }; `
+      + `case "$failure" in *${shell(DOCKER_NAME_IN_USE)}*) ;; *) break ;; esac; done; `
+      + `[ -n "$created" ] || { echo "$failure" >&2; false; }; fi && ${removeImage}`
     return { prepare: prepare.join(" && "), start }
   }
 
@@ -390,7 +455,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // request paths onto this base URL and would drop that query, so the
     // runtime authenticates every route itself except the anonymous
     // `/global/health` probe (liveness, the workspace id and the lease epoch).
-    await execOrThrow(sandboxId, `host ${port} --public`, "host publish")
+    await execOrThrow(sandboxId, `host ${port} --public`, "host publish", { retryOnceOn: HOST_RELAY_NOT_STOPPED })
     await waitForHealth(sandboxId, input, secrets)
     // The lease owns the sandbox's lifetime from here; a deadline Boat keeps
     // would end it mid-work, so a sandbox whose deadline cannot be removed
@@ -473,15 +538,17 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   }
 
   /**
-   * The container is ended and removed before Boat archives the sandbox, so
-   * the resume creates it once: Boat recreates a container that was running
-   * and pulls its image while the start chain pulls the same image for its
-   * own create, and the two pulls on one VM took 48–74 s where one takes 31–36 s
-   * (staging, 2026-10-13). The runtime gets the grace Boat's own stop gives.
+   * The container is ended before Boat archives the sandbox and kept, so the
+   * snapshot records it as stopped: Boat's restore creates it again without
+   * starting it (docs.boat.dev/snapshots/whats-saved#docker), and the start
+   * starts it after writing this boot's env file. Removed, it left Boat the
+   * set an earlier snapshot recorded, from which Boat created and started the
+   * runtime again on the previous boot's env file (2026-10-15). The runtime
+   * gets the grace Boat's own stop gives.
    */
   async function stop(target: SandboxResource) {
     await client.command(target.sandboxId, {
-      command: `docker stop -t ${CONTAINER_STOP_GRACE_SECONDS} ${containerName} >/dev/null 2>&1; docker rm -f ${containerName} >/dev/null 2>&1; true`,
+      command: `docker stop -t ${CONTAINER_STOP_GRACE_SECONDS} ${containerName} >/dev/null 2>&1; true`,
       timeoutSeconds: CONTAINER_STOP_GRACE_SECONDS + 30,
     }).catch(hostGoneOrThrow)
     await client.stop(target.sandboxId).catch(hostGoneOrThrow)
