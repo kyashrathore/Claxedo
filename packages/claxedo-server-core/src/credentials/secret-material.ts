@@ -36,7 +36,21 @@ const OAUTH_REFRESH_TOKEN_PREFIX = "sk-ant-ort"
 const API_KEY_PREFIX = "sk-ant-api"
 
 export function isAnthropicOAuthToken(secret: string): boolean {
-  return secret.trim().startsWith(OAUTH_ACCESS_TOKEN_PREFIX)
+  return pastedSecret(secret).startsWith(OAUTH_ACCESS_TOKEN_PREFIX)
+}
+
+/**
+ * A pasted secret as the vendor must receive it. A login document keeps its
+ * own text. A bare key or token carries no whitespace, so any inside it was
+ * put there on the way: a terminal wraps `claude setup-token`'s 108 characters
+ * and a copy of the wrapped line carries the break, and Chromium's single-line
+ * input turns that break into a space on paste (a 110-byte value, 2026-10-15).
+ * Sent as is, Anthropic answers 401 authentication_error, the same word it has
+ * for a token that was never issued.
+ */
+export function pastedSecret(secret: string): string {
+  const value = secret.trim()
+  return parseJsonRecord(value) ? value : value.replace(/\s+/g, "")
 }
 
 /**
@@ -46,7 +60,7 @@ export function isAnthropicOAuthToken(secret: string): boolean {
  * vendor with a message that names neither.
  */
 export function subscriptionTokenRefusal(secret: string): string | undefined {
-  const value = secret.trim()
+  const value = pastedSecret(secret)
   const document = parseJsonRecord(value)
   const token = document ? loginDocumentToken(document) : value
   if (token && isAnthropicOAuthToken(token)) return undefined
@@ -88,10 +102,7 @@ export function credentialSecretMaterial(input: {
   kind: CredentialKind
   secret: string
 }): CredentialSecretMaterial | undefined {
-  // Trimmed for the same reason the prefix match is: a pasted token can carry
-  // surrounding whitespace, and a leading space survives into the header as
-  // part of the value, so the provider is handed a token that is not the user's.
-  const secret = input.secret.trim()
+  const secret = pastedSecret(input.secret)
   if (!secret) return undefined
   const document = parseJsonRecord(secret)
   if (!document) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { credentialSecretMaterial, isAnthropicOAuthToken, storedCredentialKind, subscriptionTokenRefusal } from "./secret-material"
+import { credentialSecretMaterial, isAnthropicOAuthToken, pastedSecret, storedCredentialKind, subscriptionTokenRefusal } from "./secret-material"
 
 function jwt(claims: Record<string, unknown>) {
   return `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`
@@ -29,6 +29,24 @@ describe("credentialSecretMaterial", () => {
       kind: "oauth_token",
       secret: JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
     })).toEqual({ token: "sk-ant-oat01-keychain", form: "subscription" })
+  })
+
+  test("a bare token copied across a wrapped terminal line is the token without the break", () => {
+    expect(credentialSecretMaterial({ kind: "oauth_token", secret: "sk-ant-oat01-wrapped\n token" }))
+      .toEqual({ token: "sk-ant-oat01-wrappedtoken", form: "subscription" })
+    expect(credentialSecretMaterial({ kind: "oauth_token", secret: "sk-ant-oat01-wrapped  token" }))
+      .toEqual({ token: "sk-ant-oat01-wrappedtoken", form: "subscription" })
+    expect(credentialSecretMaterial({ kind: "api_key", secret: " sk-ant-api03-wrapped\n\tkey\n" }))
+      .toEqual({ token: "sk-ant-api03-wrappedkey", form: "api-key" })
+  })
+})
+
+describe("pastedSecret", () => {
+  test("a bare key or token loses every space and line break; a login document keeps its own", () => {
+    expect(pastedSecret(" sk-ant-oat01-wrapped\n token\n")).toBe("sk-ant-oat01-wrappedtoken")
+    expect(pastedSecret("sk-ant-oat01-wrapped  token")).toBe("sk-ant-oat01-wrappedtoken")
+    const document = JSON.stringify({ tokens: { access_token: "access token", account_id: "acct 1" } }, null, 2)
+    expect(pastedSecret(` ${document}\n`)).toBe(document)
   })
 })
 
