@@ -1,5 +1,6 @@
 import { unreachable } from "@/lib/machine"
 import { repositoryName, type ProjectSource } from "@/server"
+import type { ProjectsText } from "./i18n"
 
 export function draftProjectName(source: ProjectSource): string {
   if (source.kind === "folder") return source.path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? ""
@@ -18,4 +19,8 @@ export function sourceLabel(source: ProjectSource | undefined): string {
     default:
       return unreachable(source)
   }
+}
+
+export function pastedRepositoryHint(t: ProjectsText, host: string | undefined, connected: boolean): string {
+  return host && connected ? t("projects.create.url.hint.connected", { host }) : t("projects.create.url.hint.none")
 }

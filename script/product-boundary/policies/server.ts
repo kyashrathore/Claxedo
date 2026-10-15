@@ -190,8 +190,11 @@ export const serverWorkerd: Policy = {
   // the one start of a cloud workspace's machine, `workspace/cloud-workspace-start.ts`,
   // split from the connect path so a session host's tool call starts the
   // machine through it as the workspace's owner.
-  // 169/22, no headroom.
-  ceilings: { modules: 169, packages: 22 },
+  // +1 module (owner: the hosted workspace create route): the connection a new
+  // cloud workspace's repository is read through, picked or found for a pasted
+  // GitHub URL, `workspace/repository-connection.ts`. It adds no package edge.
+  // 170/22, no headroom.
+  ceilings: { modules: 170, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

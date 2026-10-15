@@ -152,6 +152,9 @@ function buildApp(opts: {
     // Tests never dial DNS: clone admission resolves through this stub (a
     // public answer) unless a case overrides it to answer private or nothing.
     resolveRepoAddresses: async () => ["93.184.216.34"],
+    repositoryVisibility: async () => {
+      throw new Error("a route test asked GitHub whether a repository is public without saying what GitHub answers")
+    },
     ...opts.options,
   })
   return { app, authority, capture }
@@ -1529,7 +1532,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     for (const visibility of [{ private: true, bound: "conn_org" }, { private: false, bound: undefined }]) {
       const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
       const repository = { id: "1", name: "widgets", fullName: "acme/widgets", cloneUrl: "https://github.com/acme/widgets.git", private: visibility.private, permissions: { read: true, write: false } }
-      const repositoryForAuth = vi.fn(async () => ({ ok: true as const, repository }))
+      const repositoryForAuth = vi.fn(async () => ({ ok: true as const, repository, connectionId: "conn_org" }))
       const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
       const { app } = buildApp({
         authority: fakeAuthority({ createCloudWorkspace }),
@@ -1542,6 +1545,102 @@ describe("hosted cloud workspace create (POST /create)", () => {
       const created = (createCloudWorkspace.mock.calls[0] as unknown[])[1] as { repoUrl?: string; repoConnectionId?: string }
       expect([created.repoUrl, created.repoConnectionId]).toEqual([repository.cloneUrl, visibility.bound])
     }
+  })
+
+  describe("a pasted GitHub URL", () => {
+    const widgets = { id: "1", name: "widgets", fullName: "acme/widgets", cloneUrl: "https://github.com/acme/widgets.git", private: true, permissions: { read: true, write: false } }
+    const pasted = (
+      repoUrl: string,
+      answer: Awaited<ReturnType<NonNullable<HostedWorkspaceRouteOptions["connections"]>["repositoryForAuth"]>>,
+      visibility: "public" | "unreadable" = "unreadable",
+    ) => {
+      const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+      const repositoryForAuth = vi.fn(async () => answer)
+      const repositoryVisibility = vi.fn(async () => visibility)
+      const { app } = buildApp({
+        authority: fakeAuthority({ createCloudWorkspace }),
+        sandboxManager: { ensure: vi.fn() } as unknown as SandboxManager,
+        options: { connections: { repositoryForAuth }, repositoryVisibility },
+      })
+      const created = () => (createCloudWorkspace.mock.calls[0] as unknown[] | undefined)?.[1] as { repoUrl?: string; repoConnectionId?: string } | undefined
+      return { response: app.fetch(post("/create", { workspaceName: "Widgets", repoUrl })), repositoryForAuth, repositoryVisibility, created }
+    }
+
+    test("of a private repository a connection can read is bound to that connection, as the GitHub picker binds it", async () => {
+      for (const repoUrl of [
+        "https://github.com/acme/widgets",
+        "https://github.com/acme/widgets.git",
+        "https://github.com/acme/widgets/",
+        "git@github.com:acme/widgets.git",
+        "ssh://git@github.com/acme/widgets.git",
+      ]) {
+        const run = pasted(repoUrl, { ok: true, repository: widgets, connectionId: "conn_personal" })
+        expect((await run.response).status).toBe(200)
+        expect(run.repositoryForAuth).toHaveBeenCalledWith(expect.anything(), undefined, "acme/widgets")
+        expect(run.repositoryVisibility).not.toHaveBeenCalled()
+        expect(run.created()).toMatchObject({ repoUrl: widgets.cloneUrl, repoConnectionId: "conn_personal" })
+      }
+    })
+
+    test("of a private repository no connection can read is refused at create, naming the GitHub App's installation settings", async () => {
+      const run = pasted("https://github.com/acme/widgets", { ok: false, status: 404, code: "repository_not_found" })
+      const res = await run.response
+      expect(res.status).toBe(403)
+      const body = (await res.json()) as { error: { code: string; message: string } }
+      expect(body.error.code).toBe("repository_access_required")
+      expect(body.error.message).toContain("acme/widgets")
+      expect(body.error.message).toContain("https://github.com/organizations/acme/settings/installations")
+      expect(run.repositoryVisibility).toHaveBeenCalledWith("acme/widgets")
+      expect(run.created()).toBeUndefined()
+    })
+
+    test("of a private repository from a person with no GitHub connection is refused at create, saying to connect GitHub", async () => {
+      const run = pasted("git@github.com:acme/widgets.git", { ok: false, status: 404, code: "connection_not_found" })
+      const res = await run.response
+      expect(res.status).toBe(403)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "repository_connection_required", message: expect.stringContaining("Connect GitHub") } })
+      expect(run.created()).toBeUndefined()
+    })
+
+    test("of a public repository no connection lists is created unbound from the URL as pasted", async () => {
+      const run = pasted("https://github.com/acme/widgets", { ok: false, status: 404, code: "repository_not_found" }, "public")
+      expect((await run.response).status).toBe(200)
+      expect(run.created()).toMatchObject({ repoUrl: "https://github.com/acme/widgets" })
+      expect(run.created()?.repoConnectionId).toBeUndefined()
+    })
+
+    test("of a public repository a connection lists is created unbound from its clone URL", async () => {
+      const run = pasted("https://github.com/acme/widgets", { ok: true, repository: { ...widgets, private: false }, connectionId: "conn_org" })
+      expect((await run.response).status).toBe(200)
+      expect(run.created()).toMatchObject({ repoUrl: widgets.cloneUrl })
+      expect(run.created()?.repoConnectionId).toBeUndefined()
+    })
+
+    test("is refused when GitHub cannot say whether a repository no connection lists is public", async () => {
+      const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+      const { app } = buildApp({
+        authority: fakeAuthority({ createCloudWorkspace }),
+        sandboxManager: { ensure: vi.fn() } as unknown as SandboxManager,
+        options: {
+          connections: { repositoryForAuth: async () => ({ ok: false as const, status: 404 as const, code: "repository_not_found" }) },
+          repositoryVisibility: async () => { throw new Error("GitHub answered 503") },
+        },
+      })
+      const res = await app.fetch(post("/create", { workspaceName: "Widgets", repoUrl: "https://github.com/acme/widgets" }))
+      expect(res.status).toBe(502)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "repository_visibility_unavailable" } })
+      expect(createCloudWorkspace).not.toHaveBeenCalled()
+    })
+
+    test("of another host, or not naming one repository, keeps the URL with no connection lookup", async () => {
+      for (const repoUrl of ["https://gitlab.com/acme/widgets.git", "https://github.com/acme/widgets/tree/main", "https://github.com/acme"]) {
+        const run = pasted(repoUrl, { ok: true, repository: widgets, connectionId: "conn_personal" })
+        expect((await run.response).status).toBe(200)
+        expect(run.repositoryForAuth).not.toHaveBeenCalled()
+        expect(run.created()).toMatchObject({ repoUrl })
+        expect(run.created()?.repoConnectionId).toBeUndefined()
+      }
+    })
   })
 
   test("a refused admission creates nothing and provisions nothing", async () => {

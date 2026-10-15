@@ -529,6 +529,78 @@ describe("hosted D1 Connections setup", () => {
     })
   })
 
+  describe("which connection can read a repository", () => {
+    const repository = (fullName: string, read = true) => ({
+      id: fullName,
+      name: fullName.split("/")[1],
+      fullName,
+      cloneUrl: `https://github.com/${fullName}.git`,
+      private: true,
+      permissions: { read, write: false },
+    })
+    const visibleTo: Record<string, ReturnType<typeof repository>[]> = {
+      "org-token": [repository("acme/shared"), repository("acme/both")],
+      "owner-token": [repository("owner/mine"), repository("acme/both"), repository("acme/listed-unreadable", false)],
+      "member-token": [repository("member/theirs")],
+    }
+    const github: { decl: IntegrationDeclaration; impl: IntegrationImpl } = {
+      decl: { id: "github", name: "GitHub", methods: ["key"], keyTokenType: "bearer" },
+      impl: {
+        actions: { "code-host": { capability: "code-host", listRepositories: async (_fields, token) => visibleTo[token] ?? [] } },
+        auth: { verify: async () => ({ ok: true }) },
+      },
+    }
+    const ids = async (test: Awaited<ReturnType<typeof rig>>) => {
+      const rows = await test.database.prepare(`select connection_id, owner_user_id from hosted_connections where integration_id = 'github'`)
+        .all<{ connection_id: string; owner_user_id: string | null }>()
+      return {
+        personal: rows.results.find((row) => row.owner_user_id === test.ownerUserId)?.connection_id,
+        member: rows.results.find((row) => row.owner_user_id === test.memberUserId)?.connection_id,
+        organization: rows.results.find((row) => row.owner_user_id === null)?.connection_id,
+      }
+    }
+    const connected = async () => {
+      const test = await rig({ integrations: [github, keyIntegration] })
+      await connect(test.app, "context7", { scope: "personal", secret: "owner-key" })
+      await connect(test.app, "github", { scope: "org", secret: "org-token" })
+      await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
+      test.as(test.member)
+      await connect(test.app, "github", { scope: "personal", secret: "member-token" })
+      test.as(test.owner)
+      return { test, ids: await ids(test), access: createHostedRepositoryAccess(test.input) }
+    }
+
+    test("a repository named without a connection resolves to the caller's own connection before the organization's", async () => {
+      const { test, ids, access } = await connected()
+      expect(await access(test.owner, undefined, "owner/mine")).toMatchObject({ ok: true, connectionId: ids.personal, repository: { fullName: "owner/mine" } })
+      expect(await access(test.owner, undefined, "acme/shared")).toMatchObject({ ok: true, connectionId: ids.organization })
+      expect(await access(test.owner, undefined, "acme/both")).toMatchObject({ ok: true, connectionId: ids.personal })
+    })
+
+    test("a repository named without a connection matches GitHub's names whatever their case", async () => {
+      const { test, ids, access } = await connected()
+      expect(await access(test.owner, undefined, "Owner/MINE")).toMatchObject({ ok: true, connectionId: ids.personal, repository: { fullName: "owner/mine" } })
+    })
+
+    test("a repository none of the caller's connections can read is refused, though another person's connection could", async () => {
+      const { test, access } = await connected()
+      expect(await access(test.owner, undefined, "member/theirs")).toEqual({ ok: false, status: 404, code: "repository_not_found" })
+      expect(await access(test.owner, undefined, "acme/listed-unreadable")).toEqual({ ok: false, status: 403, code: "repository_read_required" })
+    })
+
+    test("a caller with no code-host connection has none to resolve", async () => {
+      const test = await rig({ integrations: [github, keyIntegration] })
+      await connect(test.app, "context7", { scope: "personal", secret: "owner-key" })
+      expect(await createHostedRepositoryAccess(test.input)(test.owner, undefined, "owner/mine")).toEqual({ ok: false, status: 404, code: "connection_not_found" })
+    })
+
+    test("the caller's personal connection, picked by id, reads its repository", async () => {
+      const { test, ids, access } = await connected()
+      expect(await access(test.owner, ids.personal, "owner/mine")).toMatchObject({ ok: true, connectionId: ids.personal })
+      expect(await access(test.owner, ids.member, "member/theirs")).toEqual({ ok: false, status: 404, code: "connection_not_found" })
+    })
+  })
+
   test("repository access refuses a connection id from another partition", async () => {
     const test = await rig()
     test.as(test.member)
