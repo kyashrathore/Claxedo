@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
+import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type PlacementId, type Project, type ProjectSource } from "@/server"
 import { Button, ClaxedoIcon as Icon, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { draftProjectName, pastedRepositoryHint } from "../project-source"
@@ -9,7 +9,7 @@ import { AccountSelect, FIELD_BOX, RepositoryList } from "./project-create-repos
 
 type Submit =
   | { onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>; submitLabel?: string; onCreated?: undefined }
-  | { onSubmit?: undefined; onCreated: (project: Project) => void }
+  | { onSubmit?: undefined; onCreated: (project: Project, placementId: PlacementId | undefined) => void }
 
 export type ProjectCreateFormProps = {
   folderMachine?: string
@@ -180,7 +180,9 @@ function useProjectCreateSubmit(props: ProjectCreateFormProps, form: FormState) 
     form.setError("")
     try {
       if (props.onSubmit) return await props.onSubmit(picked, name)
-      props.onCreated(await server.projects.create({ source: picked, ...(name ? { name } : {}) }))
+      let placementId: PlacementId | undefined
+      const project = await server.projects.create({ source: picked, ...(name ? { name } : {}), onPlacement: (id) => (placementId = id) })
+      props.onCreated(project, placementId)
     } catch (cause) {
       form.setError(toAppError(cause).message)
     } finally {

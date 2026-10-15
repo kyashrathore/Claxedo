@@ -1,11 +1,11 @@
 import type { JSX } from "solid-js"
-import { useServer, type Project } from "@/server"
+import { useServer, type PlacementId, type Project } from "@/server"
 import { Dialog, DialogBody, DialogHeader, DialogTitleGroup, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { pickProjectFolderWith } from "../pick-project-folder"
 import { ProjectCreateForm } from "./project-create-form"
 
-export function DialogCreateProject(props: { readonly onCreated: (project: Project) => void }): JSX.Element {
+export function DialogCreateProject(props: { readonly onCreated: (project: Project, placementId: PlacementId | undefined) => void }): JSX.Element {
   const t = useProjectsText()
   const dialog = useDialog()
   const server = useServer()
@@ -19,9 +19,9 @@ export function DialogCreateProject(props: { readonly onCreated: (project: Proje
           folderMachine={server.capabilities()?.servingMachine?.name}
           pickFolder={pickProjectFolderWith(dialog)}
           onCancel={() => dialog.close()}
-          onCreated={(project) => {
+          onCreated={(project, placementId) => {
             dialog.close()
-            props.onCreated(project)
+            props.onCreated(project, placementId)
           }}
         />
       </DialogBody>

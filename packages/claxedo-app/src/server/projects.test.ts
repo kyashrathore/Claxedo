@@ -33,6 +33,7 @@ function world(serverKind: "daemon" | "hosted") {
   } as unknown as Workspaces
   const createCloudWorkspace = async (input: CloudSourceCreateInput): Promise<CloudWorkspace> => {
     created.push(input)
+    input.onCreated?.(placementId("ws_new"))
     return { id: placementId("ws_new"), projectId: accountProject.id } as CloudWorkspace
   }
   const queryClient = new QueryClient()
@@ -64,4 +65,11 @@ test("a daemon creates the project through its own route and never a cloud works
   expect(requests).toEqual(["/api/claxedo/projects"])
   expect(created).toEqual([])
   expect(project.id).toBe(projectId("prj_local"))
+})
+
+test("a hosted create reports the workspace it just made, so a repository that already has a project opens the new workspace", async () => {
+  const { api } = world("hosted")
+  const reported: string[] = []
+  await api.create({ source: repository, onPlacement: (id) => reported.push(id) })
+  expect(reported).toEqual(["ws_new"])
 })
