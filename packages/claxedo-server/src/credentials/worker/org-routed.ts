@@ -47,7 +47,7 @@ export function orgRoutedCredentials(
     getCredential: async (id, org) => await at(org).getCredential?.(id, org),
     resolveCredentialSecretById: async (id, org) => (await at(org).resolveCredentialSecretById?.(id, org)) ?? null,
     putCredential: (input, org) => write(org, (store) => store.putCredential(input, org)),
-    deleteCredential: (id, org) => write(org, (store) => store.deleteCredential(id, org)),
+    deleteCredential: (id, org, administeredBy) => write(org, (store) => store.deleteCredential(id, org, administeredBy)),
     deleteCredentialsByProvider: (providerId, kind, org) => write(org, (store) => store.deleteCredentialsByProvider(providerId, kind, org)),
     updateCredentialStatus: (id, status, error, org) => write(org, (store) => store.updateCredentialStatus(id, status, error, org)),
     updateCredentialHealth: async (id, health, validatedAt, org, evidence) => await at(org).updateCredentialHealth?.(id, health, validatedAt, org, evidence),
