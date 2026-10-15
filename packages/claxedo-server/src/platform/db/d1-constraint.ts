@@ -40,3 +40,26 @@ export function d1BatchAssertionFailed(error: unknown): boolean {
   const failure = d1ConstraintFailure(error)
   return failure?.kind === "check" && failure.target === "passed = 1"
 }
+
+const TRANSIENT = [
+  /Network connection lost/i,
+  /object to be reset/i,
+  /and was reset/i,
+  /reset because its code was updated/i,
+  /D1 DB is overloaded/i,
+  /^D1_ERROR: internal error/i,
+]
+
+/**
+ * Whether a D1 failure is the platform's own, which the same statement can
+ * succeed past moments later: Cloudflare's retry guidance names the reset and
+ * connection-loss messages, and staging answered "D1_ERROR: internal error"
+ * to reads that succeeded on the next request.
+ */
+export function d1TransientFailure(error: unknown): boolean {
+  for (let current = error, depth = 0; current instanceof Error && depth < 4; current = current.cause, depth++) {
+    const message = current.message
+    if (TRANSIENT.some((pattern) => pattern.test(message))) return true
+  }
+  return false
+}
