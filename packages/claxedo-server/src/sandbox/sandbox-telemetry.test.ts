@@ -62,13 +62,14 @@ describe("workspace lifecycle events", () => {
   test("a stop closes the metered interval with the boot's machine time", () => {
     const { captured, telemetry } = sink()
     const emit = sandboxLifecycleSink(telemetry)
-    emit({ ...machine, kind: "stopped", idle: true, activeMs: 282_921 })
+    emit({ ...machine, kind: "stopped", cause: "idle", activeMs: 282_921 })
+    emit({ ...machine, kind: "stopped", cause: "provider", activeMs: 61_000 })
     emit({ ...machine, kind: "destroyed", hostGone: false })
-    expect(captured).toEqual([{
-      distinctId: "system",
-      event: "workspace_stopped",
-      properties: { workspace_id: "ws_1", driver: "boat", project_id: "prj_1", org_id: "org_1", $groups: { org: "org_1" }, cause: "idle", active_ms: 282_921 },
-    }])
+    const properties = { workspace_id: "ws_1", driver: "boat", project_id: "prj_1", org_id: "org_1", $groups: { org: "org_1" } }
+    expect(captured).toEqual([
+      { distinctId: "system", event: "workspace_stopped", properties: { ...properties, cause: "idle", active_ms: 282_921 } },
+      { distinctId: "system", event: "workspace_stopped", properties: { ...properties, cause: "host_stopped", active_ms: 61_000 } },
+    ])
   })
 })
 

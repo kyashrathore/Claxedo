@@ -1,5 +1,8 @@
 import type { SandboxLease } from "./contract"
 
+/** Who stopped the host: a person or the plane's explicit stop, the idle policy, or the provider on its own. */
+export type SandboxStopCause = "explicit" | "idle" | "provider"
+
 /**
  * The lease transitions a deployment meters. A lease epoch is one boot: a wake
  * acquires a new epoch with its own start, so `activeMs` (the epoch's start to
@@ -16,7 +19,7 @@ export type SandboxLifecycleEvent = {
   driver: string
   labels: Record<string, string>
 } & (
-  | { kind: "stopped"; idle: boolean; activeMs?: number }
+  | { kind: "stopped"; cause: SandboxStopCause; activeMs?: number }
   | { kind: "destroyed"; hostGone: boolean; activeMs?: number }
   | { kind: "failed"; bootFailed: boolean; retrying: boolean }
 )
@@ -33,7 +36,9 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
     }
   }
   return {
-    stopped: (lease: SandboxLease, idle: boolean) => report({ ...base(lease), kind: "stopped", idle, ...active(lease) }),
+    stopped: (lease: SandboxLease, idle: boolean) => report({ ...base(lease), kind: "stopped", cause: idle ? "idle" : "explicit", ...active(lease) }),
+    /** `endedAt` is when the host was last proven serving: a stop the provider made on its own is learned after the fact. */
+    hostStopped: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "stopped", cause: "provider", ...active(lease, endedAt) }),
     destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", hostGone: false, ...active(lease) }),
     /** `endedAt` is when the host was last proven serving: the provider's loss is learned after the fact. */
     hostGone: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "destroyed", hostGone: true, ...active(lease, endedAt) }),

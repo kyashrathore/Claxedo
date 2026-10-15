@@ -1143,14 +1143,25 @@ describe("boat sandbox driver", () => {
 
     const stopped = await driver.stop!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }).catch((error: unknown) => error)
     expect(isSandboxHostGone(stopped)).toBe(true)
-    expect(await driver.inspect!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" })).toBeUndefined()
+    expect(await driver.inspect!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" })).toBe("gone")
     expect(boat.calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")).toHaveLength(0)
   })
 
-  test("a sandbox Boat still has inspects as the target it serves, and a refusal of the read is no answer about it", async () => {
+  test.each([
+    ["ready", "serving"],
+    ["running", "serving"],
+    ["provisioning", "serving"],
+    ["archiving", "stopped"],
+    ["archived", "stopped"],
+    ["error", "stopped"],
+  ] as const)("a sandbox Boat holds in state %s inspects as %s", async (state, expected) => {
+    const boat = fakeBoat({ states: [state] })
     const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
-    const boat = fakeBoat()
-    expect(await createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl }).inspect!(target)).toEqual(target)
+    expect(await createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl }).inspect!(target)).toBe(expected)
+  })
+
+  test("a refusal of the inspect read is no answer about the sandbox", async () => {
+    const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
     const refused = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => Response.json({ ok: false, code: "unauthorized", message: "Unauthorized" }, { status: 401 }) })
     await expect(refused.inspect!(target)).rejects.toThrow("unauthorized")
   })

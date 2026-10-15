@@ -116,6 +116,8 @@ export type HostedSandboxBinding = {
   refresh: SandboxStart
   inFlight: SandboxInFlight
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
+  /** Ends the turns a workspace's runtime was running when the plane found that runtime gone. */
+  runtimeLost?: (workspaceId: string, at: number) => Promise<void>
   /** The organization keys every cloud workspace of this deployment starts on. */
   keys: HostedSandboxKeys
 }

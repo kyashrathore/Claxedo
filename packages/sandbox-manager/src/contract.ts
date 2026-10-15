@@ -411,6 +411,9 @@ export type SandboxTarget = {
 
 export type SandboxResource = Omit<SandboxTarget, "url"> & { url?: string }
 
+/** What the provider says of a host: running or booting, held but not running, or no longer had. */
+export type SandboxHostState = "serving" | "stopped" | "gone"
+
 export type SandboxSnapshotResult = { snapshotId: string }
 export type SandboxCommandResult = { stdout: string; stderr: string; exitCode: number }
 
@@ -446,8 +449,7 @@ export type SandboxDriver = {
   snapshot?: (target: SandboxTarget, committed?: string) => Promise<SandboxSnapshotResult>
   /** Deletes a snapshot `snapshot` returned; implemented by drivers whose snapshots outlive their sandbox. */
   deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
-  /** Undefined for a host the provider no longer has. */
-  inspect?: (target: SandboxTarget) => Promise<SandboxTarget | undefined>
+  inspect?: (target: SandboxTarget) => Promise<SandboxHostState>
   exec?: (target: SandboxTarget, command: string) => Promise<SandboxCommandResult>
   clone?: (target: SandboxTarget, input: { name: string }) => Promise<SandboxTarget>
 }
@@ -475,8 +477,13 @@ export type SandboxManager = {
   checkpoint: (workspaceId: string, input: SandboxCheckpointCaptureInput) => Promise<SandboxCheckpointResult>
   restore: (workspaceId: string, input: SandboxCheckpointRestoreInput) => Promise<SandboxCheckpointResult>
   stop: (workspaceId: string, input?: SandboxStopInput) => Promise<SandboxMutationResult>
-  /** True when the provider no longer has the host the epoch serves from, which ends that lease destroyed; a driver that cannot inspect its hosts answers false. */
-  endIfHostGone: (workspaceId: string, epoch: number) => Promise<boolean>
+  /**
+   * Ends the serving lease at `epoch` when the provider says its host is not
+   * running: `stopped` (held, not running) ends it stopped, so the next start
+   * resumes that host; `gone` ends it destroyed. Nothing while the host
+   * serves, the epoch moved on, or the driver cannot inspect its hosts.
+   */
+  endIfHostDown: (workspaceId: string, epoch: number) => Promise<Exclude<SandboxHostState, "serving"> | undefined>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>
   release: (workspaceId: string) => Promise<{ released: boolean }>
   garbageCollect: () => Promise<SandboxGarbageCollectResult>

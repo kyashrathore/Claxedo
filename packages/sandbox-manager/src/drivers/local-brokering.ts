@@ -331,7 +331,7 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
     catalogEntry: localBrokeringTestDriverCatalogEntry,
     ensureHost,
     resumeHost: ({ ensure }) => ensureHost(ensure),
-    inspect: async (target) => hosts.get(target.workspaceId ?? "")?.target,
+    inspect: async (target) => (hosts.get(target.workspaceId ?? "")?.target ? "serving" : "gone"),
     touch: async () => {},
     stop,
     suspend: stop,

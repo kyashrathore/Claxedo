@@ -2078,6 +2078,34 @@ describe("a host the provider no longer has", () => {
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "destroyed", epoch: 2, lastError: "runtime_host_gone: sandbox_gone is gone" })
   })
 
+  test("a serving lease whose host the provider reports stopped ends stopped at its last proof of life, so the next start resumes that host", async () => {
+    const store = createMemoryLeaseStore([serving()])
+    const patches = recording(store)
+    const events: SandboxLifecycleEvent[] = []
+    const driver = fakeDriver({ inspect: vi.fn(async () => "stopped" as const) })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => 20_000, onLifecycle: (event) => events.push(event) })
+
+    await expect(manager.endIfHostDown("ws_1", 3)).resolves.toBe("stopped")
+    expect(patches).toContainEqual({ epoch: 3, status: "stopped", endedAt: 8_000 })
+    expect(events).toEqual([expect.objectContaining({ kind: "stopped", cause: "provider", epoch: 3, activeMs: 7_000 })])
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ status: "unavailable", leaseStatus: "stopped" })
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "stopped", sandboxId: "sandbox_gone", hostId: "host_1" })
+    await expect(manager.endIfHostDown("ws_1", 3)).resolves.toBeUndefined()
+  })
+
+  test("a serving lease whose host the provider reports gone ends destroyed; one it reports serving, or a lease of another epoch, is left as it is", async () => {
+    const gone = createMemoryLeaseStore([serving()])
+    const goneManager = createSandboxManager({ leaseStore: gone, driver: fakeDriver({ inspect: vi.fn(async () => "gone" as const) }) })
+    await expect(goneManager.endIfHostDown("ws_1", 3)).resolves.toBe("gone")
+    await expect(gone.get("ws_1")).resolves.toMatchObject({ status: "destroyed", lastError: "runtime_host_gone: sandbox_gone is gone" })
+
+    const kept = createMemoryLeaseStore([serving()])
+    const keptManager = createSandboxManager({ leaseStore: kept, driver: fakeDriver({ inspect: vi.fn(async () => "serving" as const) }) })
+    await expect(keptManager.endIfHostDown("ws_1", 3)).resolves.toBeUndefined()
+    await expect(keptManager.endIfHostDown("ws_1", 2)).resolves.toBeUndefined()
+    await expect(kept.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 3 })
+  })
+
   test("a stop the provider refuses for any other reason still fails the stop and keeps the lease", async () => {
     const store = createMemoryLeaseStore([serving()])
     const driver = fakeDriver({ stop: vi.fn(async () => { throw new Error("Boat POST /sandboxes/sandbox_gone/stop was rejected (http_500)") }) })

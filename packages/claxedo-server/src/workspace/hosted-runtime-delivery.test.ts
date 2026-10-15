@@ -48,9 +48,10 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer, orgId: "org" },
 })
 
-/** A provider that loses hosts: an ensure for a host it no longer holds creates a new one. */
+/** A provider that loses or stops hosts: an ensure for a host it no longer holds creates a new one. */
 function recreatingDriver() {
   const hosts = new Set<string>()
+  const stopped = new Set<string>()
   const created: SandboxDriverEnsureInput[] = []
   const driver = {
     id: "test",
@@ -62,7 +63,7 @@ function recreatingDriver() {
       }
       return { sandboxId: `sb_${input.workspaceId}`, url: "https://runtime.test", hostId, labels: input.labels }
     },
-    inspect: async (target: SandboxTarget) => (hosts.has(target.hostId) ? target : undefined),
+    inspect: async (target: SandboxTarget) => (!hosts.has(target.hostId) ? "gone" : stopped.has(target.hostId) ? "stopped" : "serving"),
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "suspends-host",
@@ -81,14 +82,15 @@ function recreatingDriver() {
       machineClasses: ["small", "default", "large"],
     },
   } satisfies SandboxDriver
-  return { driver, created, lose: () => hosts.clear() }
+  return { driver, created, lose: () => hosts.clear(), stopOnItsOwn: () => { for (const host of hosts) stopped.add(host) } }
 }
 
 async function composition() {
   const instance = await workspaceBackingDatabase([])
   active.push(instance)
-  const { driver, created, lose } = recreatingDriver()
+  const { driver, created, lose, stopOnItsOwn } = recreatingDriver()
   const stops: Array<{ workspaceId: string; epoch: number; idleBefore?: number }> = []
+  const lost: Array<{ workspaceId: string; at: number }> = []
   const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
   const rows = new Map<string, Record<string, unknown>>()
   const authority = {
@@ -149,6 +151,7 @@ async function composition() {
     provisionedRunner: undefined,
     deliverSessionRowsPass: async (workspaceId) => { pushed.push(`session rows pass ${workspaceId}`) },
     sandboxRefresh: (workspaceId) => inlineSandboxStart(delivery.start)(workspaceId),
+    runtimeLost: async (workspaceId, at) => { lost.push({ workspaceId, at }) },
     idleStop: (workspaceId, epoch, stop) => {
       stops.push({ workspaceId, epoch, ...stop })
       return sandboxManager.stop(workspaceId, { expectedEpoch: epoch, ...stop })
@@ -180,7 +183,7 @@ async function composition() {
     expect(res.status).toBe(200)
     return (await res.json() as { workspaceId: string }).workspaceId
   }
-  return { app, delivery, created, lose, create, secrets, env, stops, sandboxManager }
+  return { app, delivery, created, lose, stopOnItsOwn, create, secrets, env, stops, lost, sandboxManager }
 }
 
 describe("the steps of a hosted sandbox start", () => {
@@ -293,7 +296,7 @@ describe("watching a serving hosted sandbox for idleness", () => {
   })
 
   test("a runtime that answers nothing is read again, counted, and stopped only once the failure budget is spent", async () => {
-    const { delivery, create, stops } = await composition()
+    const { delivery, create, stops, lost } = await composition()
     const workspaceId = await create({})
     await delivery.start.acquire(workspaceId)
     await delivery.start.provision(workspaceId, 1)
@@ -301,12 +304,14 @@ describe("watching a serving hosted sandbox for idleness", () => {
     await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("unreachable")
     await expect(delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 2)).rejects.toThrow("unreachable")
     expect(stops).toEqual([])
+    expect(lost).toEqual([])
     expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
     expect(stops).toEqual([{ workspaceId, epoch: 1 }])
+    expect(lost).toEqual([{ workspaceId, at: expect.any(Number) }])
   })
 
   test("a runtime that answers nothing on a host the provider no longer has ends its lease at the first read, without spending the failure budget", async () => {
-    const { delivery, create, stops, lose, sandboxManager } = await composition()
+    const { delivery, create, stops, lost, lose, sandboxManager } = await composition()
     const workspaceId = await create({})
     await delivery.start.acquire(workspaceId)
     await delivery.start.provision(workspaceId, 1)
@@ -316,6 +321,36 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(stops).toEqual([])
     expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "unavailable", leaseStatus: "destroyed" })
     expect((await sandboxManager.list()).find((lease) => lease.workspaceId === workspaceId)).toMatchObject({ status: "destroyed", lastError: `runtime_host_gone: sb_${workspaceId} is gone` })
+    expect(lost).toEqual([{ workspaceId, at: expect.any(Number) }])
+  })
+
+  test("a runtime that answers nothing on a host the provider stopped on its own ends its lease stopped at the first read, and its sessions' turns are ended with it", async () => {
+    const { delivery, create, stops, lost, stopOnItsOwn, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    stopOnItsOwn()
+    const before = Date.now()
+
+    expect(await delivery.start.watch(workspaceId, 0)).toBeUndefined()
+    expect(stops).toEqual([])
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "unavailable", leaseStatus: "stopped" })
+    expect(lost).toHaveLength(1)
+    expect(lost[0]!.workspaceId).toBe(workspaceId)
+    expect(lost[0]!.at).toBeGreaterThanOrEqual(before)
+    expect(await delivery.start.watch(workspaceId, 0)).toBeUndefined()
+    expect(lost).toHaveLength(1)
+  })
+
+  test("a runtime that answers nothing on a host the provider still serves is read again, and nothing is ended", async () => {
+    const { delivery, create, lost, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+
+    await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("unreachable")
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "ready" })
+    expect(lost).toEqual([])
   })
 })
 
