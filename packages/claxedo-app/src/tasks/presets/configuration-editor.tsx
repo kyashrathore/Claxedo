@@ -1,11 +1,12 @@
 import { Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import type { ConfigurationSlot, HarnessReference } from "@claxedo/tasks"
+import type { ConfigurationSlot, HarnessReference, PresetPlacement } from "@claxedo/tasks"
 import { DraftHarnessPicker, type DraftHarnessChoice } from "@/composer"
 import { useTranslator } from "@/i18n"
 import { NATIVE_HARNESS_IDS, connectionHarness, nativeHarness, type HarnessSelection } from "@/lib/harness-selection"
 import { useServer } from "@/server"
 import { tasksDictionary } from "../i18n"
+import { CloudConfigurationPicker } from "./cloud-configuration-picker"
 import type { ConfigurationDraft } from "./draft"
 
 function harnessReferenceOf(selection: HarnessSelection): HarnessReference {
@@ -36,12 +37,22 @@ function configurationOf(choice: DraftHarnessChoice): ConfigurationDraft {
   }
 }
 
-export function ConfigurationEditor(props: {
+type ConfigurationEditorProps = {
   readonly slot: ConfigurationSlot
   readonly configuration: ConfigurationDraft
   readonly disabled: boolean
   readonly onChange: (configuration: ConfigurationDraft) => void
-}): JSX.Element {
+}
+
+export function ConfigurationEditor(props: ConfigurationEditorProps & { readonly placement: PresetPlacement }): JSX.Element {
+  return (
+    <Show when={props.placement === "cloud"} fallback={<LocalConfigurationEditor {...props} />}>
+      <CloudConfigurationPicker {...props} />
+    </Show>
+  )
+}
+
+function LocalConfigurationEditor(props: ConfigurationEditorProps): JSX.Element {
   const t = useTranslator(tasksDictionary)
   const server = useServer()
   const placements = useQuery(() => server.queries.placements.list())

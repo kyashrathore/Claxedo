@@ -149,6 +149,13 @@ const en = {
   "tasks.preset.nameTooLong": "Name is longer than {{max}} characters.",
   "tasks.preset.cloudHarnessElsewhere":
     "{{harness}} runs in its own session host on a cloud workspace, and a cloud task starts its session in the workspace's runtime. Choose another harness for a cloud preset.",
+  "tasks.preset.cloudModelUnlisted":
+    "{{harness}} lists its models only from a running workspace and has no default a cloud preset can name. Choose another harness for a cloud preset.",
+  "tasks.preset.cloudDefaultModel":
+    "Runs on {{harness}}'s default model. A harness lists its models only from a running workspace, and a cloud task starts in a new one.",
+  "tasks.preset.cloudSavedModel": "Runs on {{model}}.",
+  "tasks.preset.harness": "Harness",
+  "tasks.preset.harnessPlaceholder": "Choose a harness",
   "tasks.preset.chooseHarness": "Choose a harness.",
   "tasks.preset.chooseModel": "Choose a model for this harness.",
   "tasks.preset.primaryRequired": "The primary configuration is required.",

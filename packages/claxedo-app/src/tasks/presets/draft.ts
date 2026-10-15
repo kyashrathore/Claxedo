@@ -11,6 +11,7 @@ import {
   type PresetPlacement,
 } from "@claxedo/tasks"
 import type { TasksKey } from "../i18n"
+import { cloudPresetModel } from "./cloud-model"
 
 export type CapabilitySelection = { readonly sourceId: string; readonly name: string }
 
@@ -98,10 +99,13 @@ function nameProblem(name: string): FieldProblem | undefined {
 }
 
 export function cloudHarnessProblem(draft: PresetEditorDraft, slot: ConfigurationSlot): FieldProblem | undefined {
-  const harness = draft.configurations[slot]?.harness
-  if (draft.placement !== "cloud" || !harness || cloudHarnessHost(harness.id) !== "session-host") return undefined
+  const configuration = draft.configurations[slot]
+  const harness = configuration?.harness
+  if (draft.placement !== "cloud" || !harness) return undefined
   const label = AGENT_HARNESS_DEFINITIONS.find((definition) => definition.id === harness.id)?.label ?? harness.id
-  return { key: "tasks.preset.cloudHarnessElsewhere", params: { harness: label } }
+  if (cloudHarnessHost(harness.id) === "session-host") return { key: "tasks.preset.cloudHarnessElsewhere", params: { harness: label } }
+  if (!configuration.model && !cloudPresetModel(harness)) return { key: "tasks.preset.cloudModelUnlisted", params: { harness: label } }
+  return undefined
 }
 
 function parseConfigurations(draft: PresetEditorDraft, fields: Record<string, FieldProblem>) {
@@ -109,9 +113,9 @@ function parseConfigurations(draft: PresetEditorDraft, fields: Record<string, Fi
   for (const slot of CONFIGURATION_SLOTS) {
     const entry = draft.configurations[slot]
     if (!entry) continue
-    const elsewhere = cloudHarnessProblem(draft, slot)
-    if (elsewhere) fields[`configurations.${slot}.cloud`] = elsewhere
-    if (!entry.harness) fields[`configurations.${slot}.harness`] = { key: "tasks.preset.chooseHarness" }
+    const cloud = cloudHarnessProblem(draft, slot)
+    if (cloud) fields[`configurations.${slot}.cloud`] = cloud
+    else if (!entry.harness) fields[`configurations.${slot}.harness`] = { key: "tasks.preset.chooseHarness" }
     else if (!entry.model) fields[`configurations.${slot}.model`] = { key: "tasks.preset.chooseModel" }
     else configurations[slot] = { harness: entry.harness, model: entry.model, effort: entry.effort }
   }
