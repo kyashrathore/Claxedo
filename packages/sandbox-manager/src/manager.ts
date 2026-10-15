@@ -373,17 +373,23 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     message: string,
     enteredAt: number,
   ): Promise<SandboxEnsureResult> {
+    if (!(await endGoneHostLease(workspaceId, lease, message))) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion: lease.homeRegion }
+    const admitted = await admit(workspaceId, managerInput)
+    if (!("lease" in admitted)) return admitted
+    return provisionLease(workspaceId, admitted.lease, admitted.lease.homeRegion, managerInput, enteredAt)
+  }
+
+  /** Ends the lease of a host found gone, its boot closing at the last moment the host was proven serving; false when the epoch moved on first. */
+  async function endGoneHostLease(workspaceId: string, lease: SandboxLease, message: string): Promise<boolean> {
     const endedAt = hostLastProvenAliveAt(lease)
     const ended = await options.leaseStore.update(workspaceId, lease.epoch, {
       status: "destroyed",
       lastError: sandboxHostGoneError(message),
       ...(endedAt === undefined ? {} : { endedAt }),
     })
-    if (!ended) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion: lease.homeRegion }
+    if (!ended) return false
     lifecycle.destroyed(lease, endedAt)
-    const admitted = await admit(workspaceId, managerInput)
-    if (!("lease" in admitted)) return admitted
-    return provisionLease(workspaceId, admitted.lease, admitted.lease.homeRegion, managerInput, enteredAt)
+    return true
   }
 
   /**
@@ -644,6 +650,13 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         const resource = { ...target, ...(checkpoint ? { checkpoint } : {}) }
         return (await ended(resource, await hostStopped(stopHost, resource))) ?? { ok: false, reason: "runtime_lease_changed" }
       })
+    },
+    async endIfHostGone(workspaceId, epoch) {
+      const lease = await options.leaseStore.get(workspaceId)
+      if (!lease || lease.epoch !== epoch || !options.driver.inspect) return false
+      const target = await leaseTarget(lease)
+      if (target.status !== "ready" || await options.driver.inspect(target)) return false
+      return await endGoneHostLease(workspaceId, lease, `${target.sandboxId} is gone`)
     },
     async destroy(workspaceId) {
       return await mutationLifecycle(workspaceId, "destroy", async () => {

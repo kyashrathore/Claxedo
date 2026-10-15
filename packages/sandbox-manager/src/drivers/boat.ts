@@ -483,6 +483,16 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     await client.delete(target.sandboxId)
   }
 
+  async function inspect(target: SandboxTarget) {
+    try {
+      await client.get(target.sandboxId)
+      return target
+    } catch (err) {
+      if (err instanceof BoatApiError && GONE_CODES.has(err.code)) return undefined
+      throw err
+    }
+  }
+
   return {
     id: "boat",
     metadata: sandboxDriverCatalog.boat.metadata,
@@ -493,5 +503,6 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     suspend: stop,
     stop,
     destroy,
+    inspect,
   }
 }

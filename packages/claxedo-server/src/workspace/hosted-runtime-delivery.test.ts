@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { createSandboxManager, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
+import { createSandboxManager, type SandboxDriver, type SandboxDriverEnsureInput, type SandboxTarget } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -62,6 +62,7 @@ function recreatingDriver() {
       }
       return { sandboxId: `sb_${input.workspaceId}`, url: "https://runtime.test", hostId, labels: input.labels }
     },
+    inspect: async (target: SandboxTarget) => (hosts.has(target.hostId) ? target : undefined),
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "suspends-host",
@@ -302,6 +303,19 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(stops).toEqual([])
     expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
     expect(stops).toEqual([{ workspaceId, epoch: 1 }])
+  })
+
+  test("a runtime that answers nothing on a host the provider no longer has ends its lease at the first read, without spending the failure budget", async () => {
+    const { delivery, create, stops, lose, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    lose()
+
+    expect(await delivery.start.watch(workspaceId, 0)).toBeUndefined()
+    expect(stops).toEqual([])
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "unavailable", leaseStatus: "destroyed" })
+    expect((await sandboxManager.list()).find((lease) => lease.workspaceId === workspaceId)).toMatchObject({ status: "destroyed", lastError: `runtime_host_gone: sb_${workspaceId} is gone` })
   })
 })
 
