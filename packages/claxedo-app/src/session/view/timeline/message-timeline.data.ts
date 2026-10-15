@@ -90,13 +90,15 @@ export namespace Timeline {
     const compaction = userParts.some((p) => p.type === "compaction")
     const handoff = userParts.flatMap(readHandoffPart)[0]
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
+    const runStopped = isActive && status === "interrupted" && lastAssistantMessage !== undefined
+      && typeof lastAssistantMessage.time.completed !== "number"
     const shape = turnFoldShape({
       assistantMessages,
       partsOf: getMessageParts,
       hasText,
       showReasoning,
       compaction,
-      cancelledAssistantMessageId: cancelledAssistantMessageId(lastTurn),
+      cancelledAssistantMessageId: runStopped ? lastAssistantMessage.id : cancelledAssistantMessageId(lastTurn),
     })
     const interrupted = shape.interruptedMessageIndex !== -1
     const errorMessage = shape.errorMessage
@@ -151,7 +153,7 @@ export namespace Timeline {
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
     const interruptedActivityTime =
-      interrupted && !shape.harnessInterrupted
+      interrupted && !shape.harnessInterrupted && !runStopped
         ? lastTurn?.completedAt
         : interrupted && lastAssistantMessage
           ? lastKnownPartActivity(getMessageParts(lastAssistantMessage.id))
@@ -208,7 +210,7 @@ export namespace Timeline {
           TimelineRow.TurnDivider({
             userMessageId: userMessage.id,
             label: "interrupted",
-            ...(typeof durationMs === "number" ? { durationMs } : {}),
+            ...(typeof durationMs === "number" && !runStopped ? { durationMs } : {}),
           }),
         )
         return
