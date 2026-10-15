@@ -3,7 +3,7 @@ import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
 import { followWorkspaceStart, startWorkspace, type StartOptions } from "./workspace-start"
-import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, isImageOutdated, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
+import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, isImageOutdated, unavailableRetry, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
 import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
 import { asArray, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { ServerError } from "./errors"
@@ -97,9 +97,9 @@ async function requestConnection(request: Request, workspaceId: string, start: b
   if (response.ok) return connectionAnswerFromWire(await response.json(), workspaceId)
   const body = response.clone()
   const error = await responseError(response, start ? "Workspace start" : "Workspace connection")
-  const retryAfterMs = start && error.code === CLOUD_RUNTIME_UNAVAILABLE ? unavailableRetryAfter(JSON.parse(await body.text())) : undefined
-  if (retryAfterMs === undefined) throw error
-  return { kind: "provisioning", retryAfterMs }
+  const retrying = start && error.code === CLOUD_RUNTIME_UNAVAILABLE ? unavailableRetry(JSON.parse(await body.text())) : undefined
+  if (!retrying) throw error
+  return retrying
 }
 
 export function createWorkspaceConnections(request: Request, account?: HostedAccount): WorkspaceConnections {

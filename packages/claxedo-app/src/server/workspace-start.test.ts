@@ -39,6 +39,24 @@ test("workspace start: polls the explicit connect while it provisions, each wait
   expect(progress).toEqual([{ kind: "provisioning", bootMode: "resume" }, { kind: "provisioning" }, { kind: "provisioning" }])
 })
 
+test("workspace start: a start the server retries after a failed step reports that failure with its progress until a step succeeds", async () => {
+  const server = answers(
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" }),
+    json({ error: { code: "cloud_runtime_unavailable", message: "quota exceeded", retryAfterMs: 15_000, failure: "quota exceeded" } }, 409),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume" }),
+    json(READY),
+  )
+  const progress: WorkspaceStartProgress[] = []
+
+  await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async () => undefined })
+
+  expect(progress).toEqual([
+    { kind: "provisioning", bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" },
+    { kind: "provisioning", failure: "quota exceeded" },
+    { kind: "provisioning", bootMode: "resume" },
+  ])
+})
+
 test("workspace start: a refusal with no retry hint fails at once with the server's reason", async () => {
   const server = answers(json({ error: { code: "billing_entitlement_required", message: "An active subscription is required" } }, 402))
 

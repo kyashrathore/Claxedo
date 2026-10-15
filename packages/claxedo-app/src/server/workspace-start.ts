@@ -21,7 +21,7 @@ async function settledAnswer(connect: Connect, workspaceId: string, options: Sta
   for (;;) {
     const answer = await connect(workspaceId)
     if (answer.kind !== "provisioning") return answer
-    options.onProgress?.({ kind: "provisioning", ...(answer.bootMode ? { bootMode: answer.bootMode } : {}) })
+    options.onProgress?.({ kind: "provisioning", ...(answer.bootMode ? { bootMode: answer.bootMode } : {}), ...(answer.failure ? { failure: answer.failure } : {}) })
     await wait(retryDelay(answer.retryAfterMs))
   }
 }

@@ -5,6 +5,7 @@ import { ServerError } from "./errors"
 import { placementId } from "./ids"
 import type { Placement } from "./types"
 import type { RuntimeRoute, Transport } from "./transport"
+import type { WorkspaceStartProgress } from "./cloud-types"
 import type { StartOptions } from "./workspace-start"
 import { createWorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
@@ -16,7 +17,7 @@ type Start = { resolve: () => void; reject: (error: unknown) => void }
 
 type Lifecycle = Extract<Placement, { kind: "cloud" }>["lifecycle"]
 
-function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle } = {}) {
+function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; startProgress?: readonly WorkspaceStartProgress[] } = {}) {
   const starts: Start[] = []
   const follows: Start[] = []
   const placements: Record<string, Placement> = {
@@ -30,7 +31,7 @@ function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle } 
       return () => undefined
     },
     startRuntime: (_workspaceId: string, options?: StartOptions) => {
-      options?.onProgress?.({ kind: "provisioning", bootMode: "resume" })
+      for (const progress of server.startProgress ?? [{ kind: "provisioning", bootMode: "resume" }]) options?.onProgress?.(progress)
       return new Promise<void>((resolve, reject) => starts.push({ resolve, reject }))
     },
     followRuntime: (_workspaceId: string, options?: StartOptions) => {
@@ -204,4 +205,13 @@ test("a failed Restart to update keeps its reason and Try again on the running w
   starts[1]?.resolve()
   await retry
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
+})
+
+test("wakes: a start the server retries after a failed step reads waking with that failure", async () => {
+  const { starts, wakes } = fixture({ value: false }, { startProgress: [{ kind: "provisioning", bootMode: "resume" }, { kind: "provisioning", failure: "quota exceeded" }] })
+  void wakes.start(cloud)
+  await settle()
+  expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "resume", failure: "quota exceeded" })
+  starts[0]!.resolve()
+  await settle()
 })

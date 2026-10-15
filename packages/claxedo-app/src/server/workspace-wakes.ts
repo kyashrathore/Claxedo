@@ -22,7 +22,7 @@ const CHECKPOINT_SETTLE_MS = 5_000
 
 function runtimeOf(wake: WakeState, placement: Placement | undefined): WorkspaceRuntime {
   const asleep = isStoppedCloud(placement)
-  if (wake.kind === "waking") return { kind: "waking", ...(wake.bootMode ? { bootMode: wake.bootMode } : {}) }
+  if (wake.kind === "waking") return { kind: "waking", ...(wake.bootMode ? { bootMode: wake.bootMode } : {}), ...(wake.failure ? { failure: wake.failure } : {}) }
   if (wake.kind === "outdated" && !asleep) return { kind: "outdated" }
   if (wake.kind === "failed" && (asleep || wake.restart)) return { kind: "wakeFailed", error: wake.error }
   if (isStartingCloud(placement)) return { kind: "waking" }
@@ -35,7 +35,7 @@ async function driveWake(run: Run, workspaces: Workspaces, id: PlacementId, send
   send({ type: "wakeStarted" })
   try {
     const { workspaceId } = await workspaces.locate(id)
-    await run(workspaceId, { onProgress: (progress) => send({ type: "provisioning", ...(progress.bootMode ? { bootMode: progress.bootMode } : {}) }) })
+    await run(workspaceId, { onProgress: (progress) => send({ type: "provisioning", ...(progress.bootMode ? { bootMode: progress.bootMode } : {}), ...(progress.failure ? { failure: progress.failure } : {}) }) })
     await workspaces.refresh()
     send({ type: "woke" })
   } catch (cause) {
