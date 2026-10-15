@@ -118,7 +118,7 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     for (const key of this.userDefaults.keys()) ids.add(JSON.parse(key)[1])
     for (const key of this.projectOverrides.keys()) ids.add(JSON.parse(key)[2])
     for (const key of this.organizationDefaults) ids.add(JSON.parse(key)[1])
-    return [...ids].sort().map((pluginInstanceId) => ({
+    return [...ids].filter((id) => !isBuiltinPluginInstanceId(id)).sort().map((pluginInstanceId) => ({
       pluginInstanceId,
       pins: { ...this.pins.get(pluginInstanceId) },
     }))

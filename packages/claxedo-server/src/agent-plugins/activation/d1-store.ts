@@ -123,7 +123,9 @@ function conflict(expected: number, current: number) {
 /**
  * The built-in comes from no source, so there is no tree to retain and no pin
  * to point at. The rule the pin enforces — never enable bytes this deployment
- * does not hold — is already true of it: the bytes are the product.
+ * does not hold — is already true of it: the bytes are the product. Its
+ * groups' rows are tool-group state read by ID; listed as known plugins they
+ * would enter artifact selection as plugins enabled without an artifact.
  */
 function requiresRetainedArtifact(pluginInstanceId: string) {
   return !isBuiltinPluginInstanceId(pluginInstanceId)
@@ -677,7 +679,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       ...organizationDefaults,
       ...claxedoDefaults,
     ])
-    return [...ids].toSorted().map((pluginInstanceId) => {
+    return [...ids].filter(requiresRetainedArtifact).toSorted().map((pluginInstanceId) => {
       const user = userPins.get(pluginInstanceId)
       const organization = organizationPins.get(pluginInstanceId)
       const claxedo = claxedoPins.get(pluginInstanceId)

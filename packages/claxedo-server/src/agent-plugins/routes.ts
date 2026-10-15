@@ -381,9 +381,7 @@ export function HostedAgentPluginRoutes(input: {
     const delivery: CatalogCloudDelivery = { imageCommands: input.imageCommands ?? [], secretBrokering }
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
     const candidateIds = new Set(resolved.candidates.map((candidate) => candidate.pluginInstanceId))
-    // A group's activation row is the built-in entry's own state; listed
-    // on its own it would be a plugin with no source and no artifact.
-    const retainedEntries = known.filter((entry) => !candidateIds.has(entry.pluginInstanceId) && !isBuiltinPluginInstanceId(entry.pluginInstanceId))
+    const retainedEntries = known.filter((entry) => !candidateIds.has(entry.pluginInstanceId))
     const snapshots = await input.activations.read(auth, {
       pluginInstanceIds: [...builtInIds(), ...candidateIds, ...retainedEntries.map((entry) => entry.pluginInstanceId)],
       ...(projectId ? { projectId } : {}),

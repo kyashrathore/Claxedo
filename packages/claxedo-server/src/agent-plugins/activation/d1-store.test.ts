@@ -4,7 +4,8 @@ import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { AgentPluginActivationStoreError } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { AgentPluginArtifactPin } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
-import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES, type AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
@@ -16,6 +17,8 @@ import {
   type AgentPluginActivationAuthority,
 } from "./d1-store"
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
+import { desiredAgentPluginSelections } from "../runtime/provision"
+import { createCloudRootToolGroups } from "../runtime/cloud-root-environment"
 
 
 const PLUGIN = "claxedo/review"
@@ -598,6 +601,46 @@ describe("D1 signed Agent Plugins activation store", () => {
     await expect(store.runtimeSnapshot(local.workspace_id)).rejects.toThrow(
       "Agent Plugins cloud workspace not found",
     )
+  })
+
+  test("a built-in tool group's switch reaches the root's tool groups and never enters artifact selection", async () => {
+    const { authority, store } = await setup()
+    const auth = await signed(authority, identity("alice"))
+    const { userId, orgId } = await principalOf(authority, auth)
+    const cloud = await workspace({ authority, auth, orgId, workspaceId: "ws-cloud", backing: "cloud-vm" })
+    const root = { userId, orgId, projectId: cloud.project_id, workspaceId: cloud.workspace_id }
+    const toolGroups = createCloudRootToolGroups({
+      activations: store,
+      builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } },
+    })
+    const toggle = async (groupId: string, choice: boolean) => await store.mutateUser(auth, {
+      pluginInstanceId: `claxedo:${groupId}`,
+      harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
+      choice,
+      target: { scope: "all-projects" },
+      expectedRevision: await store.revision(auth),
+    })
+    expect(await toolGroups(root)).not.toContain("tasks")
+    expect(await toolGroups(root)).toContain("sessions")
+
+    await toggle("tasks", true)
+    await toggle("sessions", false)
+    await toggle("sessions", true)
+    await toggle("documents", true)
+
+    for (const snapshot of [await store.runtimeSnapshot(cloud.workspace_id), await store.runtimeSnapshotForUser(auth)]) {
+      expect(snapshot.plugins).toEqual([])
+      expect(desiredAgentPluginSelections(snapshot)).toEqual([])
+    }
+    expect(await store.listKnown(auth)).toEqual([])
+    expect(await toolGroups(root)).toEqual(expect.arrayContaining(["tasks", "sessions", "documents"]))
+
+    await toggle("tasks", false)
+    await toggle("sessions", false)
+    const after = await toolGroups(root)
+    expect(after).not.toContain("tasks")
+    expect(after).not.toContain("sessions")
+    expect(desiredAgentPluginSelections(await store.runtimeSnapshot(cloud.workspace_id))).toEqual([])
   })
 
   test("serves the signed user's all-projects world without any project override", async () => {
