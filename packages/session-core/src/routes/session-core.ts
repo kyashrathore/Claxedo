@@ -25,14 +25,11 @@ import { AgentMessagePageError, parseMessagePageQuery, type AgentMessagePage, ty
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-runtime-contract"
 import { asRecord, asNumber, asString } from "@claxedo/helpers/guards"
 import {
-  isAgentRuntimeMessageIdConflictError,
   isAgentRuntimeTurnAdmissionError as isAgentRuntimeTurnConflictError,
   type HarnessTarget,
 } from "../host/runtime"
 import {
   envelopeDirectory,
-  runRuntimePromptTurn,
-  sessionPromptReply,
   parseSessionPromptBody,
   type SessionPromptBody,
 } from "../session/service"
@@ -79,22 +76,14 @@ import {
 import {
   effectivePermissionCeiling,
   permissionModeUnderCeiling,
-  rejectPermissionOverride,
   sessionPermissionCeiling,
 } from "./session-permission-ceiling"
 import {
-  acquireManagedPromptLease,
-  admitQueuedDelivery,
   createPromptAdmission,
   deferredTurnGrant,
   deferredTurnGrantRefused,
-  flushDocumentsAfterTurn,
-  messageIdConflict,
   publishTurnFailure,
-  settleChildTurn,
-  steerAnswerStatus,
   turnAdmissionConflict,
-  turnScope,
 } from "./session-prompt-admission"
 import {
   after,
@@ -102,7 +91,6 @@ import {
   readSession,
   recordReaderSend,
   requestSecretAuthority,
-  requestTurnSender,
   sessionConfigOf,
   sessionOwner,
   sessionTarget,
@@ -110,11 +98,11 @@ import {
   type SessionRouteContext as Ctx,
   type SessionRouteOptions as Opts,
 } from "./session-route-options"
-import type { ActiveSessionTurnLease } from "./session-turn-lease"
-import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
+import { cancelAdmittedTurn, recoveryCaller } from "./session-turn-containment"
 import { toolImageResponse } from "./tool-image"
-import { messageUpdated, sessionUpdated, withDir } from "../projection/presentation-events"
+import { sessionUpdated, withDir } from "../projection/presentation-events"
 import { sessionDeleteRoute } from "./session-delete"
+import { sessionMessageRoute } from "./session-message-route"
 import { compensateRegistration, registerCreatedSession, registrationOperationId } from "./session-registration"
 
 type DraftTarget = Extract<HarnessTarget, { harness: SessionHarness }>
@@ -333,21 +321,6 @@ function sessionLifecycleInfo(input: {
       ...(archived !== undefined ? { archived } : {}),
     },
   }
-}
-
-/**
- * The revoked caller's answer, carrying what containment reached for the turn
- * it lost. That result is the lease's alone until this point: the caller is
- * the one owed it, and it names an operation the runtime's own inspection
- * then reports for as long as it stays unresolved.
- */
-function lostTurnResponse(sessionId: string, lease?: ActiveSessionTurnLease) {
-  const loss = lease?.lossResult()
-  return Response.json(errorBody(
-    "session_turn_lease_lost",
-    `Session ${sessionId} turn authority was lost before completion`,
-    loss ? { containment: loss } : undefined,
-  ), { status: 409 })
 }
 
 const RECOVERY_REFUSAL_STATUS: Readonly<Record<RecoveryRefusal["kind"], ContentfulStatusCode>> = {
@@ -1143,74 +1116,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .patch("/session/:id/config", (c) => sessionConfigWrite(opts, c))
     .delete("/session/:id", (c) => sessionDeleteRoute(opts, c, withSessionChange))
-    .post("/session/:id/message", async (c) => {
-      const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId: id })
-      if (!await readSession(opts, c, directory, id)) return c.json(sessionNotFound(), 404)
-      const runtime = await opts.runtime(c)
-      const parsedBody = parseSessionPromptBody(await boundedJsonBody(c))
-      const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-      const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
-      if (permissionRefusal) return permissionRefusal
-      if (body.delivery) {
-        const messageID = body.messageID ?? `msg_${crypto.randomUUID()}`
-        const delivered = await admitQueuedDelivery(opts, c, runtime, { sessionId: id, body: { ...body, messageID, delivery: body.delivery } })
-        if ("refused" in delivered) return delivered.refused
-        if ("queued" in delivered) return c.json({ delivery: "queue", messageID }, 202)
-        if (delivered.steered.ok) return c.json({ delivery: "steer", messageID })
-        return c.json({ ...delivered.steered, error: delivered.steered.message }, steerAnswerStatus(delivered.steered))
-      }
-      const lostTurn = captureTurnTarget((target) => opts.childSessions?.onTurnStarted(id, directory, target.turnId))
-      const turnAdmission = await acquireManagedPromptLease({
-        opts,
-        c,
-        sessionId: id,
-        turnId: body.messageID,
-        onLost: () => containLostTurn({ runtime: runtime.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
-      })
-      if (turnAdmission.rejected) return turnAdmission.rejected
-      const activeTurn = opts.createActiveTurnScope
-        ? turnScope(opts.createActiveTurnScope({ c, directory, sessionId: id }), turnAdmission.lease)
-        : undefined
-      try {
-        const turn = await (async () => {
-        try {
-          return await runRuntimePromptTurn({
-                runtime,
-                sessionId: id,
-                directory,
-                body,
-                ...requestTurnSender(c),
-                publishGlobal: opts.publishGlobal,
-                activeTurn,
-                onTurnTarget: lostTurn.set,
-                ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-              })
-        } finally {
-          if (!turnAdmission.lease?.lost()) await flushDocumentsAfterTurn(opts, id)
-          await settleChildTurn(opts, id, directory, lostTurn.get()?.turnId)
-        }
-        })()
-        if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {
-          return lostTurnResponse(id, turnAdmission.lease)
-        }
-        await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
-        if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {
-          return lostTurnResponse(id, turnAdmission.lease)
-        }
-        const output = sessionPromptReply(turn)
-        if (output.assistantMessage) opts.publishGlobal(withDir(turn.scope, messageUpdated(output.assistantMessage)))
-        return c.json(output.body)
-      } catch (error) {
-        if (turnAdmission.lease?.lost()) return lostTurnResponse(id, turnAdmission.lease)
-        if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
-        throw error
-      } finally {
-        await turnAdmission.lease?.release().catch(() => undefined)
-      }
-    })
+    .post("/session/:id/message", (c) => sessionMessageRoute(opts, c))
     .get("/session/:id/message/:messageId/attachment/:attachmentId", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")

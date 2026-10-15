@@ -403,6 +403,19 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.ok(host.controlPlane.calls.releases.indexOf("msg_evict_queued") >= 0)
   })
 
+  void it("takes a message sent between a turn's answer and its lease's release, and runs it once the lease is released", { timeout: 120_000 }, async () => {
+    const root = "ses_send_in_release_gap"
+    const host = await session(root)
+    host.controlPlane.control.releaseDelayMs = 1_500
+    await host.prompt("msg_gap_first", "Reply with exactly this one token: PIGAPFIRST")
+    await host.settled("PIGAPFIRST")
+    assert.equal(host.controlPlane.calls.releases.includes("msg_gap_first"), false)
+    await host.prompt("msg_gap_next", "Reply with exactly this one token: PIGAPNEXT")
+    await host.settled("PIGAPNEXT")
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_gap_first", "msg_gap_next"])
+    assert.deepEqual(host.controlPlane.calls.releases.slice(0, 1), ["msg_gap_first"])
+  })
+
   void it("draws every turn's tool rows in the first read a reload takes, as the live stream showed them, after the object restarts", { timeout: 120_000 }, async () => {
     const root = "ses_reload_tools"
     const host = await session(root)
@@ -654,9 +667,6 @@ void describe("SessionDO under workerd with PiHarness", () => {
 
   const NO_PLUGINS: RuntimeConfigSnapshotPlugins = { harnessLaunch: {}, mcp: {} }
   const toolParts = (messages: StoredMessage[], tool: string) => messages.flatMap((message) => message.parts).filter((part) => part.type === "tool" && part.tool === tool)
-  /** A turn's answer shows before its lease is released, and the plane refuses another turn's acquire until it is. */
-  const released = (host: Awaited<ReturnType<typeof session>>, turnId: string) =>
-    eventually(`${turnId}'s lease released`, async () => host.controlPlane.calls.releases.includes(turnId) ? true : undefined, 15_000)
 
   void it("answers a turn while the workspace machine sleeps, without starting it or asking for it", { timeout: 120_000 }, async () => {
     plugins = NO_PLUGINS
@@ -677,9 +687,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const write = async (marker: string) => {
       model.scriptTool({ name: "write", input: { path: "asleep.txt", content: `${marker}\n` }, whenPromptIncludes: marker })
       await host.prompt(`msg_${marker}`, `Write the file, then reply with exactly this one token: ${marker}`)
-      const state = toolParts(await host.settled(marker), "write").at(-1)?.state
-      await released(host, `msg_${marker}`)
-      return state
+      return toolParts(await host.settled(marker), "write").at(-1)?.state
     }
 
     const started = await write("PIASLEEPSTART")
@@ -712,7 +720,6 @@ void describe("SessionDO under workerd with PiHarness", () => {
       host.controlPlane.control.machine = "asleep"
       await host.prompt("msg_asleep_skills", "Reply with exactly this one token: PIASLEEPSKILLS")
       await host.settled("PIASLEEPSKILLS")
-      await released(host, "msg_asleep_skills")
       assert.deepEqual(host.controlPlane.calls.starts, [])
       const asleep = model.requests.filter((request) => request.prompt.includes("PIASLEEPSKILLS"))
       assert.ok(asleep.length > 0 && asleep.every((request) => !request.prompt.includes("PROBESKILLDESCRIPTION")))
@@ -739,7 +746,6 @@ void describe("SessionDO under workerd with PiHarness", () => {
       control.machine = "asleep"
       await host.prompt("msg_asleep_mcp", "Reply with exactly this one token: PIASLEEPMCP")
       await host.settled("PIASLEEPMCP")
-      await released(host, "msg_asleep_mcp")
       assert.deepEqual(host.controlPlane.calls.starts, ["msg_asleep_mcp"])
       const offered = (marker: string) => model.requests.find((request) => request.prompt.includes(marker))?.tools.map((tool) => tool.name) ?? []
       assert.equal(offered("PIASLEEPMCP").includes("mcp__machine__proof"), false)
