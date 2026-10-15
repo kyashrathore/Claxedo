@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
+import { vi } from "vitest"
 import type { SandboxLifecycleEvent, SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
-import { sandboxLifecycleSink, sandboxStartPhaseSink } from "./sandbox-telemetry"
+import { sandboxEgressUnenforcedSink, sandboxLifecycleSink, sandboxStartPhaseSink } from "./sandbox-telemetry"
 
 function sink() {
   const captured: Array<{ distinctId: string; event: string; properties?: Record<string, unknown> }> = []
@@ -35,6 +36,17 @@ describe("workspace start events", () => {
 })
 
 describe("workspace lifecycle events", () => {
+  test("a stop says why the machine ended: a host the provider lost is host_gone, a destroyed workspace machine is deleted", () => {
+    const { captured, telemetry } = sink()
+    const emit = sandboxLifecycleSink(telemetry)
+    emit({ ...machine, kind: "destroyed", hostGone: true, activeMs: 7_000 })
+    emit({ ...machine, kind: "destroyed", hostGone: false, activeMs: 5_700 })
+    expect(captured.map((entry) => [entry.event, entry.properties?.cause, entry.properties?.active_ms])).toEqual([
+      ["workspace_stopped", "host_gone", 7_000],
+      ["workspace_stopped", "deleted", 5_700],
+    ])
+  })
+
   const failed = (retrying: boolean, bootFailed = false): SandboxLifecycleEvent => ({ ...machine, kind: "failed", bootFailed, retrying })
 
   test("an epoch that failed while its start goes on sends nothing; the start's final failure is workspace_failed", () => {
@@ -51,11 +63,34 @@ describe("workspace lifecycle events", () => {
     const { captured, telemetry } = sink()
     const emit = sandboxLifecycleSink(telemetry)
     emit({ ...machine, kind: "stopped", idle: true, activeMs: 282_921 })
-    emit({ ...machine, kind: "destroyed" })
+    emit({ ...machine, kind: "destroyed", hostGone: false })
     expect(captured).toEqual([{
       distinctId: "system",
       event: "workspace_stopped",
       properties: { workspace_id: "ws_1", driver: "boat", project_id: "prj_1", org_id: "org_1", $groups: { org: "org_1" }, cause: "idle", active_ms: 282_921 },
     }])
+  })
+})
+
+describe("sandbox egress events", () => {
+  test("a start whose allowlist the driver withheld names its workspace and org as every workspace event does; the composition warning is the deployment's", () => {
+    const { captured, telemetry } = sink()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const emit = sandboxEgressUnenforcedSink(telemetry)
+    const base = { reason: "sandbox_egress_uncontained", driver: "boat", egressControl: "none", message: "egress is unrestricted" } as const
+    emit({ ...base, phase: "composition" })
+    emit({ ...base, phase: "ensure", workspaceId: "ws_1", labels: machine.labels, requested: { mode: "restricted", hosts: ["api.github.com"] } })
+    warn.mockRestore()
+    expect(captured).toEqual([
+      { distinctId: "system", event: "sandbox.egress_unenforced", properties: { phase: "composition", reason: "sandbox_egress_uncontained", driver: "boat", egress_control: "none" } },
+      {
+        distinctId: "system",
+        event: "sandbox.egress_unenforced",
+        properties: {
+          phase: "ensure", reason: "sandbox_egress_uncontained", driver: "boat", egress_control: "none",
+          workspace_id: "ws_1", org_id: "org_1", $groups: { org: "org_1" }, withheld_host_count: 1, withheld_cidr_count: 0,
+        },
+      },
+    ])
   })
 })

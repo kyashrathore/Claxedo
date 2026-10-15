@@ -19,3 +19,20 @@ test("resolver fences stale and missing routing identities against the current a
   await leaseStore.release("ws_1")
   expect(await lookup({ workspaceId: "ws_1", hostId: "host_1", routingId: "current" })).toEqual({ found: false, code: "runtime_access_token_invalid" })
 })
+
+test("a routed request's keep-alive touch is a workspace event: its workspace digest key and its org", async () => {
+  const captured: Array<{ distinctId: string; event: string; properties?: Record<string, unknown> }> = []
+  const target = { status: "ready", sandboxId: "s_1", hostId: "host_1", url: "https://runtime.test", routingId: "current", labels: { sandboxOrg: "org_1", sandboxKey: "key_1" } }
+  const sandboxManager = { target: async () => target, touch: async () => ({ touched: true, status: "ready" }) } as unknown as ReturnType<typeof createSandboxManager>
+  const touches: Promise<unknown>[] = []
+  const lookup = sandboxRelayTargetLookup({ sandboxManager, telemetry: { capture: (distinctId, event, properties) => void captured.push({ distinctId, event, properties }) } })
+
+  expect(await lookup({ workspaceId: "ws_1", hostId: "host_1", routingId: "current", waitUntil: (work) => void touches.push(work) })).toMatchObject({ found: true })
+  await Promise.all(touches)
+
+  expect(captured).toEqual([{
+    distinctId: "system",
+    event: "sandbox.touch",
+    properties: { workspace_id: "ws_1", org_id: "org_1", $groups: { org: "org_1" }, touched: true, status: "ready" },
+  }])
+})

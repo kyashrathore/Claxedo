@@ -48,7 +48,7 @@ Worker's sink (`platform/auth/worker-telemetry.ts`) forwards everything to PostH
 | `workspace_created`, `workspace_deleted` | `routes/hosted/workspace.ts`, `workspace/cloud-workspace-deletion.ts` | `kind`: cloud; created also `private_repository` |
 | `workspace_ready`, `workspace_woken` | `sandbox/sandbox-telemetry.ts` from the sandbox manager's `runtime_ready` phase | one per start the person asked for, however many lease epochs it took: `start_ms` (the connect that began the start to serving, across a retried or taken-over epoch), `boot_mode` (cold-start for a host that never served, resume or restore otherwise), `driver`, `org_id`, `region`. Opens the metered interval. |
 | `workspace_failed` | same, from the manager's `onLifecycle` | `code`: boot_failed, provision_failed. Only when the start itself ends: a boot failure or a spent retry budget. An epoch that fails while its retry is still ahead sends nothing; the next epoch continues the start. |
-| `workspace_stopped` | same | `cause`: explicit, idle, deleted; `active_ms` (the epoch's own machine time). Closes the metered interval. |
+| `workspace_stopped` | same | `cause`: explicit, idle, deleted (Claxedo destroyed the machine: a workspace delete or a destroy by hand), host_gone (the provider no longer has the host; the same start places a replacement); `active_ms` (the epoch's own machine time). Closes the metered interval. |
 | `broker_refused` | `credentials/hosted-egress-broker/index.ts`, sampled | `code` (the credential broker's error codes), `status`, `suppressed`: one event per code per minute per isolate, carrying how many refusals of that code the previous event stood for. No request detail. |
 | `$exception` | `deployments/hosted-workerd/core-worker.cf.ts` `onError` | an unhandled route error: `route` (the matched pattern), `method`, `code`; never the body |
 
@@ -58,7 +58,9 @@ user with their org.
 
 Every event about a workspace names it as `workspace_id` (digested), the route events through
 `captureWorkspaceTelemetry` (`workspace/route-support.ts`), which also sets `org_id` and `$groups.org` from the
-workspace row or the admission, so one query joins a workspace from `workspace_created` to its stops.
+workspace row or the admission, and the machine events, `sandbox.touch` and `sandbox.egress_unenforced` through
+`sandboxWorkspaceKeys` (`sandbox/sandbox-telemetry.ts`), which reads the org from the placement's labels, so one
+query joins a workspace from `workspace_created` to its stops.
 
 ## Ops events
 
@@ -68,9 +70,9 @@ workspace row or the admission, so one query joins a workspace from `workspace_c
 | `workspace.connection.unavailable` | `connections/hosted-connection-info.ts` | `backing`, `homeRegion`, `retryAfterMs` |
 | `sandbox.ensure` | `connections/hosted-connection-info.ts` | one per start decision, not per poll that joined the run in flight: `status`, `homeRegion`, `leaseEpoch`, `retryAfterMs`, `code`, `hostId` |
 | `sandbox.target` | same | `status`, `homeRegion`, `reason`, `leaseStatus`, `hostId`, `leaseEpoch` |
-| `sandbox.touch` | `authority/sandbox-relay-target.ts` | `touched`, `status` |
+| `sandbox.touch` | `authority/sandbox-relay-target.ts` | `workspace_id`, `org_id`, `touched`, `status` |
 | `sandbox.start_phase` | `sandbox/sandbox-telemetry.ts` | per epoch: `phase`, `duration_ms`, `epoch`, `region`, `boot_mode`, `repo_size_bytes` |
-| `sandbox.egress_unenforced` | `authority/provider-neutral-hosted-services.ts` | `phase`, `reason`, `driver`, `egress_control`, withheld counts |
+| `sandbox.egress_unenforced` | `sandbox/sandbox-telemetry.ts` | `phase`, `reason`, `driver`, `egress_control`; the `ensure` phase also `workspace_id`, `org_id` and the withheld counts. The `composition` phase is the deployment's, once per driver per isolate, and names no workspace. |
 | `sandbox.garbage_collect`, `sandbox.release` | `routes/hosted/sandbox-admin.ts` | the sweep's counts; a release names its workspace and whether it released |
 | `runtime_access_token.minted` | the connection paths | `backing`, `role`, `homeRegion`, `leaseEpoch` |
 | `host_workspace_assignment.assigned` | `workspace/host-assignment-handlers.ts` | `hostId` |
