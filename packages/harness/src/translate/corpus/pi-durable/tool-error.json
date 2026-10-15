@@ -975,7 +975,7 @@
           {
             "type": "tool-error",
             "toolCallId": "call_4|fc_4",
-            "error": "<harness>\n[error] ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'\n</harness>"
+            "error": "ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'"
           }
         ]
       }

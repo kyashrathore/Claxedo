@@ -51,6 +51,29 @@ test("Pi's file tools name their file in the display's filePath, as every harnes
     .toMatchObject({ kind: "command_execution", display: { intent: "shell", command: "ls" } })
 })
 
+test("a Pi tool's result shows its output and its diagnostics' messages, never the block Pi renders them into for the model", () => {
+  const send = translate()
+  const asleep = "The workspace machine was asleep. This tool call started it; it usually takes about a minute. Try this tool again in a few seconds."
+  send({ type: "tool_execution_start", toolCallId: "call-1", toolName: "bash", args: { command: "ls" } })
+  expect(send({ type: "tool_execution_end", toolCallId: "call-1", toolName: "bash", entry: {
+    model: [{ role: "toolResult", isError: true, content: [{ type: "text", text: `<harness>\n[error] ${asleep}\n</harness>` }] }],
+    data: { diagnostics: [{ severity: "error", code: "unknown", message: asleep }] },
+  } })).toEqual([{ type: "tool-error", toolCallId: "call-1", error: asleep }])
+
+  send({ type: "tool_execution_start", toolCallId: "call-2", toolName: "bash", args: { command: "false" } })
+  expect(send({ type: "tool_execution_end", toolCallId: "call-2", toolName: "bash", entry: {
+    model: [{ role: "toolResult", isError: true, content: [{ type: "text", text: "partial" }, { type: "text", text: "<harness>\n[error] exit code 1\n</harness>" }] }],
+    data: { diagnostics: [{ severity: "error", code: "exit", message: "exit code 1" }] },
+  } })).toEqual([{ type: "tool-error", toolCallId: "call-2", error: "partial\nexit code 1" }])
+
+  send({ type: "tool_execution_start", toolCallId: "call-3", toolName: "bash", args: { command: "seq 1 99999" } })
+  const truncated = { severity: "warn", code: "truncated", message: "Output truncated to its end: 9 lines, 90 bytes dropped" }
+  expect(send({ type: "tool_execution_end", toolCallId: "call-3", toolName: "bash", entry: {
+    model: [{ role: "toolResult", isError: false, content: [{ type: "text", text: "99999" }, { type: "text", text: `<harness>\n[warn] ${truncated.message}\n</harness>` }] }],
+    data: { diagnostics: [truncated] },
+  } })).toEqual([{ type: "tool-output", toolCallId: "call-3", output: { content: [{ type: "text", text: "99999" }], details: { diagnostics: [truncated] } } }])
+})
+
 test("Pi's retry after the vendor edge's block page names the refused connection, never the page", () => {
   const send = translate()
   const page = "<!DOCTYPE html><html><head><title>Unable to load site</title></head><body>Please try again later.</body></html>"

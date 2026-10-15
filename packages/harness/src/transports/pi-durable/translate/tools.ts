@@ -43,15 +43,30 @@ export function piToolUpdate(state: PiDurableTranslatorState, frame: Frame): PiS
   return piStep(state, text ? [{ type: "tool-content", toolCallId: id, content: { type: "content", content: { type: "text", text } } }] : [])
 }
 
+const RENDERED_DIAGNOSTICS = /^<harness>\n[\s\S]*\n<\/harness>$/
+
+function shownContent(content: unknown): unknown[] {
+  return asArray(content).filter((item) => !RENDERED_DIAGNOSTICS.test(asString(row(item).text) ?? ""))
+}
+
+function diagnosticMessages(data: unknown): string[] {
+  return asArray(row(data).diagnostics).flatMap((diagnostic) => asString(row(diagnostic).message) ?? [])
+}
+
 export function piToolEnd(state: PiDurableTranslatorState, frame: Frame): PiStep {
   const id = toolCallId(frame, "completion")
-  const result = row(asArray(row(frame.entry).model)[0])
+  const entry = row(frame.entry)
+  const result = row(asArray(entry.model)[0])
   if (result.role !== "toolResult") {
     return piStep(state, [{ type: "tool-error", toolCallId: id, error: `Pi tool ${String(frame.toolName)} ended without a result` }])
   }
-  if (result.isError === true) return piStep(state, [{ type: "tool-error", toolCallId: id, error: piResultText(result.content) }])
-  const output = { content: result.content, ...(row(frame.entry).data === undefined ? {} : { details: row(frame.entry).data }) }
-  const images = contentBlockImages(result.content)
+  const content = shownContent(result.content)
+  if (result.isError === true) {
+    const error = [piResultText(content), ...diagnosticMessages(entry.data)].filter((text) => text !== "").join("\n")
+    return piStep(state, [{ type: "tool-error", toolCallId: id, error }])
+  }
+  const output = { content, ...(entry.data === undefined ? {} : { details: entry.data }) }
+  const images = contentBlockImages(content)
   const event: AgentRuntimeEvent = { type: "tool-output", toolCallId: id, output, ...(images.length ? { attachments: images } : {}) }
   return piStep(state, [event])
 }

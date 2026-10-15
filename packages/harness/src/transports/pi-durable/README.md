@@ -28,6 +28,8 @@
 | `run_*`, `turn_*`, `submission`, `inbox_update`, `agent_changed`, `entry_appended`, `auto_retry_end`, `deferred_poll` | nothing |
 | anything else | one `debug` diagnostic per kind per session |
 
+A tool result's diagnostics reach the model as a `<harness>` block Pi appends to the result's content, while the entry's `data.diagnostics` keeps them structured. The person sees the content without that block: a failed tool's error is its output followed by the diagnostics' messages, and a successful one's diagnostics stay in its details.
+
 A model error Pi retries is `session-retry` and its failed attempt shows nothing. A context overflow makes Pi compact and retry once, with Pi's own compaction and retry defaults.
 
 `cancel` aborts the conversation: queued inputs are withdrawn, every task of the run is aborted, and a running bash command's group is retired. It answers `terminal` once Pi is idle, or `cancellation_timeout` at the deadline.

@@ -973,7 +973,7 @@
           {
             "type": "tool-error",
             "toolCallId": "call_15|fc_15",
-            "error": "<harness>\n[error] Tool bash was aborted\n</harness>"
+            "error": "Tool bash was aborted"
           }
         ]
       }
