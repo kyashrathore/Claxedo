@@ -48,16 +48,20 @@ export function sessionHostPlugins(input: {
  * its preparation is a native one whatever the deployment's driver brokers;
  * the machine is provisioned with the same plan, which at an unchanged
  * revision answers its active generation, so the launch names the roots the
- * host reads skills from.
+ * host reads skills from. The launch is the machine's, so a workspace whose
+ * machine is not running delivers none: a Pi turn there runs without its
+ * plugins and starts nothing, and the first turn after the machine runs
+ * carries them.
  */
 export function createSessionHostPlugins(input: {
   cloudWorkspace(workspaceId: string): Promise<boolean>
+  machineRunning(workspaceId: string): Promise<boolean>
   activations: { runtimeSnapshot(workspaceId: string): Promise<SignedAgentPluginRuntimeSnapshot> }
   preparer: { forSnapshot(snapshot: SignedAgentPluginRuntimeSnapshot, options: { secretBrokering: "native" }): Promise<WorkspaceRuntimePreparation> }
   provisioner: { provision(workspaceId: string, plan: AgentPluginRuntimeProjectionPlan): Promise<AgentPluginRuntimeApplyResponse> }
 }) {
   return async (workspaceId: string): Promise<RuntimeConfigSnapshotPlugins> => {
-    if (!(await input.cloudWorkspace(workspaceId))) return { harnessLaunch: {}, mcp: {} }
+    if (!(await input.cloudWorkspace(workspaceId)) || !(await input.machineRunning(workspaceId))) return { harnessLaunch: {}, mcp: {} }
     const preparation = await input.preparer.forSnapshot(await input.activations.runtimeSnapshot(workspaceId), { secretBrokering: "native" })
     const plan = agentPluginMcpRuntimePlan(preparation)
     const receipt = await input.provisioner.provision(workspaceId, plan)

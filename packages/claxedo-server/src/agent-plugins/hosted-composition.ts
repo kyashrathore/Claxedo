@@ -498,7 +498,13 @@ export function createHostedAgentPluginsComposition(input: {
     repositoryForAuth: createHostedRepositoryAccess(connectionsInput),
     prepareRuntime,
     pluginRuntime,
-    sessionHostPlugins: createSessionHostPlugins({ cloudWorkspace, activations, preparer, provisioner }),
+    sessionHostPlugins: createSessionHostPlugins({
+      cloudWorkspace,
+      machineRunning: async (workspaceId) => (await services.sandbox.sandboxManager?.target(workspaceId))?.status === "ready",
+      activations,
+      preparer,
+      provisioner,
+    }),
     sessionHostToolGroups: createCloudRootToolGroups({ activations, builtIn }),
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
