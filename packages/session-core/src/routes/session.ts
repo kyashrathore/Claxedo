@@ -1,7 +1,7 @@
 import type { SessionConfig, SessionHarness, SubagentObservation, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
-import { acquireSessionTurnLease, createHeldTurnLeases, type ActiveSessionTurnLease } from "./session-turn-lease"
+import { acquireSessionTurnLease, adoptSessionTurnLease, createHeldTurnLeases, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { createSessionRoutes } from "./session-core"
 import { publishTurnFailure } from "./session-prompt-admission"
 import type { SessionRouteContext } from "./session-route-options"
@@ -208,6 +208,12 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
    *
    * An origin that is absent — a row admitted before any of this was
    * recorded — is refused, because nothing about it can be re-decided.
+   *
+   * A steer is not a turn: it joins the one running, under that turn's lease,
+   * and only a request asks for one, which its route has already authorized.
+   * Taking a lease for it would be refused while a turn runs and, when none
+   * does, would redeem the row's single-use grant for a turn that never
+   * starts, so the row's own turn could never be admitted.
    */
   async function startHostTurn(input: HostTurnInput): Promise<"started" | "busy"> {
     const admission = admitHostTurn(input)
@@ -240,7 +246,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       operation: "prompt" as const,
       sessionId: input.sessionId,
     }
-    if (relayed) {
+    if (relayed && input.body.delivery !== "steer") {
       if (!options.sessionAccessPolicy || !input.body.messageID) throw new Error("Managed queued input requires turn authority and a message identity")
       if (options.sessionAccessPolicy.grantTurn && !relayed.grant) {
         return decline("Host-started relayed input carries no deferred turn grant to admit a turn under")
@@ -260,7 +266,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       })
       if (!acquired.acquired) return decline(acquired.decision.message)
       lease = acquired.lease
-    } else if (origin && options.sessionAccessPolicy) {
+    } else if (origin?.provenance === "loopback-direct" && options.sessionAccessPolicy) {
       const decision = await options.sessionAccessPolicy.authorize(access)
       if (!decision.allowed) return decline(decision.message)
     }
@@ -418,6 +424,16 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
      * waiting for these prompts any more, so no request will ask for them.
      */
     recoverQueuedPrompts: () => queuedPrompts?.recover() ?? Promise.resolve(),
+    /**
+     * Takes over a turn lease this host was issued before it restarted. It is
+     * held as a lease a turn acquires here is, so the queue waits for its
+     * release before it asks the authority for the next turn, which the
+     * authority refuses while this one is live.
+     */
+    adoptTurnLease: (input: Omit<Parameters<typeof adoptSessionTurnLease>[0], "policy" | "held">) => {
+      if (!options.sessionAccessPolicy) throw new Error("Adopting a turn lease requires durable session turn authority")
+      return adoptSessionTurnLease({ ...input, policy: options.sessionAccessPolicy, held: heldTurnLeases })
+    },
     dispose: async () => {
       // Refuse first, then wait, and wait for the askers before the turns:
       // an offer still choosing a turn is not in `hostTurns` yet, and the

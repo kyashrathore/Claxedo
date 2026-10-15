@@ -16,6 +16,7 @@ export type SessionDeliveryStore = {
   listQueuedPrompts(): QueuedPromptRecord[]
   claimQueuedPromptDelivery(sessionId: string, seq: number, operationId: string, mode: "start" | "steer"): boolean
   settleQueuedPromptDelivery(sessionId: string, seq: number, steering: QueuedPromptAttempt): boolean
+  requeueQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean
   setQueuedPromptHeld(sessionId: string, seq: number, held: boolean): boolean
   completeQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean
   retireSteeredPrompt(sessionId: string, messageId: string): boolean
@@ -103,6 +104,14 @@ export function createSessionDeliveryOwner(input: {
     }
     return result.ok ? { ok: true } : { ok: false, status: state === "unknown" ? "unknown" : "rejected", message: result.message, operationId }
   }
+  /** No turn was running to steer into, so the input runs as the queue's next turn, as if it had never been claimed. */
+  function requeue(record: QueuedPromptRecord, operationId: string): QueuedControlResult {
+    if (!announced(record.sessionId, store().requeueQueuedPrompt(record.sessionId, record.seq, operationId))) {
+      return { ok: false, status: "conflict", message: "Delivery ownership changed", operationId }
+    }
+    kick(record.sessionId)
+    return { ok: true }
+  }
   async function dispatch(record: QueuedPromptRecord, operationId: string, mode: "start" | "steer"): Promise<QueuedControlResult> {
     const directory = store().sessionDirectory(record.sessionId)
     if (!directory || disposed) return settle(record, operationId, mode, { ok: false, status: "declined", message: "Session delivery is unavailable" })
@@ -116,6 +125,7 @@ export function createSessionDeliveryOwner(input: {
         onDelivery: (value) => { delivery = value },
         onSteeringResult: (value) => { steering = value },
       })
+      if (mode === "steer" && steering?.ok === false && steering.status === "no_active_turn") return requeue(record, operationId)
       if (mode === "steer") return settle(record, operationId, mode, steering ?? { ok: false, status: "unknown", message: "Runtime did not report a steering outcome" })
       if (delivery === "start") {
         return announced(record.sessionId, store().completeQueuedPrompt(record.sessionId, record.seq, operationId))

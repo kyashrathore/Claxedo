@@ -39,8 +39,12 @@ export type ControlPlaneInput = {
  * turn-lease tokens it verifies again on renewal, release and delivery; an
  * acquire while another turn's lease is live is a 409, as on the real plane. A
  * deferred turn grant is minted for the caller and one turn id, and admits
- * that turn's acquire only when it arrives without a bearer, as the real
- * authority requires.
+ * that turn's acquire only when it arrives without a bearer and only once, as
+ * the real authority redeems it: a later acquire under it is admitted only
+ * while the lease it was redeemed for is live. A turn id in
+ * `control.refusedTurns` is refused as if another turn held the session, and
+ * `control.releaseDelayMs` holds every release that long before the lease is
+ * released, as a control plane slow to answer does.
  * `/turn-delivery` hands over the session creator's accounts, as the real
  * route does, and with `firstPartyMcp` on a fresh first-party MCP bearer the
  * real `/api/claxedo/mcp` route below admits until the session is deleted;
@@ -66,7 +70,9 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
   const control = {
     refuseRenewals: false, leaseTtlMs: 60_000, reservation: `op_${input.root}`, viewers: new Set<string>(),
     executionUnavailable: false, deleteUnavailable: false, firstPartyMcp: false, toolGroups: ["sessions"],
+    refusedTurns: new Set<string>(), releaseDelayMs: 0,
   }
+  const redeemedGrants = new Map<string, string>()
 
   const mint = async (lease: Lease) => {
     const expiresAt = Date.now() + control.leaseTtlMs
@@ -95,7 +101,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
   }
   const acquire = async (c: Context, turnId: string, userId: string) => {
     const held = [...leases.values()].find((lease) => !lease.released && lease.expiresAt > Date.now() && lease.turnId !== turnId)
-    if (held) return c.json({ error: { code: "session_turn_in_progress" } }, 409)
+    if (held || control.refusedTurns.has(turnId)) return c.json({ error: { code: "session_turn_in_progress" } }, 409)
     const lease = { sessionId: input.root, turnId, fencingToken: ++fencing, released: false, userId, expiresAt: 0 }
     leases.set(turnId, lease)
     return c.json(await mint(lease))
@@ -145,6 +151,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
         const lease = await liveLease(body.leaseId)
         if (!lease) return refused(c, 401, "session_turn_lease_invalid")
         if (action === "turn_release") {
+          await new Promise((resolve) => setTimeout(resolve, control.releaseDelayMs))
           lease.released = true
           calls.releases.push(lease.turnId)
           return c.json({ released: true })
@@ -157,7 +164,12 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
         const granted = await jwtVerify(body.grant, leaseSecret).catch(() => undefined)
         const userId = asString(granted?.payload.grantedTo)
         if (!userId || granted?.payload.sessionId !== input.root || granted.payload.turnId !== body.turnId || deleted) return refused(c, 401, "session_turn_grant_invalid")
-        return acquire(c, String(body.turnId), userId)
+        const redeemedFor = redeemedGrants.get(body.grant)
+        const redeemedLease = redeemedFor === undefined ? undefined : leases.get(redeemedFor)
+        if (redeemedFor !== undefined && (!redeemedLease || redeemedLease.released || redeemedLease.expiresAt <= Date.now())) return refused(c, 403, "session_turn_grant_redeemed")
+        const answer = await acquire(c, String(body.turnId), userId)
+        if (answer.ok) redeemedGrants.set(body.grant, String(body.turnId))
+        return answer
       }
       const userId = await relayCaller(c)
       if (!userId || body.sessionId !== input.root || deleted) return refused(c, 403, "session_private")

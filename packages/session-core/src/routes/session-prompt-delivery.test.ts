@@ -168,6 +168,7 @@ function durableQueue() {
       listQueuedPrompts: () => store.deliveryQueue.listQueuedPrompts(),
       claimQueuedPromptDelivery: (sessionId, seq, operationId, mode) => store.deliveryQueue.claimQueuedPromptDelivery(sessionId, seq, operationId, mode),
       settleQueuedPromptDelivery: (sessionId, seq, steering) => store.deliveryQueue.settleQueuedPromptDelivery(sessionId, seq, steering),
+      requeueQueuedPrompt: (sessionId, seq, operationId) => store.deliveryQueue.requeueQueuedPrompt(sessionId, seq, operationId),
       setQueuedPromptHeld: (sessionId, seq, held) => store.deliveryQueue.setQueuedPromptHeld(sessionId, seq, held),
       completeQueuedPrompt: (sessionId, seq, operationId) => store.deliveryQueue.completeQueuedPrompt(sessionId, seq, operationId),
       retireSteeredPrompt: (sessionId, messageId) => store.deliveryQueue.retireSteeredPrompt(sessionId, messageId),

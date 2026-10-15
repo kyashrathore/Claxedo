@@ -154,7 +154,7 @@ export function composeSessionHost(input: SessionHostCompositionInput) {
     return { credentials: sessionCredentials(launch, { owner, config }), projection: launch.projection(config.harness),
       providerDefinitions: launch.providerDefinitions?.() ?? [] }
   }
-  return { store, runtime, sessions, app, policy, turnContext }
+  return { store, runtime, sessions, app, turnContext }
 }
 
 export type SessionHost = ReturnType<typeof composeSessionHost>

@@ -122,13 +122,14 @@ learns about that turn from the transcript, not from the stream.
 it, and `PiHarness` keeps a wake job whose alarm restarts an evicted object
 while Pi has work. `PiHarness` resumes Pi as soon as its factory returns, so
 the object boots inside the factory: `recoverBusySessions` ends the interrupted
-turn as above, the control plane's turn lease the object stored is adopted
-(`adoptSessionTurnLease`) and the turn's delivery fetched with it, and
+turn as above, the control plane's turn lease the object stored is adopted through the
+session routes (`adoptTurnLease`) and the turn's delivery fetched with it, and
 `runtime.resumeDurableRuns` attaches the session, which installs Pi's
 extensions and admits the live run as a continuation turn. The continuation
 runs under the adopted lease, which is released when Pi goes idle; a refused
 renewal aborts the run. Queued prompts are re-issued after that, from the
-object's `onStart`.
+object's `onStart`, and the queue starts none of them until the adopted lease
+is released, since the authority refuses another turn while it is live.
 
 ## Not yet proven
 

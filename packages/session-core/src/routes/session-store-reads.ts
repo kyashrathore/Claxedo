@@ -17,6 +17,7 @@ export function queuedPromptStore(store: RuntimeStore): SessionDeliveryStore {
     completeQueuedPrompt: (sessionId, seq, operationId) => store.deliveryQueue.completeQueuedPrompt(sessionId, seq, operationId),
     retireSteeredPrompt: (sessionId, messageId) => store.deliveryQueue.retireSteeredPrompt(sessionId, messageId),
     settleQueuedPromptDelivery: (sessionId, seq, steering) => store.deliveryQueue.settleQueuedPromptDelivery(sessionId, seq, steering),
+    requeueQueuedPrompt: (sessionId, seq, operationId) => store.deliveryQueue.requeueQueuedPrompt(sessionId, seq, operationId),
     sessionDirectory: (sessionId) => store.getSession(sessionId)?.directory,
     sessionArchived: (sessionId) => store.getSession(sessionId)?.time?.archived !== undefined,
     messageSessionId: (messageId) => store.messageSessionId(messageId),
