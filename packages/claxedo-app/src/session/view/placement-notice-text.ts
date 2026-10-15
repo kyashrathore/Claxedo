@@ -9,12 +9,14 @@ export type PlacementFacts = {
   readonly wakeProgress: string | undefined
   readonly retryTime?: string
   readonly offline: boolean
+  readonly harnessRunsInSessionHost: boolean
   readonly wake: () => void
 }
 
 export function placementNotice(t: SessionScreenText, facts: PlacementFacts): ComposerNotice | undefined {
   const name = facts.name
   const runtime = facts.runtime
+  if (facts.harnessRunsInSessionHost && runtime.kind !== "live") return undefined
   if (runtime.kind === "waking") {
     const message = t(isFreshStart(runtime) ? "sessionScreen.workspace.starting" : "sessionScreen.workspace.waking", { name })
     return { kind: "workspace-lifecycle", tone: "progress", message, ...(facts.wakeProgress ? { detail: facts.wakeProgress } : {}) }

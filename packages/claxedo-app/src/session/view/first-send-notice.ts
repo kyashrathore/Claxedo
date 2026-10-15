@@ -1,11 +1,11 @@
-import { publishComposerNotice, type ComposerNotice } from "@/composer"
+import { publishComposerNotice, type ComposerKey, type ComposerNotice } from "@/composer"
 import type { FirstSendState } from "./first-send"
 import { usePlacementNotice } from "./placement-notice"
 import { useSessionScreenText } from "./text"
 
-export function FirstSendNotice(props: { readonly state: FirstSendState; readonly onRetry: () => void; readonly onEdit: () => void }) {
+export function FirstSendNotice(props: { readonly state: FirstSendState; readonly composerKey: ComposerKey; readonly onRetry: () => void; readonly onEdit: () => void }) {
   const t = useSessionScreenText()
-  const placement = usePlacementNotice(() => (props.state.kind === "sending" ? props.state.placementId : undefined))
+  const placement = usePlacementNotice(() => (props.state.kind === "sending" ? props.state.placementId : undefined), () => props.composerKey)
   publishComposerNotice((): ComposerNotice | undefined => {
     const state = props.state
     if (state.kind === "creating") return { kind: "first-send", tone: "progress", message: t("sessionScreen.firstSend.creatingWorktree") }

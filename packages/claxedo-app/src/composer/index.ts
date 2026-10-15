@@ -10,6 +10,7 @@ export { createComposerNoticeChannel, type ComposerNotice } from "./view/notice-
 export { COMPOSER_MENU_CLASS } from "./view/menu-metrics"
 export { createProviderCatalog, POPULAR_PROVIDERS } from "./harness/provider-catalog"
 export { harnessModelPickerProvider } from "./harness/profile"
+export { useSelectedHarness } from "./harness/selected-harness"
 export { DraftHarnessPicker, type DraftHarnessChoice } from "./view/draft-harness-picker"
 export { modelGroupKey, useModelVisibility } from "./harness/model-visibility"
 export type { ComposerRecovery } from "./recovery"

@@ -661,8 +661,15 @@ export const desktopRenderer: Policy = {
   // app's accounts domain, `accounts/view/team-section.tsx`,
   // `accounts/view/team-account-form.tsx`, `accounts/team-store.ts`,
   // `accounts/key-actions.ts`). They add no package edge.
-  // 1383/36, no headroom.
-  ceilings: { modules: 1383, packages: 36 },
+  // The one Wake now the placement notice and the model picker share (owner:
+  // the app's cloud domain, `cloud/view/wake-workspace.ts`), the picker's
+  // words for an empty model list split from its wiring (owner: the app's
+  // composer domain, `composer/view/models-empty-notice.ts`), and the
+  // composer's selected harness that the session screens read to keep a
+  // session-host harness free of machine notices (owner: the app's composer
+  // domain, `composer/harness/selected-harness.ts`). They add no package edge.
+  // 1386/36, no headroom.
+  ceilings: { modules: 1386, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

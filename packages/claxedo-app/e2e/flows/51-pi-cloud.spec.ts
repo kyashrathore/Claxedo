@@ -162,7 +162,7 @@ test("51 deleting a cloud workspace erases its Pi sessions from their session ho
   await expect.poll(() => sessionHostTables(signedCloud), { message: "the deleted workspace's session host holds nothing" }).toEqual([])
 })
 
-test("51 a Pi draft on an asleep cloud workspace lists the account's models, never asks the workspace and never says Pi is not set up", async ({ signedCloud, page }, testInfo) => {
+test("51 a Pi draft on an asleep cloud workspace lists the account's models, never asks the workspace, never says Pi is not set up and says nothing about the asleep machine", async ({ signedCloud, page }, testInfo) => {
   test.setTimeout(180_000)
   await storeOwnerKey(signedCloud, "openai", "cloud-owner-key")
   const workspace = await makeCloudWorkspace(signedCloud, "asleep")
@@ -180,6 +180,7 @@ test("51 a Pi draft on an asleep cloud workspace lists the account's models, nev
   await page.keyboard.press("Escape")
   await expect(page.getByRole("button", { name: "Select harness and model" })).toContainText("GPT-4.1")
   await expect(page.getByText(/is not set up/)).toHaveCount(0)
+  await expect(page.getByText(/This workspace is asleep/)).toHaveCount(0)
   if (testInfo.repeatEachIndex === 0) await page.screenshot({ path: testInfo.outputPath("pi-draft-asleep.png") })
   expect(connections, "a draft's models never wake or reach the workspace").toEqual([])
 })

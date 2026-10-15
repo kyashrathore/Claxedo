@@ -1,3 +1,4 @@
+import { cloudHarnessHost } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 
@@ -23,6 +24,10 @@ export function nativeHarness(harnessId: NativeHarnessId): HarnessSelection {
 
 export function connectionHarness(connectionId: string): HarnessSelection {
   return { kind: "connection", connectionId }
+}
+
+export function runsInSessionHost(selection: HarnessSelection | undefined): boolean {
+  return selection?.kind === "native" && cloudHarnessHost(selection.harnessId) === "session-host"
 }
 
 export function isHarnessSelection(input: unknown): input is HarnessSelection {
