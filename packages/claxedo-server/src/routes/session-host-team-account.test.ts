@@ -66,10 +66,12 @@ test("a person on the team account is handed it, not their own key, and a report
   vendorAnswers = 200
   for (let attempt = 0; attempt < 3; attempt++) expect(await report({ revision: team.revision, status: 401 })).toEqual({ refusal: "kept" })
   expect(await health()).toBe("ok")
-  expect(vendorKeys).toEqual(["sk-ant-api03-team", "sk-ant-api03-team", "sk-ant-api03-team"])
+  expect(vendorKeys).toEqual(["sk-ant-api03-team"])
   vendorAnswers = 401
-  expect(await report({ revision: team.revision, status: 401 })).toEqual({ refusal: "marked" })
+  const rotated = await accounts.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-revoked", label: "Team" })
+  expect(await report({ revision: rotated.revision, status: 401 })).toEqual({ refusal: "marked" })
   expect(await health()).toBe("auth_failed")
+  await accounts.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team", label: "Team" })
 })
 
 test("once the team account is removed the turn is refused in words that say so, and nothing is handed over in its place", async () => {

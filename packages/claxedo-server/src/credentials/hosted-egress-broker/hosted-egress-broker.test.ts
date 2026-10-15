@@ -192,6 +192,37 @@ describe("a sandbox spending its organization's team account through the hosted 
     expect(upstream.seen).toHaveLength(1)
   })
 
+  test("vendor 401s a member's sandbox provokes leave a working team key in use, since only the plane's own check of it marks it; a key the vendor really refuses is marked", async () => {
+    let clock = Date.now()
+    const { app, store, upstream, delivered } = await composition({ now: () => clock })
+    const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
+    const { baseUrl, placeholder } = await delivered(team, { workspaceId: "ws_team" })
+    let revoked = false
+    upstream.answer(async () => {
+      const forged = upstream.seen.at(-1)!.body === "{}"
+      return forged || revoked
+        ? Response.json({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }, { status: 401 })
+        : Response.json({ data: [] })
+    })
+    const send = () => app.request(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": placeholder, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: "{}",
+    })
+    const health = async () => (await store.getCredential!(team.id))?.health ?? null
+    const checks = () => upstream.seen.filter((sent) => sent.body !== "{}").length
+    for (let attempt = 0; attempt < 4; attempt++) expect((await send()).status).toBe(401)
+    await vi.waitFor(() => expect(checks()).toBe(1))
+    expect(await health()).toBe("ok")
+
+    revoked = true
+    clock += 10 * 60 * 1000
+    expect((await send()).status).toBe(401)
+    await vi.waitFor(async () => expect(await health()).toBe("auth_failed"))
+    expect(checks()).toBe(2)
+  })
+
   test("a team key's placeholder is refused at once when the workspace's owner chooses their own account or leaves the organization", async () => {
     const { app, store, upstream, delivered } = await composition()
     const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })

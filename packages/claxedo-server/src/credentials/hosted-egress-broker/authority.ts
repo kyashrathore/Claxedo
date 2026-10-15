@@ -52,7 +52,7 @@ export function hostedBindingAuthority(input: {
   repositories?: () => HostedRepositoryBindings | undefined
 }): BindingAuthority<HostedBrokerClaims> {
   const now = input.now ?? Date.now
-  const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: input.credentials, now })
+  const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: input.credentials, now, ...(input.fetch ? { fetch: input.fetch } : {}) })
   /**
    * An organization's row is spent only for a workspace whose owner still
    * stands in the organization and still chooses its account for that
