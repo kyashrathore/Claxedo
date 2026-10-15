@@ -4,6 +4,7 @@ import { ClaxedoIcon as Icon } from "@/ui"
 import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
 import type { PermissionModeGroups } from "../permission/permission-mode"
 import type { PermissionModeOption } from "../permission/modes"
+import type { SubmitBlockFlash } from "../submit-block-flash"
 import type { SubmitBlock } from "../submit-block-reason"
 import type { PromptInputMode } from "./editor-surface"
 import { PromptSubmitControl } from "./submit-control"
@@ -46,6 +47,7 @@ export type PromptToolbarProps = {
   submitDisabled: Accessor<boolean>
   submitExcludeFromTab: Accessor<boolean>
   submitBlock: Accessor<SubmitBlock | null>
+  submitBlockFlash: SubmitBlockFlash
   onChooseModel: VoidFunction
   onOpenModels: VoidFunction
   readOnly: Accessor<boolean>
@@ -135,6 +137,7 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
         disabled={props.submitDisabled}
         excludeFromTab={props.submitExcludeFromTab}
         block={props.submitBlock}
+        blockFlash={props.submitBlockFlash}
         onChooseModel={props.onChooseModel}
         onOpenModels={props.onOpenModels}
         stopLabel={props.t("prompt.action.stop")}

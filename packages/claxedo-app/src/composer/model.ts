@@ -162,12 +162,13 @@ export function promptFilled(draft: Pick<Draft, "prompt" | "context">) {
 
 export type SendState =
   | { kind: "editing" }
-  | { kind: "sending"; clientRequestId: string }
+  | { kind: "sending"; clientRequestId: string; sendAgain?: true }
   | { kind: "accepted"; clientRequestId: string }
   | { kind: "rejected"; error: AppError }
 
 export type SendEvent =
   | { type: "sendStarted"; clientRequestId: string }
+  | { type: "sendRequested" }
   | { type: "sendAccepted"; clientRequestId: string }
   | { type: "sendRejected"; error: AppError }
   | { type: "sendWithdrawn"; clientRequestId: string }
@@ -177,6 +178,8 @@ export const sendTransition: Transition<SendState, SendEvent> = (state, event) =
   switch (event.type) {
     case "sendStarted":
       return state.kind === "sending" ? state : { kind: "sending", clientRequestId: event.clientRequestId }
+    case "sendRequested":
+      return state.kind === "sending" ? { ...state, sendAgain: true } : state
     case "sendAccepted":
       return state.kind === "sending" && state.clientRequestId === event.clientRequestId
         ? { kind: "accepted", clientRequestId: event.clientRequestId }

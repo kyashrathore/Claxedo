@@ -1,6 +1,6 @@
 import type { Accessor, JSX } from "solid-js"
 import { ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
-import { createSubmitBlockFlash } from "./submit-block-flash"
+import type { SubmitBlockFlash } from "../submit-block-flash"
 import { SubmitBlockTip } from "./submit-block-tip"
 import type { SubmitBlock } from "../submit-block-reason"
 
@@ -13,15 +13,13 @@ export function PromptSubmitControl(props: {
   disabled: Accessor<boolean>
   excludeFromTab: Accessor<boolean>
   block: Accessor<SubmitBlock | null>
+  blockFlash: SubmitBlockFlash
   onChooseModel: VoidFunction
   onOpenModels: VoidFunction
   sendLabel: string
   stopLabel: string
 }) {
-  const { flash, explain, dismiss } = createSubmitBlockFlash(
-    () => props.block(),
-    () => props.onChooseModel(),
-  )
+  const { flash, explain, dismiss } = props.blockFlash
 
   const actionable = () => !!props.block()?.actionable
 
@@ -56,7 +54,7 @@ export function PromptSubmitControl(props: {
     <Tooltip
       placement="top"
       inactive={!props.block() && !props.working() && props.blank()}
-      forceOpen={flash() && actionable()}
+      forceOpen={flash()}
       value={tipContent()}
     >
       <div class="relative">
@@ -65,7 +63,9 @@ export function PromptSubmitControl(props: {
           type="submit"
           disabled={props.disabled()}
           tabIndex={props.excludeFromTab() ? -1 : undefined}
-          onClick={explain}
+          onClick={(event) => {
+            if (explain()) event.preventDefault()
+          }}
           icon={stopping() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "send"}
           variant="primary"
           class="composer-submit size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35"

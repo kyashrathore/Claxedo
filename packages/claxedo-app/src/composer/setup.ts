@@ -14,6 +14,7 @@ import { createComposerController, type ComposerController } from "./controller"
 import { createComposerRefs, type ComposerRefs } from "./refs"
 import { createComposerSend } from "./send"
 import { createSuggestions, type SlashItem, type SuggestionQuery } from "./suggestions"
+import { createSubmitBlockFlash, type SubmitBlockFlash } from "./submit-block-flash"
 import { submitBlockReason, type SubmitBlock } from "./submit-block-reason"
 import { createRecovery, type ComposerRecovery } from "./recovery"
 
@@ -35,10 +36,12 @@ export type ComposerProps = {
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 
-type Late = { controller?: ComposerController; submitBlock?: Accessor<SubmitBlock | null> }
+type SubmitState = { readonly submitBlock: Accessor<SubmitBlock | null>; readonly blockFlash: SubmitBlockFlash }
 
-function explainSubmit(refs: ComposerRefs) {
-  refs.root()?.querySelector<HTMLElement>('[data-action="prompt-submit"]')?.click()
+type Late = { controller?: ComposerController; submit?: SubmitState }
+
+export function chooseComposerModel(refs: ComposerRefs) {
+  refs.root()?.querySelector<HTMLElement>('[data-action="prompt-harness-model"]')?.click()
 }
 
 type HarnessSelection = ComposerHarness
@@ -65,7 +68,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
     submission: props.manageSession === false ? async () => ({}) : selection.submission,
     goalCapable: () => goalCapable(props, selection),
     view: () => props.view,
-    blocked: () => !!late.submitBlock?.(),
+    blocked: () => !!late.submit?.submitBlock(),
     startSession: props.startSession,
     queuedReplace: () => (props.queuedEdit?.active() ? props.queuedEdit.replace : undefined),
     afterAccepted: (view) => {
@@ -120,7 +123,7 @@ function createControllerFor(input: {
     working: input.working,
     atItems: input.suggestions.atItems,
     slashItems: input.suggestions.slashItems,
-    submit: () => (input.late.submitBlock?.() ? explainSubmit(input.refs) : void input.send.send()),
+    submit: () => (input.late.submit?.submitBlock() ? void input.late.submit.blockFlash.explain() : void input.send.send()),
     stop: () => void input.send.stop(),
     edited: input.send.edited,
     runCommand: (item: SlashItem) => input.commands.trigger(item.id, "slash"),
@@ -156,8 +159,8 @@ export function createComposer(props: ComposerProps) {
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands, late })
   late.controller = controller
-  const submit = submitState({ key, selection, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true, manage: () => props.manageSession !== false })
-  late.submitBlock = submit.submitBlock
+  const submit = submitState({ key, selection, controller, refs, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true, manage: () => props.manageSession !== false })
+  late.submit = submit
   props.registerRecovery?.(
     createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
   )
@@ -181,6 +184,7 @@ function submitState(input: {
   key: Accessor<ComposerKey>
   selection: HarnessSelection
   controller: ComposerController
+  refs: ComposerRefs
   working: Accessor<boolean>
   asleep: Accessor<boolean>
   readOnly: Accessor<boolean>
@@ -205,7 +209,8 @@ function submitState(input: {
       workspaceAsleep: input.asleep(),
     })
   })
-  return { harnessPending: createMemo(() => selection.selection().readiness === "polling"), submitBlock }
+  const blockFlash = createSubmitBlockFlash(submitBlock, () => chooseComposerModel(input.refs))
+  return { harnessPending: createMemo(() => selection.selection().readiness === "polling"), submitBlock, blockFlash }
 }
 
 export type ComposerSetup = ReturnType<typeof createComposer>

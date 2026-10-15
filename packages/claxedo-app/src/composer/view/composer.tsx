@@ -4,7 +4,7 @@ import { settingsPath, useCommands } from "@/shell"
 import { useDialog } from "@/ui"
 import type { FileContextItem, QuoteContextItem } from "../model"
 import { promptText } from "../model"
-import { createComposer, type ComposerProps } from "../setup"
+import { chooseComposerModel, createComposer, type ComposerProps } from "../setup"
 import { acceptedFileTypes } from "../attachments/files"
 import { renderPromptEditor } from "../editor/serialization"
 import { PromptInputFrame } from "./frame"
@@ -124,7 +124,8 @@ export function Composer(props: ComposerProps) {
       submitDisabled={() => composer.send.sending() || (!composer.working() && !!composer.submitBlock() && !composer.submitBlock()?.actionable)}
       submitExcludeFromTab={() => false}
       submitBlock={composer.submitBlock}
-      onChooseModel={() => composer.refs.root()?.querySelector<HTMLElement>('[data-action="prompt-harness-model"]')?.click()}
+      submitBlockFlash={composer.blockFlash}
+      onChooseModel={() => chooseComposerModel(composer.refs)}
       onOpenModels={() => navigate(settingsPath("models"))}
       readOnly={() => props.readOnly === true}
       t={t}

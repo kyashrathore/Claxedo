@@ -2,7 +2,7 @@ import { createMemo, type Accessor } from "solid-js"
 import { ServerError, toAppError, type PromptAttachment, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote, formatQuoteNote } from "@/lib/comment-note"
-import { machine } from "@/lib/machine"
+import { machine, type Machine } from "@/lib/machine"
 import type { Draft, EditorMode, HistoryComment, QuoteSource, SendEvent, SendState, StopEvent, StopState, Submission } from "./model"
 import { promptFilled, promptImages, promptText, promptWithoutText, randomId, sendTransition, stopTransition } from "./model"
 import { flattenMarkedImages } from "./marks/flatten"
@@ -197,14 +197,40 @@ async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, cl
   return startDraftSession(input, submission, { ...prompt, clientRequestId })
 }
 
+type SendMachine = Machine<SendState, SendEvent>
+
+function sendAgainRequested(state: SendMachine): boolean {
+  const current = state.state()
+  return current.kind === "sending" && current.sendAgain === true
+}
+
+async function settleSend(input: SendInput, state: SendMachine, sent: { draft: Draft; goal: GoalIntent; clientRequestId: string }): Promise<boolean> {
+  const { clientRequestId } = sent
+  try {
+    const view = await deliverDraft(input, sent.draft, sent.goal, clientRequestId)
+    const again = sendAgainRequested(state)
+    if (!view) {
+      state.send({ type: "sendWithdrawn", clientRequestId })
+      return false
+    }
+    state.send({ type: "sendAccepted", clientRequestId })
+    input.afterAccepted?.(view)
+    return again
+  } catch (error) {
+    state.send({ type: "sendRejected", error: toAppError(error) })
+    return false
+  }
+}
+
 export function createComposerSend(input: SendInput) {
   const state = machine<SendState, SendEvent>({ kind: "editing" }, sendTransition)
   const sending = createMemo(() => state.state().kind === "sending")
   const armGoal = createArmGoal(input)
   const stop = createStop(input.view, input.goalStopFailed)
-  const send = async () => {
+  const send = async (): Promise<void> => {
     const draft = input.store.draft(input.key())
-    if (sending() || input.blocked?.() || !promptFilled(draft)) return
+    if (input.blocked?.() || !promptFilled(draft)) return
+    if (sending()) return state.send({ type: "sendRequested" })
     const goal = input.queuedReplace() ? { kind: "none" as const } : goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalCapable())
     if (goal.kind === "arm") {
       input.store.setPrompt(input.key(), promptWithoutText(draft.prompt), 0)
@@ -212,14 +238,7 @@ export function createComposerSend(input: SendInput) {
     }
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
-    try {
-      const view = await deliverDraft(input, draft, goal, clientRequestId)
-      if (!view) return state.send({ type: "sendWithdrawn", clientRequestId })
-      state.send({ type: "sendAccepted", clientRequestId })
-      input.afterAccepted?.(view)
-    } catch (error) {
-      state.send({ type: "sendRejected", error: toAppError(error) })
-    }
+    if (await settleSend(input, state, { draft, goal, clientRequestId })) await send()
   }
   return {
     state: state.state,
