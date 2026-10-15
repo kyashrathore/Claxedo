@@ -7,13 +7,12 @@ export type BoatNamedSnapshot = { name: string; status: BoatNamedSnapshotStatus;
 
 export type BoatSnapshotShare = { id: string; status: "active" | "revoked"; createdAt: string }
 
-const STATUSES: ReadonlySet<string> = new Set(["saving", "ready", "failed"])
+const STATUSES: readonly BoatNamedSnapshotStatus[] = ["saving", "ready", "failed"]
 
 function namedSnapshot(value: unknown): BoatNamedSnapshot {
   const snapshot = record(value) ?? invalid()
-  const status = requiredText(snapshot.status)
-  if (!STATUSES.has(status)) invalid()
-  return { name: requiredText(snapshot.name), status: status as BoatNamedSnapshotStatus, createdAt: requiredText(snapshot.createdAt) }
+  const status = STATUSES.find((known) => known === snapshot.status) ?? invalid()
+  return { name: requiredText(snapshot.name), status, createdAt: requiredText(snapshot.createdAt) }
 }
 
 function share(value: unknown): BoatSnapshotShare {

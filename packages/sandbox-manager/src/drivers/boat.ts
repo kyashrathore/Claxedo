@@ -16,6 +16,7 @@ import { assertSandboxImageReference } from "../image-name"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
+import { record } from "../json"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
 // VM's own kernel but no workspace-runtime baked in, so the canonical sandbox
@@ -45,7 +46,7 @@ export function parseBoatRuntimeTemplate(setting: string): BoatRuntimeTemplate {
   } catch {
     throw new BoatDriverError("A Boat runtime template is JSON naming its image and share code")
   }
-  const { image, shareCode } = (value ?? {}) as Record<string, unknown>
+  const { image, shareCode } = record(value) ?? {}
   if (typeof shareCode !== "string" || !/^bsh_\S+$/.test(shareCode) || typeof image !== "string") {
     throw new BoatDriverError("A Boat runtime template names its image and a bsh_ share code")
   }

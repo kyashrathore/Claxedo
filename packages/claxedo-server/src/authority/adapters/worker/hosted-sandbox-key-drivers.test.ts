@@ -36,7 +36,8 @@ describe("the drivers an organization key builds on a Worker", () => {
   test("a Boat key's driver creates a sandbox of the deployment's image from the release's runtime template", async () => {
     const creates: unknown[] = []
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (String(input).endsWith("/sandboxes")) creates.push(JSON.parse(String(init?.body)))
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith("/sandboxes") && typeof init?.body === "string") creates.push(JSON.parse(init.body))
       return Response.json({ ok: false, code: "unauthorized" }, { status: 401 })
     })
     try {

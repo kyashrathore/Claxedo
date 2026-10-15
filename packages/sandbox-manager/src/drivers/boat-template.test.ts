@@ -76,7 +76,7 @@ function fakeBoat(options: { snapshots?: NamedSnapshot[]; saveSettlesAs?: "ready
     }
     if (path === "/named-snapshots" && method === "GET") return json({ type: "snapshot.named.list", snapshots: [...snapshots.values()] })
     const share = path.match(/^\/named-snapshots\/([^/]+)\/shares(?:\/([^/]+))?$/)
-    if (share && snapshots.has(share[1]!)) {
+    if (share && snapshots.has(share[1])) {
       if (method === "POST") {
         const created = { id: `shr_new${++shareCount}`, codePrefix: "bsh_new", status: "active" as const, useCount: 0, lastUsedAt: null, revokedAt: null, createdAt: "2026-10-15T13:00:00Z" }
         shares.push(created)
@@ -88,9 +88,9 @@ function fakeBoat(options: { snapshots?: NamedSnapshot[]; saveSettlesAs?: "ready
       return json({ type: "snapshot.share.revoked", share: revoked })
     }
     const one = path.match(/^\/named-snapshots\/([^/]+)$/)
-    if (one && snapshots.has(one[1]!)) {
-      if (method === "GET") return json({ type: "snapshot.named.info", snapshot: read(one[1]!) })
-      snapshots.delete(one[1]!)
+    if (one && snapshots.has(one[1])) {
+      if (method === "GET") return json({ type: "snapshot.named.info", snapshot: read(one[1]) })
+      snapshots.delete(one[1])
       return json({ type: "snapshot.named.deleted", name: one[1], status: "deleted" })
     }
     return Response.json({ ok: false, code: one ? "not_found" : "unhandled", message: `${method} ${path}` }, { status: 404 })
