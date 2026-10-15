@@ -29,6 +29,7 @@ const DONE_STEP: Readonly<Record<WorkspaceStartStep, CloudKey>> = {
 
 function currentStep(runtime: Waking): CloudKey {
   const last = runtime.steps?.done.at(-1)
+  if (last === "machine" && runtime.bootMode !== undefined && runtime.bootMode !== "cold-start") return "cloud.wake.step.workspace"
   return last ? NEXT_STEP[last] : FIRST_STEP[runtime.bootMode ?? "cold-start"]
 }
 

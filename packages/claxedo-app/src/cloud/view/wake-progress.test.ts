@@ -29,6 +29,12 @@ test("a wake names the step it is on with that step's time, the steps it has don
     .toBe("cloud.wake.stepFor(cloud.wake.step.connecting|1s) · cloud.wake.done(cloud.wake.done.machine+cloud.wake.done.image+cloud.wake.done.runtime) · cloud.wake.total(1m 39s)")
 })
 
+test("the step after the machine is a download only on a first start; a resume or a restore starts the workspace it already holds", () => {
+  const steps = { done: ["machine" as const], startedAt: NOW - 6_000, stepStartedAt: NOW - 2_000 }
+  for (const bootMode of ["resume", "restore"] as const) expect(say({ kind: "waking", bootMode, steps })).toContain("cloud.wake.step.workspace|2s")
+  expect(say({ kind: "waking", steps })).toContain("cloud.wake.step.image|2s")
+})
+
 test("a wake the server is retrying says why, with the whole wake's time", () => {
   expect(say({ kind: "waking", bootMode: "resume", failure: "quota exceeded" })).toBe("cloud.wake.retrying(quota exceeded)")
   expect(say({ kind: "waking", bootMode: "resume", failure: "quota exceeded", steps: { done: ["machine"], startedAt: NOW - 130_000, stepStartedAt: NOW - 5_000 } }))
