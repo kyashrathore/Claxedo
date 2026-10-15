@@ -61,8 +61,10 @@ const DEFAULT_HEALTH_INTERVAL_MS = 1_000
 // Boat pauses a new sandbox's containers for about a second while it takes the
 // sandbox's first snapshot, 2 s into the runtime's start; the runtime resumes on its own.
 const BOOTING_CONTAINER_STATES: ReadonlySet<string> = new Set(["running", "paused"])
-// An image pull needs Boat's documented command maximum.
-const CONTAINER_START_TIMEOUT_SECONDS = 600
+// An image pull and the seed need Boat's documented command maximum.
+const IMAGE_PREPARATION_TIMEOUT_SECONDS = 600
+// The image is local by then; creating the container is seconds.
+const CONTAINER_START_TIMEOUT_SECONDS = 120
 // Boat's auto-stop is a deadline counted from the create or resume, not from
 // use (docs.boat.dev/long-running-tasks/auto-stop), so a serving sandbox
 // carries none and the control plane's own idle stop ends it. A boot nobody
@@ -239,16 +241,17 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * express them), and the registry password is piped to `docker login` from a
    * file that is removed whatever the outcome; a failed login aborts the chain.
    *
-   * A resume reboots the VM: Docker comes up as a systemd service after
-   * Boat reports the sandbox ready, so the chain waits for the daemon. The
-   * container the stop removed is created again, which pulls the image, and
-   * mounts the trees the snapshot kept. A container Boat itself recreated (a
-   * stop that was not this driver's) is started as it is when it runs this
-   * image; a create that loses a race with that recreation starts the one that
-   * won. Another image's container is replaced, with the trees seeded from the
-   * image this boot names, and the trees of every other image are removed.
+   * Two commands. `prepare` changes nothing a running container serves from:
+   * it waits for the daemon (a resume reboots the VM, and Docker comes up as a
+   * systemd service after Boat reports the sandbox ready), logs in, pulls the
+   * image, seeds its trees and removes other images' trees; a failure there
+   * leaves a runtime of the previous image serving. `start` then replaces
+   * another image's container with one of this image, or starts the one of
+   * this image Boat itself recreated after a stop that was not this driver's;
+   * a create that loses a race with that recreation starts the one that won.
+   * A failure there leaves nothing serving.
    */
-  function containerStartScript(input: SandboxDriverEnsureInput): string {
+  function containerScripts(input: SandboxDriverEnsureInput): { prepare: string; start: string } {
     const port = runtimePort(input)
     const directory = workspaceDirectory(input)
     const image = shell(resolveImage(input))
@@ -268,12 +271,15 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + IMAGE_TREES.map((tree) => `-v ${trees}/${tree}:/${tree} `).join("")
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
       + `--entrypoint ${CONTAINER_INIT_PATH} ${image} -- sh -lc ${shell(bootScript)}`
-    // Streamed out of a created container of the image, which `create` pulls,
-    // and unpacked as root so the image's owners and setuid bits survive the
-    // copy (the command runs as the VM user); a stream that broke leaves no
-    // tree and ends the seed before it is marked complete.
+    // Streamed out of a created container of the image and unpacked as root so
+    // the image's owners and setuid bits survive the copy (the command runs as
+    // the VM user). The persistent root is made as root too: Docker made it as
+    // root on every sandbox that booted before the trees existed, and the VM
+    // user cannot create inside it. A stream that broke leaves no tree and
+    // ends the seed before it is marked complete.
     const seed = `if [ ! -f ${trees}/${IMAGE_TREES_COMPLETE_MARKER} ]; then `
-      + `sudo rm -rf ${trees} && mkdir -p ${trees} `
+      + `sudo rm -rf ${trees} && sudo mkdir -p ${trees} `
+      + `&& { docker rm -f ${SEED_CONTAINER_NAME} >/dev/null 2>&1 || true; } `
       + `&& docker create --name ${SEED_CONTAINER_NAME} ${image} true >/dev/null `
       + `&& for tree in ${IMAGE_TREES.join(" ")}; do `
       + `docker cp ${SEED_CONTAINER_NAME}:/$tree - | sudo tar -xf - -C ${trees} ${IMAGE_TREE_SEED_EXCLUDES.map((exclude) => `--exclude=${exclude}`).join(" ")} `
@@ -281,7 +287,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + `&& docker rm ${SEED_CONTAINER_NAME} >/dev/null && sudo touch ${trees}/${IMAGE_TREES_COMPLETE_MARKER}; fi `
       + `&& sudo find "$(pwd)/${PERSISTENT_ROOT}" -mindepth 1 -maxdepth 1 -name 'image-*' ! -path ${trees} -exec rm -rf {} +`
     const ours = `[ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]`
-    const steps = [
+    const prepare = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
       `[ -x ${VM_DOCKER_INIT} ]`,
@@ -290,12 +296,13 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
-      `if ${ours}; then docker start ${containerName} >/dev/null; `
-      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } `
-      + `&& { docker rm -f ${SEED_CONTAINER_NAME} >/dev/null 2>&1 || true; } && ${seed} `
-      + `&& { ${run} || { ${ours} && docker start ${containerName} >/dev/null; }; }; fi`,
+      `{ docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image} >/dev/null; }`,
+      seed,
     ]
-    return steps.join(" && ")
+    const start = `if ${ours}; then docker start ${containerName} >/dev/null; `
+      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } `
+      + `&& { ${run} || { ${ours} && docker start ${containerName} >/dev/null; }; }; fi`
+    return { prepare: prepare.join(" && "), start }
   }
 
   async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput, secrets: readonly string[]) {
@@ -331,7 +338,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
 
   async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
     const env = { ...bootEnv(input, hostId), ...(await options.env?.(input, { id: hostId })) }
-    const script = containerStartScript(input)
+    const scripts = containerScripts(input)
     await client.writeFile(sandboxId, { path: RUNTIME_ENV_PATH, content: envFile(env) })
     if (options.registryAuth) {
       await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })
@@ -339,7 +346,15 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const secrets = [...workspaceRuntimeBootSecrets(env), ...(options.registryAuth ? [options.registryAuth.password] : [])]
     const failures: unknown[] = []
     try {
-      await execOrThrow(sandboxId, script, "container start", { timeoutSeconds: CONTAINER_START_TIMEOUT_SECONDS, secrets })
+      await execOrThrow(sandboxId, scripts.prepare, "runtime image preparation", { timeoutSeconds: IMAGE_PREPARATION_TIMEOUT_SECONDS, secrets })
+      try {
+        await execOrThrow(sandboxId, scripts.start, "container start", { timeoutSeconds: CONTAINER_START_TIMEOUT_SECONDS, secrets })
+      } catch (error) {
+        // The container of the previous image is gone by now, so the lease
+        // has nothing serving: a boot failure, which the manager demotes,
+        // unlike a provider error over a runtime that may still serve.
+        throw error instanceof BoatDriverError ? new SandboxRuntimeBootError(error.message) : error
+      }
     } catch (error) {
       failures.push(error)
     }

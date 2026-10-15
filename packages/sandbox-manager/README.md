@@ -104,7 +104,13 @@ state on the VM's disk and mounts it into the container:
 The seed streams the trees out of a created container of the image with
 `docker cp` and unpacks them as root, leaving out `~/.cache` (which Boat's own
 snapshots leave out too) and npm's cache; it is marked complete only after
-every tree landed, and a seed that did not complete is redone. Docker named
+every tree landed, and a seed that did not complete is redone. The persistent
+root is created as root too: Docker made it as root on every sandbox that
+booted before the trees existed, and the VM user cannot create inside it. A
+start runs as two commands: the preparation (daemon, login, pull, seed) changes
+nothing a running container serves from, so its failure leaves a runtime of the
+previous image serving and the lease ready; the container start that follows
+replaces that container, so its failure is a boot failure the manager demotes. Docker named
 volumes were measured and rejected: Boat saves them through a path of its own,
 and a stop with 3.7 GB of them had not finished after ten minutes, while the
 same bytes under the work directory archived in 27 s.

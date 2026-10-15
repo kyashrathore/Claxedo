@@ -128,61 +128,89 @@ const treesDirectory = (image: string) => `image-${image.replace(/[^A-Za-z0-9._-
 // The start command is the sh script Boat runs on its Linux VM.
 const onVm = test.skipIf(process.platform === "win32")
 
-function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number; recreatedDuringRun?: string; seededImages?: string[] }) {
-  const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
+type StartCommands = { prepare: string; start: string }
+
+type Vm = {
+  existingImage?: string
+  daemonUpAfter?: number
+  recreatedDuringRun?: string
+  seededImages?: string[]
+  /** The persistent root exists and the VM user cannot write into it, as Docker left it on every sandbox that booted before the trees existed. */
+  persistentRootReadOnly?: boolean
+  /** The image's trees cannot be streamed out. */
+  seedFails?: boolean
+  /** Run in the fixture an earlier run left, as a later start on the same VM. */
+  dir?: string
+}
+
+function runStartCommand(commands: StartCommands, vm: Vm) {
+  const dir = vm.dir ?? mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
-  mkdirSync(bin)
   const log = path.join(dir, "docker.log")
   const slot = path.join(dir, "container")
   const rootfs = path.join(dir, "rootfs")
+  const persistentRoot = path.join(dir, "claxedo-persistent")
   writeFileSync(log, "")
-  writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
-  writeFileSync(path.join(dir, "docker-init"), "")
-  if (vm.existingImage) writeFileSync(slot, vm.existingImage)
-  for (const tree of IMAGE_TREES) {
-    mkdirSync(path.join(rootfs, tree), { recursive: true })
-    writeFileSync(path.join(rootfs, tree, `${tree}-from-image`), "")
+  if (!vm.dir) {
+    mkdirSync(bin)
+    writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
+    writeFileSync(path.join(dir, "docker-init"), "")
+    if (vm.existingImage) writeFileSync(slot, vm.existingImage)
+    for (const tree of IMAGE_TREES) {
+      mkdirSync(path.join(rootfs, tree), { recursive: true })
+      writeFileSync(path.join(rootfs, tree, `${tree}-from-image`), "")
+    }
+    mkdirSync(path.join(rootfs, "root", ".cache"), { recursive: true })
+    writeFileSync(path.join(rootfs, "root", ".cache", "cached"), "")
+    for (const image of vm.seededImages ?? []) {
+      const trees = path.join(persistentRoot, treesDirectory(image))
+      mkdirSync(trees, { recursive: true })
+      writeFileSync(path.join(trees, ".complete"), "")
+    }
+    if (vm.persistentRootReadOnly) {
+      mkdirSync(persistentRoot, { recursive: true })
+      chmodSync(persistentRoot, 0o555)
+    }
+    const tool = (name: string, body: string) => {
+      writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
+      chmodSync(path.join(bin, name), 0o755)
+    }
+    tool("timeout", 'shift\nexec "$@"')
+    // Root may write into the persistent root; the plain VM user may not.
+    tool("sudo", `echo "sudo $1 $2" >> ${log}\nchmod u+w ${persistentRoot} 2>/dev/null\n"$@"\nrc=$?\nchmod ${vm.persistentRootReadOnly ? "u-w" : "u+w"} ${persistentRoot} 2>/dev/null\nexit $rc`)
+    tool("docker", [
+      `echo "$*" >> ${log}`,
+      `case "$1" in`,
+      `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
+      `  image) ;;`,
+      `  inspect) cat ${slot} 2>/dev/null ;;`,
+      `  rm) case "$*" in *claxedo-seed*) ;; *) rm -f ${slot} ;; esac ;;`,
+      `  create) ;;`,
+      `  cp) ${vm.seedFails ? "echo 'stream broke' >&2; exit 1" : `tree=\${2#claxedo-seed:/}; tar -cf - -C ${rootfs} "$tree"`} ;;`,
+      `  run) if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo "${vm.recreatedDuringRun ?? ""}" > ${slot}; echo Conflict >&2; exit 125; fi; echo ${IMAGE} > ${slot} ;;`,
+      `  start) [ -f ${slot} ] ;;`,
+      `esac`,
+    ].join("\n"))
+    tool("sleep", "exit 0")
   }
-  mkdirSync(path.join(rootfs, "root", ".cache"), { recursive: true })
-  writeFileSync(path.join(rootfs, "root", ".cache", "cached"), "")
-  for (const image of vm.seededImages ?? []) {
-    const trees = path.join(dir, "claxedo-persistent", treesDirectory(image))
-    mkdirSync(trees, { recursive: true })
-    writeFileSync(path.join(trees, ".complete"), "")
-  }
-  const tool = (name: string, body: string) => {
-    writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
-    chmodSync(path.join(bin, name), 0o755)
-  }
-  tool("timeout", 'shift\nexec "$@"')
-  tool("sudo", 'exec "$@"')
-  tool("docker", [
-    `echo "$*" >> ${log}`,
-    `case "$1" in`,
-    `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
-    `  inspect) cat ${slot} 2>/dev/null ;;`,
-    `  rm) case "$*" in *claxedo-seed*) ;; *) rm -f ${slot} ;; esac ;;`,
-    `  create) ;;`,
-    `  cp) tree=\${2#claxedo-seed:/}; tar -cf - -C ${rootfs} "$tree" ;;`,
-    `  run) if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo "${vm.recreatedDuringRun ?? ""}" > ${slot}; echo Conflict >&2; exit 125; fi; echo ${IMAGE} > ${slot} ;;`,
-    `  start) [ -f ${slot} ] ;;`,
-    `esac`,
-  ].join("\n"))
-  tool("sleep", "exit 0")
   // The VM's init binary lives at a fixed path the script checks; the test's copy stands in through the directory the script is run from.
-  const result = spawnSync("sh", ["-c", command.replace(/\[ -x \/usr\/libexec\/docker\/docker-init \]/, `[ -f ${path.join(dir, "docker-init")} ]`)], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
-  const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" "))
-  const trees = (image: string) => path.join(dir, "claxedo-persistent", treesDirectory(image))
-  return { status: result.status, stderr: result.stderr, calls, dir, trees }
+  const sh = (command: string) => spawnSync("sh", ["-c", command.replace(/\[ -x \/usr\/libexec\/docker\/docker-init \]/, `[ -f ${path.join(dir, "docker-init")} ]`)], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
+  const prepared = sh(commands.prepare)
+  const started = prepared.status === 0 ? sh(commands.start) : undefined
+  // The unpacking tar runs in a pipe beside `docker cp`, so its place in the log is not fixed; the trees it wrote are asserted instead.
+  const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" ")).filter((call) => call !== "sudo tar")
+  const trees = (image: string) => path.join(persistentRoot, treesDirectory(image))
+  return { prepared: prepared.status, started: started?.status, stderr: `${prepared.stderr}${started?.stderr ?? ""}`, calls, dir, trees, image: () => readFileSync(slot, "utf8").trim() }
 }
 
-async function startCommand() {
+async function startCommands(): Promise<StartCommands> {
   const boat = fakeBoat()
   const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
   await driver.ensureHost(ensureInput())
-  const command = commandsOf(boat.calls).find((c) => c.includes("docker info"))
-  if (!command) throw new Error("no container start command")
-  return command
+  const prepare = commandsOf(boat.calls).find((c) => c.includes("docker info"))
+  const start = commandsOf(boat.calls).find((c) => c.includes("docker run"))
+  if (!prepare || !start) throw new Error("no container start commands")
+  return { prepare, start }
 }
 
 const commandsOf = (calls: Call[]) => calls.filter((c) => c.path.endsWith("/commands")).map((c) => c.body.command as string)
@@ -382,7 +410,12 @@ describe("boat sandbox driver", () => {
     const order = boat.calls.map((c) => c.method === "PATCH" ? "ttl" : c.body?.command?.includes("/global/health") ? "health" : c.body?.command?.startsWith("host url") ? "url" : undefined).filter(Boolean)
     expect(order).toEqual(["health", "ttl", "url"])
     const run = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker run"))
-    expect(run?.body.timeoutSeconds).toBe(600)
+    expect(run?.body.timeoutSeconds).toBe(120)
+    const prepare = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker info"))
+    expect(prepare?.body.timeoutSeconds).toBe(600)
+    expect(prepare?.body.command).toContain("docker image inspect 'ghcr.io/test/sandbox:1' >/dev/null 2>&1 || docker pull 'ghcr.io/test/sandbox:1'")
+    expect(prepare?.body.command).toContain("sudo rm -rf")
+    expect(prepare?.body.command).toContain("sudo mkdir -p")
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
     expect(run?.body.command).toContain("docker run -d --name claxedo-runtime --hostname 'ws1' -p 2593:2593 -v /usr/libexec/docker/docker-init:/claxedo-init:ro ")
     expect(run?.body.command).toContain("--entrypoint /claxedo-init 'ghcr.io/test/sandbox:1' -- sh -lc ")
@@ -421,35 +454,57 @@ describe("boat sandbox driver", () => {
     expect(failure?.message).not.toContain("synthetic-host-token")
   })
 
-  onVm("a fresh VM waits for the Docker daemon, seeds the image's trees from a created container of the image, then creates the runtime container, leaving the workspace bind source for Docker to create", async () => {
-    const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
-    expect(run.status).toBe(0)
-    expect(run.calls).toEqual([
-      "info", "info", "info", "inspect --format", "rm -f", "rm -f", "create --name",
-      ...IMAGE_TREES.map((tree) => `cp claxedo-seed:/${tree}`), "rm claxedo-seed", "run -d",
-    ])
+  const SEED_CALLS = [
+    "sudo rm", "sudo mkdir", "rm -f", "create --name",
+    ...IMAGE_TREES.map((tree) => `cp claxedo-seed:/${tree}`), "rm claxedo-seed", "sudo touch",
+  ]
+
+  onVm("a fresh VM waits for the Docker daemon, pulls the image, seeds its trees as root from a created container of it, then creates the runtime container, leaving the workspace bind source for Docker to create", async () => {
+    const run = runStartCommand(await startCommands(), { daemonUpAfter: 2 })
+    expect(run.prepared).toBe(0)
+    expect(run.started).toBe(0)
+    expect(run.calls).toEqual(["info", "info", "info", "image inspect", ...SEED_CALLS, "sudo find", "inspect --format", "rm -f", "run -d"])
     for (const tree of IMAGE_TREES) expect(existsSync(path.join(run.trees(IMAGE), tree, `${tree}-from-image`))).toBe(true)
     expect(existsSync(path.join(run.trees(IMAGE), "root", ".cache"))).toBe(false)
     expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(true)
     expect(existsSync(path.join(run.dir, "claxedo-persistent", "workspace"))).toBe(false)
   })
 
+  onVm("a sandbox that booted before the trees existed has a persistent root only root may write into, and the seed lands there all the same", async () => {
+    const run = runStartCommand(await startCommands(), { persistentRootReadOnly: true })
+    expect(run.stderr).not.toContain("Permission denied")
+    expect(run.prepared).toBe(0)
+    expect(run.started).toBe(0)
+    expect(run.calls).toContain("sudo mkdir")
+    expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(true)
+  })
+
   onVm("a resume finds the image's trees seeded and only creates the container again", async () => {
-    const run = runStartCommand(await startCommand(), { seededImages: [IMAGE] })
-    expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "rm -f", "run -d"])
+    const run = runStartCommand(await startCommands(), { seededImages: [IMAGE] })
+    expect(run.started).toBe(0)
+    expect(run.calls).toEqual(["info", "image inspect", "sudo find", "inspect --format", "rm -f", "run -d"])
   })
 
   onVm("a seed that was interrupted before it was marked complete is redone from scratch", async () => {
-    const command = await startCommand()
-    const partial = runStartCommand(command, { seededImages: [IMAGE] })
+    const commands = await startCommands()
+    const partial = runStartCommand(commands, { seededImages: [IMAGE] })
     rmSync(path.join(partial.dir, "container"))
     rmSync(path.join(partial.trees(IMAGE), ".complete"))
     writeFileSync(path.join(partial.trees(IMAGE), "half-written"), "")
-    const result = spawnSync("sh", ["-c", command.replace(/\[ -x \/usr\/libexec\/docker\/docker-init \]/, "true")], { cwd: partial.dir, env: { PATH: `${path.join(partial.dir, "bin")}:/usr/bin:/bin` }, encoding: "utf8" })
-    expect(result.status).toBe(0)
+    const again = runStartCommand(commands, { dir: partial.dir })
+    expect(again.started).toBe(0)
     expect(existsSync(path.join(partial.trees(IMAGE), "half-written"))).toBe(false)
     expect(existsSync(path.join(partial.trees(IMAGE), "usr", "usr-from-image"))).toBe(true)
+  })
+
+  onVm("a seed that cannot stream the image's trees ends the preparation, and the container of the previous image keeps running", async () => {
+    const run = runStartCommand(await startCommands(), { existingImage: "ghcr.io/test/sandbox:0", seededImages: ["ghcr.io/test/sandbox:0"], seedFails: true })
+    expect(run.prepared).not.toBe(0)
+    expect(run.started).toBeUndefined()
+    expect(run.image()).toBe("ghcr.io/test/sandbox:0")
+    expect(run.calls).not.toContain("run -d")
+    expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(false)
+    expect(existsSync(run.trees("ghcr.io/test/sandbox:0"))).toBe(true)
   })
 
   test("a sandbox booted from an older image reads as outdated until its next start boots the deployment's image", async () => {
@@ -470,31 +525,48 @@ describe("boat sandbox driver", () => {
   })
 
   onVm("a repeated start finds the container the first one created and only starts it", async () => {
-    const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
-    expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
+    const run = runStartCommand(await startCommands(), { existingImage: IMAGE, seededImages: [IMAGE], daemonUpAfter: 1 })
+    expect(run.started).toBe(0)
+    expect(run.calls).toEqual(["info", "info", "image inspect", "sudo find", "inspect --format", "start claxedo-runtime"])
   })
 
-  onVm("a container of another image is replaced by one of the image this boot names, seeded from that image, and the other image's trees are removed", async () => {
-    const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0", seededImages: ["ghcr.io/test/sandbox:0"] })
-    expect(run.status).toBe(0)
-    expect(run.calls.slice(0, 4)).toEqual(["info", "inspect --format", "rm -f", "rm -f"])
-    expect(run.calls).toContain("create --name")
-    expect(run.calls.at(-1)).toBe("run -d")
+  onVm("a container of another image is replaced only once the trees of the image this boot names are seeded, and the other image's trees are removed", async () => {
+    const run = runStartCommand(await startCommands(), { existingImage: "ghcr.io/test/sandbox:0", seededImages: ["ghcr.io/test/sandbox:0"] })
+    expect(run.started).toBe(0)
+    expect(run.calls).toEqual(["info", "image inspect", ...SEED_CALLS, "sudo find", "inspect --format", "rm -f", "run -d"])
     expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(true)
     expect(existsSync(run.trees("ghcr.io/test/sandbox:0"))).toBe(false)
   })
 
   onVm("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {
-    const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE, seededImages: [IMAGE] })
-    expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
+    const run = runStartCommand(await startCommands(), { recreatedDuringRun: IMAGE, seededImages: [IMAGE] })
+    expect(run.started).toBe(0)
+    expect(run.calls.slice(3)).toEqual(["inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
   })
 
   onVm("a create that fails for any other reason fails the start", async () => {
-    const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0", seededImages: [IMAGE] })
-    expect(run.status).not.toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "rm -f", "run -d", "inspect --format"])
+    const run = runStartCommand(await startCommands(), { recreatedDuringRun: "ghcr.io/test/sandbox:0", seededImages: [IMAGE] })
+    expect(run.prepared).toBe(0)
+    expect(run.started).not.toBe(0)
+    expect(run.calls.slice(3)).toEqual(["inspect --format", "rm -f", "run -d", "inspect --format"])
+  })
+
+  test("a preparation that fails is a provider error over a runtime that may still serve; a container start that fails is a boot failure, since nothing serves", async () => {
+    const failing = (step: "docker info" | "docker run") => {
+      const boat = fakeBoat()
+      return createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, fetchImpl: async (url, init) => {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+        if (body?.command?.includes(step)) return Response.json({ ok: true, ...commandFinished({ exitCode: 1, stderr: "mkdir: cannot create directory: Permission denied" }) })
+        return boat.fetchImpl(url, init)
+      } })
+    }
+    const prepared = await failing("docker info").ensureHost(ensureInput()).then(() => undefined, (error: unknown) => error)
+    expect(prepared).toBeInstanceOf(Error)
+    expect(isSandboxRuntimeBootFailure(prepared)).toBe(false)
+    expect((prepared as Error).message).toContain("runtime image preparation failed (exit 1): mkdir: cannot create directory: Permission denied")
+    const started = await failing("docker run").ensureHost(ensureInput()).then(() => undefined, (error: unknown) => error)
+    expect(isSandboxRuntimeBootFailure(started)).toBe(true)
+    expect((started as Error).message).toContain("container start failed (exit 1)")
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {
@@ -527,10 +599,10 @@ describe("boat sandbox driver", () => {
     const passwordWrite = writes.find((c) => c.body.path === ".claxedo-registry-password")
     expect(passwordWrite?.body.content).toBe("synthetic-registry-pw")
 
-    const run = commands.find((c) => c.includes("docker run"))
-    expect(run).toContain("--password-stdin < .claxedo-registry-password")
-    expect(run).toContain("rm -f .claxedo-registry-password")
-    expect(run).toContain("$(pwd)/.claxedo-runtime-env:/run/claxedo-runtime.env:ro")
+    const prepare = commands.find((c) => c.includes("docker login"))
+    expect(prepare).toContain("--password-stdin < .claxedo-registry-password")
+    expect(prepare).toContain("rm -f .claxedo-registry-password")
+    expect(commands.find((c) => c.includes("docker run"))).toContain("$(pwd)/.claxedo-runtime-env:/run/claxedo-runtime.env:ro")
   })
 
   test("a failed run reports docker's stderr with every staged secret redacted", async () => {
@@ -551,7 +623,7 @@ describe("boat sandbox driver", () => {
     )
     expect(failure).toBeInstanceOf(AggregateError)
     expect(failure.errors).toHaveLength(2)
-    expect(failure.errors[0].message).toContain("container start failed (exit 125): docker: Error response from daemon: Conflict.")
+    expect(failure.errors[0].message).toContain("runtime image preparation failed (exit 125): docker: Error response from daemon: Conflict.")
     expect(failure.errors[1].message).toContain("registry password cleanup")
     for (const error of failure.errors) {
       expect(error.message).toContain("[redacted]")
