@@ -8,6 +8,7 @@ export type SessionQueue = Omit<QueuedMessages, "beginEdit"> & {
 
 export type QueueInternal = SessionQueue & {
   readonly reread: () => Promise<void>
+  readonly receive: (items: readonly QueuedPrompt[]) => void
   readonly replace: (seq: number, input: PromptInput) => Promise<boolean>
 }
 
@@ -23,6 +24,7 @@ type QueueContext = {
   readonly controlError: Field<AppError | undefined>
   readonly editing: Field<number | undefined>
   readonly inFlight: { current: Promise<void> | undefined }
+  readonly pushed: { count: number }
 }
 
 const NO_ITEMS: readonly QueuedPrompt[] = Object.freeze([])
@@ -32,16 +34,25 @@ function signalField<T>(initial: T): Field<T> {
   return { get, set }
 }
 
+function show(context: QueueContext, items: readonly QueuedPrompt[]) {
+  context.items.set(items)
+  context.readError.set(undefined)
+  context.onRead(items)
+}
+
 async function read(context: QueueContext): Promise<void> {
+  const pushedBefore = context.pushed.count
   try {
     const next = await context.server.sessions.queue(context.ref)
-    if (!next) return
-    context.items.set(next)
-    context.readError.set(undefined)
-    context.onRead(next)
+    if (next && context.pushed.count === pushedBefore) show(context, next)
   } catch (cause) {
-    context.readError.set(toAppError(cause))
+    if (context.pushed.count === pushedBefore) context.readError.set(toAppError(cause))
   }
+}
+
+function receive(context: QueueContext, items: readonly QueuedPrompt[]) {
+  context.pushed.count++
+  show(context, items)
 }
 
 function reread(context: QueueContext): Promise<void> {
@@ -101,6 +112,7 @@ export function createQueue(server: Server, ref: SessionLocation, onRead: (items
     controlError: signalField<AppError | undefined>(undefined),
     editing: signalField<number | undefined>(undefined),
     inFlight: { current: undefined },
+    pushed: { count: 0 },
   }
   return {
     items: context.items.get,
@@ -117,6 +129,7 @@ export function createQueue(server: Server, ref: SessionLocation, onRead: (items
       else void control(context, seq, "release")
     },
     reread: () => reread(context),
+    receive: (items) => receive(context, items),
     replace: (seq, input) => replace(context, seq, input),
   }
 }
