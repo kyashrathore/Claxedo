@@ -17,7 +17,7 @@ import { DurablePiPlacement } from "./pi-placement"
 import { SessionHostMeta } from "./session-host-meta"
 import { SessionHostTurns, TurnAuthorityError, type ExecutionRequest } from "./turn-delivery"
 import { TurnLeases, type StoredTurnLease } from "./turn-leases"
-import { workspaceMachineUnavailable } from "./workspace-machine"
+import { workspaceMachineAccess } from "./workspace-machine"
 
 /** A request or control-plane call at or past this is logged with its timing, so a slow composer read can be placed. */
 const SLOW_REQUEST_MS = 1_000
@@ -75,7 +75,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     this.pi = new PiHarness({ harness: (input) => this.placement.factory(() => this.boot())(input) })
     this.placement = new DurablePiPlacement({
       root, pi: this.pi, report: (error) => console.error("Pi extension failure", error),
-      execution: (request) => this.execution(request),
+      execution: (request, signal) => this.execution(request, signal),
       machine: async () => {
         const workspaceId = this.meta.workspaceId()
         const directory = (await this.turns.delivery(root)).delivery.directory
@@ -188,8 +188,8 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     return { status: answer.status === 401 || answer.status === 403 ? 403 : 502, message: `The control plane did not delete the session: ${answer.status} ${await answer.text()}` }
   }
 
-  private async execution(request: ExecutionRequest): Promise<TurnExecutionAccess> {
-    const access = await this.turns.execution(this.root, request).catch((error: unknown) => { throw workspaceMachineUnavailable(error) ?? error })
+  private async execution(request: ExecutionRequest, signal?: AbortSignal): Promise<TurnExecutionAccess> {
+    const access = await workspaceMachineAccess(() => this.turns.execution(this.root, request), { wait: request.wait === true, ...(signal ? { signal } : {}) })
     if (!this.meta.claimDirectory(access)) throw new TurnAuthorityError(409, "session_host_directory_mismatch")
     return access
   }

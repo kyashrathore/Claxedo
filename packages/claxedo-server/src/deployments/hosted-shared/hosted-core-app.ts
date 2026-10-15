@@ -346,6 +346,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...hostedPiCredentials({
         resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
         credentials: plane.orgCredentials,
+        ...(options.usageLedger?.latestHarnessModel ? { latestHarnessModel: options.usageLedger.latestHarnessModel } : {}),
       }),
     }),
   )

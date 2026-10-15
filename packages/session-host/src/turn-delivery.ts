@@ -1,12 +1,12 @@
 import { parseTurnDelivery, parseTurnExecutionAccess, type TurnDelivery, type TurnExecutionAccess } from "@claxedo/harness/contract"
-import { asBoolean, asRecord, asString } from "@claxedo/helpers/guards"
+import { asBoolean, asNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import { turnLeaseKey, type TurnLease, type TurnLeases } from "./turn-leases"
 
 export type HeldTurn = { key: string; delivery: TurnDelivery; generation: string }
 
 export type ControlPlaneFetch = (input: string, init: RequestInit) => Promise<Response>
 
-export type TurnAuthorityRefusal = { started?: boolean; message?: string }
+export type TurnAuthorityRefusal = { started?: boolean; message?: string; retryAfterMs?: number; sinceStartMs?: number }
 
 export class TurnAuthorityError extends Error {
   constructor(readonly status: number, readonly code: string, readonly refusal: TurnAuthorityRefusal = {}) {
@@ -15,8 +15,12 @@ export class TurnAuthorityError extends Error {
   }
 }
 
-/** Whether a call that finds the workspace machine not running asks the control plane to start it. */
-export type ExecutionRequest = { start: boolean }
+/**
+ * Whether a call that finds the workspace machine not running asks the
+ * control plane to start it, and whether one that finds it starting waits for
+ * it, as a tool call does.
+ */
+export type ExecutionRequest = { start: boolean; wait?: boolean }
 
 const EXECUTION_RENEW_MS = 60_000
 
@@ -31,8 +35,9 @@ async function deliveryGeneration(value: unknown): Promise<string> {
  * and provider definitions, `/turn-execution` for the token that reaches the
  * workspace machine, and `/turn-credential-refused` when the vendor refused
  * one of the delivered accounts. The first two are held for the lease and
- * dropped when its turn ends. A machine that is not running is refused at
- * once, never waited for; the refusal says whether this call started it.
+ * dropped when its turn ends. The plane refuses a machine that is not running
+ * at once; the refusal says whether this call started it, when its start can
+ * next answer differently, and how long it has run.
  */
 const askedKey = (leaseKey: string, request: ExecutionRequest) => `${leaseKey}:${request.start ? "start" : "read"}`
 
@@ -118,8 +123,11 @@ export class SessionHostTurns {
     const error = asRecord(asRecord(body)?.error)
     const started = asBoolean(error?.started)
     const message = asString(error?.message)
+    const retryAfterMs = asNumber(error?.retryAfterMs)
+    const sinceStartMs = asNumber(error?.sinceStartMs)
     throw new TurnAuthorityError(response.status, asString(error?.code) ?? "turn_authority_unavailable", {
       ...(started === undefined ? {} : { started }), ...(message ? { message } : {}),
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs }), ...(sinceStartMs === undefined ? {} : { sinceStartMs }),
     })
   }
 }

@@ -52,7 +52,8 @@ export type ControlPlaneInput = {
  * real `/api/claxedo/mcp` route below admits until the session is deleted;
  * `/turn-execution` mints a machine token while the machine runs, and
  * otherwise refuses at once, starting a sleeping machine only when the call
- * asks to and never one already starting; `/session-host-delete` deletes the
+ * asks to and never one already starting, with `control.start`'s next-answer
+ * delay and, for a start already running, how long it has run; `/session-host-delete` deletes the
  * session for anyone but a viewer.
  */
 export function controlPlaneStandIn(input: ControlPlaneInput) {
@@ -77,6 +78,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     refuseRenewals: false, leaseTtlMs: 60_000, reservation: `op_${input.root}`, viewers: new Set<string>(),
     machine: "running" as "running" | "asleep" | "starting", deleteUnavailable: false, firstPartyMcp: false, toolGroups: ["sessions"],
     refusedTurns: new Set<string>(), releaseDelayMs: 0,
+    start: { retryAfterMs: 60_000, sinceStartMs: 35_000 },
   }
   const redeemedGrants = new Map<string, string>()
 
@@ -222,7 +224,8 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
           control.machine = "starting"
           calls.starts.push(lease.turnId)
         }
-        return c.json({ error: { code: "cloud_runtime_starting", started } }, 409)
+        const { retryAfterMs, sinceStartMs } = control.start
+        return c.json({ error: { code: "cloud_runtime_starting", started, retryAfterMs, ...(started ? {} : { sinceStartMs }) } }, 409)
       }
       const expiresAt = Date.now() + 600_000
       const runtimeAccessToken = await mintRuntimeAccessToken({

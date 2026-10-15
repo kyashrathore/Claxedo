@@ -13,7 +13,7 @@ import type { ExecutionRequest } from "./turn-delivery"
 export type DurablePiHost = {
   root: string
   pi: PiHarness
-  execution(request: ExecutionRequest): Promise<TurnExecutionAccess>
+  execution(request: ExecutionRequest, signal?: AbortSignal): Promise<TurnExecutionAccess>
   machine(): Promise<{ workspaceId: string; directory: string } | undefined>
   turnContext(signal: AbortSignal): Promise<PiTurnContext>
   refresh(credentialProviderId: string): Promise<ProviderDirect | undefined>
@@ -31,7 +31,8 @@ export type DurablePiHost = {
  * the object's boot first: a session with live work is attached, which
  * installs its extensions, before anything of it can run. A machine call
  * starts a sleeping workspace machine only once a tool call of the turn has
- * passed approval; a prompt section's read never does.
+ * passed approval, and that call waits for the start; a prompt section's read
+ * never starts it.
  */
 export class DurablePiPlacement implements PiPlacement {
   private readonly registry = createRegistry()
@@ -92,7 +93,7 @@ export class DurablePiPlacement implements PiPlacement {
   env(): HarnessOptions["env"] {
     return async () => {
       const machine = await this.host.machine()
-      return machine ? new RemoteExecutionEnv({ ...machine, access: () => this.host.execution({ start: this.toolCalled }) }) : undefined
+      return machine ? new RemoteExecutionEnv({ ...machine, access: (signal) => this.host.execution({ start: this.toolCalled, wait: this.toolCalled }, signal) }) : undefined
     }
   }
 

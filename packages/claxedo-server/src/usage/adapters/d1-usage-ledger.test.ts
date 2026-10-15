@@ -79,6 +79,22 @@ describe("the D1 usage ledger", () => {
     expect(await store.cloudUsageFacts({ ...ALICE, ...range })).toEqual([expect.objectContaining({ messageId: "msg_1", revision: 2, tokens: expect.objectContaining({ input: 5 }) })])
   })
 
+  test("names the model of the account's newest finished turn on a harness since a time, and no one else's", async () => {
+    const store = await ledger()
+    const pi = (messageId: string, observedAt: number, modelId: string, status: TurnUsageRevision["status"] = "completed") =>
+      cloud({ messageId, observedAt, harness: "pi", providerId: "pi", modelId, status })
+    await store.writeRevision(pi("msg_old", DAY - 2_000, "openai-codex/gpt-6.1-sol"), { owner: ALICE, turnId: "msg_old" })
+    await store.writeRevision(pi("msg_new", DAY, "anthropic/claude-haiku-4-5-20251001"), { owner: ALICE, turnId: "msg_new" })
+    await store.writeRevision(pi("msg_failed", DAY + 500, "openai/gpt-6.1-sol", "error"), { owner: ALICE, turnId: "msg_failed" })
+    await store.writeRevision(cloud({ messageId: "msg_claude", observedAt: DAY + 1_000 }), { owner: ALICE, turnId: "msg_claude" })
+    await store.writeRevision(pi("msg_bob", DAY + 2_000, "xai/grok-4.7"), { owner: BOB, turnId: "msg_bob" })
+
+    expect(await store.latestHarnessModel({ ...ALICE, harness: "pi", since: DAY - 10_000 })).toBe("anthropic/claude-haiku-4-5-20251001")
+    expect(await store.latestHarnessModel({ ...ALICE, harness: "pi", since: DAY + 1 })).toBeUndefined()
+    expect(await store.latestHarnessModel({ ...MALLORY, harness: "pi", since: 0 })).toBeUndefined()
+    expect(await store.latestHarnessModel({ ...ALICE, harness: "claude", since: 0 })).toBe("claude-sonnet-4-5")
+  })
+
   test("keeps each turn's latest revision and answers a replay by revision and payload", async () => {
     const store = await ledger()
     const first = cloud({ messageId: "msg_1", revision: 1, settlement: "provisional", status: "running" })

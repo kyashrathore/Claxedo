@@ -65,7 +65,7 @@ async function restartableHttpMcp() {
   }
 }
 
-type StoredMessage = { info: { role: string; time?: { completed?: number } }; parts: Array<{ type: string; text?: string; tool?: string; state?: { status?: string; output?: string; error?: string } }> }
+type StoredMessage = { info: { role: string; time?: { completed?: number } }; parts: Array<{ type: string; messageID?: string; text?: string; tool?: string; state?: { status?: string; output?: string; error?: string } }> }
 
 const assistantText = (messages: StoredMessage[]) =>
   messages.filter((message) => message.info.role === "assistant").flatMap((message) => message.parts).filter((part) => part.type === "text").map((part) => part.text ?? "").join("")
@@ -183,6 +183,38 @@ void describe("SessionDO under workerd with PiHarness", () => {
       message: "Claude Code runs in the workspace's runtime on a cloud workspace, not in this session's host. Start a new Claude Code session to use it here.",
     } })
     assert.deepEqual((await host.json<{ harness: unknown }>(`/session/${root}/config`)).harness, { id: "pi", access: "native" })
+  })
+
+  void it("a session in Ask mode asks before a write, writes on Allow once, blocks it on Deny, and keeps the mode across turns", { timeout: 120_000 }, async () => {
+    const root = "ses_ask"
+    const host = await session(root)
+    type Permission = { id: string; sessionID: string; permission: string }
+    const ask = async (marker: string, file: string, response: "once" | "reject") => {
+      model.scriptTool({ name: "write", input: { path: file, content: `${marker}\n` }, whenPromptIncludes: marker })
+      await host.json(`/session/${root}/prompt_async`, { method: "POST", body: {
+        parts: [{ type: "text", text: `Write the file, then reply with exactly this one token: ${marker}` }], messageID: `msg_${marker}`, model: MODEL,
+        ...(marker === "PIASKALLOW" ? { permissionMode: "ask" } : {}),
+      } })
+      const pending = await eventually(`the permission for ${marker}`, async () => {
+        const open = await host.json<{ permissions?: { value?: Permission[] } | Permission[] }>(`/session/${root}?view=open`)
+        const rows = Array.isArray(open.permissions) ? open.permissions : open.permissions?.value ?? []
+        return rows.find((row) => row.sessionID === root)
+      }, 30_000)
+      assert.equal(existsSync(path.join(directory, file)), false, "nothing is written before the person answers")
+      assert.equal(pending.permission, "write")
+      await host.json(`/session/${root}/permissions/${encodeURIComponent(pending.id)}`, { method: "POST", body: { response } })
+      return (await host.settled(marker)).flatMap((message) => message.parts)
+        .find((part) => part.type === "tool" && part.messageID === `msg_${marker}_r`)?.state
+    }
+    const allowed = await ask("PIASKALLOW", "ask-allowed.txt", "once")
+    assert.equal(allowed?.status, "completed", JSON.stringify(allowed))
+    assert.equal(await readFile(path.join(directory, "ask-allowed.txt"), "utf8"), "PIASKALLOW\n")
+    assert.equal((await host.json<{ permissionMode?: string }>(`/session/${root}/config`)).permissionMode, "ask")
+
+    const denied = await ask("PIASKDENY", "ask-denied.txt", "reject")
+    assert.equal(denied?.status, "error", JSON.stringify(denied))
+    assert.equal(denied?.error, "Tool call blocked: The person denied this tool call")
+    assert.equal(existsSync(path.join(directory, "ask-denied.txt")), false)
   })
 
   void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for one delivery", { timeout: 120_000 }, async () => {
@@ -692,28 +724,80 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(host.controlPlane.calls.executions, [])
   })
 
-  void it("starts a sleeping machine from the first tool call that needs it and answers that call at once, starts it no second time while it starts, and runs the tool once it runs", { timeout: 120_000 }, async () => {
+  const writeTool = (host: Awaited<ReturnType<typeof session>>) => async (marker: string) => {
+    model.scriptTool({ name: "write", input: { path: "asleep.txt", content: `${marker}\n` }, whenPromptIncludes: marker })
+    await host.prompt(`msg_${marker}`, `Write the file, then reply with exactly this one token: ${marker}`)
+    return toolParts(await host.settled(marker), "write").at(-1)?.state
+  }
+
+  void it("a tool call that starts a sleeping machine holds while it comes up, asking again only as often as the start answers, and runs the tool once it runs", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const host = await session("ses_asleep_hold")
+    const control = host.controlPlane.control
+    control.machine = "asleep"
+    control.start = { retryAfterMs: 500, sinceStartMs: 1_000 }
+    const written = path.join(directory, "asleep.txt")
+    await rm(written, { force: true })
+    const heldSince = Date.now()
+    const ran = writeTool(host)("PIASLEEPHELD")
+    await eventually("the machine start", async () => host.controlPlane.calls.starts.length === 1 || undefined, 30_000)
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    control.machine = "running"
+    const state = await ran
+    const held = Date.now() - heldSince
+    assert.equal(state?.status, "completed", JSON.stringify(state))
+    assert.equal(await readFile(written, "utf8"), "PIASLEEPHELD\n")
+    assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPHELD"])
+    const asks = host.controlPlane.calls.executions.filter((turn) => turn === "msg_PIASLEEPHELD").length
+    assert.ok(asks >= 3 && asks <= 2 + held / 500, `${asks} asks in ${held} ms`)
+    assert.equal(model.requests.some((request) => request.prompt.includes("This tool call started it")), false, "the model never read that the machine was starting")
+  })
+
+  void it("stopping a turn while its tool call holds for a starting machine ends the hold, and the call asks for the machine no more", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const root = "ses_asleep_stop"
+    const host = await session(root)
+    const control = host.controlPlane.control
+    control.machine = "asleep"
+    control.start = { retryAfterMs: 500, sinceStartMs: 1_000 }
+    model.scriptTool({ name: "write", input: { path: "asleep-stop.txt", content: "no\n" }, whenPromptIncludes: "PIASLEEPSTOP" })
+    await host.prompt("msg_PIASLEEPSTOP", "Write the file, then reply with exactly this one token: PIASLEEPSTOP")
+    await eventually("the machine start", async () => host.controlPlane.calls.starts.length === 1 || undefined, 30_000)
+    const inspected = await host.json<{ target: { ownerGeneration: string } }>(`/session/${root}/recovery`)
+    const stoppedAt = Date.now()
+    await host.json(`/session/${root}/recovery`, { method: "POST", body: {
+      requestId: "stop_hold", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
+    } })
+    await eventually("the held tool call ended", async () => {
+      const state = toolParts(await host.messages(), "write").at(-1)?.state
+      return state && state.status !== "running" && state.status !== "pending" ? state : undefined
+    }, 15_000)
+    assert.ok(Date.now() - stoppedAt < 10_000, `the hold ended ${Date.now() - stoppedAt} ms after the stop`)
+    const asks = host.controlPlane.calls.executions.length
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    assert.equal(host.controlPlane.calls.executions.length, asks)
+    assert.equal(existsSync(path.join(directory, "asleep-stop.txt")), false)
+  })
+
+  void it("a tool call whose machine is not up within its hold answers that this call started it and how long it has been starting, starts it no second time, and runs the tool once it runs", { timeout: 120_000 }, async () => {
     plugins = NO_PLUGINS
     const host = await session("ses_asleep_tool")
     const control = host.controlPlane.control
     control.machine = "asleep"
     const written = path.join(directory, "asleep.txt")
-    const write = async (marker: string) => {
-      model.scriptTool({ name: "write", input: { path: "asleep.txt", content: `${marker}\n` }, whenPromptIncludes: marker })
-      await host.prompt(`msg_${marker}`, `Write the file, then reply with exactly this one token: ${marker}`)
-      return toolParts(await host.settled(marker), "write").at(-1)?.state
-    }
+    await rm(written, { force: true })
+    const write = writeTool(host)
 
     const started = await write("PIASLEEPSTART")
     assert.equal(started?.status, "error", JSON.stringify(started))
-    assert.ok(started?.error?.includes("The workspace machine was asleep. This tool call started it; it usually takes about a minute. Try this tool again in a few seconds."), started?.error)
+    assert.ok(started?.error?.includes("The workspace machine was asleep. This tool call started it; it is starting now. Call this tool again: the call waits up to 20 s for the machine to come up."), started?.error)
     assert.ok(model.requests.some((request) => request.prompt.includes("This tool call started it")), "the model was told the machine is starting")
     assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
     assert.equal(existsSync(written), false)
 
     const starting = await write("PIASLEEPSTARTING")
     assert.equal(starting?.status, "error", JSON.stringify(starting))
-    assert.ok(starting?.error?.includes("The workspace machine is starting; it usually takes about a minute. Try this tool again in a few seconds."), starting?.error)
+    assert.ok(starting?.error?.includes("The workspace machine is still starting (35 s so far). Call this tool again: the call waits up to 20 s for the machine to come up."), starting?.error)
     assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
 
     control.machine = "running"

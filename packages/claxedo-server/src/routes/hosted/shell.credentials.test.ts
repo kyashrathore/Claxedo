@@ -135,6 +135,28 @@ describe("the Pi provider catalog", () => {
     expect((await catalog.request("/api/claxedo/agent-config/harness/options?nativeHarness=codex", { headers: { authorization: "Bearer token-a" } })).status).toBe(400)
     expect((await app().request(route, { headers: { authorization: "Bearer token-a" } })).status).toBe(503)
   })
+
+  test("a Pi draft that names no model opens on the model of the person's last Pi turn while its account is connected, else the launch default; a named model wins", async () => {
+    const both = () => projectPiProviderCatalog(new Map([["openai-codex", { by: "codex-app-server" }], ["anthropic", { by: "claude-sdk" }]]))
+    const asked: string[] = []
+    let last: string | undefined = "anthropic/claude-haiku-4-5-20251001"
+    const catalog = HostedShellRoutes({ authConfig: signedConfig, verifier, piProviderCatalog: async () => both(), lastHarnessModel: async (auth, harness) => {
+      asked.push(`${auth.user.subject} ${harness}`)
+      return last
+    } })
+    const current = async (query = "") => {
+      const response = await catalog.request(`/api/claxedo/agent-config/harness/options?nativeHarness=pi${query}`, { headers: { authorization: "Bearer token-a" } })
+      const body = await response.json() as { options: Array<{ id: string; currentValue?: string }> }
+      return body.options.find((option) => option.id === "model")?.currentValue
+    }
+    expect(await current()).toBe("anthropic/claude-haiku-4-5-20251001")
+    expect(asked).toEqual(["user_a pi"])
+    expect(await current("&model=anthropic/claude-opus-5-5")).toBe("anthropic/claude-opus-5-5")
+    last = "xai/grok-4.7"
+    expect(await current()).toBe("openai-codex/gpt-6.1-sol")
+    last = undefined
+    expect(await current()).toBe("openai-codex/gpt-6.1-sol")
+  })
 })
 
 describe("a native harness draft on a cloud workspace", () => {
