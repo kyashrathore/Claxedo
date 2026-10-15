@@ -54,6 +54,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
   private key: Promise<RelayHostAuthOptions["key"]> | undefined
   private hosting: Promise<SessionHost> | undefined
   private erasing = false
+  private erased = false
 
   constructor(ctx: DurableObjectState, env: SessionHostEnv) {
     super(ctx, env)
@@ -101,6 +102,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
    * a typed refusal, and can still be deleted.
    */
   async fetch(request: Request): Promise<Response> {
+    if (this.erased) return Response.json(errorBody("session_deleted", "This session was deleted"), { status: 404 })
     const arrivedAt = Date.now()
     let failure: unknown
     const started = await this.lifecycle.start().then(() => true, (error: unknown) => { failure = error; return false })
@@ -236,10 +238,15 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     await conversation?.abort(BACKGROUND_CONTEXT)
   }
 
+  /**
+   * The object answers its delete before the runtime evicts it, so it is not
+   * aborted: an abort fails the reply still on its way out, and the caller
+   * reads an erased session as a failed delete.
+   */
   private async erase(): Promise<void> {
+    this.erased = true
     await this.pi.dispose()
     await this.ctx.storage.deleteAlarm()
     await this.ctx.storage.deleteAll()
-    setTimeout(() => this.ctx.abort("The session was deleted"), 0)
   }
 }
