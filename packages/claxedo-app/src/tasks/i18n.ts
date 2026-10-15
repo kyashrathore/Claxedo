@@ -147,6 +147,8 @@ const en = {
   "tasks.preset.namePlaceholder": "Careful reviewer",
   "tasks.preset.nameRequired": "Name is required.",
   "tasks.preset.nameTooLong": "Name is longer than {{max}} characters.",
+  "tasks.preset.cloudHarnessElsewhere":
+    "{{harness}} runs in its own session host on a cloud workspace, and a cloud task starts its session in the workspace's runtime. Choose another harness for a cloud preset.",
   "tasks.preset.chooseHarness": "Choose a harness.",
   "tasks.preset.chooseModel": "Choose a model for this harness.",
   "tasks.preset.primaryRequired": "The primary configuration is required.",
