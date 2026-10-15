@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import {
+  SandboxProviderRateLimitedError,
   createSandboxManager,
   type SandboxDriver,
   type SandboxDriverEnsureInput,
@@ -515,6 +516,26 @@ describe("hosted tasks cloud roots", () => {
     expect(usage.leaseOpened.mock.calls.map(([opened]) => opened.workspaceId)).toEqual([root?.id, root?.id, root?.id])
   })
 
+  test("a start the provider refuses at its daily start limit says why in the person's words, without the lease's code", async () => {
+    runtime()
+    const { driver } = fakeDriver()
+    const limited: SandboxDriver = {
+      ...driver,
+      ensureHost: async () => {
+        throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "start limit")
+      },
+    }
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: limited }))
+
+    const previewed = await bridge(composition).preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([{
+      code: "source_unavailable",
+      detail: "The cloud workspace for this attempt could not be provisioned: test-driver's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: press Retry then. A wake counts as a start too.",
+    }])
+  })
+
   test("refuses cloud placement on a deployment that provisions no sandboxes, and allocates nothing", async () => {
     runtime()
     const composition = services(undefined)
@@ -754,7 +775,7 @@ describe("hosted tasks cloud roots", () => {
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
     expect(previewed.preview.blockers).toEqual([
-      { code: "harness_unavailable", detail: expect.stringContaining("runs in its own session host on a cloud workspace") },
+      { code: "harness_unavailable", detail: expect.stringContaining("Pi runs in its own session host on a cloud workspace") },
     ])
     expect(ensured).toEqual([])
     expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
