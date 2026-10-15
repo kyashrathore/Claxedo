@@ -49,7 +49,7 @@ export type TranscriptContext = {
   readonly goal: SessionGoalStore
   readonly todos: SessionTodosStore
   readonly subagents: SessionSubagentsStore
-  readonly snapshotRead: { current: Promise<void> | undefined }
+  readonly snapshotRead: { current: Promise<void> | undefined; next: Promise<void> | undefined }
   readonly latestTurnRead: { current: TranscriptPage | undefined }
   readonly olderRead: { current: Promise<void> | undefined }
   readonly partReads: Map<string, Promise<void>>
@@ -81,7 +81,7 @@ export function createTranscriptContext(server: Server, ref: SessionLocation, de
     goal: createSessionGoal(server, ref),
     todos: createSessionTodos(),
     subagents: createSessionSubagents(),
-    snapshotRead: { current: undefined },
+    snapshotRead: { current: undefined, next: undefined },
     latestTurnRead: { current: undefined },
     olderRead: { current: undefined },
     partReads: new Map(),

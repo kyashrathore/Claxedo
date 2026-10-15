@@ -189,6 +189,10 @@ export function isAppError(value: unknown): value is AppError {
   return typeof row.class === "string" && ERROR_CLASSES.has(row.class) && typeof row.message === "string" && typeof row.retryable === "boolean"
 }
 
+export function isSessionMissing(error: unknown): boolean {
+  return toAppError(error).code === "session_not_found"
+}
+
 export function isTurnAdmissionConflict(error: unknown): boolean {
   const data = asRecord(asRecord(error)?.data)
   return data?.code === "turn_already_active" ||
