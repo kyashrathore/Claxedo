@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
-import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, useComposerStore, type Draft, type Submission } from "@/composer"
+import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
 import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
 import { sessionId, useServer, type PlacementId, type PromptInput, type ReservationHold } from "@/server"
 import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
@@ -19,7 +19,6 @@ import "./session-screen.css"
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
   const stores = useSessionStores()
-  const composers = useComposerStore()
   const server = useServer()
   const workbench = useWorkbench()
   const key = () => draftComposerKey(props.state.draftId)
@@ -56,17 +55,16 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
     const page = await server.sessions.list({ every: true, sessionId: sessionId(held.sessionId), limit: 1, settled: "all" })
     const row = page.rows[0]
     if (!row) return undefined
-    composers.take(key())
     return stores.open(row.ref)
   }
   const thinking = () => {
     const state = firstSend.state()
     return state.kind === "sending" && server.cloud.runtime(state.placementId).kind === "live"
   }
-  const startSession = async (submission: Submission, input: PromptInput, taken: Draft): Promise<SessionView | undefined> => {
+  const startSession = async (submission: Submission, input: PromptInput): Promise<SessionView | undefined> => {
     const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
     setSent(prompt)
-    const view = await firstSend.run(attempt(submission, prompt), { failed: () => composers.restore(key(), taken), retried: () => void composers.take(key()), landed })
+    const view = await firstSend.run(attempt(submission, prompt), { landed })
     if (!view) setSent(undefined)
     return view
   }
@@ -99,7 +97,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                 />
               </div>
               <div class="relative z-10" classList={{ "-mt-2": !sent() || notice.notices().length > 0 }}>
-                <div hidden={firstSend.state().kind === "failed"}>
+                <div hidden={!!sent()}>
                   <Composer
                     composerKey={key()}
                     placementId={where()}

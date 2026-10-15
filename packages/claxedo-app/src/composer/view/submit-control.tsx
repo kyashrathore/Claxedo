@@ -1,16 +1,14 @@
-import { type Accessor, type JSX, Show } from "solid-js"
-import { ClaxedoIconButton as IconButton, Spinner, Tooltip } from "@/ui"
+import type { Accessor, JSX } from "solid-js"
+import { ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
 import { createSubmitBlockFlash } from "./submit-block-flash"
 import { SubmitBlockTip } from "./submit-block-tip"
 import type { SubmitBlock } from "../submit-block-reason"
 
 export function PromptSubmitControl(props: {
   busy: Accessor<boolean>
-  booting: Accessor<boolean>
   working: Accessor<boolean>
   blank: Accessor<boolean>
   tip: Accessor<JSX.Element>
-  bootText: Accessor<string>
   mode: Accessor<"normal" | "shell">
   disabled: Accessor<boolean>
   excludeFromTab: Accessor<boolean>
@@ -45,23 +43,20 @@ export function PromptSubmitControl(props: {
   const label = () =>
     stopping()
       ? props.stopLabel
-      : props.booting()
-        ? props.bootText()
-        : props.block()
-          ? props.block()!.copy
-          : props.sendLabel
+      : props.block()
+        ? props.block()!.copy
+        : props.sendLabel
 
   return (
     <Tooltip
       placement="top"
-      inactive={!props.block() && !props.booting() && !props.working() && props.blank()}
+      inactive={!props.block() && !props.working() && props.blank()}
       forceOpen={flash() && actionable()}
       value={tipContent()}
     >
       <div class="relative">
         <IconButton
           data-action="prompt-submit"
-          data-booting={props.booting() || undefined}
           type="submit"
           disabled={props.disabled()}
           tabIndex={props.excludeFromTab() ? -1 : undefined}
@@ -72,9 +67,6 @@ export function PromptSubmitControl(props: {
           classList={{ "opacity-50": actionable() }}
           aria-label={label()}
         />
-        <Show when={props.booting()}>
-          <Spinner class="pointer-events-none absolute inset-0 m-auto size-3.5 text-v2-icon-icon-inverse" />
-        </Show>
       </div>
     </Tooltip>
   )

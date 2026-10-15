@@ -10,7 +10,6 @@ const unreadHarness: SubmitBlockInput = {
   harnessOptionsLoading: false,
   harnessReadyForSubmit: false,
   modelBlocked: false,
-  booting: false,
   stoppable: false,
   blank: false,
 }
@@ -19,6 +18,13 @@ test("submit block: a workspace whose sandbox is asleep sends, since the send wa
   expect(submitBlockReason({ ...unreadHarness, workspaceAsleep: true })).toBeNull()
   expect(submitBlockReason({ ...unreadHarness, workspaceAsleep: true, blank: true })?.reason).toBe("empty")
   expect(submitBlockReason(unreadHarness)?.reason).toBe("harness-error")
+})
+
+test("submit block: an asleep workspace never sends to a harness nobody chose; Send stays blocked on the model choice until one is", () => {
+  const noHarness: SubmitBlockInput = { ...unreadHarness, harnessMode: false, modelBlocked: true, workspaceAsleep: true }
+  expect(submitBlockReason(noHarness)?.reason).toBe("no-model")
+  expect(submitBlockReason({ ...noHarness, blank: true })?.reason).toBe("no-model")
+  expect(submitBlockReason({ ...noHarness, workspaceAsleep: false })?.reason).toBe("no-model")
 })
 
 test("submit block: a model already chosen sends while its options reload; only a session with no model yet waits for them", () => {

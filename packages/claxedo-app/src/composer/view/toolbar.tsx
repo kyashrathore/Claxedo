@@ -41,10 +41,8 @@ export type PromptToolbarProps = {
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
   stoppable: Accessor<boolean>
-  booting: Accessor<boolean>
   working: Accessor<boolean>
   blank: Accessor<boolean>
-  bootText: Accessor<string>
   submitDisabled: Accessor<boolean>
   submitExcludeFromTab: Accessor<boolean>
   submitBlock: Accessor<SubmitBlock | null>
@@ -55,13 +53,6 @@ export type PromptToolbarProps = {
 
 export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
   const submitTip = () => {
-    if (props.booting()) {
-      return (
-        <div class="flex items-center gap-2">
-          <span>{props.bootText()}</span>
-        </div>
-      )
-    }
     if (props.stoppable() && props.blank()) {
       return (
         <div class="flex items-center gap-2">
@@ -136,11 +127,9 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
       />
       <PromptSubmitControl
         busy={props.stoppable}
-        booting={props.booting}
         working={props.working}
         blank={props.blank}
         tip={submitTip}
-        bootText={props.bootText}
         mode={props.mode}
         disabled={props.submitDisabled}
         excludeFromTab={props.submitExcludeFromTab}

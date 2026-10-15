@@ -616,7 +616,3 @@ html[data-theme="codex"] [data-component="goal-dock"] {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
-
-.composer-submit[data-booting] > [data-component="icon"] {
-  opacity: 0;
-}
