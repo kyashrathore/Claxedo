@@ -191,9 +191,7 @@ function isStartProgress(value: Record<string, unknown>): value is SandboxStartP
 }
 
 function isStartFailure(value: unknown): value is SandboxStartFailure {
-  if (typeof value !== "object" || value === null) return false
-  const failure = value as Record<string, unknown>
-  return typeof failure.epoch === "number" && typeof failure.failedAt === "number" && typeof failure.error === "string"
+  return isRecord(value) && typeof value.epoch === "number" && typeof value.failedAt === "number" && typeof value.error === "string"
 }
 
 export function leaseStart(input: unknown): SandboxStartProgress | null {

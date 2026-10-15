@@ -40,7 +40,7 @@ async function plane() {
     database: database.database,
     services: {} as Input["services"],
     sandboxManager,
-    workspaceSecretBrokering: async (workspaceId) => BROKERING[workspaceId]!,
+    workspaceSecretBrokering: async (workspaceId) => BROKERING[workspaceId],
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
     settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
     credentials: () => store,
