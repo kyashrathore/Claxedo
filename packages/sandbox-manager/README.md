@@ -162,6 +162,23 @@ runtime again from it on the previous boot's env file. `host <port> --public` is
 sent once more when Boat answers that it could not stop the port's localhost
 relay, which is Boat's own request to try again.
 
+Two boots of one machine can run at once: Cloudflare re-ran a start's alarm on
+another machine while the first run still booted (staging, 2026-10-15), and a
+retried epoch resumes the same VM, so two seeds removed each other's trees.
+Each boot therefore stages its env and registry password under names of its own
+(`.claxedo-runtime-env.<boot>`, moved into place by its start), and its
+preparation, container start and `host --public` each hold `flock` on
+`/run/lock/claxedo-boot.lock` (two publishes of one port at once made Boat
+answer 500 on its own record of it). A second boot waits for the first's command to
+end, then finds the seed complete and the first's container, and starts it. The
+kernel releases a lock with its holder, so a holder Boat ended (a command past
+its time limit) releases it at once, and one whose caller went away holds it
+until its command ends, which Boat lets run (measured 2026-10-15). A wait past
+the command's limit less 60 s fails the boot with that reason. Staged files
+older than the 30-minute boot deadline belong to no running boot and are removed.
+A resume Boat refuses with `sandbox_resuming`, because the other boot resumed the
+sandbox first, waits for that resume instead of failing.
+
 ## Credentials & secrets
 
 There are two distinct channels for getting values into a sandbox, chosen by
