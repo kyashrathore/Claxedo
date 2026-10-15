@@ -36,7 +36,7 @@ import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/r
 import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
 import type { SessionHostAuthority } from "./session-hosts"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
-import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
+import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
@@ -45,7 +45,7 @@ import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
-import { sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
+import { sandboxEgressUnenforcedSink, sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
 import type { SandboxInFlight, SandboxStart } from "../workspace/sandbox-start"
 
 export { HostedWorkerCompositionError } from "./composition-error"
@@ -102,53 +102,6 @@ function safetyLimits(env: HostedWorkerEnv): HostedSafetyLimits {
     defaultRequestRateLimit: positiveInteger(env, "CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT", 600),
     defaultRequestRateLimitWindowMs: positiveInteger(env, "CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT_WINDOW_MS", 60_000),
     sandboxMaxRetryCount: positiveInteger(env, "CLAXEDO_SANDBOX_MAX_RETRY_COUNT", 5),
-  }
-}
-
-/**
- * Route the sandbox manager's egress-unenforced warning into ops telemetry,
- * without giving up the console line.
- *
- * The gap is a DEPLOYMENT one and silent by construction: a cloudflare driver
- * declares `egressControl: "none"`, so such a deployment boots and provisions
- * normally while every hosted sandbox comes up able to reach any host on the
- * internet. The manager warns at composition, but `console.warn` inside a
- * Worker isolate reaches only whoever is tailing logs at that moment, which is
- * nobody on the day the driver is switched.
- *
- * So the event also becomes a queryable ops fact. Deliberately NOT a hard
- * `HostedWorkerCompositionError`: refusing composition would take the entire
- * control plane down — auth, relay, every workspace already running
- * — over a provisioning-time capability. The failure this reports is real but
- * partial, and the response to it is an operator changing a driver, not an
- * outage.
- *
- * Ops plane, so `distinct_id: "system"` and no org/user identifiers — same
- * contract as `sandbox.touch` and the product monitors. `egressControl` rides
- * along even though it is always `"none"` today, so a query can group on the
- * capability rather than re-deriving it from a driver-id allowlist that would
- * go stale the moment the catalog changes.
- */
-export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
-  return (event: SandboxEgressUnenforcedEvent) => {
-    // Kept: `public-docs/sandbox-egress.md` tells operators to verify
-    // enforcement by looking for this line at boot, and overriding the sink
-    // replaces the manager's own console default.
-    console.warn(event.message)
-    telemetry.capture("system", "sandbox.egress_unenforced", {
-      phase: event.phase,
-      reason: event.reason,
-      driver: event.driver,
-      egress_control: event.egressControl,
-      ...(event.workspaceId ? { workspace_id: event.workspaceId } : {}),
-      // Counts only — an allowlist is deployment topology, not ops-plane data.
-      ...(event.requested
-        ? {
-            withheld_host_count: event.requested.hosts?.length ?? 0,
-            withheld_cidr_count: event.requested.cidrs?.length ?? 0,
-          }
-        : {}),
-    })
   }
 }
 

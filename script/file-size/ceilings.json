@@ -15,7 +15,6 @@
   "packages/claxedo-server/src/authority/adapters/d1/host-access-authority.ts": 1779,
   "packages/claxedo-server/src/authority/adapters/d1/session-authority.ts": 1580,
   "packages/claxedo-server/src/deployments/hosted-workerd/live-sync-room.cf.ts": 873,
-  "packages/claxedo-server/src/routes/runtime-session-authority.ts": 841,
   "packages/session-core/src/routes/session-core.ts": 1601,
   "packages/session-core/src/store.ts": 3470,
   "packages/workspace-relay/src/cloudflare.ts": 2473,

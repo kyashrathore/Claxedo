@@ -25,18 +25,18 @@ export function modelFamily(modelId: string): string {
 }
 
 /**
- * `turn_completed` for each settled usage row the plane files: one per message
- * a harness reports for a turn, so a turn of several model calls reads as
- * several rows. A provisional or still-running revision is not settled, and a
- * replayed one (anything but `accepted`) was already counted. The durations
- * are measured from the turn's admission, so a row filed under another turn's
+ * `turn_completed` once per message a harness reports for a turn, on the
+ * revision the ledger says first settled it, so a turn of several model calls
+ * reads as several rows and a settled message revised later (usage landing
+ * after its answer, a recovered stop) is not counted again. The durations are
+ * measured from the turn's admission, so a row filed under another turn's
  * lease carries none.
  */
 export function withTurnCompletedTelemetry(writer: UsageReportWriter, telemetry: ControlPlaneTelemetry): UsageReportWriter {
   return {
     async writeRevision(fact, filing) {
       const result = await writer.writeRevision(fact, filing)
-      if (result.status !== "accepted" || fact.settlement === "provisional" || fact.status === "running") return result
+      if (result.status !== "accepted" || !result.firstSettled) return result
       const sinceAdmission = (at: number | undefined) =>
         at !== undefined && filing.admittedAt !== undefined ? Math.max(0, at - filing.admittedAt) : undefined
       const duration = sinceAdmission(fact.completedAt)

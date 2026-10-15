@@ -215,7 +215,7 @@ describe("manager: document where we can't", () => {
     ).resolves.toMatchObject({ status: "ready" })
   })
 
-  test("withholding the policy emits a warning naming the driver and the workspace", async () => {
+  test("withholding the policy emits a warning naming the driver, the workspace and the start's placement labels", async () => {
     const { events, sink } = warnings()
     const manager = createSandboxManager({
       leaseStore: createMemoryLeaseStore(),
@@ -225,6 +225,7 @@ describe("manager: document where we can't", () => {
 
     await manager.ensure("ws_abc", {
       homeRegion: "us-east",
+      labels: { sandboxOrg: "org_1" },
       net: { mode: "restricted", hosts: ["github.com", "api.anthropic.com"] },
     })
 
@@ -236,6 +237,7 @@ describe("manager: document where we can't", () => {
       driver: "withheld-warn-driver",
       egressControl: "none",
       workspaceId: "ws_abc",
+      labels: { sandboxOrg: "org_1" },
       requested: { mode: "restricted", hosts: ["github.com", "api.anthropic.com"] },
     })
     // The message has to be usable on its own — a sink that only forwards text

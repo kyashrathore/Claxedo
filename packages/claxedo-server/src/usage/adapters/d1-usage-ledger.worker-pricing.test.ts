@@ -46,7 +46,7 @@ const FACT: TurnUsageRevision = {
 test("the hosted usage view prices an account's cloud turns inside workerd from the catalog bundled into the Worker", async () => {
   const worker = miniflare!
   const seeded = await worker.dispatchFetch("http://usage.test/seed", { method: "POST", body: JSON.stringify(FACT) })
-  expect(await seeded.json()).toEqual({ status: "accepted" })
+  expect(await seeded.json()).toEqual({ status: "accepted", firstSettled: true })
 
   const response = await worker.dispatchFetch(`http://usage.test/?since=${DAY - 3_600_000}&until=${DAY + 3_600_000}&group=model`)
   expect(response.status).toBe(200)

@@ -5,6 +5,7 @@ import { sessionHostAdmits, type SessionHostAuthority } from "./session-hosts"
 import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ControlPlaneTelemetry } from "./services"
 import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
+import { sandboxWorkspaceKeys } from "../sandbox/sandbox-telemetry"
 
 export type { HostTunnelTargetResolver, HostTunnelTargetResult } from "@claxedo/server-core/adapters/relay-port"
 
@@ -28,16 +29,17 @@ export function sandboxRelayTargetLookup(input: {
       // Touch telemetry is operational evidence; it must never break routing.
     }
   }
-  const touch = (workspaceId: string, waitUntil?: (promise: Promise<unknown>) => void) => {
+  const touch = (target: { workspaceId: string; labels?: Record<string, string> }, waitUntil?: (promise: Promise<unknown>) => void) => {
     const sandboxManager = input.sandboxManager
     if (!sandboxManager?.touch) return
+    const keys = sandboxWorkspaceKeys(target.workspaceId, target.labels)
     const work = sandboxManager
-      .touch(workspaceId)
+      .touch(target.workspaceId)
       .then((result) => {
-        capture({ workspaceId, touched: result.touched, status: result.status })
+        capture({ ...keys, touched: result.touched, status: result.status })
       })
       .catch(() => {
-        capture({ workspaceId, touched: false, status: "failed" })
+        capture({ ...keys, touched: false, status: "failed" })
       })
     if (waitUntil) waitUntil(work)
     else void work
@@ -71,7 +73,7 @@ export function sandboxRelayTargetLookup(input: {
       )
       if (target.status === "ready" && target.hostId === args.hostId) {
         if (!args.routingId || args.routingId !== target.routingId) return { found: false, code: "runtime_access_token_invalid" }
-        touch(args.workspaceId, args.waitUntil)
+        touch({ workspaceId: args.workspaceId, ...(target.labels ? { labels: target.labels } : {}) }, args.waitUntil)
         return { found: true, baseUrl: target.url, backing: "cloud-vm" }
       }
     }

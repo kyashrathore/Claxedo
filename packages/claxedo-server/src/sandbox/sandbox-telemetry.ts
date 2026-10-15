@@ -1,14 +1,18 @@
-import type { SandboxLifecycleEvent, SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
+import type { SandboxEgressUnenforcedEvent, SandboxLifecycleEvent, SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { SANDBOX_ORG_LABEL } from "./org-sandbox-manager"
 
+/** How every event about a workspace machine names it: the workspace and, from the placement's labels, its org. */
+export function sandboxWorkspaceKeys(workspaceId: string, labels: Record<string, string> | undefined) {
+  const orgId = labels?.[SANDBOX_ORG_LABEL]
+  return { workspace_id: workspaceId, ...(orgId ? { org_id: orgId, $groups: { org: orgId } } : {}) }
+}
+
 function machineProperties(event: { workspaceId: string; driver: string; labels: Record<string, string> }) {
-  const orgId = event.labels[SANDBOX_ORG_LABEL]
   return {
-    workspace_id: event.workspaceId,
+    ...sandboxWorkspaceKeys(event.workspaceId, event.labels),
     driver: event.driver,
     ...(event.labels.projectId ? { project_id: event.labels.projectId } : {}),
-    ...(orgId ? { org_id: orgId, $groups: { org: orgId } } : {}),
   }
 }
 
@@ -43,8 +47,8 @@ export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
 
 /**
  * The close of a metered interval is `workspace_stopped` with the boot's
- * `active_ms`, whether the machine was stopped by hand, by idleness, or
- * destroyed while serving. Destroying a machine that was already stopped
+ * `active_ms`, whether the machine was stopped by hand, by idleness,
+ * destroyed while serving, or lost by its provider. Destroying a machine that was already stopped
  * closes nothing. An epoch that failed while its start goes on in the next
  * one is not a failure the person saw; `workspace_failed` is the start's end.
  */
@@ -57,7 +61,32 @@ export function sandboxLifecycleSink(telemetry: ControlPlaneTelemetry) {
       return
     }
     if (event.activeMs === undefined) return
-    const cause = event.kind === "destroyed" ? "deleted" : event.idle ? "idle" : "explicit"
+    const cause = event.kind === "destroyed" ? (event.hostGone ? "host_gone" : "deleted") : event.idle ? "idle" : "explicit"
     telemetry.capture("system", "workspace_stopped", { ...machine, cause, active_ms: event.activeMs })
+  }
+}
+
+/**
+ * The manager's warning that its driver runs sandboxes with unrestricted
+ * egress, as an ops fact as well as the console line
+ * `public-docs/sandbox-egress.md` tells operators to look for at boot; a sink
+ * replaces the manager's own console default. The composition half is the
+ * deployment's and names no workspace; the start half names the workspace
+ * whose allowlist was withheld, and only the allowlist's counts, since the
+ * allowlist itself is deployment topology.
+ */
+export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
+  return (event: SandboxEgressUnenforcedEvent) => {
+    console.warn(event.message)
+    telemetry.capture("system", "sandbox.egress_unenforced", {
+      phase: event.phase,
+      reason: event.reason,
+      driver: event.driver,
+      egress_control: event.egressControl,
+      ...(event.workspaceId ? sandboxWorkspaceKeys(event.workspaceId, event.labels) : {}),
+      ...(event.requested
+        ? { withheld_host_count: event.requested.hosts?.length ?? 0, withheld_cidr_count: event.requested.cidrs?.length ?? 0 }
+        : {}),
+    })
   }
 }

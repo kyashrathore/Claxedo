@@ -2023,7 +2023,7 @@ describe("a host the provider no longer has", () => {
       lastError: "runtime_host_gone: Boat GET /sandboxes/sandbox_gone was rejected (not_found)",
       endedAt: 8_000,
     }))
-    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", epoch: 3, activeMs: 7_000 })])
+    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", hostGone: true, epoch: 3, activeMs: 7_000 })])
     expect(phases).toEqual(["4:cold-start:lease_decision", "4:cold-start:runtime_ready"])
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 4, sandboxId: "sandbox_ws_1", machineClass: "default", retryCount: 0 })
     await expect(manager.target("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 4, url: "https://runtime.test/ws_1" })
@@ -2040,7 +2040,7 @@ describe("a host the provider no longer has", () => {
     const ended = patches.find((patch) => patch.status === "destroyed")
     expect(ended).toMatchObject({ epoch: 4, lastError: "runtime_host_gone: snapshot_data_expired" })
     expect(ended).not.toHaveProperty("endedAt")
-    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", epoch: 4 })])
+    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", hostGone: true, epoch: 4 })])
     expect(events[0]).not.toHaveProperty("activeMs")
   })
 
@@ -2063,7 +2063,7 @@ describe("a host the provider no longer has", () => {
 
     await expect(manager.stop("ws_1")).resolves.toEqual({ ok: true, status: "destroyed" })
     expect(patches).toContainEqual(expect.objectContaining({ epoch: 3, status: "destroyed", lastError: "runtime_host_gone: sandbox_gone is gone", endedAt: 8_000 }))
-    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", epoch: 3, activeMs: 7_000 })])
+    expect(events).toEqual([expect.objectContaining({ kind: "destroyed", hostGone: true, epoch: 3, activeMs: 7_000 })])
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "destroyed", epoch: 3 })
     await expect(manager.target("ws_1")).resolves.toMatchObject({ status: "unavailable", leaseStatus: "destroyed" })
     await expect(manager.stop("ws_1")).resolves.toEqual({ ok: false, reason: "runtime_lease_not_ready" })

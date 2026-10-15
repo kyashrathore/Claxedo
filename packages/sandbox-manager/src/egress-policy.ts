@@ -91,6 +91,8 @@ export type SandboxEgressUnenforcedEvent = {
   message: string
   /** Present on `"ensure"`. */
   workspaceId?: string
+  /** The start's placement labels. Present on `"ensure"`. */
+  labels?: Record<string, string>
   /** The allowlist the caller asked for and did NOT get. Present on `"ensure"`. */
   requested?: SandboxNetworkPolicy
 }

@@ -380,7 +380,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       ...(endedAt === undefined ? {} : { endedAt }),
     })
     if (!ended) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion: lease.homeRegion }
-    lifecycle.destroyed(lease, endedAt)
+    lifecycle.hostGone(lease, endedAt)
     const admitted = await admit(workspaceId, managerInput)
     if (!("lease" in admitted)) return admitted
     return provisionLease(workspaceId, admitted.lease, admitted.lease.homeRegion, managerInput, enteredAt)
@@ -498,7 +498,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     // raised here, once per driver per isolate.
     const egress = sandboxEgressDisposition(options.driver.metadata.egressControl, input.net)
     if (egress.action === "withhold" && input.net) {
-      egressWarnings.withheld({ workspaceId, requested: input.net })
+      egressWarnings.withheld({ workspaceId, ...(input.labels ? { labels: input.labels } : {}), requested: input.net })
     }
     if (egress.action === "refuse") {
       // Still fail-closed, and deliberately so: this driver DOES enforce
@@ -621,7 +621,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
             ...(endedAt === undefined ? {} : { endedAt }),
           })
           if (!updated) return undefined
-          if (status === "destroyed") lifecycle.destroyed(lease, endedAt)
+          if (status === "destroyed") lifecycle.hostGone(lease, endedAt)
           else lifecycle.stopped(lease, input.idleBefore !== undefined)
           return { ok: true as const, status, ...(status === "stopped" && lease.checkpoint ? { checkpoint: lease.checkpoint.providerReference } : {}) }
         }

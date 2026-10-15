@@ -67,7 +67,7 @@ export function createEgressWarnings(input: {
     })
   }
   return {
-    withheld(start: { workspaceId: string; requested: SandboxNetworkPolicy }) {
+    withheld(start: { workspaceId: string; labels?: Record<string, string>; requested: SandboxNetworkPolicy }) {
       if (ensureEgressWarnings.has(key)) return
       ensureEgressWarnings.add(key)
       sink({
@@ -77,6 +77,7 @@ export function createEgressWarnings(input: {
         egressControl,
         message: egressUnenforcedMessage({ phase: "ensure", driver: id, workspaceId: start.workspaceId, requested: start.requested }),
         workspaceId: start.workspaceId,
+        ...(start.labels ? { labels: start.labels } : {}),
         requested: start.requested,
       })
     },

@@ -194,10 +194,12 @@ describe("sandbox lease lifecycle", () => {
     time.advance(5_000)
     expect((await manager.destroy("ws_1")).ok).toBe(true)
 
-    expect(lifecycle.map(({ kind, epoch, ...rest }) => ({ kind, epoch, activeMs: "activeMs" in rest ? rest.activeMs : undefined, idle: "idle" in rest ? rest.idle : undefined })))
+    expect(lifecycle.map(({ kind, epoch, ...rest }) => ({
+      kind, epoch, activeMs: "activeMs" in rest ? rest.activeMs : undefined, idle: "idle" in rest ? rest.idle : undefined, hostGone: "hostGone" in rest ? rest.hostGone : undefined,
+    })))
       .toEqual([
-        { kind: "stopped", epoch: 1, activeMs: 13_000, idle: true },
-        { kind: "destroyed", epoch: 2, activeMs: 5_700, idle: undefined },
+        { kind: "stopped", epoch: 1, activeMs: 13_000, idle: true, hostGone: undefined },
+        { kind: "destroyed", epoch: 2, activeMs: 5_700, idle: undefined, hostGone: false },
       ])
     expect(lifecycle[0]).toMatchObject({ workspaceId: "ws_1", driver: "test-driver", labels: { projectId: "prj_1" } })
   })
