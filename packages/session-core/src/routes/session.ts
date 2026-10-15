@@ -1,7 +1,7 @@
 import type { SessionConfig, SessionHarness, SubagentObservation, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { HTTPException } from "hono/http-exception"
-import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
+import { acquireSessionTurnLease, createHeldTurnLeases, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { createSessionRoutes } from "./session-core"
 import { publishTurnFailure } from "./session-prompt-admission"
 import type { SessionRouteContext } from "./session-route-options"
@@ -153,11 +153,19 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
    */
   const hostAdmissions = new Set<Promise<unknown>>()
   let disposing = false
+  const heldTurnLeases = createHeldTurnLeases()
   const queuedPrompts = options.queuedPrompts
     ? createSessionDeliveryOwner({
         store: options.queuedPrompts,
         startTurn: (input) => startHostTurn(input),
-        whenIdle: async (sessionId) => (await runtimeFor()).turns.whenIdle(sessionId),
+        whenIdle: async (sessionId) => {
+          for (;;) {
+            await heldTurnLeases.released(sessionId)
+            const handoff = await (await runtimeFor()).turns.whenIdle(sessionId)
+            if (handoff.unavailable || !heldTurnLeases.holds(sessionId)) return handoff
+            handoff.abandon()
+          }
+        },
         changed: (sessionId) => publishQueue(sessionId),
       })
     : undefined
@@ -240,6 +248,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       const acquired = await acquireSessionTurnLease({
         policy: options.sessionAccessPolicy,
         access,
+        held: heldTurnLeases,
         turnId: input.body.messageID,
         ...(relayed.grant ? { grant: relayed.grant } : {}),
         onLost: () => containLostTurn({
@@ -336,6 +345,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
     },
     beforeSessionOperation: (_c, input) => options.beforeSessionOperation?.(input),
     sessionAccessPolicy: options.sessionAccessPolicy,
+    heldTurnLeases,
     sessionStarts: options.sessionStarts,
     listSessions: options.listSessions ? (c, directory) => options.listSessions!(c, requiredDirectory(directory)) : undefined,
     childSessions,
