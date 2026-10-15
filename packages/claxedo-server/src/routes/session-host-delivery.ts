@@ -37,10 +37,10 @@ export type SessionHostDeliveryOptions = SessionHostMachineDeps & {
 const EXECUTION_TTL_SECONDS = 10 * 60
 const requestSchema = z.object({ turnLease: z.string().min(1) }).strict()
 const executionSchema = z.object({ turnLease: z.string().min(1), start: z.boolean().optional() }).strict()
-
-const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeTargetError && error.status === 409
 const refusedSchema = z.object({ turnLease: z.string().min(1), credentialId: z.string().min(1) }).strict()
 const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
+
+const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeTargetError && error.status === 409
 
 /**
  * The calls a session's Durable Object makes of the control plane, each
