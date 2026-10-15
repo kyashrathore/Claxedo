@@ -23,8 +23,12 @@ import {
   isSandboxProviderKeyRefused,
   isSandboxProviderRateLimited,
   isSandboxRuntimeBootFailure,
+  isSandboxStartRefusal,
+  SANDBOX_RETRY_CAP_EXCEEDED,
   sandboxHostGoneError,
+  sandboxLeaseEndedUnderStart,
   sandboxLeaseFailure,
+  sandboxProviderFailedError,
   sandboxProviderKeyRefusedError,
   sandboxProviderRateLimit,
   sandboxProviderRateLimitedError,
@@ -348,7 +352,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       const error = bootFailed
         ? sandboxRuntimeBootFailedError(message)
         : startLimit ? sandboxProviderRateLimitedError(options.driver.id, startLimit)
-        : isSandboxProviderKeyRefused(err) ? sandboxProviderKeyRefusedError(options.driver.id, message) : message
+        : isSandboxProviderKeyRefused(err) ? sandboxProviderKeyRefusedError(options.driver.id, message)
+        : isSandboxStartRefusal(err) || sandboxLeaseEndedUnderStart(message) ? message
+        : sandboxProviderFailedError(options.driver.id, message)
       if (lease.status === "ready" && !bootFailed) {
         // A single resume blip must not demote a serving lease: the existing
         // ready target keeps resolving for relay routing while we record the
@@ -371,16 +377,20 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       // out a cooldown nobody drives: a host held through either would run
       // unattended. A provider failure is retried within its backoff on the
       // host as it is, since stopping and resuming it costs minutes.
-      const unstopped = bootFailed || retryCapped ? await stopHeldHost(workspaceId, lease.epoch) : undefined
-      const recorded = unstopped ? `${error}; ${unstopped}` : error
-      lifecycle.failed(lease, { bootFailed, retrying: !bootFailed && !retryCapped, ...(startLimit ? { startLimit: startLimit.window } : {}) })
+      const hostLeftRunning = bootFailed || retryCapped ? !(await stopHeldHost(workspaceId, lease.epoch)) : false
+      lifecycle.failed(lease, {
+        bootFailed,
+        retrying: !bootFailed && !retryCapped,
+        ...(startLimit ? { startLimit: startLimit.window } : {}),
+        ...(hostLeftRunning ? { hostLeftRunning: true as const } : {}),
+      })
       const backoffMs = retryCapped ? retryCapCooldownMs : retryDelayMs(nextRetryCount)
       const retryInMs = dayLimited ? undefined : Math.max(backoffMs, startLimitRetryMs ?? 0)
-      const failed = await options.leaseStore.recordFailure(workspaceId, lease.epoch, recorded, retryInMs === undefined ? undefined : now() + retryInMs)
+      const failed = await options.leaseStore.recordFailure(workspaceId, lease.epoch, error, retryInMs === undefined ? undefined : now() + retryInMs)
       return {
         status: "unavailable",
         ...(dayLimited ? {} : { retryAfterMs: failed?.nextRetryAt ? Math.max(0, failed.nextRetryAt - now()) : retryAfterMs }),
-        error: recorded,
+        error,
         epoch: lease.epoch,
         homeRegion,
         ...(retryCapped ? { exhausted: true as const } : {}),
@@ -455,17 +465,24 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     }
   }
 
-  /** Stops the host the epoch holds, if it holds one and the driver can; otherwise why it still runs, or nothing. */
-  async function stopHeldHost(workspaceId: string, epoch: number): Promise<string | undefined> {
+  /**
+   * Stops the host the epoch holds, if it holds one and the driver can; false
+   * when that stop failed and the host may still run. The failure is the
+   * operator's, so it is logged rather than added to the start's reason.
+   */
+  async function stopHeldHost(workspaceId: string, epoch: number): Promise<boolean> {
     const current = await options.leaseStore.get(workspaceId)
     const resource = current?.epoch === epoch ? leaseResource(current) : undefined
     const stopHost = options.driver.suspend ?? options.driver.stop
-    if (!current || !resource || !stopHost) return undefined
+    if (!current || !resource || !stopHost) return true
     try {
       await stopHost({ ...resource, ...(current.checkpoint ? { checkpoint: current.checkpoint.providerReference } : {}) })
-      return undefined
+      return true
     } catch (stopError) {
-      return `host ${resource.sandboxId} not stopped: ${stopError instanceof Error ? stopError.message : String(stopError)}`
+      console.warn("A sandbox host was not stopped after its start failed", {
+        workspaceId, epoch, sandboxId: resource.sandboxId, error: stopError instanceof Error ? stopError.message : String(stopError),
+      })
+      return false
     }
   }
 
@@ -507,7 +524,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       // unavailable until an operator releases the lease.
       return {
         status: "unavailable",
-        error: existing.lastError ?? "runtime_retry_cap_exceeded",
+        error: existing.lastError ?? SANDBOX_RETRY_CAP_EXCEEDED,
         epoch: existing.epoch,
         homeRegion: existing.homeRegion,
       }

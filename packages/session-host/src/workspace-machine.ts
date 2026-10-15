@@ -5,7 +5,7 @@ const TOOL_CALL_START_WAIT_MS = 20_000
 const DEFAULT_RETRY_MS = 2_000
 const MIN_RETRY_MS = 1_000
 
-const ASLEEP = "The workspace machine is asleep. A tool call starts it."
+const ASLEEP = "The workspace machine is asleep; a tool call starts it."
 
 /** The workspace machine is not running; the message is the tool's result, read by the model and the person alike. */
 export class WorkspaceMachineUnavailableError extends Error {
@@ -17,9 +17,15 @@ export class WorkspaceMachineUnavailableError extends Error {
 
 function startingMessage(input: { started: boolean; sinceStartMs: number; waits: boolean }): string {
   const seconds = Math.round(input.sinceStartMs / 1_000)
-  const progress = seconds >= 1 ? `still starting (${seconds} s so far)` : "starting now"
-  const state = input.started ? `The workspace machine was asleep. This tool call started it; it is ${progress}.` : `The workspace machine is ${progress}.`
-  return input.waits ? `${state} Call this tool again: the call waits up to ${TOOL_CALL_START_WAIT_MS / 1_000} s for the machine to come up.` : state
+  const state = input.started
+    ? `This tool call started the asleep workspace machine${seconds >= 1 ? ` (${seconds} s so far)` : ""}`
+    : `The workspace machine is ${seconds >= 1 ? `still starting (${seconds} s so far)` : "starting now"}`
+  return input.waits ? `${state}; call this tool again to wait up to ${TOOL_CALL_START_WAIT_MS / 1_000} s for it.` : `${state}.`
+}
+
+function approximateWait(ms: number) {
+  const seconds = Math.max(1, Math.round(ms / 1_000))
+  return seconds < 120 ? `${seconds} s` : `${Math.round(seconds / 60)} min`
 }
 
 function refusedMachine(error: TurnAuthorityError): WorkspaceMachineUnavailableError | undefined {
@@ -27,8 +33,7 @@ function refusedMachine(error: TurnAuthorityError): WorkspaceMachineUnavailableE
   if (error.code !== "cloud_runtime_start_refused") return undefined
   const reason = (error.refusal.message ?? "The workspace machine could not start").replace(/\.$/, "")
   const retryAfterMs = error.refusal.retryAfterMs
-  const retry = retryAfterMs === undefined ? "" : ` It can be tried again in about ${Math.max(1, Math.round(retryAfterMs / 1_000))} s.`
-  return new WorkspaceMachineUnavailableError(`${reason}.${retry}`)
+  return new WorkspaceMachineUnavailableError(retryAfterMs === undefined ? `${reason}.` : `${reason}; try again in about ${approximateWait(retryAfterMs)}.`)
 }
 
 function sleepRejectingOnAbort(ms: number, signal: AbortSignal | undefined): Promise<void> {

@@ -16,7 +16,7 @@ export function chooseProjectWorkspace(
   const only = candidates.length === 1 ? candidates.at(0) : undefined
   if (only) return { workspace: only }
   if (candidates.length === 0) {
-    return { detail: `Project ${projectId} has no workspace this host can start a session in` }
+    return { detail: "This project has no workspace a session can start in here" }
   }
   const root = candidates.find((workspace) => workspace.id === projectId)
   if (root) return { workspace: root }
@@ -25,6 +25,6 @@ export function chooseProjectWorkspace(
   if (checkout) return { workspace: checkout }
   const names = candidates.map((workspace) => workspace.workspace_name || workspace.directory).join(", ")
   return {
-    detail: `Project ${projectId} has ${candidates.length} workspaces (${names}); name one on the task before starting`,
+    detail: `This project has ${candidates.length} workspaces (${names}); name one on the task before starting`,
   }
 }

@@ -630,7 +630,7 @@ describe("d1 sandbox lease store", () => {
     at += 5_000
     await expect(manager().ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready", epoch: 2 })
 
-    const failures = [{ epoch: 1, failedAt: NOW, error: "Boat sandbox_ws_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr'" }]
+    const failures = [{ epoch: 1, failedAt: NOW, error: "provider_failed:test-provider: Boat sandbox_ws_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr'" }]
     const row = await target.prepare("select status, epoch, last_error, start_json from sandbox_leases where workspace_id = 'ws_1'").first()
     expect(row).toMatchObject({ status: "ready", epoch: 2, last_error: null })
     expect(JSON.parse(String(row?.start_json))).toMatchObject({ requestedAt: NOW, startedAt: NOW + 5_000, failures })

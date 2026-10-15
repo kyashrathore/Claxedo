@@ -152,7 +152,7 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   return {
     route: async (ref) => {
       const home = await resolve(ref)
-      if (home.stopped) throw workspaceStopped(home.route.workspaceId)
+      if (home.stopped) throw workspaceStopped()
       return home.route
     },
     locate: async (id) => (await resolve(id)).route,

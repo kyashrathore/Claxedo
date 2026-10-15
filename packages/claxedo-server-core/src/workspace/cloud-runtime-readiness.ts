@@ -25,7 +25,12 @@ export type CloudRuntimeLifecycle =
   | { status: "provisioning"; failure?: string }
   | { status: "failed"; error: string }
 
-/** What a cloud workspace whose start failed says, the start's own answer and a catalog row alike. */
+/**
+ * A failed start's reason for a reader with no headline of its own, a Pi
+ * tool's result or a task's start blocker. The catalog row and the
+ * connection answer carry the reason alone: the app shows it under its own
+ * "Couldn't wake" headline.
+ */
 export function cloudRuntimeStartFailure(reason: string) {
   return `The cloud workspace could not start: ${reason}`
 }
@@ -41,8 +46,7 @@ export function cloudRuntimeLifecycle(target: SandboxTargetResult | undefined): 
   const failure = target.failure
   if (!failure) return { status: "failed", error: "The cloud workspace is not running" }
   if (failure.retrying) return { status: "provisioning", failure: failure.message }
-  if (failure.kind === "unhealthy") return { status: "failed", error: "The cloud workspace stopped answering" }
-  return { status: "failed", error: cloudRuntimeStartFailure(failure.message) }
+  return { status: "failed", error: failure.message }
 }
 
 /**

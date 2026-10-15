@@ -4,6 +4,7 @@ import type { WorkspaceStartProgress } from "./cloud-types"
 import { ServerError } from "./errors"
 import { followWorkspaceStart, startWorkspace } from "./workspace-start"
 import { createWorkspaceConnections } from "./transport"
+import { workspaceStopped } from "./wire/connection"
 
 const READY = { relayUrl: "https://relay.test/", runtimeAccessToken: "rat", tokenExpiresAt: 1_900_000_000_000 }
 
@@ -69,14 +70,14 @@ test("workspace start: a refusal with no retry hint fails at once with the serve
 })
 
 test("workspace start: a read that says the boot failed ends the start with that reason, under the boot-failure code", async () => {
-  const server = answers(json({ status: "failed", workspaceId: "ws_1", error: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git' }))
+  const server = answers(json({ status: "failed", workspaceId: "ws_1", error: 'The branch "missing" does not exist in https://github.com/acme/widgets.git' }))
 
   const start = startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
 
   await expect(start).rejects.toMatchObject({
     class: "conflict",
     code: "cloud_runtime_boot_failed",
-    message: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git',
+    message: 'The branch "missing" does not exist in https://github.com/acme/widgets.git',
   })
   expect(server.calls).toHaveLength(1)
 })
@@ -122,7 +123,7 @@ test("following a start ends with no link when the server says the workspace sto
   expect(await followWorkspaceStart(stopped.read, "ws_1", { wait: async () => undefined })).toBeUndefined()
   expect(stopped.calls).toHaveLength(2)
 
-  const failed = answers(json({ status: "failed", workspaceId: "ws_1", error: "The cloud workspace could not start: no such branch" }))
+  const failed = answers(json({ status: "failed", workspaceId: "ws_1", error: "no such branch" }))
   expect(await followWorkspaceStart(failed.read, "ws_1", { wait: async () => undefined })).toBeUndefined()
 })
 
@@ -239,8 +240,14 @@ test("workspace start: a 409 refusal that names a wait ends the start at once wi
   expect(server.calls).toHaveLength(1)
 })
 
+test("workspace start: a server that answers the start stopped ends it in one line naming no workspace id, and a stopped workspace's read refusal names none either", async () => {
+  const stopped = answers(json({ status: "stopped", workspaceId: "ws_1" }))
+  await expect(startWorkspace(stopped.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ message: "The workspace stopped while it was starting" })
+  expect(workspaceStopped().message).toBe("The cloud workspace is not running")
+})
+
 test("workspace start: a 409 refusal with no wait ends the start with the server's plain reason, as a provider's daily start limit does", async () => {
-  const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: try again then. A wake counts as a start too."
+  const reason = "Boat's daily start limit (200) is used up; try again later."
   const server = answers(json({ error: { code: "cloud_runtime_unavailable", message: reason, failure: reason } }, 409))
   await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: reason })
   expect(server.calls).toHaveLength(1)

@@ -171,10 +171,22 @@ const TRANSIENT_MARKERS = ["transport_failed", "idempotency_in_progress"] as con
 /** Boat's answers for a sandbox it no longer has: deleted, or stopped so long its disk was dropped (docs.boat.dev/snapshots/stop). */
 const GONE_CODES: ReadonlySet<string> = new Set(["not_found", "snapshot_data_expired"])
 const RESUME_UNDER_WAY = "sandbox_resuming"
+/**
+ * Boat's answers for a sandbox whose machine is not running: `sandbox_not_ready`
+ * is its documented one for a stopped sandbox (docs.boat.dev, execute command),
+ * and `machine_not_running` the one it gave a command on an archived sandbox
+ * (staging, 2026-10-15).
+ */
+const NOT_RUNNING_CODES: ReadonlySet<string> = new Set(["machine_not_running", "sandbox_not_ready"])
 
 function hostGoneOrThrow(err: unknown): never {
   if (err instanceof BoatApiError && GONE_CODES.has(err.code)) throw new SandboxHostGoneError(err.message)
   throw err
+}
+
+function stoppedOrThrow(err: unknown): void {
+  if (err instanceof BoatApiError && NOT_RUNNING_CODES.has(err.code)) return
+  hostGoneOrThrow(err)
 }
 
 type StagedFiles = { env: string; password?: string }
@@ -587,14 +599,15 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * starts it after writing this boot's env file. Removed, it left Boat the
    * set an earlier snapshot recorded, from which Boat created and started the
    * runtime again on the previous boot's env file (2026-10-15). The runtime
-   * gets the grace Boat's own stop gives.
+   * gets the grace Boat's own stop gives. A machine that is not running holds
+   * no running container and is already stopped, which is what a stop asks.
    */
   async function stop(target: SandboxResource) {
     await client.command(target.sandboxId, {
       command: `docker stop -t ${CONTAINER_STOP_GRACE_SECONDS} ${containerName} >/dev/null 2>&1; true`,
       timeoutSeconds: CONTAINER_STOP_GRACE_SECONDS + 30,
-    }).catch(hostGoneOrThrow)
-    await client.stop(target.sandboxId).catch(hostGoneOrThrow)
+    }).then(() => undefined, stoppedOrThrow)
+    await client.stop(target.sandboxId).catch(stoppedOrThrow)
   }
 
   async function destroy(target: SandboxResource) {

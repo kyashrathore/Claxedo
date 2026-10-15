@@ -346,7 +346,7 @@ describe("a start across the epochs it takes", () => {
     const served = await manager.target("ws_1")
     expect(served.status).toBe("ready")
     expect(served.start?.failures).toEqual([
-      { epoch: 1, failedAt: expect.any(Number), error: "Boat bx_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr': Directory not empty" },
+      { epoch: 1, failedAt: expect.any(Number), error: "provider_failed:test-driver: Boat bx_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr': Directory not empty" },
     ])
   })
 

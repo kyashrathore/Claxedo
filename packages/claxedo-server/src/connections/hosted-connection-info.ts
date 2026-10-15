@@ -18,7 +18,7 @@ import {
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import { cloudRuntimeLifecycle, cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
+import { cloudRuntimeLifecycle } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
@@ -292,9 +292,8 @@ export async function hostedConnectionInfo(
     })
     // A boot that failed fails the same way until the person changes what it
     // boots from, so its reason is the answer rather than a wait.
-    const bootFailure = sandboxRuntimeBootFailure(started.error)
-    if (bootFailure) {
-      return { error: apiError("cloud_runtime_boot_failed", cloudRuntimeStartFailure(bootFailure)), status: 409 } as const
+    if (started.error && sandboxRuntimeBootFailure(started.error) !== undefined) {
+      return { error: apiError("cloud_runtime_boot_failed", sandboxStartFailureReason(started.error)), status: 409 } as const
     }
     const failure = startFailure(started.error)
     return {

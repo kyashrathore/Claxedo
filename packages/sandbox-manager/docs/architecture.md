@@ -107,6 +107,16 @@ spent retry budget or a stop ends the start, and the person's next start begins
 its own record. The record is on the lease row (`start_json` in D1) and on
 `target()`; the connection answer passes on only the phases.
 
+`lastError` is the operator's record: a provider's error keeps the driver's own
+message behind a coded lead (`provider_failed:<driver>:`,
+`provider_key_refused:<driver>:`, `provider_rate_limited:<window>:`,
+`runtime_boot_failed:`). The line a person reads comes from
+`sandboxStartFailureReason`, one line that names the provider and never its
+request, host or code; a driver that throws `SandboxStartRefusedError` already
+carries that line. A host the manager could not stop after a failed start is
+logged and reported as `hostLeftRunning` on the `failed` lifecycle event, never
+added to the reason.
+
 ## Driver comparison
 
 All eight metadata fields come straight from each driver's `metadata` object

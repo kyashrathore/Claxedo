@@ -668,7 +668,7 @@ describe("hosted connection", () => {
       status: "failed",
       workspaceId: "ws_1",
       homeRegion: "us-east",
-      error: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git',
+      error: 'The branch "missing" does not exist in https://github.com/acme/widgets.git',
     })
     expect(await (await app.fetch(get("/ws_1/connection"))).json()).toEqual({ status: "stopped", workspaceId: "ws_1", homeRegion: "us-east" })
     expect(ensure).not.toHaveBeenCalled()
@@ -864,7 +864,7 @@ describe("hosted connection", () => {
     const body = await res.json() as { error: Record<string, unknown> }
     expect(body.error).toMatchObject({
       code: "cloud_runtime_boot_failed",
-      message: "The cloud workspace could not start: fatal: couldn't find remote ref refs/heads/missing",
+      message: "fatal: couldn't find remote ref refs/heads/missing",
     })
     expect(body.error).not.toHaveProperty("retryAfterMs")
   })
@@ -1210,7 +1210,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
       { workspace_id: "ws_stopped", backing: "cloud-vm", status: "stopped", reachable: false },
       { workspace_id: "ws_never", backing: "cloud-vm", status: "stopped", reachable: false },
       { workspace_id: "ws_retrying", backing: "cloud-vm", status: "provisioning", failure: "quota exceeded", reachable: false },
-      { workspace_id: "ws_broken", backing: "cloud-vm", status: "failed", error: "The cloud workspace could not start: quota exceeded", reachable: false },
+      { workspace_id: "ws_broken", backing: "cloud-vm", status: "failed", error: "quota exceeded", reachable: false },
     ])
     expect(ensure).not.toHaveBeenCalled()
   })

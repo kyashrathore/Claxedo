@@ -40,7 +40,7 @@ test("first send: a refused send shows the server's message and waits for Retry,
   const attempt: FirstSendAttempt<string> = async (report) => {
     attempts += 1
     report({ type: "placementResolved", placementId: created })
-    if (attempts === 1) throw new ServerError({ class: "conflict", code: "cloud_runtime_boot_failed", message: "The cloud workspace could not start: branch main is missing" })
+    if (attempts === 1) throw new ServerError({ class: "conflict", code: "cloud_runtime_boot_failed", message: "branch main is missing" })
     return "session"
   }
   let settled = false
@@ -51,7 +51,7 @@ test("first send: a refused send shows the server's message and waits for Retry,
   await settle()
   const state = send.state()
   expect(state.kind).toBe("failed")
-  expect(state.kind === "failed" && state.error.message).toBe("The cloud workspace could not start: branch main is missing")
+  expect(state.kind === "failed" && state.error.message).toBe("branch main is missing")
   expect(settled).toBe(false)
   expect(attempts).toBe(1)
 

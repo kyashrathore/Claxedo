@@ -781,7 +781,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPHELD"])
     const asks = host.controlPlane.calls.executions.filter((turn) => turn === "msg_PIASLEEPHELD").length
     assert.ok(asks >= 3 && asks <= 2 + held / 500, `${asks} asks in ${held} ms`)
-    assert.equal(model.requests.some((request) => request.prompt.includes("This tool call started it")), false, "the model never read that the machine was starting")
+    assert.equal(model.requests.some((request) => request.prompt.includes("This tool call started the asleep workspace machine")), false, "the model never read that the machine was starting")
   })
 
   void it("stopping a turn while its tool call holds for a starting machine ends the hold, and the call asks for the machine no more", { timeout: 120_000 }, async () => {
@@ -819,7 +819,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const asked = Date.now()
     const state = await writeTool(host)("PIASLEEPREFUSED")
     assert.equal(state?.status, "error", JSON.stringify(state))
-    assert.equal(state?.error, "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests. It can be tried again in about 30 s.")
+    assert.equal(state?.error, "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests; try again in about 30 s.")
     assert.ok(Date.now() - asked < 15_000)
     assert.equal(host.controlPlane.calls.executions.filter((turn) => turn === "msg_PIASLEEPREFUSED").length, 1)
   })
@@ -835,14 +835,14 @@ void describe("SessionDO under workerd with PiHarness", () => {
 
     const started = await write("PIASLEEPSTART")
     assert.equal(started?.status, "error", JSON.stringify(started))
-    assert.ok(started?.error?.includes("The workspace machine was asleep. This tool call started it; it is starting now. Call this tool again: the call waits up to 20 s for the machine to come up."), started?.error)
-    assert.ok(model.requests.some((request) => request.prompt.includes("This tool call started it")), "the model was told the machine is starting")
+    assert.ok(started?.error?.includes("This tool call started the asleep workspace machine; call this tool again to wait up to 20 s for it."), started?.error)
+    assert.ok(model.requests.some((request) => request.prompt.includes("This tool call started the asleep workspace machine")), "the model was told the machine is starting")
     assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
     assert.equal(existsSync(written), false)
 
     const starting = await write("PIASLEEPSTARTING")
     assert.equal(starting?.status, "error", JSON.stringify(starting))
-    assert.ok(starting?.error?.includes("The workspace machine is still starting (35 s so far). Call this tool again: the call waits up to 20 s for the machine to come up."), starting?.error)
+    assert.ok(starting?.error?.includes("The workspace machine is still starting (35 s so far); call this tool again to wait up to 20 s for it."), starting?.error)
     assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
 
     control.machine = "running"

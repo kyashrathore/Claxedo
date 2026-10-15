@@ -69,8 +69,8 @@ function scriptedDriver(database: D1Database): SandboxDriver {
       throw new SandboxProviderKeyRefusedError("the key was rejected (unauthorized)")
     }
     const dayLimited = /^ws_day_limited_(\d+)/.exec(input.workspaceId)
-    if (dayLimited && calls <= Number(dayLimited[1])) throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "the start limit is used up")
-    if (input.workspaceId.startsWith("ws_hour_limited")) throw new SandboxProviderRateLimitedError({ window: "hour", limit: 60, resumeCounts: true }, "the start limit is used up")
+    if (dayLimited && calls <= Number(dayLimited[1])) throw new SandboxProviderRateLimitedError({ window: "day", limit: 200 }, "the start limit is used up")
+    if (input.workspaceId.startsWith("ws_hour_limited")) throw new SandboxProviderRateLimitedError({ window: "hour", limit: 60 }, "the start limit is used up")
     const flaky = /^ws_flaky(?:_(\d+))?/.exec(input.workspaceId)
     if (flaky && calls <= Number(flaky[1] ?? 1)) throw new Error("provider hiccup")
     if (input.workspaceId.startsWith("ws_stopped_under") && calls === 1) {

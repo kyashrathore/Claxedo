@@ -327,7 +327,7 @@ describe("a hosted cloud task start on workerd", () => {
     const failed = await start("bob", taskId, presetId)
     expect(failed.preview).toMatchObject({
       available: false,
-      blockers: [{ code: "source_unavailable", detail: expect.stringContaining("could not be provisioned") }],
+      blockers: [{ code: "source_unavailable", detail: expect.stringContaining("The cloud workspace could not start: ") }],
     })
 
     const retried = await start("bob", taskId, presetId)

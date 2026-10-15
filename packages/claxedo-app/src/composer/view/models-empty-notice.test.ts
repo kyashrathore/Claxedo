@@ -29,7 +29,7 @@ test("models empty: a waking workspace shows the start's progress in place, and 
 
 test("models empty: a start that failed or hit the provider's limit shows the start's reason with Try again", () => {
   const wakes: string[] = []
-  const error = { class: "rate_limit" as const, message: "Boat's start limit for this account is used up (200 starts per day)", retryable: false }
+  const error = { class: "rate_limit" as const, message: "Boat's daily start limit (200) is used up; try again later.", retryable: false }
   const notice = modelsEmptyNotice(t, facts({ kind: "wakeFailed", error, retryAt: 1_000 }, wakes))
   expect(notice).toMatchObject({ message: "composer.models.wakeFailed Claxedo", detail: error.message, action: { label: "composer.models.retryWake" } })
   notice?.action?.run()

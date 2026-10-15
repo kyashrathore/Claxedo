@@ -464,7 +464,7 @@ describe("boat sandbox driver", () => {
     })
     expect(await manager.ensure("ws1", { homeRegion: "eu" })).toMatchObject({
       status: "unavailable",
-      error: failure === "persistence failure" ? "storage unavailable" : "runtime_lease_changed",
+      error: failure === "persistence failure" ? "provider_failed:boat: storage unavailable" : "runtime_lease_changed",
     })
     expect((await store.get("ws1"))?.sandboxId).toBeUndefined()
     expect(boat.calls.map(({ method, path }) => ({ method, path }))).toEqual([
@@ -1127,7 +1127,7 @@ describe("boat sandbox driver", () => {
     expect(error).toMatchObject({
       code: "rate_limited",
       status: 429,
-      providerRateLimited: { window: "day", limit: 200, resumeCounts: true },
+      providerRateLimited: { window: "day", limit: 200 },
       startLimit: { window: "day", limit: 200, starts: { minute: { limit: 12, used: 0 }, hour: { limit: 60, used: 0 }, day: { limit: 200, used: 200 } } },
     })
     expect(JSON.stringify(error)).not.toMatch(/Rate limit hit|billing|creditBalance|req_/)
@@ -1190,6 +1190,20 @@ describe("boat sandbox driver", () => {
       command: "docker stop -t 30 claxedo-runtime >/dev/null 2>&1; true",
       timeoutSeconds: 60,
     })
+  })
+
+  test("stop of a sandbox whose machine is not running is a stopped sandbox: the container stop is skipped, the archive still asked, and Boat's not-running answer to that is no failure", async () => {
+    for (const code of ["machine_not_running", "sandbox_not_ready"]) {
+      const boat = fakeBoat()
+      const notRunning = (stopToo: boolean): BoatFetch => async (url, init) => {
+        if (url.endsWith("/commands") || (stopToo && url.endsWith("/stop"))) return Response.json({ ok: false, code, message: "not running" }, { status: 409 })
+        return boat.fetchImpl(url, init)
+      }
+      const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
+      await expect(createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: notRunning(false) }).stop?.(target)).resolves.toBeUndefined()
+      expect(boat.calls.map(({ method, path }) => `${method} ${path}`)).toContain(`POST /sandboxes/${ID}/stop`)
+      await expect(createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: notRunning(true) }).stop?.(target)).resolves.toBeUndefined()
+    }
   })
 
   test("resume brings an archived sandbox back under the boot deadline, re-establishes the runtime, and removes the deadline", async () => {

@@ -42,7 +42,7 @@ export class BoatApiError extends Error {
     super(message)
     this.name = "BoatApiError"
     this.providerKeyRefused = status === 401 || status === 403
-    if (startLimit) this.providerRateLimited = { window: startLimit.window, limit: startLimit.limit, resumeCounts: true }
+    if (startLimit) this.providerRateLimited = { window: startLimit.window, limit: startLimit.limit }
   }
 }
 
