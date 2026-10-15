@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
 import { Button, ClaxedoIcon as Icon, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { draftProjectName } from "../project-source"
+import { draftProjectName, pastedRepositoryHint } from "../project-source"
 import { ConnectCodeHost } from "./project-create-connect"
 import { AccountSelect, FIELD_BOX, RepositoryList } from "./project-create-repository"
 
@@ -115,7 +115,7 @@ function RepositorySection(props: { choice: RepositoryChoice; url: string; onUrl
       <Show when={props.choice.view() === "url"}>
         <TextField
           label={t("projects.add.url")}
-          description={host() && props.choice.connection() ? t("projects.create.url.hint.private", { host: host() ?? "" }) : t("projects.create.url.hint.none")}
+          description={pastedRepositoryHint(t, host(),props.choice.connection() !== undefined)}
           placeholder={t("projects.create.url.placeholder")}
           value={props.url}
           onChange={props.onUrl}

@@ -48,6 +48,10 @@ export type CloudWorkspaceEntitlementGate = (tenant: {
   { status: 400 | 401 | 402 | 403 | 503; body: { error: { code: string; message: string } } } | undefined
 >
 
+export type RepositoryConnectionAccess =
+  | { ok: true; repository: CodeHostRepository; connectionId: string }
+  | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
+
 export type WorkspaceRouteOptions = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
@@ -55,14 +59,16 @@ export type WorkspaceRouteOptions = {
   cliTokenEnv?: Record<string, string | undefined>
   credentials?: ControlPlaneCredentials
   connections?: {
+    /**
+     * The repository `fullName` as the caller's connection `id` lists it, or,
+     * with no `id`, as the first of the caller's code-host connections that
+     * can read it lists it.
+     */
     repositoryForAuth(
       auth: SignedControlPlaneAuth | undefined,
-      id: string,
+      id: string | undefined,
       fullName: string,
-    ): Promise<
-      | { ok: true; repository: CodeHostRepository }
-      | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
-    >
+    ): Promise<RepositoryConnectionAccess>
   }
   relayUrl?: string
   relayUrls?: ClaxedoRegionMap<string>
