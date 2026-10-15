@@ -36,7 +36,9 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
       executable: requireClaudeExecutable(env),
       configRoot: path.join(harnessStateRoot, "claude", "config"),
       userConfigRoot: env.CLAUDE_CONFIG_DIR ?? path.join(home, ".claude"),
-      env,
+      // Claude Code exits at launch when root is allowed to skip permissions, unless IS_SANDBOX=1;
+      // every cloud sandbox image runs the runtime as root.
+      env: placement.placement === "cloud" ? { ...env, IS_SANDBOX: "1" } : env,
     }),
     cursor: () => ({
       env,
