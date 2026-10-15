@@ -98,6 +98,15 @@ phase reaches the sink at most once per epoch. The vocabulary and the
 `createSandboxPhaseTimer` a single process times its own phases with are in
 `@claxedo/sandbox-contract`.
 
+An epoch that fails records its reason in `lease.start.failures` (epoch, time,
+reason) as well as in `lastError`, in the same write. A provider failure the
+start retries hands the record to the next epoch with the start, so a start
+that serves after failed epochs still holds why they failed, though the next
+epoch's acquire and its serving target clear `lastError`. A boot failure, a
+spent retry budget or a stop ends the start, and the person's next start begins
+its own record. The record is on the lease row (`start_json` in D1) and on
+`target()`; the connection answer passes on only the phases.
+
 ## Driver comparison
 
 All eight metadata fields come straight from each driver's `metadata` object

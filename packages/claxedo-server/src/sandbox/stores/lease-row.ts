@@ -8,6 +8,7 @@ import type {
   SandboxCheckpointReference,
   SandboxPersistenceCapabilities,
   SandboxRestoreStatus,
+  SandboxStartFailure,
   SandboxStartProgress,
 } from "@claxedo/sandbox-manager"
 import { isSandboxMachineClass, sandboxStartPhases, type SandboxMachineClass } from "@claxedo/sandbox-contract"
@@ -184,8 +185,15 @@ function isStartProgress(value: Record<string, unknown>): value is SandboxStartP
     typeof value.markedAt === "number" &&
     BOOT_MODES.some((mode) => mode === value.bootMode) &&
     Array.isArray(value.phases) &&
-    value.phases.every((phase) => sandboxStartPhases.some((known) => known === phase))
+    value.phases.every((phase) => sandboxStartPhases.some((known) => known === phase)) &&
+    (value.failures === undefined || (Array.isArray(value.failures) && value.failures.every(isStartFailure)))
   )
+}
+
+function isStartFailure(value: unknown): value is SandboxStartFailure {
+  if (typeof value !== "object" || value === null) return false
+  const failure = value as Record<string, unknown>
+  return typeof failure.epoch === "number" && typeof failure.failedAt === "number" && typeof failure.error === "string"
 }
 
 export function leaseStart(input: unknown): SandboxStartProgress | null {
