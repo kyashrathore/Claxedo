@@ -418,7 +418,7 @@ describe("boat sandbox driver", () => {
     expect(prepare?.body.command).toContain("sudo mkdir -p")
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
     expect(run?.body.command).toContain("docker run -d --name claxedo-runtime --hostname 'ws1' -p 2593:2593 -v /usr/libexec/docker/docker-init:/claxedo-init:ro ")
-    expect(run?.body.command).toContain("--entrypoint /claxedo-init 'ghcr.io/test/sandbox:1' -- sh -lc ")
+    expect(run?.body.command).toContain("--security-opt seccomp=unconfined --security-opt apparmor=unconfined --entrypoint /claxedo-init 'ghcr.io/test/sandbox:1' -- sh -lc ")
     expect(run?.body.command).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
     for (const tree of IMAGE_TREES) {
       expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"/${tree}:/${tree} `)
