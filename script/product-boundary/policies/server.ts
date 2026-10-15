@@ -180,7 +180,7 @@ export const serverWorkerd: Policy = {
   // applies over the relay for a driver whose host reads no idleness (Boat) and
   // the Cloudflare sandbox Worker bundles from the same file; it imports nothing.
   // +1 module (owner: the runtime session authority routes): a cloud
-  // runtime's usage report is its own module (`routes/runtime-usage-report.ts`),
+  // runtime's usage report is its own module (`usage/runtime-usage-report.ts`),
   // split from `routes/runtime-session-authority.ts`.
   // 167/22, no headroom.
   ceilings: { modules: 167, packages: 22 },

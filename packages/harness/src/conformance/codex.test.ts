@@ -182,17 +182,16 @@ test("Codex names a session through an ephemeral read-only side thread and write
   } finally { await context.close() }
 }, 90_000)
 
-test("Codex meters a side thread's usage outside a turn to the session's last turn", async () => {
+test("Codex meters nothing for a title side thread: its usage is Claxedo's own request, not the session's turn", async () => {
   const recorder = recordingBackend()
   const { context, request } = await titledSession(recorder)
-  const metered: { assistantMessageId: string; observation?: { kind?: string; scope?: string } }[] = []
+  const metered: string[] = []
   const meter = context.sessionBroker.meter.bind(context.sessionBroker)
-  context.sessionBroker.meter = (usage) => { metered.push({ assistantMessageId: usage.assistantMessageId, observation: usage.usage.observation }); meter(usage) }
+  context.sessionBroker.meter = (usage) => { metered.push(usage.assistantMessageId); meter(usage) }
   try {
-    await context.transport.naming!.generateTitle!(context.session, request)
-    expect(metered.length).toBeGreaterThan(0)
-    expect(metered.map((row) => [row.assistantMessageId, row.observation?.kind, row.observation?.scope?.split(":")[0]]))
-      .toEqual(metered.map(() => ["a1", "delta", "title"]))
+    const title = await context.transport.naming!.generateTitle!(context.session, request)
+    expect(title).toBeTruthy()
+    expect(metered).toEqual([])
   } finally { await context.close() }
 }, 90_000)
 

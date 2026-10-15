@@ -25,7 +25,7 @@ import {
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeSandboxSecretRoutes, type RuntimeSandboxSecretOptions } from "./runtime-sandbox-secrets"
-import { reportRuntimeUsage } from "./runtime-usage-report"
+import { reportRuntimeUsage } from "../usage/runtime-usage-report"
 import { SessionHostDeliveryRoutes, type SessionHostDeliveryOptions } from "./session-host-delivery"
 import { placedSessionHostRoot, type SessionHostAuthority } from "../authority/session-hosts"
 import {
