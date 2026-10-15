@@ -51,6 +51,7 @@ function rig() {
     resolveOrgId: async () => org,
     credentials: store,
     change: async (orgId) => async () => void changes.push(orgId),
+    administers: async () => false,
     keys: envelopeKeyProviderFromEnv(env),
     fetch: deviceLogin,
     telemetry: { capture: (distinctId, event, properties) => void captured.push({ distinctId, event, properties }) },
@@ -71,7 +72,8 @@ describe("hosted account setup through the shared credential routes", () => {
   test("a write needs a signed person, lands in the authority's organization as that person, and tells the plane", async () => {
     const { org, changes, store, app } = rig()
     expect((await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("claude-sdk"), person: "" })).status).toBe(401)
-    const stored = await call(app(), "/api/claxedo/credentials", { method: "PUT", body: { ...key("claude-sdk"), owner: "bob", org_id: "attacker" } })
+    expect((await call(app(), "/api/claxedo/credentials", { method: "PUT", body: { ...key("claude-sdk"), owner: "bob" } })).status).toBe(400)
+    const stored = await call(app(), "/api/claxedo/credentials", { method: "PUT", body: { ...key("claude-sdk"), org_id: "attacker" } })
     expect(stored.status).toBe(200)
     expect(await store().listCredentials()).toMatchObject([{ owner: "alice", org_id: org, provider_id: "claude-sdk", is_active: true }])
     expect(changes).toEqual([org])
@@ -94,7 +96,7 @@ describe("hosted account setup through the shared credential routes", () => {
     expect(captured).toEqual([{
       distinctId: "alice",
       event: "credential_checked",
-      properties: { provider: "cursor-sdk", kind: "api_key", verdict, org_id: org, $groups: { org } },
+      properties: { provider: "cursor-sdk", kind: "api_key", scope: "own", verdict, org_id: org, $groups: { org } },
     }])
     expect(JSON.stringify(captured)).not.toContain("cursor-secret-key")
   })

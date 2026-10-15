@@ -197,8 +197,12 @@ export const serverWorkerd: Policy = {
   // usage is filed under, `authority/adapters/d1/cloud-turn-usage-owner.ts`,
   // split from `session-authority.ts` when it came to refuse a deleted
   // session as well as a deleted workspace.
-  // 171/22, no headroom.
-  ceilings: { modules: 171, packages: 22 },
+  // +1 module (owner: the hosted credential routes): who manages the
+  // organization's own rows, its team model accounts and its sandbox provider
+  // keys, asked once of the D1 authority's `administer` rule
+  // (`credentials/worker/org-administers.ts`).
+  // 172/22, no headroom.
+  ceilings: { modules: 172, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

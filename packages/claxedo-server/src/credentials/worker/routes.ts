@@ -10,6 +10,7 @@ import type { SandboxDriverID, SandboxMachineClass } from "@claxedo/sandbox-cont
 import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import type { ControlPlaneCredentials } from "../../authority/services"
+import type { OrgAdministers } from "./org-administers"
 import { orgRoutedCredentials, type CredentialChange } from "./org-routed"
 
 export type HostedCredentialRoutesInput = {
@@ -18,6 +19,8 @@ export type HostedCredentialRoutesInput = {
   resolveOrgId(auth: SignedControlPlaneAuth): Promise<string>
   credentials: (orgId: string) => ControlPlaneCredentials
   change: CredentialChange
+  /** Who manages the organization's own rows: its team accounts and its sandbox provider keys. */
+  administers: OrgAdministers
   /** The plane's credential keys: a sign-in's callback can land on another Worker instance than its authorize did. */
   keys: EnvelopeKeyProvider
   fetch?: typeof fetch
@@ -29,7 +32,6 @@ export type HostedCredentialRoutesInput = {
 /** The organization's sandbox provider keys: the only accounts this plane starts cloud workspaces on. */
 export type HostedSandboxDriverKeys = {
   drivers: readonly SandboxDriverID[]
-  administers(auth: SignedControlPlaneAuth, orgId: string): Promise<boolean>
   chosen(orgId: string): Promise<string | undefined>
   choose(auth: SignedControlPlaneAuth, orgId: string, driver: SandboxDriverID | undefined): Promise<void>
   remove(auth: SignedControlPlaneAuth, orgId: string, keyId: string): Promise<SandboxKeyRemoval>
@@ -39,11 +41,15 @@ export type HostedSandboxDriverKeys = {
   machineClasses(driver: SandboxDriverID): readonly SandboxMachineClass[] | undefined
 }
 
-function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: Request) => Promise<SignedControlPlaneAuth>): SandboxDriverKeys {
+function orgSandboxDriverKeys(
+  keys: HostedSandboxDriverKeys,
+  signed: (request: Request) => Promise<SignedControlPlaneAuth>,
+  administers: OrgAdministers,
+): SandboxDriverKeys {
   return {
     drivers: keys.drivers,
     owner: "org",
-    canManage: async (request, { org }) => keys.administers(await signed(request), org),
+    canManage: async (request, { org }) => administers(await signed(request), org),
     chosenDriver: ({ org }) => keys.chosen(org),
     chooseDriver: async (request, { org }, driver) => keys.choose(await signed(request), org, driver),
     removeKey: async (request, { org }, keyId) => keys.remove(await signed(request), org, keyId),
@@ -72,8 +78,9 @@ export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
   return new Hono()
     .route("/api/claxedo/credentials", CredentialRoutes(credentials, {
       ...auth,
+      managesOrgAccounts: async (request, org) => await input.administers(await signed(request), org),
       ...(input.fetch ? { fetch: input.fetch } : {}),
-      ...(input.sandboxDriverKeys ? { sandboxDriverKeys: orgSandboxDriverKeys(input.sandboxDriverKeys, signed) } : {}),
+      ...(input.sandboxDriverKeys ? { sandboxDriverKeys: orgSandboxDriverKeys(input.sandboxDriverKeys, signed, input.administers) } : {}),
       ...(input.telemetry ? { telemetry: input.telemetry } : {}),
     }))
     .route("/", ProviderAuthRoutes({ service, ...auth }))

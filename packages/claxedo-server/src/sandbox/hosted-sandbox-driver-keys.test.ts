@@ -5,6 +5,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
 import { hostedSandboxKeyDrivers } from "../authority/adapters/worker/hosted-sandbox-key-drivers"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
+import { hostedOrgAdministers } from "../credentials/worker/org-administers"
 import { hostedCredentialRoutes } from "../credentials/worker/routes"
 import { d1Authority } from "../test-support/d1-authority"
 import { hostedSandboxDriverKeys } from "./hosted-sandbox-driver-keys"
@@ -63,6 +64,7 @@ function app() {
     resolveOrgId: async () => orgId,
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
     change: UNDELIVERED_CREDENTIAL_CHANGE,
+    administers: hostedOrgAdministers(fixture.database),
     keys: envelopeKeyProviderFromEnv(env),
     fetch: provider,
     sandboxDriverKeys: hostedSandboxDriverKeys({

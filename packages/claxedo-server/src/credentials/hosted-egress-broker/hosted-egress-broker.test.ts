@@ -164,6 +164,25 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
   return { app, store, upstream, delivered, signing, sandboxes, telemetry, broker }
 }
 
+describe("a sandbox spending its organization's team account through the hosted broker", () => {
+  test("the team key arrives at the vendor, and a removed one is refused at the next request", async () => {
+    const { app, store, upstream, delivered } = await composition()
+    const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    const { baseUrl, placeholder } = await delivered(team, { workspaceId: "ws_team" })
+    const send = () => app.request(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": placeholder, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: "{}",
+    })
+    expect((await send()).status).toBe(200)
+    expect(upstream.seen.map((sent) => sent.request.headers.get("x-api-key"))).toEqual(["sk-ant-api03-team-key"])
+
+    await store.deleteCredential(team.id)
+    expect((await send()).status).toBe(403)
+    expect(upstream.seen).toHaveLength(1)
+  })
+})
+
 describe("a sandbox spending its owner's account through the hosted broker", () => {
   test("an API key arrives at the vendor as x-api-key, the placeholder never does, and the answer streams before the vendor is done", async () => {
     const { app, store, upstream, delivered } = await composition()

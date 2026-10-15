@@ -4,7 +4,7 @@ import { z } from "zod"
 import { deliveredDirect } from "@claxedo/server-core/credentials/reach"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneCredentials } from "../authority/services"
-import { ownerDirectRows } from "../credentials/direct-rows"
+import { ownerDirectDelivery } from "../credentials/direct-rows"
 import { turnLeaseAuthority, type TurnLeaseProofs } from "../session/turn-lease-authority"
 
 export type RuntimeCredentialRefreshOptions = {
@@ -40,11 +40,11 @@ export function RuntimeCredentialRefreshRoutes(input: RuntimeCredentialRefreshOp
     const workspaceId = c.req.param("workspaceId")
     const owner = claims === "denied" || claims.workspaceId !== workspaceId ? undefined : await input.resolveWorkspaceOwner(workspaceId)
     if (claims === "denied" || !owner || owner.orgId !== claims.orgId) return c.json({ error: { code: "credential_refresh_denied" } }, 403)
-    const rows = await ownerDirectRows(input.credentials(owner.orgId), owner.userId, {
+    const rows = await ownerDirectDelivery(input.credentials(owner.orgId), owner.userId, {
       providers: new Set([credentialProviderId]),
       ...(rejectedExpiresAt === undefined ? {} : { rejectedExpiresAt }),
     })
-    const row = rows[credentialProviderId]
+    const row = rows.direct[credentialProviderId]
     return row?.authKind === "subscription" ? c.json(row) : c.json({ error: { code: "credential_unavailable" } }, 409)
   })
 }

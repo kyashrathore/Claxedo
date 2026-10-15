@@ -649,7 +649,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
       const reply = (await host.messages()).find((message) => message.info.role === "assistant" && message.info.time?.completed)
       return reply ? JSON.stringify(reply.info) : undefined
     }, 30_000)
-    assert.match(refused, /Your organization has no account for this provider/)
+    assert.match(refused, /Your organization has no OpenAI API key, .*Ask an admin to add a team key/)
     assert.equal(model.requests.slice(answered).some((request) => request.prompt.includes("PIORGSOURCE")), false)
   })
 

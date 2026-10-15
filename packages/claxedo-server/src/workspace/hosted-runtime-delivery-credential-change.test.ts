@@ -87,3 +87,17 @@ test("a write that changes an owner's delivered account reaches that owner's run
   await credentials.putCredential({ owner: "owner-A", provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-owner-a" }, "org")
   expect(touched()).toEqual({ refreshed: ["ws-a-edge"], redelivered: ["ws-a"] })
 })
+
+test("a team key reaches only the running workspaces of people who chose the organization's account, and its removal takes it back from them alone by a settings push", async () => {
+  const { credentials, touched } = await plane()
+  await credentials.putCredential({ owner: null, provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-team-unchosen" }, "org")
+  expect(touched()).toEqual(NONE)
+
+  const team = await credentials.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team" }, "org")
+  expect(touched()).toEqual(NONE)
+  await credentials.setAccountSources(["claude-sdk", "claude-acp", "anthropic"], "org", "org", "owner-B")
+  expect(touched()).toEqual({ refreshed: [], redelivered: ["ws-b"] })
+
+  await credentials.deleteCredential(team.id, "org")
+  expect(touched()).toEqual({ refreshed: [], redelivered: ["ws-b"] })
+})

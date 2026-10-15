@@ -22,7 +22,6 @@ import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delive
 import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
 import { credentialReach } from "@claxedo/server-core/credentials/reach"
-import { fanoutEligible } from "@claxedo/server-core/credentials/account-kinds"
 import { spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -53,6 +52,7 @@ import {
   type SandboxDriverKeyContext,
   type SandboxDriverKeys,
 } from "./sandbox-driver-keys"
+import { isOrgAccount, orgAccountRefusal, orgSourceRefusal } from "./org-accounts"
 
 const log = Log.create({ service: "credential-routes" })
 
@@ -65,6 +65,7 @@ const putBody = z.object({
   secret: z.string().min(1),
   expires_at: z.number().optional(),
   scope: z.enum(ACCOUNT_SCOPES).optional(),
+  owner: z.literal("org").optional(),
 })
 
 const statusBody = z.object({
@@ -199,6 +200,13 @@ export type CredentialRoutesOptions = {
   resolveOrg?: (request: Request) => Promise<string> | string
   /** Absent on a host that provisions no sandboxes and keeps no provider keys for them. */
   sandboxDriverKeys?: SandboxDriverKeys
+  /**
+   * Whether the caller adds, checks, rotates and removes the organization's
+   * team accounts: its owners and admins on a host whose organizations have
+   * roles. Absent, the loopback operator of a single-tenant install does,
+   * since that install's organization is theirs alone.
+   */
+  managesOrgAccounts?: (request: Request, org: string) => Promise<boolean>
   /** Where each Check's verdict is recorded as `credential_checked`; absent, verdicts stay in the answer alone. */
   telemetry?: ControlPlaneTelemetry
 }
@@ -269,7 +277,9 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   }
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
-  const canRemoveOrgAccounts = (request: Request) => localOperators.has(request) && org(request) === SINGLE_TENANT_ORG
+  const managesOrgAccounts = async (request: Request) => options.managesOrgAccounts
+    ? await options.managesOrgAccounts(request, org(request))
+    : localOperators.has(request) && org(request) === SINGLE_TENANT_ORG
   const sandboxKeys = options.sandboxDriverKeys
   const keyContext = (request: Request): SandboxDriverKeyContext => ({
     org: org(request),
@@ -291,6 +301,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   }
   const sandboxKeysUnavailable = () => errorBody("sandbox_driver_keys_unavailable", "This host keeps no sandbox provider keys")
   const sandboxKeysForbidden = () => errorBody("sandbox_driver_keys_forbidden", "Only an organization owner or admin manages sandbox provider keys")
+  const orgAccountsForbidden = () => errorBody("org_accounts_forbidden", "Only an organization owner or admin manages its team accounts")
   /**
    * One row, in the caller's org. Scoped before anything else runs: an
    * out-of-org id must 404 before a secret is resolved or a provider is called
@@ -301,9 +312,12 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     credentials.getCredential
       ? await credentials.getCredential(id, scope)
       : (await credentials.listCredentials(scope)).find((item) => item.id === id)
-  const findCredential = async (id: string, scope: string, person: string) => {
-    const row = await readCredential(id, scope)
-    return row?.owner === person ? row : undefined
+  /** An account the caller may check or change: their own, or a team account they manage. */
+  const changeableAccount = async (request: Request, row: CredentialMetadata | undefined) =>
+    !!row && (row.owner === actor(request) || (isOrgAccount(row) && await managesOrgAccounts(request)))
+  const findCredential = async (request: Request, id: string) => {
+    const row = await readCredential(id, org(request))
+    return await changeableAccount(request, row) ? row : undefined
   }
   const checkOptions = {
     ...(options.fetch ? { fetch: options.fetch } : {}),
@@ -320,6 +334,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     options.telemetry?.capture(actor(request), "credential_checked", {
       provider: named ? credential.provider_id : "custom",
       kind: credential.kind,
+      scope: credential.owner === null ? "org" : "own",
       verdict: outcome.status === "checked" ? outcome.health : outcome.status,
       ...(scope === SINGLE_TENANT_ORG ? {} : { org_id: scope, $groups: { org: scope } }),
     })
@@ -426,15 +441,20 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       return c.json({ scope, credentials: rows.filter((row) => spendsAccount(row, person, sources, LOCAL_USER_ID)).map((row) => redact(row)) })
     })
     .get("/account-sources", async (c) => {
-      return c.json({
-        sources: (await credentials.accountSelections(org(c.req.raw)))[actor(c.req.raw)] ?? {},
-        org: await accountRows(c.req.raw, (row) => row.owner === null && fanoutEligible(row)),
-        can_remove_org_accounts: canRemoveOrgAccounts(c.req.raw),
-      })
+      const [selections, orgRows, manages] = await Promise.all([
+        credentials.accountSelections(org(c.req.raw)),
+        accountRows(c.req.raw, isOrgAccount),
+        managesOrgAccounts(c.req.raw),
+      ])
+      return c.json({ sources: selections[actor(c.req.raw)] ?? {}, org: orgRows, can_manage_org_accounts: manages })
     })
     .put("/account-sources", async (c) => {
       const body = accountSourcesBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
+      const refusal = body.data.source === "org"
+        ? orgSourceRefusal(await credentials.listCredentials(org(c.req.raw)), body.data.provider_ids)
+        : undefined
+      if (refusal) return c.json(refusal, 409)
       return c.json({ sources: await credentials.setAccountSources(body.data.provider_ids, body.data.source, org(c.req.raw), actor(c.req.raw)) })
     })
     .get("/machine-logins", async (c) => {
@@ -494,18 +514,24 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     .put("/", async (c) => {
       const body = putBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
-      const secret = pastedSecret(body.data.secret)
-      const refusal = subscriptionTokenRefused(body.data.provider_id, body.data.kind, secret)
+      const { owner, ...fields } = body.data
+      const secret = pastedSecret(fields.secret)
+      if (owner === "org") {
+        if (!await managesOrgAccounts(c.req.raw)) return c.json(orgAccountsForbidden(), 403)
+        const refused = orgAccountRefusal({ ...fields, secret })
+        if (refused) return c.json(refused, 400)
+      }
+      const refusal = subscriptionTokenRefused(fields.provider_id, fields.kind, secret)
       if (refusal) return c.json(refusal, 400)
       let write: CredentialWrite = {
-        ...body.data,
+        ...fields,
         secret,
-        owner: actor(c.req.raw),
-        ...(body.data.scope === "shared" ? {
+        owner: owner === "org" ? null : actor(c.req.raw),
+        ...(fields.scope === "shared" ? {
           consent: { at: (options.now ?? Date.now)(), surface: "api_key" as const },
         } : {}),
       }
-      if (body.data.kind === "sandbox_driver") {
+      if (fields.kind === "sandbox_driver") {
         if (!sandboxKeys) return c.json(sandboxKeysUnavailable(), 501)
         if (!await managesSandboxKeys(c.req.raw)) return c.json(sandboxKeysForbidden(), 403)
         const key = sandboxKeyWrite(sandboxKeys, keyContext(c.req.raw), body.data)
@@ -578,7 +604,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       const id = c.req.param("id")
       const scope = org(c.req.raw)
       const row = await readCredential(id, scope)
-      const credential = row?.owner === actor(c.req.raw) || await managedSandboxKey(c.req.raw, row) ? row : undefined
+      const credential = await changeableAccount(c.req.raw, row) || await managedSandboxKey(c.req.raw, row) ? row : undefined
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
@@ -592,7 +618,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       if (!body.success) return c.json(invalidBody(body.error), 400)
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      const credential = await findCredential(id, scope, actor(c.req.raw))
+      const credential = await findCredential(c.req.raw, id)
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
@@ -600,7 +626,8 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)
       }
       const secret = pastedSecret(body.data.secret)
-      const refusal = subscriptionTokenRefused(credential.provider_id, credential.kind, secret)
+      const refusal = (isOrgAccount(credential) ? orgAccountRefusal({ ...credential, secret }) : undefined)
+        ?? subscriptionTokenRefused(credential.provider_id, credential.kind, secret)
       if (refusal) return c.json(refusal, 400)
       const outcome = await checkCredential(credentials, credential, {
         org: scope,
@@ -651,7 +678,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       return c.json({ credentials: result.credentials.map((row) => redact(row)) })
     })
     .patch("/:id/status", async (c) => {
-      if (!await findCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
+      if (!await findCredential(c.req.raw, c.req.param("id"))) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       const body = statusBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       try {
@@ -662,7 +689,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       }
     })
     .patch("/:id/scope", async (c) => {
-      if (!await findCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
+      if (!await findCredential(c.req.raw, c.req.param("id"))) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       const body = scopeBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
       if (!credentials.updateCredentialScope) {
@@ -688,11 +715,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         if ("deleted" in removal) return c.json(removal)
         return c.json(sandboxKeyInUse(removal.workspaces), 409)
       }
-      const removable = row && (
-        row.owner === actor(c.req.raw)
-        || (row.owner === null && fanoutEligible(row) && canRemoveOrgAccounts(c.req.raw))
-        || await managedSandboxKey(c.req.raw, row)
-      )
+      const removable = await changeableAccount(c.req.raw, row) || await managedSandboxKey(c.req.raw, row)
       if (!removable) return c.json({ deleted: false })
       const deleted = await credentials.deleteCredential(c.req.param("id"), org(c.req.raw))
       return c.json({ deleted })

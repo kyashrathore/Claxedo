@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "vitest"
 import { UNDELIVERED_CREDENTIAL_CHANGE } from "../../credentials/worker/org-routed"
 import { countD1Rounds, type D1Rounds } from "../../test-support/d1-rounds"
 import { hostedCoreD1App } from "../../test-support/hosted-core-d1-app"
+import { hostedOrgAdministers } from "../../credentials/worker/org-administers"
 import { hostedSandboxDriverKeys } from "../../sandbox/hosted-sandbox-driver-keys"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 
@@ -28,6 +29,7 @@ async function signedReader(workspace = true) {
       productWorkspace: { sandboxStart: async () => READY },
       accountSetup: {
         change: UNDELIVERED_CREDENTIAL_CHANGE,
+        administers: hostedOrgAdministers(database),
         sandboxDriverKeys: hostedSandboxDriverKeys({ database, authority, drivers: ["boat"], hostedBroker: true, leaseStore: createD1SandboxLeaseStore({ database }) }),
       },
     }),
@@ -83,10 +85,11 @@ test("a connect to a live sandbox pays four control-plane rounds", async () => {
  * Settings → Models reads the person's accounts, the ones in use and their
  * account sources at once, and the Add dialog reads the sign-in methods, so the
  * deepest of those chains is the time the page waits. Every one pays the
- * principal row and the organization resolution first; the route's own reads
+ * principal row and the organization resolution first; the accounts' own reads
  * follow them one at a time (list, then the organization's sandbox driver for
- * the reach of each row; selections, then the list). The sign-in methods are
- * a table in the Worker and read nothing.
+ * the reach of each row), while the account sources read the selections, the
+ * organization's rows and whether the caller manages them at once. The sign-in
+ * methods are a table in the Worker and read nothing.
  */
 test("the account reads Settings → Models makes answer in few serial control-plane rounds", async () => {
   const { app, alice, traced } = await signedReader(false)
@@ -101,7 +104,7 @@ test("the account reads Settings → Models makes answer in few serial control-p
   expect(Object.fromEntries(Object.entries(measured).map(([route, { rounds, statements }]) => [route, { rounds, statements }]))).toEqual({
     accounts: { rounds: 4, statements: 4 },
     effective: { rounds: 4, statements: 4 },
-    sources: { rounds: 5, statements: 5 },
+    sources: { rounds: 3, statements: 6 },
     signInMethods: { rounds: 0, statements: 0 },
   })
 })

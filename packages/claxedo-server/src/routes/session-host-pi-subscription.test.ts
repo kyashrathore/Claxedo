@@ -41,6 +41,7 @@ function settings() {
     resolveOrgId: async () => plane.orgId,
     credentials: plane.credentials,
     change: UNDELIVERED_CREDENTIAL_CHANGE,
+    administers: async () => false,
     keys: envelopeKeyProviderFromEnv(plane.env),
   })
 }

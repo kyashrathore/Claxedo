@@ -55,7 +55,6 @@ export default {
   "settings.providers.agents.removingAccount": "جارٍ الإزالة…",
   "settings.providers.accountSource.own": "حسابك الخاص",
   "settings.providers.accountSource.org": "حساب المؤسسة",
-  "settings.providers.accountSource.unavailable": "لا يمكن تشغيل {{name}} لك: لا تملك مؤسستك حسابًا لهذا المزوّد. اختر حسابك الخاص لاستخدامه.",
   "settings.providers.accountSource.label": "الحساب المستخدم لـ {{name}}",
   "settings.providers.live.ok": "يعمل",
   "settings.providers.live.authFailed": "رفضه المزوّد",

@@ -14,6 +14,7 @@ import { sessionHostAdmits, type SessionHostPlacement } from "../authority/sessi
 import type { SessionMcpCredentials } from "../mcp/session-mcp-credentials"
 import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 import { sessionHostMachineAccess, type SessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
+import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
 import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
@@ -214,8 +215,12 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
       if (!owner || owner.orgId !== claims.orgId) return denied(c)
       const holder = placement.session!.creatorUserId ?? owner.userId
-      const credential = await input.credentials(owner.orgId).getCredential?.(parsed.data.credentialId)
-      if (!credential || credential.owner !== holder || !PI_DIRECT_PROVIDERS.has(credential.provider_id)) return denied(c)
+      const accounts = input.credentials(owner.orgId)
+      const credential = await accounts.getCredential?.(parsed.data.credentialId)
+      if (!credential || !PI_DIRECT_PROVIDERS.has(credential.provider_id)) return denied(c)
+      const spent = credential.owner === holder
+        || (credential.owner === null && spendsAccount(credential, holder, holderAccountSources(await accounts.accountSelections(), holder, holder), holder))
+      if (!spent) return denied(c)
       return c.json({ refusal: await refusals.refused(owner.orgId, credential, credential.revision) })
     })
     .post("/session-host-delete", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {

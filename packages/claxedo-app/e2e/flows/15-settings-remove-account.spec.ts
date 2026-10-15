@@ -8,9 +8,9 @@ test("15 settings: the local operator removes a saved organization account, canc
   const read = async () => {
     const response = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`)
     expect(response.status).toBe(200)
-    return await response.json() as { can_remove_org_accounts: boolean; org: Array<{ id: string }> }
+    return await response.json() as { can_manage_org_accounts: boolean; org: Array<{ id: string }> }
   }
-  expect(await read()).toMatchObject({ can_remove_org_accounts: true, org: [expect.objectContaining({ id })] })
+  expect(await read()).toMatchObject({ can_manage_org_accounts: true, org: [expect.objectContaining({ id })] })
   await app.goto(`${stack.url}/settings/models`)
   const accounts = app.getByRole("radiogroup", { name: "Claude Code", exact: true })
   const saved = accounts.locator('[data-slot="account-row"]').filter({ hasText: "Saved Claude account" })
@@ -44,20 +44,22 @@ test("15 settings: the local operator removes a saved organization account, canc
   await expect(accounts.locator('[data-account="org"]')).toHaveCount(0)
 })
 
-test("15 settings: an unavailable selected organization account explains the failure and disappears after choosing the machine login", async ({ stack, app }) => {
+test("15 settings: a chosen organization account that was removed says so and disappears after choosing the machine login", async ({ stack, app }) => {
   await stack.daemon.makeWorkspace("missing-org", "Missing organization")
-  const response = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ provider_ids: HARNESS_TABLE.cursor.providerIds, source: "org" }),
-  })
-  expect(response.status).toBe(200)
+  const json = (method: string, body: unknown) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+  const sources = (source: string) => fetch(`${stack.url}/api/claxedo/credentials/account-sources`, json("PUT", { provider_ids: HARNESS_TABLE.cursor.providerIds, source }))
+  expect((await sources("org")).status).toBe(409)
+  const team = await fetch(`${stack.url}/api/claxedo/credentials`, json("PUT", { provider_id: "cursor", kind: "api_key", owner: "org", label: "Team Cursor", secret: "key_team_cursor" }))
+  expect(team.status).toBe(200)
+  const { credential } = await team.json() as { credential: { id: string } }
+  expect((await sources("org")).status).toBe(200)
+  expect((await fetch(`${stack.url}/api/claxedo/credentials/${credential.id}`, json("DELETE", {}))).status).toBe(200)
   await app.goto(`${stack.url}/settings/models`)
   const accounts = app.getByRole("radiogroup", { name: "Cursor", exact: true })
   const missing = accounts.locator('[data-account="org"]')
   await expect(missing.getByRole("radio")).toBeChecked()
   await expect(missing.getByRole("radio")).toBeDisabled()
-  await expect(missing.getByText("Cursor can't run for you: your organization has no account for this provider. Choose your own account to use it.", { exact: true })).toBeVisible()
+  await expect(missing.getByText("Your organization has no Cursor API key. Ask an admin to add a team key, or choose your own account.", { exact: true })).toBeVisible()
   await accounts.getByText(/^Login on /).click()
   await expect(missing).toHaveCount(0)
   const read = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`)

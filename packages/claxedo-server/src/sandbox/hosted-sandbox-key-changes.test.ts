@@ -6,6 +6,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
 import type { ControlPlaneServices } from "../authority/services"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
+import { hostedOrgAdministers } from "../credentials/worker/org-administers"
 import { hostedCredentialRoutes } from "../credentials/worker/routes"
 import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
 import { d1Authority } from "../test-support/d1-authority"
@@ -97,6 +98,7 @@ function plane() {
     resolveOrgId: async () => orgId,
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
     change: UNDELIVERED_CREDENTIAL_CHANGE,
+    administers: hostedOrgAdministers(fixture.database),
     keys: envelopeKeyProviderFromEnv(env),
     sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"], hostedBroker: false, leaseStore }),
   })

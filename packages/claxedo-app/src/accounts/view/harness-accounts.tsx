@@ -8,7 +8,7 @@ import type { AccountsSnapshot, Harness } from "../model"
 import type { Accounts } from "../store"
 import { AgentHarnessRow } from "./harness-row"
 
-const UNREAD: AccountsSnapshot = { cloudOnly: false, stored: [], effective: undefined, machineLogins: [], sources: { sources: new Map(), org: [], canRemoveOrgAccounts: false }, scannedAt: 0 }
+const UNREAD: AccountsSnapshot = { cloudOnly: false, stored: [], effective: undefined, machineLogins: [], sources: { sources: new Map(), org: [], canManageOrgAccounts: false }, scannedAt: 0 }
 
 function LoadingNote(props: { readonly onMachine: boolean; readonly machineName: string | undefined }) {
   const t = useAccountsText()

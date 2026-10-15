@@ -54,7 +54,6 @@ export default {
   "settings.providers.agents.removingAccount": "Uklanjanje…",
   "settings.providers.accountSource.own": "Vaš vlastiti račun",
   "settings.providers.accountSource.org": "Račun organizacije",
-  "settings.providers.accountSource.unavailable": "{{name}} se ne može pokrenuti za vas: vaša organizacija nema račun za ovog pružaoca. Odaberite vlastiti račun da biste ga koristili.",
   "settings.providers.accountSource.label": "Račun koji se koristi za {{name}}",
   "settings.providers.live.ok": "Radi",
   "settings.providers.live.authFailed": "Pružalac ga je odbio",
