@@ -70,6 +70,38 @@ describe("hosted Agent Plugins runtime provisioner", () => {
     for (const entry of body.artifacts) expect(decodePluginTreeBase64(entry.tree).entries).toHaveLength(1)
   })
 
+  test("a plugin enabled with no retained artifact is left out of the machine's projection while the rest is delivered", async () => {
+    const first = await artifact("review-user")
+    const second = await artifact("review-org")
+    const ready = snapshot({ first: first.digest, second: second.digest })
+    const unretained = Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => [harnessId, {
+      revision: 9,
+      pluginInstanceId: "claxedo/triage",
+      harnessId,
+      projectId: "project_1",
+      userDefault: true,
+      pins: {},
+    }])) as SignedAgentPluginRuntimeSnapshot["plugins"][number]["harnesses"]
+    let delivered: { selections: Array<{ pluginInstanceId: string }> } | undefined
+    const provisioner = createHostedAgentPluginRuntimeProvisioner({
+      activations: { runtimeSnapshot: async () => ({
+        ...ready,
+        plugins: [...ready.plugins, { pluginInstanceId: "claxedo/triage", pins: {}, harnesses: unretained }],
+      }) },
+      artifacts: {
+        put: async (value) => value,
+        get: async (digest) => digest === first.digest ? first : digest === second.digest ? second : undefined,
+      },
+      runtimeFetch: async (_workspaceId, _identity, _path, init: RequestInit) => {
+        delivered = JSON.parse(fetchBodyText(init.body))
+        return Response.json({ ok: true, revision: 9, generationId: "generation_9", harnessLaunch: {} })
+      },
+    })
+
+    await expect(provisioner.provision("ws_1")).resolves.toMatchObject({ ok: true, generationId: "generation_9" })
+    expect(delivered?.selections.map((selection) => selection.pluginInstanceId)).toEqual(["claxedo/review", "claxedo/review"])
+  })
+
   test("fails closed before contacting the VM when selected retained bytes are unavailable", async () => {
     const first = await artifact("review-user")
     const second = await artifact("review-org")
