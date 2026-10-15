@@ -78,7 +78,7 @@ import {
 import { readTimelineMountSnapshot, writeTimelineMountSnapshot } from "./timeline-mount-cache"
 import { createTimelineScrollMemory } from "./timeline-scroll-memory"
 import { createTurnFoldStore } from "./turn-fold-store"
-import { formatDuration } from "@/transcript"
+import { turnDividerLabel } from "./turn-divider-label"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
@@ -1073,22 +1073,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
       }
       case "TurnDivider": {
         const turnDividerRow = rowOfTag(row, "TurnDivider", current)
-        const label = () => {
-          const divider = turnDividerRow()
-          if (divider.label === "worked") return host.t("ui.message.workedDuration", { duration: formatDuration(divider.durationMs) })
-          if (divider.label === "compaction") return host.t("ui.messagePart.compaction")
-          if (divider.label === "handoff") return `Session handed off to ${divider.harness}`
-          const durationMs = divider.durationMs
-          return typeof durationMs === "number"
-            ? host.t("ui.message.interruptedDuration", { duration: formatDuration(durationMs) })
-            : host.t("ui.message.interrupted")
-        }
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div data-slot="session-turn-compaction">
                 <MessageDivider
-                  label={label()}
+                  label={turnDividerLabel(turnDividerRow(), host.t)}
                   icon={turnDividerRow().label === "compaction" ? "archive" : undefined}
                 />
               </div>

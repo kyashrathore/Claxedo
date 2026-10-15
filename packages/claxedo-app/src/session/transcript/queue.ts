@@ -34,7 +34,7 @@ function signalField<T>(initial: T): Field<T> {
   return { get, set }
 }
 
-function show(context: QueueContext, items: readonly QueuedPrompt[]) {
+function showQueue(context: QueueContext, items: readonly QueuedPrompt[]) {
   context.items.set(items)
   context.readError.set(undefined)
   context.onRead(items)
@@ -44,7 +44,7 @@ async function read(context: QueueContext): Promise<void> {
   const pushedBefore = context.pushed.count
   try {
     const next = await context.server.sessions.queue(context.ref)
-    if (next && context.pushed.count === pushedBefore) show(context, next)
+    if (next && context.pushed.count === pushedBefore) showQueue(context, next)
   } catch (cause) {
     if (context.pushed.count === pushedBefore) context.readError.set(toAppError(cause))
   }
@@ -52,7 +52,7 @@ async function read(context: QueueContext): Promise<void> {
 
 function receive(context: QueueContext, items: readonly QueuedPrompt[]) {
   context.pushed.count++
-  show(context, items)
+  showQueue(context, items)
 }
 
 function reread(context: QueueContext): Promise<void> {
