@@ -596,11 +596,11 @@ describe("boat sandbox driver", () => {
     expect(run.boatSavedImages()).toEqual(["other-image.tar"])
     expect(run.image()).toBe(IMAGE)
     const root = run.stubRoot()
-    for (const link of ["bin", "lib", "lib64", "sbin"]) expect(root).toContainEqual(expect.stringMatching(new RegExp(`^l.* 0 +0 .* \\./${link} -> usr/${link}$`)))
+    for (const link of ["bin", "lib", "lib64", "sbin"]) expect(root).toContainEqual(expect.stringMatching(new RegExp(`^l.* 0(?:/| +)0 .* \\./${link} -> usr/${link}$`)))
     for (const directory of ["boot", "dev", "media", "mnt", "proc", "run", "sys", ...IMAGE_TREES]) {
-      expect(root).toContainEqual(expect.stringMatching(new RegExp(`^d.* 0 +0 .* \\./${directory}/?$`)))
+      expect(root).toContainEqual(expect.stringMatching(new RegExp(`^d.* 0(?:/| +)0 .* \\./${directory}/?$`)))
     }
-    expect(root).toContainEqual(expect.stringMatching(/^drwxrwxrwt .* 0 +0 .* \.\/tmp\/?$/))
+    expect(root).toContainEqual(expect.stringMatching(/^drwxrwxrwt.* 0(?:\/| +)0 .* \.\/tmp\/?$/))
     expect(existsSync(path.join(run.dir, "claxedo-persistent", "workspace"))).toBe(false)
   })
 
