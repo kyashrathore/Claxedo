@@ -38,7 +38,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { acceptsSubscriptionToken } from "@claxedo/server-core/credentials/provider-auth/methods"
-import { subscriptionTokenRefusal } from "@claxedo/server-core/credentials/secret-material"
+import { pastedSecret, subscriptionTokenRefusal } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialKind, CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
 import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
@@ -494,10 +494,12 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     .put("/", async (c) => {
       const body = putBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
-      const refusal = subscriptionTokenRefused(body.data.provider_id, body.data.kind, body.data.secret)
+      const secret = pastedSecret(body.data.secret)
+      const refusal = subscriptionTokenRefused(body.data.provider_id, body.data.kind, secret)
       if (refusal) return c.json(refusal, 400)
       let write: CredentialWrite = {
         ...body.data,
+        secret,
         owner: actor(c.req.raw),
         ...(body.data.scope === "shared" ? {
           consent: { at: (options.now ?? Date.now)(), surface: "api_key" as const },
@@ -595,11 +597,12 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       if (!credentials.updateCredentialSecret || !credentials.updateCredentialHealth) {
         return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)
       }
-      const refusal = subscriptionTokenRefused(credential.provider_id, credential.kind, body.data.secret)
+      const secret = pastedSecret(body.data.secret)
+      const refusal = subscriptionTokenRefused(credential.provider_id, credential.kind, secret)
       if (refusal) return c.json(refusal, 400)
       const outcome = await checkCredential(credentials, credential, {
         org: scope,
-        secret: body.data.secret,
+        secret,
         replace: true,
         ...checkOptions,
       })

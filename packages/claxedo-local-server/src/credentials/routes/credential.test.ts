@@ -795,6 +795,19 @@ describe("credential routes", () => {
       secret: "sk-test",
     }, SINGLE_TENANT_ORG)
 
+    // A key copied across a wrapped terminal line arrives with the break (or
+    // the space a single-line field turned it into) inside; the row keeps the key.
+    const wrapped = await app.request("http://localhost/", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider_id: "claude-sdk", kind: "oauth_token", source: "managed", label: "plan", secret: " sk-ant-oat01-wrapped\n token\n" }),
+    })
+    expect(wrapped.status).toBe(200)
+    expect(registry.putCredential).toHaveBeenLastCalledWith(
+      { owner: "local", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", label: "plan", secret: "sk-ant-oat01-wrappedtoken" },
+      SINGLE_TENANT_ORG,
+    )
+
     const sync = await app.request("http://localhost/sync-local", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -988,6 +1001,31 @@ describe("replacing the token on a stored account", () => {
     // The new material is what the provider was asked about, not the one the
     // row was rejected for.
     expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer sk-fresh" })
+  })
+
+  test("a token pasted across a wrapped line is judged and stored without the break", async () => {
+    const row: CredentialMetadata = {
+      ...(await credentials().listCredentials())[0],
+      provider_id: "claude-sdk",
+      kind: "oauth_token",
+      health: "auth_failed",
+    }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async () => {}),
+    })
+    const request = providerFetch(() => Response.json({ data: [] }))
+    const app = CredentialRoutes(registry, { fetch: request as unknown as typeof fetch, now: () => 42 })
+
+    const response = await app.request("http://localhost/cred_1/reconnect", {
+      method: "POST",
+      body: JSON.stringify({ secret: "sk-ant-oat01-wrapped  token" }),
+    })
+
+    await expect(response.json()).resolves.toMatchObject({ health: "ok", stored: true })
+    expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer sk-ant-oat01-wrappedtoken" })
+    expect(registry.updateCredentialSecret).toHaveBeenCalledWith("cred_1", "sk-ant-oat01-wrappedtoken", null, SINGLE_TENANT_ORG)
   })
 
   test("judges the pasted secret rather than the expiry the replaced one carried", async () => {
