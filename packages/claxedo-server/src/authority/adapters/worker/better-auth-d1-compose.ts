@@ -13,7 +13,7 @@ import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedBrokerCredentialReader, hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { createCredentialRefusals } from "../../../credentials/credential-refusals"
-import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION } from "../../../credentials/hosted-egress-broker"
+import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, type HostedEgressBroker } from "../../../credentials/hosted-egress-broker"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
@@ -120,6 +120,8 @@ export type BetterAuthD1UserDeployedComposition = {
   plane: HostedControlPlane
   /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox binding. */
   runtimeDelivery?: ReturnType<typeof createHostedRuntimeDelivery>
+  /** The plane's broker for drivers with no provider edge; absent without a sandbox binding or a public origin. */
+  egressBroker?: HostedEgressBroker
   options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
   /** The membership, team and project rows hosted Pages authorize against. */
   documentAccess: D1AccessContext
@@ -290,6 +292,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   return {
     plane,
     ...(delivery ? { runtimeDelivery: delivery } : {}),
+    ...(broker ? { egressBroker: broker } : {}),
     documentAccess: new D1WorkspaceAuthority(input.controlPlaneDatabase, {
       deploymentId,
       product: input.product,

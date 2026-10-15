@@ -30,7 +30,7 @@ import {
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
   createHostedRepositoryAccess,
-  createHostedRepositoryCloneSecrets,
+  createHostedRepositoryClone,
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
@@ -65,6 +65,9 @@ import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-
 import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
 import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
 import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
+import type { HostedEgressBroker } from "../credentials/hosted-egress-broker"
+import { hostedRepositoryBindings } from "../credentials/hosted-egress-broker/repository-binding"
+import { hostedRepositoryCloneDelivery } from "../workspace/repository-clone"
 
 const log = Log.create({ service: "hosted-agent-plugins" })
 
@@ -229,6 +232,8 @@ export function createHostedAgentPluginsComposition(input: {
   /** Refreshes the caller's running sandboxes after an activation change; absent on a plane that hosts no sandboxes. */
   pluginsChanged?: (userId: string) => Promise<void>
   pushRuntime?: (context: WorkspaceRuntimeContext, preparation: WorkspaceRuntimePreparation) => Promise<void>
+  /** The plane's broker, through which a sandbox with no provider edge clones its private repository. */
+  egressBroker?: HostedEgressBroker
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -326,7 +331,13 @@ export function createHostedAgentPluginsComposition(input: {
     credentials: orgCredentials,
   }
   const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
-  const cloneSecrets = createHostedRepositoryCloneSecrets(connectionsInput)
+  const repositoryClone = createHostedRepositoryClone(connectionsInput)
+  input.egressBroker?.serveRepositoryClones(hostedRepositoryBindings(repositoryClone))
+  const cloneDelivery = hostedRepositoryCloneDelivery({
+    clone: repositoryClone,
+    secretBrokering: workspaceSecretBrokering(input.plane),
+    ...(input.egressBroker ? { broker: input.egressBroker } : {}),
+  })
   const resolveConnection = createHostedCapabilityConnectionResolver(connectionsInput)
   const resolveToken = createHostedCapabilityTokenResolver(connectionsInput)
   const reportAuthFailure = createHostedCapabilityAuthFailureReporter(connectionsInput)
@@ -383,9 +394,9 @@ export function createHostedAgentPluginsComposition(input: {
         projectId: snapshot.identity.projectId,
         workspaceId: snapshot.identity.workspaceId,
       }),
-      cloneSecrets({ workspaceId, ownerUserId: snapshot.identity.userId, orgId: snapshot.identity.organizationId }),
+      cloneDelivery({ workspaceId, ownerUserId: snapshot.identity.userId, orgId: snapshot.identity.organizationId }),
     ])
-    return { ...preparation, secrets: [...preparation.secrets ?? [], ...clone], env }
+    return { ...preparation, secrets: [...preparation.secrets ?? [], ...clone.secrets], env, ...(clone.leaseEnv ? { leaseEnv: clone.leaseEnv } : {}) }
   }
   // The header placeholder is the one a header-injecting driver installs
   // (`brokeredPlaceholderEnv`); the sandbox presents it and the driver's edge

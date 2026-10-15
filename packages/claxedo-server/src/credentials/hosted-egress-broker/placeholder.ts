@@ -37,6 +37,11 @@ export function brokerBindingId(input: { userId: string; orgId: string; workspac
   return createHash("sha256").update(JSON.stringify([input.userId, input.orgId, input.workspaceId, input.providerId])).digest("hex").slice(0, 32)
 }
 
+/** A workspace's repository binding: derived under a name no stored account carries, so no account binding shares its id. */
+export function repositoryBindingId(identity: { userId: string; orgId: string; workspaceId: string }): string {
+  return brokerBindingId({ ...identity, providerId: "github-repository" })
+}
+
 const CLAIM = {
   bindingId: "binding_id",
   credentialId: "credential_id",

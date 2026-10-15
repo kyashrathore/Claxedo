@@ -16,7 +16,7 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
-import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { SandboxInFlight, SandboxStart } from "./sandbox-start"
 
 export type WorkspaceRuntimeContext = {
@@ -28,6 +28,8 @@ export type WorkspaceRuntimePreparation = {
   secrets?: SandboxBrokeredSecret[]
   /** The readable half: what the runtime itself reads at boot and what the agent presents knowingly. */
   env?: Record<string, string>
+  /** Readable env bound to the lease the sandbox boots: placeholders the plane's own broker honours for that lease alone. */
+  leaseEnv?: SandboxManagerInput["leaseEnv"]
   /** Feature-private immutable plan, passed back only to the matching provision hook. */
   state?: unknown
 }

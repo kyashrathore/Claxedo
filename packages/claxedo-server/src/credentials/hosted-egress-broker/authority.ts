@@ -6,7 +6,8 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { createCredentialRefusals, type CredentialRefusals } from "../credential-refusals"
 import { storeRenewal } from "../store-renewal"
-import { brokerBindingId, type HostedBrokerClaims } from "./placeholder"
+import { brokerBindingId, repositoryBindingId, type HostedBrokerClaims } from "./placeholder"
+import type { HostedRepositoryBindings } from "./repository-binding"
 
 export type HostedBrokerCredentialRead = (credentialId: string) => Promise<{ credential: CredentialMetadata; secret: string } | undefined>
 
@@ -30,9 +31,10 @@ export function bindingDestination(destination: ProviderDestination): Binding["d
  * the account row with its envelope and the workspace's lease row. The
  * placeholder's signature proves who minted it; the store row proves the
  * account is still the owner's to spend; the lease row proves the sandbox it
- * was minted for is the one still serving, so a placeholder carried out of a
- * stopped, replaced or deleted sandbox is refused at its next request, not at
- * its expiry.
+ * was minted for is the one still serving, or still booting, so a placeholder
+ * carried out of a stopped, replaced or deleted sandbox is refused at its next
+ * request, not at its expiry. A repository binding reads the workspace's
+ * repository and its connection's token in place of the account row.
  */
 export function hostedBindingAuthority(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
@@ -42,11 +44,14 @@ export function hostedBindingAuthority(input: {
   now?: () => number
   /** The plane's rule for a vendor refusing a stored account, shared with every other path that spends one. */
   credentialRefusals?: CredentialRefusals
+  /** How a repository binding resolves, once the composition owning code-host connections installed it. */
+  repositories?: () => HostedRepositoryBindings | undefined
 }): BindingAuthority<HostedBrokerClaims> {
   const now = input.now ?? Date.now
   const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: input.credentials, now })
   return {
     async resolve(bindingId, claims) {
+      if (bindingId === repositoryBindingId(claims)) return input.repositories?.()?.(bindingId, claims)
       const read = await input.read(claims.orgId)(claims.credentialId)
       if (!read) return undefined
       let { credential, secret } = read
@@ -85,14 +90,16 @@ export function hostedBindingAuthority(input: {
     },
     async currentRuntime(identity) {
       const target = await input.sandboxManager.target(identity.workspaceId)
-      return target.status === "ready" && target.epoch === identity.leaseGeneration && target.hostId === identity.runtimeId
+      // A booting sandbox clones its repository before its lease is ready.
+      const runtime = target.status === "ready" ? target : target.booting
+      return runtime?.epoch === identity.leaseGeneration && runtime.hostId === identity.runtimeId
     },
     // The hosted store keeps no last-use mark on a row; a delivered account's
     // selection moves only when its owner chooses another.
     async markUsed() {},
-    async reportFailure({ credentialId, revision, status, runtime }: BindingFailure) {
+    async reportFailure({ bindingId, credentialId, revision, status, runtime }: BindingFailure) {
       // A 403 from a model vendor is a permission or region refusal, not a rejected credential.
-      if (status !== 401) return
+      if (status !== 401 || bindingId === repositoryBindingId(runtime)) return
       const credential = await input.credentials(runtime.orgId).getCredential?.(credentialId)
       if (credential) await refusals.refused(runtime.orgId, credential, revision)
     },

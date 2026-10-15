@@ -96,6 +96,9 @@ export const SESSION_ROWS_PASS_PATH = "/api/claxedo/session-rows/pass"
 /** Where the control plane takes, once, the start phases a cloud runtime timed while it booted. */
 export const RUNTIME_START_PHASES_PATH = "/api/claxedo/start-phases"
 
+/** Where the control plane hands a serving runtime its lease env afresh, before the placeholders its boot was given expire. */
+export const RUNTIME_LEASE_ENV_PATH = "/api/claxedo/lease-env"
+
 /** The pass a runtime holds, as its claims read without verifying; null before the control plane delivered one. */
 export type SessionRowsPassHeld = { epoch: number; issuedAt: number; expiresAt: number } | null
 

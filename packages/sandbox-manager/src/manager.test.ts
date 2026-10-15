@@ -9,6 +9,7 @@ import {
   type SandboxCheckpointRuntime,
   type SandboxDriver,
   type SandboxLifecycleEvent,
+  type SandboxManager,
   type SandboxTarget,
 } from "."
 import { createMemoryLeaseStore, sandboxLease } from "./stores/memory"
@@ -1783,6 +1784,50 @@ describe("sandbox manager", () => {
     const result = await manager.ensure("ws_1", { homeRegion: "us-east", secrets })
     expect(result.status).toBe("ready")
     expect(driver.ensureHost).toHaveBeenCalledWith(expect.objectContaining({ secrets }))
+  })
+
+  test("lease env is minted for the epoch and host the driver boots, beside the caller's env", async () => {
+    const driver = fakeDriver({ metadata: { secretBrokering: "none" } as never })
+    const leaseStore = createMemoryLeaseStore()
+    const manager = createSandboxManager({ leaseStore, driver })
+    const leaseEnv = vi.fn(async (lease: { epoch: number; hostId: string }) => ({ CLONE_PASS: `pass-${lease.epoch}-${lease.hostId}` }))
+
+    const first = await manager.ensure("ws_1", { homeRegion: "us-east", env: { A: "a" }, leaseEnv })
+    expect(first.status).toBe("ready")
+    expect(driver.ensureHost).toHaveBeenLastCalledWith(expect.objectContaining({ env: { A: "a", CLONE_PASS: "pass-1-test-driver-ws_1" } }))
+
+    await manager.stop("ws_1")
+    await manager.ensure("ws_1", { homeRegion: "us-east", leaseEnv })
+    const second = (await leaseStore.get("ws_1"))!
+    expect(second.epoch).toBe(2)
+    expect(leaseEnv).toHaveBeenLastCalledWith({ epoch: 2, hostId: second.hostId })
+    expect(driver.ensureHost).toHaveBeenLastCalledWith(expect.objectContaining({ env: { CLONE_PASS: `pass-2-${second.hostId}` } }))
+  })
+
+  test("lease env that restates the runtime's identity is refused before the driver runs", async () => {
+    const driver = fakeDriver({ metadata: { secretBrokering: "none" } as never })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    const result = await manager.ensure("ws_1", { homeRegion: "us-east", leaseEnv: async () => ({ WORKSPACE_RUNTIME_HOST_ID: "other" }) })
+    expect(result).toMatchObject({ status: "unavailable" })
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+  })
+
+  test("a lease booting on a host names its epoch and host while it is not yet ready", async () => {
+    const leaseStore = createMemoryLeaseStore()
+    let booting: Awaited<ReturnType<SandboxManager["target"]>> | undefined
+    const manager: SandboxManager = createSandboxManager({
+      leaseStore,
+      driver: fakeDriver({
+        ensureHost: vi.fn(async (input) => {
+          await input.onResource?.({ sandboxId: "sb_1", hostId: input.hostId, labels: input.labels })
+          booting = await manager.target("ws_1")
+          return { sandboxId: "sb_1", url: "https://runtime.test/ws_1", hostId: input.hostId, labels: input.labels }
+        }),
+      }),
+    })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(booting).toMatchObject({ status: "unavailable", leaseStatus: "acquiring", booting: { epoch: 1, hostId: "test-driver-ws_1" } })
+    expect(await manager.target("ws_1")).not.toHaveProperty("booting")
   })
 
   test("the placeholder a header-injecting driver puts in the sandbox is named, not valued", () => {

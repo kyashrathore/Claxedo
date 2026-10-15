@@ -212,7 +212,13 @@ never logged, and never captured in a driver snapshot. A `none` driver's
 sandbox is handed no provider secret at all: on the hosted control plane its
 owner's model accounts reach the harness as placeholders spent through the
 plane's own egress broker (`@claxedo/server`'s
-`credentials/hosted-egress-broker/`), which the driver never sees.
+`credentials/hosted-egress-broker/`), which the driver never sees. Its private
+repository is cloned the same way: `SandboxManagerInput.leaseEnv` mints, for
+the epoch and host the driver is about to boot, a broker placeholder and the
+binding URL the runtime points its git at; the broker attaches the
+connection's current token to that repository's smart-HTTP requests while the
+lease boots or serves, and the control plane re-delivers the placeholder at
+half its hour.
 
 > Native brokering keeps the original upstream URL. Cloudflare accepts its
 > named placeholder as the complete credential header, or with a Bearer prefix
