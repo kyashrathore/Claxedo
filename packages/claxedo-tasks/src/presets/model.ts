@@ -1,3 +1,4 @@
+import { cloudHarnessHost, harnessProductLabel } from "@claxedo/agent-runtime-contract"
 import { utf8ByteLength } from "@claxedo/helpers/string"
 import {
   CONFIGURATION_SLOTS,
@@ -24,6 +25,21 @@ export function configurationEntries(
     if (configuration) entries.push([slot, configuration])
   }
   return entries
+}
+
+export function cloudPresetHarnessRefusal(harness: HarnessReference): string | undefined {
+  if (harness.access !== "native" || cloudHarnessHost(harness.id) !== "session-host") return undefined
+  const label = harnessProductLabel(harness.id) ?? harness.id
+  return `${label} runs in its own session host on a cloud workspace, and a cloud task starts its session in the workspace's runtime. Choose another harness for a cloud preset.`
+}
+
+export function presetCloudHarnessRefusal(draft: Pick<PresetDraft, "execution" | "configurations">): string | undefined {
+  if (draft.execution.placement !== "cloud") return undefined
+  for (const [, configuration] of configurationEntries(draft)) {
+    const refusal = cloudPresetHarnessRefusal(configuration.harness)
+    if (refusal) return refusal
+  }
+  return undefined
 }
 
 /** The harness references a draft names, so a service can resolve them in one pass. */
@@ -72,6 +88,10 @@ export function validatePresetDraft(draft: PresetDraft, harness: HarnessLookup):
   }
 
   for (const [slot, configuration] of configurationEntries(draft)) {
+    if (draft.execution.placement === "cloud" && cloudPresetHarnessRefusal(configuration.harness)) {
+      fields.add(`configurations.${slot}.harness`, "not_allowed")
+      continue
+    }
     const descriptor = harness(configuration.harness)
     if (!descriptor) {
       fields.add(`configurations.${slot}.harness`, "unknown_value")
