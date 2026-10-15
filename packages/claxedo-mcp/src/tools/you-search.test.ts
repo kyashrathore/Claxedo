@@ -124,4 +124,88 @@ describe("you_web_search handler", () => {
 		expect(result.isError).toBe(true)
 		expect((result.content[0] as { type: "text"; text: string }).text).toContain("network error")
 	})
+
+	test("limits results to the requested max_results", async () => {
+		const { registrar, tools } = captureRegistrar()
+		registerYouSearchTools(registrar)
+		const handler = tools.get("you_web_search")!.handler
+
+		const web = Array.from({ length: 8 }, (_, i) => ({ title: `Result ${i + 1}`, url: `https://example.com/${i + 1}` }))
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify({ results: { web } }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+			),
+		)
+
+		const result = await handler({ query: "test", max_results: 3 }, mockCtx)
+		expect(result.isError).toBeUndefined()
+		const text = (result.content[0] as { type: "text"; text: string }).text
+		// Only 3 numbered entries should appear, not 8.
+		expect(text.match(/^\d+\./gm)).toHaveLength(3)
+		expect(text).toContain("Result 1")
+		expect(text).toContain("Result 3")
+		expect(text).not.toContain("Result 4")
+	})
+
+	test("returns an error when the response is missing results.web", async () => {
+		const { registrar, tools } = captureRegistrar()
+		registerYouSearchTools(registrar)
+		const handler = tools.get("you_web_search")!.handler
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify({ unexpected: "shape" }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+			),
+		)
+
+		const result = await handler({ query: "test" }, mockCtx)
+		expect(result.isError).toBe(true)
+		expect((result.content[0] as { type: "text"; text: string }).text).toContain("unexpected response format")
+	})
+
+	test("passes an abort signal to fetch so stalled requests do not hang", async () => {
+		const { registrar, tools } = captureRegistrar()
+		registerYouSearchTools(registrar)
+		const handler = tools.get("you_web_search")!.handler
+
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ results: { web: [] } }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		)
+		vi.stubGlobal("fetch", fetchMock)
+
+		await handler({ query: "test" }, mockCtx)
+		const init = fetchMock.mock.calls[0][1] as RequestInit | undefined
+		expect(init?.signal).toBeInstanceOf(AbortSignal)
+	})
+
+	test("marks the response as external untrusted content", async () => {
+		const { registrar, tools } = captureRegistrar()
+		registerYouSearchTools(registrar)
+		const handler = tools.get("you_web_search")!.handler
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				new Response(
+					JSON.stringify({ results: { web: [{ title: "Example", url: "https://example.com" }] } }),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			),
+		)
+
+		const result = await handler({ query: "test" }, mockCtx)
+		const text = (result.content[0] as { type: "text"; text: string }).text
+		expect(text.toLowerCase()).toContain("untrusted")
+	})
 })
