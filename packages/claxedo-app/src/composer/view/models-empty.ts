@@ -10,6 +10,7 @@ type ModelsEmptyInput = {
   readonly harness: Accessor<HarnessType | undefined>
   readonly harnessLabel: (harness: HarnessType) => string
   readonly asleep: Accessor<boolean>
+  readonly waking: Accessor<boolean>
   readonly account: Accessor<HarnessAccountState>
   readonly placementId: Accessor<PlacementId | undefined>
   readonly openProviders: () => void
@@ -30,6 +31,7 @@ export function createModelsEmpty(input: ModelsEmptyInput): Accessor<ModelLoadFa
     const name = input.harnessLabel(harness)
     const unavailableHere = input.unavailableHere()
     if (unavailableHere) return unavailableHere
+    if (input.waking()) return { message: t("composer.models.waking", { name: placementName(input.placementId()) }), detail: t("composer.models.waking.detail") }
     if (input.asleep()) {
       const id = input.placementId()
       return { message: t("composer.models.asleep", { name: placementName(id) }), detail: t("composer.models.asleep.detail") }
