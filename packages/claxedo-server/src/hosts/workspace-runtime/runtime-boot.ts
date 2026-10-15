@@ -21,6 +21,7 @@ import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { sandboxConnectionSecrets } from "./connection-secrets"
 import { sandboxDirectCredentialRefresh } from "./direct-credential-refresh"
 import { configureRuntimeGitAuth } from "./git-auth"
+import { runtimeLeaseEnv } from "./lease-env"
 import { prepareRuntimeRepository, repositorySizeBytes, selectsRepository } from "./repository-source"
 import { repositoryScript } from "./repository-scripts"
 import { runtimeStartPhases } from "./runtime-start-phases"
@@ -254,7 +255,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     routeContributions: [
       ...(input.routeContributions ?? []),
       ...(sessionRows ? [sessionRows.routes] : []),
-      ...(relayOptions.relayHostAuth ? [startPhases.routes] : []),
+      ...(relayOptions.relayHostAuth ? [startPhases.routes, runtimeLeaseEnv(env)] : []),
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,

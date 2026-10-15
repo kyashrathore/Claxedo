@@ -23,7 +23,7 @@ import {
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
   createHostedRepositoryAccess,
-  createHostedRepositoryCloneSecrets,
+  createHostedRepositoryClone,
   type HostedD1ConnectionsSetupInput,
 } from "./setup"
 
@@ -465,14 +465,14 @@ describe("hosted D1 Connections setup", () => {
     }
     const workspace = async (test: Awaited<ReturnType<typeof rig>>, workspaceId: string, repoConnectionId?: string) => {
       await test.authority.createCloudWorkspace(test.owner, { workspaceId, displayName: workspaceId, repoUrl, ...(repoConnectionId ? { repoConnectionId } : {}) })
-      return createHostedRepositoryCloneSecrets(test.input)({ workspaceId, ownerUserId: test.ownerUserId, orgId: "org_deployment" })
+      return createHostedRepositoryClone(test.input)({ workspaceId, ownerUserId: test.ownerUserId, orgId: "org_deployment" })
     }
 
     test("a repository created without a private connection boots with no credential, though its owner holds GitHub connections", async () => {
       const test = await rig({ integrations: [github] })
       await connect(test.app, "github", { scope: "org", secret: "org-token" })
       await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
-      expect(await workspace(test, "ws_public")).toEqual([])
+      expect(await workspace(test, "ws_public")).toBeUndefined()
     })
 
     test("a private repository clones with the connection picked at create, not the one capability resolution prefers", async () => {
@@ -480,14 +480,7 @@ describe("hosted D1 Connections setup", () => {
       await connect(test.app, "github", { scope: "org", secret: "org-token" })
       await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
       const { organization } = await connectionIds(test)
-      expect(await workspace(test, "ws_private", organization)).toEqual([{
-        name: "CLAXEDO_GITHUB_CLONE_AUTH",
-        value: `Basic ${Buffer.from("x-access-token:org-token").toString("base64")}`,
-        hosts: ["github.com"],
-        header: "Authorization",
-        methods: ["GET", "POST"],
-        pathPrefixes: ["/acme/private.git/"],
-      }])
+      expect(await workspace(test, "ws_private", organization)).toEqual({ repoUrl, connectionId: organization, token: "org-token" })
     })
 
     test("a token mint GitHub answers 503 fails the preparation rather than withdrawing the credential", async () => {
@@ -514,8 +507,8 @@ describe("hosted D1 Connections setup", () => {
 
       await expect(workspace(test, "ws_blip", organization)).rejects.toThrow("connection_refresh_transient")
       githubUp = true
-      await expect(createHostedRepositoryCloneSecrets(test.input)({ workspaceId: "ws_blip", ownerUserId: test.ownerUserId, orgId: "org_deployment" }))
-        .resolves.toMatchObject([{ name: "CLAXEDO_GITHUB_CLONE_AUTH", value: `Basic ${Buffer.from("x-access-token:fresh-access").toString("base64")}` }])
+      await expect(createHostedRepositoryClone(test.input)({ workspaceId: "ws_blip", ownerUserId: test.ownerUserId, orgId: "org_deployment" }))
+        .resolves.toMatchObject({ connectionId: organization, token: "fresh-access" })
     })
 
     test("a picked connection that is gone, or that belongs to someone else, yields no credential rather than refusing the boot", async () => {
@@ -524,8 +517,8 @@ describe("hosted D1 Connections setup", () => {
       await connect(test.app, "github", { scope: "personal", secret: "member-token" })
       const { personal: foreign } = await connectionIds(test)
       test.as(test.owner)
-      expect(await workspace(test, "ws_foreign", foreign)).toEqual([])
-      expect(await workspace(test, "ws_gone", "conn_deleted")).toEqual([])
+      expect(await workspace(test, "ws_foreign", foreign)).toBeUndefined()
+      expect(await workspace(test, "ws_gone", "conn_deleted")).toBeUndefined()
     })
   })
 

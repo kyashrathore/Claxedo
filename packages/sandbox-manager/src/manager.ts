@@ -54,6 +54,10 @@ function sandboxId(driver: string, workspaceId: string) {
   return `${driver}-${workspaceId}`
 }
 
+function leaseHostId(driver: SandboxDriver, workspaceId: string, lease: SandboxLease, managerInput: SandboxManagerInput | undefined) {
+  return managerInput?.hostId ?? lease.hostId ?? sandboxId(driver.id, workspaceId)
+}
+
 /**
  * Build the driver-facing ensure input.
  *
@@ -70,6 +74,7 @@ function ensureHostInput(input: {
   lease: SandboxLease
   homeRegion: SandboxRegion
   managerInput?: SandboxManagerInput
+  leaseEnv?: Record<string, string>
   appLabel: string
 }): SandboxDriverEnsureInput {
   const egress = sandboxEgressDisposition(input.driver.metadata.egressControl, input.managerInput?.net)
@@ -82,7 +87,7 @@ function ensureHostInput(input: {
   }
   return {
     workspaceId: input.workspaceId,
-    hostId: input.managerInput?.hostId ?? input.lease.hostId ?? sandboxId(input.driver.id, input.workspaceId),
+    hostId: leaseHostId(input.driver, input.workspaceId, input.lease, input.managerInput),
     homeRegion: input.homeRegion,
     epoch: input.lease.epoch,
     labels,
@@ -97,7 +102,7 @@ function ensureHostInput(input: {
     workspaceRoot: input.managerInput?.workspaceRoot ?? "/workspace",
     runtimeCwd: input.managerInput?.runtimeCwd,
     workspaceRuntimePort: input.managerInput?.workspaceRuntimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT,
-    env: input.managerInput?.env ?? {},
+    env: { ...input.managerInput?.env, ...input.leaseEnv },
     // Brokered secrets ride their own channel — NEVER merged into labels or env.
     // Presence of the key, not its length, is the signal: `[]` is the caller
     // withdrawing every brokered secret, and dropping it would reach the driver
@@ -211,6 +216,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         ...(lease.nextRetryAt !== undefined ? { retryAfterMs: Math.max(0, lease.nextRetryAt - now()) } : {}),
         ...(failure ? { failure } : {}),
         ...(lease.start && (lease.status === "acquiring" || lease.status === "unavailable") ? { start: { ...lease.start, epoch: lease.epoch } } : {}),
+        ...(lease.status === "acquiring" && lease.hostId ? { booting: { epoch: lease.epoch, hostId: lease.hostId } } : {}),
       }
     }
     const booted = resource.labels?.[SANDBOX_IMAGE_LABEL]
@@ -235,12 +241,18 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     enteredAt: number,
   ): Promise<SandboxEnsureResult> {
     try {
+      const leaseEnv = await managerInput.leaseEnv?.({ epoch: lease.epoch, hostId: leaseHostId(options.driver, workspaceId, lease, managerInput) })
+      const identityConflicts = workspaceRuntimeIdentityEnvConflicts(leaseEnv)
+      if (identityConflicts.length) {
+        return { status: "unavailable", error: `sandbox env cannot set runtime identity: ${identityConflicts.join(", ")}`, epoch: lease.epoch, homeRegion }
+      }
       const ensure = ensureHostInput({
         driver: options.driver,
         workspaceId,
         homeRegion,
         lease,
         managerInput,
+        ...(leaseEnv ? { leaseEnv } : {}),
         appLabel: options.appLabel ?? DEFAULT_APP_LABEL,
       })
       // Fail-closed: a brokered secret must never be downgraded to readable

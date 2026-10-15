@@ -13,7 +13,7 @@ import {
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { projectEnvironment } from "@claxedo/server-core/projects/environment"
-import { workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { RUNTIME_LEASE_ENV_PATH, workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import { storeRenewal } from "../credentials/store-renewal"
@@ -27,7 +27,7 @@ import { withTimeout } from "../platform/runtime/timeout"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
 import type { ReadySandboxTarget, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
 import { accountsRenewalDueAt, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
-import type { BrokerLease, HostedEgressBroker } from "../credentials/hosted-egress-broker"
+import { PLACEHOLDER_TTL_SECONDS, type BrokerLease, type HostedEgressBroker } from "../credentials/hosted-egress-broker"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
@@ -35,6 +35,11 @@ import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, workspaceIdleStopDue } from ".
 import type { WorkspaceIdleStop } from "./routes/checkpoints"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
+
+const soonestDue = (...times: (number | undefined)[]) => {
+  const due = times.filter((time): time is number => time !== undefined)
+  return due.length ? Math.min(...due) : undefined
+}
 
 const RUNTIME_HEALTH_PATH = "/api/wr/health"
 
@@ -165,26 +170,46 @@ export function createHostedRuntimeDelivery(input: {
     const person = await owner(workspaceId)
     const appliedAt = Date.now()
     const supervisor = supervisorClient(input.services, workspaceId, input.signingEnv)
-    const [config, { client, options }, auth, plugins] = await Promise.all([
+    const lease = supervisor.then(({ target }): BrokerLease => ({ epoch: target.epoch, hostId: target.hostId }))
+    const [config, { client, options }, auth, plugins, leaseEnv] = await Promise.all([
       userAgentConfigStore(input.settings, person.userId).read(),
       supervisor,
-      supervisor.then(({ target }) => runtimeAuth(workspaceId, person, { epoch: target.epoch, hostId: target.hostId })),
+      lease.then((current) => runtimeAuth(workspaceId, person, current)),
       hooks.pluginRuntime ? hooks.pluginRuntime(workspaceId, preparation) : { mcp: {}, harnessLaunch: {} },
+      preparation?.leaseEnv
+        ? lease.then(preparation.leaseEnv).catch((error: unknown) => {
+            log.warn("lease env was not minted; the runtime keeps what it holds until the next renewal", { workspaceId, error: String(error) })
+            return undefined
+          })
+        : undefined,
     ])
     const snapshot = composeRuntimeConfigSnapshot({ config, provisionedRunner: input.provisionedRunner, providers: [], commands: [], auth, plugins })
     await client.applyConfig(snapshot, options)
-    // The brokered rows alone: a direct plan token is renewed by the harness
-    // mid-turn through the credential refresh route, and an edge placeholder
-    // never expires.
-    const renewAt = accountsRenewalDueAt(snapshot.auth, appliedAt)
+    const runtime = (path: string, init: RequestInit) => runtimeFetch(workspaceId, person.orgId, path, init)
+    // The brokered rows and the lease env alone: a direct plan token is
+    // renewed by the harness mid-turn through the credential refresh route,
+    // and an edge placeholder never expires.
+    const renewAt = soonestDue(
+      accountsRenewalDueAt(snapshot.auth, appliedAt),
+      preparation?.leaseEnv ? appliedAt + (PLACEHOLDER_TTL_SECONDS * 1_000) / 2 : undefined,
+    )
     await Promise.all([
+      leaseEnv && runtime(RUNTIME_LEASE_ENV_PATH, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(leaseEnv),
+      }).then((response) => {
+        if (!response.ok) throw new Error(`the runtime answered ${response.status} for its lease env`)
+      }).catch((error: unknown) => {
+        log.warn("lease env delivery failed; the runtime keeps what it holds until the next renewal", { workspaceId, error: String(error) })
+      }),
       input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
         log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
       }),
       recordRuntimeStartPhases({
         sandboxManager: input.sandboxManager,
         workspaceId,
-        runtimeFetch: (path, init) => runtimeFetch(workspaceId, person.orgId, path, init),
+        runtimeFetch: runtime,
       }).catch((error: unknown) => {
         log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
       }),

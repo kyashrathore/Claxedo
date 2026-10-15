@@ -134,7 +134,8 @@ export async function prepareRuntimeRepository(directory: string, env: NodeJS.Pr
       if (entries.some((entry) => entry !== ".git")) throw new Error("Cannot prepare the selected repository in a nonempty workspace directory")
       await run(["remote", "add", "origin", source.repoUrl], directory)
     }
-    const origin = (await run(["remote", "get-url", "origin"], directory)).trim()
+    // `remote get-url` answers the broker's rewrite of the URL, not the one the checkout records.
+    const origin = (await run(["config", "--get", "remote.origin.url"], directory)).trim()
     if (origin !== source.repoUrl) throw new Error("The workspace checkout's origin is not the selected repository")
     return { branch: await checkOut(run, directory, source), fresh: true as const }
   } catch (error) {

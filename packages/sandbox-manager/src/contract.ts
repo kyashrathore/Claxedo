@@ -508,6 +508,13 @@ export type SandboxManagerInput = {
   env?: Record<string, string>
   /** Brokered secrets: injected on egress, never readable inside the sandbox. */
   secrets?: SandboxBrokeredSecret[]
+  /**
+   * Env minted for the lease the driver boots, joined to `env`: a credential
+   * bound to one lease generation and host can only be minted once the start
+   * has settled which epoch it runs, and a failed attempt's retry takes a new
+   * one.
+   */
+  leaseEnv?: (lease: { epoch: number; hostId: string }) => Promise<Record<string, string>>
   /** The machine the workspace chose; refused before a lease is taken when its driver declares no such class. */
   machineClass?: SandboxMachineClass
   source?: SandboxSource
@@ -598,6 +605,8 @@ export type SandboxTargetResult =
       failure?: SandboxLeaseFailure
       /** The start the lease is on while it is acquiring or waiting out a retry, as far as it has been observed. */
       start?: SandboxEpochStart
+      /** The epoch and host an acquiring lease is booting, once the driver has handed it a host. */
+      booting?: { epoch: number; hostId: string }
     }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }
