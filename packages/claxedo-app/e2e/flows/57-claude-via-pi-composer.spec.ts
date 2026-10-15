@@ -24,6 +24,6 @@ test("57 composer: on a cloud provider without its own edge, Claude Code runs th
   await expect(picker.getByText("Cursor runs inside the workspace, and your organization's cloud provider can't keep your key out of it.", { exact: true })).toBeVisible()
   await expect(picker.getByText("It runs on your machines, or pick another harness here.", { exact: true })).toBeVisible()
   await expect(picker.getByRole("button", { name: /^Switch to/ })).toHaveCount(0)
-  await expect(page.getByText("This workspace is asleep. Your next message wakes it.", { exact: true })).toBeVisible()
+  await expect(page.getByText("This workspace is asleep. It wakes when a message or a tool needs it.", { exact: true })).toBeVisible()
   expect(starts.filter((method) => method === "POST"), "the answers come without starting the workspace").toEqual([])
 })

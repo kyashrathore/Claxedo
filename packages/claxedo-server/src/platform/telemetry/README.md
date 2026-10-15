@@ -68,7 +68,7 @@ query joins a workspace from `workspace_created` to its stops.
 | --- | --- | --- |
 | `workspace.connection.requested` | `connections/hosted-connection-info.ts`, `connections/host-tunnel-connection.ts` | `backing`, `homeRegion`; a tunnel also `hostId` |
 | `workspace.connection.unavailable` | `connections/hosted-connection-info.ts` | `backing`, `homeRegion`, `retryAfterMs` |
-| `sandbox.ensure` | `connections/hosted-connection-info.ts` | one per start decision, not per poll that joined the run in flight: `status`, `homeRegion`, `leaseEpoch`, `retryAfterMs`, `code`, `hostId` |
+| `sandbox.ensure` | `workspace/cloud-workspace-start.ts` | one per start decision, not per poll that joined the run in flight, whether a person's connect or a session host's tool call asked for it (`startedBy: "session_host_tool"`, under the workspace owner's organization): `status`, `homeRegion` (a connect's), `leaseEpoch`, `retryAfterMs`, `code`, `hostId` |
 | `sandbox.target` | same | `status`, `homeRegion`, `reason`, `leaseStatus`, `hostId`, `leaseEpoch` |
 | `sandbox.touch` | `authority/sandbox-relay-target.ts` | `workspace_id`, `org_id`, `touched`, `status` |
 | `sandbox.start_phase` | `sandbox/sandbox-telemetry.ts` | per epoch: `phase`, `duration_ms`, `epoch`, `region`, `boot_mode`, `repo_size_bytes` |

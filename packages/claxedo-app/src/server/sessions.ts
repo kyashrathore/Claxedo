@@ -41,14 +41,17 @@ function createBody(input: SessionCreateInput) {
 }
 
 async function createSession(context: SessionContext, wakes: WorkspaceWakes, input: SessionCreateInput): Promise<SessionRow> {
-  await wakes.wakeIfStopped(input.placementId)
-  const where = await context.workspaces.route(input.placementId)
+  const where = await context.workspaces.locate(input.placementId)
   const placement = context.workspaces.byId(input.placementId)
   if (!placement) throw new ServerError({ class: "not_found", message: `Placement ${input.placementId} is not in the catalog` })
   const reserve = { workspaceId: where.workspaceId, ...(input.title ? { title: input.title } : {}), ...(input.harness ? { harness: harnessIdentity(input.harness) } : {}) }
+  const create = async (reservation: SessionReservation | undefined) => {
+    if (!reservation?.sessionHostRoot) await wakes.wakeIfStopped(input.placementId)
+    return await postCreate(context, where, input, reservation)
+  }
   const created = where.remote && context.account
-    ? await createReserved(context.account, input.reservation, reserve, (reservation) => postCreate(context, where, input, reservation))
-    : await postCreate(context, where, input, undefined)
+    ? await createReserved(context.account, input.reservation, reserve, create)
+    : await create(undefined)
   return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
 }
 
@@ -81,6 +84,7 @@ async function replyToRequest(context: SessionContext, ref: SessionLocation, id:
 const CHECKPOINT_SETTLE_ATTEMPTS = 60
 
 async function postPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionLocation, input: PromptInput, messageId: string): Promise<PromptDelivery> {
+  if ((await context.workspaces.home(ref)).route.sessionHost) return await deliverPrompt(context, ref, input, messageId)
   await wakes.wakeIfStopped(ref.placementId)
   let woke = false
   for (let attempt = 1; ; attempt++) {

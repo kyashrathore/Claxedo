@@ -29,6 +29,11 @@ test("a turn delivery carries the first-party MCP server it names, and refuses o
   expect(parseTurnDelivery({ ...delivery, firstPartyMcp: { ...firstPartyMcp, headers: {} } })).toBeUndefined()
 })
 
+test("a turn delivery names the session's directory on the workspace machine, and refuses an empty one", () => {
+  expect(parseTurnDelivery({ ...delivery, directory: "/workspace/repo" })).toEqual({ ...delivery, directory: "/workspace/repo" })
+  expect(parseTurnDelivery({ ...delivery, directory: "" })).toBeUndefined()
+})
+
 test("a turn delivery carrying brokered accounts, an unknown field or no expiry is refused", () => {
   const binding = { baseUrl: "https://broker.example", placeholder: "p", authMode: "api-key" }
   expect(parseTurnDelivery({ ...delivery, auth: { ...delivery.auth, accounts: { owner: { anthropic: binding } } } })).toBeUndefined()

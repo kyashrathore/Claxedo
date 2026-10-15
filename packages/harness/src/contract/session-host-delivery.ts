@@ -17,6 +17,7 @@ export type TurnDelivery = {
   plugins: RuntimeConfigSnapshotPlugins
   providerDefinitions: readonly CustomProviderDefinition[]
   firstPartyMcp?: FirstPartyMcpDelivery
+  directory?: string
 }
 
 export type TurnExecutionAccess = {
@@ -58,14 +59,15 @@ function firstPartyMcp(input: unknown): FirstPartyMcpDelivery | undefined {
 }
 
 export function parseTurnDelivery(input: unknown): TurnDelivery | undefined {
-  if (!isRecord(input) || !onlyKeys(input, ["expiresAt", "auth", "plugins", "providerDefinitions", "firstPartyMcp"]) || !epochMillis(input.expiresAt)) return undefined
+  if (!isRecord(input) || !onlyKeys(input, ["expiresAt", "auth", "plugins", "providerDefinitions", "firstPartyMcp", "directory"]) || !epochMillis(input.expiresAt)) return undefined
   const auth = credentialSnapshot(input.auth, {})
   if (!auth || Object.keys(auth.accounts).length > 0) return undefined
   const section = plugins(input.plugins)
   const providerDefinitions = input.providerDefinitions === undefined ? undefined : readProviderDefinitions(input.providerDefinitions)
   const mcp = input.firstPartyMcp === undefined ? undefined : firstPartyMcp(input.firstPartyMcp)
   if (!section || !providerDefinitions || (input.firstPartyMcp !== undefined && !mcp)) return undefined
-  return { expiresAt: input.expiresAt, auth, plugins: section, providerDefinitions, ...(mcp ? { firstPartyMcp: mcp } : {}) }
+  if (input.directory !== undefined && !isNonEmptyString(input.directory)) return undefined
+  return { expiresAt: input.expiresAt, auth, plugins: section, providerDefinitions, ...(mcp ? { firstPartyMcp: mcp } : {}), ...(input.directory === undefined ? {} : { directory: input.directory }) }
 }
 
 export function parseTurnExecutionAccess(input: unknown): TurnExecutionAccess | undefined {

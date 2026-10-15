@@ -2,7 +2,7 @@ import { readField } from "@claxedo/helpers/readers"
 import assert from "node:assert/strict"
 import { existsSync } from "node:fs"
 import { createServer } from "node:http"
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -652,24 +652,100 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(await host.tables(), [])
   })
 
-  void it("stops a turn whose plugin MCP server waits for a machine that is still provisioning", { timeout: 120_000 }, async () => {
-    const root = "ses_mcp_wait"
-    projection = { generation: "g2", pluginRoots: [], notApplied: [],
-      mcpServers: [{ kind: "stdio", name: "waiting", origin: "plugin", command: process.execPath, args: ["-e", ""] }] }
-    plugins = { harnessLaunch: { pi: { generation: "g2", execution: { mode: "default" }, pluginRoots: [], notApplied: [],
-      mcpServers: [{ kind: "stdio", name: "waiting", origin: "plugin", command: "waiting" }] } }, mcp: {} }
-    const host = await session(root)
-    host.controlPlane.control.executionUnavailable = true
-    await host.prompt("msg_mcp_wait", "Reply with exactly this one token: PIWAIT")
-    await eventually("the MCP server waiting on the machine", async () => host.controlPlane.calls.executions.length >= 2 ? true : undefined, 30_000)
-    const inspected = await host.json<{ target: { ownerGeneration: string } }>(`/session/${root}/recovery`)
-    const waited = host.controlPlane.calls.executions.length
-    await host.json(`/session/${root}/recovery`, { method: "POST", body: {
-      requestId: "stop_wait", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
-    } })
-    assert.ok(host.controlPlane.calls.executions.length - waited <= 1, `${host.controlPlane.calls.executions.length - waited} more waits after the stop`)
-    await eventually("the stopped turn's lease released", async () => host.controlPlane.calls.releases.includes("msg_mcp_wait") ? true : undefined, 15_000)
-    assert.equal(assistantText(await host.messages()).includes("PIWAIT"), false)
+  const NO_PLUGINS: RuntimeConfigSnapshotPlugins = { harnessLaunch: {}, mcp: {} }
+  const toolParts = (messages: StoredMessage[], tool: string) => messages.flatMap((message) => message.parts).filter((part) => part.type === "tool" && part.tool === tool)
+
+  void it("answers a turn while the workspace machine sleeps, without starting it or asking for it", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const host = await session("ses_asleep_text")
+    host.controlPlane.control.machine = "asleep"
+    await host.prompt("msg_asleep_text", "Reply with exactly this one token: PIASLEEPTEXT")
+    await host.settled("PIASLEEPTEXT")
+    assert.deepEqual(host.controlPlane.calls.starts, [])
+    assert.deepEqual(host.controlPlane.calls.executions, [])
+  })
+
+  void it("starts a sleeping machine from the first tool call that needs it and answers that call at once, starts it no second time while it starts, and runs the tool once it runs", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const host = await session("ses_asleep_tool")
+    const control = host.controlPlane.control
+    control.machine = "asleep"
+    const written = path.join(directory, "asleep.txt")
+    const write = async (marker: string) => {
+      model.scriptTool({ name: "write", input: { path: "asleep.txt", content: `${marker}\n` }, whenPromptIncludes: marker })
+      await host.prompt(`msg_${marker}`, `Write the file, then reply with exactly this one token: ${marker}`)
+      return toolParts(await host.settled(marker), "write").at(-1)?.state
+    }
+
+    const started = await write("PIASLEEPSTART")
+    assert.equal(started?.status, "error", JSON.stringify(started))
+    assert.ok(started?.error?.includes("The workspace machine was asleep. This tool call started it; it usually takes about a minute. Try this tool again in a few seconds."), started?.error)
+    assert.ok(model.requests.some((request) => request.prompt.includes("This tool call started it")), "the model was told the machine is starting")
+    assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
+    assert.equal(existsSync(written), false)
+
+    const starting = await write("PIASLEEPSTARTING")
+    assert.equal(starting?.status, "error", JSON.stringify(starting))
+    assert.ok(starting?.error?.includes("The workspace machine is starting; it usually takes about a minute. Try this tool again in a few seconds."), starting?.error)
+    assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
+
+    control.machine = "running"
+    const ran = await write("PIASLEEPRAN")
+    assert.equal(ran?.status, "completed", JSON.stringify(ran))
+    assert.equal(await readFile(written, "utf8"), "PIASLEEPRAN\n")
+    assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
+  })
+
+  void it("leaves the skills section out while the machine sleeps without starting it, and reads it from the machine once it runs", { timeout: 120_000 }, async () => {
+    const skills = path.join(directory, "skill-plugin")
+    await mkdir(path.join(skills, "skills", "probe"), { recursive: true })
+    await writeFile(path.join(skills, "skills", "probe", "SKILL.md"), "---\nname: probe\ndescription: PROBESKILLDESCRIPTION\n---\nProbe.\n")
+    plugins = { harnessLaunch: { pi: { generation: "skills", execution: { mode: "default" }, notApplied: [], mcpServers: [],
+      pluginRoots: [{ pluginInstanceId: "pi_skill_plugin", root: skills, dataRoot: skills, skillNames: ["probe"] }] } }, mcp: {} }
+    try {
+      const host = await session("ses_asleep_skills")
+      host.controlPlane.control.machine = "asleep"
+      await host.prompt("msg_asleep_skills", "Reply with exactly this one token: PIASLEEPSKILLS")
+      await host.settled("PIASLEEPSKILLS")
+      assert.deepEqual(host.controlPlane.calls.starts, [])
+      const asleep = model.requests.filter((request) => request.prompt.includes("PIASLEEPSKILLS"))
+      assert.ok(asleep.length > 0 && asleep.every((request) => !request.prompt.includes("PROBESKILLDESCRIPTION")))
+
+      host.controlPlane.control.machine = "running"
+      await host.prompt("msg_awake_skills", "Reply with exactly this one token: PIAWAKESKILLS")
+      await host.settled("PIAWAKESKILLS")
+      assert.ok(model.requests.some((request) => request.prompt.includes("PIAWAKESKILLS") && request.prompt.includes("PROBESKILLDESCRIPTION")))
+    } finally {
+      plugins = NO_PLUGINS
+    }
+  })
+
+  void it("starts a sleeping machine for a plugin's stdio MCP server, answers the turn without that server's tools, and lists them once the machine runs", { timeout: 120_000 }, async () => {
+    const server = path.join(directory, "asleep-mcp.cjs")
+    await writeFile(server, STDIO_MCP)
+    projection = { generation: "g-asleep", pluginRoots: [], notApplied: [],
+      mcpServers: [{ kind: "stdio", name: "machine", origin: "plugin", command: process.execPath, args: [server] }] }
+    plugins = { harnessLaunch: { pi: { generation: "g-asleep", execution: { mode: "default" }, pluginRoots: [], notApplied: [],
+      mcpServers: [{ kind: "stdio", name: "machine", origin: "plugin", command: "machine" }] } }, mcp: {} }
+    try {
+      const host = await session("ses_asleep_mcp")
+      const control = host.controlPlane.control
+      control.machine = "asleep"
+      await host.prompt("msg_asleep_mcp", "Reply with exactly this one token: PIASLEEPMCP")
+      await host.settled("PIASLEEPMCP")
+      assert.deepEqual(host.controlPlane.calls.starts, ["msg_asleep_mcp"])
+      const offered = (marker: string) => model.requests.find((request) => request.prompt.includes(marker))?.tools.map((tool) => tool.name) ?? []
+      assert.equal(offered("PIASLEEPMCP").includes("mcp__machine__proof"), false)
+
+      control.machine = "running"
+      model.scriptTool({ name: "mcp__machine__proof", input: { marker: "M2" }, whenPromptIncludes: "PIAWAKEMCP" })
+      await host.prompt("msg_awake_mcp", "Call it, then reply with exactly this one token: PIAWAKEMCP")
+      const proof = toolParts(await host.settled("PIAWAKEMCP"), "mcp__machine__proof").at(-1)
+      assert.equal(proof?.state?.output, `MACHINE_MCP:M2:${directory}`, JSON.stringify(await host.messages()))
+      assert.deepEqual(host.controlPlane.calls.starts, ["msg_asleep_mcp"])
+    } finally {
+      plugins = NO_PLUGINS
+    }
   })
 })
 

@@ -15,8 +15,9 @@ import { HTTPException } from "hono/http-exception"
 import { composeSessionHost, type SessionHost } from "./composition"
 import { DurablePiPlacement } from "./pi-placement"
 import { SessionHostMeta } from "./session-host-meta"
-import { SessionHostTurns, TurnAuthorityError } from "./turn-delivery"
+import { SessionHostTurns, TurnAuthorityError, type ExecutionRequest } from "./turn-delivery"
 import { TurnLeases, type StoredTurnLease } from "./turn-leases"
+import { workspaceMachineUnavailable } from "./workspace-machine"
 
 /** A request or control-plane call at or past this is logged with its timing, so a slow composer read can be placed. */
 const SLOW_REQUEST_MS = 1_000
@@ -74,7 +75,12 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     this.pi = new PiHarness({ harness: (input) => this.placement.factory(() => this.boot())(input) })
     this.placement = new DurablePiPlacement({
       root, pi: this.pi, report: (error) => console.error("Pi extension failure", error),
-      execution: (signal) => this.execution(signal),
+      execution: (request) => this.execution(request),
+      machine: async () => {
+        const workspaceId = this.meta.workspaceId()
+        const directory = (await this.turns.delivery(root)).delivery.directory
+        return workspaceId && directory ? { workspaceId, directory } : undefined
+      },
       turnContext: async () => {
         await this.turns.delivery(root)
         return (await this.host()).turnContext()
@@ -182,8 +188,8 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     return { status: answer.status === 401 || answer.status === 403 ? 403 : 502, message: `The control plane did not delete the session: ${answer.status} ${await answer.text()}` }
   }
 
-  private async execution(signal: AbortSignal): Promise<TurnExecutionAccess> {
-    const access = await this.turns.execution(this.root, signal)
+  private async execution(request: ExecutionRequest): Promise<TurnExecutionAccess> {
+    const access = await this.turns.execution(this.root, request).catch((error: unknown) => { throw workspaceMachineUnavailable(error) ?? error })
     if (!this.meta.claimDirectory(access)) throw new TurnAuthorityError(409, "session_host_directory_mismatch")
     return access
   }
@@ -194,7 +200,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     host.store.recoverBusySessions()
     const stored = this.leases.current(this.root)
     const lease = stored ? await this.adopt(stored, host) : undefined
-    if (lease) this.placement.turnStarted(lease.signal)
+    if (lease) this.placement.turnStarted()
     if (host.store.getSession(this.root)) await host.runtime.resumeDurableRuns([this.root])
     const harness = await this.placement.harness()
     if (lease) void harness.waitForIdle(BACKGROUND_CONTEXT).finally(() => lease.release())

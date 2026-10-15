@@ -95,7 +95,9 @@ async function plane() {
   })
   const machinePreparation = await preparer.forSnapshot(snapshot, { secretBrokering: "native" })
   machineEnv = brokeredPlaceholderEnv(machinePreparation.secrets)
-  return { env, provisioner, plugins: createSessionHostPlugins({ cloudWorkspace: async (id) => id === "workspace-1", activations, preparer, provisioner }) }
+  const running = new Set(["workspace-1"])
+  const plugins = createSessionHostPlugins({ cloudWorkspace: async (id) => id === "workspace-1", machineRunning: async (id) => running.has(id), activations, preparer, provisioner })
+  return { env, provisioner, plugins, running }
 }
 
 describe("the Pi plugins a session host is delivered", () => {
@@ -116,6 +118,14 @@ describe("the Pi plugins a session host is delivered", () => {
     const stdio = projection.mcpServers.find((server) => server.kind === "stdio")
     expect(stdio).toEqual({ kind: "stdio", name: stdio?.name, origin: "plugin", command: expect.any(String) })
     expect(JSON.stringify(delivered)).not.toContain("machine-only")
+  })
+
+  test("deliver nothing while the workspace's machine is not running, and provision nothing there", async () => {
+    const { plugins, running, provisioner } = await plane()
+    running.delete("workspace-1")
+    const provision = vi.spyOn(provisioner, "provision")
+    expect(await plugins("workspace-1")).toEqual({ harnessLaunch: {}, mcp: {} })
+    expect(provision).not.toHaveBeenCalled()
   })
 
   test("deliver nothing for a workspace that is not a cloud root", async () => {

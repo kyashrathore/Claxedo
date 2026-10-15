@@ -285,6 +285,8 @@ describe("the first start with a driver that cannot contain egress", () => {
 
 const driveSource = fs.readFileSync(path.join(import.meta.dirname, "../../workspace/hosted-runtime-delivery.ts"), "utf8")
 const routeSource = fs.readFileSync(path.join(import.meta.dirname, "../../connections/hosted-connection-info.ts"), "utf8")
+const startSource = fs.readFileSync(path.join(import.meta.dirname, "../../workspace/cloud-workspace-start.ts"), "utf8")
+const turnExecutionSource = fs.readFileSync(path.join(import.meta.dirname, "../session-host-delivery.ts"), "utf8")
 
 /** Strip whole-line comments so prose about `net:` cannot satisfy the check. */
 function code(source: string) {
@@ -326,8 +328,9 @@ describe("the hosted manager steps cannot omit the egress policy", () => {
     expect(stepArguments().filter((argument) => !/^(?:await input\.)?sandboxInput\b|^\{ \.\.\.sandboxInput\b/.test(argument))).toEqual([])
   })
 
-  test("the connect route runs no manager step of its own: a start reaches the driver only through the drive", () => {
-    expect([...code(routeSource).matchAll(MANAGER_STEP)]).toEqual([])
-    expect(code(routeSource)).toContain("options.sandboxStart(workspaceId)")
+  test("the connect route and a session host's tool call run no manager step of their own: a start reaches the driver only through the drive", () => {
+    for (const source of [routeSource, startSource, turnExecutionSource]) expect([...code(source).matchAll(MANAGER_STEP)]).toEqual([])
+    expect(code(routeSource)).toContain("startCloudWorkspace(services, options.sandboxStart,")
+    expect(code(startSource)).toContain("await start(workspaceId)")
   })
 })

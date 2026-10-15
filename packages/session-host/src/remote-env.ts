@@ -4,6 +4,7 @@ import { ExecutionError, FileError, type ExecutionEnv, type FileErrorCode, type 
 import type { TurnExecutionAccess } from "@claxedo/harness/contract"
 import { asNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import { serverSentEvents } from "./server-sent-events"
+import { machineFailureText } from "./workspace-machine"
 
 type WireError = { code: string; message: string; path?: string }
 type WireResult = { ok: true; value?: unknown } | { ok: false; error: WireError }
@@ -73,29 +74,29 @@ function lineReader(text: string): TextLineReader {
   }
 }
 
+export type WorkspaceMachine = { workspaceId: string; directory: string; access(): Promise<TurnExecutionAccess> }
+
 /**
  * Pi's execution environment on the workspace machine: every file operation
  * and command goes through the relay to the machine's `execution-env` routes
- * with the turn's session-scoped token. Its files are the machine's, so its
- * namespace is the workspace's own.
+ * with the turn's session-scoped token, asked for when an operation needs it,
+ * so building the environment reaches nothing. Its files are the machine's, so
+ * its namespace is the workspace's own.
  */
 export class RemoteExecutionEnv implements ExecutionEnv {
   readonly id: string
   cwd: string
 
-  constructor(private readonly access: TurnExecutionAccess) {
-    this.id = `vm:${access.workspaceId}`
-    this.cwd = access.directory
-  }
-
-  private route(path: string): string {
-    return `${this.access.relayUrl}/workspaces/${encodeURIComponent(this.access.workspaceId)}/api/wr/execution-env/${path}`
+  constructor(private readonly machine: WorkspaceMachine) {
+    this.id = `vm:${machine.workspaceId}`
+    this.cwd = machine.directory
   }
 
   private async request(path: string, body: unknown, context: Context): Promise<Response> {
-    return fetch(this.route(path), {
+    const access = await this.machine.access()
+    return fetch(`${access.relayUrl}/workspaces/${encodeURIComponent(access.workspaceId)}/api/wr/execution-env/${path}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${this.access.runtimeAccessToken}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${access.runtimeAccessToken}`, "content-type": "application/json" },
       body: JSON.stringify(body),
       ...(context.abortSignal ? { signal: context.abortSignal } : {}),
     })
@@ -109,7 +110,7 @@ export class RemoteExecutionEnv implements ExecutionEnv {
       const result = wireResult(await response.json())
       return result.ok ? { ok: true, value: read(result.value) } : { ok: false, error: fileError(result.error) }
     } catch (error) {
-      return { ok: false, error: new FileError(context.abortSignal?.aborted ? "aborted" : "unknown", String(error)) }
+      return { ok: false, error: new FileError(context.abortSignal?.aborted ? "aborted" : "unknown", machineFailureText(error)) }
     }
   }
 
@@ -160,7 +161,7 @@ export class RemoteExecutionEnv implements ExecutionEnv {
       }
       return { ok: false, error: new ExecutionError("unknown", "The workspace machine ended the command without a result") }
     } catch (error) {
-      return { ok: false, error: new ExecutionError(context.abortSignal?.aborted ? "aborted" : "unknown", String(error)) }
+      return { ok: false, error: new ExecutionError(context.abortSignal?.aborted ? "aborted" : "unknown", machineFailureText(error)) }
     }
   }
 }

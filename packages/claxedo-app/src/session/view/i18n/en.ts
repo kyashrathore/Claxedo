@@ -161,7 +161,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.goal.metric.tokensUsed": "{{count}} tokens",
   "sessionScreen.goal.metric.tokenBudget": "{{count}} token budget",
   "sessionScreen.goal.metric.timeUsed": "{{seconds}}s",
-  "sessionScreen.workspace.asleep": "This workspace is asleep. Your next message wakes it.",
+  "sessionScreen.workspace.asleep": "This workspace is asleep. It wakes when a message or a tool needs it.",
   "sessionScreen.workspace.machineOffline": "This session's machine is offline. Its messages show again when the machine is back.",
   "sessionScreen.workspace.waking": "Waking {{name}}",
   "sessionScreen.workspace.wakeFailed": "Couldn't wake {{name}}",

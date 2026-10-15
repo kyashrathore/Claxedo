@@ -17,7 +17,7 @@ import {
   type SignedStack,
 } from "../harness"
 
-const ASLEEP = "This workspace is asleep. Your next message wakes it."
+const ASLEEP = "This workspace is asleep. It wakes when a message or a tool needs it."
 const WAKING = "Waking main"
 
 function wakeRequests(page: Page, workspace: CloudWorkspace) {

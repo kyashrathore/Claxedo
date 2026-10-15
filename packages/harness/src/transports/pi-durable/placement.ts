@@ -26,4 +26,5 @@ export interface PiPlacement {
   mcpTransport(server: ProjectedMcpServer, sessionId: string): Promise<McpTransport>
   prepareTurn?(sessionId: string, signal: AbortSignal): Promise<PiTurnContext>
   refreshCredential?(providerId: string, sessionId: string): Promise<ProviderDirect | undefined>
+  toolCalling?(sessionId: string): void
 }

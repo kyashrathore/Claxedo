@@ -1,4 +1,3 @@
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority, type WorkspaceAuthority, type WorkspaceOpenResult, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
@@ -20,17 +19,14 @@ import {
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeLifecycle, cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager, type SandboxTargetResult } from "@claxedo/sandbox-manager"
+import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
-import type { CloudCreateAdmission, CloudCreateUsage } from "../workspace/cloud-create-admission"
 import { provisioningConnection } from "./cloud-start-progress"
+import { startCloudWorkspace, type CloudStartDenial, type FirstLease } from "../workspace/cloud-workspace-start"
 
-type HostedConnectionDenial = {
-  error: ReturnType<typeof apiError>
-  status: ContentfulStatusCode
-}
+type HostedConnectionDenial = CloudStartDenial
 
 type CloudConnectionIngress =
   | HostedConnectionDenial
@@ -233,43 +229,13 @@ async function mintCloudConnection(
   } as const
 }
 
-/** What the start that opens a cloud workspace's first lease answers to: the lease cap, then the usage seams. */
-export type FirstLease = {
-  readonly admission: Pick<CloudCreateAdmission, "capLease">
-  readonly usage: CloudCreateUsage | undefined
-}
-
-/**
- * The cap a start that may open the workspace's first lease answers to, and
- * the meter it runs if its own acquire creates that lease: two first starts
- * racing both pass the cap, and only the one that wins the acquire meters.
- */
-async function firstLeaseMeter(
-  services: ControlPlaneServices | undefined,
-  lease: FirstLease,
-  auth: SignedControlPlaneAuth,
-  input: { workspaceId: string; current: SandboxTargetResult },
-): Promise<HostedConnectionDenial | (() => void) | undefined> {
-  const { current } = input
-  if (current.status !== "unavailable" || current.reason !== "runtime_lease_missing") return undefined
-  const denied = await lease.admission.capLease({ kind: "signed", auth })
-  if (denied) return { error: denied.body.error, status: denied.status }
-  const placed = await services?.sandbox.workspaceDriver?.(input.workspaceId)
-  return () => lease.usage?.leaseOpened({
-    caller: { kind: "signed", auth },
-    workspaceId: input.workspaceId,
-    driver: placed?.id ?? "unknown",
-    startedAt: Date.now(),
-    ...(services ? { services } : {}),
-  })
-}
-
 /**
  * The connect path (POST `/:id/connection`, POST `/:id/connection/refresh`):
- * the ONLY route that begins a sandbox start, so starting billable compute
- * always traces to an explicit connect — never to a read. The start itself
- * runs under `options.sandboxStart`, which answers at once: a Worker cuts
- * work held past a response, and a cold start outlives any request.
+ * a person's route that begins a sandbox start, so starting billable compute
+ * traces to an explicit connect or to a session host's tool call
+ * (`/turn-execution`), never to a read. Both start through
+ * `startCloudWorkspace`, whose start answers at once: a Worker cuts work held
+ * past a response, and a cold start outlives any request.
  */
 export async function hostedConnectionInfo(
   services: ControlPlaneServices | undefined,
@@ -290,33 +256,11 @@ export async function hostedConnectionInfo(
   }
 
   const current = await hostManager.target(workspaceId)
-  const meter = await firstLeaseMeter(services, lease, auth, { workspaceId, current })
-  if (meter && typeof meter !== "function") return meter
-  const [started, actor] = await Promise.all([options.sandboxStart(workspaceId), settledActor(authority, auth)])
-  if (started.status === "provisioning" && started.opened) {
-    meter?.()
-    await Promise.resolve(lease.usage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId }))
-      .catch((cause: unknown) => console.error(`[workspace] the lease tenant of ${workspaceId} was not recorded`, cause instanceof Error ? cause.message : String(cause)))
-  }
-  // A poll that joined the run in flight decided nothing; the start's own
-  // steps and its outcome are what the ensure record is for.
-  if (!(started.status === "provisioning" && started.joined)) {
-    captureWorkspaceTelemetry({
-      services,
-      auth,
-      event: "sandbox.ensure",
-      workspaceId,
-      orgId: workspaceOrgId(result.workspace),
-      properties: {
-        status: started.status,
-        homeRegion,
-        ...(started.status === "provisioning" ? { leaseEpoch: started.epoch, retryAfterMs: started.retryAfterMs } : {}),
-        ...(started.status === "unavailable" ? { retryAfterMs: started.retryAfterMs } : {}),
-        ...(started.status === "failed" ? { code: started.code } : {}),
-        ...(started.status === "ready" ? { hostId: started.hostId, leaseEpoch: started.epoch } : {}),
-      },
-    })
-  }
+  const [started, actor] = await Promise.all([
+    startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current }),
+    settledActor(authority, auth),
+  ])
+  if ("denied" in started) return started.denied
   if (started.status === "provisioning") {
     return {
       connection: provisioningConnection({

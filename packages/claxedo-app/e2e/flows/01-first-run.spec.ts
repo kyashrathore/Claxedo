@@ -108,7 +108,7 @@ test("01 first run on the web: where it runs, a connected repository, the AI, th
   await expect(page).toHaveURL(/\/w\/[^/]+\/session$/, { timeout: 90_000 })
   await expect(page.getByRole("button", { name: "Where it runs", exact: true })).toHaveText("widgets")
   expect(await cloudWorkspaceNames(signed)).toEqual(["widgets"])
-  await expect(page.getByText("This workspace is asleep. Your next message wakes it.")).toHaveCount(0)
+  await expect(page.getByText("This workspace is asleep. It wakes when a message or a tool needs it.")).toHaveCount(0)
   await page.getByRole("button", { name: /^Select harness and model/ }).click()
   const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })
   await showHarnesses(picker)

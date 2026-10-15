@@ -3,7 +3,8 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { SandboxTargetResult } from "@claxedo/sandbox-manager"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxStartAnswer } from "../workspace/sandbox-start"
-import { hostedConnectionInfo, hostedConnectionStatus, type FirstLease } from "./hosted-connection-info"
+import { hostedConnectionInfo, hostedConnectionStatus } from "./hosted-connection-info"
+import type { FirstLease } from "../workspace/cloud-workspace-start"
 
 const auth = {
   mode: "signed",

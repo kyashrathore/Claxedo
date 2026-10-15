@@ -7,14 +7,17 @@ import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/
 import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { privateSessionRuntimeProof, type PrivateSessionRuntimePrincipal, type SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { asRecord } from "@claxedo/helpers/guards"
+import { sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
+import { cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { sessionHostAdmits, type SessionHostPlacement } from "../authority/session-hosts"
 import type { SessionMcpCredentials } from "../mcp/session-mcp-credentials"
 import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
-import { sessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
+import { sessionHostMachineAccess, type SessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
 import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
 import { ownerDirectRows, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
+import type { OwnerMachineStart } from "../workspace/cloud-workspace-start"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 
 type TurnLeaseVerifier = NonNullable<RuntimeSessionAuthorityOptions["verifyTurnLease"]>
@@ -27,13 +30,17 @@ export type SessionHostDeliveryOptions = SessionHostMachineDeps & {
   sessionMcp?: Pick<SessionMcpCredentials, "issue">
   /** The plane's one rule for a vendor refusing a stored account; the broker's by default. */
   credentialRefusals?: CredentialRefusals
+  /** The workspace's machine start, run as its owner for a tool call that finds it not running; absent, such a call is only refused. */
+  startMachine?: OwnerMachineStart
 }
 
 const EXECUTION_TTL_SECONDS = 10 * 60
-const UNAVAILABLE_RETRY_MS = 2_000
 const requestSchema = z.object({ turnLease: z.string().min(1) }).strict()
+const executionSchema = z.object({ turnLease: z.string().min(1), start: z.boolean().optional() }).strict()
 const refusedSchema = z.object({ turnLease: z.string().min(1), credentialId: z.string().min(1) }).strict()
 const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
+
+const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeTargetError && error.status === 409
 
 /**
  * The calls a session's Durable Object makes of the control plane, each
@@ -41,7 +48,9 @@ const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
  * hands it the provider accounts of the session's creator as direct secrets
  * and, for a turn the workspace owner drives in their own session, the
  * first-party MCP server with that turn's bearer; `/turn-execution` mints it
- * a session-scoped token for the workspace's machine, where its tools run.
+ * a session-scoped token for the workspace's machine, where its tools run,
+ * and for a call that asks, starts a machine that is not running and answers
+ * at once that it is starting, never waiting for it.
  * Both answer only that session's own host, only while its lease is the live
  * one, and only while the turn's actor may still send its turns.
  * `/turn-credential-refused` takes the host's word that the vendor refused
@@ -95,6 +104,48 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     return admittedTurn(c, parsed.data.turnLease, { live: true })
   }
 
+  const starting = (c: Context, started: boolean) => c.json({ error: { code: "cloud_runtime_starting", started } }, 409)
+
+  /** Begins or joins the start of the turn's workspace machine as the workspace's owner; nothing once the machine is ready. */
+  async function startedMachine(c: Context, claims: TurnLeaseClaims, start: OwnerMachineStart): Promise<Response | undefined> {
+    const refused = (reason: string) => c.json({ error: { code: "cloud_runtime_start_refused", message: cloudRuntimeStartFailure(reason) } }, 409)
+    const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
+    if (!owner || owner.orgId !== claims.orgId) return denied(c)
+    const started = await start({ owner: { userId: owner.userId, orgId: owner.orgId }, workspaceId: claims.workspaceId })
+    if ("denied" in started) return refused(started.denied.error.message)
+    if (started.status === "ready") return undefined
+    if (started.status === "provisioning") return starting(c, started.joined !== true)
+    if (started.status === "failed") return refused(started.message)
+    const bootFailure = sandboxRuntimeBootFailure(started.error)
+    return bootFailure ? refused(bootFailure) : starting(c, false)
+  }
+
+  /**
+   * The turn's token for its workspace machine. A machine that is not running
+   * is refused at once; a call that asks starts it first, through the one
+   * start, when this plane composes one.
+   */
+  async function turnMachine(c: Context, claims: TurnLeaseClaims, asksStart: boolean): Promise<SessionHostMachineAccess | Response> {
+    const access = () => sessionHostMachineAccess(input, {
+      scope: "turn", actorId: claims.actorId, orgId: claims.orgId, workspaceId: claims.workspaceId, sessionId: claims.sessionId, ttlSeconds: EXECUTION_TTL_SECONDS,
+    })
+    const start = asksStart ? input.startMachine : undefined
+    try {
+      return await access()
+    } catch (error) {
+      if (!machineNotRunning(error)) throw error
+      if (!start) return c.json({ error: { code: "cloud_runtime_unavailable" } }, 409)
+    }
+    const unready = await startedMachine(c, claims, start)
+    if (unready) return unready
+    try {
+      return await access()
+    } catch (error) {
+      if (!machineNotRunning(error)) throw error
+      return starting(c, false)
+    }
+  }
+
   const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: (orgId) => input.credentials(orgId) })
 
   return new Hono()
@@ -123,31 +174,28 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const firstPartyMcp = holder === owner.userId && claims.actorId === owner.actorId
         ? await input.sessionMcp?.issue({ origin: new URL(c.req.url).origin, owner, workspaceId: claims.workspaceId, sessionId: claims.sessionId, expiresAt })
         : undefined
+      const directory = placement.workspace.directory
       const delivery: TurnDelivery = {
         expiresAt,
         auth: { machineOwnerUserId: owner.userId, accounts: {}, direct: { [holder]: direct } },
         plugins,
         providerDefinitions: [],
         ...(firstPartyMcp ? { firstPartyMcp } : {}),
+        ...(directory ? { directory } : {}),
       }
       return c.json(delivery)
     })
     .post("/turn-execution", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       c.header("cache-control", "no-store")
-      const admitted = await liveTurn(c)
+      const parsed = executionSchema.safeParse(await c.req.json().catch(() => undefined))
+      if (!parsed.success) return c.json({ error: { code: "turn_delivery_request_invalid" } }, 400)
+      const admitted = await admittedTurn(c, parsed.data.turnLease, { live: true })
       if (admitted instanceof Response) return admitted
       const { claims } = admitted
       const directory = admitted.placement.workspace.directory
       if (claims.principalKind !== "user" || !directory) return denied(c)
-      let machine: Awaited<ReturnType<typeof sessionHostMachineAccess>>
-      try {
-        machine = await sessionHostMachineAccess(input, {
-          scope: "turn", actorId: claims.actorId, orgId: claims.orgId, workspaceId: claims.workspaceId, sessionId: claims.sessionId, ttlSeconds: EXECUTION_TTL_SECONDS,
-        })
-      } catch (error) {
-        if (!(error instanceof WorkspaceRuntimeTargetError) || error.status !== 409) throw error
-        return c.json({ error: { code: "cloud_runtime_unavailable", retryAfterMs: error.retryAfterMs ?? UNAVAILABLE_RETRY_MS } }, 409)
-      }
+      const machine = await turnMachine(c, claims, parsed.data.start === true)
+      if (machine instanceof Response) return machine
       const access: TurnExecutionAccess = { ...machine, workspaceId: claims.workspaceId, directory }
       return c.json(access)
     })

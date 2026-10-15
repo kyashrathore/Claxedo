@@ -8,11 +8,13 @@ import { StreamableHttpTransport, type McpFetch, type McpTransport } from "@eare
 import type { PiHarness, PiHarnessFactory } from "agents/harness/pi"
 import { RelayedStdioMcpTransport } from "./mcp-relay-transport"
 import { RemoteExecutionEnv } from "./remote-env"
+import type { ExecutionRequest } from "./turn-delivery"
 
 export type DurablePiHost = {
   root: string
   pi: PiHarness
-  execution(signal: AbortSignal): Promise<TurnExecutionAccess>
+  execution(request: ExecutionRequest): Promise<TurnExecutionAccess>
+  machine(): Promise<{ workspaceId: string; directory: string } | undefined>
   turnContext(signal: AbortSignal): Promise<PiTurnContext>
   refresh(credentialProviderId: string): Promise<ProviderDirect | undefined>
   report(error: unknown): void
@@ -27,13 +29,15 @@ export type DurablePiHost = {
  * pi-durable fixes `models` and `registry` when the Harness opens and
  * `PiHarness` resumes it as soon as the factory returns, so the factory runs
  * the object's boot first: a session with live work is attached, which
- * installs its extensions, before anything of it can run.
+ * installs its extensions, before anything of it can run. A machine call
+ * starts a sleeping workspace machine only once a tool call of the turn has
+ * passed approval; a prompt section's read never does.
  */
 export class DurablePiPlacement implements PiPlacement {
   private readonly registry = createRegistry()
   private sessionModels: Models | undefined
   private opened: Promise<Harness> | undefined
-  private turn: AbortSignal | undefined
+  private toolCalled = false
   private readonly models = new Proxy<Models>(Object.create(null), {
     get: (_target, key) => {
       if (!this.sessionModels) throw new Error("No Pi session is open in this session host")
@@ -61,9 +65,12 @@ export class DurablePiPlacement implements PiPlacement {
     }
   }
 
-  /** Every wait on the workspace machine ends with this signal: the running turn's, or at boot the adopted lease's. */
-  turnStarted(signal: AbortSignal): void {
-    this.turn = signal
+  turnStarted(): void {
+    this.toolCalled = false
+  }
+
+  toolCalling(sessionId: string): void {
+    if (sessionId === this.host.root) this.toolCalled = true
   }
 
   harness(): Promise<Harness> {
@@ -83,11 +90,14 @@ export class DurablePiPlacement implements PiPlacement {
   }
 
   env(): HarnessOptions["env"] {
-    return async (_target, context) => new RemoteExecutionEnv(await this.host.execution(context.abortSignal ?? this.turnSignal()))
+    return async () => {
+      const machine = await this.host.machine()
+      return machine ? new RemoteExecutionEnv({ ...machine, access: () => this.host.execution({ start: this.toolCalled }) }) : undefined
+    }
   }
 
   async mcpTransport(server: ProjectedMcpServer): Promise<McpTransport> {
-    if (server.kind === "stdio") return new RelayedStdioMcpTransport(server.name, () => this.host.execution(this.turnSignal()))
+    if (server.kind === "stdio") return new RelayedStdioMcpTransport(server.name, () => this.host.execution({ start: true }))
     if (server.kind === "sse") throw new Error(`Pi cannot load SSE MCP server ${server.name}`)
     if (server.origin === "first-party") {
       return new StreamableHttpTransport({ url: server.url, fetch: this.host.controlPlane, authProvider: { token: () => this.host.firstPartyMcpToken() } })
@@ -96,12 +106,8 @@ export class DurablePiPlacement implements PiPlacement {
   }
 
   prepareTurn(_sessionId: string, signal: AbortSignal): Promise<PiTurnContext> {
-    this.turnStarted(signal)
+    this.turnStarted()
     return this.host.turnContext(signal)
-  }
-
-  private turnSignal(): AbortSignal {
-    return this.turn ?? AbortSignal.abort(new Error("No turn is running in this session host"))
   }
 
   refreshCredential(credentialProviderId: string): Promise<ProviderDirect | undefined> {
