@@ -163,6 +163,24 @@ test("a draft's first send keeps its text in the draft while the workspace wakes
   expect(promptText(store.draft(key).prompt)).toBe("hello hone")
 })
 
+test("a blocked composer never sends, so Enter cannot pass a gate the Send button shows", async () => {
+  const store = createComposerStore()
+  const key = "draft:blocked" as const
+  store.setPrompt(key, [{ type: "text", content: "hello hone", start: 0, end: 10 }], 10)
+  let starts = 0
+  const send = createRoot(() => createComposerSend({
+    key: () => key, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    view: () => undefined, queuedReplace: () => undefined, blocked: () => true,
+    startSession: async () => { starts++; return {} as unknown as SessionView },
+    focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  await send.send()
+  expect(starts).toBe(0)
+  expect(send.state().kind).toBe("editing")
+  expect(promptText(store.draft(key).prompt)).toBe("hello hone")
+})
+
 test("a draft's first send clears the draft only once the session exists", async () => {
   const store = createComposerStore()
   const key = "draft:created" as const

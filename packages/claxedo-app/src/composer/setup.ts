@@ -14,7 +14,7 @@ import { createComposerController, type ComposerController } from "./controller"
 import { createComposerRefs, type ComposerRefs } from "./refs"
 import { createComposerSend } from "./send"
 import { createSuggestions, type SlashItem, type SuggestionQuery } from "./suggestions"
-import { submitBlockReason } from "./submit-block-reason"
+import { submitBlockReason, type SubmitBlock } from "./submit-block-reason"
 import { createRecovery, type ComposerRecovery } from "./recovery"
 
 export type ComposerProps = {
@@ -35,7 +35,11 @@ export type ComposerProps = {
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 
-type Late = { controller?: ComposerController }
+type Late = { controller?: ComposerController; submitBlock?: Accessor<SubmitBlock | null> }
+
+function explainSubmit(refs: ComposerRefs) {
+  refs.root()?.querySelector<HTMLElement>('[data-action="prompt-submit"]')?.click()
+}
 
 type HarnessSelection = ComposerHarness
 
@@ -61,6 +65,7 @@ function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor
     submission: props.manageSession === false ? async () => ({}) : selection.submission,
     goalCapable: () => goalCapable(props, selection),
     view: () => props.view,
+    blocked: () => !!late.submitBlock?.(),
     startSession: props.startSession,
     queuedReplace: () => (props.queuedEdit?.active() ? props.queuedEdit.replace : undefined),
     afterAccepted: (view) => {
@@ -106,6 +111,7 @@ function createControllerFor(input: {
   suggestions: ReturnType<typeof createSuggestions>
   send: ReturnType<typeof createComposerSend>
   commands: Commands
+  late: Late
 }) {
   return createComposerController({
     key: input.key,
@@ -114,7 +120,7 @@ function createControllerFor(input: {
     working: input.working,
     atItems: input.suggestions.atItems,
     slashItems: input.suggestions.slashItems,
-    submit: () => void input.send.send(),
+    submit: () => (input.late.submitBlock?.() ? explainSubmit(input.refs) : void input.send.send()),
     stop: () => void input.send.stop(),
     edited: input.send.edited,
     runCommand: (item: SlashItem) => input.commands.trigger(item.id, "slash"),
@@ -148,8 +154,10 @@ export function createComposer(props: ComposerProps) {
   const suggestions = createSuggestionsFor(props, selection, commands, query)
   const send = createSendFor(props, store, key, selection, late, t)
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
-  const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
+  const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands, late })
   late.controller = controller
+  const submit = submitState({ key, selection, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true, manage: () => props.manageSession !== false })
+  late.submitBlock = submit.submitBlock
   props.registerRecovery?.(
     createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
   )
@@ -159,7 +167,7 @@ export function createComposer(props: ComposerProps) {
   const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }
   return {
     ...shared,
-    ...submitState({ key, selection, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true, manage: () => props.manageSession !== false }),
+    ...submit,
     harness: selection.harness,
     harnessController: selection.controller,
     harnessScopeInput: selection.scopeInput,

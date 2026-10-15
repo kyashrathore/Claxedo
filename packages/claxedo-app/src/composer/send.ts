@@ -111,6 +111,7 @@ type SendInput = {
   working: Accessor<boolean>
   goalCapable: Accessor<boolean>
   view: Accessor<SessionView | undefined>
+  blocked?: () => boolean
   startSession?: (submission: Submission, prompt: PromptInput) => Promise<SessionView | undefined>
   afterAccepted?: (view: SessionView) => void
   queuedReplace: () => ((input: PromptInput) => Promise<boolean>) | undefined
@@ -189,7 +190,7 @@ export function createComposerSend(input: SendInput) {
   const stop = createStop(input.view, input.goalStopFailed)
   const send = async () => {
     const draft = input.store.draft(input.key())
-    if (sending() || !promptFilled(draft)) return
+    if (sending() || input.blocked?.() || !promptFilled(draft)) return
     const goal = input.queuedReplace() ? { kind: "none" as const } : goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalCapable())
     if (goal.kind === "arm") {
       input.store.setPrompt(input.key(), promptWithoutText(draft.prompt), 0)
