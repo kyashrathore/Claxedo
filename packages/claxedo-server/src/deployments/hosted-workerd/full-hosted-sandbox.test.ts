@@ -36,11 +36,16 @@ test("the composed plane's ready sandbox is handed a pass for its lease epoch ov
   } as unknown as ControlPlaneServices
   const keyDrivers = { drivers: ["cloudflare" as const], create: () => undefined }
 
+  const nudged: string[] = []
+  const room = { idFromName: (name: string) => name, get: (name: string) => ({ fetch: async () => (nudged.push(name), Response.json({ delivered: 0, held: 0 })) }) } as never
+
   const composed = composeWithCloudSandbox(
-    { database: backing.database, signingEnv, provisioner: inlineSandboxProvisioner(), keyDrivers },
+    { database: backing.database, signingEnv, provisioner: inlineSandboxProvisioner(), keyDrivers, room },
     (extra) => ({ plane: { services }, extra }),
   )
   await composed.extra.sandbox.deliverSessionRowsPass!("ws_cloud")
+  await composed.extra.sandbox.runtimeLost!("ws_cloud", Date.now())
+  expect(nudged).toEqual([])
 
   expect(composed.extra.sandbox.keys.drivers).toBe(keyDrivers.drivers)
   expect(relayed.map((call) => `${call.method} ${call.url}`)).toEqual([

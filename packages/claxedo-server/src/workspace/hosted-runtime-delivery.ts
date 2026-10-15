@@ -123,6 +123,8 @@ export function createHostedRuntimeDelivery(input: {
   sandboxRedeliver: (workspaceId: string) => Promise<void>
   /** Stops a lease generation the idle watch found idle, or unreachable for the whole failure budget. */
   idleStop: WorkspaceIdleStop
+  /** Ends the turns the workspace's runtime was running when the idle watch found that runtime gone at `at`. */
+  runtimeLost?: (workspaceId: string, at: number) => Promise<void>
   /** A request to a ready sandbox's runtime over the relay; a test hands in its own runtime. */
   runtimeFetch?: (workspaceId: string, orgId: string, path: string, init: RequestInit) => Promise<Response>
 }) {
@@ -260,12 +262,20 @@ export function createHostedRuntimeDelivery(input: {
       ...(hostWatchesIdle(ensured) ? {} : { watchAt: Date.now() + IDLE_CHECK_MS }),
     }
   }
+  const runtimeLost = async (workspaceId: string) => {
+    try {
+      await input.runtimeLost?.(workspaceId, Date.now())
+    } catch (error) {
+      log.warn("the turns of a lost runtime's sessions were not ended", { workspaceId, error: String(error) })
+    }
+  }
   /**
    * One read of a serving runtime's idleness over the relay. A runtime that
-   * does not answer on a host the provider no longer has ends its lease at
-   * once, so the workspace stops reading as running; one that answered
-   * nothing for the whole failure budget is stopped too: its host is metered
-   * while nobody reaches what it serves.
+   * does not answer on a host the provider stopped or no longer has ends its
+   * lease at once, so the workspace stops reading as running; one that
+   * answered nothing for the whole failure budget is stopped too: its host is
+   * metered while nobody reaches what it serves. Either way the turns its
+   * sessions were running end with it.
    */
   const watch = async (workspaceId: string, failures: number): Promise<number | undefined> => {
     const target = await input.sandboxManager.target(workspaceId)
@@ -278,13 +288,16 @@ export function createHostedRuntimeDelivery(input: {
       report = asRecord(await response.json())
       if (report?.workspaceId !== workspaceId) throw new Error("the runtime answered for another workspace")
     } catch (error) {
-      if (await input.sandboxManager.endIfHostGone(workspaceId, target.epoch)) {
-        log.warn("sandbox lease ended: its runtime answered no idle check and the provider no longer has its host", { workspaceId, epoch: target.epoch, error: String(error) })
+      const down = await input.sandboxManager.endIfHostDown(workspaceId, target.epoch)
+      if (down) {
+        log.warn(`sandbox lease ended: its runtime answered no idle check and the provider ${down === "gone" ? "no longer has" : "stopped"} its host`, { workspaceId, epoch: target.epoch, error: String(error) })
+        await runtimeLost(workspaceId)
         return undefined
       }
       if (failures + 1 < IDLE_CHECK_FAILURE_LIMIT) throw error
       log.warn("sandbox stopped: its runtime answered no idle check for the whole failure budget", { workspaceId, epoch: target.epoch, error: String(error) })
       await input.idleStop(workspaceId, target.epoch, {})
+      await runtimeLost(workspaceId)
       return undefined
     }
     const idleBefore = workspaceIdleStopDue(report ?? {}, Date.now())

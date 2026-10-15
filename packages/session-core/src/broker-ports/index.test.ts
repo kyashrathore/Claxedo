@@ -429,11 +429,11 @@ describe("store broker ports", () => {
     ports.abortProviderTurn("s1")
     release()
     if (cancelled.admitted) expect(await cancelled.settled).toEqual({ state: "cancelled" })
-    const completed = await ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+    const completed = await ports.admitProviderTurn("s1", { reason: "provider", current: () => true }, async (turn) => {
       await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
     })
     if (completed.admitted) expect(await completed.settled).toEqual({ state: "completed" })
-    const failed = await ports.admitProviderTurn("s1", { reason: "provider" }, async () => { throw new Error("failed") })
+    const failed = await ports.admitProviderTurn("s1", { reason: "provider", current: () => true }, async () => { throw new Error("failed") })
     if (failed.admitted) expect(await failed.settled).toEqual({ state: "failed", error: "failed" })
   })
 
@@ -457,7 +457,7 @@ describe("store broker ports", () => {
     const { store, ports } = setup()
     const lease = store.readTurnAuthority("s1")!.leaseId
     let decided = false
-    const admission = ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+    const admission = ports.admitProviderTurn("s1", { reason: "provider", current: () => true }, async (turn) => {
       await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
     }).finally(() => { decided = true })
     await tick()
@@ -502,7 +502,7 @@ describe("store broker ports", () => {
     const clock = { now: () => 0, setTimeout: (callback: () => void) => timers.push(callback), clearTimeout: () => {} }
     const { store, ports } = setup({ clock })
     const lease = store.readTurnAuthority("s1")!.leaseId
-    const admission = ports.admitProviderTurn("s1", { reason: "provider" }, async () => {})
+    const admission = ports.admitProviderTurn("s1", { reason: "provider", current: () => true }, async () => {})
     await tick()
     expect(timers).toHaveLength(1)
     timers[0]()
@@ -559,7 +559,7 @@ describe("store broker ports", () => {
     store.finishTurn({ sessionId: "s1", assistantMessageId: assistantMessageIdForTurn(promptId), leaseId: prompted, outcome: { status: "completed", completedAt: 20 } })
     store.releaseTurnLease("s1", prompted)
 
-    const admitted = await ports.admitProviderTurn("s1", { reason: "provider", detail: "Agent \"Audit\" finished" }, async (turn) => {
+    const admitted = await ports.admitProviderTurn("s1", { reason: "provider", detail: "Agent \"Audit\" finished", current: () => true }, async (turn) => {
       await ports.drainProviderEvent("s1", turn, { event: { type: "text-delta", delta: "One task finished." } })
       await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
     })
@@ -579,7 +579,7 @@ describe("store broker ports", () => {
 
   test("a provider turn names its opening message after the reason it started", () => {
     expect(providerTurnNotice({ reason: "goal", detail: "ship the fix" })).toBe("Goal: ship the fix")
-    expect(providerTurnNotice({ reason: "provider" })).toBe("Continued on its own")
+    expect(providerTurnNotice({ reason: "provider", current: () => true })).toBe("Continued on its own")
     expect(harnessAuthor("cursor-acp")).toEqual({ id: "harness:cursor-acp", name: "cursor-acp", kind: "agent" })
   })
 
@@ -636,7 +636,7 @@ describe("store broker ports", () => {
     await ports.publishSessionEvent("s1", { type: "background-work", agents: 1, shells: 0, other: 0 })
     await ports.publishSessionEvent("s1", { type: "background-work", agents: 2, shells: 1, other: 0 })
     expect(ports.backgroundWork.read("s1")).toEqual({ agents: 2, shells: 1, other: 0 })
-    const admitted = await ports.admitProviderTurn("s1", { reason: "provider" }, async (turn) => {
+    const admitted = await ports.admitProviderTurn("s1", { reason: "provider", current: () => true }, async (turn) => {
       await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
     })
     expect(admitted.admitted).toBe(true)
@@ -853,7 +853,7 @@ test("provider admission refused as busy never runs its provisional producer", a
   const { ports } = setup({ clock: { now: () => 0, setTimeout: (callback: () => void) => timers.push(callback), clearTimeout: () => {} } })
   const session = createSessionBroker(createRequestBroker(ports), { sessionId: "s1", directory: "/work", workspaceId: "w1", origin })
   let runs = 0
-  const admission = session.admitProviderTurn({ reason: "provider" }, async function* () {
+  const admission = session.admitProviderTurn({ reason: "provider", current: () => true }, async function* () {
     runs++
     yield { event: { type: "finish", sessionId: "s1" } }
   })

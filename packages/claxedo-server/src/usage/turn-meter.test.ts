@@ -905,6 +905,26 @@ describe("turn usage meter attribution", () => {
     expect(box.facts.map((fact) => fact.modelId)).toEqual(["opus[1m]", "claude-opus-4-5-20251101", "claude-opus-4-5-20251101"])
   })
 
+  test("files a Pi turn under the vendor and the vendor's own model id its Pi model key names, as every other harness's turn is filed", async () => {
+    const box = machine({ harness: "pi" })
+    const meter = box.boot()
+    await meter.consume(envelope(messageUpdated(buildAssistantMessage({
+      id: "m1",
+      sessionID: "s1",
+      parentID: "u1",
+      agent: "build",
+      model: { providerID: "pi", modelID: "anthropic/claude-haiku-4-5-20251001" },
+      directory: "/w",
+      created: 1,
+    }) as never)))
+    await meter.consume(observed({ kind: "delta", tokens: inputTokens(10) }))
+
+    expect(box.facts.map((fact) => [fact.providerId, fact.modelId])).toEqual([
+      ["anthropic", "claude-haiku-4-5-20251001"],
+      ["anthropic", "claude-haiku-4-5-20251001"],
+    ])
+  })
+
   test("holds each scope's one-hour writes within that scope's writes", async () => {
     const box = machine({ harness: "claude" })
     const meter = box.boot()

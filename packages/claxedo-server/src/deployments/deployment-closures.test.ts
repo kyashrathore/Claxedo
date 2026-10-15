@@ -132,7 +132,9 @@ const ENTRIES = [
   // Every entry's workspace create finds the connection a new cloud
   // workspace's repository is read through, picked or matched to a pasted
   // GitHub URL, in one module (`workspace/repository-connection.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 170, packages: 22 },
+  // The account a cloud turn's usage is filed under is the D1 session
+  // authority's own module (`authority/adapters/d1/cloud-turn-usage-owner.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 171, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -150,7 +152,7 @@ const ENTRIES = [
   // sandbox driver (`agent-plugins/mcp/catalog-servers.ts`), by the one rule
   // runtime preparation also follows for whether a driver carries a gateway
   // credential (`agent-plugins/mcp/gateway-reach.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 228, packages: 26 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 229, packages: 26 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -160,8 +162,12 @@ const ENTRIES = [
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
   // has a sandbox to start, and the notice that start sends the workspace
   // owner's live-sync room when it begins and settles
-  // (`workspace/start-notice.ts`).
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 238, packages: 26 },
+  // (`workspace/start-notice.ts`). When the idle watch finds a cloud runtime
+  // gone, it ends that runtime's sessions' turns in the registry and tells
+  // their readers (`workspace/runtime-lost.ts`,
+  // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
+  // has cloud runtimes to lose.
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 241, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

@@ -413,6 +413,15 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     return true
   }
 
+  /** Ends the lease of a host the provider stopped on its own, its boot closing at the last moment the host was proven serving; false when the epoch moved on first. */
+  async function endStoppedHostLease(workspaceId: string, lease: SandboxLease): Promise<boolean> {
+    const endedAt = hostLastProvenAliveAt(lease)
+    const ended = await options.leaseStore.update(workspaceId, lease.epoch, { status: "stopped", ...(endedAt === undefined ? {} : { endedAt }) })
+    if (!ended) return false
+    lifecycle.hostStopped(lease, endedAt)
+    return true
+  }
+
   /**
    * The latest moment the lease's own record proves its host served: the last
    * start phase observed on it, the last liveness report, the last activity.
@@ -673,12 +682,17 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         return (await ended(resource, await hostStopped(stopHost, resource))) ?? { ok: false, reason: "runtime_lease_changed" }
       })
     },
-    async endIfHostGone(workspaceId, epoch) {
+    async endIfHostDown(workspaceId, epoch) {
       const lease = await options.leaseStore.get(workspaceId)
-      if (!lease || lease.epoch !== epoch || !options.driver.inspect) return false
+      if (!lease || lease.epoch !== epoch || !options.driver.inspect) return undefined
       const target = await leaseTarget(lease)
-      if (target.status !== "ready" || await options.driver.inspect(target)) return false
-      return await endGoneHostLease(workspaceId, lease, `${target.sandboxId} is gone`)
+      if (target.status !== "ready") return undefined
+      const state = await options.driver.inspect(target)
+      if (state === "serving") return undefined
+      const ended = state === "gone"
+        ? await endGoneHostLease(workspaceId, lease, `${target.sandboxId} is gone`)
+        : await endStoppedHostLease(workspaceId, lease)
+      return ended ? state : undefined
     },
     async destroy(workspaceId) {
       return await mutationLifecycle(workspaceId, "destroy", async () => {

@@ -2296,7 +2296,7 @@ void describe("RuntimeStore", () => {
     assert.equal(toolPart?.id, "tool-1")
     assert.equal(toolPart?.type, "tool")
     assert.equal(toolPart?.state?.status, "error")
-    assert.equal(toolPart?.state?.error, "Tool execution interrupted")
+    assert.equal(toolPart?.state?.error, "Interrupted: The agent runtime stopped during this turn")
 
     const next = new RuntimeStore(root)
     const replayed = next.getMessages("s1") as Array<{
@@ -2306,7 +2306,7 @@ void describe("RuntimeStore", () => {
     assert.equal(replayedPart?.id, "tool-1")
     assert.equal(replayedPart?.type, "tool")
     assert.equal(replayedPart?.state?.status, "error")
-    assert.equal(replayedPart?.state?.error, "Tool execution interrupted")
+    assert.equal(replayedPart?.state?.error, "Interrupted: The agent runtime stopped during this turn")
     assert.equal((next.getSession("s1") as any)?.status, "interrupted")
   })
 
@@ -2420,7 +2420,7 @@ void describe("RuntimeStore", () => {
     }>
     const toolPart = current[1]?.parts.find((part) => part.id === "tool-1")
     assert.equal(toolPart?.state?.status, "error")
-    assert.equal(toolPart?.state?.error, "Tool execution interrupted")
+    assert.equal(toolPart?.state?.error, "Interrupted: The agent runtime stopped during this turn")
   })
 
   void it("recoverBusySessions is a no-op when no sessions are busy", () => {

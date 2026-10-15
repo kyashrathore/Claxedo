@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import type { AgentAssistantMessage, AgentUserMessage } from "@claxedo/agent-runtime-contract"
 import { formatCommentNote, formatImageMarkNote, formatQuoteNote } from "@/lib/comment-note"
 import { promptEcho, type PromptAttachment } from "@/server"
+import { groupMembers } from "@claxedo/agent-runtime-contract/turn-fold"
 import { MessageComment, Timeline } from "./message-timeline.data"
 
 const user = { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } } as AgentUserMessage
@@ -54,6 +55,29 @@ test("a notice stays on screen when a settled turn folds its work", () => {
   const shown = rows.flatMap((row) => (row._tag === "AssistantPart" && row.group.type === "part" ? [row.group.ref.partId] : []))
   expect(shown).toContain("p2")
   expect(rows.some((row) => row._tag === "TurnFold" && row.folded)).toBe(true)
+})
+
+test("the running turn of a session whose run stopped under it is drawn interrupted: its open tools stop, and the divider does not say the person stopped it", () => {
+  const assistant = { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2 } } as unknown as AgentAssistantMessage
+  const base = { sessionID: "s1", messageID: "a1" }
+  const parts = [
+    { ...base, id: "p1", type: "text", text: "Running the sleep." },
+    { ...base, id: "p2", type: "tool", tool: "bash", state: { status: "running", input: { command: "sleep 120" }, time: { start: 3 } } },
+  ] as never[]
+  const hasText = (part: { type: string }) => "text" in part && !!part.text
+  const earlierStop = { status: "cancelled" as const, completedAt: 1, assistantMessageId: "a0" }
+  const rowsWhile = (status: "working" | "interrupted") =>
+    Timeline.constructMessageRows(user, (id) => (id === "a1" ? parts : []), hasText, [assistant], false, status, true, undefined, earlierStop)
+  const shown = (rows: ReturnType<typeof rowsWhile>) =>
+    rows.flatMap((row) => (row._tag === "AssistantPart" ? groupMembers(row.group).map((ref) => ref.partId) : []))
+  const dividers = (rows: ReturnType<typeof rowsWhile>) => rows.flatMap((row) => (row._tag === "TurnDivider" ? [row] : []))
+
+  expect(shown(rowsWhile("working"))).toEqual(["p1", "p2"])
+  expect(dividers(rowsWhile("working"))).toEqual([])
+  const interrupted = rowsWhile("interrupted")
+  expect(shown(interrupted)).toEqual(["p1"])
+  expect(dividers(interrupted)).toEqual([expect.objectContaining({ label: "interrupted" })])
+  expect(dividers(interrupted)[0]).not.toHaveProperty("durationMs")
 })
 
 test("a thought between commands is drawn inside their work group, and the group's header counts only the commands", () => {

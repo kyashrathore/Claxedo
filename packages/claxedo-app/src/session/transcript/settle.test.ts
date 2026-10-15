@@ -1,11 +1,11 @@
 /// <reference types="bun" />
 import { expect, spyOn, test } from "bun:test"
 import { createRoot } from "solid-js"
-import { ServerError, type Server, type TranscriptPage } from "@/server"
+import { ServerError, type Server, type TranscriptPage, type TranscriptPart } from "@/server"
 import { createTranscriptContext } from "./context"
 import { loadOlder } from "./older"
 import { readSnapshot } from "./snapshot"
-import { settleTurn } from "./settle"
+import { settleEndedTurn, settleTurn } from "./settle"
 import { transcriptRef, shell, withShell, latest, firstReadOf, transcriptServer } from "./test-support/transcript-server"
 
 test("settlement: a missed preamble lands before the tool and final answer in the authority's order", async () => {
@@ -44,4 +44,29 @@ test("settlement: a failed authority read preserves the live transcript", async 
   } finally {
     log.mockRestore()
   }
+})
+
+test("settlement: a turn the session's status ends, as idle, interrupted or failed, is read again so its open tools stop running", async () => {
+  const running = { ...shell(""), state: { status: "running", input: { command: "sleep 120" }, title: "sleep", metadata: {}, time: { start: 1 } } } as TranscriptPart
+  const ended = { ...shell(""), state: { status: "error", input: { command: "sleep 120" }, error: "Interrupted: The workspace machine stopped during this turn", metadata: {}, time: { start: 1, end: 3 } } } as TranscriptPart
+  const reads: string[] = []
+  const { server: base, deps } = transcriptServer(firstReadOf(withShell(latest, running)))
+  const server = { ...base, sessions: { ...base.sessions, turn: async (_ref: unknown, turnId: string) => {
+    reads.push(turnId)
+    return withShell(latest, ended)
+  } } } as Server
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, transcriptRef, deps)
+    await readSnapshot(context)
+    await settleEndedTurn(context, { kind: "working" })
+    await settleEndedTurn(context, { kind: "retrying", message: "Retrying" })
+    expect(reads).toEqual([])
+    expect(context.data.parts["msg_2_r"]?.[0]?.type === "tool" && context.data.parts["msg_2_r"][0].state.status).toBe("running")
+    await settleEndedTurn(context, { kind: "interrupted", message: "The previous run stopped" })
+    expect(context.data.parts["msg_2_r"]?.[0]).toEqual(ended)
+    await settleEndedTurn(context, { kind: "idle" })
+    await settleEndedTurn(context, { kind: "failed", error: new ServerError({ class: "internal", message: "Failed" }) })
+    expect(reads).toEqual(["msg_2", "msg_2", "msg_2"])
+    dispose()
+  })
 })

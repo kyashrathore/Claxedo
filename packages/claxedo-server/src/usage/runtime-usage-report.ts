@@ -11,13 +11,19 @@ import {
   type UsageReportWriter,
 } from "@claxedo/server-core/usage/usage-report"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { SESSION_TURN_GRANT_DEFAULT_TTL_MS } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import type { SessionProofClaims, TurnLeaseClaims } from "../session/runtime-session-proofs"
 import { positiveInteger } from "../session/runtime-authority-request"
 
 const USAGE_REPORT_KEYS: ReadonlySet<string> = new Set(["action", "sessionId", "turnId", "leaseId", "fencingToken", "facts"])
 
+/** How long after its release a turn's usage proof files the usage its work leaves: as long as a deferred turn grant lives. */
+export const USAGE_REPORT_TAIL_MS = SESSION_TURN_GRANT_DEFAULT_TTL_MS
+
 export type RuntimeUsageReportInput = {
   verifyTurnLease: (lease: string) => Promise<TurnLeaseClaims>
+  /** The usage proof a turn's release answered, which proves that turn here alone. */
+  verifyTurnUsageProof: (proof: string) => Promise<TurnLeaseClaims>
   /** The refusal for a lease whose host is not the one serving the session, or nothing. */
   hostRefusal: (context: Context, lease: TurnLeaseClaims, sessionId: string) => Promise<Response | undefined>
   /** Why the proof the lease was minted from no longer stands, or nothing. */
@@ -36,8 +42,12 @@ export type RuntimeUsageReportInput = {
  * turn is not one a cloud workspace's session admitted for an account, or
  * when its turn already holds the most messages one turn files; a malformed
  * fact, or too many of them, refuses the report.
- * The lease may already be released: it proves the turn was admitted, and
- * its own expiry bounds how late a report can arrive.
+ * The lease may already be released: it proves the turn was admitted until
+ * its own expiry, and the usage proof its release answered proves it for
+ * `USAGE_REPORT_TAIL_MS` after, so usage a turn's work leaves once it ended (a
+ * background task's report) is filed when it settles. A fact filed under
+ * the usage proof carries no admission time, since its turn's duration says
+ * nothing about it.
  */
 export async function reportRuntimeUsage(context: Context, body: Record<string, unknown>, input: RuntimeUsageReportInput) {
   const sessionId = trimToUndefined(body.sessionId)
@@ -51,7 +61,8 @@ export async function reportRuntimeUsage(context: Context, body: Record<string, 
       400,
     )
   }
-  const lease = await input.verifyTurnLease(leaseId).catch(() => undefined)
+  const held = await input.verifyTurnLease(leaseId).catch(() => undefined)
+  const lease = held ?? await input.verifyTurnUsageProof(leaseId).catch(() => undefined)
   if (!lease || lease.sessionId !== sessionId || lease.turnId !== turnId || lease.fencingToken !== fencingToken) {
     return context.json(
       { error: { code: "session_turn_lease_invalid", message: "Session turn lease is invalid or mismatched" } },
@@ -87,7 +98,7 @@ export async function reportRuntimeUsage(context: Context, body: Record<string, 
       const owner = owners.get(fact.turnId)
       if (!inBounds.includes(item)) results.push({ ...reported, status: "refused", code: "usage_fact_out_of_bounds" })
       else if (!owner) results.push({ ...reported, status: "refused", code: "usage_owner_unresolved" })
-      else results.push({ ...reported, ...usageReportAnswer(await writer.writeRevision(revision, { owner, turnId: fact.turnId, ...(fact.turnId === lease.turnId ? { admittedAt: lease.acquiredAt } : {}) })) })
+      else results.push({ ...reported, ...usageReportAnswer(await writer.writeRevision(revision, { owner, turnId: fact.turnId, ...(held && fact.turnId === lease.turnId ? { admittedAt: lease.acquiredAt } : {}) })) })
     }
     return context.json({ results })
   } catch {

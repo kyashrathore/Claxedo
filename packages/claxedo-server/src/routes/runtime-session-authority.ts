@@ -25,7 +25,7 @@ import {
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeSandboxSecretRoutes, type RuntimeSandboxSecretOptions } from "./runtime-sandbox-secrets"
-import { reportRuntimeUsage } from "../usage/runtime-usage-report"
+import { reportRuntimeUsage, USAGE_REPORT_TAIL_MS } from "../usage/runtime-usage-report"
 import { SessionHostDeliveryRoutes, type SessionHostDeliveryOptions } from "./session-host-delivery"
 import { placedSessionHostRoot, type SessionHostAuthority } from "../authority/session-hosts"
 import {
@@ -36,6 +36,8 @@ import {
   streamLeaseVerifier,
   turnLeaseMinter,
   turnLeaseVerifier,
+  turnUsageProofMinter,
+  turnUsageProofVerifier,
   WORKSPACE_STREAM_LEASE_SESSION,
   type DeferredGrantBinding,
   type SessionProofClaims,
@@ -575,7 +577,8 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     }
     const released = await options.turnAuthority.releaseSessionTurn(owned)
     options.turnCredentials?.revokeLease(ownedTurn!.authorityLeaseId)
-    return context.json(released)
+    const usageProof = await turnUsageProofMinter(env)(ownedTurn!, Date.now() + USAGE_REPORT_TAIL_MS)
+    return context.json({ ...released, usageProof: { proof: usageProof.lease, expiresAt: usageProof.expiresAt } })
   }
 
   const app = new Hono()
@@ -591,6 +594,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     if (body?.action === USAGE_REPORT_ACTION) {
       return reportRuntimeUsage(context, body, {
         verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
+        verifyTurnUsageProof: turnUsageProofVerifier(env),
         hostRefusal: async (context, lease, sessionId) => (await sessionHostMismatch(lease, sessionId)) ? sessionHostRefusal(context) : undefined,
         proofDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
         ...(options.authority.resolveCloudTurnUsageOwner ? { resolveCloudTurnUsageOwner: options.authority.resolveCloudTurnUsageOwner } : {}),

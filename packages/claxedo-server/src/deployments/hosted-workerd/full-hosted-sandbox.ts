@@ -7,6 +7,8 @@ import { d1OrgSandboxDriver } from "../../sandbox/stores/d1-org-driver"
 import type { HostedSandboxKeys } from "../../sandbox/org-sandbox-drivers"
 import { createSessionRowsPasses, type SessionRowsPasses } from "../../session/session-rows-pass"
 import { createHostedRuntimeFetch } from "../../workspace/relay-runtime-client"
+import { d1RuntimeLost } from "../../workspace/runtime-lost"
+import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { sandboxProvisioner, type SandboxProvisionerNamespace } from "../../workspace/sandbox-start"
 
 /**
@@ -21,6 +23,7 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
     signingEnv: Record<string, string | undefined>
     provisioner: SandboxProvisionerNamespace
     keyDrivers: Omit<HostedSandboxKeys, "chosenDriver">
+    room: LiveSyncRoomNamespace
   },
   compose: (extra: { sandbox: HostedSandboxBinding; sessionRowsPasses: SessionRowsPasses }) => Composed,
 ): Composed {
@@ -45,6 +48,7 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
       redeliver: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).redeliver(workspaceId),
       inFlight: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).inFlight(),
       deliverSessionRowsPass: sessionRowsPasses.deliver,
+      runtimeLost: d1RuntimeLost({ database: input.database, room: input.room }),
       keys: { ...input.keyDrivers, chosenDriver: d1OrgSandboxDriver(input.database).chosen },
     },
     sessionRowsPasses,

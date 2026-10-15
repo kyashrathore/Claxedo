@@ -4,6 +4,7 @@ import {
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxLease,
+  type SandboxHostState,
   type SandboxTarget,
   type SandboxResource,
 } from "../contract"
@@ -600,12 +601,12 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     await client.delete(target.sandboxId)
   }
 
-  async function inspect(target: SandboxTarget) {
+  async function inspect(target: SandboxTarget): Promise<SandboxHostState> {
     try {
-      await client.get(target.sandboxId)
-      return target
+      const { state } = await client.get(target.sandboxId)
+      return READY_STATES.has(state) || PENDING_STATES.has(state) ? "serving" : "stopped"
     } catch (err) {
-      if (err instanceof BoatApiError && GONE_CODES.has(err.code)) return undefined
+      if (err instanceof BoatApiError && GONE_CODES.has(err.code)) return "gone"
       throw err
     }
   }
