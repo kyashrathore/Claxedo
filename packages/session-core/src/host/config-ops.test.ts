@@ -41,7 +41,7 @@ test("runtime-owned previews read the current saved model on every request", asy
 })
 
 const CLAUDE: SessionHarness = { id: "claude", access: "native" }
-const LISTED: SessionHarness = { id: "pi", access: "native" }
+const LISTED: SessionHarness = { id: "opencode", access: "native" }
 const AGENT_MODES: AgentPermissionMode[] = [
   { id: "ask", name: "Ask every time" },
   { id: "code", name: "Write code" },
@@ -163,7 +163,7 @@ describe("a selection write publishes the session's row", () => {
   })
 
   test("a harness switch publishes the row on its new harness", async () => {
-    const { fixture, published, sessionId } = await hostWith(CLAUDE, new FakeTransport(), { pi: new FakeTransport() })
+    const { fixture, published, sessionId } = await hostWith(CLAUDE, new FakeTransport(), { opencode: new FakeTransport() })
 
     await fixture.runtime.sessions.updateConfig(sessionId, { harness: LISTED })
 
