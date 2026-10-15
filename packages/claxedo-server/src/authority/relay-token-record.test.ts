@@ -54,7 +54,7 @@ describe("recordRelayRuntimeToken", () => {
     await recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", ownerGrant: true })
 
     expect(auth.recordOwnerRuntimeAccessToken).toHaveBeenCalledWith("actor_user_1", {
-      jti: "jti_1", workspaceId: "ws_1", hostId: "host_1", expiresAt: 1_000,
+      jti: "jti_1", workspaceId: "ws_1", hostId: "host_1", expiresAt: 1_000, role: "owner",
     })
     expect(auth.recordRuntimeAccessToken).not.toHaveBeenCalled()
     expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()

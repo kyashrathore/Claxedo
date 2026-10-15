@@ -3,6 +3,7 @@ import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/ser
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
   ChannelMachineIdentity,
+  OwnerRuntimeAccessTokenRecord,
   ProjectAction,
   ProjectRole,
   WorkspaceAuthority,
@@ -290,14 +291,16 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   }
 
   /**
-   * The workspace owner's editor token the first-party MCP endpoint reaches
-   * the machine with for the tools of a session served by its own host. It
-   * names no session, so the insert admits only the workspace's owner.
+   * The workspace owner's own token, recorded with no signed request behind
+   * it. It names no session, so the insert admits only the workspace's owner.
+   * `servedSession` is the session served by its own host whose tools the
+   * first-party MCP endpoint reaches the machine for; a session's grant
+   * starting a task in the owner's workspace names none.
    */
-  async recordSessionMcpRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord) {
-    await this.requireHostedSessionMachine(token)
-    const { sessionId: _sessionId, ...workspaceToken } = token
-    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...workspaceToken, role: "editor" })
+  async recordOwnerRuntimeAccessToken(actorId: string, token: OwnerRuntimeAccessTokenRecord) {
+    const { servedSession, ...workspaceToken } = token
+    if (servedSession !== undefined) await this.requireHostedSessionMachine({ ...workspaceToken, sessionId: servedSession })
+    return await this.recordUserRuntimeToken(await this.requireActor(actorId), workspaceToken)
   }
 
   /**
@@ -312,19 +315,15 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...token, role: "editor" })
   }
 
-  private async requireHostedSessionMachine(token: TurnRuntimeAccessTokenRecord) {
+  private async requireHostedSessionMachine(token: Pick<TurnRuntimeAccessTokenRecord, "sessionId" | "workspaceId" | "hostId">) {
     if (!(await this.hostedSession(token)) || sessionHostRootOf(token.hostId)) throw denied("Only a session served by its own host reaches its machine with a turn token")
   }
 
-  private async hostedSession(token: TurnRuntimeAccessTokenRecord) {
+  private async hostedSession(token: Pick<TurnRuntimeAccessTokenRecord, "sessionId" | "workspaceId">) {
     return await this.database
       .prepare(`select 1 from sessions where session_id = ? and workspace_id = ? and session_host_root = session_id and deleted_at is null`)
       .bind(requireText(token.sessionId, "sessionId"), requireText(token.workspaceId, "workspaceId"))
       .first()
-  }
-
-  async recordOwnerRuntimeAccessToken(actorId: string, args: { jti: string; workspaceId: string; hostId: string; expiresAt: number }) {
-    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...args, role: "owner" })
   }
 
   async recordRuntimeAccessTokenForService(args: {

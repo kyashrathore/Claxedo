@@ -132,6 +132,16 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 /** The same identity carrying the binding generation the authority admitted it under. */
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
+/** `servedSession`: the session served by its own host this token reaches the machine for, when it is for one. */
+export type OwnerRuntimeAccessTokenRecord = {
+  jti: string
+  workspaceId: string
+  hostId: string
+  expiresAt: number
+  role: "editor" | "owner"
+  servedSession?: string
+}
+
 export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Partial<SessionReaderAuthority> & {
   /** Internal host delegation, answered only for the workspace's owner, whose actor the authority rechecks. */
   resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
@@ -507,17 +517,12 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
   }) => Promise<unknown>
   /**
    * The workspace owner's own token, recorded with no signed request behind
-   * it: the owner a verified grant resolved to (`resolveWorkspaceOwner`),
-   * reaching that owner's workspace for the session the grant's Start
-   * creates there. Admitted for the workspace's owner alone, and optional
-   * because only a deployment that resolves grants to owners mints one.
+   * it, for the owner this control plane resolved from a credential it
+   * minted (`resolveWorkspaceOwner`). Admitted for the workspace's owner
+   * alone, and optional because only a deployment that resolves such
+   * credentials to owners mints one.
    */
-  recordOwnerRuntimeAccessToken?: (actorId: string, args: {
-    jti: string
-    workspaceId: string
-    hostId: string
-    expiresAt: number
-  }) => Promise<unknown>
+  recordOwnerRuntimeAccessToken?: (actorId: string, token: OwnerRuntimeAccessTokenRecord) => Promise<unknown>
   runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
   revokeRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,

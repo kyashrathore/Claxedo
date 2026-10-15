@@ -35,11 +35,13 @@ export async function recordRelayRuntimeToken(
   if (input.principalKind === "user") {
     if (input.ownerGrant) {
       if (!authority.recordOwnerRuntimeAccessToken) throw new Error("This control plane records no owner token for a grant")
+      if (input.role !== "owner" && input.role !== "editor") throw new Error("A grant owner's runtime token is an owner's or an editor's")
       return authority.recordOwnerRuntimeAccessToken(input.actorId, {
         jti: input.jti,
         workspaceId: input.workspaceId,
         hostId: input.hostId,
         expiresAt: input.expiresAt,
+        role: input.role,
       })
     }
     if (input.channelIdentity) {
