@@ -1,5 +1,6 @@
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
-import { createSessionHostPlugins } from "./runtime/session-host-launch"
+import { createSessionHostPlugins, machineServing } from "./runtime/session-host-launch"
+import type { SandboxInFlight } from "../workspace/sandbox-start"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import type { D1Database } from "@cloudflare/workers-types"
 import { cloudRootBacking, isCloudRoot } from "../workspace/cloud-root-backing"
@@ -229,6 +230,8 @@ export function createHostedAgentPluginsComposition(input: {
   /** Refreshes the caller's running sandboxes after an activation change; absent on a plane that hosts no sandboxes. */
   pluginsChanged?: (userId: string) => Promise<void>
   pushRuntime?: (context: WorkspaceRuntimeContext, preparation: WorkspaceRuntimePreparation) => Promise<void>
+  /** The start run a workspace's sandbox has in flight; absent on a plane that hosts no sandboxes. */
+  sandboxInFlight?: SandboxInFlight
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -500,7 +503,10 @@ export function createHostedAgentPluginsComposition(input: {
     pluginRuntime,
     sessionHostPlugins: createSessionHostPlugins({
       cloudWorkspace,
-      machineRunning: async (workspaceId) => (await services.sandbox.sandboxManager?.target(workspaceId))?.status === "ready",
+      machineServing: machineServing({
+        target: async (workspaceId) => await services.sandbox.sandboxManager?.target(workspaceId),
+        ...(input.sandboxInFlight ? { inFlight: input.sandboxInFlight } : {}),
+      }),
       activations,
       preparer,
       provisioner,

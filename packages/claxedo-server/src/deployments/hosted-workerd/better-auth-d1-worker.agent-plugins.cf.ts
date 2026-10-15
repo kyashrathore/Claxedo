@@ -83,6 +83,7 @@ export function composeBetterAuthD1AgentPlugins(
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,
     ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged, pushRuntime: base.runtimeDelivery.provisionRuntime } : {}),
+    ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
   })
   const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
     const [basePreparation, featurePreparation] = await Promise.all([
