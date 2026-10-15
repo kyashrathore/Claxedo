@@ -118,14 +118,14 @@ test("sessions: a first send resent after its create failed creates under the dr
 
 type HostedRequest = { method: string; path: string; authorization: string | null; id?: unknown; operation: string | null }
 
-function sessionHostServer(minted: unknown[], hosted: HostedRequest[], reservations: unknown[]) {
+function sessionHostServer(minted: unknown[], hosted: HostedRequest[], reservations: unknown[], reachable = true) {
   let origin = ""
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch: async (request): Promise<Response> => {
       const url = new URL(request.url)
-      if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap(() => true, false))
+      if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap(() => reachable, false))
       if (url.pathname === "/api/control/session-registrations/reserve") {
         const reserved = (await request.json()) as { sessionId: string; harness?: { id: string } }
         reservations.push(reserved)
@@ -142,6 +142,7 @@ function sessionHostServer(minted: unknown[], hosted: HostedRequest[], reservati
       if (url.pathname.startsWith("/relay/workspaces/ws_cloud/session")) {
         const body = request.method === "POST" ? (await request.json()) as { id?: unknown } : {}
         hosted.push({ method: request.method, path: url.pathname, authorization: request.headers.get("authorization"), ...(body.id === undefined ? {} : { id: body.id }), operation: request.headers.get(RESERVATION_HEADER) })
+        if (url.pathname.endsWith("/prompt_async")) return Response.json({ delivery: "queue" })
         const id = url.pathname.split("/").pop()
         return Response.json({ id, title: "Pi", time: { created: 1, updated: 1 } })
       }
@@ -219,6 +220,47 @@ test("sessions: a create the control plane places in the workspace's runtime min
   workspaces.dispose()
 })
 
+function recordedWakes(woke: string[]) {
+  return { wakeIfStopped: async (id: string) => { woke.push(id); return true } } as unknown as WorkspaceWakes
+}
+
+test("sessions: a Pi create on a sleeping cloud workspace wakes nothing: it is reserved, connected and created in its own host, and its sends go there", async () => {
+  const minted: unknown[] = []
+  const hosted: HostedRequest[] = []
+  const reservations: unknown[] = []
+  const woke: string[] = []
+  const origin = sessionHostServer(minted, hosted, reservations, false)
+  const transport = createTransport({ serverUrl: origin, cookies: true })
+  const account = createBrowserHostedAccount(transport)
+  const workspaces = createWorkspaces(transport, new QueryClient())
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), recordedWakes(woke), createSessionProjection(workspaces, account), telemetry, account)
+
+  const row = await sessions.create({ placementId: placementId("ws_cloud"), harness: "pi" })
+  const id = String(row.ref.sessionId)
+  expect(hosted).toEqual([expect.objectContaining({ method: "POST", path: `/relay/workspaces/ws_cloud/session/${id}` })])
+  expect(await sessions.prompt(row.ref, { clientRequestId: "req_1", messageId: "msg_1", text: "hello", attachments: [] })).toBe("queue")
+  expect(hosted.at(-1)).toMatchObject({ method: "POST", path: `/relay/workspaces/ws_cloud/session/${id}/prompt_async`, authorization: "Bearer session-host-rat" })
+  expect(woke).toEqual([])
+  workspaces.dispose()
+})
+
+test("sessions: a create the control plane places in a sleeping workspace's runtime wakes it first", async () => {
+  const minted: unknown[] = []
+  const hosted: HostedRequest[] = []
+  const reservations: unknown[] = []
+  const woke: string[] = []
+  const origin = sessionHostServer(minted, hosted, reservations, false)
+  const transport = createTransport({ serverUrl: origin, cookies: true })
+  const account = createBrowserHostedAccount(transport)
+  const workspaces = createWorkspaces(transport, new QueryClient())
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), recordedWakes(woke), createSessionProjection(workspaces, account), telemetry, account)
+  await expect(sessions.create({ placementId: placementId("ws_cloud"), harness: "codex" })).rejects.toBeDefined()
+  expect(reservations).toEqual([expect.objectContaining({ harness: { id: "codex", access: "native" } })])
+  expect(woke).toEqual(["ws_cloud"])
+  expect(minted).toEqual([])
+  workspaces.dispose()
+})
+
 function sendFixture(answers: Array<unknown>, stopsOnRefresh: boolean) {
   const sent: string[] = []
   const bodies: unknown[] = []
@@ -234,8 +276,10 @@ function sendFixture(answers: Array<unknown>, stopsOnRefresh: boolean) {
       return answer
     },
   } as unknown as Transport
+  const route = { directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true }
   const workspaces = {
-    route: async () => ({ directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true }),
+    route: async () => route,
+    home: async () => ({ route, central: true, live: true }),
     refresh: async () => { stopped = stopsOnRefresh },
   } as unknown as Workspaces
   const wakes = {
