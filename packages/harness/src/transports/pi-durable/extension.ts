@@ -11,6 +11,7 @@ export type PiExtensionHost = {
   skills(): readonly SkillRoot[]
   asker(): PiAsker
   opening: string
+  toolCalling(): void
 }
 
 export const CLAXEDO_PI_EXTENSION = "claxedo"
@@ -21,9 +22,13 @@ export function claxedoPiExtension(host: PiExtensionHost, mcpTools: readonly Too
     tools: [piQuestionTool({ sessionId: host.sessionId, asker: () => host.asker() }), ...mcpTools],
     sections: [piSkillsSection(() => host.skills())],
     hooks: [hook(ToolTask, {
-      beforeTool: (call, _api, context) => piAsks(host.config(), call.name)
-        ? piToolApproval({ sessionId: host.sessionId, call, asker: host.asker(), signal: context.abortSignal, opening: host.opening })
-        : undefined,
+      beforeTool: async (call, _api, context) => {
+        const blocked = piAsks(host.config(), call.name)
+          ? await piToolApproval({ sessionId: host.sessionId, call, asker: host.asker(), signal: context.abortSignal, opening: host.opening })
+          : undefined
+        if (!blocked) host.toolCalling()
+        return blocked
+      },
     })],
   })
 }

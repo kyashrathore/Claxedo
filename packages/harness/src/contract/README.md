@@ -41,7 +41,7 @@ Everything a transport sees. The types say the shapes; this file says the rules 
 
 ## Session host delivery
 
-- **A turn delivery is the control plane's answer to one turn lease of a session hosted in its own Durable Object** (`session-host-delivery.ts`). It carries only the session owner's direct credentials: `parseTurnDelivery` refuses a snapshot with any brokered `accounts` row, because a Durable Object has no egress broker to spend one through. `expiresAt` is the earlier of the lease's and the credentials' expiries, after which the host asks again. `TurnExecutionAccess` is the session-scoped Runtime Access Token the host uses to reach the workspace machine's execution routes through the relay.
+- **A turn delivery is the control plane's answer to one turn lease of a session hosted in its own Durable Object** (`session-host-delivery.ts`). It carries only the session owner's direct credentials: `parseTurnDelivery` refuses a snapshot with any brokered `accounts` row, because a Durable Object has no egress broker to spend one through. `expiresAt` is the earlier of the lease's and the credentials' expiries, after which the host asks again. `directory` is the session's directory on the workspace machine, where the host's tools run, read from the session's placement, so the host knows it while the machine sleeps. `TurnExecutionAccess` is the session-scoped Runtime Access Token the host uses to reach the workspace machine's execution routes through the relay.
 
 ## Configuration
 

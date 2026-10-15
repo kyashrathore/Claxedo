@@ -99,6 +99,8 @@ import { BROKER_ROUTE_PATTERN, isBrokerPath } from "@claxedo/egress-broker"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { withTurnCompletedTelemetry } from "../../usage/turn-completed-telemetry"
+import { createCloudCreateAdmission } from "../../workspace/cloud-create-admission"
+import { ownerMachineStart } from "../../workspace/cloud-workspace-start"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
@@ -573,11 +575,23 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         listSessions: options.ownerSessionList,
       })
     : undefined
+  const sandboxStart = workspaceOptions.sandboxStart
+  const startMachine = sandboxStart
+    ? ownerMachineStart(services, {
+        start: sandboxStart,
+        lease: {
+          admission: createCloudCreateAdmission({ services, leaseCap: workspaceOptions.sandboxLeaseCap, countActiveLeases: workspaceOptions.countActiveOrgSandboxLeases }),
+          usage: workspaceOptions.sandboxUsage,
+        },
+        ...(workspaceOptions.requireCloudWorkspaceEntitlement ? { entitlement: workspaceOptions.requireCloudWorkspaceEntitlement } : {}),
+      })
+    : undefined
   const sessionHostDelivery = sessionHostMachine && plane.orgCredentials
     ? {
         ...sessionHostMachine,
         resolveWorkspaceOwner,
         credentials: plane.orgCredentials,
+        ...(startMachine ? { startMachine } : {}),
         ...(options.sessionHostPlugins ? { plugins: options.sessionHostPlugins } : {}),
         ...(sessionMcp ? { sessionMcp } : {}),
         ...(options.credentialRefusals ? { credentialRefusals: options.credentialRefusals } : {}),

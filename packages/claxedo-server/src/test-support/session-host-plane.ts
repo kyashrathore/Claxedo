@@ -16,6 +16,9 @@ import { d1Authority } from "./d1-authority"
 import { firstPartyMcpContribution } from "../mcp/first-party-mcp"
 import { sessionMcpCredentials } from "../mcp/session-mcp-credentials"
 import { ownerSessionList } from "../session/list"
+import { ownerMachineStart } from "../workspace/cloud-workspace-start"
+import type { SandboxStartAnswer } from "../workspace/sandbox-start"
+import type { CloudWorkspaceEntitlementGate } from "../workspace/route-support"
 
 export const SESSION_AUTHORIZE_URL = "https://plane.test/api/runtime-authority/session-authorize"
 export const WORKSPACE_ID = "ws_cloud"
@@ -25,7 +28,8 @@ export const DIRECTORY = "/workspace/repo"
  * A control plane on real D1 serving one cloud workspace, its owner, a member
  * of the owner's organization and an outsider, with the session authority,
  * the session-host turn routes and the first-party MCP endpoint mounted as the
- * hosted Worker mounts them.
+ * hosted Worker mounts them. The workspace's sandbox target and its start are
+ * stand-ins the test sets; the machine start around them is the real one.
  */
 export async function sessionHostPlane(input: {
   plugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
@@ -52,6 +56,10 @@ export async function sessionHostPlane(input: {
   await fixture.addMember(owner, member, orgId)
   const credentials = (org: string) => hostedOrgCredentials(org, { database: fixture.database, env })
   let target: SandboxTargetResult = { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "acquiring", retryAfterMs: 1_500 }
+  let startAnswer: SandboxStartAnswer = { status: "provisioning", epoch: 1, retryAfterMs: 2_000, homeRegion: "us-east" }
+  let entitlement: Awaited<ReturnType<CloudWorkspaceEntitlementGate>>
+  const starts: Array<{ workspaceId: string }> = []
+  const entitledOrgs: Array<string | undefined> = []
   const signRuntimeAccessToken = runtimeAccessTokenSigner(env)
 
   const services = { sandbox: { sandboxManager: { target: async () => target } }, defaultHomeRegion: "us-east" } as unknown as ControlPlaneServices
@@ -72,6 +80,17 @@ export async function sessionHostPlane(input: {
       credentials,
       ...(input.plugins ? { plugins: input.plugins } : {}),
       sessionMcp,
+      startMachine: ownerMachineStart(services, {
+        start: async (workspaceId) => {
+          starts.push({ workspaceId })
+          return startAnswer
+        },
+        lease: { admission: { capLease: async () => undefined }, usage: undefined },
+        entitlement: async (tenant) => {
+          entitledOrgs.push(tenant.orgId)
+          return entitlement
+        },
+      }),
     },
   }))
   const mcp = firstPartyMcpContribution({
@@ -156,6 +175,16 @@ export async function sessionHostPlane(input: {
     acquire,
     serve(next: SandboxTargetResult) {
       target = next
+    },
+    /** What the workspace's sandbox start answers from now on, and each start it was asked for. */
+    starting(next: SandboxStartAnswer) {
+      startAnswer = next
+    },
+    starts,
+    /** The organization each machine start's admission was asked for, and what it answers. */
+    entitledOrgs,
+    entitle(next: Awaited<ReturnType<CloudWorkspaceEntitlementGate>>) {
+      entitlement = next
     },
     close: fixture.dispose,
   }

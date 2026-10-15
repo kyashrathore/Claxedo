@@ -82,6 +82,7 @@ export class PiSession {
     this.runtime.registry.install(CodingTools)
     this.runtime.registry.install(claxedoPiExtension({
       sessionId: this.sessionId, config: () => this.start.config, skills: () => this.start.projection.pluginRoots, asker: () => this.asker(), opening: this.opening,
+      toolCalling: () => this.input.placement.toolCalling?.(this.sessionId),
     }, tools))
   }
 }

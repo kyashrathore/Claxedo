@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { hostedConnectionInfo, type FirstLease } from "./hosted-connection-info"
+import { hostedConnectionInfo } from "./hosted-connection-info"
+import type { FirstLease } from "../workspace/cloud-workspace-start"
 import type { SandboxStart } from "../workspace/sandbox-start"
 import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
 

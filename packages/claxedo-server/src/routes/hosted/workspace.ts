@@ -196,9 +196,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       const rateLimit = await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
       if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
       // GET is the read: it reports the lease's current state and may mint only
-      // off an already-running sandbox. POST is the explicit connect: the only
-      // path that runs `sandboxManager.ensure` and so the only one that can
-      // start billable compute (P-118). A GET naming a session is a share
+      // off an already-running sandbox. POST is the explicit connect, the one
+      // request of this router that can start billable compute (P-118); a
+      // session host's tool call is the other door. A GET naming a session is a share
       // holder's, whose token reaches that session alone.
       const sessionId = input.readOnly ? c.req.query("sessionId")?.trim() : undefined
       const result = sessionId

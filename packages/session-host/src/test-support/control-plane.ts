@@ -44,14 +44,18 @@ export type ControlPlaneInput = {
  * `/turn-delivery` hands over the session creator's accounts, as the real
  * route does, and with `firstPartyMcp` on a fresh first-party MCP bearer the
  * real `/api/claxedo/mcp` route below admits until the session is deleted;
- * `/turn-execution` mints a machine token, and `/session-host-delete` deletes
- * the session for anyone but a viewer.
+ * `/turn-execution` mints a machine token while the machine runs, and
+ * otherwise refuses at once, starting a sleeping machine only when the call
+ * asks to and never one already starting; `/session-host-delete` deletes the
+ * session for anyone but a viewer.
  */
 export function controlPlaneStandIn(input: ControlPlaneInput) {
   const leaseSecret = crypto.getRandomValues(new Uint8Array(32))
   const leases = new Map<string, Lease>()
   const calls = {
     deliveries: [] as string[], executions: [] as string[], releases: [] as string[], deletes: [] as string[], renewals: 0, mcpBearers: [] as string[],
+    /** The turn each machine start was asked by. */
+    starts: [] as string[],
     /** Each usage report: the turn whose lease proved it and the facts it carried. */
     usage: [] as Array<{ turnId: string; released: boolean; facts: Record<string, unknown>[] }>,
     /** Each session rows publication: the turn whose lease was its bearer and the rows it carried. */
@@ -65,7 +69,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
   let deleted = false
   const control = {
     refuseRenewals: false, leaseTtlMs: 60_000, reservation: `op_${input.root}`, viewers: new Set<string>(),
-    executionUnavailable: false, deleteUnavailable: false, firstPartyMcp: false, toolGroups: ["sessions"],
+    machine: "running" as "running" | "asleep" | "starting", deleteUnavailable: false, firstPartyMcp: false, toolGroups: ["sessions"],
   }
 
   const mint = async (lease: Lease) => {
@@ -184,14 +188,24 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
         plugins: input.plugins(),
         providerDefinitions: [],
         ...(control.firstPartyMcp ? { firstPartyMcp: firstPartyMcp(new URL(c.req.url).origin) } : {}),
+        directory: input.machine().directory,
       }
       return c.json(delivery)
     })
     .post("/turn-execution", async (c) => {
-      const lease = await liveLease((await c.req.json<{ turnLease?: string }>()).turnLease)
+      const body = await c.req.json<{ turnLease?: string; start?: boolean }>()
+      const lease = await liveLease(body.turnLease)
       if (!lease) return refused(c, 401, "session_turn_lease_invalid")
       calls.executions.push(lease.turnId)
-      if (control.executionUnavailable) return c.json({ error: { code: "cloud_runtime_unavailable", retryAfterMs: 200 } }, 409)
+      if (control.machine !== "running") {
+        if (body.start !== true) return c.json({ error: { code: "cloud_runtime_unavailable" } }, 409)
+        const started = control.machine === "asleep"
+        if (started) {
+          control.machine = "starting"
+          calls.starts.push(lease.turnId)
+        }
+        return c.json({ error: { code: "cloud_runtime_starting", started } }, 409)
+      }
       const expiresAt = Date.now() + 600_000
       const runtimeAccessToken = await mintRuntimeAccessToken({
         principalKind: "user", actorId: lease.userId, userId: lease.userId, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,

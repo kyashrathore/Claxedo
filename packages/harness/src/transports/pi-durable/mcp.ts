@@ -41,7 +41,7 @@ export class PiMcpTools {
     if (Object.keys(fresh).length > 0) await this.host.record(key, { ...cached, ...fresh })
     const lists = { ...cached, ...fresh }
     const tools = servers.flatMap((server) => (lists[server.name] ?? []).map((tool) => this.tool(server, tool)))
-    this.listed = { key, tools }
+    if (servers.every((server) => Object.hasOwn(lists, server.name))) this.listed = { key, tools }
     return tools
   }
 

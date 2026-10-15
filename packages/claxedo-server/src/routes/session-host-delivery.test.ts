@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { decodeJwt, importPKCS8, SignJWT } from "jose"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
+import { sandboxRuntimeBootFailedError } from "@claxedo/sandbox-manager"
 import { parseTurnDelivery, parseTurnExecutionAccess } from "@claxedo/harness/contract"
 import { DIRECTORY, WORKSPACE_ID, sessionHostPlane, type SessionHostPlane } from "../test-support/session-host-plane"
 
@@ -143,6 +144,7 @@ describe("/turn-delivery", () => {
     })
     expect(delivery!.expiresAt).toBe(decodeJwt(lease.leaseId).authority_expires_at)
     expect(delivery!.firstPartyMcp?.name).toBe("claxedo")
+    expect(delivery!.directory).toBe(DIRECTORY)
 
     await release(proof, ROOT, lease)
     const released = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
@@ -237,14 +239,18 @@ describe("/turn-credential-refused", () => {
 })
 
 describe("/turn-execution", () => {
-  test("answers a provisioning machine with its retry, then a token for this session on that machine", async () => {
+  const NOT_RUNNING = { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "acquiring", retryAfterMs: 1_500 } as const
+
+  test("refuses a machine that is not running at once and starts nothing for a call that does not ask, then answers a token for this session on that machine", async () => {
     const root = "ses_pi_execution"
     const proof = await plane.createHostedSession(root)
     const lease = await plane.acquire(proof, root, "turn_execution")
-    plane.serve({ status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "acquiring", retryAfterMs: 1_500 })
+    plane.serve(NOT_RUNNING)
+    const starts = plane.starts.length
     const provisioning = await plane.post("/turn-execution", { turnLease: lease.leaseId })
     expect(provisioning.status).toBe(409)
-    expect(await provisioning.json()).toEqual({ error: { code: "cloud_runtime_unavailable", retryAfterMs: 1_500 } })
+    expect(await provisioning.json()).toEqual({ error: { code: "cloud_runtime_unavailable" } })
+    expect(plane.starts.length).toBe(starts)
 
     plane.serve({ status: "ready", workspaceId: WORKSPACE_ID, sandboxId: "sbx", url: "https://vm.test", hostId: VM_HOST, routingId: "route_1", epoch: 1, homeRegion: "us-east" })
     const answer = await plane.post("/turn-execution", { turnLease: lease.leaseId })
@@ -256,6 +262,41 @@ describe("/turn-execution", () => {
     })
     const jti = String(decodeJwt(access!.runtimeAccessToken).jti)
     expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
+  })
+
+  test("a call that asks starts a machine that is not running as the workspace's owner and answers at once that this call started it; a call while it starts joins that start", async () => {
+    const root = "ses_pi_execution_start"
+    const proof = await plane.createHostedSession(root)
+    const lease = await plane.acquire(proof, root, "turn_execution_start")
+    plane.serve(NOT_RUNNING)
+    const starts = plane.starts.length
+    plane.starting({ status: "provisioning", epoch: 2, retryAfterMs: 2_000, homeRegion: "us-east" })
+    const started = await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })
+    expect(started.status).toBe(409)
+    expect(await started.json()).toEqual({ error: { code: "cloud_runtime_starting", started: true } })
+    plane.starting({ status: "provisioning", epoch: 2, retryAfterMs: 2_000, homeRegion: "us-east", joined: true })
+    const joined = await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })
+    expect(await joined.json()).toEqual({ error: { code: "cloud_runtime_starting", started: false } })
+    expect(plane.starts.slice(starts)).toEqual([{ workspaceId: WORKSPACE_ID }, { workspaceId: WORKSPACE_ID }])
+    expect(plane.entitledOrgs.at(-1)).toBe(plane.orgId)
+  })
+
+  test("a start the plane refuses answers its reason: a boot that failed, a start that failed, the deployment's admission", async () => {
+    const root = "ses_pi_execution_start_refused"
+    const proof = await plane.createHostedSession(root)
+    const lease = await plane.acquire(proof, root, "turn_execution_start_refused")
+    plane.serve(NOT_RUNNING)
+    const refusal = async () => await (await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })).json()
+    plane.starting({ status: "unavailable", homeRegion: "us-east", retryAfterMs: 0, error: sandboxRuntimeBootFailedError("the branch main is gone") })
+    expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: the branch main is gone" } })
+    plane.starting({ status: "failed", code: "runtime_prepare_failed", message: "the settings could not be prepared" })
+    expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: the settings could not be prepared" } })
+    const starts = plane.starts.length
+    plane.entitle({ status: 402, body: { error: { code: "cloud_workspace_plan_required", message: "this organization's plan runs no cloud workspaces" } } })
+    try {
+      expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: this organization's plan runs no cloud workspaces" } })
+    } finally { plane.entitle(undefined) }
+    expect(plane.starts.length).toBe(starts)
   })
 
   test("a machine target the store refuses answers the store's refusal, never an anonymous failure", async () => {
