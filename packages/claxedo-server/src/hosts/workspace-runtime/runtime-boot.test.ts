@@ -416,7 +416,7 @@ describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot po
         assistant("msg_tail"),
       ]) options.onPresentationEvent!(event)
       await policy.endTurn?.(turn)
-      expect(await policy.releaseTurn!(turn)).toEqual({ released: true })
+      expect(await policy.releaseTurn!(turn)).toMatchObject({ released: true, usageProof: { proof: expect.any(String) } })
       options.onPresentationEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
 
       await options.onDrain!()
