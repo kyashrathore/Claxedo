@@ -26,8 +26,8 @@ afterAll(async () => {
   await miniflare?.dispose()
 })
 
-async function start(workspaceId: string): Promise<SandboxStartAnswer> {
-  const response = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}`, { method: "POST" })
+async function start(workspaceId: string, request: { retry?: true } = {}): Promise<SandboxStartAnswer> {
+  const response = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}${request.retry ? "&retry=1" : ""}`, { method: "POST" })
   expect(response.status).toBe(200)
   return (await response.json()) as SandboxStartAnswer
 }
@@ -164,13 +164,13 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_slow_1_left_asleep")).toBe(2)
   })
 
-  test("a step that throws after the lease went ready ends the run with that error, and the next start runs its own", async () => {
+  test("a step that throws after the lease went ready ends the run with that error, and a person's retry runs its own", async () => {
     expect(await start("ws_step_throws")).toMatchObject({ status: "provisioning", epoch: 1 })
     const thrown = await until(() => start("ws_step_throws"), (answer) => answer.status !== "provisioning")
     expect(thrown).toMatchObject({ status: "unavailable", error: "runtime_provision_failed: the runtime refused its settings", epoch: 1 })
     expect(await target("ws_step_throws")).toMatchObject({ status: "ready", epoch: 1 })
 
-    expect(await start("ws_step_throws")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await start("ws_step_throws", { retry: true })).toMatchObject({ status: "provisioning", epoch: 1 })
     expect(await until(() => start("ws_step_throws"), (answer) => answer.status !== "provisioning")).toMatchObject({ status: "ready", epoch: 1 })
     expect(await driverCalls("ws_step_throws")).toBe(2)
   })
@@ -274,14 +274,15 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_key_refused")).toBe(5)
   })
 
-  test("a start refused at the provider's daily start limit ends at once, its next poll is told why with no retry, and only the next start runs the driver again", async () => {
+  test("a start refused at the provider's daily start limit ends at once, every connect after it is told why with no retry, and only a person's retry runs the driver again", async () => {
     expect(await start("ws_day_limited_1")).toMatchObject({ status: "provisioning", epoch: 1 })
     const ended = await until(() => start("ws_day_limited_1"), (answer) => answer.status !== "provisioning")
     expect(ended).toMatchObject({ status: "unavailable", exhausted: true, error: expect.stringContaining("start limit for this account is used up (200 starts per day)") })
     expect(ended).not.toHaveProperty("retryAfterMs")
+    expect(await Promise.all([start("ws_day_limited_1"), start("ws_day_limited_1")])).toEqual([ended, ended])
     expect(await inFlight("ws_day_limited_1")).toBeNull()
     expect(await driverCalls("ws_day_limited_1")).toBe(1)
-    expect(await start("ws_day_limited_1")).toMatchObject({ status: "provisioning", epoch: 2 })
+    expect(await start("ws_day_limited_1", { retry: true })).toMatchObject({ status: "provisioning", epoch: 2 })
     expect(await until(() => start("ws_day_limited_1"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
     expect(await driverCalls("ws_day_limited_1")).toBe(2)
   })

@@ -108,6 +108,7 @@ const connectionBody = z
   .object({
     previousJti: z.string().optional(),
     session: z.object({ sessionId: z.string().min(1) }).strict().optional(),
+    retry: z.literal(true).optional(),
   })
   .strict()
   .refine((body) => !(body.previousJti && body.session), { message: "A session connection is minted fresh, never refreshed from a previous token" })
@@ -181,7 +182,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     ...options,
     requireSigned: true as const,
   })
-  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean; session?: { sessionId: string } } = {}) => {
+  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean; session?: { sessionId: string }; retry?: true } = {}) => {
     const workspaceId = routeParam(c, "id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
@@ -214,7 +215,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           ? await hostedSessionHostConnection(services, options, auth, { workspaceId, ...input.session })
           : input.readOnly
           ? await hostedConnectionStatus(services, options, auth, workspaceId)
-          : await hostedConnectionInfo(services, options, auth, workspaceId, { admission: createAdmission, usage: options.sandboxUsage }, input.previousJti)
+          : await hostedConnectionInfo(services, options, auth, workspaceId, { admission: createAdmission, usage: options.sandboxUsage }, {
+            ...(input.previousJti ? { previousJti: input.previousJti } : {}),
+            ...(input.retry ? { retry: input.retry } : {}),
+          })
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so

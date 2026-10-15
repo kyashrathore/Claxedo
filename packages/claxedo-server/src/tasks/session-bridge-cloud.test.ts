@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import {
   createSandboxManager,
+  SandboxProviderRateLimitedError,
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxManager,
@@ -475,6 +476,27 @@ describe("hosted tasks cloud roots", () => {
     // One sandbox, not a replacement: a second allocation would have burned a
     // lease epoch and left the first root's files behind.
     expect(await sandboxManager.list()).toMatchObject([{ workspaceId: root, epoch: 1 }])
+  })
+
+  test("a sandbox refused at the provider's daily start limit is refused with the reason a person is told, not the lease's coded error", async () => {
+    runtime()
+    const { driver } = fakeDriver()
+    const limited: SandboxDriver = {
+      ...driver,
+      ensureHost: async () => {
+        throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "the start limit is used up")
+      },
+    }
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: limited }))
+    const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, undefined, { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) })
+
+    const previewed = await kit.preview(previewCommand("tsk_limited"))
+    expect(previewed).toMatchObject({ ok: true, preview: { available: false } })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([{
+      code: "source_unavailable",
+      detail: `The cloud workspace for this attempt could not be provisioned: ${driver.id}'s start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: try again then. A wake counts as a start too.`,
+    }])
   })
 
   test("a sandbox that cannot be provisioned releases its lease and refuses the start, and the same attempt then starts on a fresh one", async () => {

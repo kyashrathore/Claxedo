@@ -43,7 +43,7 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
   composed = compose({
     sandbox: {
       leaseStore,
-      start: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).start(workspaceId),
+      start: (workspaceId, request) => sandboxProvisioner(input.provisioner, workspaceId).start(workspaceId, request),
       refresh: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).refresh(workspaceId),
       redeliver: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).redeliver(workspaceId),
       inFlight: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).inFlight(),

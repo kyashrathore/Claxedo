@@ -227,7 +227,9 @@ export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url)
     const workspaceId = url.searchParams.get("ws") ?? ""
-    if (url.pathname === "/start") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId))
+    if (url.pathname === "/start") {
+      return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId, url.searchParams.has("retry") ? { retry: true } : {}))
+    }
     if (url.pathname === "/refresh") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).refresh(workspaceId))
     if (url.pathname === "/redeliver") {
       await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).redeliver(workspaceId)

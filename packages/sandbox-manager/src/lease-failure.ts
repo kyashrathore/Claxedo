@@ -77,7 +77,7 @@ export type SandboxStartLimit = { window: SandboxStartWindow; limit: number; res
  * A driver throws this shape when its provider refused a start because the
  * account's start limit is used up. A minute's or an hour's limit is waited
  * out before the next attempt; a day's is not retried on its own, since every
- * attempt until it frees up is refused again, and a person's Retry runs it.
+ * attempt until it frees up is refused again, and a person trying again runs it.
  */
 export type SandboxProviderRateLimited = { providerRateLimited: SandboxStartLimit; message: string }
 
@@ -110,7 +110,7 @@ const PROVIDER_RATE_LIMITED = "provider_rate_limited:"
 export function sandboxProviderRateLimitedError(driver: string, limit: SandboxStartLimit) {
   const provider = isSandboxDriverID(driver) ? sandboxDriverLabels[driver] : driver
   const again = limit.window === "day"
-    ? "Sandboxes can start again once that daily limit frees a start: press Retry then."
+    ? "Sandboxes can start again once that daily limit frees a start: try again then."
     : `Claxedo tries again in ${limit.window === "minute" ? "a minute" : "an hour"}.`
   return `${PROVIDER_RATE_LIMITED}${limit.window}: ${provider}'s start limit for this account is used up (${limit.limit} starts per ${limit.window}). ${again}${limit.resumeCounts ? " A wake counts as a start too." : ""}`
 }

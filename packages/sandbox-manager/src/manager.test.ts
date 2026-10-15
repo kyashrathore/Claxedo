@@ -1178,7 +1178,7 @@ describe("sandbox manager", () => {
       }),
     })
     const manager = createSandboxManager({ leaseStore: store, driver, now: () => 10_000, retryDelayMs: () => 1_000, maxRetryCount: 2, onLifecycle: (event) => events.push(event) })
-    const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: press Retry then. A wake counts as a start too."
+    const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: try again then. A wake counts as a start too."
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       const answer = await manager.ensure("ws_1", { homeRegion: "us-east" })

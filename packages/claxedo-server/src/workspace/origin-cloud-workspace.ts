@@ -1,4 +1,4 @@
-import type { SandboxBrokeredSecret, SandboxDriver, SandboxManagerInput } from "@claxedo/sandbox-manager"
+import { sandboxStartFailureReason, type SandboxBrokeredSecret, type SandboxDriver, type SandboxManagerInput } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { sha256Hex } from "@claxedo/helpers/crypto"
@@ -159,7 +159,7 @@ export async function allocateOriginCloudWorkspace(
   return {
     code: "source_unavailable",
     detail: ready.error
-      ? `The cloud workspace for this attempt could not be provisioned: ${ready.error}`
+      ? `The cloud workspace for this attempt could not be provisioned: ${sandboxStartFailureReason(ready.error)}`
       : "The cloud workspace for this attempt could not be provisioned",
   }
 }

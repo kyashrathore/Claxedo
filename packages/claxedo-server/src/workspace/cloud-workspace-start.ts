@@ -5,7 +5,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import type { CloudCreateAdmission, CloudCreateCaller, CloudCreateUsage } from "./cloud-create-admission"
 import { startElapsedMs } from "../connections/cloud-start-progress"
 import { apiError, captureWorkspaceTelemetry, type CloudWorkspaceEntitlementGate } from "./route-support"
-import type { SandboxStart, SandboxStartAnswer } from "./sandbox-start"
+import type { SandboxStart, SandboxStartAnswer, SandboxStartRequest } from "./sandbox-start"
 
 export type CloudStartDenial = {
   error: ReturnType<typeof apiError>
@@ -59,12 +59,12 @@ export async function startCloudWorkspace(
   start: SandboxStart,
   lease: FirstLease,
   caller: CloudCreateCaller,
-  input: { workspaceId: string; orgId: string | undefined; homeRegion?: ClaxedoRegion; current: SandboxTargetResult },
+  input: { workspaceId: string; orgId: string | undefined; homeRegion?: ClaxedoRegion; current: SandboxTargetResult; request?: SandboxStartRequest },
 ): Promise<CloudStartOutcome> {
   const { workspaceId } = input
   const meter = await firstLeaseMeter(services, lease, caller, input)
   if (meter && typeof meter !== "function") return meter
-  const started = await start(workspaceId)
+  const started = await start(workspaceId, input.request)
   if (started.status === "provisioning" && started.opened) {
     meter?.()
     await Promise.resolve(lease.usage?.recordLeaseTenant({ caller, workspaceId }))
