@@ -1,4 +1,5 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
+import { readD1CloudTurnUsageOwner } from "./cloud-turn-usage-owner"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority, WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
 import {
@@ -866,16 +867,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   async resolveCloudTurnUsageOwner(args: { sessionId: string; turnId: string }) {
     const sessionId = requireText(args.sessionId, "sessionId")
     const turnId = requireText(args.turnId, "turnId")
-    // An agent actor has no account, and a deleted workspace answers for no
-    // one: either leaves the usage unowned rather than guessed.
-    const turn = await this.database.prepare(`
-      select source.org_id, actor.user_id from session_turn_producers source
-      join actors actor on actor.actor_id = source.actor_id and actor.user_id is not null
-      join workspaces workspace on workspace.workspace_id = source.workspace_id
-        and workspace.deleted_at is null and workspace.backing = 'cloud-vm'
-      where source.session_id = ? and source.turn_id = ?
-    `).bind(sessionId, turnId).first<{ org_id: string; user_id: string }>()
-    return turn ?? undefined
+    return await readD1CloudTurnUsageOwner(this.database, sessionId, turnId)
   }
 
   async readSessionMessages(

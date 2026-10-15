@@ -348,6 +348,18 @@ describe("usage reports over the runtime session authority", () => {
     expect(filings).toEqual([{ messageId: "msg_continuation", turnId: "msg_user_1" }])
   })
 
+  test("a released turn's usage proof files nothing once its session was deleted, though its workspace lives", async () => {
+    const target = await plane()
+    await target.session("ses_deleted")
+    const lease = await target.acquire(target.owner, "ses_deleted", "msg_user_1")
+    const released = await (await target.post({ action: "turn_release", ...lease })).json() as { usageProof: { proof: string } }
+    await target.database.prepare("update sessions set deleted_at = ? where session_id = ?").bind(Date.now(), "ses_deleted").run()
+
+    const answer = await report(target, { ...lease, leaseId: released.usageProof.proof }, [reported({ messageId: "msg_after_delete" })])
+    expect(await answer.json()).toEqual({ results: [{ messageId: "msg_after_delete", revision: 2, status: "refused", code: "usage_owner_unresolved" }] })
+    expect(await target.ledger.current({ sessionId: "ses_deleted" })).toEqual([])
+  })
+
   test("a plane with no usage store answers a verified report as unavailable", async () => {
     const target = await plane({ usageWriter: false })
     await target.session("ses_unstored")
