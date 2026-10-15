@@ -3,6 +3,7 @@ import { decodeJwt, importPKCS8, SignJWT } from "jose"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 import { sandboxRuntimeBootFailedError } from "@claxedo/sandbox-manager"
 import { parseTurnDelivery, parseTurnExecutionAccess } from "@claxedo/harness/contract"
+import { ORG_ACCOUNT_UNAVAILABLE } from "@claxedo/agent-runtime-contract"
 import { DIRECTORY, WORKSPACE_ID, sessionHostPlane, type SessionHostPlane } from "../test-support/session-host-plane"
 
 let plane: SessionHostPlane
@@ -149,6 +150,22 @@ describe("/turn-delivery", () => {
     await release(proof, ROOT, lease)
     const released = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
     expect(released.status).toBe(401)
+  })
+
+  test("a provider the owner chose the organization's account for, where it has none, is handed over as that refusal instead of their own account", async () => {
+    const ownerId = plane.owner.principal!.userId
+    const accounts = plane.credentials(plane.orgId)
+    await accounts.setAccountSources(["anthropic"], "org", plane.orgId, ownerId)
+    try {
+      const proof = await hostProof("rat_delivery_org")
+      const lease = await plane.acquire(proof, ROOT, "turn_delivery_org")
+      const delivery = parseTurnDelivery(await (await plane.post("/turn-delivery", { turnLease: lease.leaseId })).json())
+      expect(delivery!.auth.accounts).toEqual({ [ownerId]: { anthropic: { unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE } } })
+      expect(delivery!.auth.direct?.[ownerId]?.anthropic).toBeUndefined()
+      await release(proof, ROOT, lease)
+    } finally {
+      await accounts.setAccountSources(["anthropic"], "own", plane.orgId, ownerId)
+    }
   })
 
   test("a machine's lease gets nothing for the session it serves", async () => {

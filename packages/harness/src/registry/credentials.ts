@@ -1,4 +1,4 @@
-import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, isHarnessId, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs,
+import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, ORG_ACCOUNT_UNAVAILABLE, isHarnessId, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs,
   piProviderSpending, type CredentialSnapshot, type PiLaunchProvider, type PromptModel, type ProviderProjection,
   type SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
@@ -24,6 +24,10 @@ export class CredentialSelectionError extends Error {
 }
 
 export function accountUnusable(reason: string) {
+  if (reason === ORG_ACCOUNT_UNAVAILABLE) {
+    return new CredentialSelectionError("account_unavailable",
+      "Your organization has no account for this provider, and this harness is set to use the organization's. Choose your own account for it in Settings → Models.", { reason })
+  }
   return new CredentialSelectionError("account_unavailable", "The account chosen for this harness can't be used here. Check it in Settings → Models.", { reason })
 }
 

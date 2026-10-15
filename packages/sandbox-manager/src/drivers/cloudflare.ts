@@ -29,7 +29,7 @@ import {
   type SandboxResource,
 } from "../contract"
 import { brokeredPlaceholderEnv } from "../egress-policy"
-import { SandboxRuntimeBootError } from "../lease-failure"
+import { SandboxProviderKeyRefusedError, SandboxRuntimeBootError } from "../lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { record, text } from "../json"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
@@ -284,7 +284,9 @@ export function createCloudflareSandboxDriver(
     }
     if (data.exited === true) throw new SandboxRuntimeBootError(text(data.error) ?? "The workspace runtime exited before it was ready")
     if (status >= 400 || !runtimeUrl) {
-      throw new Error(`Cloudflare ensure-runtime failed (${status}): ${text(data.error) ?? "no runtime url"}`)
+      const reason = `Cloudflare ensure-runtime failed (${status}): ${text(data.error) ?? "no runtime url"}`
+      // The sandbox Worker answers 401 and 403 to the bearer token, which is the organization's key.
+      throw status === 401 || status === 403 ? new SandboxProviderKeyRefusedError(reason) : new Error(reason)
     }
     const targetOut: SandboxTarget = {
       workspaceId: input.workspaceId,

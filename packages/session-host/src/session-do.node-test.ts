@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite"
 import { after, afterEach, before, describe, it } from "node:test"
 import { generateKeyPair } from "jose"
 import type { PluginProjection, RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
+import { ORG_ACCOUNT_UNAVAILABLE, type ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../harness/e2e/harness/scripted-model-server"
 import { eventually } from "../../harness/e2e/harness/eventually"
@@ -116,11 +117,11 @@ void describe("SessionDO under workerd with PiHarness", () => {
   const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key" }
   const openai = (secret: string) => ({ openai: { delivery: "direct" as const, baseUrl: model.url, apiPath: "/v1", secret, authKind: "api-key" as const, account: OPENAI_ACCOUNT } })
 
-  async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>> } = {}) {
+  async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>>; refused?: Record<string, Record<string, ProviderUnavailable>> } = {}) {
     const creator = options.creator ?? OWNER
     const controlPlane = controlPlaneStandIn({
       root, relayHostKey: relayHost.publicKey, runtimeAccessKey: runtimeAccess.privateKey,
-      accounts: () => options.accounts ?? { [OWNER]: openai(SECRET) }, plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
+      accounts: () => options.accounts ?? { [OWNER]: openai(SECRET) }, ...(options.refused ? { refused: () => options.refused! } : {}), plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
       workspaceSessions: () => [{ id: "ses_listed_on_machine", title: "WORKSPACE_SESSION_ROW" }],
       sessionHost: () => (path, init) => sessionHostClient(worker, { root, relayHostSigningKey: relayHost.privateKey, user: creator }).request(path, init),
     })
@@ -605,6 +606,19 @@ void describe("SessionDO under workerd with PiHarness", () => {
     }, 30_000)
     assert.match(refused, /No account is chosen for this harness/)
     assert.equal(model.requests.slice(answered).some((request) => request.prompt.includes("PIBARE")), false)
+  })
+
+  void it("a creator who chose the organization's account where it has none is told that, and spends nothing", { timeout: 120_000 }, async () => {
+    const creator = "user_org_source"
+    const host = await session("ses_org_source", { creator, accounts: {}, refused: { [creator]: { openai: { unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE } } } })
+    const answered = model.requests.length
+    await host.prompt("msg_org_source", "Reply with exactly this one token: PIORGSOURCE")
+    const refused = await eventually("the turn refused for the organization's missing account", async () => {
+      const reply = (await host.messages()).find((message) => message.info.role === "assistant" && message.info.time?.completed)
+      return reply ? JSON.stringify(reply.info) : undefined
+    }, 30_000)
+    assert.match(refused, /Your organization has no account for this provider/)
+    assert.equal(model.requests.slice(answered).some((request) => request.prompt.includes("PIORGSOURCE")), false)
   })
 
   void it("is refused what the control plane refuses: a create its reservation does not name, a viewer's turn and delete", { timeout: 120_000 }, async () => {

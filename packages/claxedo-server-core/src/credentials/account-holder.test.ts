@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest"
 import { selectSessionCredentials } from "@claxedo/harness/registry"
 import { LOCAL_USER_ID } from "../platform/auth/local-identity"
-import { selectedAccounts, spendsAccount, ORG_ACCOUNT_UNAVAILABLE, type AccountSelections } from "./account-holder"
+import { ORG_ACCOUNT_UNAVAILABLE } from "@claxedo/agent-runtime-contract"
+import { selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
 
 const own = (person: string) => ({ baseUrl: `https://${person}.example`, placeholder: person, authMode: "api-key" as const })
 const ORG = own("org")

@@ -50,7 +50,7 @@ function rig() {
     authConfig,
     resolveOrgId: async () => org,
     credentials: store,
-    changed: async (orgId) => void changes.push(orgId),
+    change: async (orgId) => async () => void changes.push(orgId),
     keys: envelopeKeyProviderFromEnv(env),
     fetch: deviceLogin,
     telemetry: { capture: (distinctId, event, properties) => void captured.push({ distinctId, event, properties }) },

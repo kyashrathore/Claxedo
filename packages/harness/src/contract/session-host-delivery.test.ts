@@ -34,6 +34,11 @@ test("a turn delivery names the session's directory on the workspace machine, an
   expect(parseTurnDelivery({ ...delivery, directory: "" })).toBeUndefined()
 })
 
+test("a turn delivery carries the refusal of a provider whose account it cannot hand over", () => {
+  const refused = { ...delivery, auth: { ...delivery.auth, accounts: { owner: { openai: { unavailable: true as const, reason: "org_account_unavailable" } } } } }
+  expect(parseTurnDelivery(JSON.parse(JSON.stringify(refused)))).toEqual(refused)
+})
+
 test("a turn delivery carrying brokered accounts, an unknown field or no expiry is refused", () => {
   const binding = { baseUrl: "https://broker.example", placeholder: "p", authMode: "api-key" }
   expect(parseTurnDelivery({ ...delivery, auth: { ...delivery.auth, accounts: { owner: { anthropic: binding } } } })).toBeUndefined()

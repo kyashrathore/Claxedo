@@ -53,6 +53,8 @@ export type SandboxProvisionerStub = {
   start(workspaceId: string): Promise<SandboxStartAnswer>
   /** A re-delivery of what the sandbox runs with: begins or joins a run even for a sandbox that is live. */
   refresh(workspaceId: string): Promise<SandboxStartAnswer>
+  /** A settings push to a serving sandbox with no driver step and no run; a run in flight delivers them as it settles. */
+  redeliver(workspaceId: string): Promise<void>
   /** The run in flight, which a read answers instead of asking a runtime the run is replacing; begins nothing. */
   inFlight(): Promise<SandboxStartAnswer | undefined>
 }
@@ -68,6 +70,7 @@ export function sandboxProvisioner(namespace: SandboxProvisionerNamespace, works
   return {
     start: (id) => timed("do", () => stub.start(id)),
     refresh: (id) => timed("do", () => stub.refresh(id)),
+    redeliver: (id) => timed("do", () => stub.redeliver(id)),
     inFlight: () => timed("do", () => stub.inFlight()),
   }
 }

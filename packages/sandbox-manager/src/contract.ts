@@ -598,7 +598,15 @@ export type SandboxEnsureResult =
       stale?: true
     })
   | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: SandboxRegion; bootMode?: SandboxBootMode }
-  | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: SandboxRegion }
+  | {
+      status: "unavailable"
+      retryAfterMs?: number
+      error?: string
+      epoch?: number
+      homeRegion: SandboxRegion
+      /** The start's retry budget is spent: `retryAfterMs` is the cooldown every start waits out, which nothing drives. */
+      exhausted?: true
+    }
 
 export type SandboxTargetResult =
   | ({ status: "ready" } & SandboxTarget & {

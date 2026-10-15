@@ -6,6 +6,7 @@ import {
   type SandboxManagerInput,
   type SandboxTarget,
 } from "@claxedo/sandbox-manager"
+import { createMemoryLeaseStore, sandboxLease } from "@claxedo/sandbox-manager/stores/memory"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
@@ -13,7 +14,7 @@ import { sandboxStartPhaseSink } from "./sandbox-telemetry"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
 import { d1Authority } from "../test-support/d1-authority"
 import { orgSandboxDrivers, SandboxProviderKeyMissingError } from "./org-sandbox-drivers"
-import { createOrgSandboxManager, SANDBOX_KEY_LABEL, SANDBOX_ORG_LABEL } from "./org-sandbox-manager"
+import { createOrgSandboxManager, liftOrgKeyRetryWaits, SANDBOX_KEY_LABEL, SANDBOX_ORG_LABEL } from "./org-sandbox-manager"
 import { createD1SandboxLeaseStore } from "./stores/d1"
 import { d1OrgSandboxDriver } from "./stores/d1-org-driver"
 
@@ -227,5 +228,36 @@ describe("sweeping orphaned sandboxes across keys", () => {
     const blind = await manager.garbageCollect()
     expect(blind.kept.map((target) => target.sandboxId)).toEqual([`${cloudflareAccount}-ws_cloudflare`])
     expect(blind.unreachable).toEqual([{ driver: "boat", error: "The sandbox provider key this workspace was created with has been removed" }])
+  })
+})
+
+describe("a change to an organization's sandbox key", () => {
+  test("lifts the retry wait of every start on that key or with no machine yet, and of no other organization's or key's", async () => {
+    const waiting = (workspaceId: string, org: string, key: string, sandboxId?: string) => sandboxLease({
+      workspaceId,
+      status: "unavailable",
+      retryCount: 5,
+      nextRetryAt: Date.now() + 600_000,
+      lastError: "Boat refused the sandbox provider key",
+      labels: { [SANDBOX_KEY_LABEL]: key, [SANDBOX_ORG_LABEL]: org },
+      ...(sandboxId ? { sandboxId, hostId: `host-${workspaceId}` } : {}),
+    })
+    const store = createMemoryLeaseStore([
+      waiting("ws_on_key", "org_a", "key_boat", "bx_on_key"),
+      waiting("ws_no_machine", "org_a", "key_cloudflare"),
+      waiting("ws_other_key", "org_a", "key_cloudflare", "cf_other_key"),
+      waiting("ws_other_org", "org_b", "key_boat", "bx_other_org"),
+    ])
+
+    await liftOrgKeyRetryWaits(store, "org_a", "key_boat")
+
+    const retry = async (workspaceId: string) => {
+      const lease = await store.get(workspaceId)
+      return { retryCount: lease?.retryCount, nextRetryAt: lease?.nextRetryAt }
+    }
+    expect(await retry("ws_on_key")).toEqual({ retryCount: 0, nextRetryAt: undefined })
+    expect(await retry("ws_no_machine")).toEqual({ retryCount: 0, nextRetryAt: undefined })
+    expect(await retry("ws_other_key")).toMatchObject({ retryCount: 5, nextRetryAt: expect.any(Number) })
+    expect(await retry("ws_other_org")).toMatchObject({ retryCount: 5, nextRetryAt: expect.any(Number) })
   })
 })

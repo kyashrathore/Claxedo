@@ -285,6 +285,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         provisionedRunner: provisionedRunner(input.env),
         ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
         sandboxRefresh: sandbox.refresh,
+        sandboxRedeliver: sandbox.redeliver,
         idleStop: hostedWorkspaceIdleStop(plane.services),
       })
     : undefined
@@ -306,12 +307,13 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         settingsChanged: delivery.settingsChanged,
         draftCredentials: delivery.credentialSnapshot,
         accountSetup: {
-          changed: delivery.reconcileCredentialDelivery,
+          change: delivery.credentialChange,
           sandboxDriverKeys: hostedSandboxDriverKeys({
             database: input.controlPlaneDatabase,
             authority,
             drivers: sandbox.keys.drivers,
             hostedBroker: broker !== undefined,
+            leaseStore: sandbox.leaseStore,
             ...(input.now ? { now: input.now } : {}),
           }),
         },

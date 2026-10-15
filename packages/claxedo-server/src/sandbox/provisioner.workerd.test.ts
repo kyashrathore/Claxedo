@@ -50,6 +50,14 @@ async function driverCalls(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/driver-calls?ws=${workspaceId}`)).json()) as { calls: number }).calls
 }
 
+async function redeliver(workspaceId: string) {
+  expect((await miniflare.dispatchFetch(`${ORIGIN}/redeliver?ws=${workspaceId}`, { method: "POST" })).status).toBe(200)
+}
+
+async function fixKey(workspaceId: string) {
+  return ((await (await miniflare.dispatchFetch(`${ORIGIN}/fix-key?ws=${workspaceId}`, { method: "POST" })).json()) as { lifted: boolean }).lifted
+}
+
 async function renewals(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/renewals?ws=${workspaceId}`)).json()) as { renewals: number }).renewals
 }
@@ -177,6 +185,18 @@ describe("a sandbox start on workerd", () => {
     expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
   })
 
+  test("a redelivery pushes a serving sandbox's settings at once, with no driver step and no run a read would see", async () => {
+    await start("ws_renew_1")
+    await until(() => target("ws_renew_1"), (lease) => lease.status === "ready")
+    expect(await until(() => renewals("ws_renew_1"), (count) => count >= 1)).toBe(1)
+
+    await redeliver("ws_renew_1")
+    expect(await renewals("ws_renew_1")).toBe(2)
+    expect(await inFlight("ws_renew_1")).toBeNull()
+    expect(await driverCalls("ws_renew_1")).toBe(1)
+    expect(await start("ws_renew_1")).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
   test("a ready sandbox whose host reads no idleness has it read from the alarm until a read stops it, and the next start resumes it", async () => {
     await start("ws_watch_3")
     await until(() => target("ws_watch_3"), (lease) => lease.status === "ready")
@@ -229,6 +249,29 @@ describe("a sandbox start on workerd", () => {
     expect(await until(() => target("ws_flaky"), (lease) => lease.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
     expect(await driverCalls("ws_flaky")).toBe(2)
     expect(await until(() => start("ws_flaky"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
+  })
+
+  test("a start that spends its retry budget ends with the provider's refusal, every start in the cooldown is told it with less time left, and a fixed key starts the next at once", async () => {
+    const reason = "scripted refused the sandbox provider key: the key was rejected (unauthorized). Fix the key in Settings → Sandbox providers."
+    expect(await start("ws_key_refused")).toMatchObject({ status: "provisioning", epoch: 1 })
+    const exhausted = await until(() => start("ws_key_refused"), (answer) => answer.status !== "provisioning")
+    expect(exhausted).toMatchObject({ status: "unavailable", exhausted: true, error: reason, epoch: 4 })
+    expect(await inFlight("ws_key_refused")).toBeNull()
+    expect(await driverCalls("ws_key_refused")).toBe(4)
+    const first = (exhausted as { retryAfterMs: number }).retryAfterMs
+    expect(first).toBeGreaterThan(50_000)
+    expect(first).toBeLessThanOrEqual(60_000)
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const later = await start("ws_key_refused")
+    expect(later).toMatchObject({ status: "unavailable", exhausted: true, error: reason })
+    expect((later as { retryAfterMs: number }).retryAfterMs).toBeLessThan(first)
+    expect(await driverCalls("ws_key_refused")).toBe(4)
+
+    expect(await fixKey("ws_key_refused")).toBe(true)
+    expect(await start("ws_key_refused")).toMatchObject({ status: "provisioning", epoch: 5 })
+    expect(await until(() => start("ws_key_refused"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 5 })
+    expect(await driverCalls("ws_key_refused")).toBe(5)
   })
 
   test("while a run waits out a failed step's retry, every poll that joins it is told that step's failure, and a step that succeeds clears it", async () => {

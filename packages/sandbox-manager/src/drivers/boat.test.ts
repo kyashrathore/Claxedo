@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
-import { createSandboxManager, isSandboxHostGone, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -1091,6 +1091,15 @@ describe("boat sandbox driver", () => {
       expect(() => createBoatSandboxDriver({ apiKey: "k", image: IMAGE, baseUrl })).toThrow(/HTTPS/)
     }
   })
+
+  test.each([[401, "unauthorized", true], [403, "forbidden", true], [404, "not_found", false], [500, "internal", false]] as const)(
+    "a %s from Boat is a refusal of its key only when it is 401 or 403",
+    async (status, code, refused) => {
+      const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => Response.json({ ok: false, code, message: code }, { status }) })
+      const error = await driver.ensureHost(ensureInput()).then(() => undefined, (cause: unknown) => cause)
+      expect(isSandboxProviderKeyRefused(error)).toBe(refused)
+    },
+  )
 
   test.each([301, 302, 303, 307, 308])("a %s redirect is a refusal, never followed with the key", async (status) => {
     const calls: string[] = []

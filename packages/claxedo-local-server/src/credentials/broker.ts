@@ -38,7 +38,8 @@ import {
   type ProviderProjectionSource,
 } from "@claxedo/agent-runtime-contract"
 import { isSubscriptionKind } from "@claxedo/server-core/credentials/secret-material"
-import { ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
+import { selectedAccounts, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
+import { ORG_ACCOUNT_UNAVAILABLE } from "@claxedo/agent-runtime-contract"
 import { accountSelections } from "@claxedo/server-core/credentials/account-source"
 import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-runtime-contract"
 import {

@@ -10,14 +10,14 @@ import type { SandboxDriverID, SandboxMachineClass } from "@claxedo/sandbox-cont
 import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import type { ControlPlaneCredentials } from "../../authority/services"
-import { orgRoutedCredentials } from "./org-routed"
+import { orgRoutedCredentials, type CredentialChange } from "./org-routed"
 
 export type HostedCredentialRoutesInput = {
   authentication: RequestAuthenticationAdapter
   authConfig: ControlPlaneAuthConfig
   resolveOrgId(auth: SignedControlPlaneAuth): Promise<string>
   credentials: (orgId: string) => ControlPlaneCredentials
-  changed: (orgId: string) => Promise<void>
+  change: CredentialChange
   /** The plane's credential keys: a sign-in's callback can land on another Worker instance than its authorize did. */
   keys: EnvelopeKeyProvider
   fetch?: typeof fetch
@@ -33,6 +33,8 @@ export type HostedSandboxDriverKeys = {
   chosen(orgId: string): Promise<string | undefined>
   choose(auth: SignedControlPlaneAuth, orgId: string, driver: SandboxDriverID | undefined): Promise<void>
   remove(auth: SignedControlPlaneAuth, orgId: string, keyId: string): Promise<SandboxKeyRemoval>
+  /** The organization saved `keyId`: the workspace starts waiting out a failure it may have fixed run at once. */
+  changed(orgId: string, keyId: string): Promise<void>
   brokering(driver: SandboxDriverID): HarnessSecretDelivery | undefined
   machineClasses(driver: SandboxDriverID): readonly SandboxMachineClass[] | undefined
 }
@@ -45,6 +47,7 @@ function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: R
     chosenDriver: ({ org }) => keys.chosen(org),
     chooseDriver: async (request, { org }, driver) => keys.choose(await signed(request), org, driver),
     removeKey: async (request, { org }, keyId) => keys.remove(await signed(request), org, keyId),
+    keyChanged: ({ org }, keyId) => keys.changed(org, keyId),
     brokering: (driver) => keys.brokering(driver),
     machineClasses: (driver) => keys.machineClasses(driver),
   }
@@ -57,7 +60,7 @@ function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: R
  * claim the request carries.
  */
 export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
-  const credentials = orgRoutedCredentials(input.credentials, input.changed)
+  const credentials = orgRoutedCredentials(input.credentials, input.change)
   const signed = async (request: Request) => {
     const auth = await controlPlaneAuthContext(request, { authentication: input.authentication, config: input.authConfig })
     if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed authentication is required")

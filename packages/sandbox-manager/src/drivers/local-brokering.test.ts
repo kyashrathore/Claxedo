@@ -39,7 +39,7 @@ function sendConnect(proxy: URL, host: string) {
   })
 }
 
-test.skipIf(process.platform !== "darwin")("local broker keeps the key outside the runtime and withdraws it on ensure", async () => {
+test.skipIf(process.platform !== "darwin")("local broker keeps the key outside the runtime and withdraws it on ensure, from the runtime that keeps serving", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-broker-test-"))
   roots.push(root)
   const received: Array<{ authorization: string; url: string }> = []
@@ -101,7 +101,8 @@ test.skipIf(process.platform !== "darwin")("local broker keeps the key outside t
     const withdrawn = await driver.ensureHost({ ...ensure, secrets: [] })
     if ("provisioning" in withdrawn) throw new Error("local test driver did not return a withdrawn target")
     const withdrawnEnv = await (await fetch(withdrawn.url)).json() as Record<string, string>
-    expect(withdrawnEnv.MODEL_KEY).toBeUndefined()
+    expect(withdrawn.url).toBe(target.url)
+    expect(withdrawnEnv.MODEL_KEY).toBe(placeholder)
     expect(await sendProxy(new URL(withdrawnEnv.HTTP_PROXY), `${origin}/v1/messages`, `Bearer ${placeholder}`)).toBe(403)
     expect(received).toEqual([{ authorization: `Bearer ${key}`, url: "/v1/messages?proof=1" }, { authorization: `Bearer ${key}`, url: "/v1/messages" }])
     await driver.stop?.(withdrawn)

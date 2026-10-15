@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import { createSandboxManager, type SandboxDriver, type SandboxTarget } from "@claxedo/sandbox-manager"
+import { UNDELIVERED_CREDENTIAL_CHANGE } from "../credentials/worker/org-routed"
+import { createSandboxManager, SandboxProviderKeyRefusedError, type SandboxDriver, type SandboxTarget } from "@claxedo/sandbox-manager"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
@@ -45,6 +46,7 @@ function providerAccount(id: SandboxDriver["id"], name: string, accounts: Map<st
     ensureHost: async (input) => {
       account.entered?.()
       await account.gate
+      if (name.endsWith("-bad")) throw new SandboxProviderKeyRefusedError("Boat POST /sandboxes was rejected (unauthorized)")
       const target = { workspaceId: input.workspaceId, sandboxId: `${name}-${input.workspaceId}`, url: "https://runtime.test", hostId: `host-${input.workspaceId}`, labels: input.labels }
       account.live.push(target)
       return target
@@ -87,16 +89,16 @@ function plane() {
       credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
     }),
     workspaceOrg: async () => orgId,
-    manager: (driver) => createSandboxManager({ leaseStore, driver, onEgressUnenforced: () => {} }),
+    manager: (driver) => createSandboxManager({ leaseStore, driver, onEgressUnenforced: () => {}, maxRetryCount: 1 }),
   })
   const credentialsApp = hostedCredentialRoutes({
     authentication,
     authConfig,
     resolveOrgId: async () => orgId,
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
-    changed: async () => {},
+    change: UNDELIVERED_CREDENTIAL_CHANGE,
     keys: envelopeKeyProviderFromEnv(env),
-    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"], hostedBroker: false }),
+    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"], hostedBroker: false, leaseStore }),
   })
   const workspaceApp = HostedWorkspaceRoutes(
     { authority: fixture.authority, sandbox: { sandboxManager: sandboxes.manager }, telemetry: { capture: () => {} } } as unknown as ControlPlaneServices,
@@ -108,8 +110,8 @@ function plane() {
       headers: { authorization: "Bearer owner", "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
-  const addKey = async () => {
-    const saved = await credentials("", "PUT", { provider_id: "boat", kind: "sandbox_driver", secret: JSON.stringify({ api_key: "bx-org" }) })
+  const addKey = async (apiKey = "bx-org") => {
+    const saved = await credentials("", "PUT", { provider_id: "boat", kind: "sandbox_driver", secret: JSON.stringify({ api_key: apiKey }) })
     return (await saved.json() as { credential: { id: string } }).credential.id
   }
   const keys = async () => (await (await credentials("/sandbox-drivers")).json() as { keys: Array<{ id: string }> }).keys.map((key) => key.id)
@@ -210,5 +212,24 @@ describe("removing an organization's sandbox provider key", () => {
 
     expect(await rig.deleteWorkspace("ws_late")).toBe(200)
     expect(await rig.leaseStore.get("ws_late")).toBeUndefined()
+  })
+})
+
+describe("replacing an organization's sandbox provider key", () => {
+  test("a start the provider refused the key for is told so and waits out its cooldown; saving a working key lets the next start run at once", async () => {
+    const rig = plane()
+    const refusedKey = await rig.addKey("bx-bad")
+    await rig.create("ws_key_fixed")
+    expect(await rig.ensure("ws_key_fixed")).toMatchObject({
+      status: "unavailable",
+      exhausted: true,
+      error: "Boat refused the sandbox provider key: Boat POST /sandboxes was rejected (unauthorized). Fix the key in Settings → Sandbox providers.",
+    })
+    expect(await rig.ensure("ws_key_fixed")).toMatchObject({ status: "unavailable", exhausted: true })
+
+    expect(await rig.addKey("bx-org")).toBe(refusedKey)
+    expect(await rig.ensure("ws_key_fixed")).toMatchObject({ status: "ready" })
+    expect(rig.live(BOAT_ACCOUNT)).toEqual(["ws_key_fixed"])
+    expect(await rig.deleteWorkspace("ws_key_fixed")).toBe(200)
   })
 })

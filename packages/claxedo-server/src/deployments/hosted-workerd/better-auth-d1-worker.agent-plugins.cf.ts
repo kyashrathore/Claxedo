@@ -84,6 +84,7 @@ export function composeBetterAuthD1AgentPlugins(
     passes,
     ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged, pushRuntime: base.runtimeDelivery.provisionRuntime } : {}),
     ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
+    ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
   })
   const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
     const [basePreparation, featurePreparation] = await Promise.all([

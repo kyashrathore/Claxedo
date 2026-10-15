@@ -96,5 +96,3 @@ export function selectedAccounts<T>(input: {
   }
   return accounts
 }
-
-export const ORG_ACCOUNT_UNAVAILABLE = "org_account_unavailable"

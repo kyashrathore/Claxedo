@@ -20,9 +20,11 @@ import { createEgressWarnings } from "./egress-warnings"
 import { sweepSandboxes } from "./garbage-collect"
 import {
   isSandboxHostGone,
+  isSandboxProviderKeyRefused,
   isSandboxRuntimeBootFailure,
   sandboxHostGoneError,
   sandboxLeaseFailure,
+  sandboxProviderKeyRefusedError,
   sandboxRuntimeBootFailedError,
 } from "./lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
@@ -338,7 +340,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         return hostGone(workspaceId, lease, managerInput, message, enteredAt)
       }
       const bootFailed = isSandboxRuntimeBootFailure(err)
-      const error = bootFailed ? sandboxRuntimeBootFailedError(message) : message
+      const error = bootFailed
+        ? sandboxRuntimeBootFailedError(message)
+        : isSandboxProviderKeyRefused(err) ? sandboxProviderKeyRefusedError(options.driver.id, message) : message
       if (lease.status === "ready" && !bootFailed) {
         // A single resume blip must not demote a serving lease: the existing
         // ready target keeps resolving for relay routing while we record the
@@ -371,6 +375,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         error: recorded,
         epoch: lease.epoch,
         homeRegion,
+        ...(retryCapped ? { exhausted: true as const } : {}),
       }
     }
   }
@@ -475,6 +480,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         error: existing.lastError,
         epoch: existing.epoch,
         homeRegion: existing.homeRegion,
+        ...(existing.retryCount >= maxRetryCount ? { exhausted: true as const } : {}),
       }
     }
     if (existing.status === "unavailable" && existing.retryCount >= maxRetryCount && existing.nextRetryAt === undefined) {

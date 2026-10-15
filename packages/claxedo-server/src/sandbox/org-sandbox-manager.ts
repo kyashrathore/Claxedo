@@ -1,5 +1,6 @@
 import {
   applySandboxRuntimeSnapshot,
+  liftSandboxRetryWait,
   type SandboxDriver,
   type SandboxGarbageCollectResult,
   type SandboxLease,
@@ -148,6 +149,21 @@ export function createOrgSandboxManager(input: {
     orgDriver: async (orgId: string): Promise<SandboxDriver> => (await input.drivers.forOrg(orgId)).driver,
     orgSecretBrokering: (orgId: string): Promise<SandboxSecretBrokering> => input.drivers.secretBrokering(orgId),
   }
+}
+
+/**
+ * After the organization saved or chose `keyId`, the starts that were waiting
+ * out a failure run at once: each one on that key, and each one with no
+ * machine yet, which picks the organization's key again on its next start. A
+ * workspace whose machine is on another key goes on waiting, since the change
+ * did not touch the key it starts with.
+ */
+export async function liftOrgKeyRetryWaits(leaseStore: SandboxLeaseStore, orgId: string, keyId: string): Promise<void> {
+  const waiting = (await leaseStore.list()).filter((lease) => {
+    const recorded = recordedKey(lease)
+    return lease.status === "unavailable" && recorded?.orgId === orgId && (recorded.key === keyId || !machineKey(lease))
+  })
+  await Promise.all(waiting.map((lease) => liftSandboxRetryWait(leaseStore, lease.workspaceId)))
 }
 
 /** The key a lease was taken on. Absent only for a lease nothing wrote through this manager. */

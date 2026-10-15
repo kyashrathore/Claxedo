@@ -42,6 +42,7 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
       leaseStore,
       start: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).start(workspaceId),
       refresh: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).refresh(workspaceId),
+      redeliver: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).redeliver(workspaceId),
       inFlight: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).inFlight(),
       deliverSessionRowsPass: sessionRowsPasses.deliver,
       keys: { ...input.keyDrivers, chosenDriver: d1OrgSandboxDriver(input.database).chosen },
