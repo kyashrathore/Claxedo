@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { runtimeBootDiagnostic, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailedError, sandboxRuntimeBootFailure, workspaceRuntimeBootReason } from "./lease-failure"
+import { runtimeBootDiagnostic, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailedError, sandboxLeaseFailure, sandboxRuntimeBootFailure, sandboxStartFailureReason, workspaceRuntimeBootReason } from "./lease-failure"
+import type { SandboxLease } from "./contract"
 
 describe("the reason a person is told for a boot that failed", () => {
   const diagnostic = [
@@ -22,6 +23,12 @@ describe("the reason a person is told for a boot that failed", () => {
     expect(runtimeBootDiagnostic(`${"x".repeat(800)}\nStartup failed: bun install failed\n`, 600)).toBe(`${"x".repeat(565)}\nStartup failed: bun install failed`)
   })
 
+  test("a start step's error is told as the boot's reason, or as the driver's first line", () => {
+    expect(sandboxStartFailureReason(sandboxRuntimeBootFailedError(diagnostic))).toBe("The branch \"lane-b-no-such-branch\" does not exist in https://github.com/octocat/git-consortium")
+    expect(sandboxStartFailureReason("Boat bx_1 runtime image preparation failed (exit 1): mkdir: cannot create directory\n    at run (boat.ts:1:1)")).toBe("Boat bx_1 runtime image preparation failed (exit 1): mkdir: cannot create directory")
+    expect(sandboxStartFailureReason("provider hiccup")).toBe("provider hiccup")
+  })
+
   test("is the driver's whole diagnostic when the runtime never named one", () => {
     expect(workspaceRuntimeBootReason("the runtime container is exited; container diagnostics unavailable")).toBeUndefined()
     expect(sandboxRuntimeBootFailure(sandboxRuntimeBootFailedError("the image has no runtime"))).toBe("the image has no runtime")
@@ -34,4 +41,14 @@ test("a lease stopped, destroyed or replaced under a start step is not the start
   expect(sandboxLeaseEndedUnderStart("runtime_lease_not_ready")).toBe(false)
   expect(sandboxLeaseEndedUnderStart(sandboxRuntimeBootFailedError("no runtime"))).toBe(false)
   expect(sandboxLeaseEndedUnderStart(undefined)).toBe(false)
+})
+
+test("a lease that failed at the provider is told by the driver's first line, and one whose boot failed by the runtime's reason", () => {
+  const failed = (lastError: string): SandboxLease => ({
+    workspaceId: "ws_1", homeRegion: "us-east", driver: "boat", epoch: 2, status: "unavailable", retryCount: 1, nextRetryAt: 2_000, updatedAt: 0, createdAt: 0, lastError,
+  })
+  expect(sandboxLeaseFailure(failed("Boat bx_1 runtime image preparation failed (exit 1): no space left on device\n    at run (boat.ts:1:1)"), { now: 1_000, maxRetryCount: 5 }))
+    .toEqual({ kind: "provider", message: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device", retrying: true })
+  expect(sandboxLeaseFailure(failed(sandboxRuntimeBootFailedError("workspace_runtime_boot_failed: Error: The branch \"x\" does not exist in https://github.com/o/r\n    at checkOut (a.mjs:1:1)")), { now: 1_000, maxRetryCount: 5 }))
+    .toEqual({ kind: "boot", message: "The branch \"x\" does not exist in https://github.com/o/r", retrying: false })
 })

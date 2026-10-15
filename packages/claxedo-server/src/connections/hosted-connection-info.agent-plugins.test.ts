@@ -95,6 +95,21 @@ describe("Agent Plugins cloud readiness gate", () => {
     expect(signer).not.toHaveBeenCalled()
     expect(result).toMatchObject({ status: 409, error: { code: "runtime_provision_failed", message: "artifact corrupt" } })
   })
+
+  test("a start waiting out a provider failure's retry window says the failure, with the window; a lease that ended under the start says nothing of it", async () => {
+    const { services, signer, options } = subject([])
+    const retrying = await hostedConnectionInfo(services, options(async () => ({
+      status: "unavailable", retryAfterMs: 15_000, epoch: 2, homeRegion: "us-east", error: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device\n    at run (boat.ts:1:1)",
+    })), auth, "ws_1", LEASED)
+    expect(retrying).toEqual({ status: 409, error: { code: "cloud_runtime_unavailable", message: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device", retryAfterMs: 15_000, failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" } })
+
+    const ended = await hostedConnectionInfo(services, options(async () => ({ status: "unavailable", epoch: 2, homeRegion: "us-east", error: "runtime_lease_changed" })), auth, "ws_1", LEASED)
+    expect(ended).toEqual({ status: 409, error: { code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable", retryAfterMs: undefined } })
+
+    const joined = await hostedConnectionInfo(services, options(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 2, homeRegion: "us-east", joined: true, failure: "provider hiccup" })), auth, "ws_1", LEASED)
+    expect(joined).toEqual({ connection: { status: "provisioning", workspaceId: "ws_1", homeRegion: "us-east", retryAfterMs: 2_000, failure: "provider hiccup" } })
+    expect(signer).not.toHaveBeenCalled()
+  })
 })
 
 function machinePlacedSubject(order: string[]) {

@@ -90,6 +90,11 @@ export function sandboxRuntimeBootFailure(error: string | undefined) {
   return workspaceRuntimeBootReason(diagnostic) ?? diagnostic
 }
 
+/** The line a person is told for a start step's error: the runtime's own reason for a boot that failed, else the driver's first line. */
+export function sandboxStartFailureReason(error: string): string {
+  return sandboxRuntimeBootFailure(error) ?? error.split("\n", 1)[0]?.trim() ?? error
+}
+
 /** The error a lease keeps when the runtime it serves stopped answering its health reports. */
 export const SANDBOX_RUNTIME_UNHEALTHY = "runtime_unhealthy"
 
@@ -113,7 +118,7 @@ export function sandboxLeaseFailure(
   const kind = boot !== undefined ? "boot" : lease.lastError === SANDBOX_RUNTIME_UNHEALTHY ? "unhealthy" : "provider"
   const retrying = kind !== "boot" && lease.retryCount < input.maxRetryCount
     && lease.nextRetryAt !== undefined && lease.nextRetryAt > input.now
-  return { kind, message: boot ?? lease.lastError, retrying }
+  return { kind, message: sandboxStartFailureReason(lease.lastError), retrying }
 }
 
 /**

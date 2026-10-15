@@ -27,7 +27,7 @@ function subject() {
     telemetry: { capture: vi.fn() },
   } as unknown as ControlPlaneServices
   const runtimeProvisioned = vi.fn(async () => true)
-  const options = (inFlight: () => Promise<{ status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: string; bootMode?: "resume" } | undefined>) => ({
+  const options = (inFlight: () => Promise<{ status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: string; bootMode?: "resume"; failure?: string } | undefined>) => ({
     defaultHomeRegion: "us-east",
     relayUrl: "wss://relay.test",
     runtimeAccessTokenSigner: async () => ({ runtimeAccessToken: "runtime-token", tokenExpiresAt: Date.now() + 60_000, jti: "jti_1" }),
@@ -43,6 +43,22 @@ describe("a connection read while a sandbox start is in flight", () => {
     const result = await hostedConnectionStatus(services, options(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east", bootMode: "resume" })), auth, "ws_1")
     expect(result).toEqual({ connection: { status: "provisioning", workspaceId: "ws_1", homeRegion: "us-east", retryAfterMs: 2_000, bootMode: "resume" } })
     expect(runtimeProvisioned).not.toHaveBeenCalled()
+  })
+
+  test("carries the failure the run is retrying, as its readable line, so a poller can say why the start is taking long", async () => {
+    const { services, options } = subject()
+    const result = await hostedConnectionStatus(services, options(async () => ({
+      status: "provisioning", retryAfterMs: 2_000, epoch: 2, homeRegion: "us-east", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device\n    at run (boat.ts:1:1)",
+    })), auth, "ws_1")
+    expect(result).toEqual({ connection: { status: "provisioning", workspaceId: "ws_1", homeRegion: "us-east", retryAfterMs: 2_000, failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" } })
+  })
+
+  test("a lease waiting out its own retry window reads provisioning with the failure it retries", async () => {
+    const { services, options } = subject()
+    const target = services.sandbox.sandboxManager?.target as unknown as ReturnType<typeof vi.fn>
+    target.mockResolvedValueOnce({ status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "unavailable", retryAfterMs: 15_000, failure: { kind: "provider", message: "quota exceeded", retrying: true } })
+    const result = await hostedConnectionStatus(services, options(async () => undefined), auth, "ws_1")
+    expect(result).toEqual({ connection: { status: "provisioning", workspaceId: "ws_1", homeRegion: "us-east", failure: "quota exceeded", retryAfterMs: 15_000 } })
   })
 
   test("mints off the ready, provisioned runtime once no run is in flight", async () => {
