@@ -12,6 +12,7 @@ import { DraftTranscript } from "./draft-transcript"
 import { createFirstSend, type FirstSendAttempt } from "./first-send"
 import { FirstSendNotice } from "./first-send-notice"
 import { PlacementNotice } from "./placement-notice"
+import { sessionHarnessLabel } from "./session-harness-label"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
 import "./session-screen.css"
@@ -26,9 +27,9 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
   let pane: HTMLDivElement | undefined
-  const [sent, setSent] = createSignal<SentPrompt>()
+  const [sent, setSent] = createSignal<{ readonly prompt: SentPrompt; readonly harness: string | undefined }>()
   const sentMessage = createMemo(() => {
-    const prompt = sent()
+    const prompt = sent()?.prompt
     return prompt && pendingMessage("", prompt)
   })
   const [started, setStarted] = createSignal<SessionView>()
@@ -63,7 +64,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   }
   const startSession = async (submission: Submission, input: PromptInput): Promise<SessionView | undefined> => {
     const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
-    setSent(prompt)
+    setSent({ prompt, harness: submission.harness })
     const view = await firstSend.run(attempt(submission, prompt), { landed })
     if (!view) setSent(undefined)
     return view
@@ -75,7 +76,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
         <div ref={pane} class="relative flex size-full flex-col overflow-hidden bg-background-base">
           <Show when={sentMessage()} fallback={<div aria-hidden="true" class="h-[calc(34%+4.25rem)] shrink-0" />}>
             {(message) => (
-              <DraftTranscript message={message()} placementId={where()} thinking={thinking()} />
+              <DraftTranscript message={message()} harnessLabel={sessionHarnessLabel(sent()?.harness)} placementId={where()} thinking={thinking()} />
             )}
           </Show>
           <div classList={{ "flex shrink-0 justify-center": true, "px-6": !sent(), "pointer-events-none pb-3": !!sent() }}>

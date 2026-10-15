@@ -25,7 +25,7 @@ function DraftTranscriptRow(props: { readonly centered: boolean; readonly childr
   )
 }
 
-export function DraftTranscript(props: { readonly message: OptimisticUserMessage; readonly placementId: PlacementId; readonly thinking: boolean }) {
+export function DraftTranscript(props: { readonly message: OptimisticUserMessage; readonly harnessLabel: string | undefined; readonly placementId: PlacementId; readonly thinking: boolean }) {
   const server = useServer()
   const phone = usePhone()
   const preferences = usePreferences()
@@ -33,7 +33,7 @@ export function DraftTranscript(props: { readonly message: OptimisticUserMessage
   const t = timelineText(useSessionScreenText())
   return (
     <TranscriptKitProviders>
-      <DataProvider directory={server.placements.byId(props.placementId)?.path ?? ""}>
+      <DataProvider directory={server.placements.byId(props.placementId)?.path ?? ""} harnessLabel={props.harnessLabel}>
         <div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden" style={transcriptTypographyStyle(resolveTranscriptTypography(typography()))}>
           <div aria-hidden="true" class="flex-1" />
           <DraftTranscriptRow centered={!phone()}>

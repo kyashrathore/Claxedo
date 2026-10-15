@@ -34,7 +34,8 @@ export type AgentUserMessage = {
     body?: string
     diffs: AgentSnapshotFileDiff[]
   }
-  agent: string
+  /** Present only when the prompt named an engine agent; a harness with no agent concept sends none. */
+  agent?: string
   /** Absent when the connection owns model selection. */
   model?: AgentModelRef
   system?: string

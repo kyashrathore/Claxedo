@@ -8,6 +8,7 @@ import { DataProvider, TranscriptKitProviders, type SubagentStopAnswer, type Tra
 import { MessageTimeline, type SessionErrorClass, type TimelineHost, type TimelineNavTurn } from "./timeline"
 import type { QueuedMessages } from "./timeline/model"
 import type { TimelineScroll } from "./timeline-scroll"
+import { sessionHarnessLabel } from "./session-harness-label"
 import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
 import "./transcript-kit.css"
@@ -49,6 +50,7 @@ export function SessionTimeline(props: {
     <TranscriptKitProviders>
       <DataProvider
         directory={props.host.placementPath}
+        harnessLabel={sessionHarnessLabel(props.view.row()?.harness)}
         onNavigateToSession={props.host.navigation.toSession}
         onSessionHref={(id) =>
           sessionLinkPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) }, server.placements.byId(props.view.ref.placementId))

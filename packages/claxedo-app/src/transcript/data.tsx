@@ -27,6 +27,7 @@ export type SubagentStopAnswer = { ok: true } | { ok: false; message: string }
 
 export type DataProviderProps = {
   directory: string
+  harnessLabel?: string
   onNavigateToSession?: NavigateToSessionFn
   onSessionHref?: SessionHrefFn
   onTaskHref?: TaskHrefFn
@@ -42,6 +43,9 @@ function transcriptData(props: DataProviderProps) {
   return {
     get directory() {
       return props.directory
+    },
+    get harnessLabel() {
+      return props.harnessLabel
     },
     navigateToSession: props.onNavigateToSession,
     sessionHref: props.onSessionHref,
