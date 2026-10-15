@@ -779,6 +779,20 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(existsSync(path.join(directory, "asleep-stop.txt")), false)
   })
 
+  void it("a tool call whose machine start failed answers at once that it could not start, why, and when it can be tried again, with no hold and no call-again", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const host = await session("ses_asleep_refused")
+    const control = host.controlPlane.control
+    control.machine = "asleep"
+    control.startRefusal = { message: "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests", retryAfterMs: 30_000 }
+    const asked = Date.now()
+    const state = await writeTool(host)("PIASLEEPREFUSED")
+    assert.equal(state?.status, "error", JSON.stringify(state))
+    assert.equal(state?.error, "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests. It can be tried again in about 30 s.")
+    assert.ok(Date.now() - asked < 15_000)
+    assert.equal(host.controlPlane.calls.executions.filter((turn) => turn === "msg_PIASLEEPREFUSED").length, 1)
+  })
+
   void it("a tool call whose machine is not up within its hold answers that this call started it and how long it has been starting, starts it no second time, and runs the tool once it runs", { timeout: 120_000 }, async () => {
     plugins = NO_PLUGINS
     const host = await session("ses_asleep_tool")

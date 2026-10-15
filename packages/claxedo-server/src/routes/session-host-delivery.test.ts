@@ -321,6 +321,24 @@ describe("/turn-execution", () => {
     expect(plane.starts.length).toBe(starts)
   })
 
+  test("a start that failed and is backing off is refused with the provider's reason and when it is tried again, never answered as starting", async () => {
+    const root = "ses_pi_execution_start_backoff"
+    const proof = await plane.createHostedSession(root)
+    const lease = await plane.acquire(proof, root, "turn_execution_start_backoff")
+    plane.serve(NOT_RUNNING)
+    const refusal = async () => await (await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })).json()
+    plane.starting({ status: "unavailable", homeRegion: "us-east", epoch: 3, retryAfterMs: 30_000, error: "boat_rate_limited: 429 Too Many Requests\nretry later" })
+    expect(await refusal()).toEqual({ error: {
+      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests", retryAfterMs: 30_000,
+    } })
+    plane.starting({ status: "unavailable", homeRegion: "us-east", epoch: 3, error: "runtime_lease_stopped" })
+    expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: it was stopped or replaced while it started" } })
+    plane.starting({ status: "provisioning", epoch: 3, retryAfterMs: 12_000, homeRegion: "us-east", joined: true, failure: "boat_rate_limited: 429 Too Many Requests" })
+    expect(await refusal()).toEqual({ error: {
+      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests", retryAfterMs: 12_000,
+    } })
+  })
+
   test("a machine target the store refuses answers the store's refusal, never an anonymous failure", async () => {
     const root = "ses_pi_execution_refused"
     const proof = await plane.createHostedSession(root)
