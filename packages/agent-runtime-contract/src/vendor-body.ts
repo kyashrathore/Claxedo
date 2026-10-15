@@ -25,7 +25,7 @@ export function vendorBody(text: string): VendorBody {
 function parseDocument(text: string): Record<string, unknown> | undefined {
   try {
     const value: unknown = JSON.parse(text)
-    return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
+    return isDocument(value) ? value : undefined
   } catch {
     return undefined
   }
@@ -38,3 +38,7 @@ function parseDocument(text: string): Record<string, unknown> | undefined {
  */
 export const EDGE_REFUSED_MESSAGE =
   "The model provider refused the connection from this host and answered with a block page instead of its API; the account itself was not refused"
+
+function isDocument(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
