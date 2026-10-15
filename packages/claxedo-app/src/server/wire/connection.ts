@@ -18,9 +18,11 @@ export type ConnectionAnswer =
   | { readonly kind: "stopped" }
   | { readonly kind: "failed"; readonly reason: string }
 
+export type StartRequest = { readonly retry?: true }
+
 export type WorkspaceConnections = {
   readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
-  readonly start: (workspaceId: string) => Promise<ConnectionAnswer>
+  readonly start: (workspaceId: string, request?: StartRequest) => Promise<ConnectionAnswer>
   readonly mintSession: (workspaceId: string, sessionId: string) => Promise<ConnectionAnswer>
 }
 

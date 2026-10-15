@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers"
 import { sandboxLeaseEndedUnderStart, sandboxProviderRateLimit, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
-import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox-start"
+import type { SandboxStartAnswer, SandboxStartDrive, SandboxStartRequest } from "../workspace/sandbox-start"
 
 /** `failure` is the error of the last step that failed and is being retried; a step that succeeds or ends the run clears it. */
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number; failure?: string }
@@ -28,11 +28,10 @@ const FOLLOW_UP_KEYS: readonly FollowUpKey[] = ["renewal", "watch"]
 const START_WALL_MS = 15 * 60_000
 
 /**
- * How long a settled outcome waits for the poller whose start began the run.
- * A poller comes back within its retryAfterMs (2 s in production, a minute
- * from a throttled background tab); an outcome older than this belongs to a
- * poller that left, and a `ready` one would soon describe a sandbox that has
- * since stopped on its own.
+ * How long a settled failure answers every connect that is not a person's
+ * retry. A poller comes back within its retryAfterMs (2 s in production, a
+ * minute from a throttled background tab); a failure older than this belongs
+ * to a poller that left, and the next connect begins its own run.
  */
 const OUTCOME_HELD_MS = 2 * 60_000
 
@@ -71,8 +70,9 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * request died with a closed tab and left the lease `acquiring` until the
  * stale window let the next start take it over. Here a start takes the lease
  * and answers at once; the alarm drives the driver, step by step, until the
- * lease is ready or the start has failed, and the first `start` within
- * `outcomeHeldMs` of a failed settling reports that failure. A run's
+ * lease is ready or the start has failed, and every `start` within
+ * `outcomeHeldMs` of a failed settling reports that failure, except a
+ * person's retry, which begins the next run. A run's
  * beginning and its settling are announced to the workspace owner's open
  * clients, so a tab learns of a start another tab or a session's tool call
  * asked for.
@@ -98,15 +98,12 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
   return class SandboxProvisioner extends DurableObject<Env> {
     #driving = false
 
-    start(workspaceId: string): Promise<SandboxStartAnswer> {
+    start(workspaceId: string, request: SandboxStartRequest = {}): Promise<SandboxStartAnswer> {
       return this.#flushed(async () => {
         const joined = await this.#inFlight()
         if (joined) return joined
-        const outcome = await this.ctx.storage.get<Outcome>("outcome")
-        if (outcome) {
-          await this.ctx.storage.delete("outcome")
-          if (Date.now() - outcome.settledAt <= outcomeHeldMs && outcome.answer.status !== "ready") return outcome.answer
-        }
+        const failed = await this.#heldFailure(request)
+        if (failed) return failed
         const live = await drive(this.env).live(workspaceId)
         if (live) return live
         return this.#begin(workspaceId)
@@ -148,6 +145,21 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       } finally {
         await drive(this.env).flushTelemetry?.().catch(() => undefined)
       }
+    }
+
+    /**
+     * Kept for the whole window rather than handed to the first connect: two
+     * polls of one start can arrive together, and the one that found no
+     * outcome would begin a start the provider refuses again and counts.
+     */
+    async #heldFailure(request: SandboxStartRequest): Promise<SandboxStartAnswer | undefined> {
+      const storage = this.ctx.storage
+      const outcome = await storage.get<Outcome>("outcome")
+      if (!outcome) return undefined
+      const failed = outcome.answer.status !== "ready" && Date.now() - outcome.settledAt <= outcomeHeldMs
+      if (failed && !request.retry) return outcome.answer
+      await storage.delete("outcome")
+      return undefined
     }
 
     async #inFlight(): Promise<SandboxStartAnswer | undefined> {
@@ -262,8 +274,8 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         // cooldown ends or a key change lifts it, so holding it would outlive
         // the lift and freeze the time left. A day's start limit is no
         // lease's answer (the next start runs the driver), so it is held
-        // like any failure: the polls of the start that hit it are told it,
-        // and only the person's next start tries again.
+        // like any failure: every connect in the window is told it, and only
+        // a person's retry tries again.
         const leaseAnswers = answer.status === "unavailable" && answer.exhausted && sandboxProviderRateLimit(answer.error) !== "day"
         if (answer.status !== "unavailable" || !(sandboxLeaseEndedUnderStart(answer.error) || leaseAnswers)) {
           const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }

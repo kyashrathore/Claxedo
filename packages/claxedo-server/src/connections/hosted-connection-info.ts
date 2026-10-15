@@ -243,8 +243,9 @@ export async function hostedConnectionInfo(
   auth: SignedControlPlaneAuth,
   workspaceId: string,
   lease: FirstLease,
-  previousJti?: string,
+  connect: { previousJti?: string; retry?: true } = {},
 ) {
+  const { previousJti, retry } = connect
   const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
   if ("error" in ingress) return ingress
   if ("tunnel" in ingress) {
@@ -257,7 +258,7 @@ export async function hostedConnectionInfo(
 
   const current = await hostManager.target(workspaceId)
   const [started, actor] = await Promise.all([
-    startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current }),
+    startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current, ...(retry ? { request: { retry } } : {}) }),
     settledActor(authority, auth),
   ])
   if ("denied" in started) return started.denied

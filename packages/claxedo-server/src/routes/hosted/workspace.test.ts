@@ -508,7 +508,7 @@ describe("hosted connection", () => {
     const { app, capture } = buildApp({ authority: authority, sandboxManager, options: { sandboxStart } })
     const res = await app.fetch(post("/ws_1/connection", {}))
     expect(res.status).toBe(200)
-    expect(sandboxStart).toHaveBeenCalledWith("ws_1")
+    expect(sandboxStart).toHaveBeenCalledWith("ws_1", undefined)
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
       workspace_id: "ws_1",
       backing: "cloud-vm",
@@ -527,6 +527,22 @@ describe("hosted connection", () => {
       homeRegion: "apac-south",
       retryAfterMs: 2_000,
     })
+  })
+
+  test("a connect that asks to retry reaches the start as a person's retry, one that does not is no retry, and any other retry value is refused", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" } })),
+    })
+    const sandboxManager = {
+      target: vi.fn(async () => ({ status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "failed" as const })),
+    } as unknown as SandboxManager
+    const sandboxStart = vi.fn(async () => ({ status: "provisioning" as const, retryAfterMs: 2_000, epoch: 2, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority, sandboxManager, options: { sandboxStart } })
+
+    expect((await app.fetch(post("/ws_1/connection", { retry: true }))).status).toBe(200)
+    expect((await app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
+    expect((await app.fetch(post("/ws_1/connection", { retry: false }))).status).toBe(400)
+    expect(sandboxStart.mock.calls).toEqual([["ws_1", { retry: true }], ["ws_1", undefined]])
   })
 
   test("GET reports an in-flight start as provisioning without provisioning itself", async () => {

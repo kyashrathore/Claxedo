@@ -20,8 +20,11 @@ export type SandboxStartAnswer =
 
 export type ReadySandboxTarget = Extract<SandboxTargetResult, { status: "ready" }>
 
+/** `retry` is a person asking again after a start failed: the failure held for that start's connects does not answer it. */
+export type SandboxStartRequest = { retry?: true }
+
 /** Begins or joins the start of a workspace's sandbox and answers at once; the work itself runs elsewhere. */
-export type SandboxStart = (workspaceId: string) => Promise<SandboxStartAnswer>
+export type SandboxStart = (workspaceId: string, request?: SandboxStartRequest) => Promise<SandboxStartAnswer>
 
 /** The run a workspace's sandbox start has in flight, as its pollers see it, or nothing when no run is in flight. */
 export type SandboxInFlight = (workspaceId: string) => Promise<SandboxStartAnswer | undefined>
@@ -49,8 +52,8 @@ export type SandboxStartDrive = {
 }
 
 export type SandboxProvisionerStub = {
-  /** A connect: answers a live sandbox at once, joins the run in flight, or begins the run the lease needs. */
-  start(workspaceId: string): Promise<SandboxStartAnswer>
+  /** A connect: answers a live sandbox at once, joins the run in flight, is told the last start's held failure, or begins the run the lease needs. */
+  start(workspaceId: string, request?: SandboxStartRequest): Promise<SandboxStartAnswer>
   /** A re-delivery of what the sandbox runs with: begins or joins a run even for a sandbox that is live. */
   refresh(workspaceId: string): Promise<SandboxStartAnswer>
   /** A settings push to a serving sandbox with no driver step and no run; a run in flight delivers them as it settles. */
@@ -68,7 +71,7 @@ export interface SandboxProvisionerNamespace {
 export function sandboxProvisioner(namespace: SandboxProvisionerNamespace, workspaceId: string): SandboxProvisionerStub {
   const stub = namespace.get(namespace.idFromName(`workspace:${workspaceId}`))
   return {
-    start: (id) => timed("do", () => stub.start(id)),
+    start: (id, request) => timed("do", () => stub.start(id, request)),
     refresh: (id) => timed("do", () => stub.refresh(id)),
     redeliver: (id) => timed("do", () => stub.redeliver(id)),
     inFlight: () => timed("do", () => stub.inFlight()),

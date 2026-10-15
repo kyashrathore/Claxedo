@@ -57,8 +57,13 @@ Object (`sandbox/provisioner.cf.ts`, named `workspace:<id>`, bound as
 `SANDBOX_PROVISIONER` on the full-hosted artifact alone, migration tag `v3`):
 `start` takes the lease through `SandboxManager.acquire` and schedules its
 alarm; the alarm drives `SandboxManager.provision` for that lease epoch, step
-by step, until the lease is ready or the start has failed, and the first
-`start` after that settles reports the outcome. A Worker cuts work held past a
+by step, until the lease is ready or the start has failed. A failure is held
+for two minutes: every `start` in that window is told it, however many polls
+of one start arrive together, and only a person's retry (`{ "retry": true }`
+on the connect, which the app sends on the first request of a Wake, Try again
+or send) begins the next run, so one Wake costs the provider one start. A
+ready outcome answers nothing on its own: the next `start` asks the runtime
+itself. A Worker cuts work held past a
 response about 30 s after it, which is why nothing of the driver runs in the
 request. Each step is the hosted runtime delivery's
 (`workspace/hosted-runtime-delivery.ts`): the runtime's preparation, the

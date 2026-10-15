@@ -89,6 +89,20 @@ test("wakes: a send to an asleep cloud workspace starts it once, however many se
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
 })
 
+test("wakes: Wake clicked twice, and Wake now in the picker beside it, run one start", async () => {
+  const running = { value: false }
+  const { starts, wakes } = fixture(running)
+
+  const clicks = [wakes.start(cloud), wakes.start(cloud), wakes.start(cloud)]
+  await settle()
+  expect(starts).toHaveLength(1)
+
+  running.value = true
+  starts[0].resolve()
+  await Promise.all(clicks)
+  expect(starts).toHaveLength(1)
+})
+
 test("wakes: a refused start leaves the workspace asleep with the server's reason, and a retry can wake it", async () => {
   const running = { value: false }
   const { starts, wakes } = fixture(running)

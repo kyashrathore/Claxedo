@@ -332,6 +332,6 @@ describe("the hosted manager steps cannot omit the egress policy", () => {
   test("the connect route and a session host's tool call run no manager step of their own: a start reaches the driver only through the drive", () => {
     for (const source of [routeSource, startSource, turnExecutionSource]) expect([...code(source).matchAll(MANAGER_STEP)]).toEqual([])
     expect(code(routeSource)).toContain("startCloudWorkspace(services, options.sandboxStart,")
-    expect(code(startSource)).toContain("await start(workspaceId)")
+    expect(code(startSource)).toContain("await start(workspaceId, input.request)")
   })
 })

@@ -1,7 +1,7 @@
 import { sleep } from "@claxedo/helpers"
 import type { WorkspaceStartProgress } from "./cloud-types"
 import { ServerError } from "./errors"
-import { CLOUD_RUNTIME_BOOT_FAILED, type ConnectionAnswer, type RelayConnection } from "./wire/connection"
+import { CLOUD_RUNTIME_BOOT_FAILED, type ConnectionAnswer, type RelayConnection, type StartRequest } from "./wire/connection"
 
 export type StartOptions = {
   readonly onProgress?: (progress: WorkspaceStartProgress) => void
@@ -18,7 +18,7 @@ const POLL_DEADLINE_MS = 30_000
 
 const retryDelay = (retryAfterMs: number | undefined) => Math.min(MAX_RETRY_MS, Math.max(MIN_RETRY_MS, retryAfterMs ?? DEFAULT_RETRY_MS))
 
-type Connect = (workspaceId: string) => Promise<ConnectionAnswer>
+type Connect = (workspaceId: string, request?: StartRequest) => Promise<ConnectionAnswer>
 
 type Provisioning = Extract<ConnectionAnswer, { kind: "provisioning" }>
 
@@ -49,20 +49,35 @@ function unlessCutShort<T>(work: Promise<T>, settled: StartOptions["settled"], d
   })
 }
 
-async function settledAnswer(connect: Connect, workspaceId: string, options: StartOptions): Promise<Exclude<ConnectionAnswer, { kind: "provisioning" }>> {
+async function polled(poll: Promise<ConnectionAnswer>, options: StartOptions) {
+  let noticed = false
+  const stopListening = options.settled?.(() => {
+    noticed = true
+  })
+  try {
+    const answer = await unlessCutShort(poll, undefined, options.pollDeadlineMs ?? POLL_DEADLINE_MS)
+    return { answer, noticed }
+  } finally {
+    stopListening?.()
+  }
+}
+
+async function settledAnswer(connect: Connect, workspaceId: string, options: StartOptions, first?: StartRequest): Promise<Exclude<ConnectionAnswer, { kind: "provisioning" }>> {
   const wait = options.wait ?? sleep
   const now = options.now ?? Date.now
+  let request = first
   for (;;) {
-    const answer = await unlessCutShort(connect(workspaceId), options.settled, options.pollDeadlineMs ?? POLL_DEADLINE_MS)
+    const { answer, noticed } = await polled(connect(workspaceId, request), options)
+    request = undefined
     if (answer === undefined) continue
     if (answer.kind !== "provisioning") return answer
     options.onProgress?.(startProgressOf(answer, now()))
-    await unlessCutShort(wait(retryDelay(answer.retryAfterMs)), options.settled)
+    if (!noticed) await unlessCutShort(wait(retryDelay(answer.retryAfterMs)), options.settled)
   }
 }
 
 export async function startWorkspace(connect: Connect, workspaceId: string, options: StartOptions = {}): Promise<RelayConnection> {
-  const answer = await settledAnswer(connect, workspaceId, options)
+  const answer = await settledAnswer(connect, workspaceId, options, { retry: true })
   if (answer.kind === "ready") return answer.link
   if (answer.kind === "stopped") throw new ServerError({ class: "internal", message: `The start of ${workspaceId} answered that it is stopped` })
   throw new ServerError({ class: "conflict", code: CLOUD_RUNTIME_BOOT_FAILED, message: answer.reason })
