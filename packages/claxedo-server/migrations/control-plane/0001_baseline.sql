@@ -450,7 +450,6 @@ CREATE TABLE sandbox_boots (
   machine_class text,
   started_at integer not null,
   stopped_at integer not null check (stopped_at >= started_at),
-  error text,
   primary key (workspace_id, epoch)
 );
 

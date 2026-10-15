@@ -15,20 +15,18 @@ const HOSTED = "(l.status = 'ready' or (l.status in ('pending', 'acquiring', 'st
  * whether its runtime served or its boot failed on it. The interval is the one `workspace_stopped.active_ms`
  * measures: the epoch's start to the write. An epoch that serves again after an outage extends its own row rather
  * than adding one; a retried boot takes an epoch of its own. The driver and machine class travel with the boot
- * because they are what it is priced by, and the lease that named them is rewritten by the next boot. A boot that
- * failed keeps the reason, which the lease loses to the next epoch's acquire; a later close of the epoch keeps it too.
+ * because they are what it is priced by, and the lease that named them is rewritten by the next boot.
  */
-export function closeBoot(database: D1Database, guard: SandboxLeaseGuard, stoppedAt: number, error?: string): D1PreparedStatement {
+export function closeBoot(database: D1Database, guard: SandboxLeaseGuard, stoppedAt: number): D1PreparedStatement {
   return database.prepare(`
-    insert into sandbox_boots (workspace_id, epoch, org_id, owner_user_id, driver, machine_class, started_at, stopped_at, error)
+    insert into sandbox_boots (workspace_id, epoch, org_id, owner_user_id, driver, machine_class, started_at, stopped_at)
     select l.workspace_id, l.epoch, w.org_id, w.owner_user_id, l.driver, l.machine_class,
-      min(json_extract(l.start_json, '$.startedAt'), ?1), ?1, ?2
+      min(json_extract(l.start_json, '$.startedAt'), ?1), ?1
     from (select * from sandbox_leases where ${guard.sql}) l
     join workspaces w on w.workspace_id = l.workspace_id
     where ${HOSTED} and json_extract(l.start_json, '$.startedAt') is not null
-    on conflict (workspace_id, epoch) do update set stopped_at = max(sandbox_boots.stopped_at, excluded.stopped_at),
-      error = coalesce(excluded.error, sandbox_boots.error)
-  `).bind(stoppedAt, error ?? null, ...guard.binds)
+    on conflict (workspace_id, epoch) do update set stopped_at = max(sandbox_boots.stopped_at, excluded.stopped_at)
+  `).bind(stoppedAt, ...guard.binds)
 }
 
 export type MachineTimeQuery = { org_id: string; user_id: string; since: number; until: number }
