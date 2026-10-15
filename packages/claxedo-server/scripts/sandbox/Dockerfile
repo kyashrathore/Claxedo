@@ -33,7 +33,8 @@ RUN printf '%s\n' \
 RUN npm i -g --min-release-age=2 \
       tsx@4.22.3 \
       @anthropic-ai/claude-code@2.1.285 \
-      @openai/codex@0.159.2
+      @openai/codex@0.159.2 && \
+    npm cache clean --force
 
 COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh
 RUN sh /tmp/install-agent-artifacts.sh && \
@@ -56,6 +57,7 @@ RUN sh /tmp/install-agent-artifacts.sh && \
 COPY .build/ /opt/workspace-runtime/
 RUN cd /opt/workspace-runtime && \
     npm install --omit=dev --min-release-age=2 --legacy-peer-deps && \
+    npm cache clean --force && \
     test -f /opt/workspace-runtime/workspace-runtime-host.mjs && \
     test -f /opt/workspace-runtime/launch-gate-child.mjs && \
     test -f /opt/workspace-runtime/cursor-worker.mjs && \
