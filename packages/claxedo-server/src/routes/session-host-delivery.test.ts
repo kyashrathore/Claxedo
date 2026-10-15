@@ -232,7 +232,13 @@ describe("/turn-credential-refused", () => {
     const cursor = await accounts.putCredential({ owner: ownerId, provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "cursor-owner-2" })
     const health = async (id: string) => (await accounts.getCredential!(id))?.health ?? null
     const lease = await plane.acquire(proof, root, "turn_refused")
-    const refused = (credentialId: string, turnLease = lease.leaseId) => plane.post("/turn-credential-refused", { turnLease, credentialId })
+    const refused = (credentialId: string, turnLease = lease.leaseId, report: { revision?: number; status?: number } = {}) =>
+      plane.post("/turn-credential-refused", { turnLease, credentialId, revision: 1, status: 401, ...report })
+
+    expect(await (await refused(spent.id, lease.leaseId, { status: 403 })).json()).toEqual({ refusal: "ignored" })
+    expect(await (await refused(spent.id, lease.leaseId, { status: 402 })).json()).toEqual({ refusal: "ignored" })
+    expect(await (await refused(spent.id, lease.leaseId, { revision: 7 })).json()).toEqual({ refusal: "stale" })
+    expect(await health(spent.id)).toBeNull()
 
     const first = await refused(spent.id)
     expect(first.status).toBe(200)
@@ -252,6 +258,7 @@ describe("/turn-credential-refused", () => {
     expect(await health(cursor.id)).toBeNull()
     expect((await refused(spent.id, await expiredLease())).status).toBe(401)
     expect((await plane.post("/turn-credential-refused", { turnLease: lease.leaseId })).status).toBe(400)
+    expect((await plane.post("/turn-credential-refused", { turnLease: lease.leaseId, credentialId: spent.id })).status).toBe(400)
   })
 })
 

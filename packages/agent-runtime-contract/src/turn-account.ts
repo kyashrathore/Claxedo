@@ -8,7 +8,14 @@ import { isProviderUnavailable, type ProviderProjection } from "./provider-proje
  * credential was bound for it.
  */
 export type TurnAccount =
-  | { readonly kind: "stored"; readonly harnessId: NativeSdkHarnessId; readonly credentialId: string; readonly providerId: string; readonly label?: string }
+  | {
+    readonly kind: "stored"
+    readonly harnessId: NativeSdkHarnessId
+    readonly credentialId: string
+    readonly providerId: string
+    readonly label?: string
+    readonly revision?: number
+  }
   | { readonly kind: "machine"; readonly harnessId: NativeSdkHarnessId }
 
 const HARNESS_IDS = ["claude", "codex", "cursor", "pi"] as const satisfies readonly NativeSdkHarnessId[]
@@ -20,7 +27,8 @@ export function turnAccount(input: unknown): TurnAccount | undefined {
   if (input.kind === "machine") return { kind: "machine", harnessId }
   if (input.kind !== "stored" || typeof input.credentialId !== "string" || typeof input.providerId !== "string") return undefined
   const label = typeof input.label === "string" && input.label ? { label: input.label } : {}
-  return { kind: "stored", harnessId, credentialId: input.credentialId, providerId: input.providerId, ...label }
+  const revision = typeof input.revision === "number" && Number.isSafeInteger(input.revision) && input.revision > 0 ? { revision: input.revision } : {}
+  return { kind: "stored", harnessId, credentialId: input.credentialId, providerId: input.providerId, ...label, ...revision }
 }
 
 /**

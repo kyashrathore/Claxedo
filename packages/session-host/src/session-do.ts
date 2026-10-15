@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
-import { classifyFirstTurnError, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import { vendorHttpStatus, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { TurnExecutionAccess } from "@claxedo/harness/contract"
 import {
   errorBody, remoteWorkspaceSessionAccessPolicy, RuntimeStoreSchemaMismatchError, type SessionAccessPolicy,
@@ -22,10 +22,19 @@ import { workspaceMachineAccess } from "./workspace-machine"
 /** A request or control-plane call at or past this is logged with its timing, so a slow composer read can be placed. */
 const SLOW_REQUEST_MS = 1_000
 
-/** The stored account a failed turn spent when its failure reads as the vendor refusing that account's credential. */
-function refusedStoredAccount(outcome: AgentTurnOutcome): string | undefined {
+type StoredAccountRefusal = { credentialId: string; revision: number; status: number }
+
+/**
+ * The stored account a failed turn spent, the revision of it this turn was
+ * handed and the vendor's own status, when that status is 401: the only
+ * answer the plane counts against an account, as its broker does. Prose about
+ * a key, a 403 or billing is never a refusal of the credential.
+ */
+function refusedStoredAccount(outcome: AgentTurnOutcome): StoredAccountRefusal | undefined {
   if (outcome.status !== "failed" || outcome.account?.kind !== "stored") return undefined
-  return (outcome.errorClass ?? classifyFirstTurnError(outcome.error)) === "credential" ? outcome.account.credentialId : undefined
+  const status = vendorHttpStatus(outcome.error)
+  const { credentialId, revision } = outcome.account
+  return status === 401 && revision !== undefined ? { credentialId, revision, status } : undefined
 }
 
 export type SessionHostEnv = {

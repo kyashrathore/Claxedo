@@ -114,7 +114,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await rm(persist, { recursive: true, force: true })
   })
 
-  const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key" }
+  const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key", revision: 3 }
   const openai = (secret: string) => ({ openai: { delivery: "direct" as const, baseUrl: model.url, apiPath: "/v1", secret, authKind: "api-key" as const, account: OPENAI_ACCOUNT } })
 
   async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>>; refused?: Record<string, Record<string, ProviderUnavailable>> } = {}) {
@@ -288,12 +288,24 @@ void describe("SessionDO under workerd with PiHarness", () => {
       await host.prompt("msg_refused_key", "Reply with exactly this one token: PIREFUSEDKEY")
       await eventually("the refused account reported", async () => host.controlPlane.calls.refusals.length ? true : undefined, 30_000)
     } finally { restore() }
-    assert.deepEqual(host.controlPlane.calls.refusals, [{ turnId: "msg_refused_key", credentialId: OPENAI_ACCOUNT.credentialId }])
+    assert.deepEqual(host.controlPlane.calls.refusals, [{ turnId: "msg_refused_key", credentialId: OPENAI_ACCOUNT.credentialId, revision: 3, status: 401 }])
     await eventually("the failed turn's row and usage", async () =>
       host.controlPlane.calls.usage.some((report) => report.turnId === "msg_refused_key")
         && host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => readField(row.lastTurn, "status") === "failed")) ? true : undefined)
     const fact = host.controlPlane.calls.usage.flatMap((report) => report.facts).find((candidate) => candidate.turnId === "msg_refused_key")
     assert.equal(fact?.status, "error", JSON.stringify(fact))
+  })
+
+  void it("reports nothing against the account for a vendor answer that is not 401, whatever its prose says about the key", { timeout: 120_000 }, async () => {
+    const root = "ses_forbidden_account"
+    const host = await session(root)
+    const restore = model.scriptError({ marker: "PIFORBIDDENKEY", status: 403, message: "This API key is not allowed from your region" })
+    try {
+      await host.prompt("msg_forbidden_key", "Reply with exactly this one token: PIFORBIDDENKEY")
+      await eventually("the forbidden turn's row", async () =>
+        host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => readField(row.lastTurn, "status") === "failed")) ? true : undefined, 30_000)
+    } finally { restore() }
+    assert.deepEqual(host.controlPlane.calls.refusals, [])
   })
 
   void it("keeps delivered model options after an idle object restart without requesting another secret delivery", { timeout: 120_000 }, async () => {
