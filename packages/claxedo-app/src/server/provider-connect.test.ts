@@ -2,6 +2,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createProviderConnectApi } from "./provider-connect"
+import { queryKeys } from "./query-keys"
 import { createTransport } from "./transport"
 
 const running: Array<{ stop: (force: boolean) => unknown }> = []
@@ -23,7 +24,9 @@ function serve(deleted = 1) {
     },
   })
   running.push(server)
-  return { seen, api: createProviderConnectApi(createTransport({ serverUrl: `http://127.0.0.1:${server.port}` }), new QueryClient()) }
+  const serverUrl = `http://127.0.0.1:${server.port}`
+  const client = new QueryClient()
+  return { seen, serverUrl, client, api: createProviderConnectApi(createTransport({ serverUrl }), client) }
 }
 
 test("provider connect: a custom provider is declared with the header its key rides in", async () => {
@@ -68,4 +71,11 @@ test("provider connect: a disconnect that removed no account of yours fails inst
     "DELETE /api/claxedo/credentials/provider/acme",
     "DELETE /api/claxedo/agent-config/providers/custom/acme?nativeHarness=opencode",
   ])
+})
+
+test("provider connect: a refused disconnect rereads the accounts, so a row another tab already removed corrects itself", async () => {
+  const { serverUrl, client, api } = serve(0)
+  client.setQueryData(queryKeys.accounts(serverUrl), [])
+  await expect(api.disconnect("pi", { id: "groq", source: "api" })).rejects.toMatchObject({ class: "not_found" })
+  expect(client.getQueryState(queryKeys.accounts(serverUrl))?.isInvalidated).toBe(true)
 })

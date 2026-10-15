@@ -142,6 +142,9 @@ function LoginForm(props: { invitationToken?: string }) {
       title={controller.invitation ? "Join your organization" : "Sign in to Claxedo"}
       lead={controller.invitation ? "Use the email address that received this invitation." : LEAD}
     >
+      <Show when={controller.auth.state().kind === "expired"}>
+        <p role="status" class="auth-note">Your sign-in expired. Sign in again to continue.</p>
+      </Show>
       <Show when={controller.joined()} fallback={<LoginActions controller={controller} />}>
         <p class="auth-subtitle">You have joined the organization.</p>
         <a class="auth-button auth-button-icon" href="/">

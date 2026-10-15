@@ -88,3 +88,12 @@ test("accounts: a refresh rereads the stored accounts and scans no machine", asy
   await client.fetchQuery(read)
   expect(seen.map((request) => request.path)).toEqual(["/api/claxedo/credentials", "/api/claxedo/credentials"])
 })
+
+test("accounts: a refused removal rereads the accounts, so a row another tab already removed corrects itself", async () => {
+  const { transport } = serve(() => Response.json({ error: { code: "credential_not_found", message: "No such account" } }, { status: 404 }))
+  const client = new QueryClient()
+  const read = accountQueries(transport).list()
+  client.setQueryData(read.queryKey, [])
+  await expect(createAccountsApi(transport, client).remove(["gone"])).rejects.toMatchObject({ class: "not_found" })
+  expect(client.getQueryState(read.queryKey)?.isInvalidated).toBe(true)
+})

@@ -639,8 +639,12 @@ export const desktopRenderer: Policy = {
   // and a wake can be told apart without the composer (owner: the app's
   // session domain, `session/view/placement-notice-text.ts`). They add no
   // package edge.
-  // 1372/36, no headroom.
-  ceilings: { modules: 1372, packages: 36 },
+  // Every account write's reread of the accounts and provider catalogs,
+  // succeeded or refused, which the accounts, account sources, sandbox keys and
+  // provider connect writes share (owner: the app's server adapter,
+  // `server/account-writes.ts`). It adds no package edge.
+  // 1373/36, no headroom.
+  ceilings: { modules: 1373, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

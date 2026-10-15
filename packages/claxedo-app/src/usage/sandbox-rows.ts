@@ -78,8 +78,15 @@ export function sandboxRows(time: MachineTime | undefined, live: readonly CloudW
   return [...timed, ...starting].sort(byRunningThenRecent)
 }
 
-export function filterSandboxRows(rows: readonly SandboxRow[], filter: SandboxFilter): readonly SandboxRow[] {
-  return filter === "running" ? rows.filter(isRunningRow) : rows
+export type SandboxRowList =
+  | { readonly kind: "rows"; readonly rows: readonly SandboxRow[] }
+  | { readonly kind: "empty" }
+  | { readonly kind: "unknown" }
+
+export function listSandboxRows(rows: readonly SandboxRow[], filter: SandboxFilter, read: { readonly time: boolean; readonly live: boolean }): SandboxRowList {
+  const shown = filter === "running" ? rows.filter(isRunningRow) : rows
+  if (shown.length > 0) return { kind: "rows", rows: shown }
+  return read.time && read.live ? { kind: "empty" } : { kind: "unknown" }
 }
 
 export function sandboxTotals(rows: readonly SandboxRow[]): SandboxTotals {

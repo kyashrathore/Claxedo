@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import { accountSourceQueries, createAccountSourceWrites } from "./account-sources"
+import { accountWrites } from "./account-writes"
 import type { AccountsApi } from "./api"
 import { contractMismatch, responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -43,35 +44,25 @@ export function accountQueries(transport: Transport) {
 }
 
 export function createAccountsApi(transport: Transport, queryClient: QueryClient): AccountsApi {
-  const server = transport.serverUrl
-  const changed = async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
-    await queryClient.invalidateQueries({ queryKey: queryKeys.providerCatalogs(server) })
-  }
+  const { refresh, write } = accountWrites(queryClient, transport.serverUrl)
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
   return {
-    ...createAccountSourceWrites(transport, changed),
-    ...createSandboxKeyWrites(transport, changed),
+    ...createAccountSourceWrites(transport, write),
+    ...createSandboxKeyWrites(transport, write),
     ...createMachineLoginScans(transport, queryClient),
-    select: async (ids) => {
-      await post("/activate", { ids })
-      await changed()
-    },
-    selectMachineLogin: async (providerIds) => {
-      await post("/activate", { machine_login: { provider_ids: providerIds } })
-      await changed()
-    },
-    remove: async (ids) => {
-      for (const id of ids) await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(id)}`, { method: "DELETE" })
-      await changed()
-    },
-    check: async (id): Promise<AccountCheck> => {
-      const check = accountCheckFromWire(await post(`/${encodeURIComponent(id)}/verify`, {}))
-      if (!check) throw contractMismatch("account check")
-      await changed()
-      return check
-    },
-    refresh: changed,
+    select: (ids) => write(async () => void (await post("/activate", { ids }))),
+    selectMachineLogin: (providerIds) => write(async () => void (await post("/activate", { machine_login: { provider_ids: providerIds } }))),
+    remove: (ids) =>
+      write(async () => {
+        for (const id of ids) await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(id)}`, { method: "DELETE" })
+      }),
+    check: (id) =>
+      write(async (): Promise<AccountCheck> => {
+        const check = accountCheckFromWire(await post(`/${encodeURIComponent(id)}/verify`, {}))
+        if (!check) throw contractMismatch("account check")
+        return check
+      }),
+    refresh,
   }
 }
 

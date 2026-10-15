@@ -6,7 +6,7 @@ import { FailureNotice } from "@/lib/failure"
 import { useMachineTime } from "../api"
 import { usageDictionary } from "../i18n"
 import type { UsageDays } from "../model"
-import { filterSandboxRows, sandboxRows, sandboxTotals, type SandboxFilter } from "../sandbox-rows"
+import { listSandboxRows, sandboxRows, sandboxTotals, type SandboxFilter, type SandboxRowList } from "../sandbox-rows"
 import { Choices, type Choice } from "./choices"
 import { RANGES, rangeDays } from "./ranges"
 import { SandboxPrices } from "./sandbox-prices"
@@ -18,6 +18,8 @@ const FILTERS: readonly Choice<SandboxFilter>[] = [
   { value: "all", label: "usage.sandbox.filter.all" },
   { value: "running", label: "usage.sandbox.filter.running" },
 ]
+
+const listedRows = (list: SandboxRowList) => (list.kind === "rows" ? list.rows : undefined)
 
 export function SandboxUsageSection(): JSX.Element {
   const t = useTranslator(usageDictionary)
@@ -45,7 +47,7 @@ export function SandboxUsageSection(): JSX.Element {
   }
   const rows = createMemo(() => sandboxRows(time(), live()))
   const totals = createMemo(() => sandboxTotals(rows()))
-  const shown = createMemo(() => filterSandboxRows(rows(), filter()))
+  const list = createMemo(() => listSandboxRows(rows(), filter(), { time: time() !== undefined, live: live() !== undefined }))
   const loaded = () => machineTime.load().kind !== "loading" || running.list().kind !== "loading"
   return (
     <div class="usage">
@@ -72,9 +74,12 @@ export function SandboxUsageSection(): JSX.Element {
             <h3 id="usage-sandbox-workspaces-title" class="usage-group-title">{t("usage.sandbox.workspaces")}</h3>
             <Choices label={t("usage.sandbox.filter")} choices={FILTERS} value={filter()} onChange={setFilter} />
           </div>
-          <Show when={shown().length > 0} fallback={<p class="usage-empty">{t(filter() === "running" ? "usage.sandbox.noneRunning" : "usage.sandbox.empty")}</p>}>
-            <SandboxTable rows={shown()} onStop={(id) => void running.stop(id)} />
-          </Show>
+          <Switch>
+            <Match when={listedRows(list())}>{(shown) => <SandboxTable rows={shown()} onStop={(id) => void running.stop(id)} />}</Match>
+            <Match when={list().kind === "empty"}>
+              <p class="usage-empty">{t(filter() === "running" ? "usage.sandbox.noneRunning" : "usage.sandbox.empty")}</p>
+            </Match>
+          </Switch>
         </section>
       </Show>
       <Show when={time()}>{(ready) => <SandboxPrices time={ready()} />}</Show>

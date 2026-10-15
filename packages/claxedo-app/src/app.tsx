@@ -21,14 +21,15 @@ function principalOf(auth: Auth): string | undefined {
   return state.kind === "signedIn" ? state.user.id : auth.restoringUserId()
 }
 
-type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "relayLinks">
+type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "onSignInRefused" | "relayLinks">
 
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return {}
   const access = auth.controlPlane
   const storage = tabStorage()
   const relayLinks = storage ? { relayLinks: { scope: principal, storage } } : {}
-  return access.kind === "port" ? { account: access.run, accountEvents: access.events, ...relayLinks } : { cookies: true, ...relayLinks }
+  if (access.kind === "port") return { account: access.run, accountEvents: access.events, ...relayLinks }
+  return { cookies: true, onSignInRefused: () => void auth.refresh(), ...relayLinks }
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {

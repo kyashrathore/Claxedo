@@ -133,7 +133,7 @@ export function SourceControlView(props: SourceControlViewProps): JSX.Element {
   }))
   const status = () => statusQuery.data ?? EMPTY_STATUS
   const branch = () => status().branch
-  const compareUrl = useCompareUrl(() => props.placementId, branch)
+  const compareUrl = useCompareUrl(() => props.placementId, status)
   const [selectedPath, setSelectedPath] = createSignal<string>()
   const activePath = () => props.activePath ?? selectedPath()
   const open = (entry: ChangeEntry, scope: DiffScope) => {

@@ -70,6 +70,65 @@ test("a sign-in after the restore never names the last user", async () => {
   })
 })
 
+function signedInBinding(reread: () => Promise<AuthUser | null>) {
+  const [user, setUser] = createSignal<AuthUser | null>({ id: "user-1", email: "ada@example.test" })
+  let reads = 0
+  const session: AccountSession = {
+    ...restoringBinding().binding.open(),
+    user,
+    loading: () => false,
+    refresh: async () => {
+      reads++
+      setUser(await reread())
+    },
+  }
+  return { binding: { open: () => session }, reads: () => reads }
+}
+
+test("a refresh that finds the session gone ends a signed-in reader as expired, whoever else asks meanwhile", async () => {
+  await createRoot(async (dispose) => {
+    let answer: (user: AuthUser | null) => void = () => {}
+    const { binding, reads } = signedInBinding(() => new Promise((resolve) => (answer = resolve)))
+    const auth = createAuth(binding)
+    await Promise.resolve()
+    expect(auth.state().kind).toBe("signedIn")
+    const first = auth.refresh()
+    const second = auth.refresh()
+    expect(auth.state().kind).toBe("signedIn")
+    answer(null)
+    await Promise.all([first, second])
+    expect(reads()).toBe(1)
+    expect(auth.state()).toEqual({ kind: "expired" })
+    await auth.refresh()
+    expect(reads()).toBe(1)
+    dispose()
+  })
+})
+
+test("a refresh that still finds the reader keeps them signed in", async () => {
+  await createRoot(async (dispose) => {
+    const { binding } = signedInBinding(async () => ({ id: "user-1", email: "ada@example.test" }))
+    const auth = createAuth(binding)
+    await Promise.resolve()
+    await auth.refresh()
+    expect(auth.state()).toEqual({ kind: "signedIn", user: { id: "user-1", email: "ada@example.test" } })
+    dispose()
+  })
+})
+
+test("a refresh the identity provider refuses ends a signed-in reader as expired without throwing", async () => {
+  await createRoot(async (dispose) => {
+    const { binding } = signedInBinding(async () => {
+      throw new Error("session refresh failed")
+    })
+    const auth = createAuth(binding)
+    await Promise.resolve()
+    await auth.refresh()
+    expect(auth.state()).toEqual({ kind: "expired" })
+    dispose()
+  })
+})
+
 test("with no stored user the restore names no one", async () => {
   installStorage({})
   await createRoot(async (dispose) => {

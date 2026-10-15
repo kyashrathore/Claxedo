@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
 import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
+import { accountWrites } from "./account-writes"
 import { contractMismatch, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
@@ -75,41 +76,37 @@ export function providerConnectQueries(transport: Transport): ProviderConnectQue
 }
 
 export function createProviderConnectApi(transport: Transport, queryClient: QueryClient): ProviderConnectApi {
-  const server = transport.serverUrl
-  const changed = async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
-    await queryClient.invalidateQueries({ queryKey: queryKeys.providerCatalogs(server) })
-  }
+  const { write } = accountWrites(queryClient, transport.serverUrl)
   const oauthPath = (providerId: string, step: "authorize" | "callback") => `/provider/${encodeURIComponent(providerId)}/oauth/${step}`
   return {
     authorize: async (providerId, method) => authorizationOf(await transport.json(oauthPath(providerId, "authorize"), jsonInit("POST", { method }))),
-    callback: async (providerId, method, step) => {
-      await transport.json(oauthPath(providerId, "callback"), jsonInit("POST", {
-        method, ...(step.code ? { code: step.code } : {}), ...(step.attempt ? { attempt: step.attempt } : {}),
-      }))
-      await changed()
-    },
-    saveKey: async (input) => {
-      await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: input.providerId, kind: input.kind, source: "managed", label: input.label, secret: input.secret }))
-      await changed()
-    },
-    reconnect: async (credentialId, secret) => {
-      await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(credentialId)}/reconnect`, jsonInit("POST", { secret }))
-      await changed()
-    },
-    saveCustomProvider: async (draft) => {
-      const config = draft.config
-      if (draft.key) await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerId, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
-      await transport.json(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", customProviderBody(config)))
-      await changed()
-    },
-    disconnect: async (harness, provider) => {
-      const removed = await transport.json(`${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
-      if (provider.source !== "custom" && !((readFiniteNumber(removed, "deleted") ?? 0) > 0)) {
-        throw new ServerError({ class: "not_found", message: `No ${provider.id} account of yours was stored to disconnect` })
-      }
-      if (provider.source === "custom") await transport.json(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
-      await changed()
-    },
+    callback: (providerId, method, step) =>
+      write(async () => {
+        await transport.json(oauthPath(providerId, "callback"), jsonInit("POST", {
+          method, ...(step.code ? { code: step.code } : {}), ...(step.attempt ? { attempt: step.attempt } : {}),
+        }))
+      }),
+    saveKey: (input) =>
+      write(async () => {
+        await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: input.providerId, kind: input.kind, source: "managed", label: input.label, secret: input.secret }))
+      }),
+    reconnect: (credentialId, secret) =>
+      write(async () => {
+        await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(credentialId)}/reconnect`, jsonInit("POST", { secret }))
+      }),
+    saveCustomProvider: (draft) =>
+      write(async () => {
+        const config = draft.config
+        if (draft.key) await transport.json(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerId, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
+        await transport.json(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", customProviderBody(config)))
+      }),
+    disconnect: (harness, provider) =>
+      write(async () => {
+        const removed = await transport.json(`${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
+        if (provider.source !== "custom" && !((readFiniteNumber(removed, "deleted") ?? 0) > 0)) {
+          throw new ServerError({ class: "not_found", message: `No ${provider.id} account of yours was stored to disconnect` })
+        }
+        if (provider.source === "custom") await transport.json(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
+      }),
   }
 }

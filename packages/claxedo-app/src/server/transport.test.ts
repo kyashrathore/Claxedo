@@ -36,6 +36,21 @@ test("every cookie-authenticated mutation declares JSON with or without a body, 
   expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("content-type")).toBeNull()
 })
 
+test("a control-plane answer refusing the sign-in (401) is reported to the auth owner, and no other answer is", async () => {
+  const refusals: string[] = []
+  const transport = createTransport({ serverUrl: "https://cp.test", cookies: true, onSignInRefused: () => refusals.push("refused") })
+  fetcher.mockResolvedValueOnce(Response.json({ error: { code: "missing_bearer_token", message: "Signed auth is required" } }, { status: 401 }))
+  await expect(transport.json("/api/workspace?host=machine")).rejects.toMatchObject({ status: 401, class: "auth" })
+  expect(refusals).toEqual(["refused"])
+  for (const status of [200, 403, 404, 500]) {
+    fetcher.mockResolvedValueOnce(Response.json({}, { status }))
+    await transport.request("/api/x")
+  }
+  fetcher.mockResolvedValueOnce(new Response(null, { status: 401 }))
+  await transport.request("/api/cp/events", { headers: { Accept: "text/event-stream" } })
+  expect(refusals).toEqual(["refused", "refused"])
+})
+
 afterEach(() => fetcher.mockReset())
 afterAll(() => fetcher.mockRestore())
 

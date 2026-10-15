@@ -1,6 +1,7 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { SandboxKeys } from "./account-types"
 import type { AccountsApi } from "./api"
+import type { AccountWrite } from "./account-writes"
 import { contractMismatch, responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
@@ -25,18 +26,15 @@ export function sandboxKeyQueries(transport: Transport) {
   return { sandbox }
 }
 
-export function createSandboxKeyWrites(transport: Transport, changed: () => Promise<void>): Pick<AccountsApi, "saveSandboxKey" | "chooseSandboxDriver"> {
+export function createSandboxKeyWrites(transport: Transport, write: AccountWrite): Pick<AccountsApi, "saveSandboxKey" | "chooseSandboxDriver"> {
   return {
-    saveSandboxKey: async (driver, fields) => {
-      const body = { provider_id: driver, kind: "sandbox_driver", source: "managed", secret: JSON.stringify(fields) }
-      const saved = accountFromWire(asRecord(await transport.json(CREDENTIALS_PATH, jsonInit("PUT", body)))?.credential)
-      if (!saved) throw contractMismatch("sandbox key")
-      await changed()
-      return saved
-    },
-    chooseSandboxDriver: async (driver) => {
-      await transport.json(`${SANDBOX_PATH}/default`, jsonInit("PUT", { driver }))
-      await changed()
-    },
+    saveSandboxKey: (driver, fields) =>
+      write(async () => {
+        const body = { provider_id: driver, kind: "sandbox_driver", source: "managed", secret: JSON.stringify(fields) }
+        const saved = accountFromWire(asRecord(await transport.json(CREDENTIALS_PATH, jsonInit("PUT", body)))?.credential)
+        if (!saved) throw contractMismatch("sandbox key")
+        return saved
+      }),
+    chooseSandboxDriver: (driver) => write(async () => void (await transport.json(`${SANDBOX_PATH}/default`, jsonInit("PUT", { driver })))),
   }
 }
