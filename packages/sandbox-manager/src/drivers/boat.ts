@@ -66,6 +66,7 @@ const BOOTING_CONTAINER_STATES: ReadonlySet<string> = new Set(["running", "pause
 const IMAGE_PREPARATION_TIMEOUT_SECONDS = 600
 // The image is local by then; creating the container is seconds.
 const CONTAINER_START_TIMEOUT_SECONDS = 120
+const HOST_PUBLISH_TIMEOUT_SECONDS = 120
 // Boat's auto-stop is a deadline counted from the create or resume, not from
 // use (docs.boat.dev/long-running-tasks/auto-stop), so a serving sandbox
 // carries none and the control plane's own idle stop ends it. A boot nobody
@@ -81,6 +82,18 @@ const DOCKER_DAEMON_WAIT_SECONDS = 120
 // bind mount.
 const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
 const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
+// Two boots of one machine can run at once: a start's Durable Object alarm is
+// re-run on another machine while the first run still boots (staging,
+// 2026-10-15), and a retried epoch resumes the same VM. So a boot stages its
+// files under names of its own, and its preparation, container start and port
+// publish each hold one lock on the machine, which a second boot waits for and
+// then finds the work done. The kernel drops a flock lock with its holder, and
+// Boat ends a timed-out command (the next boot took the lock at once; a command
+// whose caller went away ran to its end, measured 2026-10-15). /run/lock is a
+// tmpfs the VM user writes, so no snapshot carries a lock.
+const BOOT_LOCK_PATH = "/run/lock/claxedo-boot.lock"
+// A boot's own work after another's is seconds; the rest of its command's limit waits for the other boot.
+const BOOT_LOCK_HEADROOM_SECONDS = 60
 const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
 // Everything the runtime keeps lives under one root on the VM's disk, which
 // Boat's snapshot saves (docs.boat.dev/snapshots/whats-saved): the workspace,
@@ -156,10 +169,18 @@ const PENDING_STATES = new Set(["init", "provisioning", "provisioned", "cloning"
 const TRANSIENT_MARKERS = ["transport_failed", "idempotency_in_progress"] as const
 /** Boat's answers for a sandbox it no longer has: deleted, or stopped so long its disk was dropped (docs.boat.dev/snapshots/stop). */
 const GONE_CODES: ReadonlySet<string> = new Set(["not_found", "snapshot_data_expired"])
+const RESUME_UNDER_WAY = "sandbox_resuming"
 
 function hostGoneOrThrow(err: unknown): never {
   if (err instanceof BoatApiError && GONE_CODES.has(err.code)) throw new SandboxHostGoneError(err.message)
   throw err
+}
+
+type StagedFiles = { env: string; password?: string }
+
+function holdingBootLock(commandTimeoutSeconds: number, script: string) {
+  const wait = commandTimeoutSeconds - BOOT_LOCK_HEADROOM_SECONDS
+  return `exec 9>>${BOOT_LOCK_PATH} && { flock -w ${wait} 9 || { echo "another boot of this machine held ${BOOT_LOCK_PATH} for ${wait} s" >&2; exit 1; }; } && ${script}`
 }
 
 function sleep(ms: number) {
@@ -290,7 +311,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * removes the image if a seed left it. A failure there leaves nothing
    * serving.
    */
-  function containerScripts(input: SandboxDriverEnsureInput): { prepare: string; start: string } {
+  function containerScripts(input: SandboxDriverEnsureInput, staged: StagedFiles): { prepare: string; start: string } {
     const port = runtimePort(input)
     const directory = workspaceDirectory(input)
     const reference = resolveImage(input)
@@ -352,13 +373,14 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + `&& sudo rm -f ${BOAT_SAVED_IMAGES}/"\${id#sha256:}".tar; fi`
     const seeded = [IMAGE_TREES_COMPLETE_MARKER, STUB_IMAGE_ARCHIVE, IMAGE_ENV_FILE].map((file) => `[ -f ${trees}/${file} ]`).join(" && ")
     const prepare = [
-      `chmod 600 ${RUNTIME_ENV_PATH}`,
+      `chmod 600 ${staged.env}`,
+      `find . -maxdepth 1 \\( -name '${RUNTIME_ENV_PATH}.*' -o -name '${REGISTRY_PASSWORD_PATH}.*' \\) -mmin +${BOOT_TTL_SECONDS / 60} -exec rm -f {} +`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
       `[ -x ${VM_DOCKER_INIT} ]`,
-      ...(options.registryAuth
-        ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `
-          + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
-          + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
+      ...(options.registryAuth && staged.password
+        ? [`{ chmod 600 ${staged.password}; docker login ${shell(options.registryAuth.server)} `
+          + `--username ${shell(options.registryAuth.username)} --password-stdin < ${staged.password}; `
+          + `rc=$?; rm -f ${staged.password}; (exit $rc); }`]
         : []),
       // Trees an earlier start marked complete hold what a person or a harness
       // changed since, so a seed missing only its stub or env builds those alone.
@@ -372,12 +394,15 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // name taken. Docker holds the name from the start of that create, so a
     // removal right after the clash finds nothing and the next create clashes
     // again; the 0.8 s the create took is waited out before each retry.
-    const start = `if ${labelledWithImage("container", containerName)}; then docker start ${containerName} >/dev/null; `
+    const start = `mv -f ${staged.env} ${RUNTIME_ENV_PATH} && if ${labelledWithImage("container", containerName)}; then docker start ${containerName} >/dev/null; `
       + `else created=; for attempt in $(seq ${CONTAINER_CREATE_ATTEMPTS}); do [ "$attempt" = 1 ] || sleep 1; `
       + `docker rm -f ${containerName} >/dev/null 2>&1; failure=$(${run} 2>&1 >/dev/null) && { created=1; break; }; `
       + `case "$failure" in *${shell(DOCKER_NAME_IN_USE)}*) ;; *) break ;; esac; done; `
       + `[ -n "$created" ] || { echo "$failure" >&2; false; }; fi && ${removeImage}`
-    return { prepare: prepare.join(" && "), start }
+    return {
+      prepare: holdingBootLock(IMAGE_PREPARATION_TIMEOUT_SECONDS, prepare.join(" && ")),
+      start: holdingBootLock(CONTAINER_START_TIMEOUT_SECONDS, start),
+    }
   }
 
   async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput, secrets: readonly string[]) {
@@ -413,13 +438,18 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
 
   async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
     const env = { ...bootEnv(input, hostId), ...(await options.env?.(input, { id: hostId })) }
-    const scripts = containerScripts(input)
-    await client.writeFile(sandboxId, { path: RUNTIME_ENV_PATH, content: envFile(env) })
-    if (options.registryAuth) {
-      await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })
+    const boot = crypto.randomUUID()
+    const staged: StagedFiles = {
+      env: `${RUNTIME_ENV_PATH}.${boot}`,
+      ...(options.registryAuth ? { password: `${REGISTRY_PASSWORD_PATH}.${boot}` } : {}),
+    }
+    const scripts = containerScripts(input, staged)
+    await client.writeFile(sandboxId, { path: staged.env, content: envFile(env) })
+    if (options.registryAuth && staged.password) {
+      await client.writeFile(sandboxId, { path: staged.password, content: options.registryAuth.password })
     }
     const secrets = [...workspaceRuntimeBootSecrets(env), ...(options.registryAuth ? [options.registryAuth.password] : [])]
-    const failures: unknown[] = []
+    let failure: unknown
     try {
       await execOrThrow(sandboxId, scripts.prepare, "runtime image preparation", { timeoutSeconds: IMAGE_PREPARATION_TIMEOUT_SECONDS, secrets })
       try {
@@ -431,17 +461,21 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
         throw error instanceof BoatDriverError ? new SandboxRuntimeBootError(error.message) : error
       }
     } catch (error) {
-      failures.push(error)
+      failure = error
     }
-    // The login step removes the staged password when it runs; this covers
-    // failures before the command reaches it.
+    // The login step removes the staged password and the start moves the
+    // staged env into place when they run; this covers failures before then.
+    // A cleanup that fails after the boot did is told in the boot's own error,
+    // which keeps its kind and is the text the lease records.
     try {
-      if (options.registryAuth) await execOrThrow(sandboxId, `rm -f ${REGISTRY_PASSWORD_PATH}`, "registry password cleanup", { secrets })
-    } catch (error) {
-      failures.push(error)
+      if (options.registryAuth || failure !== undefined) {
+        await execOrThrow(sandboxId, `rm -f ${[staged.env, staged.password].filter(Boolean).join(" ")}`, "staged file cleanup", { secrets })
+      }
+    } catch (cleanupFailure) {
+      if (failure === undefined) throw cleanupFailure
+      if (failure instanceof Error) failure.message = `${failure.message}; ${cleanupFailure instanceof Error ? cleanupFailure.message : String(cleanupFailure)}`
     }
-    if (failures.length === 1) throw failures[0]
-    if (failures.length > 1) throw new AggregateError(failures, `Boat ${sandboxId} container start and registry password cleanup failed`)
+    if (failure !== undefined) throw failure
     return secrets
   }
 
@@ -455,7 +489,11 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // request paths onto this base URL and would drop that query, so the
     // runtime authenticates every route itself except the anonymous
     // `/global/health` probe (liveness, the workspace id and the lease epoch).
-    await execOrThrow(sandboxId, `host ${port} --public`, "host publish", { retryOnceOn: HOST_RELAY_NOT_STOPPED })
+    // Two boots publishing one port at once made Boat answer 500 on its own unique (agent, port) record (2026-10-15).
+    await execOrThrow(sandboxId, holdingBootLock(HOST_PUBLISH_TIMEOUT_SECONDS, `host ${port} --public`), "host publish", {
+      timeoutSeconds: HOST_PUBLISH_TIMEOUT_SECONDS,
+      retryOnceOn: HOST_RELAY_NOT_STOPPED,
+    })
     await waitForHealth(sandboxId, input, secrets)
     // The lease owns the sandbox's lifetime from here; a deadline Boat keeps
     // would end it mid-work, so a sandbox whose deadline cannot be removed
@@ -530,7 +568,11 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       await client.resume(sandboxId, {
         ttlSeconds: BOOT_TTL_SECONDS,
         ...(input.ensure.machineClass ? { type: input.ensure.machineClass } : {}),
-      }).catch(hostGoneOrThrow)
+      }).catch((err: unknown) => {
+        // Another boot of this workspace resumed it first; its resume brings the sandbox up for both.
+        if (err instanceof BoatApiError && err.code === RESUME_UNDER_WAY) return
+        hostGoneOrThrow(err)
+      })
     }
     const ready = await waitUntilReady(sandboxId)
     if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }

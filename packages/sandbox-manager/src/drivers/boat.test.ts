@@ -1,5 +1,5 @@
-import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
@@ -91,7 +91,7 @@ function fakeBoat(options: { states?: string[]; hostUrl?: string; failHealthOnce
         return json(commandFinished({ stdout: `${healthy ? "200" : "000"}\n${options.containerState ?? "running"}` }))
       }
       if (command.startsWith("host url")) return json(commandFinished({ stdout: `${hostUrl}\n` }))
-      const publishFailure = command.startsWith("host ") ? options.hostPublishFailures?.shift() : undefined
+      const publishFailure = isHostCommand(command) ? options.hostPublishFailures?.shift() : undefined
       if (publishFailure) return json(commandFinished({ stderr: publishFailure, exitCode: 1 }))
       return json(commandFinished({}))
     }
@@ -112,6 +112,9 @@ function fakeBoat(options: { states?: string[]; hostUrl?: string; failHealthOnce
 }
 
 const BOOT_TTL_SECONDS = 30 * 60
+
+/** Boat's in-sandbox `host`, sent bare or behind the machine's boot lock. */
+const isHostCommand = (command: string) => /(^|&& )host /.test(command)
 
 const ttlUpdates = (calls: Call[]) => calls.filter((c) => c.path === `/sandboxes/${ID}` && c.method === "PATCH").map((c) => c.body)
 
@@ -134,10 +137,12 @@ const IMAGE_ID = "sha256:5eed1d"
  * `seededImages` are the images whose trees an earlier start left complete;
  * `boatSavedImages` are the image archives Boat keeps under its own directory.
  */
-// The start command is the sh script Boat runs on its Linux VM.
-const onVm = test.skipIf(process.platform === "win32")
+// The start command is the sh script Boat runs on its Linux VM. A start spawns dozens of real shells, and with the
+// machine at a load average of 11 the five-create case took 6.8 s, past the test runner's 5 s default.
+const VM_TEST_TIMEOUT_MS = 30_000
+const onVm = (name: string, run: () => Promise<void>) => test.skipIf(process.platform === "win32")(name, run, VM_TEST_TIMEOUT_MS)
 
-type StartCommands = { prepare: string; start: string }
+type StartCommands = { prepare: string; start: string; staged: string[] }
 
 type Vm = {
   existingImage?: string
@@ -163,11 +168,15 @@ type Vm = {
   persistentRootReadOnly?: boolean
   /** The image's trees cannot be streamed out. */
   seedFails?: boolean
+  /** Another boot of the machine holds the boot lock past this boot's wait. */
+  bootLockHeld?: boolean
+  /** Files a boot that never finished staged, written long before this boot. */
+  staleStaged?: string[]
   /** Run in the fixture an earlier run left, as a later start on the same VM. */
   dir?: string
 }
 
-function runStartCommand(commands: StartCommands, vm: Vm) {
+function vmFixture(vm: Vm) {
   const dir = vm.dir ?? mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
   const log = path.join(dir, "docker.log")
@@ -178,6 +187,8 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
   const recreations = path.join(dir, "recreations")
   const imageContainers = path.join(dir, "image-containers")
   const slotUsesImage = path.join(dir, "container-uses-image")
+  const seedSlot = path.join(dir, "seed-container")
+  const bootLock = path.join(dir, "boot.lock")
   const persistentRoot = path.join(dir, "claxedo-persistent")
   writeFileSync(log, "")
   if (!vm.dir) {
@@ -185,8 +196,11 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
     mkdirSync(images)
     mkdirSync(path.join(dir, "tmp"))
     mkdirSync(boatImages)
-    writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
     writeFileSync(path.join(dir, "docker-init"), "")
+    for (const file of vm.staleStaged ?? []) {
+      writeFileSync(path.join(dir, file), "secret")
+      utimesSync(path.join(dir, file), new Date(Date.now() - 31 * 60_000), new Date(Date.now() - 31 * 60_000))
+    }
     writeFileSync(recreations, (vm.recreatedBeforeRun ?? []).join("\n"))
     writeFileSync(imageContainers, (vm.imageContainers ?? []).map((id) => `${id}\n`).join(""))
     if (vm.existingUsesImage) writeFileSync(slotUsesImage, "")
@@ -223,6 +237,8 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
       chmodSync(path.join(bin, name), 0o755)
     }
     tool("timeout", 'shift\nexec "$@"')
+    // util-linux `flock -w <s> <fd>` takes flock(2) on the descriptor the calling shell holds, so the lock lasts as long as that shell.
+    tool("flock", vm.bootLockHeld ? "exit 1" : `exec perl -e 'use Fcntl qw(:flock); open(my $fh, ">&=", $ARGV[1]) or die; my $until = time + $ARGV[0]; until (flock($fh, LOCK_EX | LOCK_NB)) { exit 1 if time >= $until; select(undef, undef, undef, 0.02) }' "$2" "$3"`)
     // Root may write into the persistent root; the plain VM user may not.
     tool("sudo", `echo "sudo $1 $2" >> ${log}\nchmod u+w ${persistentRoot} 2>/dev/null\n"$@"\nrc=$?\nchmod ${vm.persistentRootReadOnly ? "u-w" : "u+w"} ${persistentRoot} 2>/dev/null\nexit $rc`)
     tool("docker", [
@@ -238,11 +254,11 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
       `    *) [ -f ${images}/image ] || exit 1; case "$*" in *Env*) printf 'PATH=/usr/local/bin:/usr/bin\\nLANG=C.UTF-8\\n' ;; *WorkingDir*) echo /workspace ;; *.Id*) echo ${IMAGE_ID} ;; esac ;;`,
       `  esac ;;`,
       `  container) [ -f ${slot} ] && { [ "$3" != --format ] || cat ${slot}; } ;;`,
-      `  rm) for a; do case "$a" in rm|-f|claxedo-seed) ;; claxedo-runtime) rm -f ${slot} ${slotUsesImage} ;; *) sed -i.bak "/^$a$/d" ${imageContainers} ;; esac; done ;;`,
-      `  create) [ -f ${images}/image ] ;;`,
-      `  cp) ${vm.seedFails ? "echo 'stream broke' >&2; exit 1" : `tree=\${2#claxedo-seed:/}; tar -cf - -C ${rootfs} "$tree"`} ;;`,
-      `  import) for a; do file=$prev; prev=$a; case "$a" in "LABEL claxedo.image="*) echo "\${a#LABEL claxedo.image=}" > ${images}/stub.next ;; esac; done`,
-      `    tar -tf "$file" >/dev/null && cp "$file" ${images}/stub-root.tar && mv ${images}/stub.next ${images}/stub ;;`,
+      `  rm) for a; do case "$a" in rm|-f) ;; claxedo-seed) rm -f ${seedSlot} ;; claxedo-runtime) rm -f ${slot} ${slotUsesImage} ;; *) sed -i.bak "/^$a$/d" ${imageContainers} ;; esac; done ;;`,
+      `  create) [ -f ${images}/image ] || exit 1; if [ -f ${seedSlot} ]; then echo 'Conflict. The container name "/claxedo-seed" is already in use' >&2; exit 125; fi; touch ${seedSlot} ;;`,
+      `  cp) ${vm.seedFails ? "echo 'stream broke' >&2; exit 1" : `/bin/sleep 0.05; [ -f ${seedSlot} ] || { echo 'No such container: claxedo-seed' >&2; exit 1; }; tree=\${2#claxedo-seed:/}; tar -cf - -C ${rootfs} "$tree"`} ;;`,
+      `  import) for a; do file=$prev; prev=$a; case "$a" in "LABEL claxedo.image="*) echo "\${a#LABEL claxedo.image=}" > ${images}/stub.next.$$ ;; esac; done`,
+      `    tar -tf "$file" >/dev/null && cp "$file" ${images}/stub-root.tar && mv ${images}/stub.next.$$ ${images}/stub ;;`,
       `  save) cp ${images}/stub "$3" ;;`,
       `  load) cp "$3" ${images}/stub ;;`,
       `  run) next=$(head -n 1 ${recreations}); if [ -n "$next" ]; then echo "$next" > ${slot}; sed -i.bak 1d ${recreations}; fi`,
@@ -255,24 +271,53 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
     ].join("\n"))
     tool("sleep", `echo "sleep $1" >> ${log}`)
   }
-  // The VM's init binary and Boat's image archive directory live at fixed paths the script names; the test's copies stand in under the directory the script is run from.
-  const sh = (command: string) => spawnSync("sh", ["-c", command
+  // The VM's init binary, Boat's image archive directory and the boot lock live at fixed paths the script names; the test's copies stand in under the directory the script is run from.
+  const script = (command: string) => command
     .replace(/\[ -x \/usr\/libexec\/docker\/docker-init \]/, `[ -f ${path.join(dir, "docker-init")} ]`)
-    .replaceAll("/var/lib/ascii-docker-images", boatImages)], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin`, TMPDIR: path.join(dir, "tmp") }, encoding: "utf8" })
-  const prepared = sh(commands.prepare)
-  const started = prepared.status === 0 ? sh(commands.start) : undefined
+    .replaceAll("/var/lib/ascii-docker-images", boatImages)
+    .replaceAll("/run/lock/claxedo-boot.lock", bootLock)
+  const shell = { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin`, TMPDIR: path.join(dir, "tmp") } }
+  // Boat's file channel writes what a boot stages before its commands run.
+  const stage = (commands: StartCommands) => { for (const file of commands.staged) writeFileSync(path.join(dir, file), file) }
   // The unpacking tar runs in a pipe beside `docker cp`, so its place in the log is not fixed; the trees it wrote are asserted instead.
-  const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" ")).filter((call) => call !== "sudo tar")
+  const calls = () => readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" ")).filter((call) => call !== "sudo tar")
   const trees = (image: string) => path.join(persistentRoot, treesDirectory(image))
   const read = (file: string) => existsSync(file) ? readFileSync(file, "utf8").trim() : undefined
   return {
-    prepared: prepared.status, started: started?.status, stderr: `${prepared.stderr}${started?.stderr ?? ""}`, calls, dir, trees,
+    dir, script, shell, stage, calls, trees,
     image: () => read(slot),
     imagePulled: () => existsSync(path.join(images, "image")),
     stub: () => read(path.join(images, "stub")),
     stubRoot: () => spawnSync("tar", ["-tvf", path.join(images, "stub-root.tar")], { encoding: "utf8" }).stdout.split("\n").filter(Boolean),
     boatSavedImages: () => readdirSync(boatImages),
   }
+}
+
+function runStartCommand(commands: StartCommands, vm: Vm) {
+  const vmState = vmFixture(vm)
+  vmState.stage(commands)
+  const sh = (command: string) => spawnSync("sh", ["-c", vmState.script(command)], { ...vmState.shell, encoding: "utf8" })
+  const prepared = sh(commands.prepare)
+  const started = prepared.status === 0 ? sh(commands.start) : undefined
+  return { ...vmState, prepared: prepared.status, started: started?.status, stderr: `${prepared.stderr}${started?.stderr ?? ""}`, calls: vmState.calls() }
+}
+
+/** Boots of one machine run side by side, each its preparation then its start, as two runners of one workspace's start do. */
+async function runStartsConcurrently(boots: StartCommands[], vm: Vm) {
+  const vmState = vmFixture(vm)
+  for (const boot of boots) vmState.stage(boot)
+  const sh = (command: string) => new Promise<{ status: number | null; stderr: string }>((resolve) => {
+    const child = spawn("sh", ["-c", vmState.script(command)], vmState.shell)
+    let stderr = ""
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString() })
+    child.on("close", (status) => resolve({ status, stderr }))
+  })
+  const results = await Promise.all(boots.map(async (boot) => {
+    const prepared = await sh(boot.prepare)
+    const started = prepared.status === 0 ? await sh(boot.start) : undefined
+    return { prepared: prepared.status, started: started?.status, stderr: `${prepared.stderr}${started?.stderr ?? ""}` }
+  }))
+  return { ...vmState, results, calls: vmState.calls() }
 }
 
 async function startCommands(): Promise<StartCommands> {
@@ -282,13 +327,13 @@ async function startCommands(): Promise<StartCommands> {
   const prepare = commandsOf(boat.calls).find((c) => c.includes("docker info"))
   const start = commandsOf(boat.calls).find((c) => c.includes("docker run -d"))
   if (!prepare || !start) throw new Error("no container start commands")
-  return { prepare, start }
+  return { prepare, start, staged: boat.calls.filter((c) => c.path.endsWith("/files")).map((c) => c.body.path as string) }
 }
 
 const commandsOf = (calls: Call[]) => calls.filter((c) => c.path.endsWith("/commands")).map((c) => c.body.command as string)
 
 describe("boat sandbox driver", () => {
-  test.each(["transport", "http", "exit"] as const)("registry password cleanup %s failure prevents publishing the runtime", async (failure) => {
+  test.each(["transport", "http", "exit"] as const)("staged file cleanup %s failure prevents publishing the runtime", async (failure) => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({
       apiKey: "k",
@@ -297,7 +342,7 @@ describe("boat sandbox driver", () => {
       registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
       fetchImpl: async (url, init) => {
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
-        if (body?.command === "rm -f .claxedo-registry-password") {
+        if (body?.command?.startsWith("rm -f .claxedo-runtime-env.")) {
           if (failure === "transport") throw new Error("cleanup connection refused")
           if (failure === "http") return Response.json({ ok: false, code: "forbidden", message: "cleanup denied" }, { status: 403 })
           return Response.json({ ok: true, ...commandFinished({ exitCode: 1, stderr: "cleanup denied" }) })
@@ -306,7 +351,7 @@ describe("boat sandbox driver", () => {
       },
     })
     await expect(driver.ensureHost(ensureInput())).rejects.toThrow()
-    expect(commandsOf(boat.calls).some((command) => command.startsWith("host "))).toBe(false)
+    expect(commandsOf(boat.calls).some(isHostCommand)).toBe(false)
   })
 
   test("persists a created sandbox before readiness polling and resumes it after manager restart", async () => {
@@ -505,11 +550,11 @@ describe("boat sandbox driver", () => {
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
     expect(run?.body.command).not.toContain("--env ")
-    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env")
+    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path?.startsWith(".claxedo-runtime-env."))
     expect(envWrite?.body).toMatchObject({ encoding: "utf8" })
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_WORKSPACE_ID='ws1'")
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL='https://api.example.test/.well-known/jwks.json'")
-    expect(commandsOf(boat.calls)).toContain("host 2593 --public")
+    expect(commandsOf(boat.calls)).toContain(`exec 9>>/run/lock/claxedo-boot.lock && { flock -w 60 9 || { echo "another boot of this machine held /run/lock/claxedo-boot.lock for 60 s" >&2; exit 1; }; } && host 2593 --public`)
     expect(commandsOf(boat.calls)).toContain("host url 2593 --public")
   })
 
@@ -527,7 +572,7 @@ describe("boat sandbox driver", () => {
     await driver.ensureHost({ ...ensureInput(), onImageReady: async () => { seen = commandsOf(boat.calls) } })
 
     expect(seen.some((command) => command.includes("docker run -d"))).toBe(true)
-    expect(seen).not.toContain("host 2593 --public")
+    expect(seen.some((command) => command.endsWith("host 2593 --public"))).toBe(false)
   })
 
   test("reports its machine ready once Boat says a created or resumed sandbox is ready, before anything is written to it", async () => {
@@ -556,7 +601,7 @@ describe("boat sandbox driver", () => {
   })
 
   const RELAY_NOT_STOPPED = "Error: API error (500): The sandbox could not stop the localhost relay of this port. Try again."
-  const publishes = (calls: Call[]) => commandsOf(calls).filter((command) => command === "host 2593 --public")
+  const publishes = (calls: Call[]) => commandsOf(calls).filter((command) => command.endsWith("&& host 2593 --public"))
 
   test("a port publish Boat answers could not stop the port's relay is tried once more", async () => {
     const boat = fakeBoat({ hostPublishFailures: [RELAY_NOT_STOPPED] })
@@ -664,6 +709,52 @@ describe("boat sandbox driver", () => {
     expect(run.started).toBe(0)
     expect(run.calls.slice(-6)).toEqual(["image inspect", "ps -aq", "rm -f", "image inspect", `rmi ${IMAGE}`, "sudo rm"])
     expect(run.imagePulled()).toBe(false)
+  })
+
+  onVm("two boots of one machine at once seed it once: the second waits for the first's preparation, then finds the seed complete and the first's container", async () => {
+    const run = await runStartsConcurrently([await startCommands(), await startCommands()], {})
+    for (const result of run.results) {
+      expect(result.stderr).toBe("")
+      expect(result.prepared).toBe(0)
+      expect(result.started).toBe(0)
+    }
+    expect(run.calls.filter((call) => call.startsWith("pull "))).toHaveLength(1)
+    expect(run.calls.filter((call) => call === "cp claxedo-seed:/usr")).toHaveLength(1)
+    expect(run.calls.filter((call) => call === "run -d")).toHaveLength(1)
+    expect(run.calls.filter((call) => call === "start claxedo-runtime")).toHaveLength(1)
+    expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(true)
+    expect(run.image()).toBe(IMAGE)
+  })
+
+  onVm("a boot that cannot take the machine's boot lock in time fails with the reason and changes nothing", async () => {
+    const run = runStartCommand(await startCommands(), { bootLockHeld: true })
+    expect(run.prepared).not.toBe(0)
+    expect(run.stderr).toContain("another boot of this machine held /run/lock/claxedo-boot.lock".replace("/run/lock/claxedo-boot.lock", path.join(run.dir, "boot.lock")))
+    expect(run.calls).toEqual([])
+  })
+
+  test("each boot stages its env and registry password under names of its own, so one boot's cleanup never removes another's", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0,
+      registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" } })
+    await driver.ensureHost(ensureInput())
+    await driver.ensureHost(ensureInput())
+    const staged = boat.calls.filter((c) => c.path.endsWith("/files")).map((c) => c.body.path as string)
+    expect(staged).toHaveLength(4)
+    expect(new Set(staged).size).toBe(4)
+    const cleanups = commandsOf(boat.calls).filter((command) => command.startsWith("rm -f .claxedo-runtime-env."))
+    expect(cleanups).toEqual([`rm -f ${staged[0]} ${staged[1]}`, `rm -f ${staged[2]} ${staged[3]}`])
+  })
+
+  onVm("a boot moves the env it staged into the container's place and removes what boots that never finished staged", async () => {
+    const commands = await startCommands()
+    const stale = [".claxedo-runtime-env.dead-boot", ".claxedo-registry-password.dead-boot"]
+    const run = runStartCommand(commands, { seededImages: [IMAGE], stubLoaded: IMAGE, staleStaged: stale })
+    expect(run.started).toBe(0)
+    for (const file of stale) expect(existsSync(path.join(run.dir, file))).toBe(false)
+    const [env] = commands.staged
+    expect(existsSync(path.join(run.dir, env))).toBe(false)
+    expect(readFileSync(path.join(run.dir, ".claxedo-runtime-env"), "utf8")).toBe(env)
   })
 
   onVm("a seed that was interrupted before it was marked complete is redone from scratch", async () => {
@@ -797,16 +888,16 @@ describe("boat sandbox driver", () => {
     }
 
     const writes = boat.calls.filter((c) => c.path.endsWith("/files") && c.method === "PUT")
-    const envWrite = writes.find((c) => c.body.path === ".claxedo-runtime-env")
+    const envWrite = writes.find((c) => c.body.path.startsWith(".claxedo-runtime-env."))
     expect(envWrite?.body.content).toContain("export RUNTIME_SECRET='synthetic-runtime-secret'")
     expect(envWrite?.body.content).toContain("export CALLER_SECRET='synthetic-caller-secret'")
     expect(envWrite?.body.content).toContain("export PEM='-----BEGIN-----\nline2\n-----END-----'")
-    const passwordWrite = writes.find((c) => c.body.path === ".claxedo-registry-password")
+    const passwordWrite = writes.find((c) => c.body.path.startsWith(".claxedo-registry-password."))
     expect(passwordWrite?.body.content).toBe("synthetic-registry-pw")
 
     const prepare = commands.find((c) => c.includes("docker login"))
-    expect(prepare).toContain("--password-stdin < .claxedo-registry-password")
-    expect(prepare).toContain("rm -f .claxedo-registry-password")
+    expect(prepare).toContain(`--password-stdin < ${passwordWrite?.body.path}`)
+    expect(prepare).toContain(`rm -f ${passwordWrite?.body.path}`)
     expect(commands.find((c) => c.includes("docker run -d"))).toContain("$(pwd)/.claxedo-runtime-env:/run/claxedo-runtime.env:ro")
   })
 
@@ -824,17 +915,26 @@ describe("boat sandbox driver", () => {
 
     const failure = await driver.ensureHost(ensureInput()).then(
       () => { throw new Error("expected ensure to fail") },
-      (err: unknown) => err as AggregateError,
+      (err: unknown) => err as Error,
     )
-    expect(failure).toBeInstanceOf(AggregateError)
-    expect(failure.errors).toHaveLength(2)
-    expect(failure.errors[0].message).toContain("runtime image preparation failed (exit 125): docker: Error response from daemon: Conflict.")
-    expect(failure.errors[1].message).toContain("registry password cleanup")
-    for (const error of failure.errors) {
-      expect(error.message).toContain("[redacted]")
-      expect(error.message).not.toContain("synthetic-runtime-secret")
-      expect(error.message).not.toContain("synthetic-registry-pw")
-    }
+    expect(failure.message.startsWith(`Boat ${ID} runtime image preparation failed (exit 125): docker: Error response from daemon: Conflict.`)).toBe(true)
+    expect(failure.message).toContain(`; Boat ${ID} staged file cleanup failed (exit 125)`)
+    expect(failure.message).toContain("[redacted]")
+    expect(failure.message).not.toContain("synthetic-runtime-secret")
+    expect(failure.message).not.toContain("synthetic-registry-pw")
+  })
+
+  test("a container start that fails and whose cleanup fails too is still the boot failure it was, with both reasons", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, fetchImpl: async (url, init) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (body?.command?.includes("docker run -d")) return Response.json({ ok: true, ...commandFinished({ exitCode: 1, stderr: "invalid mount" }) })
+      if (body?.command?.startsWith("rm -f .claxedo-runtime-env.")) return Response.json({ ok: true, ...commandFinished({ exitCode: 1, stderr: "read-only file system" }) })
+      return boat.fetchImpl(url, init)
+    } })
+    const failure = await driver.ensureHost(ensureInput()).then(() => undefined, (error: unknown) => error as Error)
+    expect(isSandboxRuntimeBootFailure(failure)).toBe(true)
+    expect(failure?.message).toBe(`Boat ${ID} container start failed (exit 1): invalid mount; Boat ${ID} staged file cleanup failed (exit 1): read-only file system`)
   })
 
   test("a command request outlasts its command, while other calls keep the client timeout", async () => {
@@ -884,7 +984,7 @@ describe("boat sandbox driver", () => {
       return boat.fetchImpl(url, init)
     } })
     await expect(driver.ensureHost(ensureInput())).rejects.toThrow(/container start timed out/)
-    expect(commandsOf(boat.calls).some((command) => command.startsWith("host "))).toBe(false)
+    expect(commandsOf(boat.calls).some(isHostCommand)).toBe(false)
   })
 
   test("retries the health probe until the runtime answers 200", async () => {
@@ -1054,6 +1154,19 @@ describe("boat sandbox driver", () => {
     expect(target.sandboxId).toBe(ID)
     expect(boat.calls.find((c) => c.path === `/sandboxes/${ID}/resume`)?.body).toEqual({ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS })
     expect(ttlUpdates(boat.calls)).toEqual([{ ttlSeconds: null }])
+  })
+
+  test("a resume Boat refuses because another boot's resume of the sandbox is under way waits for that resume and boots", async () => {
+    const boat = fakeBoat({ states: ["archived", "provisioning", "ready"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, provisionIntervalMs: 0, fetchImpl: async (url, init) => {
+      if (url.endsWith("/resume")) return Response.json({ ok: false, code: "sandbox_resuming", message: "The sandbox is already resuming" }, { status: 409 })
+      return boat.fetchImpl(url, init)
+    } })
+    const target = await driver.resumeHost!({
+      lease: sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" }),
+      ensure: ensureInput(),
+    })
+    expect(target).toMatchObject({ sandboxId: ID, url: "https://machine-2593.on.boat.dev" })
   })
 
   test("a sandbox that still runs is booted again without a resume, and one still archiving is polled", async () => {
