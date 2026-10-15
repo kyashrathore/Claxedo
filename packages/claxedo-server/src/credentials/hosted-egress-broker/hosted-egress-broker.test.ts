@@ -83,6 +83,12 @@ function leases() {
   }
 }
 
+/** Who owns each workspace as the authority answers now; a workspace not named here is alice's, a removed owner answers none. */
+const workspaceOwners = new Map<string, { userId: string; actorId: string; orgId: string; projectId: string } | undefined>()
+afterEach(() => workspaceOwners.clear())
+const workspaceOwner = async (workspaceId: string) =>
+  workspaceOwners.has(workspaceId) ? workspaceOwners.get(workspaceId) : { userId: "alice", actorId: "actor-alice", orgId: "org-1", projectId: "project-1" }
+
 async function composition(options: { now?: () => number; upstreamTimeoutMs?: number; sandboxManager?: Pick<SandboxManager, "target"> } = {}) {
   const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
@@ -95,6 +101,7 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
   const broker = createHostedEgressBroker({
     credentials,
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
+    workspaceOwner,
     sandboxManager: options.sandboxManager ?? sandboxes.sandboxManager,
     env: signing,
     origin: ORIGIN,
@@ -155,7 +162,7 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
     const secret = await store.resolveCredentialSecretById?.(credential.id)
     const destination = builtInProviderDestination({ providerId: credential.provider_id, kind: credential.kind, secret: secret ?? "" })
     if (!destination) throw new Error("the account has no destination")
-    const binder = (at ? createHostedEgressBroker({ credentials, read: () => async () => undefined, sandboxManager: sandboxes.sandboxManager, env: signing, origin: ORIGIN, now: at }) : broker)
+    const binder = (at ? createHostedEgressBroker({ credentials, read: () => async () => undefined, workspaceOwner, sandboxManager: sandboxes.sandboxManager, env: signing, origin: ORIGIN, now: at }) : broker)
       .binder({ orgId: "org-1", workspaceId: workspace.workspaceId, lease: workspace.lease ?? SERVING })
     const projection = await binder.bind(credential, destination)
     if ("unavailable" in projection || !projection.placeholder) throw new Error("the account was not bound")
@@ -165,9 +172,12 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
 }
 
 describe("a sandbox spending its organization's team account through the hosted broker", () => {
+  const ANTHROPIC = ["anthropic", "claude-sdk", "claude-acp"]
+
   test("the team key arrives at the vendor, and a removed one is refused at the next request", async () => {
     const { app, store, upstream, delivered } = await composition()
     const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
     const { baseUrl, placeholder } = await delivered(team, { workspaceId: "ws_team" })
     const send = () => app.request(`${baseUrl}/v1/messages`, {
       method: "POST",
@@ -180,6 +190,30 @@ describe("a sandbox spending its organization's team account through the hosted 
     await store.deleteCredential(team.id)
     expect((await send()).status).toBe(403)
     expect(upstream.seen).toHaveLength(1)
+  })
+
+  test("a team key's placeholder is refused at once when the workspace's owner chooses their own account or leaves the organization", async () => {
+    const { app, store, upstream, delivered } = await composition()
+    const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
+    const { baseUrl, placeholder } = await delivered(team, { workspaceId: "ws_team" })
+    const send = () => app.request(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": placeholder, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: "{}",
+    })
+    expect((await send()).status).toBe(200)
+
+    await store.setAccountSources(ANTHROPIC, "own", "org-1", "alice")
+    expect((await send()).status).toBe(403)
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
+    expect((await send()).status).toBe(200)
+
+    workspaceOwners.set("ws_team", undefined)
+    expect((await send()).status).toBe(403)
+    workspaceOwners.set("ws_team", { userId: "alice", actorId: "actor-alice", orgId: "org-2", projectId: "project-1" })
+    expect((await send()).status).toBe(403)
+    expect(upstream.seen.map((sent) => sent.request.headers.get("x-api-key"))).toEqual(["sk-ant-api03-team-key", "sk-ant-api03-team-key"])
   })
 })
 

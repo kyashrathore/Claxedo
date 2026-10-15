@@ -3,6 +3,8 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { builtInProviderDestination, type ProviderDestination } from "@claxedo/server-core/credentials/built-in-destinations"
 import { hostedBrokerServes } from "@claxedo/server-core/credentials/reach"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
+import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
+import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { createCredentialRefusals, type CredentialRefusals } from "../credential-refusals"
 import { storeRenewal } from "../store-renewal"
@@ -39,6 +41,8 @@ export function bindingDestination(destination: ProviderDestination): Binding["d
 export function hostedBindingAuthority(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
   read: (orgId: string) => HostedBrokerCredentialRead
+  /** The workspace's owner as the authority answers now: none once they no longer stand in its organization. */
+  workspaceOwner: (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
   sandboxManager: Pick<SandboxManager, "target">
   fetch?: typeof fetch
   now?: () => number
@@ -49,6 +53,18 @@ export function hostedBindingAuthority(input: {
 }): BindingAuthority<HostedBrokerClaims> {
   const now = input.now ?? Date.now
   const refusals = input.credentialRefusals ?? createCredentialRefusals({ credentials: input.credentials, now })
+  /**
+   * An organization's row is spent only for a workspace whose owner still
+   * stands in the organization and still chooses its account for that
+   * provider, read on every request: a placeholder minted before they chose
+   * their own account or left is refused at its next request.
+   */
+  const spendsTeamAccount = async (credentials: ControlPlaneCredentials, credential: CredentialMetadata, claims: HostedBrokerClaims) => {
+    const owner = await input.workspaceOwner(claims.workspaceId)
+    if (!owner || owner.orgId !== claims.orgId) return false
+    const sources = holderAccountSources(await credentials.accountSelections(), owner.userId, owner.userId)
+    return spendsAccount(credential, owner.userId, sources, owner.userId)
+  }
   return {
     async resolve(bindingId, claims) {
       if (bindingId === repositoryBindingId(claims)) return input.repositories?.()?.(bindingId, claims)
@@ -61,6 +77,7 @@ export function hostedBindingAuthority(input: {
       // only when the pass was minted for exactly this binding.
       if (brokerBindingId(identity) !== bindingId) return undefined
       const credentials = input.credentials(claims.orgId)
+      if (credential.owner === null && !await spendsTeamAccount(credentials, credential, claims)) return undefined
       const renewed = await storeRenewal(credentials, input.fetch ? { fetch: input.fetch } : {})(credential)
       if (renewed.revision !== credential.revision) {
         const fresh = await credentials.resolveCredentialSecretById?.(credential.id)

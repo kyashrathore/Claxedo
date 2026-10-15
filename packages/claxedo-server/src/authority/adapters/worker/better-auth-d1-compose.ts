@@ -264,6 +264,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     ? createHostedEgressBroker({
         credentials: plane.orgCredentials,
         read: (orgId) => hostedBrokerCredentialReader(orgId, { database: input.controlPlaneDatabase, env: input.env }),
+        workspaceOwner: async (workspaceId) => await authority.resolveWorkspaceOwner?.(workspaceId),
         sandboxManager,
         env: input.env,
         origin,

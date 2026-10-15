@@ -52,6 +52,7 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
   const broker = options.broker === false ? undefined : createHostedEgressBroker({
     credentials,
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
+    workspaceOwner: async () => ({ userId: "owner", actorId: "actor-owner", orgId: "org", projectId: "project" }),
     sandboxManager,
     env: signing,
     origin: ORIGIN,
