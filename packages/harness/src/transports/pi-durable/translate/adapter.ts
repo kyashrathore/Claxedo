@@ -1,5 +1,6 @@
 import { asRecord, asRecordOrEmpty as row, asString } from "@claxedo/helpers/guards"
 import type { HarnessEventAdapter } from "../../../translate/adapter"
+import { piRetryMessage } from "../errors"
 import { piMessageEnd, piMessageStart, piMessageUpdate, piReconcile } from "./messages"
 import { ignoredKind, initialPiDurableState, piStep, type PiDurableTranslatorState, type PiStep } from "./state"
 import { piToolEnd, piToolStart, piToolUpdate } from "./tools"
@@ -21,7 +22,7 @@ const HANDLERS: Record<string, Handler> = {
   message_start: piMessageStart, message_update: piMessageUpdate, message_end: piMessageEnd,
   tool_execution_start: piToolStart, tool_execution_update: piToolUpdate, tool_execution_end: piToolEnd,
   usage_changed: piUsageChanged,
-  auto_retry_start: (state, frame) => piStep(state, [{ type: "session-retry", message: asString(frame.errorMessage) || "Pi is retrying the model request",
+  auto_retry_start: (state, frame) => piStep(state, [{ type: "session-retry", message: piRetryMessage(asString(frame.errorMessage)),
     ...(typeof frame.attempt === "number" ? { attempt: frame.attempt } : {}) }]),
   compaction_start: (state, frame) => piStep(state, [{ type: "session-compaction", phase: "started", ...reason(frame) }]),
   compaction_end: (state, frame) => piStep(state, [{ type: "session-compaction", phase: "completed", ...reason(frame) }]),

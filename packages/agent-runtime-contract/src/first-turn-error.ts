@@ -1,6 +1,7 @@
 import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS } from "./credential-broker-errors"
 import type { FirstTurnErrorClass } from "./turn-error-classes"
 import type { TurnAccount } from "./turn-account"
+import { vendorBody } from "./vendor-body"
 
 /**
  * The broker's verdict, out of the vocabulary the broker itself writes.
@@ -29,6 +30,8 @@ export function classifyFirstTurnError(error: unknown): FirstTurnErrorClass {
   // harness wrapped around this code.
   const broker = brokerFault(message)
   if (broker) return broker
+  // An edge's block page carries "try again later", which is not a rate limit.
+  if (vendorBody(message).kind === "page") return "egress"
   if (usageLimit.test(message)) return "usage_limit"
   if (rateLimit.test(message)) return "rate_limit"
   if (credential.test(message)) return "credential"

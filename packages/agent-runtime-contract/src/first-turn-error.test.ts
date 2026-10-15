@@ -30,6 +30,8 @@ describe("first-turn error taxonomy", () => {
     ["thread not found: 019f73fb-1234-4abc-8def-0123456789ab", "session"],
     ["session not found", "session"],
     ["no such thread", "session"],
+    // chatgpt.com's block page as a Pi turn in a Durable Object received it (2026-10-15): its "try again later" is no rate limit.
+    ["<!DOCTYPE html><html lang=\"en-US\"><head><title>Unable to load site</title></head><body><p>Please try again later. If you are using a VPN, try turning it off.</p><p>[IP:2a06:98c0:3600::103 | Ray ID:a4abfe3368bcce65]</p></body></html>", "egress"],
   ] as const)("classifies %s as %s", (message, expected) => {
     expect(classifyFirstTurnError(message)).toBe(expected)
   })

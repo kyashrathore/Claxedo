@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { responseError } from "./errors"
+import { responseError, turnError } from "./errors"
 
 const reply = (status: number, error: object) => new Response(JSON.stringify({ ok: false, error }), { status })
 
@@ -34,4 +34,9 @@ test("a 403 is a sign-in failure only when it names a token, proof or credential
   ])
   expect(classes.map((error) => error.class)).toEqual(["auth", "auth", "auth", "forbidden", "forbidden", "forbidden", "forbidden", "forbidden"])
   expect(classes.every((error) => !error.retryable)).toBe(true)
+})
+
+test("a turn the provider's edge refused is a network failure, not a rate limit", () => {
+  const error = turnError({ name: "UnknownError", data: { message: "refused", firstTurnErrorClass: "egress" } })
+  expect(error.class).toBe("network")
 })

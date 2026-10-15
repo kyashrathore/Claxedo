@@ -1,4 +1,4 @@
-import { vendorCredentialProviderIds } from "@claxedo/agent-runtime-contract"
+import { harnessForProviderId, vendorCredentialProviderIds, type HarnessId } from "@claxedo/agent-runtime-contract"
 import type { ProviderCatalogEntry, ProviderModel } from "@claxedo/harness/contract"
 import type { CustomProviderConfig } from "./custom-provider"
 import { PROVIDER_AUTH_KINDS } from "./account-kinds"
@@ -20,8 +20,15 @@ export type OpenCodeCatalogProvider = {
   id: string
   name: string
   env: string[]
-  /** `custom` for an operator-declared provider, `api` for one the caller or the org holds an account for, `config` otherwise. */
-  source: "custom" | "api" | "config"
+  /**
+   * `custom` for an operator-declared provider; `api` for one the caller or
+   * the org holds a key or sign-in for under the vendor's own id; `harness`
+   * for one reached only through another harness's sign-in, such as a ChatGPT
+   * plan connected for Codex, which this provider cannot disconnect; `config`
+   * otherwise.
+   */
+  source: "custom" | "api" | "harness" | "config"
+  harness?: HarnessId
   models: Record<string, OpenCodeCatalogModel>
   /** Present on operator-declared providers: `baseURL` and non-secret headers. */
   options?: Record<string, unknown>
@@ -66,6 +73,15 @@ function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, cre
   return [...vendors.filter((vendor) => !declared.has(vendor.id)), ...custom]
 }
 
+/** An API key for the vendor wins, as the engine spends it before another harness's sign-in. */
+function vendorAccountSource(providerId: string, accounts: readonly CredentialMetadata[]): Pick<OpenCodeCatalogProvider, "source" | "harness"> {
+  const held = accounts.filter((credential) => vendorCredentialProviderIds(providerId).includes(credential.provider_id))
+  if (!held.length) return { source: "config" }
+  if (held.some((credential) => credential.kind === "api_key" || credential.provider_id === providerId)) return { source: "api" }
+  const harness = held.map((credential) => harnessForProviderId(credential.provider_id)).find((id) => id !== undefined)
+  return harness ? { source: "harness", harness } : { source: "api" }
+}
+
 /**
  * The Settings catalog: what the workspace engine discovers and can run,
  * joined with what this org manages for each provider. A declared provider the
@@ -80,9 +96,7 @@ export function projectOpenCodeProviderCatalog(options: {
   const declared = new Map(options.declared.map((provider) => [provider.providerID, provider]))
   const credentials = options.credentials
   const entries = new Map((options.engine ?? accountEntries(declared, credentials)).map((entry) => [entry.id, entry]))
-  const stored = new Set(credentials
-    .filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))
-    .map((credential) => credential.provider_id))
+  const accounts = credentials.filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))
   for (const provider of declared.values()) {
     if (entries.has(provider.providerID)) continue
     entries.set(provider.providerID, { id: provider.providerID, name: provider.name, env: provider.env, connected: false, models: providerModels(provider) })
@@ -93,7 +107,7 @@ export function projectOpenCodeProviderCatalog(options: {
       id: entry.id,
       name: custom?.name ?? entry.name,
       env: [...(custom?.env ?? entry.env)],
-      source: custom ? "custom" : vendorCredentialProviderIds(entry.id).some((id) => stored.has(id)) ? "api" : "config",
+      ...(custom ? { source: "custom" as const } : vendorAccountSource(entry.id, accounts)),
       models: Object.fromEntries(entry.models.map((model) => [model.id, catalogModel(model, entry.connected)])),
       ...(custom ? { options: { baseURL: custom.baseURL, ...(Object.keys(custom.headers).length ? { headers: custom.headers } : {}) } } : {}),
     }

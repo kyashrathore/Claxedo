@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { EDGE_REFUSED_MESSAGE, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { piDurableAdapter } from "./adapter"
 
 function translate() {
@@ -49,4 +49,13 @@ test("Pi's file tools name their file in the display's filePath, as every harnes
   }
   expect(send({ type: "tool_execution_start", toolCallId: "call-bash", toolName: "bash", args: { command: "ls" } })[0])
     .toMatchObject({ kind: "command_execution", display: { intent: "shell", command: "ls" } })
+})
+
+test("Pi's retry after the vendor edge's block page names the refused connection, never the page", () => {
+  const send = translate()
+  const page = "<!DOCTYPE html><html><head><title>Unable to load site</title></head><body>Please try again later.</body></html>"
+  expect(send({ type: "auto_retry_start", attempt: 3, errorMessage: page }))
+    .toEqual([{ type: "session-retry", message: EDGE_REFUSED_MESSAGE, attempt: 3 }])
+  expect(send({ type: "auto_retry_start", attempt: 1, errorMessage: "429: slow down" }))
+    .toEqual([{ type: "session-retry", message: "429: slow down", attempt: 1 }])
 })

@@ -39,6 +39,10 @@ export type ScriptedToolCall = { name: string; input: unknown; namespace?: strin
   opening?: true }
 export type ScriptedError = { marker: string; status: number; message: string; model?: string; once?: true }
 
+/** One row of the catalog `chatgpt.com/backend-api/codex/models` answers a plan with, as Codex 0.162.0 cached it. */
+export type ScriptedPlanModelRead = { path: string; authorization?: string; account?: string }
+export type ScriptedPlanModel = { slug: string; display_name: string; visibility: "list" | "hide"; priority: number; context_window: number }
+
 export type ScriptedModelServer = {
   url: string
   v1Url: string
@@ -54,6 +58,8 @@ export type ScriptedModelServer = {
   holdOpeningReplies(marker: string): () => void
   textGateReached(marker: string): Promise<void>
   refuseAuthorization(fragment: string): void
+  servePlanModels(models: readonly ScriptedPlanModel[]): void
+  planModelReads: readonly ScriptedPlanModelRead[]
   setReplyDelayMs(ms: number): void
   setTextStreamPacing(pacing: StreamPacing | undefined): void
   close(): Promise<void>
@@ -79,6 +85,8 @@ type ServerState = {
   replyDelayMs: number
   pacing?: StreamPacing
   refusedAuthorization?: string
+  planModels?: readonly ScriptedPlanModel[]
+  planModelReads: ScriptedPlanModelRead[]
 }
 
 const SCRIPTED_TITLE = "Scripted Session"
@@ -171,9 +179,14 @@ function closeAll(server: Server) {
   })
 }
 
-function chatgptBackend(incoming: IncomingMessage, outgoing: ServerResponse): boolean {
+function chatgptBackend(incoming: IncomingMessage, outgoing: ServerResponse, state: ServerState): boolean {
   const requestPath = incoming.url ?? "/"
   if (!requestPath.startsWith("/backend-api/") || requestPath.startsWith("/backend-api/codex/responses")) return false
+  if (requestPath.startsWith("/backend-api/codex/models") && state.planModels) {
+    state.planModelReads.push({ path: requestPath, authorization: incoming.headers.authorization, account: incoming.headers["chatgpt-account-id"]?.toString() })
+    outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ models: state.planModels }))
+    return true
+  }
   if (!requestPath.startsWith("/backend-api/wham/accounts/check")) {
     outgoing.writeHead(404).end()
     return true
@@ -186,9 +199,9 @@ function chatgptBackend(incoming: IncomingMessage, outgoing: ServerResponse): bo
 
 export async function startScriptedModelServer(input: { port: number; red?: boolean }): Promise<ScriptedModelServer> {
   const requests: ScriptedModelRequest[] = []
-  const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0, pendingTools: [] }
+  const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0, pendingTools: [], planModelReads: [] }
   const server = createServer(async (incoming, outgoing) => {
-    if (chatgptBackend(incoming, outgoing)) return
+    if (chatgptBackend(incoming, outgoing, state)) return
     if (incoming.method !== "POST") {
       outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }))
       return
@@ -259,6 +272,10 @@ export async function startScriptedModelServer(input: { port: number; red?: bool
     refuseAuthorization: (fragment) => {
       state.refusedAuthorization = fragment
     },
+    servePlanModels: (models) => {
+      state.planModels = models
+    },
+    planModelReads: state.planModelReads,
     setReplyDelayMs: (ms) => {
       state.replyDelayMs = ms
     },

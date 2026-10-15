@@ -66,6 +66,17 @@ test("a vendor the org stored an account for is managed by that account, connect
   expect(other.all[0]?.source).toBe("config")
 })
 
+test("a vendor reached through another harness's sign-in names that harness, and an API key for the vendor still wins", async () => {
+  await putCredential({ owner: "person_a", provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "plan-token" }, "org_plan")
+  const openai = { id: "openai", name: "OpenAI", env: ["OPENAI_API_KEY"], connected: true, models: [{ providerID: "openai", id: "gpt-6-luna", cost: [] }] }
+  const plan = opencodeProviderCatalog({ actor: "person_a", org: "org_plan", engine: engine(openai) })
+  expect(plan.all[0]).toMatchObject({ id: "openai", source: "harness", harness: "codex" })
+  await putCredential({ owner: "person_a", provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-openai" }, "org_plan")
+  const keyed = opencodeProviderCatalog({ actor: "person_a", org: "org_plan", engine: engine(openai) })
+  expect(keyed.all[0]?.source).toBe("api")
+  expect(keyed.all[0]).not.toHaveProperty("harness")
+})
+
 test("a declared provider keeps its custom row whether or not the engine runs it, and never crosses orgs", async () => {
   const acme = { providerID: "acme", name: "Acme", baseURL: "https://api.acme.test/v1", env: [], headers: { "X-Title": "prod" },
     credentialHeader: { name: "Authorization", scheme: "Bearer" as const }, models: { "acme-1": { name: "Acme One" } } }
