@@ -1,7 +1,8 @@
-import { harnessForProviderId, vendorCredentialProviderIds, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_TABLE, harnessForProviderId, type HarnessId } from "@claxedo/agent-runtime-contract"
 import type { ProviderCatalogEntry, ProviderModel } from "@claxedo/harness/contract"
 import type { CustomProviderConfig } from "./custom-provider"
 import { PROVIDER_AUTH_KINDS } from "./account-kinds"
+import { deliveredDirect } from "./reach"
 import type { CredentialMetadata } from "./types"
 import { VENDOR_PROVIDER_NAMES } from "./vendor-providers"
 
@@ -64,7 +65,7 @@ function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, cre
   const accounts = credentials.filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))
   const available = (ids: readonly string[]) => accounts.some((credential) => ids.includes(credential.provider_id) && credential.status === "available")
   const vendors = Object.entries(VENDOR_PROVIDER_NAMES).map(([id, name]): ProviderCatalogEntry => ({
-    id, name, env: [], connected: available(vendorCredentialProviderIds(id)), models: [],
+    id, name, env: [], connected: accounts.some((credential) => openCodeSpends(id, credential) && credential.status === "available"), models: [],
   }))
   const custom = [...declared.values()].map((provider): ProviderCatalogEntry => ({
     id: provider.providerID, name: provider.name, env: provider.env, models: providerModels(provider),
@@ -73,11 +74,24 @@ function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, cre
   return [...vendors.filter((vendor) => !declared.has(vendor.id)), ...custom]
 }
 
-/** An API key for the vendor wins, as the engine spends it before another harness's sign-in. */
+/**
+ * Whether the OpenCode engine can spend this row for the vendor. It is handed
+ * the owner's rows under their stored ids, so only the vendor's own row reaches
+ * the engine provider of that id; another harness's login reaches it only as a
+ * plan delivered as its token (a ChatGPT plan, through the transport's plan
+ * path). A Claude plan, or a key stored for Claude Code or Codex, reaches none.
+ */
+function openCodeSpends(vendor: string, credential: CredentialMetadata) {
+  if (credential.provider_id === vendor) return true
+  const harness = harnessForProviderId(credential.provider_id)
+  return deliveredDirect(credential) && harness !== undefined && HARNESS_TABLE[harness].vendorProvider === vendor
+}
+
+/** The vendor's own row wins, as the engine spends it before another harness's sign-in. */
 function vendorAccountSource(providerId: string, accounts: readonly CredentialMetadata[]): Pick<OpenCodeCatalogProvider, "source" | "harness"> {
-  const held = accounts.filter((credential) => vendorCredentialProviderIds(providerId).includes(credential.provider_id))
+  const held = accounts.filter((credential) => openCodeSpends(providerId, credential))
   if (!held.length) return { source: "config" }
-  if (held.some((credential) => credential.kind === "api_key" || credential.provider_id === providerId)) return { source: "api" }
+  if (held.some((credential) => credential.provider_id === providerId)) return { source: "api" }
   const harness = held.map((credential) => harnessForProviderId(credential.provider_id)).find((id) => id !== undefined)
   return harness ? { source: "harness", harness } : { source: "api" }
 }

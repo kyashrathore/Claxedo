@@ -52,7 +52,7 @@ test("a discovered provider the engine cannot run stays listed disconnected", as
 
 test("a vendor the org stored an account for is managed by that account, connected or refused", async () => {
   await putCredential({ owner: "person_a", provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-openai" }, "org_api")
-  await putCredential({ owner: "person_a", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-claude" }, "org_api")
+  await putCredential({ owner: "person_a", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key" }, "org_api")
   const catalog = opencodeProviderCatalog({ actor: "person_a", org: "org_api", engine: engine(
     { id: "openai", name: "OpenAI", env: ["OPENAI_API_KEY"], connected: false, models: [] },
     { id: "anthropic", name: "Anthropic", env: [], connected: true, models: [{ providerID: "anthropic", id: "sonnet", cost: [] }] },
@@ -77,6 +77,28 @@ test("a vendor reached through another harness's sign-in names that harness, and
   expect(keyed.all[0]).not.toHaveProperty("harness")
 })
 
+test("a Claude plan or a key stored for Claude Code is no Anthropic account OpenCode holds, since its engine is handed only the vendor's own rows", async () => {
+  await putCredential({ owner: "person_a", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-plan" }, "org_claude_plan")
+  await putCredential({ owner: "person_a", provider_id: "claude-acp", kind: "api_key", source: "managed", secret: "sk-ant-api03-for-claude" }, "org_claude_plan")
+  await putCredential({ owner: "person_a", provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "plan-token" }, "org_claude_plan")
+  const settings = opencodeProviderCatalog({ actor: "person_a", org: "org_claude_plan", engine: undefined })
+  expect(settings.all.find((provider) => provider.id === "anthropic")).toMatchObject({ source: "config" })
+  expect(settings.all.find((provider) => provider.id === "anthropic")).not.toHaveProperty("harness")
+  expect(settings.all.find((provider) => provider.id === "openai")).toMatchObject({ source: "harness", harness: "codex" })
+  expect(settings.connected).toEqual(["openai"])
+  const engineAnswered = opencodeProviderCatalog({ actor: "person_a", org: "org_claude_plan", engine: engine(
+    { id: "anthropic", name: "Anthropic", env: [], connected: false, models: [{ providerID: "anthropic", id: "sonnet", cost: [] }] },
+  ) })
+  expect(engineAnswered.all[0]).toMatchObject({ id: "anthropic", source: "config" })
+})
+
+test("a key stored for Codex is no OpenAI account OpenCode holds; only Codex's ChatGPT plan reaches OpenCode", async () => {
+  await putCredential({ owner: "person_a", provider_id: "codex-app-server", kind: "api_key", source: "managed", secret: "sk-proj-for-codex" }, "org_codex_key")
+  const settings = opencodeProviderCatalog({ actor: "person_a", org: "org_codex_key", engine: undefined })
+  expect(settings.all.find((provider) => provider.id === "openai")).toMatchObject({ source: "config" })
+  expect(settings.connected).toEqual([])
+})
+
 test("a declared provider keeps its custom row whether or not the engine runs it, and never crosses orgs", async () => {
   const acme = { providerID: "acme", name: "Acme", baseURL: "https://api.acme.test/v1", env: [], headers: { "X-Title": "prod" },
     credentialHeader: { name: "Authorization", scheme: "Bearer" as const }, models: { "acme-1": { name: "Acme One" } } }
@@ -97,7 +119,7 @@ test("a declared provider keeps its custom row whether or not the engine runs it
 })
 
 test("with no engine to ask, the vendors and declared providers are listed, connected by the accounts the org holds", async () => {
-  await putCredential({ owner: "person_a", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-claude" }, "org_accounts")
+  await putCredential({ owner: "person_a", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key" }, "org_accounts")
   const refused = await putCredential({ owner: "person_a", provider_id: "keyed", kind: "api_key", source: "managed", secret: "sk-keyed" }, "org_accounts")
   updateCredentialStatus(refused.id, "revoked", undefined, "org_accounts")
   const declared = { providerID: "keyless", name: "Keyless", baseURL: "http://127.0.0.1:11434/v1", env: [], headers: {},
