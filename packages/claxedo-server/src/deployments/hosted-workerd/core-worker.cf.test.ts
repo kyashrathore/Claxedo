@@ -165,4 +165,27 @@ describe("hosted core Worker root", () => {
     expect(posted[0]).not.toContain("t_1")
     vi.unstubAllGlobals()
   })
+
+  test("a transient D1 failure answers a retryable 503 the app can degrade in place, while any other failure stays a 500", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("ok")))
+    const routes = new Hono()
+      .get("/api/workspace", () => { throw new Error("D1_ERROR: internal error", { cause: new Error("D1_ERROR: internal error") }) })
+      .get("/api/control/orgs/o/members", () => { throw new Error("list failed", { cause: new Error("Network connection lost.") }) })
+      .get("/api/broken", () => { throw new Error("D1_ERROR: no such table: workspaces: SQLITE_ERROR") })
+    mocks.createHostedCoreApp.mockReturnValue(routes)
+    const worker = createHostedCoreWorker(vi.fn(() => ({ plane: { env: {} } as never, options: {} as never, documentAccess })))
+    const context = { waitUntil: () => {}, passThroughOnException: () => {}, props: {} } as never
+    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => {})
+
+    for (const path of ["/api/workspace", "/api/control/orgs/o/members"]) {
+      const response = await worker.fetch(new Request(`https://core.example.test${path}`), env(), context)
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ error: { code: "database_unavailable", message: "The database did not answer. Try again.", retryable: true } })
+    }
+    const broken = await worker.fetch(new Request("https://core.example.test/api/broken"), env(), context)
+    expect(broken.status).toBe(500)
+    expect(await broken.text()).toBe("Internal Server Error")
+    console.mockRestore()
+    vi.unstubAllGlobals()
+  })
 })

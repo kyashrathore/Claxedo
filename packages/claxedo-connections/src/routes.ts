@@ -286,7 +286,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     if (!row) return c.json({ code: "connection_not_found" }, 404)
     const result = await service.listRepositories(row.id)
     if (!result.ok) return c.json({ code: result.code }, result.status)
-    return c.json({ repositories: result.repositories })
+    return c.json({ repositories: result.repositories, ...(result.access ? { access: result.access } : {}) })
   })
 
   route("post", "/connections/:id/auth-failure", "turn-credential", async (c) => {

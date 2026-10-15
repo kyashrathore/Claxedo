@@ -19,7 +19,7 @@ function transition(_state: StartupState, event: StartupEvent): StartupState {
 }
 
 export function createStartup(input: {
-  readonly workspaces: Pick<Workspaces, "load">
+  readonly workspaces: Pick<Workspaces, "boot">
   readonly streams: Pick<EventStreams, "open" | "retry">
   readonly capabilities: CapabilitiesOwner
   readonly setConnection: (state: ConnectionState) => void
@@ -33,10 +33,10 @@ export function createStartup(input: {
     if (!opened) input.setConnection({ kind: "connecting" })
     pending = (async () => {
       try {
-        const catalog = await input.workspaces.load()
+        const catalog = await input.workspaces.boot()
         if (!opened) input.streams.open(catalog.declaration)
         opened = true
-        await input.capabilities.load()
+        input.capabilities.declare(catalog.declaration)
         status.send({ type: "succeeded" })
       } catch (error) {
         const failure = toAppError(error)

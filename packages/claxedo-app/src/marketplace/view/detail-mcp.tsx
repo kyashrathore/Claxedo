@@ -4,7 +4,9 @@ import type { PluginCandidate, PluginMcpServer, PluginToolGroup } from "@/server
 import { Switch } from "@/ui"
 import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
 import { isBuiltIn, toolGroups } from "../model"
+import { serverCloudLimit } from "../cloud-reach"
 import { ROW } from "./chrome"
+import { useHarnessLabel } from "./harness-label"
 
 function ServerDot(props: { readonly required: boolean }): JSX.Element {
   return (
@@ -54,6 +56,7 @@ const AUTH_KEYS: Record<"public" | "local" | "harness", MarketplaceKey> = {
 
 function ServerRow(props: { readonly server: PluginMcpServer; readonly retained: boolean }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
+  const label = useHarnessLabel()
   const auth = () => props.server.authentication
   const oauth = () => auth().state === "oauth"
   const message = () => {
@@ -67,15 +70,24 @@ function ServerRow(props: { readonly server: PluginMcpServer; readonly retained:
     t(props.retained ? "marketplace.mcp.connectionRequired" : "marketplace.mcp.enableFirst", {
       type: props.server.type,
     })
+  const cloudLimit = () => {
+    const limit = serverCloudLimit(props.server.cloud)
+    if (!limit) return undefined
+    if (limit.kind === "unavailable") return t("marketplace.mcp.cloudUnavailable", { reason: limit.reason.replaceAll("_", " ") })
+    return t("marketplace.mcp.cloudOnly", { harnesses: limit.harnesses.map(label).join(", ") })
+  }
   return (
-    <div class={`${ROW} mb-1.5 flex items-center gap-2`}>
-      <ServerDot required={oauth()} />
-      <div class="min-w-0 flex-1">
-        <div class="truncate text-12-medium text-text-strong">{props.server.name}</div>
-        <div class="text-11-regular text-text-weaker">{oauth() ? oauthLine() : props.server.type}</div>
+    <>
+      <div class={`${ROW} mb-1.5 flex items-center gap-2`}>
+        <ServerDot required={oauth()} />
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-12-medium text-text-strong">{props.server.name}</div>
+          <div class="text-11-regular text-text-weaker">{oauth() ? oauthLine() : props.server.type}</div>
+        </div>
+        <Show when={message()}>{(text) => <span class="shrink-0 text-11-regular text-text-weak">{text()}</span>}</Show>
       </div>
-      <Show when={message()}>{(text) => <span class="shrink-0 text-11-regular text-text-weak">{text()}</span>}</Show>
-    </div>
+      <Show when={cloudLimit()}>{(text) => <p class="mb-1.5 text-11-regular text-text-weak">{text()}</p>}</Show>
+    </>
   )
 }
 

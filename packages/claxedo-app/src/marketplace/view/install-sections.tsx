@@ -2,6 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness } from "@/server"
 import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
+import { pluginCloudReach } from "../cloud-reach"
 import { useHarnessLabel } from "./harness-label"
 import { useProjectScopeText } from "./project-scope"
 
@@ -43,9 +44,21 @@ function Environment(props: { readonly title: string; readonly detail: string })
   )
 }
 
-export function InstallPlacement(): JSX.Element {
+function useCloudDetail(plugin: () => PluginCandidate) {
+  const t = useTranslator(marketplaceDictionary)
+  const label = useHarnessLabel()
+  return () => {
+    const reach = pluginCloudReach(plugin())
+    if (reach.kind === "every") return undefined
+    if (reach.kind === "limited") return t("marketplace.install.cloudLimitedDetail")
+    return t("marketplace.install.cloudOnlyDetail", { harnesses: reach.harnesses.map(label).join(", ") })
+  }
+}
+
+export function InstallPlacement(props: { readonly plugin: PluginCandidate }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const scope = useProjectScopeText()
+  const cloudLimit = useCloudDetail(() => props.plugin)
   return (
     <>
       <section
@@ -54,12 +67,16 @@ export function InstallPlacement(): JSX.Element {
       >
         <div class="flex items-baseline justify-between gap-2">
           <h4 class="text-13-medium text-text-strong">{t("marketplace.install.environments")}</h4>
-          <span class="text-11-regular text-text-weaker">{t("marketplace.install.bothAlways")}</span>
+          <Show when={!cloudLimit()}>
+            <span class="text-11-regular text-text-weaker">{t("marketplace.install.bothAlways")}</span>
+          </Show>
         </div>
-        <p class="text-12-regular text-text-weak">{t("marketplace.install.environmentsNote")}</p>
+        <Show when={!cloudLimit()}>
+          <p class="text-12-regular text-text-weak">{t("marketplace.install.environmentsNote")}</p>
+        </Show>
         <div class="grid grid-cols-2 gap-1.5">
           <Environment title={t("marketplace.install.machines")} detail={t("marketplace.install.machinesDetail")} />
-          <Environment title={t("marketplace.install.cloud")} detail={t("marketplace.install.cloudDetail")} />
+          <Environment title={t("marketplace.install.cloud")} detail={cloudLimit() ?? t("marketplace.install.cloudDetail")} />
         </div>
       </section>
       <section

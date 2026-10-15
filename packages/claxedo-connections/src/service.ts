@@ -8,6 +8,7 @@ import {
   type AttemptStatus,
   type ConnectionFields,
   type CodeHostRepository,
+  type CodeHostRepositoryAccess,
   type ConnectionRow,
   type ConnectionScope,
   type ConnectionStorePort,
@@ -77,7 +78,7 @@ export type TokenResult =
   | { ok: false; status: 403 | 404 | 409 | 503; code: ConnectionTokenFailureCode; credentialStatus?: string }
 
 export type RepositoryListResult =
-  | { ok: true; repositories: CodeHostRepository[] }
+  | { ok: true; repositories: CodeHostRepository[]; access?: CodeHostRepositoryAccess }
   | { ok: false; status: 403 | 404 | 409 | 501 | 502 | 503; code: string }
 
 export type CapabilityHandle = {
@@ -548,11 +549,13 @@ export function createConnectionsService(deps: {
       }
       const token = await getToken(id, "code-host")
       if (!token.ok) return { ok: false, status: token.status, code: token.code }
+      const fields = token.response.fields ?? row.fields
       try {
-        return {
-          ok: true,
-          repositories: await codeHost.listRepositories(token.response.fields ?? row.fields, token.response.token),
-        }
+        const [repositories, access] = await Promise.all([
+          codeHost.listRepositories(fields, token.response.token),
+          codeHost.repositoryAccess?.(fields, token.response.token),
+        ])
+        return { ok: true, repositories, ...(access ? { access } : {}) }
       } catch (error) {
         const code = asRecord(error)?.code === "repository_provider_unauthorized"
           ? "repository_provider_unauthorized"

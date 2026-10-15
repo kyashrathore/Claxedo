@@ -104,7 +104,7 @@ function InstallPluginSheet(props: {
         </DialogTitle>
       </DialogHeader>
       <DialogBody class="flex flex-col px-4 pb-4">
-        <InstallPlacement />
+        <InstallPlacement plugin={props.plugin} />
         <InstallHarnesses rows={rows()} selected={selected()} onChange={setSelected} />
         <Show when={sheet.error()}>
           {(message) => (

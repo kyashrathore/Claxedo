@@ -44,7 +44,7 @@ export async function scriptedGithub(request: IncomingMessage, url: URL, gitUrl:
     || (url.origin === "https://codeload.github.com" && url.pathname.startsWith(`${repository}zip/`))) {
     return collection.fetch(url.toString())
   }
-  if (url.origin !== "https://api.github.com" || !["/user", "/user/emails", "/user/repos"].includes(url.pathname)) return undefined
+  if (url.origin !== "https://api.github.com" || !["/user", "/user/emails", "/user/repos", "/user/installations"].includes(url.pathname)) return undefined
   const person = request.headers.authorization?.replace(/^Bearer /i, "")
   if (person !== "hosted-token-hosted-person-a" && person !== "hosted-token-hosted-person-b") {
     return Response.json({ message: "unauthorized" }, { status: 401 })
@@ -54,6 +54,10 @@ export async function scriptedGithub(request: IncomingMessage, url: URL, gitUrl:
     return Response.json([{ id: 1, name, full_name: HOSTED_CODE_HOST_REPOSITORY, clone_url: gitUrl, private: false, permissions: { pull: true } }])
   }
   const id = person.endsWith("-a") ? 101 : 202
+  if (url.pathname === "/user/installations") {
+    return Response.json({ total_count: 1, installations: [{ id, account: { login: `hosted-person-${id}` },
+      html_url: `https://github.com/settings/installations/${id}`, repository_selection: "selected" }] })
+  }
   const email = `hosted-person-${id}@example.test`
   if (url.pathname === "/user") {
     return Response.json({ id, login: `hosted-person-${id}`, name: `Hosted Person ${id}`, email, avatar_url: `https://example.test/avatar/${id}` })

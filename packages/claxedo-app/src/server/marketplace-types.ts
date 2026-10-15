@@ -40,10 +40,16 @@ export type PluginMcpAuthentication =
   | { readonly state: "oauth"; readonly integrationId: string; readonly issuers?: readonly string[] }
   | { readonly state: "unavailable"; readonly reason: string }
 
+export type PluginMcpCloudReach =
+  | { readonly state: "gateway" | "image-command" }
+  | { readonly state: "gateway"; readonly onlyHarnesses: readonly PluginHarness[]; readonly reason: string }
+  | { readonly state: "unavailable"; readonly reason: string }
+
 export type PluginMcpServer = {
   readonly name: string
   readonly type: "stdio" | "streamable-http" | "sse"
   readonly authentication: PluginMcpAuthentication
+  readonly cloud?: PluginMcpCloudReach
 }
 
 export type PluginComponentDiagnostic = { readonly code: string; readonly path: string; readonly message: string }

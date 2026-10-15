@@ -43,7 +43,8 @@ export function createProjectList(server: Server) {
       return [{ project: color ? { ...project, icon: { ...project.icon, color } } : project }]
     })
   })
-  return { list }
+  const failure = () => (query.data === undefined ? query.error ?? undefined : undefined)
+  return { list, failure, retry: () => void query.refetch() }
 }
 
 export type ProjectList = ReturnType<typeof createProjectList>

@@ -7,6 +7,7 @@ import { ask } from "./answer"
 import { responseError } from "./errors"
 import { jsonInit, type Transport } from "./transport"
 import type { CodeHostConnection } from "./cloud-types"
+import { httpsLink } from "./wire/cloud"
 import type { FetchQuery } from "./types"
 
 const INTEGRATIONS_PATH = "/api/claxedo/integrations"
@@ -85,11 +86,6 @@ export function codeHostConnections(catalog: IntegrationsCatalog | undefined): r
     if (!providerName) return []
     return [{ id: connection.id, providerName, ...(connection.accountLabel ? { accountLabel: connection.accountLabel } : {}), status: connection.status }]
   })
-}
-
-function httpsLink(value: string | undefined) {
-  if (!value) return undefined
-  return URL.canParse(value) && new URL(value).protocol === "https:" ? value : undefined
 }
 
 function integrationPromptFromWire(value: unknown): IntegrationPrompt[] {

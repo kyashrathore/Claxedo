@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { D1Database } from "@cloudflare/workers-types"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
-import { d1BatchAssertionFailed, d1ConstraintFailure, d1UniqueFailureOn } from "./d1-constraint"
+import { d1BatchAssertionFailed, d1ConstraintFailure, d1TransientFailure, d1UniqueFailureOn } from "./d1-constraint"
 
 let instance: ControlPlaneDatabase
 let database: D1Database
@@ -47,5 +47,14 @@ describe("D1 constraint failures", () => {
       .toEqual({ kind: "unique", target: "users.email" })
     expect(d1ConstraintFailure(new Error("D1_ERROR: no such table: users: SQLITE_ERROR"))).toBeUndefined()
     expect(d1ConstraintFailure("UNIQUE constraint failed: users.email")).toBeUndefined()
+  })
+
+  test("a reset, a lost connection or D1's internal error is transient, and a constraint or a missing table is not", () => {
+    expect(d1TransientFailure(new Error("D1_ERROR: internal error"))).toBe(true)
+    expect(d1TransientFailure(new Error("list failed", { cause: new Error("Network connection lost.") }))).toBe(true)
+    expect(d1TransientFailure(new Error("D1 DB storage operation exceeded timeout which caused object to be reset."))).toBe(true)
+    expect(d1TransientFailure(new Error("D1_ERROR: UNIQUE constraint failed: users.email: SQLITE_CONSTRAINT"))).toBe(false)
+    expect(d1TransientFailure(new Error("D1_ERROR: no such table: users: SQLITE_ERROR"))).toBe(false)
+    expect(d1TransientFailure("Network connection lost")).toBe(false)
   })
 })

@@ -27,6 +27,7 @@ import type { HostedControlPlane } from "../../authority/hosted-services"
 import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { workerErrorCapture } from "../../platform/auth/worker-telemetry"
+import { d1TransientFailure } from "../../platform/db/d1-constraint"
 import {
   cloudflareRateLimitStore,
   type CloudflareRateLimitBinding,
@@ -165,6 +166,9 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
         method: context.req.method,
         ...(isClaxedoError(error) ? { code: error.code } : {}),
       }))
+      if (d1TransientFailure(error)) {
+        return context.json({ error: { code: "database_unavailable", message: "The database did not answer. Try again.", retryable: true } }, 503)
+      }
       return context.text("Internal Server Error", 500)
     })
     appByPlane.set(key, app)

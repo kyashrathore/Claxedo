@@ -649,8 +649,15 @@ export const desktopRenderer: Policy = {
   // notice for a harness the runtime refuses because it runs in another host
   // (owner: the app's composer domain, `composer/view/harness-elsewhere.ts`).
   // They add no package edge.
-  // 1375/36, no headroom.
-  ceilings: { modules: 1375, packages: 36 },
+  // What a permission ask shows from the request the harness sent (owner: the
+  // app's session domain, `session/view/docks/permission-facts.ts`), where a
+  // plugin works in the cloud from its MCP servers' reach (owner: the app's
+  // marketplace domain, `marketplace/cloud-reach.ts`), and the repository
+  // picker's hint about where a code host grants more repositories (owner:
+  // the app's projects domain, `projects/repository-access.ts`,
+  // `projects/view/project-repository-access.tsx`). They add no package edge.
+  // 1379/36, no headroom.
+  ceilings: { modules: 1379, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
