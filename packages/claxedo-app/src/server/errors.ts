@@ -189,6 +189,10 @@ export function isAppError(value: unknown): value is AppError {
   return typeof row.class === "string" && ERROR_CLASSES.has(row.class) && typeof row.message === "string" && typeof row.retryable === "boolean"
 }
 
+export function isClaimedByAnotherClient(error: unknown): boolean {
+  return toAppError(error).code === "control_plane_idempotency_in_flight"
+}
+
 export function isSessionMissing(error: unknown): boolean {
   return toAppError(error).code === "session_not_found"
 }

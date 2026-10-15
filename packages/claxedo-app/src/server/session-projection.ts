@@ -1,4 +1,4 @@
-import { toAppError } from "./errors"
+import { isClaimedByAnotherClient, toAppError } from "./errors"
 import type { ServerEvent } from "./events"
 import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
@@ -20,14 +20,15 @@ export function createSessionProjection(workspaces: Workspaces, account: HostedA
       const { workspaceId } = await workspaces.locate(ref.placementId)
       await account.run(rowOnly ? "session.projection.register" : "session.projection.checkpoint", { workspaceId, sessionId: ref.sessionId, idempotencyKey, reason })
     } catch (error) {
+      if (isClaimedByAnotherClient(error)) return
       console.warn("The control plane could not store a cloud session", { sessionId: ref.sessionId, action, error: toAppError(error) })
     }
   }
   return {
     created: (ref) => pull(ref, "register", "session-created", `session-created:${ref.placementId}:${ref.sessionId}`),
     observe: (event) => {
-      if (event.type !== "statusChanged" || (event.status.kind !== "idle" && event.status.kind !== "failed")) return
-      void pull(event.ref, "checkpoint", "message-checkpoint", `message-checkpoint:${event.ref.sessionId}:${Date.now()}`)
+      if (event.type !== "statusChanged" || !event.lastTurn) return
+      void pull(event.ref, "checkpoint", "message-checkpoint", `message-checkpoint:${event.ref.sessionId}:${event.lastTurn.completedAt}`)
     },
   }
 }
