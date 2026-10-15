@@ -1,6 +1,6 @@
 import { ServerError } from "../errors"
 import type { WorkspaceBootMode } from "../cloud-types"
-import { isRecord } from "@claxedo/helpers/guards"
+import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 export type RelayConnection = {
   readonly sessionId?: string
@@ -54,10 +54,6 @@ function retryAfterOf(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
-function failureOf(value: unknown): string | undefined {
-  return typeof value === "string" && value ? value : undefined
-}
-
 function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnection {
   const { relayUrl, runtimeAccessToken, tokenExpiresAt } = row
   if (typeof relayUrl !== "string" || typeof runtimeAccessToken !== "string" || typeof tokenExpiresAt !== "number") {
@@ -73,7 +69,7 @@ export function connectionAnswerFromWire(body: unknown, workspaceId: string, ses
   if (row.status === "provisioning") {
     const retryAfterMs = retryAfterOf(row.retryAfterMs)
     const bootMode = bootModeOf(row.bootMode)
-    const failure = failureOf(row.failure)
+    const failure = nonEmptyString(row.failure)
     return { kind: "provisioning", ...(retryAfterMs !== undefined ? { retryAfterMs } : {}), ...(bootMode ? { bootMode } : {}), ...(failure ? { failure } : {}) }
   }
   if (sessionId && row.sessionId !== sessionId) throw new ServerError({ class: "internal", message: "Session connection scope does not match the requested session" })
@@ -85,6 +81,6 @@ export function unavailableRetry(body: unknown): Extract<ConnectionAnswer, { kin
   const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
   const retryAfterMs = retryAfterOf(error?.retryAfterMs)
   if (retryAfterMs === undefined) return undefined
-  const failure = failureOf(error?.failure)
+  const failure = nonEmptyString(error?.failure)
   return { kind: "provisioning", retryAfterMs, ...(failure ? { failure } : {}) }
 }

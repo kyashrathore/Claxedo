@@ -616,8 +616,12 @@ export const desktopRenderer: Policy = {
   // read (owner: `lib/account-health.ts`), and the connect form's state apart
   // from its server reads (owner: the app's accounts domain,
   // `accounts/connect-state.ts`). They add no package edge.
-  // 1365/36, no headroom.
-  ceilings: { modules: 1365, packages: 36 },
+  // A cloud placement's lease lifecycle read from its catalog row, which tells
+  // a workspace the server is starting from one that is asleep (owner: the
+  // app's server adapter, `server/wire/placement-lifecycle.ts`). It adds no
+  // package edge.
+  // 1366/36, no headroom.
+  ceilings: { modules: 1366, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
