@@ -7,6 +7,7 @@ import { TransportError } from "../../contract/errors.js"
 import { PLAN_CREDENTIAL_PROVIDER, PLAN_PROVIDER, planAccount, planIdentity } from "./credentials.js"
 import { openCodeLocationClient, type OpenCodeHost } from "./host.js"
 import { watchPluginEvents } from "./plugin-events.js"
+import { readPlanModels, type PlanModel } from "./plan-models.js"
 
 const PLAN_METHOD = Integration.MethodID.make("chatgpt-headless")
 const PLAN_PLACEHOLDER = "claxedo-delivered-chatgpt-plan"
@@ -21,12 +22,14 @@ export type PlanRenewalSource = Readonly<{
 type HttpRequest = { request: Request }
 type HttpResponse = { sessionID: string; request: Request; response: Response }
 type Retry = { sessionID: string; error: { status?: number }; decision: { retry: false } | { retry: true; delay: number } }
-type HeldPlan = Readonly<{ credentialId: string; accountID: string; access: string; expires: number }>
+type HeldPlan = Readonly<{ credentialId: string; accountID: string; access: string; expires: number; baseURL: string }>
+type CatalogEditor = Parameters<Parameters<Plugin.Context["catalog"]["transform"]>[0]>[0]
 
 function planOf(row: ProviderDirect, credentialId = planIdentity(row)): HeldPlan {
   const accountID = planAccount(row)
   if (!accountID) throw new TransportError("opencode", "credential_unavailable", "The ChatGPT plan's token names no account")
-  return { credentialId, accountID, access: row.secret, expires: expiryFromJwt(row.secret) ?? row.expiresAt ?? Number.MAX_SAFE_INTEGER }
+  return { credentialId, accountID, access: row.secret, expires: expiryFromJwt(row.secret) ?? row.expiresAt ?? Number.MAX_SAFE_INTEGER,
+    baseURL: `${row.baseUrl}${row.apiPath ?? ""}` }
 }
 
 async function accountTaken(context: Plugin.Context, accountID: string | undefined): Promise<void> {
@@ -44,8 +47,27 @@ async function accountTaken(context: Plugin.Context, accountID: string | undefin
   }
 }
 
+function servePlanModels(draft: CatalogEditor, models: readonly PlanModel[]): void {
+  const provider = draft.provider.get(PLAN_PROVIDER)
+  if (!provider) return
+  const served = new Set(models.map((model) => model.id))
+  for (const id of provider.models.keys()) {
+    if (!served.has(id)) draft.model.update(PLAN_PROVIDER, id, (draftModel) => { draftModel.enabled = false })
+  }
+  for (const model of models) {
+    const known = provider.models.has(model.id)
+    draft.model.update(PLAN_PROVIDER, model.id, (draftModel) => {
+      draftModel.enabled = true
+      if (known) return
+      draftModel.name = model.name
+      if (model.context !== undefined) draftModel.limit = { ...draftModel.limit, context: model.context }
+    })
+  }
+}
+
 class ChatGptPlanLogin {
   private held?: HeldPlan
+  private models?: readonly PlanModel[]
   private unrenewable?: string
   private readonly locations = new Set<Plugin.Context>()
   private readonly renewed = new Set<string>()
@@ -59,6 +81,7 @@ class ChatGptPlanLogin {
     await context.integration.transform((draft) => draft.method.update({ integrationID: PLAN_PROVIDER,
       method: { id: PLAN_METHOD, type: "oauth", label: "ChatGPT plan delivered by Claxedo" },
       authorize: async () => ({ mode: "code", url: "", instructions: "", callback: async () => this.connection() }) }))
+    await context.catalog.transform((draft) => { if (this.held && this.models) servePlanModels(draft, this.models) })
     await context.session.hook("http.request", (event) => this.authorize(event), { providerID: PLAN_PROVIDER })
     await context.session.hook("http.response", (event) => this.refused(event), { providerID: PLAN_PROVIDER })
     await context.session.hook("retry", (event) => this.retry(event), { providerID: PLAN_PROVIDER })
@@ -85,6 +108,7 @@ class ChatGptPlanLogin {
     const location = { directory }
     const previous = ((await client.integration.get({ location, integrationID: PLAN_PROVIDER })).data?.connections ?? [])
       .flatMap((connection) => connection.type === "credential" ? [connection.id] : [])
+    this.models = plan && await readPlanModels(plan)
     this.held = plan
     if (!plan && !previous.length) return
     if (plan) {
@@ -93,6 +117,7 @@ class ChatGptPlanLogin {
         await client.integration.oauth.complete({ location, integrationID: PLAN_PROVIDER, attemptID: attempt.data.attemptID, code: "claxedo" })
       } catch (error) {
         this.held = undefined
+        this.models = undefined
         throw error
       }
     }

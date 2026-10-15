@@ -5,7 +5,7 @@ import { Database } from "bun:sqlite"
 import { afterAll, expect, test } from "bun:test"
 import type { ProviderDirect } from "@claxedo/agent-runtime-contract"
 import { releasePort, reservePort } from "../../e2e/harness/ports"
-import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
+import { startScriptedModelServer, type ScriptedPlanModel } from "../../e2e/harness/scripted-model-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress, type EgressGuard } from "../../e2e/harness/egress-guard"
 import { OpenCodeSdkTransport } from "../transports/opencode-sdk"
 import type { CredentialRefreshRequest, RoutedEvent } from "../contract"
@@ -15,7 +15,11 @@ import { removeTempRoot } from "../test-support/temp-root"
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
 type PlanBackend = ConformanceBackend & { root: string; server: ScriptedServer; guard: EgressGuard }
 
-const PLAN_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"]
+const PLAN_CATALOG: readonly ScriptedPlanModel[] = [
+  { slug: "gpt-6-luna", display_name: "GPT-6-Luna", visibility: "list", priority: 4, context_window: 372_000 },
+  { slug: "gpt-reserve", display_name: "GPT-Reserve", visibility: "hide", priority: 4, context_window: 272_000 },
+  { slug: "gpt-5.5", display_name: "GPT-5.5", visibility: "list", priority: 8, context_window: 272_000 },
+]
 
 let egress: Promise<EgressGuard> | undefined
 
@@ -48,6 +52,7 @@ async function planBackend(secret: string, renewed: (server: ScriptedServer) => 
   await fs.mkdir(directory)
   const port = await reservePort()
   const server = await startScriptedModelServer({ port })
+  server.servePlanModels(PLAN_CATALOG)
   const guard = await egressGuard()
   const attemptsBefore = guard.attempts.length
   return {
@@ -105,7 +110,7 @@ async function expectNoTokenStored(root: string, tokens: readonly string[]): Pro
   }
 }
 
-test("a ChatGPT plan handed over directly runs OpenCode's own plan path with the delivered token, account and plan models", async () => {
+test("a ChatGPT plan handed over directly runs OpenCode's own plan path with the delivered token and account, offering exactly the models the plan lists", async () => {
   const first = planToken("first")
   const refreshes: CredentialRefreshRequest[] = []
   const context = await setupConformance({ name: "opencode-plan", backend: () => planBackend(first, () => undefined, refreshes),
@@ -118,9 +123,10 @@ test("a ChatGPT plan handed over directly runs OpenCode's own plan path with the
     expect(requests.every((request) => request.authorization === `Bearer ${first}` && request.account === "acct-member")).toBe(true)
     const openai = (await context.transport.providerCatalog!.providers(context.start)).find((entry) => entry.id === "openai")
     expect(openai?.connected).toBe(true)
-    expect(openai?.models.map((model) => model.id)).toEqual(expect.arrayContaining(PLAN_MODELS))
-    expect(openai?.models.map((model) => model.id)).not.toContain("gpt-5.5-pro")
-    expect(openai?.models.map((model) => model.id)).not.toContain("gpt-4.1")
+    expect(openai?.models.map((model) => model.id).sort()).toEqual(["gpt-5.5", "gpt-6-luna"])
+    expect(openai?.models.find((model) => model.id === "gpt-6-luna")?.name).toBe("GPT-6-Luna")
+    expect(state.server.planModelReads).toEqual([{ path: expect.stringMatching(/^\/backend-api\/codex\/models\?client_version=\d+\.\d+\.\d+$/),
+      authorization: `Bearer ${first}`, account: "acct-member" }])
     await expectNoTokenStored(state.root, [first])
     expect(refreshes).toEqual([])
   } finally { await context.close() }
