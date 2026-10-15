@@ -41,6 +41,7 @@ export type TimelineTextKey =
   | "ui.message.attachment.alt"
   | "ui.message.interrupted"
   | "ui.message.interruptedDuration"
+  | "ui.message.workedDuration"
   | "ui.message.queued"
   | "ui.message.queued.accepted"
   | "ui.message.queued.cancelEdit"

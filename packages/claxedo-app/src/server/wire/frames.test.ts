@@ -54,6 +54,23 @@ test("frames: a turn-end frame carries the turn's lastTurn onto statusChanged; a
   expect(bare && serverEventFromFrame(bare, address)).toEqual({ type: "statusChanged", ref, status: { kind: "idle" } })
 })
 
+test("frames: a session.queue frame becomes the session's queueChanged with the rows the runtime holds now", () => {
+  const rejected = { seq: 1, messageId: "msg_a", queuedAt: 5, parts: [{ type: "text", text: "Reply only QUEUED-52." }], held: false, steering: { mode: "start", operationId: "op_1", state: "rejected", message: "session_turn_in_progress" } }
+  const frame = frameFromWire({ directory: "/work", payload: { type: "session.queue", directory: "/work", sessionID: "s1", queue: [rejected, { seq: 2, queuedAt: 6, parts: [], held: false }, { seq: "x" }] } })
+  expect(frame && serverEventFromFrame(frame, address)).toEqual({
+    type: "queueChanged",
+    ref,
+    queue: [
+      { seq: 1, messageId: "msg_a", queuedAt: 5, parts: [{ type: "text", text: "Reply only QUEUED-52." }], held: false, steering: { mode: "start", operationId: "op_1", state: "rejected", message: "session_turn_in_progress" } },
+      { seq: 2, queuedAt: 6, parts: [], held: false },
+    ],
+  })
+  const drained = frameFromWire({ directory: "/work", payload: { type: "session.queue", directory: "/work", sessionID: "s1", queue: [] } })
+  expect(drained && serverEventFromFrame(drained, address)).toEqual({ type: "queueChanged", ref, queue: [] })
+  const unaddressed = frameFromWire({ directory: "/work", payload: { type: "session.queue", directory: "/work", queue: [] } })
+  expect(unaddressed && serverEventFromFrame(unaddressed, address)).toBeUndefined()
+})
+
 test("frames: a harness.health frame without a known health status is dropped", () => {
   const frame = frameFromWire({ directory: "/work", payload: { type: "harness.health", properties: { sessionID: "s1", harnessHealth: { status: "fine" } } } })
   expect(frame && serverEventFromFrame(frame, address)).toBeUndefined()

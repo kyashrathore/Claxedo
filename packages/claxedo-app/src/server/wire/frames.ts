@@ -7,6 +7,7 @@ import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { harnessOptionsFromWire } from "./harness-options"
 import { subagentFromWire } from "./subagents"
+import { queuedPromptFromWire } from "./queue"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
 import { isSessionWire, lastTurnFromWire, listedStatusFromListItem, readerFromWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
@@ -252,12 +253,22 @@ function statusNotice(frame: Frame, address: Address): ServerEvent | undefined {
   }
 }
 
+function queueEvent(frame: Frame, address: Address): ServerEvent | undefined {
+  const sessionId = nonEmptyString(frame.raw.sessionID)
+  const rows = frame.raw.queue
+  if (!sessionId || !frame.directory || !Array.isArray(rows)) return undefined
+  const ref = sessionLocationFor(address, { directory: frame.directory, workspaceId: frame.workspaceId, sessionId })
+  if (!ref) return undefined
+  return { type: "queueChanged", ref, queue: rows.flatMap((row) => queuedPromptFromWire(row) ?? []) }
+}
+
 export const STATUS_NOTICE = "session.status.changed"
 
 const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff|background-work|config)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
 
 export function serverEventFromFrame(frame: Frame, address: Address): ServerEvent | undefined {
   if (frame.type === STATUS_NOTICE) return statusNotice(frame, address)
+  if (frame.type === "session.queue") return queueEvent(frame, address)
   if (!SESSION_FRAME.test(frame.type)) return controlEvent(frame, address)
   const ref = refOf(frame, address)
   if (!ref) return undefined

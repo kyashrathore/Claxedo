@@ -4,7 +4,7 @@ import type { CloudWorkspaceStatus } from "./cloud-types"
 import type { HarnessConnectionState, HarnessHealth, HarnessOptions } from "./harness-types"
 import type { Terminal, TerminalAgentStatus } from "./terminal-types"
 import type { BackgroundWork, SessionStatus } from "./status-types"
-import type { AgentRequest, FileDiff, SessionGoal, SessionLocation, SessionReader, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
+import type { AgentRequest, FileDiff, QueuedPrompt, SessionGoal, SessionLocation, SessionReader, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
 
 export type PartAddress = { readonly messageId: string; readonly partId: string }
 
@@ -41,6 +41,7 @@ export type ServerEvent =
   | { readonly type: "diffChanged"; readonly ref: SessionLocation; readonly diff: readonly FileDiff[] }
   | { readonly type: "goalChanged"; readonly ref: SessionLocation; readonly goal: SessionGoal | undefined }
   | { readonly type: "subagentUpdated"; readonly ref: SessionLocation; readonly subagent: Subagent }
+  | { readonly type: "queueChanged"; readonly ref: SessionLocation; readonly queue: readonly QueuedPrompt[] }
   | { readonly type: "harnessOptionsChanged"; readonly ref: SessionLocation; readonly options: HarnessOptions }
   | {
       readonly type: "harnessHealthChanged"

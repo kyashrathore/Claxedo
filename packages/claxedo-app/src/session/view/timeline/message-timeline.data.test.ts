@@ -75,6 +75,27 @@ test("a thought between commands is drawn inside their work group, and the group
   expect(Timeline.memberTools(members).map((part) => part.id)).toEqual(["b1", "b2"])
 })
 
+function loneCommandTurn(input: { reply?: string; completed?: number; status?: "idle" | "working" }) {
+  const assistant = { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2, ...(input.completed ? { completed: input.completed } : {}) } } as unknown as AgentAssistantMessage
+  const base = { sessionID: "s1", messageID: "a1" }
+  const parts = [
+    { ...base, id: "b1", type: "tool", tool: "bash", state: { status: "completed", input: { command: "seq 1 120" }, output: "1\n2", title: "", metadata: {}, time: { start: 2, end: 900 } } },
+    ...(input.reply ? [{ ...base, id: "t1", type: "text", text: input.reply }] : []),
+  ] as never[]
+  const hasText = (part: { type: string }) => "text" in part && !!part.text
+  return Timeline.constructMessageRows(user, (id) => (id === "a1" ? parts : []), hasText, [assistant], true, input.status ?? "idle", true)
+}
+
+test("a settled turn that ends on a tool with no reply still says how long it worked", () => {
+  const rows = loneCommandTurn({ completed: 9_001 })
+  expect(rows.filter((row) => row._tag === "TurnDivider")).toEqual([{ _tag: "TurnDivider", userMessageId: "u1", label: "worked", durationMs: 9_000 }])
+})
+
+test("a turn's duration is drawn once: beside a reply, or not at all while the turn runs", () => {
+  expect(loneCommandTurn({ completed: 9_001, reply: "Printed them." }).some((row) => row._tag === "TurnDivider")).toBe(false)
+  expect(loneCommandTurn({ status: "working" }).some((row) => row._tag === "TurnDivider")).toBe(false)
+})
+
 function sentComments(attachments: PromptAttachment[]) {
   const echo = promptEcho({ clientRequestId: "c1", text: "Look at these", attachments }, { sessionId: "s1", messageId: "u1", created: 1 })
   return echo.parts.flatMap((part) => MessageComment.fromPart(part) ?? [])

@@ -166,8 +166,10 @@ export function harnessBindingIds(harness: HarnessId): string[] {
  * A subscription connected for Claude Code is an Anthropic login and nothing
  * about it is Claude Code's alone — the broker sends it to the same origin and
  * the same paths an Anthropic key goes to, differing only in the header it
- * rides in. So an engine that runs Anthropic models resolves it here instead
- * of asking for the account a second time.
+ * rides in. So Pi, which runs Anthropic models and sends a subscription's own
+ * headers, resolves it here instead of asking for the account a second time.
+ * OpenCode's engine does not: it is handed rows under their stored ids and its
+ * Anthropic provider speaks only an API key.
  *
  * The vendor leads, which is the opposite of the order a harness's
  * `selectedProviderProjection` reads. Both are right about their own question: Claude Code asked which

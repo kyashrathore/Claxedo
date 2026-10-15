@@ -316,6 +316,25 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(assistantText(await host.messages()).includes("PISTOPQUEUED"), false)
   })
 
+  void it("runs the messages queued behind a turn that ends by itself, in the order they were sent", { timeout: 120_000 }, async () => {
+    const root = "ses_queued_after_turn"
+    const host = await session(root)
+    const pidFile = path.join(directory, "queued-after-turn.pid")
+    const briefCommand = `exec '${process.execPath}' -e 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setTimeout(() => {}, 3_000)' '${pidFile}'`
+    model.scriptTool({ name: "bash", input: { command: briefCommand }, whenPromptIncludes: "PIBRIEFTURN" })
+    await host.prompt("msg_brief", "Run it, then reply with exactly this one token: PIBRIEFTURN")
+    await pidFrom(pidFile)
+    for (const [messageID, token] of [["msg_queued_a", "PIQUEUEDA"], ["msg_queued_b", "PIQUEUEDB"]]) {
+      assert.deepEqual(await host.json(`/session/${root}/prompt_async`, { method: "POST", body: {
+        parts: [{ type: "text", text: `Reply with exactly this one token: ${token}` }], messageID, model: MODEL, delivery: "queue",
+      } }), { delivery: "queue" })
+    }
+    await host.settled("PIQUEUEDB").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
+    assert.deepEqual(await host.json(`/session/${root}/queue`), [])
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_brief", "msg_queued_a", "msg_queued_b"])
+    assert.match(assistantText(await host.messages()), /PIBRIEFTURN[\s\S]*PIQUEUEDA[\s\S]*PIQUEUEDB/)
+  })
+
   void it("draws every turn's tool rows in the first read a reload takes, as the live stream showed them, after the object restarts", { timeout: 120_000 }, async () => {
     const root = "ses_reload_tools"
     const host = await session(root)

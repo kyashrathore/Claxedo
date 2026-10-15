@@ -13,12 +13,14 @@ export type TimelineRowMap = {
     userMessageId: string
     anchor: boolean
   }
-  TurnDivider: {
-    userMessageId: string
-    label: "compaction" | "handoff" | "interrupted"
-    harness?: string
-    durationMs?: number
-  }
+  TurnDivider:
+    | {
+        userMessageId: string
+        label: "compaction" | "handoff" | "interrupted"
+        harness?: string
+        durationMs?: number
+      }
+    | { userMessageId: string; label: "worked"; durationMs: number }
   AssistantPart: {
     userMessageId: string
     group: PartGroup

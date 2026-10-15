@@ -139,6 +139,20 @@ function draftActions(table: EntryTable) {
   }
 }
 
+function sentDraftActions(table: EntryTable) {
+  return {
+    take: (key: ComposerKey): Draft => {
+      const taken = { ...unwrap(table.draft(key)) }
+      table.replaceDraft(key, emptyDraft())
+      return taken
+    },
+    returnUnsent: (key: ComposerKey, unsent: Draft) => {
+      const typed = unwrap(table.draft(key))
+      table.replaceDraft(key, draftEmpty(typed) ? unsent : appendedDraft(unsent, typed))
+    },
+  }
+}
+
 function forkActions(table: EntryTable) {
   const { ensure, setEntries, persist } = table
   let forks = 0
@@ -218,6 +232,7 @@ export function createComposerStore(persistence?: ComposerPersistence) {
     history: (key: ComposerKey, mode: EditorMode): HistoryEntry[] => table.entry(key).history[mode],
     ...promptActions(table),
     ...draftActions(table),
+    ...sentDraftActions(table),
     ...forkActions(table),
     ...entryActions(table),
   }

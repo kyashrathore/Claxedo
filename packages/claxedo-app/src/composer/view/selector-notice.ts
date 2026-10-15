@@ -1,4 +1,4 @@
-import { createMemo, type Accessor } from "solid-js"
+import { createEffect, createMemo, on, type Accessor } from "solid-js"
 import type { HarnessScopeInput, HarnessSelectionController, HarnessSelectionSnapshot } from "../harness/controller"
 import { harnessDisplayLabel, harnessSelectionId, isCatalogHarness, type HarnessType } from "../harness/profile"
 import type { ComposerNotice } from "./notice-slot"
@@ -63,21 +63,32 @@ function harnessNoticeInput(input: SelectorNoticeInput, unserved: HarnessAccount
   }
 }
 
+function reloadModels(input: SelectorNoticeInput) {
+  if (input.harness() && isCatalogHarness(input.harness())) {
+    void input.catalog.providers.refresh()
+    return
+  }
+  void input.controller().reprobe(input.scope(), input.scopeInput())
+}
+
 function retryAction(input: SelectorNoticeInput): NonNullable<ComposerNotice["action"]> {
   return {
     label: "Retry",
     ariaLabel: input.harness() && isCatalogHarness(input.harness()) ? `Retry loading ${harnessDisplayLabel(harnessSelectionId(input.harness()!))} models` : "Retry loading harness models",
-    run: () => {
-      if (input.harness() && isCatalogHarness(input.harness())) {
-        void input.catalog.providers.refresh()
-        return
-      }
-      void input.controller().reprobe(input.scope(), input.scopeInput())
-    },
+    run: () => reloadModels(input),
   }
 }
 
+function reloadModelsOnWake(input: SelectorNoticeInput) {
+  createEffect(on(input.asleep, (asleep, wasAsleep) => {
+    if (asleep || !wasAsleep || input.active() === false) return
+    if (input.harness() && isCatalogHarness(input.harness()) && !input.catalog.providers.error()) return
+    reloadModels(input)
+  }))
+}
+
 export function createSelectorNotice(input: SelectorNoticeInput) {
+  reloadModelsOnWake(input)
   const unservedAccount = createUnservedAccount(input)
   const notice = createMemo<ComposerNotice | undefined>(() => {
     if (input.active() === false || !input.selection().isHarnessMode || input.selection().readiness === "unresolved") return undefined

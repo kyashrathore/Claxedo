@@ -624,8 +624,12 @@ export const desktopRenderer: Policy = {
   // a workspace the server is starting from one that is asleep (owner: the
   // app's server adapter, `server/wire/placement-lifecycle.ts`). It adds no
   // package edge.
-  // 1368/36, no headroom.
-  ceilings: { modules: 1368, packages: 36 },
+  // A timeline divider's wording, split from the timeline view when a turn that
+  // ends on a tool with no reply gained its "Worked for" divider (owner: the
+  // app's session domain, `session/view/timeline/turn-divider-label.ts`). It
+  // adds no package edge.
+  // 1369/36, no headroom.
+  ceilings: { modules: 1369, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

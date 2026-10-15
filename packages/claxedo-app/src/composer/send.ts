@@ -163,24 +163,38 @@ async function startDraftSession(input: SendInput, submission: Submission, promp
   return view
 }
 
-async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView | undefined> {
+async function sendToSession(input: SendInput, view: SessionView, goal: GoalIntent, clientRequestId: string, delivery: PromptInput["delivery"]): Promise<SessionView> {
   const key = input.key()
+  const mode = input.mode()
+  const draft = input.store.take(key)
+  try {
+    const prompt = await buildPromptInput({ draft, submission: await input.submission(), goal, delivery })
+    await view.send({ ...prompt, clientRequestId })
+  } catch (error) {
+    input.store.returnUnsent(key, draft)
+    throw error
+  }
+  input.store.addHistory(key, mode, draft.prompt, historyComments(draft))
+  input.normalMode()
+  return view
+}
+
+async function replaceQueued(input: SendInput, view: SessionView, replace: (prompt: PromptInput) => Promise<boolean>, draft: Draft, delivery: PromptInput["delivery"]): Promise<SessionView> {
+  const prompt = await buildPromptInput({ draft, submission: await input.submission(), goal: { kind: "none" }, delivery })
+  if (!await replace(prompt)) throw new ServerError({ class: "conflict", code: "queue_edit_conflict", message: "The queued message changed; your edit has not been sent" })
+  input.normalMode()
+  return view
+}
+
+async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView | undefined> {
   const replace = input.queuedReplace()
   const delivery = input.working() ? "queue" : undefined
+  const existing = input.view()
+  if (existing && replace) return replaceQueued(input, existing, replace, draft, delivery)
+  if (existing) return sendToSession(input, existing, goal, clientRequestId, delivery)
   const submission = await input.submission()
   const prompt = await buildPromptInput({ draft, submission, goal, delivery })
-  const existing = input.view()
-  if (!existing) return startDraftSession(input, submission, { ...prompt, clientRequestId })
-  if (replace) {
-    if (!await replace(prompt)) throw new ServerError({ class: "conflict", code: "queue_edit_conflict", message: "The queued message changed; your edit has not been sent" })
-    input.normalMode()
-    return existing
-  }
-  await existing.send({ ...prompt, clientRequestId })
-  input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
-  input.store.reset(key)
-  input.normalMode()
-  return existing
+  return startDraftSession(input, submission, { ...prompt, clientRequestId })
 }
 
 export function createComposerSend(input: SendInput) {
