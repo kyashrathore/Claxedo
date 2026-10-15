@@ -16,7 +16,7 @@ type ProvisioningFacts = {
 }
 
 function startOf(target: SandboxTargetResult, epoch: number | undefined) {
-  const start = target.status === "unavailable" ? target.start : undefined
+  const start = target.start
   return start && (epoch === undefined || start.epoch === epoch) ? start : undefined
 }
 
@@ -24,8 +24,10 @@ function startOf(target: SandboxTargetResult, epoch: number | undefined) {
  * The provisioning connection answer, the connect and the read alike: the
  * start's own facts, and the phases its lease has recorded so far, with the
  * time since the start the person is waiting on began and since its last
- * observed phase ended. A start the lease has not recorded yet answers no
- * progress rather than an empty one.
+ * observed phase ended. A lease already ready while its run still delivers
+ * the runtime its settings reports every phase, so the wait reads as
+ * connecting, timed from the runtime's readiness. A start the lease has not
+ * recorded yet answers no progress rather than an empty one.
  */
 export function provisioningConnection(facts: ProvisioningFacts, target: SandboxTargetResult) {
   const start = startOf(target, facts.epoch)

@@ -2102,6 +2102,18 @@ describe("the start a lease epoch records", () => {
     expect(seen).toEqual({ requestedAt: 10_000, startedAt: 10_000, bootMode: "cold-start", markedAt: 10_000, phases: ["lease_decision"] })
     await expect(store.get("ws_1")).resolves.toMatchObject({ start: { startedAt: 10_000, phases: ["lease_decision", "runtime_ready"] } })
   })
+
+  test("a ready epoch's target names the start that brought it up, so the run still delivering its settings is timed from it", async () => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver({ ensureHost: vi.fn(async (input) => ({ sandboxId: "sb_1", url: "https://runtime.test", hostId: "host_1", labels: input.labels })) })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => 10_000 })
+
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({
+      status: "ready",
+      start: { epoch: 1, requestedAt: 10_000, markedAt: 10_000, phases: ["lease_decision", "runtime_ready"] },
+    })
+  })
 })
 
 describe("the machine a resumed sandbox runs on", () => {

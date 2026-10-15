@@ -579,6 +579,8 @@ export type SandboxTargetResult =
       homeRegion: SandboxRegion
       /** The runtime booted from an image other than the driver's current one; its next ensure boots the current one. */
       imageOutdated?: true
+      /** The start that brought this epoch up, as observed; the run still delivering its settings is timed from it. */
+      start?: SandboxEpochStart
     })
   | {
       status: "unavailable"

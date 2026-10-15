@@ -163,32 +163,32 @@ export function createHostedRuntimeDelivery(input: {
   const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined): Promise<number | undefined> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return undefined
     const person = await owner(workspaceId)
-    const config = await userAgentConfigStore(input.settings, person.userId).read()
-    const { client, options, target } = await supervisorClient(input.services, workspaceId, input.signingEnv)
     const appliedAt = Date.now()
-    const snapshot = composeRuntimeConfigSnapshot({
-      config,
-      provisionedRunner: input.provisionedRunner,
-      providers: [],
-      commands: [],
-      auth: await runtimeAuth(workspaceId, person, { epoch: target.epoch, hostId: target.hostId }),
-      plugins: hooks.pluginRuntime ? await hooks.pluginRuntime(workspaceId, preparation) : { mcp: {}, harnessLaunch: {} },
-    })
+    const supervisor = supervisorClient(input.services, workspaceId, input.signingEnv)
+    const [config, { client, options }, auth, plugins] = await Promise.all([
+      userAgentConfigStore(input.settings, person.userId).read(),
+      supervisor,
+      supervisor.then(({ target }) => runtimeAuth(workspaceId, person, { epoch: target.epoch, hostId: target.hostId })),
+      hooks.pluginRuntime ? hooks.pluginRuntime(workspaceId, preparation) : { mcp: {}, harnessLaunch: {} },
+    ])
+    const snapshot = composeRuntimeConfigSnapshot({ config, provisionedRunner: input.provisionedRunner, providers: [], commands: [], auth, plugins })
     await client.applyConfig(snapshot, options)
     // The brokered rows alone: a direct plan token is renewed by the harness
     // mid-turn through the credential refresh route, and an edge placeholder
     // never expires.
     const renewAt = accountsRenewalDueAt(snapshot.auth, appliedAt)
-    await input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
-      log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
-    })
-    await recordRuntimeStartPhases({
-      sandboxManager: input.sandboxManager,
-      workspaceId,
-      runtimeFetch: (path, init) => runtimeFetch(workspaceId, person.orgId, path, init),
-    }).catch((error: unknown) => {
-      log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
-    })
+    await Promise.all([
+      input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
+        log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
+      }),
+      recordRuntimeStartPhases({
+        sandboxManager: input.sandboxManager,
+        workspaceId,
+        runtimeFetch: (path, init) => runtimeFetch(workspaceId, person.orgId, path, init),
+      }).catch((error: unknown) => {
+        log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
+      }),
+    ])
     return renewAt
   }
   const provisionRuntime = async (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {

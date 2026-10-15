@@ -20,7 +20,7 @@ const en = {
   "cloud.wake.step.image": "Downloading the workspace image",
   "cloud.wake.step.workspace": "Starting the workspace",
   "cloud.wake.step.runtime": "Starting the agent runtime",
-  "cloud.wake.step.connecting": "Connecting",
+  "cloud.wake.step.connecting": "Connecting to the workspace",
   "cloud.wake.stepFor": "{{step}} · {{elapsed}}",
   "cloud.wake.done": "Done: {{steps}}",
   "cloud.wake.done.machine": "machine",

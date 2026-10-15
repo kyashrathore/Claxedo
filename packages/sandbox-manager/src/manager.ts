@@ -215,7 +215,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     }
     const booted = resource.labels?.[SANDBOX_IMAGE_LABEL]
     const imageOutdated = options.driver.image !== undefined && booted !== undefined && booted !== options.driver.image
-    return { ...resource, status: "ready", url: resource.url, routingId: lease.routingId, ...(imageOutdated ? { imageOutdated: true as const } : {}) }
+    return {
+      ...resource,
+      status: "ready",
+      url: resource.url,
+      routingId: lease.routingId,
+      ...(imageOutdated ? { imageOutdated: true as const } : {}),
+      ...(lease.start ? { start: { ...lease.start, epoch: lease.epoch } } : {}),
+    }
   }
 
   // Runs driver ensure/resume for an owned lease epoch and records the

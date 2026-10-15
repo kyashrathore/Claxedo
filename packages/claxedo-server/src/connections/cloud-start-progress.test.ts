@@ -86,6 +86,23 @@ describe("a cloud start's progress in the connection answer", () => {
     expect(result).toEqual({ connection: { status: "provisioning", workspaceId: "ws_1", homeRegion: "us-east", retryAfterMs: 2_000 } })
   })
 
+  test("a lease already ready while its run still delivers the runtime its settings reports every phase, timed from the runtime's readiness", async () => {
+    const serving = {
+      status: "ready",
+      url: "https://runtime.test",
+      hostId: "host_1",
+      epoch: 2,
+      homeRegion: "us-east",
+      start: { epoch: 2, requestedAt: NOW - 25_000, startedAt: NOW - 25_000, bootMode: "resume", markedAt: NOW - 4_000, phases: ["lease_decision", "machine_ready", "image_ready", "runtime_ready"] },
+    } as SandboxTargetResult
+    const { services, options } = subject(serving)
+    const connected = await hostedConnectionInfo(services, options(JOINED), auth, "ws_1", LEASED)
+    const progress = { phases: ["lease_decision", "machine_ready", "image_ready", "runtime_ready"], sinceStartMs: 25_000, sinceStepMs: 4_000 }
+    expect(connected).toMatchObject({ connection: { status: "provisioning", bootMode: "resume", progress } })
+    const read = await hostedConnectionStatus(services, options(JOINED), auth, "ws_1")
+    expect(read).toMatchObject({ connection: { status: "provisioning", bootMode: "resume", progress } })
+  })
+
   test("a lease waiting out a retry reports the start the person is waiting on beside the failure it retries", async () => {
     const waiting = { ...booting(3, ["lease_decision"]), leaseStatus: "unavailable", retryAfterMs: 15_000, failure: { kind: "provider", message: "quota exceeded", retrying: true } } as SandboxTargetResult
     const { services, options } = subject(waiting)
