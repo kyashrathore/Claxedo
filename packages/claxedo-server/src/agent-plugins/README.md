@@ -29,7 +29,7 @@ signed:   project override -> user all-projects default -> organization positive
 unsigned: machine override -> Claxedo positive default -> disabled
 ```
 
-Only the user and machine layers may explicitly disable. Organization and Claxedo defaults are positive-only and never make a plugin required. A winning enabled choice without its retained artifact remains visibly `artifact-unavailable`; it is not silently treated as disabled and runtime readiness fails closed.
+Only the user and machine layers may explicitly disable. Organization and Claxedo defaults are positive-only and never make a plugin required. A winning enabled choice without its retained artifact remains visibly `artifact-unavailable` in the Marketplace; it is not silently treated as disabled. That plugin is left out of the runtime projection, so it never runs without its pinned bytes, and every other plugin is still delivered: one such plugin does not stop a machine from starting. A pinned digest whose bytes the artifact store cannot return still fails provisioning. The built-in plugin's tool groups have no artifact; their activation reaches a cloud root as its launch tool groups, never as artifact selections.
 
 Catalog reads are side-effect free. **Refresh** bypasses the source cache, validates current candidates, and reports ordinary path-scoped errors and `updateAvailable`; it changes no artifact, pin, activation, runtime, or Connection. **Update** is the explicit acquisition action. Source-unavailable retained entries remain in the catalog response with `sourceAvailable: false`.
 
