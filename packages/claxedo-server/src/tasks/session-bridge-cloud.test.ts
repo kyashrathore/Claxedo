@@ -1,13 +1,12 @@
 /**
- * Cloud placement through the real workspace store, the real sandbox manager
- * and a fake driver. The allocation, its readiness and its failure cleanup are
- * the real ones; what is faked is the driver's provider and the HTTP surface
- * of the workspace runtime the session is created on.
+ * Cloud placement through the real sandbox manager and a fake driver. The
+ * allocation, its readiness and its failure cleanup are the real ones; what is
+ * faked is the driver's provider, the authority whose rows record each root,
+ * and the HTTP surface of the workspace runtime the session is created on.
  */
-import { existsSync } from "node:fs"
-import path from "node:path"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import {
+  SandboxProviderRateLimitedError,
   createSandboxManager,
   type SandboxDriver,
   type SandboxDriverEnsureInput,
@@ -15,14 +14,7 @@ import {
 } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import {
-  deleteWorkspace,
-  ensureWorkspace,
-  getProjectWorkspace,
-  getWorkspace,
-  listWorkspaces,
-  type Workspace,
-} from "@claxedo/server-core/workspace/store/index"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import {
   startConfigurationDigest,
   startOriginId,
@@ -39,18 +31,9 @@ import { composeProviderNeutralHostedControlPlane } from "../authority/provider-
 import type { TasksRootIdentity } from "./root-capability"
 import type { ControlPlaneServices } from "../authority/services"
 import { unusedSandboxStarts } from "../test-support/inline-sandbox-start"
+import type { TasksHostReads } from "./d1-host-reads"
 
-// Hoisted above the imports so it is set before the store's first read: left
-// unset, every row this file writes would land in the developer's own data
-// directory.
-const data = vi.hoisted(() => {
-  const tmp = (process.env.TMPDIR ?? "/tmp").replace(/\/+$/, "")
-  const root = `${tmp}/claxedo-tasks-cloud-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  process.env.CLAXEDO_DATA_DIR = root
-  return root
-})
-
-const mock = vi.hoisted(() => ({ request: vi.fn() }))
+const mock = vi.hoisted(() => ({ request: vi.fn(), register: (_workspaceId: string, _sessionId: string) => {} }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
   createWorkspaceRuntimeClient: ({ workspace }: { workspace: { id: string } }) => ({
     request: (requestPath: string, init?: RequestInit) => mock.request(workspace.id, requestPath, init),
@@ -63,6 +46,18 @@ const PROJECT = "prj_cloud"
 const REPO = "https://github.com/acme/importer.git"
 const slot: ConfigurationSlot = "primary"
 const actor = { scopeId: "org", ownerId: "owner" }
+
+let filed = new Map<string, Workspace>()
+
+type RootArgs = {
+  workspaceId: string
+  projectId?: string
+  displayName: string
+  repoUrl?: string
+  repoName?: string
+  gitBranch?: string
+  remoteDirectory?: string
+}
 
 /**
  * A driver plus the workspaces it was asked to host. `ensureHost` runs on
@@ -121,6 +116,8 @@ function runtime() {
     }
     if (requestPath.startsWith("/session?")) {
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as Record<string, unknown>
+      const headers = new Headers(init?.headers)
+      if (headers.get("x-claxedo-session-registration-operation")) mock.register(workspaceId, String(body.id))
       rows.set(String(body.id), {
         instructions: typeof body.instructions === "string" ? body.instructions : "",
         ...(typeof body.variant === "string" ? { variant: body.variant } : {}),
@@ -148,7 +145,34 @@ function services(
     orgDriver: async () => fakeDriver({ id: "modal" }).driver,
   },
 ) {
-  const created = new Map<string, { projectId?: string; displayName: string }>()
+  const created = new Map<string, Workspace>()
+  filed = created
+  const file =(args: RootArgs, orgId: string) => {
+    if (created.has(args.workspaceId)) return { workspace_id: args.workspaceId }
+    created.set(args.workspaceId, {
+      id: args.workspaceId,
+      org_id: orgId,
+      project_id: args.projectId ?? PROJECT,
+      workspace_name: args.displayName,
+      directory: args.remoteDirectory ?? "/workspace",
+      kind: "cloud",
+      ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
+      ...(args.repoName ? { repo_name: args.repoName } : {}),
+      ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
+      ...(args.remoteDirectory ? { remote_directory: args.remoteDirectory } : {}),
+      created_at: 1,
+      updated_at: 1,
+    })
+    return { workspace_id: args.workspaceId }
+  }
+  const registered = new Map<string, { workspaceID: string }>()
+  mock.register = (workspaceId, sessionId) => registered.set(sessionId, { workspaceID: workspaceId })
+  const reads: TasksHostReads = {
+    workspace: async (workspaceId) => created.get(workspaceId),
+    projectWorkspaces: async () => [],
+    projectSource: async (projectId) => (projectId === PROJECT ? { repoUrl: REPO, gitBranch: "main", repoName: "importer" } : undefined),
+    sessions: async (ids) => new Map([...registered].filter(([id]) => ids.includes(id))),
+  }
   const authority = {
     reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string }) => ({
       ...intent,
@@ -159,41 +183,15 @@ function services(
     completeSessionCompensation: vi.fn(async () => ({})),
     authorizeWorkspaceCreate: vi.fn(async () => ({ orgId: "org" })),
     auditDeny: vi.fn(async () => undefined),
-    createCloudWorkspace: vi.fn(
-      async (_auth: unknown, args: { workspaceId: string; projectId?: string; displayName: string }) => {
-        created.set(args.workspaceId, {
-          ...(args.projectId ? { projectId: args.projectId } : {}),
-          displayName: args.displayName,
-        })
-        return { workspace_id: args.workspaceId }
-      },
-    ),
-    deleteWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => {
-      created.delete(args.workspaceId)
-      return {}
-    }),
-    createRuntimeCloudWorkspace: vi.fn(
-      async (_principal: unknown, args: { workspaceId: string; orgId: string; projectId: string; displayName: string }) => {
-        created.set(args.workspaceId, { projectId: args.projectId, displayName: args.displayName })
-        return { workspace_id: args.workspaceId }
-      },
-    ),
-    deleteRuntimeWorkspace: vi.fn(async (_principal: unknown, args: { workspaceId: string }) => {
-      created.delete(args.workspaceId)
-      return {}
-    }),
-  }
-  const projectionStore = {
-    session_metas: vi.fn(async () => new Map()),
-    put_session_meta: vi.fn(async () => undefined),
-    delete_session_meta: vi.fn(async () => undefined),
+    createCloudWorkspace: vi.fn(async (_auth: unknown, args: RootArgs) => file(args, "org")),
+    createRuntimeCloudWorkspace: vi.fn(async (_principal: unknown, args: RootArgs & { orgId: string }) => file(args, args.orgId)),
   }
   return {
     authority,
     created,
+    reads,
     value: {
       authority,
-      projectionStore,
       sandbox: { ...(sandboxManager ? { sandboxManager } : {}), ...sandbox },
       relay: { relayUrls: { "us-east": "https://relay.claxedo.test" } },
       defaultHomeRegion: "us-east",
@@ -240,6 +238,7 @@ function bridge(
   return createHostedTasksSessionBridge({
     services: composition.value,
     runtimeClient: {},
+    reads: composition.reads,
     principal: async () => ({ principalKind: "user", actorId: OWNER.actorId, actorKind: "human" }),
     ...identity,
     ...(port ? { selectedCapabilities: port } : {}),
@@ -324,25 +323,13 @@ async function start(kit: ReturnType<typeof bridge>, taskId: string) {
   return { preview: previewed.preview, started: await kit.start(await startCommand(taskId, previewed.preview.digest)) }
 }
 
+/** The authority row the latest composition filed for a task's root, if any. */
 async function rootOf(taskId: string): Promise<Workspace | undefined> {
-  return await getWorkspace(await originCloudWorkspaceId(startOriginId("org", taskId, slot, 1)))
+  return filed.get(await originCloudWorkspaceId(startOriginId("org", taskId, slot, 1)))
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   vi.clearAllMocks()
-  for (const workspace of await listWorkspaces()) await deleteWorkspace(workspace.id)
-  await ensureWorkspace({
-    workspaceId: PROJECT,
-    project_id: PROJECT,
-    project_name: "importer",
-    workspace_name: "importer",
-    directory: "/workspace",
-    kind: "cloud",
-    driver: "modal",
-    repo_url: REPO,
-    git_branch: "main",
-    remote_directory: "/workspace",
-  })
 })
 
 /**
@@ -401,11 +388,6 @@ function composedHostedServices(driver: SandboxDriver, orgKeys: readonly string[
 }
 
 describe("hosted tasks cloud roots", () => {
-  test("keeps every row it writes inside this file's own data directory", async () => {
-    expect(await getWorkspace(PROJECT)).toBeDefined()
-    expect(existsSync(path.join(data, "workspaces.json"))).toBe(true)
-  })
-
   test("gives two roots in one project two workspaces with distinct ids and sandboxes", async () => {
     runtime()
     const { driver, ensured } = fakeDriver()
@@ -482,46 +464,77 @@ describe("hosted tasks cloud roots", () => {
     const root = first.started.session.sessionRef.workspaceId
     expect(again.started.session.sessionRef).toEqual(first.started.session.sessionRef)
     expect(new Set(ensured)).toEqual(new Set([root]))
-    // The retry re-admits the row it found rather than trusting it. A store row
-    // is not proof the authority still has one: a failed provision discards the
-    // authority record and only tries to delete the store row, so a row that
-    // survived that path would otherwise be a root the authority never heard of
-    // and every later reservation in it would be refused.
+    // The retry re-admits the row it found rather than trusting it: the
+    // authority holds a second filing of the id to the first, owner included,
+    // which is what refuses anyone else's retry of this root.
     const admitted = composition.authority.createCloudWorkspace.mock.calls.map(
       ([, args]: [unknown, { workspaceId: string }]) => args.workspaceId,
     )
     expect(admitted.length).toBeGreaterThan(0)
     expect(new Set(admitted)).toEqual(new Set([root]))
-    expect((await listWorkspaces()).filter((row) => row.id !== PROJECT)).toHaveLength(1)
+    expect([...composition.created.keys()]).toEqual([root])
     // One sandbox, not a replacement: a second allocation would have burned a
     // lease epoch and left the first root's files behind.
     expect(await sandboxManager.list()).toMatchObject([{ workspaceId: root, epoch: 1 }])
   })
 
-  test("a sandbox that cannot be provisioned leaves no workspace and no authority record, and refuses the start", async () => {
+  test("a sandbox refused at the provider's daily start limit is refused in one line with the reason a person is told, not the lease's coded error", async () => {
     runtime()
-    const { driver } = fakeDriver({
+    const { driver } = fakeDriver()
+    const limited: SandboxDriver = {
+      ...driver,
       ensureHost: async () => {
-        throw new Error("the driver is out of quota")
+        throw new SandboxProviderRateLimitedError({ window: "day", limit: 200 }, "the start limit is used up")
       },
-    })
-    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
-    const kit = bridge(composition)
+    }
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: limited }))
+    const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, undefined, { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) })
+
+    const previewed = await kit.preview(previewCommand("tsk_limited"))
+    expect(previewed).toMatchObject({ ok: true, preview: { available: false } })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([{
+      code: "source_unavailable",
+      detail: `The cloud workspace could not start: ${driver.id}'s daily start limit (200) is used up; try again later.`,
+    }])
+  })
+
+  test("a sandbox that cannot be provisioned releases its lease and refuses the start, and the same attempt then starts on a fresh one", async () => {
+    runtime()
+    let quota = false
+    const { driver, ensured } = fakeDriver()
+    const failing: SandboxDriver = {
+      ...driver,
+      ensureHost: async (input) => {
+        if (!quota) throw new Error("the driver is out of quota")
+        return driver.ensureHost(input)
+      },
+    }
+    const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: failing })
+    const composition = services(sandboxManager)
+    const usage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
+    const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, undefined, usage)
 
     const previewed = await kit.preview(previewCommand("tsk_one"))
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(false)
     expect(previewed.preview.blockers).toEqual([
-      { code: "source_unavailable", detail: expect.stringContaining("could not be provisioned") },
+      { code: "source_unavailable", detail: "The cloud workspace could not start: test-driver returned an error." },
     ])
-    expect(await rootOf("tsk_one")).toBeUndefined()
-    expect(composition.created.size).toBe(0)
-    expect(composition.authority.deleteWorkspace).toHaveBeenCalledTimes(1)
-
+    const root = await rootOf("tsk_one")
+    expect(root).toBeDefined()
+    expect(await sandboxManager.list()).toEqual([])
     const started = await kit.start(await startCommand("tsk_one", previewed.preview.digest))
     expect(started).toMatchObject({ ok: false, error: { code: "unsupported" } })
     expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
+
+    quota = true
+    const retried = await start(kit, "tsk_one")
+    expect(retried.started).toMatchObject({ ok: true, session: { sessionRef: { workspaceId: root?.id } } })
+    expect(ensured).toEqual([root?.id, root?.id])
+    // Each lease a start opened is metered once, the released one included.
+    expect(usage.leaseOpened.mock.calls.map(([opened]) => opened.workspaceId)).toEqual([root?.id, root?.id, root?.id])
   })
 
   test("refuses cloud placement on a deployment that provisions no sandboxes, and allocates nothing", async () => {
@@ -563,9 +576,11 @@ describe("hosted tasks cloud roots", () => {
     const sandbox = composedHostedServices(driver)
     expect((await sandbox.sandbox.orgDriver!("org")).id).toBe("cloudflare")
     const composition = services(undefined, sandbox.sandbox)
+    const usage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
 
-    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
-    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "cloudflare" })
+    expect((await start(bridge(composition, selectedCapabilities(), undefined, signedPerson, undefined, usage), "tsk_one")).started)
+      .toMatchObject({ ok: true })
+    expect(usage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: (await rootOf("tsk_one"))?.id, driver: "cloudflare" }))
   })
 
   test("an organization without a sandbox provider key is refused a root, and told which key to add", async () => {
@@ -577,16 +592,6 @@ describe("hosted tasks cloud roots", () => {
     expect(started).toMatchObject({ ok: false, error: { message: expect.stringContaining("Add a sandbox provider key") } })
     expect(await rootOf("tsk_one")).toBeUndefined()
     expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
-  })
-
-  test("stores the organization's driver as the root's placement", async () => {
-    runtime()
-    const composition = services(
-      createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
-    )
-    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
-
-    expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "modal" })
   })
 
   test("places a root on its organization's own sandbox key and opens its lease metered against that driver", async () => {
@@ -601,22 +606,10 @@ describe("hosted tasks cloud roots", () => {
 
     expect((await start(kit, "tsk_one")).started).toMatchObject({ ok: true })
     const root = await rootOf("tsk_one")
-    expect(root).toMatchObject({ kind: "cloud", driver: "boat" })
+    expect(root).toMatchObject({ kind: "cloud", project_id: PROJECT })
     expect(orgDriver).toHaveBeenCalledWith("org")
     expect(usage.leaseOpened).toHaveBeenCalledOnce()
     expect(usage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: root?.id, driver: "boat" }))
-  })
-
-  test("keeps a root out of its project's workspace list, so an ordinary start still resolves one workspace", async () => {
-    runtime()
-    const composition = services(
-      createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
-    )
-    expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
-
-    const root = await rootOf("tsk_one")
-    expect(root?.project_id).toBe(root?.id)
-    expect((await getProjectWorkspace(PROJECT))?.id).toBe(PROJECT)
   })
 
   test("hands the root's own credentials to its sandbox and refuses a start the runtime did not acknowledge", async () => {
@@ -645,7 +638,7 @@ describe("hosted tasks cloud roots", () => {
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(false)
     expect(previewed.preview.blockers).toEqual([
-      { code: "capability_unavailable", detail: expect.stringContaining("did not acknowledge the selected capability set") },
+      { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." },
     ])
 
     // The credentials the selection resolved travel on the create itself,
@@ -738,30 +731,6 @@ describe("hosted tasks cloud roots", () => {
     }
   })
 
-  test("discards a root the owner path admitted through the same path when its sandbox fails", async () => {
-    runtime()
-    const { driver, ensured } = fakeDriver({
-      ensureHost: async () => {
-        throw new Error("the driver is out of quota")
-      },
-    })
-    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
-
-    const previewed = await bridge(composition, selectedCapabilities(), undefined, grantOwner).preview(previewCommand("tsk_one"))
-    expect(previewed).toMatchObject({ ok: true })
-    if (!previewed.ok) return
-    expect(previewed.preview.blockers).toEqual([
-      { code: "source_unavailable", detail: expect.stringContaining("could not be provisioned") },
-    ])
-    expect(ensured).toEqual([])
-    expect(await rootOf("tsk_one")).toBeUndefined()
-    expect(composition.created.size).toBe(0)
-    expect(composition.authority.deleteRuntimeWorkspace).toHaveBeenCalledWith(OWNER_PRINCIPAL, {
-      workspaceId: await originCloudWorkspaceId(startOriginId("org", "tsk_one", slot, 1)),
-    })
-    expect(composition.authority.deleteWorkspace).not.toHaveBeenCalled()
-  })
-
   test("refuses an actor that is neither signed nor a grant's resolved owner before any sandbox exists", async () => {
     runtime()
     const { driver, ensured } = fakeDriver()
@@ -797,6 +766,22 @@ describe("hosted tasks cloud roots", () => {
     expect(await rootOf("tsk_one")).toBeUndefined()
   })
 
+  test("refuses a cloud preset whose harness runs in its own session host, before a row or a sandbox exists", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+    const pi: Preset = { ...cloudPreset(), configurations: { primary: { harness: { id: "pi", access: "native" }, model: MODEL, effort: null } } }
+
+    const previewed = await bridge(composition).preview({ ...previewCommand("tsk_one"), preset: pi })
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([
+      { code: "harness_unavailable", detail: expect.stringContaining("Pi runs in its own session host on a cloud workspace") },
+    ])
+    expect(ensured).toEqual([])
+    expect(composition.authority.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
   test("refuses a cloud root on a deployment that cannot project a capability set, before any sandbox exists", async () => {
     runtime()
     const { driver, ensured } = fakeDriver()
@@ -806,7 +791,7 @@ describe("hosted tasks cloud roots", () => {
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
     expect(previewed.preview.blockers).toEqual([
-      { code: "capability_unavailable", detail: expect.stringContaining("cannot project a selected capability set") },
+      { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." },
     ])
     expect(ensured).toEqual([])
   })

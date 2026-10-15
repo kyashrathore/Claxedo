@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { SignJWT, jwtVerify } from "jose"
 import { CLAXEDO_MCP_PATH, CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, createClaxedoMcpRoutes } from "@claxedo/mcp"
 import { createClaxedoMcpClient, type ClaxedoFetch } from "@claxedo/mcp/client"
-import type { ProviderDirect } from "@claxedo/agent-runtime-contract"
+import type { ProviderDirect, ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { asString } from "@claxedo/helpers/guards"
 import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import { bearerToken } from "@claxedo/session-core"
@@ -23,6 +23,8 @@ export type ControlPlaneInput = {
   runtimeAccessKey: CryptoKey
   /** Each person's Pi accounts by user id; a person without an entry holds none. */
   accounts: () => Record<string, Record<string, ProviderDirect>>
+  /** Each person's providers whose account the control plane refuses, with why. */
+  refused?: () => Record<string, Record<string, ProviderUnavailable>>
   plugins: () => RuntimeConfigSnapshotPlugins
   machine: () => { relayUrl: string; directory: string; routingId?: string }
   /** The workspace runtime's root sessions, which the first-party MCP endpoint lists for a session that carries its turn's bearer. */
@@ -50,7 +52,9 @@ export type ControlPlaneInput = {
  * real `/api/claxedo/mcp` route below admits until the session is deleted;
  * `/turn-execution` mints a machine token while the machine runs, and
  * otherwise refuses at once, starting a sleeping machine only when the call
- * asks to and never one already starting; `/session-host-delete` deletes the
+ * asks to and never one already starting, with `control.start`'s next-answer
+ * delay and, for a start already running, how long it has run, or refusing
+ * every start with `control.startRefusal`; `/session-host-delete` deletes the
  * session for anyone but a viewer.
  */
 export function controlPlaneStandIn(input: ControlPlaneInput) {
@@ -65,7 +69,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     /** Each session rows publication: the turn whose lease was its bearer and the rows it carried. */
     rows: [] as Array<{ turnId: string; released: boolean; hostId: string; rows: Record<string, unknown>[] }>,
     /** Each stored account the host reported the vendor refusing, with the turn that spent it. */
-    refusals: [] as Array<{ turnId: string; credentialId: string }>,
+    refusals: [] as Array<{ turnId: string; credentialId: string; revision: unknown; status: unknown }>,
   }
   const mcpBearers = new Set<string>()
   let fencing = 0
@@ -75,6 +79,8 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     refuseRenewals: false, leaseTtlMs: 60_000, reservation: `op_${input.root}`, viewers: new Set<string>(),
     machine: "running" as "running" | "asleep" | "starting", deleteUnavailable: false, firstPartyMcp: false, toolGroups: ["sessions"],
     refusedTurns: new Set<string>(), releaseDelayMs: 0,
+    start: { retryAfterMs: 60_000, sinceStartMs: 35_000 },
+    startRefusal: undefined as { message: string; retryAfterMs?: number } | undefined,
   }
   const redeemedGrants = new Map<string, string>()
 
@@ -191,12 +197,16 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       return c.json({ allowed: true })
     })
     .post("/turn-delivery", async (c) => {
+      const refusals = (person: string) => {
+        const refused = input.refused?.()[person]
+        return refused ? { [person]: refused } : {}
+      }
       const lease = await liveLease((await c.req.json<{ turnLease?: string }>()).turnLease)
       if (!lease || !creator) return refused(c, 401, "session_turn_lease_invalid")
       calls.deliveries.push(lease.turnId)
       const delivery: TurnDelivery = {
         expiresAt: Date.now() + control.leaseTtlMs,
-        auth: { machineOwnerUserId: OWNER, accounts: {}, direct: { [creator]: input.accounts()[creator] ?? {} } },
+        auth: { machineOwnerUserId: OWNER, accounts: refusals(creator), direct: { [creator]: input.accounts()[creator] ?? {} } },
         plugins: input.plugins(),
         providerDefinitions: [],
         ...(control.firstPartyMcp ? { firstPartyMcp: firstPartyMcp(new URL(c.req.url).origin) } : {}),
@@ -211,12 +221,14 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       calls.executions.push(lease.turnId)
       if (control.machine !== "running") {
         if (body.start !== true) return c.json({ error: { code: "cloud_runtime_unavailable" } }, 409)
+        if (control.startRefusal) return c.json({ error: { code: "cloud_runtime_start_refused", ...control.startRefusal } }, 409)
         const started = control.machine === "asleep"
         if (started) {
           control.machine = "starting"
           calls.starts.push(lease.turnId)
         }
-        return c.json({ error: { code: "cloud_runtime_starting", started } }, 409)
+        const { retryAfterMs, sinceStartMs } = control.start
+        return c.json({ error: { code: "cloud_runtime_starting", started, retryAfterMs, ...(started ? {} : { sinceStartMs }) } }, 409)
       }
       const expiresAt = Date.now() + 600_000
       const runtimeAccessToken = await mintRuntimeAccessToken({
@@ -227,10 +239,10 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       return c.json(access)
     })
     .post("/turn-credential-refused", async (c) => {
-      const body = await c.req.json<{ turnLease?: string; credentialId?: string }>()
+      const body = await c.req.json<{ turnLease?: string; credentialId?: string; revision?: unknown; status?: unknown }>()
       const lease = await issuedLease(body.turnLease)
       if (!lease || typeof body.credentialId !== "string") return refused(c, 401, "session_turn_lease_invalid")
-      calls.refusals.push({ turnId: lease.turnId, credentialId: body.credentialId })
+      calls.refusals.push({ turnId: lease.turnId, credentialId: body.credentialId, revision: body.revision, status: body.status })
       return c.json({ refusal: "waiting" })
     })
     .post("/session-host-delete", async (c) => {

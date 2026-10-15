@@ -23,7 +23,7 @@ import {
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
   createHostedRepositoryAccess,
-  createHostedRepositoryCloneSecrets,
+  createHostedRepositoryClone,
   type HostedD1ConnectionsSetupInput,
 } from "./setup"
 
@@ -465,14 +465,14 @@ describe("hosted D1 Connections setup", () => {
     }
     const workspace = async (test: Awaited<ReturnType<typeof rig>>, workspaceId: string, repoConnectionId?: string) => {
       await test.authority.createCloudWorkspace(test.owner, { workspaceId, displayName: workspaceId, repoUrl, ...(repoConnectionId ? { repoConnectionId } : {}) })
-      return createHostedRepositoryCloneSecrets(test.input)({ workspaceId, ownerUserId: test.ownerUserId, orgId: "org_deployment" })
+      return createHostedRepositoryClone(test.input)({ workspaceId, ownerUserId: test.ownerUserId, orgId: "org_deployment" })
     }
 
     test("a repository created without a private connection boots with no credential, though its owner holds GitHub connections", async () => {
       const test = await rig({ integrations: [github] })
       await connect(test.app, "github", { scope: "org", secret: "org-token" })
       await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
-      expect(await workspace(test, "ws_public")).toEqual([])
+      expect(await workspace(test, "ws_public")).toBeUndefined()
     })
 
     test("a private repository clones with the connection picked at create, not the one capability resolution prefers", async () => {
@@ -480,14 +480,7 @@ describe("hosted D1 Connections setup", () => {
       await connect(test.app, "github", { scope: "org", secret: "org-token" })
       await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
       const { organization } = await connectionIds(test)
-      expect(await workspace(test, "ws_private", organization)).toEqual([{
-        name: "CLAXEDO_GITHUB_CLONE_AUTH",
-        value: `Basic ${Buffer.from("x-access-token:org-token").toString("base64")}`,
-        hosts: ["github.com"],
-        header: "Authorization",
-        methods: ["GET", "POST"],
-        pathPrefixes: ["/acme/private.git/"],
-      }])
+      expect(await workspace(test, "ws_private", organization)).toEqual({ repoUrl, connectionId: organization, token: "org-token" })
     })
 
     test("a token mint GitHub answers 503 fails the preparation rather than withdrawing the credential", async () => {
@@ -514,8 +507,8 @@ describe("hosted D1 Connections setup", () => {
 
       await expect(workspace(test, "ws_blip", organization)).rejects.toThrow("connection_refresh_transient")
       githubUp = true
-      await expect(createHostedRepositoryCloneSecrets(test.input)({ workspaceId: "ws_blip", ownerUserId: test.ownerUserId, orgId: "org_deployment" }))
-        .resolves.toMatchObject([{ name: "CLAXEDO_GITHUB_CLONE_AUTH", value: `Basic ${Buffer.from("x-access-token:fresh-access").toString("base64")}` }])
+      await expect(createHostedRepositoryClone(test.input)({ workspaceId: "ws_blip", ownerUserId: test.ownerUserId, orgId: "org_deployment" }))
+        .resolves.toMatchObject({ connectionId: organization, token: "fresh-access" })
     })
 
     test("a picked connection that is gone, or that belongs to someone else, yields no credential rather than refusing the boot", async () => {
@@ -524,8 +517,80 @@ describe("hosted D1 Connections setup", () => {
       await connect(test.app, "github", { scope: "personal", secret: "member-token" })
       const { personal: foreign } = await connectionIds(test)
       test.as(test.owner)
-      expect(await workspace(test, "ws_foreign", foreign)).toEqual([])
-      expect(await workspace(test, "ws_gone", "conn_deleted")).toEqual([])
+      expect(await workspace(test, "ws_foreign", foreign)).toBeUndefined()
+      expect(await workspace(test, "ws_gone", "conn_deleted")).toBeUndefined()
+    })
+  })
+
+  describe("which connection can read a repository", () => {
+    const repository = (fullName: string, read = true) => ({
+      id: fullName,
+      name: fullName.split("/")[1],
+      fullName,
+      cloneUrl: `https://github.com/${fullName}.git`,
+      private: true,
+      permissions: { read, write: false },
+    })
+    const visibleTo: Record<string, ReturnType<typeof repository>[]> = {
+      "org-token": [repository("acme/shared"), repository("acme/both")],
+      "owner-token": [repository("owner/mine"), repository("acme/both"), repository("acme/listed-unreadable", false)],
+      "member-token": [repository("member/theirs")],
+    }
+    const github: { decl: IntegrationDeclaration; impl: IntegrationImpl } = {
+      decl: { id: "github", name: "GitHub", methods: ["key"], keyTokenType: "bearer" },
+      impl: {
+        actions: { "code-host": { capability: "code-host", listRepositories: async (_fields, token) => visibleTo[token] ?? [] } },
+        auth: { verify: async () => ({ ok: true }) },
+      },
+    }
+    const ids = async (test: Awaited<ReturnType<typeof rig>>) => {
+      const rows = await test.database.prepare(`select connection_id, owner_user_id from hosted_connections where integration_id = 'github'`)
+        .all<{ connection_id: string; owner_user_id: string | null }>()
+      return {
+        personal: rows.results.find((row) => row.owner_user_id === test.ownerUserId)?.connection_id,
+        member: rows.results.find((row) => row.owner_user_id === test.memberUserId)?.connection_id,
+        organization: rows.results.find((row) => row.owner_user_id === null)?.connection_id,
+      }
+    }
+    const connected = async () => {
+      const test = await rig({ integrations: [github, keyIntegration] })
+      await connect(test.app, "context7", { scope: "personal", secret: "owner-key" })
+      await connect(test.app, "github", { scope: "org", secret: "org-token" })
+      await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
+      test.as(test.member)
+      await connect(test.app, "github", { scope: "personal", secret: "member-token" })
+      test.as(test.owner)
+      return { test, ids: await ids(test), access: createHostedRepositoryAccess(test.input) }
+    }
+
+    test("a repository named without a connection resolves to the caller's own connection before the organization's", async () => {
+      const { test, ids, access } = await connected()
+      expect(await access(test.owner, undefined, "owner/mine")).toMatchObject({ ok: true, connectionId: ids.personal, repository: { fullName: "owner/mine" } })
+      expect(await access(test.owner, undefined, "acme/shared")).toMatchObject({ ok: true, connectionId: ids.organization })
+      expect(await access(test.owner, undefined, "acme/both")).toMatchObject({ ok: true, connectionId: ids.personal })
+    })
+
+    test("a repository named without a connection matches GitHub's names whatever their case", async () => {
+      const { test, ids, access } = await connected()
+      expect(await access(test.owner, undefined, "Owner/MINE")).toMatchObject({ ok: true, connectionId: ids.personal, repository: { fullName: "owner/mine" } })
+    })
+
+    test("a repository none of the caller's connections can read is refused, though another person's connection could", async () => {
+      const { test, access } = await connected()
+      expect(await access(test.owner, undefined, "member/theirs")).toEqual({ ok: false, status: 404, code: "repository_not_found" })
+      expect(await access(test.owner, undefined, "acme/listed-unreadable")).toEqual({ ok: false, status: 403, code: "repository_read_required" })
+    })
+
+    test("a caller with no code-host connection has none to resolve", async () => {
+      const test = await rig({ integrations: [github, keyIntegration] })
+      await connect(test.app, "context7", { scope: "personal", secret: "owner-key" })
+      expect(await createHostedRepositoryAccess(test.input)(test.owner, undefined, "owner/mine")).toEqual({ ok: false, status: 404, code: "connection_not_found" })
+    })
+
+    test("the caller's personal connection, picked by id, reads its repository", async () => {
+      const { test, ids, access } = await connected()
+      expect(await access(test.owner, ids.personal, "owner/mine")).toMatchObject({ ok: true, connectionId: ids.personal })
+      expect(await access(test.owner, ids.member, "member/theirs")).toEqual({ ok: false, status: 404, code: "connection_not_found" })
     })
   })
 

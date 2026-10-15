@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite"
 import { after, afterEach, before, describe, it } from "node:test"
 import { generateKeyPair } from "jose"
 import type { PluginProjection, RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
+import { ORG_ACCOUNT_UNAVAILABLE, type ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../harness/e2e/harness/scripted-model-server"
 import { eventually } from "../../harness/e2e/harness/eventually"
@@ -64,7 +65,7 @@ async function restartableHttpMcp() {
   }
 }
 
-type StoredMessage = { info: { role: string; time?: { completed?: number } }; parts: Array<{ type: string; text?: string; tool?: string; state?: { status?: string; output?: string; error?: string } }> }
+type StoredMessage = { info: { role: string; time?: { completed?: number } }; parts: Array<{ type: string; messageID?: string; text?: string; tool?: string; state?: { status?: string; output?: string; error?: string } }> }
 
 const assistantText = (messages: StoredMessage[]) =>
   messages.filter((message) => message.info.role === "assistant").flatMap((message) => message.parts).filter((part) => part.type === "text").map((part) => part.text ?? "").join("")
@@ -113,14 +114,14 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await rm(persist, { recursive: true, force: true })
   })
 
-  const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key" }
+  const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key", revision: 3 }
   const openai = (secret: string) => ({ openai: { delivery: "direct" as const, baseUrl: model.url, apiPath: "/v1", secret, authKind: "api-key" as const, account: OPENAI_ACCOUNT } })
 
-  async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>> } = {}) {
+  async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>>; refused?: Record<string, Record<string, ProviderUnavailable>> } = {}) {
     const creator = options.creator ?? OWNER
     const controlPlane = controlPlaneStandIn({
       root, relayHostKey: relayHost.publicKey, runtimeAccessKey: runtimeAccess.privateKey,
-      accounts: () => options.accounts ?? { [OWNER]: openai(SECRET) }, plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
+      accounts: () => options.accounts ?? { [OWNER]: openai(SECRET) }, ...(options.refused ? { refused: () => options.refused! } : {}), plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
       workspaceSessions: () => [{ id: "ses_listed_on_machine", title: "WORKSPACE_SESSION_ROW" }],
       sessionHost: () => (path, init) => sessionHostClient(worker, { root, relayHostSigningKey: relayHost.privateKey, user: creator }).request(path, init),
     })
@@ -184,6 +185,38 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual((await host.json<{ harness: unknown }>(`/session/${root}/config`)).harness, { id: "pi", access: "native" })
   })
 
+  void it("a session in Ask mode asks before a write, writes on Allow once, blocks it on Deny, and keeps the mode across turns", { timeout: 120_000 }, async () => {
+    const root = "ses_ask"
+    const host = await session(root)
+    type Permission = { id: string; sessionID: string; permission: string }
+    const ask = async (marker: string, file: string, response: "once" | "reject") => {
+      model.scriptTool({ name: "write", input: { path: file, content: `${marker}\n` }, whenPromptIncludes: marker })
+      await host.json(`/session/${root}/prompt_async`, { method: "POST", body: {
+        parts: [{ type: "text", text: `Write the file, then reply with exactly this one token: ${marker}` }], messageID: `msg_${marker}`, model: MODEL,
+        ...(marker === "PIASKALLOW" ? { permissionMode: "ask" } : {}),
+      } })
+      const pending = await eventually(`the permission for ${marker}`, async () => {
+        const open = await host.json<{ permissions?: { value?: Permission[] } | Permission[] }>(`/session/${root}?view=open`)
+        const rows = Array.isArray(open.permissions) ? open.permissions : open.permissions?.value ?? []
+        return rows.find((row) => row.sessionID === root)
+      }, 30_000)
+      assert.equal(existsSync(path.join(directory, file)), false, "nothing is written before the person answers")
+      assert.equal(pending.permission, "write")
+      await host.json(`/session/${root}/permissions/${encodeURIComponent(pending.id)}`, { method: "POST", body: { response } })
+      return (await host.settled(marker)).flatMap((message) => message.parts)
+        .find((part) => part.type === "tool" && part.messageID === `msg_${marker}_r`)?.state
+    }
+    const allowed = await ask("PIASKALLOW", "ask-allowed.txt", "once")
+    assert.equal(allowed?.status, "completed", JSON.stringify(allowed))
+    assert.equal(await readFile(path.join(directory, "ask-allowed.txt"), "utf8"), "PIASKALLOW\n")
+    assert.equal((await host.json<{ permissionMode?: string }>(`/session/${root}/config`)).permissionMode, "ask")
+
+    const denied = await ask("PIASKDENY", "ask-denied.txt", "reject")
+    assert.equal(denied?.status, "error", JSON.stringify(denied))
+    assert.equal(denied?.error, "Tool call blocked: The person denied this tool call")
+    assert.equal(existsSync(path.join(directory, "ask-denied.txt")), false)
+  })
+
   void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for one delivery", { timeout: 120_000 }, async () => {
     const root = "ses_turn"
     const host = await session(root)
@@ -215,8 +248,8 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(host.controlPlane.calls.usage.map((report) => report.turnId), ["msg_reported"])
     assert.equal(settled.status, "completed")
     assert.equal(settled.harness, "pi")
-    assert.equal(settled.providerId, MODEL.providerID)
-    assert.equal(settled.modelId, MODEL.modelID)
+    assert.equal(settled.providerId, "openai")
+    assert.equal(settled.modelId, "gpt-4.1")
     assert.equal(settled.turnId, "msg_reported")
     assert.ok(atLeastOne(readField(settled.tokens, "input")) && atLeastOne(readField(settled.tokens, "output")), JSON.stringify(settled))
     assert.equal(readField(settled.quality, "source"), "provider")
@@ -255,12 +288,24 @@ void describe("SessionDO under workerd with PiHarness", () => {
       await host.prompt("msg_refused_key", "Reply with exactly this one token: PIREFUSEDKEY")
       await eventually("the refused account reported", async () => host.controlPlane.calls.refusals.length ? true : undefined, 30_000)
     } finally { restore() }
-    assert.deepEqual(host.controlPlane.calls.refusals, [{ turnId: "msg_refused_key", credentialId: OPENAI_ACCOUNT.credentialId }])
+    assert.deepEqual(host.controlPlane.calls.refusals, [{ turnId: "msg_refused_key", credentialId: OPENAI_ACCOUNT.credentialId, revision: 3, status: 401 }])
     await eventually("the failed turn's row and usage", async () =>
       host.controlPlane.calls.usage.some((report) => report.turnId === "msg_refused_key")
         && host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => readField(row.lastTurn, "status") === "failed")) ? true : undefined)
     const fact = host.controlPlane.calls.usage.flatMap((report) => report.facts).find((candidate) => candidate.turnId === "msg_refused_key")
     assert.equal(fact?.status, "error", JSON.stringify(fact))
+  })
+
+  void it("reports nothing against the account for a vendor answer that is not 401, whatever its prose says about the key", { timeout: 120_000 }, async () => {
+    const root = "ses_forbidden_account"
+    const host = await session(root)
+    const restore = model.scriptError({ marker: "PIFORBIDDENKEY", status: 403, message: "This API key is not allowed from your region" })
+    try {
+      await host.prompt("msg_forbidden_key", "Reply with exactly this one token: PIFORBIDDENKEY")
+      await eventually("the forbidden turn's row", async () =>
+        host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => readField(row.lastTurn, "status") === "failed")) ? true : undefined, 30_000)
+    } finally { restore() }
+    assert.deepEqual(host.controlPlane.calls.refusals, [])
   })
 
   void it("keeps delivered model options after an idle object restart without requesting another secret delivery", { timeout: 120_000 }, async () => {
@@ -277,6 +322,21 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await host.prompt("msg_restored_catalog", "Reply with exactly this one token: PIRESTOREDCATALOG")
     await host.settled("PIRESTOREDCATALOG")
     assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_catalog", "msg_restored_catalog"])
+  })
+
+  void it("answers a prompt sent again under a message id the session already holds as it first did, running it no second time, before and after the object restarts", { timeout: 120_000 }, async () => {
+    const root = "ses_lost_ack"
+    const host = await session(root)
+    const send = () => host.prompt("msg_lost_ack", "Reply with exactly this one token: PILOSTACK")
+    const first = await send()
+    await host.settled("PILOSTACK")
+    await eventually("the lost ack turn's lease released", async () => host.controlPlane.calls.releases.includes("msg_lost_ack") ? true : undefined)
+    assert.deepEqual(await send(), first)
+    await host.crash()
+    assert.deepEqual(await send(), first)
+    await host.prompt("msg_after_lost_ack", "Reply with exactly this one token: PIAFTERLOSTACK")
+    await host.settled("PIAFTERLOSTACK")
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_lost_ack", "msg_after_lost_ack"])
   })
 
   void it("stops a turn and the command it was running on the machine", { timeout: 120_000 }, async () => {
@@ -607,6 +667,19 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(model.requests.slice(answered).some((request) => request.prompt.includes("PIBARE")), false)
   })
 
+  void it("a creator who chose the organization's account where it has none is told that, and spends nothing", { timeout: 120_000 }, async () => {
+    const creator = "user_org_source"
+    const host = await session("ses_org_source", { creator, accounts: {}, refused: { [creator]: { openai: { unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE } } } })
+    const answered = model.requests.length
+    await host.prompt("msg_org_source", "Reply with exactly this one token: PIORGSOURCE")
+    const refused = await eventually("the turn refused for the organization's missing account", async () => {
+      const reply = (await host.messages()).find((message) => message.info.role === "assistant" && message.info.time?.completed)
+      return reply ? JSON.stringify(reply.info) : undefined
+    }, 30_000)
+    assert.match(refused, /Your organization has no OpenAI API key, .*Ask an admin to add a team key/)
+    assert.equal(model.requests.slice(answered).some((request) => request.prompt.includes("PIORGSOURCE")), false)
+  })
+
   void it("is refused what the control plane refuses: a create its reservation does not name, a viewer's turn and delete", { timeout: 120_000 }, async () => {
     await assert.rejects(session("ses_unreserved", { reservation: "op_someone_else" }), /answered 403/)
 
@@ -635,6 +708,10 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.ok((await host.tables()).includes("session_host_meta"))
     assert.deepEqual(await host.json(`/session/${root}`, { method: "DELETE" }), { ok: true, deletedSessionIds: [root] })
     assert.deepEqual(host.controlPlane.calls.deletes, [OWNER])
+    const after = await host.as(OWNER).fetch(`/session/${root}/message`)
+    assert.equal(after.status, 404)
+    assert.deepEqual(await after.json(), { error: { code: "session_deleted", message: "This session was deleted" } })
+    assert.deepEqual(await host.tables(), [])
     await host.crash()
     assert.deepEqual(await host.tables(), [])
     await assert.rejects(host.messages(), /answered 403/)
@@ -678,28 +755,94 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(host.controlPlane.calls.executions, [])
   })
 
-  void it("starts a sleeping machine from the first tool call that needs it and answers that call at once, starts it no second time while it starts, and runs the tool once it runs", { timeout: 120_000 }, async () => {
+  const writeTool = (host: Awaited<ReturnType<typeof session>>) => async (marker: string) => {
+    model.scriptTool({ name: "write", input: { path: "asleep.txt", content: `${marker}\n` }, whenPromptIncludes: marker })
+    await host.prompt(`msg_${marker}`, `Write the file, then reply with exactly this one token: ${marker}`)
+    return toolParts(await host.settled(marker), "write").at(-1)?.state
+  }
+
+  void it("a tool call that starts a sleeping machine holds while it comes up, asking again only as often as the start answers, and runs the tool once it runs", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const host = await session("ses_asleep_hold")
+    const control = host.controlPlane.control
+    control.machine = "asleep"
+    control.start = { retryAfterMs: 500, sinceStartMs: 1_000 }
+    const written = path.join(directory, "asleep.txt")
+    await rm(written, { force: true })
+    const heldSince = Date.now()
+    const ran = writeTool(host)("PIASLEEPHELD")
+    await eventually("the machine start", async () => host.controlPlane.calls.starts.length === 1 || undefined, 30_000)
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    control.machine = "running"
+    const state = await ran
+    const held = Date.now() - heldSince
+    assert.equal(state?.status, "completed", JSON.stringify(state))
+    assert.equal(await readFile(written, "utf8"), "PIASLEEPHELD\n")
+    assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPHELD"])
+    const asks = host.controlPlane.calls.executions.filter((turn) => turn === "msg_PIASLEEPHELD").length
+    assert.ok(asks >= 3 && asks <= 2 + held / 500, `${asks} asks in ${held} ms`)
+    assert.equal(model.requests.some((request) => request.prompt.includes("This tool call started the asleep workspace machine")), false, "the model never read that the machine was starting")
+  })
+
+  void it("stopping a turn while its tool call holds for a starting machine ends the hold, and the call asks for the machine no more", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const root = "ses_asleep_stop"
+    const host = await session(root)
+    const control = host.controlPlane.control
+    control.machine = "asleep"
+    control.start = { retryAfterMs: 500, sinceStartMs: 1_000 }
+    model.scriptTool({ name: "write", input: { path: "asleep-stop.txt", content: "no\n" }, whenPromptIncludes: "PIASLEEPSTOP" })
+    await host.prompt("msg_PIASLEEPSTOP", "Write the file, then reply with exactly this one token: PIASLEEPSTOP")
+    await eventually("the machine start", async () => host.controlPlane.calls.starts.length === 1 || undefined, 30_000)
+    const inspected = await host.json<{ target: { ownerGeneration: string } }>(`/session/${root}/recovery`)
+    const stoppedAt = Date.now()
+    await host.json(`/session/${root}/recovery`, { method: "POST", body: {
+      requestId: "stop_hold", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
+    } })
+    await eventually("the held tool call ended", async () => {
+      const state = toolParts(await host.messages(), "write").at(-1)?.state
+      return state && state.status !== "running" && state.status !== "pending" ? state : undefined
+    }, 15_000)
+    assert.ok(Date.now() - stoppedAt < 10_000, `the hold ended ${Date.now() - stoppedAt} ms after the stop`)
+    const asks = host.controlPlane.calls.executions.length
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    assert.equal(host.controlPlane.calls.executions.length, asks)
+    assert.equal(existsSync(path.join(directory, "asleep-stop.txt")), false)
+  })
+
+  void it("a tool call whose machine start failed answers at once that it could not start, why, and when it can be tried again, with no hold and no call-again", { timeout: 120_000 }, async () => {
+    plugins = NO_PLUGINS
+    const host = await session("ses_asleep_refused")
+    const control = host.controlPlane.control
+    control.machine = "asleep"
+    control.startRefusal = { message: "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests", retryAfterMs: 30_000 }
+    const asked = Date.now()
+    const state = await writeTool(host)("PIASLEEPREFUSED")
+    assert.equal(state?.status, "error", JSON.stringify(state))
+    assert.equal(state?.error, "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests; try again in about 30 s.")
+    assert.ok(Date.now() - asked < 15_000)
+    assert.equal(host.controlPlane.calls.executions.filter((turn) => turn === "msg_PIASLEEPREFUSED").length, 1)
+  })
+
+  void it("a tool call whose machine is not up within its hold answers that this call started it and how long it has been starting, starts it no second time, and runs the tool once it runs", { timeout: 120_000 }, async () => {
     plugins = NO_PLUGINS
     const host = await session("ses_asleep_tool")
     const control = host.controlPlane.control
     control.machine = "asleep"
     const written = path.join(directory, "asleep.txt")
-    const write = async (marker: string) => {
-      model.scriptTool({ name: "write", input: { path: "asleep.txt", content: `${marker}\n` }, whenPromptIncludes: marker })
-      await host.prompt(`msg_${marker}`, `Write the file, then reply with exactly this one token: ${marker}`)
-      return toolParts(await host.settled(marker), "write").at(-1)?.state
-    }
+    await rm(written, { force: true })
+    const write = writeTool(host)
 
     const started = await write("PIASLEEPSTART")
     assert.equal(started?.status, "error", JSON.stringify(started))
-    assert.ok(started?.error?.includes("The workspace machine was asleep. This tool call started it; it usually takes about a minute. Try this tool again in a few seconds."), started?.error)
-    assert.ok(model.requests.some((request) => request.prompt.includes("This tool call started it")), "the model was told the machine is starting")
+    assert.ok(started?.error?.includes("This tool call started the asleep workspace machine; call this tool again to wait up to 20 s for it."), started?.error)
+    assert.ok(model.requests.some((request) => request.prompt.includes("This tool call started the asleep workspace machine")), "the model was told the machine is starting")
     assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
     assert.equal(existsSync(written), false)
 
     const starting = await write("PIASLEEPSTARTING")
     assert.equal(starting?.status, "error", JSON.stringify(starting))
-    assert.ok(starting?.error?.includes("The workspace machine is starting; it usually takes about a minute. Try this tool again in a few seconds."), starting?.error)
+    assert.ok(starting?.error?.includes("The workspace machine is still starting (35 s so far); call this tool again to wait up to 20 s for it."), starting?.error)
     assert.deepEqual(host.controlPlane.calls.starts, ["msg_PIASLEEPSTART"])
 
     control.machine = "running"

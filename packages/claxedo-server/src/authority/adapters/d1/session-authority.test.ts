@@ -873,7 +873,7 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toMatchObject({ status: 403 })
   })
 
-  test("attributes a cloud turn's usage to the account that started that turn, and to nobody for a turn a machine served", async () => {
+  test("attributes a cloud turn's usage to the account that started that turn, and to nobody for a turn a machine served or on a deleted session or workspace", async () => {
     const input = await setup()
     const { alice, bob } = await sharedWorkspace(input)
     await reserveAndRegister(input.sessions, alice, { operationId: "op_usage", sessionId: "ses_usage" })
@@ -911,6 +911,11 @@ describe("D1 private multiplayer session authority", () => {
     const laptopTurn = await input.sessions.acquireSessionTurn({ ...alicePrincipal, ...laptop, turnId: "msg_laptop" })
     await input.sessions.releaseSessionTurn({ ...alicePrincipal, ...laptop, turnId: "msg_laptop", leaseId: laptopTurn.leaseId, fencingToken: laptopTurn.fencingToken })
     expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_laptop", turnId: "msg_laptop" })).toBeUndefined()
+
+    await input.database.prepare("update sessions set deleted_at = ? where session_id = ?").bind(input.now(), "ses_usage").run()
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toBeUndefined()
+    await input.database.prepare("update sessions set deleted_at = null where session_id = ?").bind("ses_usage").run()
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toEqual(bobOwner)
 
     await input.database.prepare("update workspaces set deleted_at = ? where workspace_id = ?").bind(input.now(), "ws_main").run()
     expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toBeUndefined()

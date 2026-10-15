@@ -47,8 +47,8 @@ function launchFromTurn(workspaceId: string, held: () => HeldTurn | undefined): 
     credentials: () => {
       const turn = held()
       if (!turn) return undefined
-      const { machineOwnerUserId, direct } = turn.delivery.auth
-      return { machineOwnerUserId, accounts: {}, ...(direct ? { direct } : {}), placement: "cloud", canUseOwnLogin: false, leaseGeneration: turn.key }
+      const { machineOwnerUserId, accounts, direct } = turn.delivery.auth
+      return { machineOwnerUserId, accounts, ...(direct ? { direct } : {}), placement: "cloud", canUseOwnLogin: false, leaseGeneration: turn.key }
     },
     providerDefinitions: () => held()?.delivery.providerDefinitions ?? [],
   }

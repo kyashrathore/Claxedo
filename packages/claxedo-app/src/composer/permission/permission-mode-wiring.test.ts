@@ -43,16 +43,30 @@ test("permission surface: a table harness names its modes and the row's mode wit
   })
 })
 
-test("permission surface: pi and OpenCode show as unavailable, and nothing is read for them", () => {
+test("permission surface: Pi names Ask and Full access with no read, a draft starts on Full access, and a pick of Ask is what its prompt carries", () => {
   createRoot((dispose) => {
-    for (const harness of [nativeHarness("pi"), nativeHarness("opencode")]) {
-      const { permissionMode, reads } = surface(harness, {})
-      expect(permissionMode.groups()?.harness).toMatchObject({ rows: [], unavailable: expect.any(String) })
-      expect(permissionMode.groups()?.harness.loading).toBeUndefined()
-      expect(permissionMode.current()).toBeUndefined()
-      permissionMode.openModes()
-      expect(reads).toEqual([])
-    }
+    const draft = surface(nativeHarness("pi"))
+    expect(draft.permissionMode.groups()?.harness.rows.map((row) => [row.option.id, row.selectable])).toEqual([["ask", true], ["full", true]])
+    expect(draft.permissionMode.current()?.id).toBe("full")
+    const ask = draft.permissionMode.groups()!.harness.rows[0].option
+    draft.permissionMode.select(ask)
+    expect(draft.permissionMode.promptModeId()).toBe("ask")
+    const session = surface(nativeHarness("pi"), { permissionMode: "ask" })
+    expect(session.permissionMode.current()?.name).toBe("Ask")
+    draft.permissionMode.openModes()
+    expect([...draft.reads, ...session.reads]).toEqual([])
+    dispose()
+  })
+})
+
+test("permission surface: OpenCode shows as unavailable, and nothing is read for it", () => {
+  createRoot((dispose) => {
+    const { permissionMode, reads } = surface(nativeHarness("opencode"), {})
+    expect(permissionMode.groups()?.harness).toMatchObject({ rows: [], unavailable: expect.any(String) })
+    expect(permissionMode.groups()?.harness.loading).toBeUndefined()
+    expect(permissionMode.current()).toBeUndefined()
+    permissionMode.openModes()
+    expect(reads).toEqual([])
     dispose()
   })
 })

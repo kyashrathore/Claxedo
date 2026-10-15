@@ -3,6 +3,7 @@ import { useTranslator } from "@/i18n"
 import { useServer, type PluginCandidate } from "@/server"
 import { marketplaceDictionary } from "../i18n"
 import { activationSummary, installedHarnesses } from "../model"
+import { pluginCloudReach } from "../cloud-reach"
 import { CHIP } from "./chrome"
 import { useHarnessLabel } from "./harness-label"
 import { useProjectScopeText } from "./project-scope"
@@ -12,6 +13,12 @@ export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.El
   const label = useHarnessLabel()
   const server = useServer()
   const scope = useProjectScopeText()
+  const cloud = () => {
+    const reach = pluginCloudReach(props.plugin)
+    if (reach.kind === "every") return t("marketplace.facts.cloud")
+    if (reach.kind === "limited") return t("marketplace.facts.cloudLimited")
+    return t("marketplace.facts.cloudOnly", { harnesses: reach.harnesses.map(label).join(", ") })
+  }
   const status = () => {
     const summary = activationSummary(props.plugin)
     const state = t(summary.state.key)
@@ -30,7 +37,7 @@ export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.El
       <dt class="text-text-weaker">{t("marketplace.facts.where")}</dt>
       <dd class="flex flex-wrap gap-1.5">
         <span class={CHIP}>{t("marketplace.facts.local")}</span>
-        <span class={CHIP}>{t("marketplace.facts.cloud")}</span>
+        <span class={CHIP}>{cloud()}</span>
       </dd>
 
       <dt class="text-text-weaker">{t("marketplace.facts.projects")}</dt>

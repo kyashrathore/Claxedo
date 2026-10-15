@@ -3,7 +3,7 @@ import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
 import { followWorkspaceStart, startWorkspace, type StartOptions } from "./workspace-start"
-import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, isImageOutdated, unavailableRetry, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
+import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, isImageOutdated, startRefused, type ConnectionAnswer, type StartRequest, type WorkspaceConnections } from "./wire/connection"
 import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
 import { asArray, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { ServerError } from "./errors"
@@ -95,14 +95,12 @@ function workspaceProxyPath(route: RuntimeRoute, path: string) {
 
 type Request = Transport["request"]
 
-async function requestConnection(request: Request, workspaceId: string, start: boolean): Promise<ConnectionAnswer> {
-  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, start ? { method: "POST", body: "{}" } : undefined)
+async function requestConnection(request: Request, workspaceId: string, start: StartRequest | undefined): Promise<ConnectionAnswer> {
+  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, start ? { method: "POST", body: JSON.stringify(start) } : undefined)
   if (response.ok) return connectionAnswerFromWire(await response.json(), workspaceId)
   const body = response.clone()
   const error = await responseError(response, start ? "Workspace start" : "Workspace connection")
-  const retrying = start && error.code === CLOUD_RUNTIME_UNAVAILABLE ? unavailableRetry(JSON.parse(await body.text())) : undefined
-  if (!retrying) throw error
-  return retrying
+  throw start && error.code === CLOUD_RUNTIME_UNAVAILABLE ? startRefused(error, JSON.parse(await body.text())) : error
 }
 
 export function createWorkspaceConnections(request: Request, account?: HostedAccount): WorkspaceConnections {
@@ -116,11 +114,11 @@ export function createWorkspaceConnections(request: Request, account?: HostedAcc
       }
       return account
         ? connectionAnswerFromWire(await account.run("workspace.connection.read", { id: workspaceId }), workspaceId)
-        : requestConnection(request, workspaceId, false)
+        : requestConnection(request, workspaceId, undefined)
     },
-    start: async (workspaceId) => account
-      ? connectionAnswerFromWire(await account.run("workspace.connection.mint", { id: workspaceId }), workspaceId)
-      : requestConnection(request, workspaceId, true),
+    start: async (workspaceId, start = {}) => account
+      ? connectionAnswerFromWire(await account.run("workspace.connection.mint", { id: workspaceId, ...start }), workspaceId)
+      : requestConnection(request, workspaceId, start),
     mintSession: async (workspaceId, sessionId) => {
       const body = account
         ? await account.run("session.connection.mint", { id: workspaceId, sessionId })

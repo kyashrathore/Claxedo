@@ -45,7 +45,8 @@ export namespace Pty {
    * terminal memory is therefore (sessions × the sum below), and the session
    * count is itself bounded by orphan reaping (see `orphanTimeoutMs`).
    *
-   *   BUFFER_LIMIT          2 MB code units  — the replay buffer, ~2–4 MB heap
+   *   BUFFER_LIMIT          2 MB code units  — the replay buffer, cut back to it
+   *                                            once it passes 2.5 MB; ~2–5 MB heap
    *   QUEUE_HIGH_WATERMARK  1 MB             — pending writes to a slow pty
    *   modeTracker                            — headless xterm, 5000 scrollback rows
    *                                            + up to 1 MB pending control string

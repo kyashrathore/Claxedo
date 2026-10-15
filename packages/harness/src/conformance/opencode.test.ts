@@ -826,3 +826,24 @@ test("a prompt naming a declared OpenCode command runs that command, not its lit
     expect(prompts.some((prompt) => prompt.includes("/h12 RUN"))).toBe(false)
   } finally { await context.close() }
 }, 60_000)
+
+test("a draft's capabilities list the models of the accounts its owner holds, before any session bound them", async () => {
+  const state = await backend()
+  const transport = new OpenCodeSdkTransport(createTestServices(), { databasePath: path.join(state.root, "opencode.db") })
+  try {
+    const definition = { id: "carried", name: "Carried", npm: "@ai-sdk/openai-compatible" as const, baseURL: "https://unused.invalid/v1",
+      headers: {}, models: { carried: { name: "Carried" } }, credentialProviderId: "account", credentialSource: "account" as const }
+    const model = { providerID: "carried", modelID: "carried" }
+    const draft = { workspaceId: "w1", directory: state.directory, locality: "remote" as const, owner: { kind: "person" as const, userId: "owner" },
+      config: { harness: state.harness, model }, model, projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
+      credentials: { ...state.credentials, providers: { ...state.credentials.providers,
+        account: { baseUrl: state.server.v1Url, placeholder: "cloud-placeholder", authMode: "api-key" as const } } },
+      providerDefinitions: [definition] }
+    const selection = (await transport.capabilities({ directory: state.directory, draft })).modelSelection
+    const offered = selection.status === "required" ? selection.models.map((row) => `${row.providerId}/${row.modelId}`) : []
+    expect(offered).toContain("carried/carried")
+  } finally {
+    await transport.dispose()
+    await state.close()
+  }
+}, 60_000)

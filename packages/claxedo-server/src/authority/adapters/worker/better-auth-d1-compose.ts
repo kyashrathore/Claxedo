@@ -13,9 +13,10 @@ import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedBrokerCredentialReader, hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { createCredentialRefusals } from "../../../credentials/credential-refusals"
-import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION } from "../../../credentials/hosted-egress-broker"
+import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, type HostedEgressBroker } from "../../../credentials/hosted-egress-broker"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
+import { hostedOrgAdministers } from "../../../credentials/worker/org-administers"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
 import { hostedWorkspaceIdleStop } from "../../../workspace/routes/checkpoints"
 import { ownerSessionList } from "../../../session/list"
@@ -120,6 +121,8 @@ export type BetterAuthD1UserDeployedComposition = {
   plane: HostedControlPlane
   /** The sandbox delivery stack a feature entry composes onto; absent without a sandbox binding. */
   runtimeDelivery?: ReturnType<typeof createHostedRuntimeDelivery>
+  /** The plane's broker for drivers with no provider edge; absent without a sandbox binding or a public origin. */
+  egressBroker?: HostedEgressBroker
   options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
   /** The membership, team and project rows hosted Pages authorize against. */
   documentAccess: D1AccessContext
@@ -261,6 +264,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     ? createHostedEgressBroker({
         credentials: plane.orgCredentials,
         read: (orgId) => hostedBrokerCredentialReader(orgId, { database: input.controlPlaneDatabase, env: input.env }),
+        workspaceOwner: async (workspaceId) => await authority.resolveWorkspaceOwner?.(workspaceId),
         sandboxManager,
         env: input.env,
         origin,
@@ -282,7 +286,10 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         signingEnv: input.env,
         provisionedRunner: provisionedRunner(input.env),
         ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
+        ...(sandbox.runtimeLost ? { runtimeLost: sandbox.runtimeLost } : {}),
         sandboxRefresh: sandbox.refresh,
+        sandboxRedeliver: sandbox.redeliver,
+        sandboxFollow: sandbox.follow,
         idleStop: hostedWorkspaceIdleStop(plane.services),
       })
     : undefined
@@ -290,6 +297,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   return {
     plane,
     ...(delivery ? { runtimeDelivery: delivery } : {}),
+    ...(broker ? { egressBroker: broker } : {}),
     documentAccess: new D1WorkspaceAuthority(input.controlPlaneDatabase, {
       deploymentId,
       product: input.product,
@@ -303,12 +311,14 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         settingsChanged: delivery.settingsChanged,
         draftCredentials: delivery.credentialSnapshot,
         accountSetup: {
-          changed: delivery.reconcileCredentialDelivery,
+          change: delivery.credentialChange,
+          administers: hostedOrgAdministers(input.controlPlaneDatabase),
           sandboxDriverKeys: hostedSandboxDriverKeys({
             database: input.controlPlaneDatabase,
             authority,
             drivers: sandbox.keys.drivers,
             hostedBroker: broker !== undefined,
+            leaseStore: sandbox.leaseStore,
             ...(input.now ? { now: input.now } : {}),
           }),
         },

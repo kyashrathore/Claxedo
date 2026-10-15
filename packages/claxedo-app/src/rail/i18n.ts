@@ -48,6 +48,7 @@ const en = {
   "rail.noSessions": "No sessions yet.",
   "rail.noActiveSessions": "No active sessions. Show settled lists them all.",
   "rail.noProjects": "No projects yet.",
+  "rail.projectsFailed": "Your projects couldn't be loaded",
   "rail.loadMore": "Load more",
   "rail.loadingMore": "Loading...",
   "rail.loadingSessions": "Loading sessions",

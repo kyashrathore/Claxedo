@@ -69,6 +69,7 @@ export function hostedSandboxInput(
     ...(isSandboxMachineClass(row.machine_class) ? { machineClass: row.machine_class } : {}),
     ...(secrets !== undefined ? { secrets } : {}),
     ...(input.preparation?.env ? { env: input.preparation.env } : {}),
+    ...(input.preparation?.leaseEnv ? { leaseEnv: input.preparation.leaseEnv } : {}),
     ...(input.onLeaseOpened ? { onLeaseOpened: input.onLeaseOpened } : {}),
     net: hostedSandboxNetworkPolicy({
       controlPlane: [configuredRelayUrl(input.egress, homeRegion), input.egress.sandboxControlPlaneOrigin],

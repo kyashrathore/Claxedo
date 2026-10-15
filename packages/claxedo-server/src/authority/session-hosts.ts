@@ -1,3 +1,4 @@
+import type { OwnerRuntimeAccessTokenRecord } from "@claxedo/server-core/platform/auth/authority"
 export type SessionHostPlacement = {
   workspace: { backing: "cloud-vm" | "local-worktree"; directory: string | null }
   /** `creatorUserId`: the person whose accounts the session spends, whoever sends its turns; null for an agent that names nobody. */
@@ -18,8 +19,8 @@ export type SessionHostAuthority = {
   readSessionHostPlacement(input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined>
   /** The editor token a session host is minted for one turn, reaching the workspace's machine for that session alone. */
   recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
-  /** The workspace owner's editor token the first-party MCP endpoint reaches the machine with for that session's tools. */
-  recordSessionMcpRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
+  /** The workspace owner's token; with `servedSession`, the one the first-party MCP endpoint reaches the machine with for that session's tools. */
+  recordOwnerRuntimeAccessToken(actorId: string, token: OwnerRuntimeAccessTokenRecord): Promise<unknown>
   /** The workspace owner's editor token the first-party MCP endpoint reaches the session's own host with, for that session's own routes. */
   recordSessionMcpSessionHostAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
   /** Whether this lease is still the session's live one: neither released nor expired nor superseded. */

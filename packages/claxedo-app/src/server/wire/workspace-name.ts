@@ -8,6 +8,10 @@ export function cloudWorkspaceName(row: Record<string, unknown>, id: string): st
 
 export function placementName(row: Record<string, unknown>, id: string, kind: PlacementKind, path: string | undefined): PlacementName {
   const own = cloudWorkspaceName(row, id)
-  if (kind === "cloud") return { kind, lifecycle: cloudLifecycleOf(row), ...(own ? { label: own } : {}) }
+  if (kind === "cloud") {
+    const lifecycle = cloudLifecycleOf(row)
+    const failure = lifecycle === "failed" ? nonEmptyString(row.error) : undefined
+    return { kind, lifecycle, ...(own ? { label: own } : {}), ...(failure ? { failure } : {}) }
+  }
   return { kind, label: own ?? path?.split("/").filter(Boolean).pop() ?? path ?? id }
 }

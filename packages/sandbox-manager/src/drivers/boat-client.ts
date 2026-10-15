@@ -1,6 +1,7 @@
 import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
 import { record } from "../json"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
+import { SANDBOX_START_WINDOWS, type SandboxStartLimit, type SandboxStartWindow } from "../lease-failure"
 
 export type BoatSandboxState =
   | "init" | "provisioning" | "provisioned" | "cloning" | "ready" | "idle" | "running"
@@ -22,10 +23,51 @@ const COMMAND_RESPONSE_MARGIN_MS = 30_000
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const SANDBOX_STATES = new Set<string>(["init", "provisioning", "provisioned", "cloning", "ready", "idle", "running", "archiving", "archived", "error", "cancelled"])
 
+/**
+ * What Boat's 429 `rate_limited` says about the account's start limit: the
+ * window that is used up, its limit, and the starts used of each window. It
+ * names no time the window reopens (2026-10-15), so none is kept.
+ */
+export type BoatStartLimit = {
+  window: SandboxStartWindow
+  limit: number
+  starts: Partial<Record<SandboxStartWindow, { limit: number; used: number }>>
+}
+
 export class BoatApiError extends Error {
-  constructor(message: string, readonly code: string, readonly status?: number) {
+  /** Boat answers 401 or 403 to the API key itself, never to a sandbox it was asked about. */
+  readonly providerKeyRefused: boolean
+  /** Create, fork and resume each count as one start (Boat's own refusal, 2026-10-15). */
+  readonly providerRateLimited?: SandboxStartLimit
+  constructor(message: string, readonly code: string, readonly status?: number, readonly startLimit?: BoatStartLimit) {
     super(message)
     this.name = "BoatApiError"
+    this.providerKeyRefused = status === 401 || status === 403
+    if (startLimit) this.providerRateLimited = { window: startLimit.window, limit: startLimit.limit }
+  }
+}
+
+
+function startCount(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+/** Only the numbers and the window are read from the refusal; its text is never kept. */
+function startLimitOf(body: Record<string, unknown> | undefined): BoatStartLimit | undefined {
+  const details = record(record(body?.error)?.details)
+  const window = SANDBOX_START_WINDOWS.find((name) => name === details?.window)
+  const limit = startCount(details?.limit)
+  if (!window || limit === undefined) return undefined
+  const starts = record(details?.starts)
+  return {
+    window,
+    limit,
+    starts: Object.fromEntries(SANDBOX_START_WINDOWS.flatMap((name) => {
+      const entry = record(starts?.[name])
+      const entryLimit = startCount(entry?.limit)
+      const used = startCount(entry?.used)
+      return entryLimit === undefined || used === undefined ? [] : [[name, { limit: entryLimit, used }]]
+    })),
   }
 }
 
@@ -107,7 +149,8 @@ export function createBoatApi(options: BoatClientOptions) {
       // Provider error text is never copied: command bodies and their output can carry secrets.
       if (!response.ok || body?.ok === false) {
         const code = typeof body?.code === "string" ? body.code : `http_${response.status}`
-        throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status)
+        const startLimit = response.status === 429 && code === "rate_limited" ? startLimitOf(body) : undefined
+        throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status, startLimit)
       }
       if (body?.ok !== true || typeof body.type !== "string" || !types.includes(body.type)) {
         const answered = typeof body?.type === "string" ? `"${body.type}"` : "no envelope type"

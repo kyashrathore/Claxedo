@@ -74,7 +74,7 @@ function lineReader(text: string): TextLineReader {
   }
 }
 
-export type WorkspaceMachine = { workspaceId: string; directory: string; access(): Promise<TurnExecutionAccess> }
+export type WorkspaceMachine = { workspaceId: string; directory: string; access(signal?: AbortSignal): Promise<TurnExecutionAccess> }
 
 /**
  * Pi's execution environment on the workspace machine: every file operation
@@ -93,7 +93,7 @@ export class RemoteExecutionEnv implements ExecutionEnv {
   }
 
   private async request(path: string, body: unknown, context: Context): Promise<Response> {
-    const access = await this.machine.access()
+    const access = await this.machine.access(context.abortSignal)
     return fetch(`${access.relayUrl}/workspaces/${encodeURIComponent(access.workspaceId)}/api/wr/execution-env/${path}`, {
       method: "POST",
       headers: { authorization: `Bearer ${access.runtimeAccessToken}`, "content-type": "application/json" },

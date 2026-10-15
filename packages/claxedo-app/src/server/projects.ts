@@ -52,7 +52,7 @@ function hostedProjectCreator(workspaces: Pick<Workspaces, "accountProjects">, c
   return async (input: ProjectCreateInput): Promise<Project> => {
     const source = input.source
     if (source.kind === "folder") throw new ServerError({ class: "invalid", code: "project_folder_unavailable", message: "A hosted plane holds no folders; a project here is made from a repository" })
-    const workspace = await createCloudWorkspace({ source, name: input.name ?? repositoryName(source) })
+    const workspace = await createCloudWorkspace({ source, name: input.name ?? repositoryName(source), ...(input.onPlacement ? { onCreated: input.onPlacement } : {}) })
     const project = (await workspaces.accountProjects()).find((candidate) => candidate.id === workspace.projectId)
     if (!project) throw new ServerError({ class: "internal", message: `The catalog does not list project ${workspace.projectId} of the new workspace ${workspace.id}` })
     return project

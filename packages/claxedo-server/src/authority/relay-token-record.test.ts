@@ -26,6 +26,7 @@ function authority() {
     recordChannelRuntimeAccessToken: vi.fn(async () => ({})),
     recordRuntimeAccessToken: vi.fn(async () => ({})),
     recordRuntimeAccessTokenForService: vi.fn(async () => ({})),
+    recordOwnerRuntimeAccessToken: vi.fn(async () => ({})),
   }
 }
 
@@ -46,6 +47,19 @@ describe("recordRelayRuntimeToken", () => {
       actorKind: "human", role: "owner", expiresAt: 1_000,
     })
     expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()
+  })
+
+  test("records a grant owner's token through the owner door, never as a signed caller or the service", async () => {
+    const auth = authority()
+    await recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", ownerGrant: true })
+
+    expect(auth.recordOwnerRuntimeAccessToken).toHaveBeenCalledWith("actor_user_1", {
+      jti: "jti_1", workspaceId: "ws_1", hostId: "host_1", expiresAt: 1_000, role: "owner",
+    })
+    expect(auth.recordRuntimeAccessToken).not.toHaveBeenCalled()
+    expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()
+    await expect(recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", ownerGrant: true, auth: signed }))
+      .rejects.toThrow("two caller identities")
   })
 
   test("records a service token through the service path", async () => {

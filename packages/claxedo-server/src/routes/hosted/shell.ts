@@ -90,6 +90,8 @@ export type HostedShellRouteOptions = {
    * that does.
    */
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<PiProviderCatalog>
+  /** The model of the caller's newest finished turn on `harness`, which a draft that names no model opens on while it is still offered. */
+  lastHarnessModel?: (auth: SignedControlPlaneAuth, harness: "pi") => Promise<string | undefined>
   /**
    * The accounts a cloud workspace's sandbox is delivered, for the caller who
    * may open it; nothing for a workspace they cannot open or no sandbox serves.
@@ -600,7 +602,8 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         if (harness === "pi") {
           if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
           const catalog = await options.piProviderCatalog(auth)
-          return c.json(piCatalogOptions(piLaunchCatalog(catalog.connected), c.req.query("model") || undefined))
+          const model = c.req.query("model") || await options.lastHarnessModel?.(auth, "pi")
+          return c.json(piCatalogOptions(piLaunchCatalog(catalog.connected), model))
         }
         const workspaceId = c.req.query("workspaceId")
         if (!workspaceId) return c.json({ error: { code: "agent_config_workspace_required", message: "workspaceId is required" } }, 400)

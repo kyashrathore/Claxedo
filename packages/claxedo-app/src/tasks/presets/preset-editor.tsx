@@ -17,6 +17,7 @@ import { CapabilityNotice, CapabilityPicker } from "./capability-picker"
 import { ConfigurationEditor } from "./configuration-editor"
 import {
   EMPTY_CONFIGURATION,
+  cloudHarnessProblem,
   parsePresetEditorDraft,
   rebaseConfiguration,
   type ConfigurationDraft,
@@ -84,15 +85,24 @@ function SlotEditor(props: {
   readonly fieldText: FieldText
   readonly onChange: (value: ConfigurationDraft) => void
 }): JSX.Element {
+  const t = useTranslator(tasksDictionary)
   const entry = () => props.draft.configurations[props.slot] ?? EMPTY_CONFIGURATION
   return (
     <div class="tsk-stack" data-testid={`preset-editor-configuration-${props.slot}`}>
       <ConfigurationEditor
         slot={props.slot}
+        placement={props.draft.placement}
         configuration={entry()}
         disabled={props.busy === true}
         onChange={(next) => untrack(() => props.onChange(rebaseConfiguration(entry(), next)))}
       />
+      <Show when={cloudHarnessProblem(props.draft, props.slot)}>
+        {(problem) => (
+          <span class="tsk-error" data-testid={`preset-editor-cloud-harness-${props.slot}`}>
+            {t(problem().key, problem().params)}
+          </span>
+        )}
+      </Show>
       <For each={["model", "harness", "effort"] as const}>
         {(field) => (
           <Show when={props.fieldText(`configurations.${props.slot}.${field}`)}>

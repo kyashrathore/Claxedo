@@ -850,7 +850,7 @@ describe("credential routes", () => {
     expect(registry.putCredential).not.toHaveBeenCalled()
     expect((await send(keeping, { api_key: " boat-key " })).status).toBe(200)
     expect(registry.putCredential).toHaveBeenCalledWith(
-      { owner: null, provider_id: "boat", kind: "sandbox_driver", source: "managed", label: "Boat", secret: JSON.stringify({ api_key: "boat-key" }) },
+      { owner: null, provider_id: "boat", kind: "sandbox_driver", source: "managed", label: "Boat", secret: JSON.stringify({ api_key: "boat-key" }), administeredBy: "local" },
       SINGLE_TENANT_ORG,
     )
   })

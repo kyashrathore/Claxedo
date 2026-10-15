@@ -1,4 +1,4 @@
-import { toAppError } from "@/server"
+import { toAppError, type SessionStatus } from "@/server"
 import type { TranscriptContext } from "./context"
 import { lastUserMessageId, mergePage } from "./conversation"
 
@@ -11,4 +11,9 @@ export async function settleTurn(context: TranscriptContext): Promise<void> {
   } catch (cause) {
     console.error("The settled turn could not be read", { sessionId: context.ref.sessionId, turnId, error: toAppError(cause) })
   }
+}
+
+export function settleEndedTurn(context: TranscriptContext, status: SessionStatus): Promise<void> | undefined {
+  if (status.kind !== "idle" && status.kind !== "interrupted" && status.kind !== "failed") return undefined
+  return settleTurn(context)
 }

@@ -212,7 +212,7 @@ export class ClaudeTurns {
   }
 
   private admitOwnTurn(entry: ClaudeEntry, live: ClaudeLiveQuery, current: () => boolean): void {
-    void entry.broker.admitProviderTurn({ reason: "continuation", current }, (broker, turn) => this.ownTurn(entry, live, broker, turn)).then((admission) => {
+    void entry.broker.admitProviderTurn({ reason: "provider", current }, (broker, turn) => this.ownTurn(entry, live, broker, turn)).then((admission) => {
       if (!admission.admitted && admission.reason === "closed") live.close()
     }, (error: unknown) => entry.broker.reportFailure(error))
   }

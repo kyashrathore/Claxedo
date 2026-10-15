@@ -16,11 +16,14 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
-import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { SandboxInFlight, SandboxStart } from "./sandbox-start"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 
 export type WorkspaceRuntimeContext = {
   workspaceId: string
+  /** A Task root's own capability set, which every preparation of that root projects in place of its owner's activations. */
+  capabilities?: AgentPluginExecutionSelection
 }
 
 export type WorkspaceRuntimePreparation = {
@@ -28,6 +31,8 @@ export type WorkspaceRuntimePreparation = {
   secrets?: SandboxBrokeredSecret[]
   /** The readable half: what the runtime itself reads at boot and what the agent presents knowingly. */
   env?: Record<string, string>
+  /** Readable env bound to the lease the sandbox boots: placeholders the plane's own broker honours for that lease alone. */
+  leaseEnv?: SandboxManagerInput["leaseEnv"]
   /** Feature-private immutable plan, passed back only to the matching provision hook. */
   state?: unknown
 }
@@ -46,6 +51,10 @@ export type CloudWorkspaceEntitlementGate = (tenant: {
   { status: 400 | 401 | 402 | 403 | 503; body: { error: { code: string; message: string } } } | undefined
 >
 
+export type RepositoryConnectionAccess =
+  | { ok: true; repository: CodeHostRepository; connectionId: string }
+  | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
+
 export type WorkspaceRouteOptions = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
@@ -53,14 +62,16 @@ export type WorkspaceRouteOptions = {
   cliTokenEnv?: Record<string, string | undefined>
   credentials?: ControlPlaneCredentials
   connections?: {
+    /**
+     * The repository `fullName` as the caller's connection `id` lists it, or,
+     * with no `id`, as the first of the caller's code-host connections that
+     * can read it lists it.
+     */
     repositoryForAuth(
       auth: SignedControlPlaneAuth | undefined,
-      id: string,
+      id: string | undefined,
       fullName: string,
-    ): Promise<
-      | { ok: true; repository: CodeHostRepository }
-      | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
-    >
+    ): Promise<RepositoryConnectionAccess>
   }
   relayUrl?: string
   relayUrls?: ClaxedoRegionMap<string>

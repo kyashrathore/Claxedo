@@ -2,6 +2,7 @@ import { bindingBaseUrl, brokerErrorBody, createEgressBroker, presentedRuntimeTo
 import type { CredentialBrokerErrorCode, ProviderBindingSource } from "@claxedo/agent-runtime-contract"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
+import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import { destinationAuthMode } from "@claxedo/server-core/credentials/built-in-destinations"
 import type { HarnessCredentialBroker } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials } from "../../authority/services"
@@ -9,9 +10,11 @@ import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate
 import { requestClientKeyFromHeaders, type RouteGuardExemption } from "../../platform/auth/request-guard"
 import type { CredentialRefusals } from "../credential-refusals"
 import { hostedBindingAuthority, type HostedBrokerCredentialRead } from "./authority"
-import { brokerBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
+import { brokerBindingId, mintBrokerPlaceholder, repositoryBindingId, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
+import type { HostedRepositoryBindings } from "./repository-binding"
 
-export { EGRESS_BROKER_PASS_AUDIENCE, brokerBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
+export { EGRESS_BROKER_PASS_AUDIENCE, PLACEHOLDER_TTL_SECONDS, brokerBindingId, mintBrokerPlaceholder, verifyBrokerPlaceholder, type HostedBrokerClaims } from "./placeholder"
+export type { HostedRepositoryBindings } from "./repository-binding"
 
 /**
  * A projection that says the account is deliverable without minting anything:
@@ -74,6 +77,10 @@ export type HostedEgressBroker = {
   handler: (request: Request) => Promise<Response>
   /** The account binder for one workspace's deliveries; without a lease it projects draft placeholders. */
   binder(input: { orgId: string; workspaceId: string; lease?: BrokerLease }): HarnessCredentialBroker
+  /** The workspace's repository binding for `lease`, through which its sandbox's git reaches the repository while that lease serves or boots. */
+  repositoryBinding(input: { orgId: string; ownerUserId: string; workspaceId: string; connectionId: string; lease: BrokerLease }): Promise<{ baseUrl: string; placeholder: string; expiresAt: number }>
+  /** Installs how every repository binding resolves; until it is installed, none does. */
+  serveRepositoryClones(resolve: HostedRepositoryBindings): void
 }
 
 /**
@@ -128,6 +135,7 @@ function recent<K, V>(capacity: number) {
 export function createHostedEgressBroker(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
   read: (orgId: string) => HostedBrokerCredentialRead
+  workspaceOwner: (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
   sandboxManager: Pick<SandboxManager, "target">
   env: Record<string, string | undefined>
   /** The public origin sandboxes reach the plane at; a binding's base URL is under it. */
@@ -150,9 +158,11 @@ export function createHostedEgressBroker(input: {
     }
     return reader
   }
+  let repositories: HostedRepositoryBindings | undefined
   const authority = hostedBindingAuthority({
-    credentials: input.credentials, read, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now,
+    credentials: input.credentials, read, workspaceOwner: input.workspaceOwner, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now,
     ...(input.credentialRefusals ? { credentialRefusals: input.credentialRefusals } : {}),
+    repositories: () => repositories,
   })
   const verified = recent<string, HostedBrokerClaims>(HELD_PLACEHOLDERS)
   const verify = async (token: string): Promise<HostedBrokerClaims | undefined> => {
@@ -196,8 +206,19 @@ export function createHostedEgressBroker(input: {
     }
     return refusing(request)
   }
+  const leaseIdentity = (identity: { userId: string; orgId: string; workspaceId: string }, lease: BrokerLease): RuntimeIdentity =>
+    ({ ...identity, leaseId: `sandbox:${identity.workspaceId}`, leaseGeneration: lease.epoch, runtimeId: lease.hostId })
   return {
     handler,
+    serveRepositoryClones: (resolve) => {
+      repositories = resolve
+    },
+    repositoryBinding: async ({ orgId, ownerUserId, workspaceId, connectionId, lease }) => {
+      const identity = { userId: ownerUserId, orgId, workspaceId }
+      const id = repositoryBindingId(identity)
+      const minted = await mintBrokerPlaceholder({ identity: leaseIdentity(identity, lease), bindingId: id, credentialId: connectionId }, input.env, { now })
+      return { baseUrl: bindingBaseUrl(input.origin, id), ...minted }
+    },
     binder: ({ orgId, workspaceId, lease }) => ({
       async bind(credential, destination): Promise<ProviderBindingSource> {
         const userId = credential.owner ?? `org:${orgId}`
@@ -209,8 +230,7 @@ export function createHostedEgressBroker(input: {
           account: { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}) },
         }
         if (!lease) return { ...route, placeholder: DRAFT_PLACEHOLDER }
-        const identity: RuntimeIdentity = { userId, orgId, workspaceId, leaseId: `sandbox:${workspaceId}`, leaseGeneration: lease.epoch, runtimeId: lease.hostId }
-        const { placeholder, expiresAt } = await mintBrokerPlaceholder({ identity, bindingId: id, credentialId: credential.id }, input.env, { now })
+        const { placeholder, expiresAt } = await mintBrokerPlaceholder({ identity: leaseIdentity({ userId, orgId, workspaceId }, lease), bindingId: id, credentialId: credential.id }, input.env, { now })
         return { ...route, placeholder, expiresAt }
       },
     }),

@@ -7,15 +7,16 @@ import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/
 import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { privateSessionRuntimeProof, type PrivateSessionRuntimePrincipal, type SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { asRecord } from "@claxedo/helpers/guards"
-import { sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
+import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason } from "@claxedo/sandbox-manager"
 import { cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { sessionHostAdmits, type SessionHostPlacement } from "../authority/session-hosts"
 import type { SessionMcpCredentials } from "../mcp/session-mcp-credentials"
 import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 import { sessionHostMachineAccess, type SessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
+import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
-import { ownerDirectRows, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
+import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
 import type { OwnerMachineStart } from "../workspace/cloud-workspace-start"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
@@ -37,7 +38,12 @@ export type SessionHostDeliveryOptions = SessionHostMachineDeps & {
 const EXECUTION_TTL_SECONDS = 10 * 60
 const requestSchema = z.object({ turnLease: z.string().min(1) }).strict()
 const executionSchema = z.object({ turnLease: z.string().min(1), start: z.boolean().optional() }).strict()
-const refusedSchema = z.object({ turnLease: z.string().min(1), credentialId: z.string().min(1) }).strict()
+const refusedSchema = z.object({
+  turnLease: z.string().min(1),
+  credentialId: z.string().min(1),
+  revision: z.number().int().positive(),
+  status: z.number().int().min(100).max(599),
+}).strict()
 const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
 
 const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeTargetError && error.status === 409
@@ -53,10 +59,11 @@ const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeT
  * at once that it is starting, never waiting for it.
  * Both answer only that session's own host, only while its lease is the live
  * one, and only while the turn's actor may still send its turns.
- * `/turn-credential-refused` takes the host's word that the vendor refused
- * one of the accounts it was handed, under the same rule the plane's broker
- * applies to its own refusals; the lease may be released by then, since the
- * turn ends on the refusal. `/session-host-delete` deletes the session's row
+ * `/turn-credential-refused` takes the vendor status and the revision of an
+ * account the host was handed: only a 401 counts, as for the plane's broker,
+ * and the plane's one refusal rule (`credential-refusals.ts`) decides the
+ * rest. The lease may be released by then, since the turn ends on the
+ * refusal. `/session-host-delete` deletes the session's row
  * for a request the host was relayed, as that request's actor, before the
  * host erases itself.
  */
@@ -104,20 +111,35 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     return admittedTurn(c, parsed.data.turnLease, { live: true })
   }
 
-  const starting = (c: Context, started: boolean) => c.json({ error: { code: "cloud_runtime_starting", started } }, 409)
+  /** `retryAfterMs` is when the start's next step can answer differently, `sinceStartMs` how long the start has run, each when known. */
+  const starting = (c: Context, answer: { started: boolean; retryAfterMs?: number; sinceStartMs?: number }) =>
+    c.json({ error: { code: "cloud_runtime_starting", ...answer } }, 409)
 
-  /** Begins or joins the start of the turn's workspace machine as the workspace's owner; nothing once the machine is ready. */
+  /**
+   * Begins or joins the start of the turn's workspace machine as the
+   * workspace's owner; nothing once the machine is ready. A start whose last
+   * step failed, retried later or never, is refused with that step's reason
+   * and, when it is retried, how long until then.
+   */
   async function startedMachine(c: Context, claims: TurnLeaseClaims, start: OwnerMachineStart): Promise<Response | undefined> {
-    const refused = (reason: string) => c.json({ error: { code: "cloud_runtime_start_refused", message: cloudRuntimeStartFailure(reason) } }, 409)
+    const refused = (reason: string, retryAfterMs?: number) => c.json({ error: {
+      code: "cloud_runtime_start_refused", message: cloudRuntimeStartFailure(reason), ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    } }, 409)
     const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
     if (!owner || owner.orgId !== claims.orgId) return denied(c)
     const started = await start({ owner: { userId: owner.userId, orgId: owner.orgId }, workspaceId: claims.workspaceId })
     if ("denied" in started) return refused(started.denied.error.message)
     if (started.status === "ready") return undefined
-    if (started.status === "provisioning") return starting(c, started.joined !== true)
     if (started.status === "failed") return refused(started.message)
-    const bootFailure = sandboxRuntimeBootFailure(started.error)
-    return bootFailure ? refused(bootFailure) : starting(c, false)
+    if (started.status === "unavailable") {
+      if (!started.error) return refused("the start failed", started.retryAfterMs)
+      if (sandboxLeaseEndedUnderStart(started.error)) return refused("it was stopped or replaced while it started")
+      const bootFailed = sandboxRuntimeBootFailure(started.error) !== undefined
+      return refused(sandboxStartFailureReason(started.error), bootFailed ? undefined : started.retryAfterMs)
+    }
+    if (started.failure) return refused(sandboxStartFailureReason(started.failure), started.retryAfterMs)
+    const { retryAfterMs, sinceStartMs } = started
+    return starting(c, { started: started.joined !== true, retryAfterMs, ...(sinceStartMs === undefined ? {} : { sinceStartMs }) })
   }
 
   /**
@@ -142,7 +164,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       return await access()
     } catch (error) {
       if (!machineNotRunning(error)) throw error
-      return starting(c, false)
+      return starting(c, { started: false })
     }
   }
 
@@ -162,7 +184,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
       if (!owner || owner.orgId !== claims.orgId) return denied(c)
       const holder = placement.session!.creatorUserId ?? owner.userId
-      const direct = await ownerDirectRows(input.credentials(owner.orgId), holder, { providers: PI_DIRECT_PROVIDERS })
+      const { direct, refused } = await ownerDirectDelivery(input.credentials(owner.orgId), holder, { providers: PI_DIRECT_PROVIDERS })
       let plugins: RuntimeConfigSnapshotPlugins = { harnessLaunch: {}, mcp: {} }
       try {
         if (input.plugins) plugins = await input.plugins(claims.workspaceId)
@@ -177,7 +199,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const directory = placement.workspace.directory
       const delivery: TurnDelivery = {
         expiresAt,
-        auth: { machineOwnerUserId: owner.userId, accounts: {}, direct: { [holder]: direct } },
+        auth: { machineOwnerUserId: owner.userId, accounts: Object.keys(refused).length ? { [holder]: refused } : {}, direct: { [holder]: direct } },
         plugins,
         providerDefinitions: [],
         ...(firstPartyMcp ? { firstPartyMcp } : {}),
@@ -208,9 +230,15 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
       if (!owner || owner.orgId !== claims.orgId) return denied(c)
       const holder = placement.session!.creatorUserId ?? owner.userId
-      const credential = await input.credentials(owner.orgId).getCredential?.(parsed.data.credentialId)
-      if (!credential || credential.owner !== holder || !PI_DIRECT_PROVIDERS.has(credential.provider_id)) return denied(c)
-      return c.json({ refusal: await refusals.refused(owner.orgId, credential, credential.revision) })
+      const accounts = input.credentials(owner.orgId)
+      const credential = await accounts.getCredential?.(parsed.data.credentialId)
+      if (!credential || !PI_DIRECT_PROVIDERS.has(credential.provider_id)) return denied(c)
+      const spent = credential.owner === holder
+        || (credential.owner === null && spendsAccount(credential, holder, holderAccountSources(await accounts.accountSelections(), holder, holder), holder))
+      if (!spent) return denied(c)
+      const { revision, status } = parsed.data
+      if (status !== 401) return c.json({ refusal: "ignored" })
+      return c.json({ refusal: await refusals.refused(owner.orgId, credential, revision) })
     })
     .post("/session-host-delete", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       const refused = () => c.json({ error: { code: "session_host_delete_denied" } }, 403)

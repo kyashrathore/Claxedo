@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { createSandboxManager, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
+import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { builtInProviderDestination } from "@claxedo/server-core/credentials/built-in-destinations"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
@@ -14,6 +16,8 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { HOSTED_CREDENTIALS_FLAG, hostedBrokerCredentialReader, hostedOrgCredentials } from "../worker/index"
+import { hostedRepositoryCloneDelivery } from "../../workspace/repository-clone"
+import { hostedRepositoryBindings } from "./repository-binding"
 import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, RUNTIME_UPSTREAM_LANES, verifyBrokerPlaceholder } from "./index"
 
 /**
@@ -60,18 +64,32 @@ const SERVING: Lease = { epoch: 1, hostId: "host_1" }
 /** The lease store as the broker reads it: every workspace serving on `SERVING` until a test stops or replaces it. */
 function leases() {
   const held = new Map<string, Lease | undefined>()
+  const booting = new Map<string, Lease>()
   const sandboxManager: Pick<SandboxManager, "target"> = {
     target: async (workspaceId) => {
+      const boot = booting.get(workspaceId)
+      if (boot) return { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "acquiring", booting: boot }
       const lease = held.has(workspaceId) ? held.get(workspaceId) : SERVING
       return lease
         ? { status: "ready", ...lease, sandboxId: `sb_${workspaceId}`, url: "https://runtime.test", homeRegion: "us-east" }
         : { status: "unavailable", reason: "runtime_lease_missing" }
     },
   }
-  return { sandboxManager, stop: (workspaceId: string) => held.set(workspaceId, undefined), replace: (workspaceId: string, lease: Lease) => held.set(workspaceId, lease) }
+  return {
+    sandboxManager,
+    stop: (workspaceId: string) => held.set(workspaceId, undefined),
+    replace: (workspaceId: string, lease: Lease) => { booting.delete(workspaceId); held.set(workspaceId, lease) },
+    boot: (workspaceId: string, lease: Lease) => booting.set(workspaceId, lease),
+  }
 }
 
-async function composition(options: { now?: () => number; upstreamTimeoutMs?: number } = {}) {
+/** Who owns each workspace as the authority answers now; a workspace not named here is alice's, a removed owner answers none. */
+const workspaceOwners = new Map<string, { userId: string; actorId: string; orgId: string; projectId: string } | undefined>()
+afterEach(() => workspaceOwners.clear())
+const workspaceOwner = async (workspaceId: string) =>
+  workspaceOwners.has(workspaceId) ? workspaceOwners.get(workspaceId) : { userId: "alice", actorId: "actor-alice", orgId: "org-1", projectId: "project-1" }
+
+async function composition(options: { now?: () => number; upstreamTimeoutMs?: number; sandboxManager?: Pick<SandboxManager, "target"> } = {}) {
   const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   const database = instance.database as unknown as D1Database
@@ -83,7 +101,8 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
   const broker = createHostedEgressBroker({
     credentials,
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
-    sandboxManager: sandboxes.sandboxManager,
+    workspaceOwner,
+    sandboxManager: options.sandboxManager ?? sandboxes.sandboxManager,
     env: signing,
     origin: ORIGIN,
     fetch: upstream.fetch,
@@ -143,14 +162,91 @@ async function composition(options: { now?: () => number; upstreamTimeoutMs?: nu
     const secret = await store.resolveCredentialSecretById?.(credential.id)
     const destination = builtInProviderDestination({ providerId: credential.provider_id, kind: credential.kind, secret: secret ?? "" })
     if (!destination) throw new Error("the account has no destination")
-    const binder = (at ? createHostedEgressBroker({ credentials, read: () => async () => undefined, sandboxManager: sandboxes.sandboxManager, env: signing, origin: ORIGIN, now: at }) : broker)
+    const binder = (at ? createHostedEgressBroker({ credentials, read: () => async () => undefined, workspaceOwner, sandboxManager: sandboxes.sandboxManager, env: signing, origin: ORIGIN, now: at }) : broker)
       .binder({ orgId: "org-1", workspaceId: workspace.workspaceId, lease: workspace.lease ?? SERVING })
     const projection = await binder.bind(credential, destination)
     if ("unavailable" in projection || !projection.placeholder) throw new Error("the account was not bound")
     return { baseUrl: projection.baseUrl, placeholder: projection.placeholder, authMode: projection.authMode, expiresAt: projection.expiresAt }
   }
-  return { app, store, upstream, delivered, signing, sandboxes, telemetry }
+  return { app, store, upstream, delivered, signing, sandboxes, telemetry, broker }
 }
+
+describe("a sandbox spending its organization's team account through the hosted broker", () => {
+  const ANTHROPIC = ["anthropic", "claude-sdk", "claude-acp"]
+
+  test("the team key arrives at the vendor, and a removed one is refused at the next request", async () => {
+    const { app, store, upstream, delivered } = await composition()
+    const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
+    const { baseUrl, placeholder } = await delivered(team, { workspaceId: "ws_team" })
+    const send = () => app.request(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": placeholder, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: "{}",
+    })
+    expect((await send()).status).toBe(200)
+    expect(upstream.seen.map((sent) => sent.request.headers.get("x-api-key"))).toEqual(["sk-ant-api03-team-key"])
+
+    await store.deleteCredential(team.id)
+    expect((await send()).status).toBe(403)
+    expect(upstream.seen).toHaveLength(1)
+  })
+
+  test("vendor 401s a member's sandbox provokes leave a working team key in use, since only the plane's own check of it marks it; a key the vendor really refuses is marked", async () => {
+    let clock = Date.now()
+    const { app, store, upstream, delivered } = await composition({ now: () => clock })
+    const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
+    const { baseUrl, placeholder } = await delivered(team, { workspaceId: "ws_team" })
+    let revoked = false
+    upstream.answer(async () => {
+      const forged = upstream.seen.at(-1)!.body === "{}"
+      return forged || revoked
+        ? Response.json({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }, { status: 401 })
+        : Response.json({ data: [] })
+    })
+    const send = () => app.request(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": placeholder, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: "{}",
+    })
+    const health = async () => (await store.getCredential!(team.id))?.health ?? null
+    const checks = () => upstream.seen.filter((sent) => sent.body !== "{}").length
+    for (let attempt = 0; attempt < 4; attempt++) expect((await send()).status).toBe(401)
+    await vi.waitFor(() => expect(checks()).toBe(1))
+    expect(await health()).toBe("ok")
+
+    revoked = true
+    clock += 10 * 60 * 1000
+    expect((await send()).status).toBe(401)
+    await vi.waitFor(async () => expect(await health()).toBe("auth_failed"))
+    expect(checks()).toBe(2)
+  })
+
+  test("a team key's placeholder is refused at once when the workspace's owner chooses their own account or leaves the organization", async () => {
+    const { app, store, upstream, delivered } = await composition()
+    const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
+    const { baseUrl, placeholder } = await delivered(team, { workspaceId: "ws_team" })
+    const send = () => app.request(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": placeholder, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: "{}",
+    })
+    expect((await send()).status).toBe(200)
+
+    await store.setAccountSources(ANTHROPIC, "own", "org-1", "alice")
+    expect((await send()).status).toBe(403)
+    await store.setAccountSources(ANTHROPIC, "org", "org-1", "alice")
+    expect((await send()).status).toBe(200)
+
+    workspaceOwners.set("ws_team", undefined)
+    expect((await send()).status).toBe(403)
+    workspaceOwners.set("ws_team", { userId: "alice", actorId: "actor-alice", orgId: "org-2", projectId: "project-1" })
+    expect((await send()).status).toBe(403)
+    expect(upstream.seen.map((sent) => sent.request.headers.get("x-api-key"))).toEqual(["sk-ant-api03-team-key", "sk-ant-api03-team-key"])
+  })
+})
 
 describe("a sandbox spending its owner's account through the hosted broker", () => {
   test("an API key arrives at the vendor as x-api-key, the placeholder never does, and the answer streams before the vendor is done", async () => {
@@ -408,5 +504,121 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     expect(expiresAt! - before).toBeGreaterThan(59 * 60 * 1000)
     expect(expiresAt! - before).toBeLessThanOrEqual(60 * 60 * 1000 + 1_000)
     expect(placeholder).not.toContain("sk-ant")
+  })
+})
+
+describe("a sandbox with no provider edge cloning its private repository through the hosted broker", () => {
+  const owner = { orgId: "org-1", ownerUserId: "alice", workspaceId: "ws_private", connectionId: "conn_org" }
+  const BOOTING: Lease = { epoch: 3, hostId: "boat-ws_private" }
+  const repository = async () => {
+    const rig = await composition()
+    const tokens = ["ghs_first", "ghs_second", "ghs_third"]
+    let clone: { repoUrl: string; connectionId: string } | undefined = { repoUrl: "https://github.com/acme/private.git", connectionId: "conn_org" }
+    const reads: unknown[] = []
+    rig.broker.serveRepositoryClones(hostedRepositoryBindings(async (workspace) => {
+      reads.push(workspace)
+      return clone ? { ...clone, token: tokens.shift() ?? "ghs_last" } : undefined
+    }))
+    rig.sandboxes.boot(owner.workspaceId, BOOTING)
+    const binding = await rig.broker.repositoryBinding({ ...owner, lease: BOOTING })
+    const git = (path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) => rig.app.request(`${binding.baseUrl}${path}`, {
+      ...init,
+      headers: { authorization: `Bearer ${binding.placeholder}`, "git-protocol": "version=2", ...init.headers },
+    })
+    const refusal = async (response: Response) => [response.status, (await response.json() as { error: { code: string } }).error.code]
+    return { ...rig, binding, git, refusal, reads, unbind: () => { clone = undefined }, rebind: (connectionId: string) => { clone = { ...clone!, connectionId } } }
+  }
+
+  test("a booting sandbox fetches with the connection's token of each request, and the placeholder never reaches GitHub", async () => {
+    const { binding, git, upstream, reads, sandboxes } = await repository()
+    expect(binding.baseUrl).toMatch(new RegExp(`^${ORIGIN}/bindings/[0-9a-f]{32}$`))
+    upstream.answer(async () => new Response("001e# service=git-upload-pack\n", { headers: { "content-type": "application/x-git-upload-pack-advertisement" } }))
+
+    const advertised = await git("/acme/private.git/info/refs?service=git-upload-pack")
+    expect(advertised.status).toBe(200)
+    expect(advertised.headers.get("content-type")).toBe("application/x-git-upload-pack-advertisement")
+    expect(await advertised.text()).toContain("service=git-upload-pack")
+    sandboxes.replace(owner.workspaceId, BOOTING)
+    const pack = await git("/acme/private.git/git-upload-pack", { method: "POST", headers: { "content-type": "application/x-git-upload-pack-request" }, body: "0032want deadbeef\n" })
+    expect(pack.status).toBe(200)
+
+    expect(upstream.seen.map(({ request }) => [request.method, request.url, request.headers.get("authorization"), request.headers.get("git-protocol")])).toEqual([
+      ["GET", "https://github.com/acme/private.git/info/refs?service=git-upload-pack", `Basic ${Buffer.from("x-access-token:ghs_first").toString("base64")}`, "version=2"],
+      ["POST", "https://github.com/acme/private.git/git-upload-pack", `Basic ${Buffer.from("x-access-token:ghs_second").toString("base64")}`, "version=2"],
+    ])
+    expect(upstream.seen[1].body).toBe("0032want deadbeef\n")
+    expect(JSON.stringify(upstream.seen.map(({ request }) => [...request.headers]))).not.toContain(binding.placeholder)
+    expect(reads).toEqual([
+      { workspaceId: owner.workspaceId, ownerUserId: "alice", orgId: "org-1" },
+      { workspaceId: owner.workspaceId, ownerUserId: "alice", orgId: "org-1" },
+    ])
+  })
+
+  test("another repository, the GitHub API, another connection, a later lease and an unbound workspace never reach GitHub", async () => {
+    const { git, refusal, upstream, sandboxes, rebind, unbind } = await repository()
+    expect(await refusal(await git("/acme/other.git/info/refs?service=git-upload-pack"))).toEqual([403, "request_outside_policy"])
+    expect(await refusal(await git("/acme/private"))).toEqual([403, "request_outside_policy"])
+    expect(await refusal(await git("/acme/private.git/info/refs", { method: "DELETE" }))).toEqual([403, "request_outside_policy"])
+    rebind("conn_personal")
+    expect(await refusal(await git("/acme/private.git/info/refs?service=git-upload-pack"))).toEqual([403, "binding_unavailable"])
+    rebind("conn_org")
+    sandboxes.replace(owner.workspaceId, { epoch: BOOTING.epoch + 1, hostId: BOOTING.hostId })
+    expect(await refusal(await git("/acme/private.git/info/refs?service=git-upload-pack"))).toEqual([403, "binding_unavailable"])
+    sandboxes.replace(owner.workspaceId, BOOTING)
+    unbind()
+    expect(await refusal(await git("/acme/private.git/info/refs?service=git-upload-pack"))).toEqual([403, "binding_unavailable"])
+    expect(upstream.seen).toHaveLength(0)
+  })
+
+  test("a start on a driver with no provider edge boots with a placeholder the broker honours before the lease is ready, and refuses once it stopped", async () => {
+    let manager: SandboxManager | undefined
+    const rig = await composition({ sandboxManager: { target: (workspaceId) => manager!.target(workspaceId) } })
+    rig.broker.serveRepositoryClones(hostedRepositoryBindings(async () => ({ repoUrl: "https://github.com/acme/private.git", connectionId: "conn_org", token: "ghs_installation" })))
+    const advertise = (env: Record<string, string>) => rig.app.request(
+      `${env.CLAXEDO_GITHUB_CLONE_BROKER_URL}/acme/private.git/info/refs?service=git-upload-pack`,
+      { headers: { authorization: env.CLAXEDO_GITHUB_CLONE_AUTH ?? "" } },
+    )
+    const booted: Record<string, string>[] = []
+    const statuses: number[] = []
+    const driver: SandboxDriver = {
+      id: "boat",
+      metadata: sandboxDriverCatalog.boat.metadata,
+      ensureHost: async (ensure) => {
+        const hostId = ensure.hostId ?? "unnamed"
+        await ensure.onResource?.({ sandboxId: "bx_1", hostId, labels: ensure.labels })
+        booted.push(ensure.env ?? {})
+        statuses.push((await advertise(ensure.env ?? {})).status)
+        return { sandboxId: "bx_1", url: "https://bx.test", hostId, labels: ensure.labels }
+      },
+    }
+    manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    const delivery = hostedRepositoryCloneDelivery({
+      clone: async () => ({ repoUrl: "https://github.com/acme/private.git", connectionId: "conn_org", token: "ghs_installation" }),
+      secretBrokering: async () => sandboxDriverCatalog.boat.metadata.secretBrokering,
+      broker: rig.broker,
+    })
+    const prepared = await delivery({ workspaceId: owner.workspaceId, ownerUserId: "alice", orgId: "org-1" })
+    expect(prepared.secrets).toEqual([])
+    expect(await manager.ensure(owner.workspaceId, { homeRegion: "us-east", secrets: prepared.secrets, ...(prepared.leaseEnv ? { leaseEnv: prepared.leaseEnv } : {}) }))
+      .toMatchObject({ status: "ready", epoch: 1 })
+    expect(statuses).toEqual([200])
+    expect(rig.upstream.seen[0].request.headers.get("authorization")).toBe(`Basic ${Buffer.from("x-access-token:ghs_installation").toString("base64")}`)
+    expect(JSON.stringify(booted)).not.toContain("ghs_installation")
+    expect((await advertise(booted[0])).status).toBe(200)
+    await manager.stop(owner.workspaceId)
+    const afterStop = await advertise(booted[0])
+    expect([afterStop.status, (await afterStop.json() as { error: { code: string } }).error.code]).toEqual([403, "binding_unavailable"])
+    expect(rig.upstream.seen).toHaveLength(2)
+  })
+
+  test("a repository placeholder spends no stored account, and an account placeholder no repository", async () => {
+    const { app, store, git, refusal, delivered, binding, upstream } = await repository()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    const account = await delivered(key, { workspaceId: owner.workspaceId, lease: BOOTING })
+    expect(await refusal(await app.request(`${account.baseUrl}/v1/messages`, { method: "POST", headers: { authorization: `Bearer ${binding.placeholder}` }, body: "{}" })))
+      .toEqual([403, "binding_not_permitted"])
+    expect(await refusal(await git("/acme/private.git/info/refs", { headers: { authorization: `Bearer ${account.placeholder}` } })))
+      .toEqual([403, "binding_not_permitted"])
+    expect(upstream.seen).toHaveLength(0)
   })
 })

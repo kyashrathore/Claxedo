@@ -84,6 +84,13 @@ describe("toSandboxLeaseRow", () => {
     expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify({ ...start, bootMode: "teleport" }) }).start).toBeNull()
   })
 
+  test("a start's failures are kept only when each names its epoch, its time and its reason", () => {
+    const start = { requestedAt: 1, startedAt: 5, bootMode: "cold-start", markedAt: 5, phases: [], failures: [{ epoch: 1, failedAt: 4, error: "provider said no" }] }
+    expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify(start) }).start).toEqual(start)
+    expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify({ ...start, failures: [{ epoch: 1, failedAt: 4 }] }) }).start).toBeNull()
+    expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify({ ...start, failures: "provider said no" }) }).start).toBeNull()
+  })
+
   test("non-string label values are dropped rather than typed as strings", () => {
     const row = toSandboxLeaseRow({ ...ready, labels: JSON.stringify({ tier: "gold", count: 4 }) })
     expect(row.labels).toEqual({ tier: "gold" })

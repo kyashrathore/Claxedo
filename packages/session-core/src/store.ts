@@ -1052,7 +1052,7 @@ export class RuntimeStore {
   }
 
   private finishTools(sessionId: string, ts: number) {
-    const error = "Tool execution interrupted"
+    const error = "Interrupted: The agent runtime stopped during this turn"
     const rows = this.db
       .prepare<{ data_json: string }>("SELECT data_json FROM part WHERE session_id = ? ORDER BY updated_at ASC")
       .all(sessionId)

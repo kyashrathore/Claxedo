@@ -1,5 +1,7 @@
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
-import { createSessionHostPlugins } from "./runtime/session-host-launch"
+import { createSessionHostPlugins, machineServing } from "./runtime/session-host-launch"
+import type { SandboxInFlight } from "../workspace/sandbox-start"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import type { D1Database } from "@cloudflare/workers-types"
 import { cloudRootBacking, isCloudRoot } from "../workspace/cloud-root-backing"
@@ -30,7 +32,7 @@ import {
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
   createHostedRepositoryAccess,
-  createHostedRepositoryCloneSecrets,
+  createHostedRepositoryClone,
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
@@ -65,6 +67,9 @@ import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-
 import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
 import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
 import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
+import type { HostedEgressBroker } from "../credentials/hosted-egress-broker"
+import { hostedRepositoryBindings } from "../credentials/hosted-egress-broker/repository-binding"
+import { hostedRepositoryCloneDelivery } from "../workspace/repository-clone"
 
 const log = Log.create({ service: "hosted-agent-plugins" })
 
@@ -114,11 +119,8 @@ export type HostedAgentPluginsComposition = {
    * an explicit selection instead of the project's activation defaults.
    */
   selectedCapabilities: {
-    prepare(input: {
-      workspaceId: string
-      capabilities: { plugins: readonly { sourceId: string; pluginName: string }[]; skills: readonly { sourceId: string; skillName: string }[] }
-    }): Promise<WorkspaceRuntimePreparation>
-    apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
+    prepare(input: { workspaceId: string; capabilities: AgentPluginExecutionSelection }): Promise<WorkspaceRuntimePreparation>
+    apply(input: { workspaceId: string; capabilities: AgentPluginExecutionSelection; preparation: WorkspaceRuntimePreparation }): Promise<void>
   }
 }
 
@@ -229,6 +231,10 @@ export function createHostedAgentPluginsComposition(input: {
   /** Refreshes the caller's running sandboxes after an activation change; absent on a plane that hosts no sandboxes. */
   pluginsChanged?: (userId: string) => Promise<void>
   pushRuntime?: (context: WorkspaceRuntimeContext, preparation: WorkspaceRuntimePreparation) => Promise<void>
+  /** The plane's broker, through which a sandbox with no provider edge clones its private repository. */
+  egressBroker?: HostedEgressBroker
+  /** The start run a workspace's sandbox has in flight; absent on a plane that hosts no sandboxes. */
+  sandboxInFlight?: SandboxInFlight
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -326,7 +332,13 @@ export function createHostedAgentPluginsComposition(input: {
     credentials: orgCredentials,
   }
   const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
-  const cloneSecrets = createHostedRepositoryCloneSecrets(connectionsInput)
+  const repositoryClone = createHostedRepositoryClone(connectionsInput)
+  input.egressBroker?.serveRepositoryClones(hostedRepositoryBindings(repositoryClone))
+  const cloneDelivery = hostedRepositoryCloneDelivery({
+    clone: repositoryClone,
+    secretBrokering: workspaceSecretBrokering(input.plane),
+    ...(input.egressBroker ? { broker: input.egressBroker } : {}),
+  })
   const resolveConnection = createHostedCapabilityConnectionResolver(connectionsInput)
   const resolveToken = createHostedCapabilityTokenResolver(connectionsInput)
   const reportAuthFailure = createHostedCapabilityAuthFailureReporter(connectionsInput)
@@ -372,20 +384,20 @@ export function createHostedAgentPluginsComposition(input: {
       groupEnabled: subagentsGroupEnabled,
     }),
   }
-  const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
+  const prepareRuntime = async ({ workspaceId, capabilities }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
     const [preparation, env, clone] = await Promise.all([
-      preparer.forSnapshot(snapshot),
+      preparer.forSnapshot(snapshot, capabilities ? { selection: capabilities } : {}),
       rootEnvironment({
         userId: snapshot.identity.userId,
         orgId: snapshot.identity.organizationId,
         projectId: snapshot.identity.projectId,
         workspaceId: snapshot.identity.workspaceId,
       }),
-      cloneSecrets({ workspaceId, ownerUserId: snapshot.identity.userId, orgId: snapshot.identity.organizationId }),
+      cloneDelivery({ workspaceId, ownerUserId: snapshot.identity.userId, orgId: snapshot.identity.organizationId }),
     ])
-    return { ...preparation, secrets: [...preparation.secrets ?? [], ...clone], env }
+    return { ...preparation, secrets: [...preparation.secrets ?? [], ...clone.secrets], env, ...(clone.leaseEnv ? { leaseEnv: clone.leaseEnv } : {}) }
   }
   // The header placeholder is the one a header-injecting driver installs
   // (`brokeredPlaceholderEnv`); the sandbox presents it and the driver's edge
@@ -421,9 +433,9 @@ export function createHostedAgentPluginsComposition(input: {
       }
       return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId), { selection: capabilities })
     },
-    async apply({ workspaceId, preparation }) {
+    async apply({ workspaceId, capabilities, preparation }) {
       if (!input.pushRuntime) throw new Error("Selected capabilities require hosted settings delivery")
-      await input.pushRuntime({ workspaceId }, preparation)
+      await input.pushRuntime({ workspaceId, capabilities }, preparation)
     },
   }
 
@@ -500,7 +512,10 @@ export function createHostedAgentPluginsComposition(input: {
     pluginRuntime,
     sessionHostPlugins: createSessionHostPlugins({
       cloudWorkspace,
-      machineRunning: async (workspaceId) => (await services.sandbox.sandboxManager?.target(workspaceId))?.status === "ready",
+      machineServing: machineServing({
+        target: async (workspaceId) => await services.sandbox.sandboxManager?.target(workspaceId),
+        ...(input.sandboxInFlight ? { inFlight: input.sandboxInFlight } : {}),
+      }),
       activations,
       preparer,
       provisioner,

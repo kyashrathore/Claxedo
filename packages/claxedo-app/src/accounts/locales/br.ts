@@ -55,7 +55,6 @@ export default {
   "settings.providers.agents.removingAccount": "Removendo…",
   "settings.providers.accountSource.own": "Sua própria conta",
   "settings.providers.accountSource.org": "Conta da organização",
-  "settings.providers.accountSource.unavailable": "{{name}} não pode ser executado para você: sua organização não tem uma conta para este provedor. Escolha sua própria conta para usá-lo.",
   "settings.providers.accountSource.label": "Conta usada para {{name}}",
   "settings.providers.live.ok": "Funcionando",
   "settings.providers.live.authFailed": "Rejeitado pelo provedor",

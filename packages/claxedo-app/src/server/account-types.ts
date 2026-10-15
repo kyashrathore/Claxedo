@@ -4,7 +4,7 @@ import type { MachineClass } from "./cloud-types"
 
 export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean; readonly reason?: string; readonly cloudHarness?: boolean }
 
-export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: readonly Account[]; readonly canRemoveOrgAccounts: boolean }
+export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: readonly Account[]; readonly canManageOrgAccounts: boolean }
 
 export type Account = {
   readonly id: string
@@ -63,3 +63,18 @@ export type SandboxKeys =
     readonly canManage: boolean
   }
   | { readonly kind: "unsupported" }
+
+export type AccountsApi = {
+  readonly select: (ids: readonly string[]) => Promise<void>
+  readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
+  readonly setSource: (providerIds: readonly string[], source: AccountSource) => Promise<void>
+  readonly setScope: (ids: readonly string[], scope: AccountScope) => Promise<void>
+  readonly remove: (ids: readonly string[]) => Promise<void>
+  readonly check: (id: string) => Promise<AccountCheck>
+  readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
+  readonly rescan: () => Promise<void>
+  readonly refresh: () => Promise<void>
+  readonly saveSandboxKey: (driver: string, fields: Readonly<Record<string, string>>) => Promise<Account>
+  readonly saveOrgAccount: (providerId: string, secret: string, label: string) => Promise<Account>
+  readonly chooseSandboxDriver: (driver: string | null) => Promise<void>
+}

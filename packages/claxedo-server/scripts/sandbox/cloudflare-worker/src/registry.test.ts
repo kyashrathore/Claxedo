@@ -31,11 +31,16 @@ const lifecycle: string[] = []
 
 // `@cloudflare/containers` cannot be imported outside workerd (its module scope
 // pulls `cloudflare:workers`), so the base class keeps only what the subclass
-// extends: the object state it was built with and the two start paths.
+// extends: the object state it was built with and the two start paths, plus
+// the SDK's own instance fields a subclass member of the same name would lose
+// to (0.12.9 sets `backupBucket` to the R2 binding in its constructor).
 vi.mock("@cloudflare/sandbox", () => ({
   getSandbox: getSandboxMock,
   Sandbox: class Sandbox {
-    constructor(readonly ctx: unknown, readonly env: unknown) {}
+    backupBucket: unknown = null
+    constructor(readonly ctx: unknown, readonly env: unknown) {
+      this.backupBucket = (env as { BACKUP_BUCKET?: unknown } | undefined)?.BACKUP_BUCKET ?? null
+    }
     async start() { lifecycle.push("start") }
     async startAndWaitForPorts() { lifecycle.push("startAndWaitForPorts") }
   },
@@ -544,14 +549,16 @@ describe("runtime env reconciliation on ensure-runtime", () => {
     expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: true })
   })
 
-  test("withdrawing a credential replaces the runtime so its placeholder stops existing", async () => {
+  test("withdrawing a credential leaves the running runtime and its turns alone, and its placeholder is no longer swapped anywhere", async () => {
     const kv = credentials({ withdrawn: JSON.stringify([registration]) })
     await call("/sandbox/withdrawn/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
       method: "POST",
       body: JSON.stringify({ command: "runtime", env: {}, egress: [] }),
     })
 
-    expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: false })
+    expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: true })
+    expect(sandboxStub.setCredentialHosts).toHaveBeenLastCalledWith("withdrawn", [])
+    expect(JSON.parse(kv.values.get("withdrawn")!)).toEqual([])
   })
 })
 

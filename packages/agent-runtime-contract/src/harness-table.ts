@@ -14,6 +14,7 @@ import {
   CLAUDE_PERMISSION_MODES,
   CODEX_PERMISSION_MODES,
   CURSOR_PERMISSION_MODES,
+  PI_PERMISSION_MODES,
   type HarnessPermissionModes,
 } from "./harness-permission-modes"
 import { AGENT_HARNESS_DEFINITIONS, harnessKey, type SessionHarness } from "./harnesses"
@@ -110,13 +111,15 @@ function tableHarness(harness: SessionHarness): HarnessId | undefined {
 }
 
 /**
- * The permission modes a session's harness declares. Undefined for an ACP
- * connection, whose agent reports its own list, and for a native harness with
- * no mode surface.
+ * The permission modes a session's harness declares: a table harness's, and
+ * Pi's, which Claxedo's own hook enforces. Undefined for an ACP connection,
+ * whose agent reports its own list, and for a native harness with no mode
+ * surface.
  */
 export function declaredPermissionModes(harness: SessionHarness): HarnessPermissionModes | undefined {
   const id = tableHarness(harness)
-  return id ? HARNESS_TABLE[id].permissionModes : undefined
+  if (id) return HARNESS_TABLE[id].permissionModes
+  return harness.access === "native" && harness.id === "pi" ? PI_PERMISSION_MODES : undefined
 }
 
 /**

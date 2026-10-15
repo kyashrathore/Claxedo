@@ -91,6 +91,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
     member,
     outsider,
     store,
+    database: fixture.database,
     ledger,
     target,
     post,

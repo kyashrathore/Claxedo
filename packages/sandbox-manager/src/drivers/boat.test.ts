@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import { boatTemplateResetCommand, createBoatSandboxDriver, formatBoatRuntimeTemplate, parseBoatRuntimeTemplate, type BoatFetch } from "./boat"
-import { createSandboxManager, isSandboxHostGone, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxProviderRateLimited, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -465,7 +465,7 @@ describe("boat sandbox driver", () => {
     })
     expect(await manager.ensure("ws1", { homeRegion: "eu" })).toMatchObject({
       status: "unavailable",
-      error: failure === "persistence failure" ? "storage unavailable" : "runtime_lease_changed",
+      error: failure === "persistence failure" ? "provider_failed:boat: storage unavailable" : "runtime_lease_changed",
     })
     expect((await store.get("ws1"))?.sandboxId).toBeUndefined()
     expect(boat.calls.map(({ method, path }) => ({ method, path }))).toEqual([
@@ -1100,6 +1100,55 @@ describe("boat sandbox driver", () => {
     }
   })
 
+  test.each([[401, "unauthorized", true], [403, "forbidden", true], [404, "not_found", false], [500, "internal", false]] as const)(
+    "a %s from Boat is a refusal of its key only when it is 401 or 403",
+    async (status, code, refused) => {
+      const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => Response.json({ ok: false, code, message: code }, { status }) })
+      const error = await driver.ensureHost(ensureInput()).then(() => undefined, (cause: unknown) => cause)
+      expect(isSandboxProviderKeyRefused(error)).toBe(refused)
+    },
+  )
+
+  // Boat's answer to a create once the account's daily starts were spent (2026-10-15), cut to the fields it read and a sample of the rest.
+  const DAY_LIMIT_REFUSAL = {
+    ok: false, type: "sandbox.error", status: 429, code: "rate_limited",
+    message: "Rate limit hit: 200 sandbox starts per day (create, fork and resume each count as one start). Your plan allows 12/min, 60/hour and 200/day.",
+    error: {
+      code: "rate_limited", status: 429, message: "Rate limit hit: 200 sandbox starts per day",
+      details: {
+        error: "rate_limited", status: "blocked", window: "day", limit: 200, creditBalanceHours: 350.01, billingUrl: "https://boat.dev/dashboard?tab=billing",
+        starts: { unlimited: false, minute: { limit: 12, used: 0, remaining: 12 }, hour: { limit: 60, used: 0, remaining: 60 }, day: { limit: 200, used: 200, remaining: 0 } },
+      },
+    },
+    requestId: "req_c963703215b743448f936894d16c3798",
+  }
+
+  test.each([["a create", false], ["a wake's resume", true]] as const)("%s Boat refuses at the account's start limit keeps the window, the limit and the starts used, and no text of Boat's", async (_kind, resume) => {
+    const boat = fakeBoat({ states: ["archived"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
+      if (init?.method === "POST" && (url.endsWith("/sandboxes") || url.endsWith("/resume"))) return Response.json(DAY_LIMIT_REFUSAL, { status: 429 })
+      return boat.fetchImpl(url, init)
+    } })
+    const lease = sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" })
+    const error = await (resume ? driver.resumeHost!({ lease, ensure: ensureInput() }) : driver.ensureHost(ensureInput())).then(() => undefined, (cause: unknown) => cause as Error)
+    expect(isSandboxProviderRateLimited(error)).toBe(true)
+    expect(error).toMatchObject({
+      code: "rate_limited",
+      status: 429,
+      providerRateLimited: { window: "day", limit: 200 },
+      startLimit: { window: "day", limit: 200, starts: { minute: { limit: 12, used: 0 }, hour: { limit: 60, used: 0 }, day: { limit: 200, used: 200 } } },
+    })
+    expect(JSON.stringify(error)).not.toMatch(/Rate limit hit|billing|creditBalance|req_/)
+    expect(error?.message).not.toContain("Rate limit hit")
+  })
+
+  test("a 429 without the start-limit facts is a plain refusal", async () => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => Response.json({ ok: false, code: "rate_limited" }, { status: 429 }) })
+    const error = await driver.ensureHost(ensureInput()).then(() => undefined, (cause: unknown) => cause)
+    expect(isSandboxProviderRateLimited(error)).toBe(false)
+    expect(error).toMatchObject({ code: "rate_limited", status: 429 })
+  })
+
   test.each([301, 302, 303, 307, 308])("a %s redirect is a refusal, never followed with the key", async (status) => {
     const calls: string[] = []
     const driver = createBoatSandboxDriver({ apiKey: "boat_secret", image: IMAGE, fetchImpl: async (url, init) => {
@@ -1149,6 +1198,20 @@ describe("boat sandbox driver", () => {
       command: "docker stop -t 30 claxedo-runtime >/dev/null 2>&1; true",
       timeoutSeconds: 60,
     })
+  })
+
+  test("stop of a sandbox whose machine is not running is a stopped sandbox: the container stop is skipped, the archive still asked, and Boat's not-running answer to that is no failure", async () => {
+    for (const code of ["machine_not_running", "sandbox_not_ready"]) {
+      const boat = fakeBoat()
+      const notRunning = (stopToo: boolean): BoatFetch => async (url, init) => {
+        if (url.endsWith("/commands") || (stopToo && url.endsWith("/stop"))) return Response.json({ ok: false, code, message: "not running" }, { status: 409 })
+        return boat.fetchImpl(url, init)
+      }
+      const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
+      await expect(createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: notRunning(false) }).stop?.(target)).resolves.toBeUndefined()
+      expect(boat.calls.map(({ method, path }) => `${method} ${path}`)).toContain(`POST /sandboxes/${ID}/stop`)
+      await expect(createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: notRunning(true) }).stop?.(target)).resolves.toBeUndefined()
+    }
   })
 
   test("resume brings an archived sandbox back under the boot deadline, re-establishes the runtime, and removes the deadline", async () => {
@@ -1264,14 +1327,25 @@ describe("boat sandbox driver", () => {
 
     const stopped = await driver.stop!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }).catch((error: unknown) => error)
     expect(isSandboxHostGone(stopped)).toBe(true)
-    expect(await driver.inspect!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" })).toBeUndefined()
+    expect(await driver.inspect!({ workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" })).toBe("gone")
     expect(boat.calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")).toHaveLength(0)
   })
 
-  test("a sandbox Boat still has inspects as the target it serves, and a refusal of the read is no answer about it", async () => {
+  test.each([
+    ["ready", "serving"],
+    ["running", "serving"],
+    ["provisioning", "serving"],
+    ["archiving", "stopped"],
+    ["archived", "stopped"],
+    ["error", "stopped"],
+  ] as const)("a sandbox Boat holds in state %s inspects as %s", async (state, expected) => {
+    const boat = fakeBoat({ states: [state] })
     const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
-    const boat = fakeBoat()
-    expect(await createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl }).inspect!(target)).toEqual(target)
+    expect(await createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl }).inspect!(target)).toBe(expected)
+  })
+
+  test("a refusal of the inspect read is no answer about the sandbox", async () => {
+    const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
     const refused = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => Response.json({ ok: false, code: "unauthorized", message: "Unauthorized" }, { status: 401 }) })
     await expect(refused.inspect!(target)).rejects.toThrow("unauthorized")
   })

@@ -3,12 +3,15 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { D1Database } from "@cloudflare/workers-types"
 import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
+import { accountPlaceholderEnv } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
+import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 import { hostedBrokerCredentialReader, hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { createHostedEgressBroker, DRAFT_PLACEHOLDER, verifyBrokerPlaceholder } from "../credentials/hosted-egress-broker"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
+
+const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
 
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({
@@ -51,6 +54,7 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
   const broker = options.broker === false ? undefined : createHostedEgressBroker({
     credentials,
     read: (orgId) => hostedBrokerCredentialReader(orgId, { database, env: CREDENTIAL_ENV }),
+    workspaceOwner: async () => ({ userId: "owner", actorId: "actor-owner", orgId: "org", projectId: "project" }),
     sandboxManager,
     env: signing,
     origin: ORIGIN,
@@ -58,6 +62,8 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
   type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
+    sandboxRedeliver: unusedSandboxRedeliver,
+    sandboxFollow: followed,
     idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database,
@@ -107,6 +113,30 @@ test("a Boat sandbox is handed a binding on the plane's broker and no edge secre
   expect(renewAt).toBeGreaterThan(before + 29 * 60 * 1000)
   expect(renewAt).toBeLessThan(before + 31 * 60 * 1000)
   expect(configApplied).toHaveBeenCalledTimes(2)
+})
+
+test("an owner on the team account gets a binding for the organization's key in place of their own, and loses it when the key is removed", async () => {
+  const { store, signing, pushed } = await composition("boat")
+  const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key", label: "Team" })
+  await store.setAccountSources(["claude-sdk", "claude-acp", "anthropic"], "org", "org", "owner")
+  const { snapshot, row } = await pushed()
+  if (!row || isProviderUnavailable(row)) throw new Error(`the team account was not delivered: ${JSON.stringify(row)}`)
+  expect(row.account).toEqual({ credentialId: team.id, providerId: "anthropic", label: "Team" })
+  expect(await verifyBrokerPlaceholder(row.placeholder!, signing)).toMatchObject({ userId: "org:org", credentialId: team.id, workspaceId: "ws-a" })
+  expect(snapshot.auth.accounts.owner?.["claude-sdk"]).toEqual({ unavailable: true, reason: "org_account_unavailable" })
+  expect(JSON.stringify(snapshot)).not.toContain("sk-ant-api03")
+
+  await store.deleteCredential(team.id)
+  expect((await pushed()).row).toEqual({ unavailable: true, reason: "org_account_unavailable" })
+})
+
+test("an owner on the team account has a Cloudflare edge hold the organization's key, under the team account's own variable", async () => {
+  const { store, pushed } = await composition("cloudflare")
+  const team = await store.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-key" })
+  await store.setAccountSources(["claude-sdk", "claude-acp", "anthropic"], "org", "org", "owner")
+  const { secrets, row } = await pushed()
+  expect(secrets).toEqual([expect.objectContaining({ name: accountPlaceholderEnv(team), value: "sk-ant-api03-team-key", hosts: ["api.anthropic.com"] })])
+  expect(row).toMatchObject({ placeholderEnv: accountPlaceholderEnv(team), baseUrl: "https://api.anthropic.com" })
 })
 
 test("a draft on a Boat workspace learns the account is deliverable without a placeholder being minted", async () => {

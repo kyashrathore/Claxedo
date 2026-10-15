@@ -1,15 +1,15 @@
 import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
+import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type PlacementId, type Project, type ProjectSource } from "@/server"
 import { Button, ClaxedoIcon as Icon, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { draftProjectName } from "../project-source"
+import { draftProjectName, pastedRepositoryHint } from "../project-source"
 import { ConnectCodeHost } from "./project-create-connect"
 import { AccountSelect, FIELD_BOX, RepositoryList } from "./project-create-repository"
 
 type Submit =
   | { onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>; submitLabel?: string; onCreated?: undefined }
-  | { onSubmit?: undefined; onCreated: (project: Project) => void }
+  | { onSubmit?: undefined; onCreated: (project: Project, placementId: PlacementId | undefined) => void }
 
 export type ProjectCreateFormProps = {
   folderMachine?: string
@@ -108,14 +108,14 @@ function RepositorySection(props: { choice: RepositoryChoice; url: string; onUrl
             <Show when={props.choice.usable().length > 1}>
               <AccountSelect connections={props.choice.usable()} current={connection()} onSelect={props.choice.setChosenId} />
             </Show>
-            <RepositoryList repositories={props.choice.repositories.data} loading={props.choice.repositories.isPending} error={props.choice.repositories.error} query={props.query} onQuery={props.onQuery} selected={props.selected} onSelect={props.onSelect} />
+            <RepositoryList listing={props.choice.repositories.data} host={host() ?? connection().providerName} loading={props.choice.repositories.isPending} error={props.choice.repositories.error} query={props.query} onQuery={props.onQuery} selected={props.selected} onSelect={props.onSelect} />
           </>
         )}
       </Show>
       <Show when={props.choice.view() === "url"}>
         <TextField
           label={t("projects.add.url")}
-          description={host() && props.choice.connection() ? t("projects.create.url.hint.private", { host: host() ?? "" }) : t("projects.create.url.hint.none")}
+          description={pastedRepositoryHint(t, host(),props.choice.connection() !== undefined)}
           placeholder={t("projects.create.url.placeholder")}
           value={props.url}
           onChange={props.onUrl}
@@ -145,7 +145,11 @@ function createFormState(props: ProjectCreateFormProps) {
     if (choice.view() !== "url") return undefined
     return repoUrl().trim() ? { kind: "repository", url: repoUrl().trim() } : undefined
   }
-  return { name, setName, folder, setFolder, repoUrl, setRepoUrl, busy, setBusy, error, setError, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
+  const editUrl = (url: string) => {
+    setError("")
+    setRepoUrl(url)
+  }
+  return { name, setName, folder, setFolder, repoUrl, editUrl, busy, setBusy, error, setError, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
 }
 
 type FormState = ReturnType<typeof createFormState>
@@ -180,7 +184,9 @@ function useProjectCreateSubmit(props: ProjectCreateFormProps, form: FormState) 
     form.setError("")
     try {
       if (props.onSubmit) return await props.onSubmit(picked, name)
-      props.onCreated(await server.projects.create({ source: picked, ...(name ? { name } : {}) }))
+      let placementId: PlacementId | undefined
+      const project = await server.projects.create({ source: picked, ...(name ? { name } : {}), onPlacement: (id) => (placementId = id) })
+      props.onCreated(project, placementId)
     } catch (cause) {
       form.setError(toAppError(cause).message)
     } finally {
@@ -210,7 +216,7 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
       <Show
         when={form.mode() === "folder" ? props.folderMachine : undefined}
         fallback={
-          <RepositorySection choice={form.choice} url={form.repoUrl()} onUrl={form.setRepoUrl} query={form.query()} onQuery={form.setQuery} selected={form.selected()} onSelect={form.setSelected} />
+          <RepositorySection choice={form.choice} url={form.repoUrl()} onUrl={form.editUrl} query={form.query()} onQuery={form.setQuery} selected={form.selected()} onSelect={form.setSelected} />
         }
       >
         {(machine) => <FolderField machine={machine()} folder={form.folder()} onChoose={() => void chooseFolder()} />}

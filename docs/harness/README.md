@@ -80,7 +80,10 @@ Claude, Codex and Cursor expose native goal operations, Pi and OpenCode declare
 none, and ACP derives them from its extensions. A provider-originated run is
 admitted through
 [`admitProviderTurn`](../../packages/harness/src/broker/goals/index.ts), so the
-host supplies its turn identity.
+host supplies its turn identity. A `goal` or `provider` run (Claude reporting
+its background work on its own) opens with a message its harness authored and
+reads as its own turn; a `continuation` (Pi resuming an interrupted run)
+answers the latest prompt.
 
 ## Credentials, conversation stores and plugins
 

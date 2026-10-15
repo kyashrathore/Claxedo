@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers"
-import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
-import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox-start"
+import { sandboxLeaseEndedUnderStart, sandboxProviderRateLimit, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
+import type { WorkspaceRuntimeContext } from "../workspace/route-support"
+import type { SandboxFollowUps, SandboxStartAnswer, SandboxStartDrive, SandboxStartRequest } from "../workspace/sandbox-start"
 
 /** `failure` is the error of the last step that failed and is being retried; a step that succeeds or ends the run clears it. */
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number; failure?: string }
@@ -16,10 +18,12 @@ type StartStep = Parameters<NonNullable<SandboxStartDrive["announce"]>>[1]
  * under its own storage key: the field of a ready answer that first schedules
  * it, and the drive step that runs it and answers when it is due again.
  */
+type FollowUpStep = (drive: SandboxStartDrive, workspaceId: string, failures: number, capabilities: AgentPluginExecutionSelection | undefined) => Promise<number | undefined>
+
 const FOLLOW_UPS = {
-  renewal: { due: "renewAt", step: (drive: SandboxStartDrive, workspaceId: string) => drive.renew(workspaceId) },
-  watch: { due: "watchAt", step: (drive: SandboxStartDrive, workspaceId: string, failures: number) => drive.watch(workspaceId, failures) },
-} as const satisfies Record<string, { due: keyof ReadyAnswer; step: (drive: SandboxStartDrive, workspaceId: string, failures: number) => Promise<number | undefined> }>
+  renewal: { due: "renewAt", step: (drive, workspaceId, _failures, capabilities) => drive.renew(workspaceId, capabilities) },
+  watch: { due: "watchAt", step: (drive, workspaceId, failures) => drive.watch(workspaceId, failures) },
+} as const satisfies Record<string, { due: keyof ReadyAnswer & keyof SandboxFollowUps; step: FollowUpStep }>
 
 type FollowUpKey = keyof typeof FOLLOW_UPS
 const FOLLOW_UP_KEYS: readonly FollowUpKey[] = ["renewal", "watch"]
@@ -28,11 +32,10 @@ const FOLLOW_UP_KEYS: readonly FollowUpKey[] = ["renewal", "watch"]
 const START_WALL_MS = 15 * 60_000
 
 /**
- * How long a settled outcome waits for the poller whose start began the run.
- * A poller comes back within its retryAfterMs (2 s in production, a minute
- * from a throttled background tab); an outcome older than this belongs to a
- * poller that left, and a `ready` one would soon describe a sandbox that has
- * since stopped on its own.
+ * How long a settled failure answers every connect that is not a person's
+ * retry. A poller comes back within its retryAfterMs (2 s in production, a
+ * minute from a throttled background tab); a failure older than this belongs
+ * to a poller that left, and the next connect begins its own run.
  */
 const OUTCOME_HELD_MS = 2 * 60_000
 
@@ -41,10 +44,10 @@ const FOLLOW_UP_RETRY_MS = 30_000
 
 export type SandboxProvisionerTiming = { outcomeHeldMs?: number; followUpRetryMs?: number }
 
-/** How long the start waits before its next driver step; nothing when this answer ends it. */
+/** How long the start waits before its next driver step; nothing when this answer ends it, as a spent retry budget does. */
 function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
   if (answer.status === "provisioning") return answer.retryAfterMs
-  if (answer.status !== "unavailable" || answer.retryAfterMs === undefined) return undefined
+  if (answer.status !== "unavailable" || answer.retryAfterMs === undefined || answer.exhausted) return undefined
   return sandboxRuntimeBootFailure(answer.error) === undefined ? answer.retryAfterMs : undefined
 }
 
@@ -71,8 +74,9 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * request died with a closed tab and left the lease `acquiring` until the
  * stale window let the next start take it over. Here a start takes the lease
  * and answers at once; the alarm drives the driver, step by step, until the
- * lease is ready or the start has failed, and the first `start` within
- * `outcomeHeldMs` of a failed settling reports that failure. A run's
+ * lease is ready or the start has failed, and every `start` within
+ * `outcomeHeldMs` of a failed settling reports that failure, except a
+ * person's retry, which begins the next run. A run's
  * beginning and its settling are announced to the workspace owner's open
  * clients, so a tab learns of a start another tab or a session's tool call
  * asked for.
@@ -90,7 +94,10 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * settling that names `renewAt` is re-delivered then, through `renew`, and
  * one that names `watchAt` has its idleness read then, through `watch`, which
  * stops a sandbox whose host reads none itself. The run owns the alarm while
- * one is in flight; the follow-ups take it back when the run settles.
+ * one is in flight; the follow-ups take it back when the run settles. A Task
+ * root is created outside any run, so `follow` hands its follow-ups here
+ * instead, with the root's capability set, which every later step of that
+ * workspace is prepared with.
  */
 export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, timing: SandboxProvisionerTiming = {}) {
   const outcomeHeldMs = timing.outcomeHeldMs ?? OUTCOME_HELD_MS
@@ -98,15 +105,12 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
   return class SandboxProvisioner extends DurableObject<Env> {
     #driving = false
 
-    start(workspaceId: string): Promise<SandboxStartAnswer> {
+    start(workspaceId: string, request: SandboxStartRequest = {}): Promise<SandboxStartAnswer> {
       return this.#flushed(async () => {
         const joined = await this.#inFlight()
         if (joined) return joined
-        const outcome = await this.ctx.storage.get<Outcome>("outcome")
-        if (outcome) {
-          await this.ctx.storage.delete("outcome")
-          if (Date.now() - outcome.settledAt <= outcomeHeldMs && outcome.answer.status !== "ready") return outcome.answer
-        }
+        const failed = await this.#heldFailure(request)
+        if (failed) return failed
         const live = await drive(this.env).live(workspaceId)
         if (live) return live
         return this.#begin(workspaceId)
@@ -126,6 +130,34 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       return this.#inFlight()
     }
 
+    /**
+     * The renewal's step run now: what the sandbox is delivered changed, and
+     * its next renewal is rescheduled from this delivery. A run in flight
+     * prepares its settings on every step, so it delivers them itself.
+     */
+    redeliver(workspaceId: string): Promise<void> {
+      return this.#flushed(async () => {
+        if (await this.ctx.storage.get<Run>("run")) return
+        const at = await drive(this.env).renew(workspaceId, await this.#capabilities())
+        if (at === undefined) await this.ctx.storage.delete("renewal")
+        else await this.ctx.storage.put("renewal", { workspaceId, at, failures: 0 } satisfies FollowUp)
+        await this.#armFollowUps()
+      })
+    }
+
+    follow(context: WorkspaceRuntimeContext, due: SandboxFollowUps): Promise<void> {
+      return this.#flushed(async () => {
+        if (context.capabilities) await this.ctx.storage.put("capabilities", context.capabilities)
+        if (await this.ctx.storage.get<Run>("run")) return
+        await this.#schedule(context.workspaceId, due)
+      })
+    }
+
+    /** The capability set a Task root's every step is prepared with; nothing for any other workspace. */
+    #capabilities(): Promise<AgentPluginExecutionSelection | undefined> {
+      return this.ctx.storage.get<AgentPluginExecutionSelection>("capabilities")
+    }
+
     /** What a step queued leaves with the invocation that ran it; the step's own answer or failure stands. */
     async #flushed<T>(work: () => Promise<T>): Promise<T> {
       try {
@@ -135,16 +167,34 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       }
     }
 
+    /**
+     * Kept for the whole window rather than handed to the first connect: two
+     * polls of one start can arrive together, and the one that found no
+     * outcome would begin a start the provider refuses again and counts.
+     */
+    async #heldFailure(request: SandboxStartRequest): Promise<SandboxStartAnswer | undefined> {
+      const storage = this.ctx.storage
+      const outcome = await storage.get<Outcome>("outcome")
+      if (!outcome) return undefined
+      const failed = outcome.answer.status !== "ready" && Date.now() - outcome.settledAt <= outcomeHeldMs
+      if (failed && !request.retry) return outcome.answer
+      await storage.delete("outcome")
+      return undefined
+    }
+
     async #inFlight(): Promise<SandboxStartAnswer | undefined> {
       const storage = this.ctx.storage
       const run = await storage.get<Run>("run")
       if (!run) return undefined
-      if (!this.#driving && (await storage.getAlarm()) === null) await storage.setAlarm(Date.now())
-      return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true, ...(run.failure ? { failure: run.failure } : {}) }
+      const alarm = await storage.getAlarm()
+      if (!this.#driving && alarm === null) await storage.setAlarm(Date.now())
+      // A failed step's retry is the alarm's, so a poll that joins is told the time left until it.
+      const retryAfterMs = run.failure && alarm !== null ? Math.max(0, alarm - Date.now()) : run.retryAfterMs
+      return { status: "provisioning", retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true, ...(run.failure ? { failure: run.failure } : {}) }
     }
 
     async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
-      const admitted = await drive(this.env).acquire(workspaceId)
+      const admitted = await drive(this.env).acquire(workspaceId, await this.#capabilities())
       if (admitted.status !== "provisioning") {
         await this.#settled(workspaceId, admitted)
         return admitted
@@ -177,14 +227,18 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
 
     /** A ready answer's follow-ups replace the ones on record; the alarm is theirs again now that no run holds it. */
     async #settled(workspaceId: string, answer: SandboxStartAnswer) {
-      const storage = this.ctx.storage
       this.#announce(workspaceId, settledStep(answer))
-      if (answer.status === "ready") {
-        for (const key of FOLLOW_UP_KEYS) {
-          const at = answer[FOLLOW_UPS[key].due]
-          if (at === undefined) await storage.delete(key)
-          else await storage.put(key, { workspaceId, at, failures: 0 } satisfies FollowUp)
-        }
+      if (answer.status === "ready") await this.#schedule(workspaceId, answer)
+      else await this.#armFollowUps()
+    }
+
+    /** The follow-ups a ready sandbox is due, replacing the ones on record; the alarm is theirs again. */
+    async #schedule(workspaceId: string, due: SandboxFollowUps) {
+      const storage = this.ctx.storage
+      for (const key of FOLLOW_UP_KEYS) {
+        const at = due[FOLLOW_UPS[key].due]
+        if (at === undefined) await storage.delete(key)
+        else await storage.put(key, { workspaceId, at, failures: 0 } satisfies FollowUp)
       }
       await this.#armFollowUps()
     }
@@ -200,7 +254,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       for (const key of FOLLOW_UP_KEYS) {
         const record = await storage.get<FollowUp>(key)
         if (!record || record.at > Date.now()) continue
-        const next = await FOLLOW_UPS[key].step(drive(this.env), record.workspaceId, record.failures)
+        const next = await FOLLOW_UPS[key].step(drive(this.env), record.workspaceId, record.failures, await this.#capabilities())
           .then((at) => (at === undefined ? undefined : { at, failures: 0 }), () => ({ at: Date.now() + followUpRetryMs, failures: record.failures + 1 }))
         if (next === undefined) await storage.delete(key)
         else await storage.put(key, { workspaceId: record.workspaceId, ...next } satisfies FollowUp)
@@ -225,7 +279,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
               epoch: run.epoch,
               homeRegion: run.homeRegion,
             }
-          : await drive(this.env).provision(run.workspaceId, run.epoch).catch((cause: unknown) => stepThrew(run, cause))
+          : await drive(this.env).provision(run.workspaceId, run.epoch, await this.#capabilities()).catch((cause: unknown) => stepThrew(run, cause))
         const retryAfterMs = nextStepAfter(answer)
         if (retryAfterMs !== undefined) {
           // A failed step's retry runs on the fresh epoch its answer names.
@@ -239,8 +293,15 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         await storage.delete("run")
         // A lease stopped, destroyed or replaced under the run was somebody's
         // decision, not the start's failure: the next start reads the lease
-        // and begins what it needs, instead of being told this run's end.
-        if (answer.status !== "unavailable" || !sandboxLeaseEndedUnderStart(answer.error)) {
+        // and begins what it needs, instead of being told this run's end. A
+        // spent budget is the lease's own answer to every start until its
+        // cooldown ends or a key change lifts it, so holding it would outlive
+        // the lift and freeze the time left. A day's start limit is no
+        // lease's answer (the next start runs the driver), so it is held
+        // like any failure: every connect in the window is told it, and only
+        // a person's retry tries again.
+        const leaseAnswers = answer.status === "unavailable" && answer.exhausted && sandboxProviderRateLimit(answer.error) !== "day"
+        if (answer.status !== "unavailable" || !(sandboxLeaseEndedUnderStart(answer.error) || leaseAnswers)) {
           const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }
           await storage.put("outcome", outcome)
         }

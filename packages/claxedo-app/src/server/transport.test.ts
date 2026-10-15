@@ -78,7 +78,10 @@ test("the public workspace wake owner sends a signed desktop cloud wake to the a
   const id = placementId("ws_cloud")
   await wakes.start(id)
   await transport.runtime(cloud, "/api/wr/health")
-  expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.mint", input: { id: "ws_cloud" } }))
+  expect(calls).toEqual([
+    { operation: "workspace.connection.mint", input: { id: "ws_cloud", retry: true } },
+    { operation: "workspace.connection.mint", input: { id: "ws_cloud" } },
+  ])
   expect(fetcher.mock.calls.map(([url]) => url)).toEqual(["https://relay.test/workspaces/ws_cloud/api/wr/health"])
   expect(wakes.runtime(id)).toEqual({ kind: "live" })
 })

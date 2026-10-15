@@ -21,6 +21,7 @@ import {
 import { selectedAgentPluginProjection } from "../runtime/selected-projection"
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { mintMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
+import { sandboxCarriesGatewayCredential } from "./gateway-reach"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 
@@ -319,11 +320,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
             mcpServers.push(unavailable({ ...identity, reason: connection.ok ? "mcp_connection_resource_mismatch" : connection.code }))
             continue
           }
-          // Only an explicit `"native"` capability may carry the minted
-          // credential: anything else — `"none"`, unstated, unrecognized —
-          // refuses the server rather than hand the secret to a runtime that
-          // cannot keep it unreadable.
-          if (secretBrokering !== "native") {
+          if (!sandboxCarriesGatewayCredential(secretBrokering)) {
             mcpServers.push(unavailable({ ...identity, reason: "secret_brokering_unsupported" }))
             continue
           }

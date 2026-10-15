@@ -16,7 +16,7 @@ import { createSandboxManager, type SandboxDriver } from "@claxedo/sandbox-manag
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { deleteWorkspace, ensureWorkspace, listWorkspaces } from "@claxedo/server-core/workspace/store/index"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { memorySandboxPassRegister, type SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import type { SessionRef, TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
@@ -25,6 +25,7 @@ import { createHostedCoreApp } from "../deployments/hosted-shared/hosted-core-ap
 import { STATIC_PRODUCT_DESCRIPTORS } from "../deployments/hosted-shared/deployment-profile"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../authority/hosted-services"
 import type { ControlPlaneServices } from "../authority/services"
+import { UNUSED_PROJECTION_STORE } from "../authority/unavailable-session-stores"
 import {
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
@@ -33,15 +34,9 @@ import { testRequestAuthenticationAdapter } from "../test-support/request-authen
 import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE } from "./capability"
 import { createD1TasksStore } from "./d1-store"
 import { createHostedTasksComposition, type HostedTasksCompositionInput } from "./hosted-composition"
+import type { TasksHostReads } from "./d1-host-reads"
 import { createHostedTasksSessionBridge } from "./session-bridge"
 import { createCloudCreateAdmission } from "../workspace/cloud-create-admission"
-
-// Set before the workspace store's first read: left unset, every root the
-// journey allocates would land in the developer's own data directory.
-vi.hoisted(() => {
-  const tmp = (process.env.TMPDIR ?? "/tmp").replace(/\/+$/, "")
-  process.env.CLAXEDO_DATA_DIR = `${tmp}/claxedo-tasks-hosted-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-})
 
 const runtime = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
@@ -85,11 +80,14 @@ const ALICE_PRINCIPAL = { principalKind: "user", actorId: "actor:alice", actorKi
  * creates, owned by alice under the task's project, and the sessions it
  * reserves in them. The fixtures above seed both.
  */
-const registry = { owners: new Map<string, WorkspaceOwner>(), placed: new Map<string, string>() }
+type RootArgs = { workspaceId: string; projectId: string; displayName: string; repoUrl?: string; gitBranch?: string; remoteDirectory?: string }
+
+const registry = { owners: new Map<string, WorkspaceOwner>(), placed: new Map<string, string>(), roots: new Map<string, Workspace>() }
 
 function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
   registry.owners = new Map(Object.entries(WORKSPACE_OWNERS))
   registry.placed = new Map(Object.entries(SESSION_WORKSPACES))
+  registry.roots = new Map()
   const sessionAuthority = {
     reserveSession: vi.fn(async () => ({ state: "reserved" })),
     registerRuntimeSession: vi.fn(async () => ({})),
@@ -99,8 +97,22 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
     authorizeRuntimeSession: vi.fn(async () => undefined),
     runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
   }
-  const createdRoot = (workspaceId: string, orgId: string, projectId: string) => {
+  const createdRoot = (args: RootArgs, orgId: string) => {
+    const { workspaceId, projectId } = args
     registry.owners.set(workspaceId, { userId: "alice", actorId: "actor:alice", orgId, projectId })
+    registry.roots.set(workspaceId, {
+      id: workspaceId,
+      org_id: orgId,
+      project_id: projectId,
+      workspace_name: args.displayName,
+      directory: args.remoteDirectory ?? "/workspace",
+      kind: "cloud",
+      ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
+      ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
+      ...(args.remoteDirectory ? { remote_directory: args.remoteDirectory } : {}),
+      created_at: 1,
+      updated_at: 1,
+    })
     return { workspace_id: workspaceId }
   }
   const services = {
@@ -108,11 +120,7 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
     relay: { relayUrl: "https://relay.test", resolverToken: "resolver-token" },
     sandbox,
     defaultHomeRegion: "us-east",
-    projectionStore: {
-      session_metas: vi.fn(async () => new Map()),
-      put_session_meta: vi.fn(async () => undefined),
-      delete_session_meta: vi.fn(async () => undefined),
-    },
+    projectionStore: UNUSED_PROJECTION_STORE,
     authority: {
       resolveOrgId: vi.fn(async (auth: { user: { subject: string } }) => ORGS[auth.user.subject] ?? "org-unknown"),
       authorizeProject: vi.fn(async (auth: { user: { subject: string } }, args: { projectId: string }) =>
@@ -124,14 +132,13 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
       }),
       resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => registry.owners.get(workspaceId)),
       authorizeWorkspaceCreate: vi.fn(async (auth: { user: { subject: string } }) => ({ orgId: ORGS[auth.user.subject] ?? "org-unknown" })),
-      createCloudWorkspace: vi.fn(async (auth: { user: { subject: string } }, args: { workspaceId: string; projectId: string }) =>
-        createdRoot(args.workspaceId, ORGS[auth.user.subject] ?? "org-unknown", args.projectId),
+      createCloudWorkspace: vi.fn(async (auth: { user: { subject: string } }, args: RootArgs) =>
+        createdRoot(args, ORGS[auth.user.subject] ?? "org-unknown"),
       ),
-      createRuntimeCloudWorkspace: vi.fn(async (_principal: unknown, args: { workspaceId: string; orgId: string; projectId: string }) =>
-        createdRoot(args.workspaceId, args.orgId, args.projectId),
+      createRuntimeCloudWorkspace: vi.fn(async (_principal: unknown, args: RootArgs & { orgId: string }) =>
+        createdRoot(args, args.orgId),
       ),
       deleteWorkspace: vi.fn(async () => ({})),
-      deleteRuntimeWorkspace: vi.fn(async () => ({})),
       reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string; workspaceId: string }) => {
         registry.placed.set(intent.sessionId, intent.workspaceId)
         return { ...intent, changed: true, state: "reserved" as const }
@@ -892,21 +899,16 @@ describe("hosted Tasks cloud start from inside a session", () => {
     return { driver, ensured }
   }
 
-  beforeEach(async () => {
+  /** The project's source and the roots the authority filed, as the D1 rows answer them. */
+  const reads: TasksHostReads = {
+    workspace: async (workspaceId) => registry.roots.get(workspaceId),
+    projectWorkspaces: async () => [],
+    projectSource: async (projectId) => (projectId === "project-a" ? { repoUrl: PROJECT_REPO, gitBranch: "main" } : undefined),
+    sessions: async () => new Map(),
+  }
+
+  beforeEach(() => {
     fakeRuntime()
-    for (const workspace of await listWorkspaces()) await deleteWorkspace(workspace.id)
-    await ensureWorkspace({
-      workspaceId: "project-a",
-      project_id: "project-a",
-      project_name: "importer",
-      workspace_name: "importer",
-      directory: "/workspace",
-      kind: "cloud",
-      driver: "modal",
-      repo_url: PROJECT_REPO,
-      git_branch: "main",
-      remote_directory: "/workspace",
-    })
   })
 
   const startBody = (presetId: string, startedFrom?: { workspaceId: string; sessionId: string }) => ({
@@ -935,6 +937,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
           createHostedTasksSessionBridge({
             services,
             runtimeClient: {},
+            reads,
             principal,
             auth,
             owner,
@@ -1074,6 +1077,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
           createHostedTasksSessionBridge({
             services,
             runtimeClient: {},
+            reads,
             principal,
             auth,
             owner,

@@ -51,7 +51,14 @@ export {
   type TasksStorePort,
 } from "./ports/store"
 
-export { configurationEntries, draftHarnesses, validatePresetDraft, type HarnessLookup } from "./presets/model"
+export {
+  cloudPresetHarnessRefusal,
+  configurationEntries,
+  draftHarnesses,
+  presetCloudHarnessRefusal,
+  validatePresetDraft,
+  type HarnessLookup,
+} from "./presets/model"
 export { createPresetsService, type PresetsService, type PresetsServiceDeps } from "./presets/service"
 export {
   validateReparent,

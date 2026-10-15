@@ -20,6 +20,12 @@ function startOf(target: SandboxTargetResult, epoch: number | undefined) {
   return start && (epoch === undefined || start.epoch === epoch) ? start : undefined
 }
 
+/** How long the start the lease records for `epoch` has run by this server's clock; nothing when the lease records no start of that epoch. */
+export function startElapsedMs(target: SandboxTargetResult, epoch: number, now = Date.now()): number | undefined {
+  const start = startOf(target, epoch)
+  return start ? Math.max(0, now - start.requestedAt) : undefined
+}
+
 /**
  * The provisioning connection answer, the connect and the read alike: the
  * start's own facts, and the phases its lease has recorded so far, with the

@@ -3,4 +3,5 @@ export { useCloudWorkspaces, useRunningCloudWorkspaces, type CloudWorkspaceRow, 
 export { canStart, canStop, cloudFailureReason } from "./model"
 export { useWorkspaceName, type WorkspaceName } from "./view/workspace-name"
 export { useWakeProgress } from "./view/wake-progress"
+export { useWakeWorkspace } from "./view/wake-workspace"
 export { createMachineSizeChoice, MachineSizeField, useMachineSizeName, type MachineSizeChoice } from "./view/machine-size"

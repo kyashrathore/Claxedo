@@ -10,8 +10,6 @@ import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { hostedTasksRouteContributions } from "./tasks-contributions"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { projectEnvironment } from "@claxedo/server-core/projects/environment"
-import { workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
@@ -83,6 +81,8 @@ export function composeBetterAuthD1AgentPlugins(
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,
     ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged, pushRuntime: base.runtimeDelivery.provisionRuntime } : {}),
+    ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
+    ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
   })
   const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
     const [basePreparation, featurePreparation] = await Promise.all([
@@ -101,13 +101,8 @@ export function composeBetterAuthD1AgentPlugins(
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
     selectedCapabilities: feature.selectedCapabilities,
-    rootEnvironment: async (root) => ({
-      ...workspaceRuntimeProjectEnv(
-        base.plane.orgCredentials ? await projectEnvironment(base.plane.orgCredentials(root.orgId), root.orgId).values(root.projectId) : {},
-      ),
-      ...(await feature.rootEnvironment(root)),
-    }),
-    releaseRuntime: feature.releaseRuntime,
+    rootEnvironment: feature.rootEnvironment,
+    ...(base.options.productWorkspace?.prepareRuntime ? { workspaceRuntime: base.options.productWorkspace.prepareRuntime } : {}),
     cloudCreateAdmission: {
       // The same entitlement gate the create route answers through, so a
       // task-driven create is billed or refused on the same tenant — the

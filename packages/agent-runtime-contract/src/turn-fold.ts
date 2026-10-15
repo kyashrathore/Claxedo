@@ -246,21 +246,34 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error
 }
 
-function answerGroupKey(groups: readonly PartGroup[], part: FoldablePartLookup): string | undefined {
-  return groups.findLast((group) => group.type === "part" && part(group.ref)?.type === "text")?.key
+function holdsTool(group: PartGroup, part: FoldablePartLookup): boolean {
+  return group.type !== "part" || part(group.ref)?.type === "tool"
 }
 
-function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, answerKey: string | undefined): boolean {
+function answerGroups(groups: readonly PartGroup[], part: FoldablePartLookup): PartGroup[] {
+  const lastTool = groups.findLastIndex((group) => holdsTool(group, part))
+  return groups.slice(lastTool + 1).filter((group) => group.type === "part" && part(group.ref)?.type === "text")
+}
+
+function answerGroupKeys(groups: readonly PartGroup[], part: FoldablePartLookup): ReadonlySet<string> {
+  return new Set(answerGroups(groups, part).map((group) => group.key))
+}
+
+export function answerPartRefs(groups: readonly PartGroup[], part: FoldablePartLookup): PartRef[] {
+  return answerGroups(groups, part).flatMap(groupMembers)
+}
+
+function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, answerKeys: ReadonlySet<string>): boolean {
   if (group.type !== "part") return true
-  if (group.key === answerKey) return false
+  if (answerKeys.has(group.key)) return false
   const resolved = part(group.ref)
   if (!resolved) return false
   return resolved.type === "text" || resolved.type === "reasoning" || resolved.type === "tool"
 }
 
 export function countFoldableGroups(groups: readonly PartGroup[], part: FoldablePartLookup) {
-  const answerKey = answerGroupKey(groups, part)
-  return groups.reduce((count, group) => (isFoldableGroup(group, part, answerKey) ? count + 1 : count), 0)
+  const answerKeys = answerGroupKeys(groups, part)
+  return groups.reduce((count, group) => (isFoldableGroup(group, part, answerKeys) ? count + 1 : count), 0)
 }
 
 type TurnFoldStatus = {
@@ -304,12 +317,12 @@ export function foldedGroupKeys(
   part: FoldablePartLookup,
 ): ReadonlySet<string> {
   if (!decision.folded) return NO_KEYS
-  const answerKey = answerGroupKey(groups, part)
+  const answerKeys = answerGroupKeys(groups, part)
   return new Set(
     groups
       .filter(
         (group) =>
-          isFoldableGroup(group, part, answerKey) &&
+          isFoldableGroup(group, part, answerKeys) &&
           (decision.explicit || !groupMembers(group).some((ref) => part(ref)?.userOpen)),
       )
       .map((group) => group.key),

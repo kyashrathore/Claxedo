@@ -13,6 +13,7 @@ import type {
 import type { SessionStatus } from "@/server"
 import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import {
+  answerPartRefs,
   assistantMessageSettled,
   cancelledAssistantMessageId,
   countFoldableGroups,
@@ -90,13 +91,15 @@ export namespace Timeline {
     const compaction = userParts.some((p) => p.type === "compaction")
     const handoff = userParts.flatMap(readHandoffPart)[0]
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
+    const runStopped = isActive && status === "interrupted" && lastAssistantMessage !== undefined
+      && typeof lastAssistantMessage.time.completed !== "number"
     const shape = turnFoldShape({
       assistantMessages,
       partsOf: getMessageParts,
       hasText,
       showReasoning,
       compaction,
-      cancelledAssistantMessageId: cancelledAssistantMessageId(lastTurn),
+      cancelledAssistantMessageId: runStopped ? lastAssistantMessage.id : cancelledAssistantMessageId(lastTurn),
     })
     const interrupted = shape.interruptedMessageIndex !== -1
     const errorMessage = shape.errorMessage
@@ -151,7 +154,7 @@ export namespace Timeline {
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
     const interruptedActivityTime =
-      interrupted && !shape.harnessInterrupted
+      interrupted && !shape.harnessInterrupted && !runStopped
         ? lastTurn?.completedAt
         : interrupted && lastAssistantMessage
           ? lastKnownPartActivity(getMessageParts(lastAssistantMessage.id))
@@ -208,7 +211,7 @@ export namespace Timeline {
           TimelineRow.TurnDivider({
             userMessageId: userMessage.id,
             label: "interrupted",
-            ...(typeof durationMs === "number" ? { durationMs } : {}),
+            ...(typeof durationMs === "number" && !runStopped ? { durationMs } : {}),
           }),
         )
         return
@@ -402,6 +405,24 @@ export namespace Timeline {
     lastTurn?: TurnOutcome,
   ) {
     return turnInterruption(assistantMessages, cancelledAssistantMessageId(lastTurn)).index !== -1
+  }
+
+  export function turnAnswerPartIds(
+    assistantMessages: AssistantMessage[],
+    getMessageParts: (messageId: string) => Part[],
+    hasText: (part: Part) => boolean,
+    lastTurn?: TurnOutcome,
+  ): string[] {
+    const shape = turnFoldShape({
+      assistantMessages,
+      partsOf: getMessageParts,
+      hasText,
+      showReasoning: false,
+      compaction: false,
+      cancelledAssistantMessageId: cancelledAssistantMessageId(lastTurn),
+    })
+    const partById = new Map(shape.refs.map((ref) => [ref.part.id, ref.part] as const))
+    return answerPartRefs(turnSegments(shape.refs, shape).flat(), (ref) => partById.get(ref.partId)).map((ref) => ref.partId)
   }
 
   export type GroupMember = { message: PresentationMessage; part: ToolPart | ReasoningPart }

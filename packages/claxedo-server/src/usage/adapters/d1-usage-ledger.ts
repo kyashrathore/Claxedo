@@ -231,7 +231,7 @@ function rollUp(rows: readonly GroupRow[], identity: (row: GroupRow) => Record<s
 }
 
 export type D1UsageLedger = UsageReportWriter
-  & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts" | "machineTime">>
+  & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts" | "latestHarnessModel" | "machineTime">>
 
 /**
  * The hosted plane's usage store: the latest revision of every reported turn,
@@ -386,6 +386,16 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
         limit ?
       `).bind(query.org_id, query.user_id, query.since, query.until, query.limit).all<FactRow>()
       return rows.results.flatMap((row) => usageFactFromRow(row) ?? [])
+    },
+
+    async latestHarnessModel(query) {
+      const row = await database.prepare(`
+        select model_id from usage_turn_facts
+        where org_id = ? and user_id = ? and observed_at >= ? and harness = ? and status = 'completed'
+        order by observed_at desc
+        limit 1
+      `).bind(query.org_id, query.user_id, query.since, query.harness).first<{ model_id: string }>()
+      return row?.model_id
     },
 
     machineTime: async (query) => priceMachineTime(await readMachineTime(database, query)),

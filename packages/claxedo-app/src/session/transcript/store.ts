@@ -6,7 +6,7 @@ import type { TranscriptConversation } from "@/transcript"
 import { createTranscriptContext, type TranscriptContext, type TranscriptDeps } from "./context"
 import { NO_PARTS, lastUserMessageId } from "./conversation"
 import { applyServerEvent } from "./events"
-import { settleTurn } from "./settle"
+import { settleEndedTurn } from "./settle"
 import { isReading, type SessionPhase } from "./model"
 import { loadOlder } from "./older"
 import { loadPart } from "./part"
@@ -104,7 +104,7 @@ export function createSessionTranscript(server: Server, ref: SessionLocation, de
     retained: () => retainedSession(context),
     apply: (event) => {
       applyServerEvent(context, event)
-      if (event.type === "statusChanged" && event.status.kind === "idle") void settleTurn(context)
+      if (event.type === "statusChanged") void settleEndedTurn(context, event.status)
     },
     gap: () => {
       void readSnapshot(context)

@@ -55,7 +55,6 @@ export default {
   "settings.providers.agents.removingAccount": "削除中…",
   "settings.providers.accountSource.own": "自分のアカウント",
   "settings.providers.accountSource.org": "組織アカウント",
-  "settings.providers.accountSource.unavailable": "{{name}} を実行できません: 組織にこのプロバイダーのアカウントがありません。使用するには自分のアカウントを選択してください。",
   "settings.providers.accountSource.label": "{{name}} に使用するアカウント",
   "settings.providers.live.ok": "利用可能",
   "settings.providers.live.authFailed": "プロバイダーに拒否されました",

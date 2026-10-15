@@ -20,10 +20,20 @@ import { createEgressWarnings } from "./egress-warnings"
 import { sweepSandboxes } from "./garbage-collect"
 import {
   isSandboxHostGone,
+  isSandboxProviderKeyRefused,
+  isSandboxProviderRateLimited,
   isSandboxRuntimeBootFailure,
+  isSandboxStartRefusal,
+  SANDBOX_RETRY_CAP_EXCEEDED,
   sandboxHostGoneError,
+  sandboxLeaseEndedUnderStart,
   sandboxLeaseFailure,
+  sandboxProviderFailedError,
+  sandboxProviderKeyRefusedError,
+  sandboxProviderRateLimit,
+  sandboxProviderRateLimitedError,
   sandboxRuntimeBootFailedError,
+  sandboxStartLimitRetryMs,
 } from "./lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import {
@@ -54,6 +64,10 @@ function sandboxId(driver: string, workspaceId: string) {
   return `${driver}-${workspaceId}`
 }
 
+function leaseHostId(driver: SandboxDriver, workspaceId: string, lease: SandboxLease, managerInput: SandboxManagerInput | undefined) {
+  return managerInput?.hostId ?? lease.hostId ?? sandboxId(driver.id, workspaceId)
+}
+
 /**
  * Build the driver-facing ensure input.
  *
@@ -70,6 +84,7 @@ function ensureHostInput(input: {
   lease: SandboxLease
   homeRegion: SandboxRegion
   managerInput?: SandboxManagerInput
+  leaseEnv?: Record<string, string>
   appLabel: string
 }): SandboxDriverEnsureInput {
   const egress = sandboxEgressDisposition(input.driver.metadata.egressControl, input.managerInput?.net)
@@ -82,7 +97,7 @@ function ensureHostInput(input: {
   }
   return {
     workspaceId: input.workspaceId,
-    hostId: input.managerInput?.hostId ?? input.lease.hostId ?? sandboxId(input.driver.id, input.workspaceId),
+    hostId: leaseHostId(input.driver, input.workspaceId, input.lease, input.managerInput),
     homeRegion: input.homeRegion,
     epoch: input.lease.epoch,
     labels,
@@ -97,7 +112,7 @@ function ensureHostInput(input: {
     workspaceRoot: input.managerInput?.workspaceRoot ?? "/workspace",
     runtimeCwd: input.managerInput?.runtimeCwd,
     workspaceRuntimePort: input.managerInput?.workspaceRuntimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT,
-    env: input.managerInput?.env ?? {},
+    env: { ...input.managerInput?.env, ...input.leaseEnv },
     // Brokered secrets ride their own channel — NEVER merged into labels or env.
     // Presence of the key, not its length, is the signal: `[]` is the caller
     // withdrawing every brokered secret, and dropping it would reach the driver
@@ -211,6 +226,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         ...(lease.nextRetryAt !== undefined ? { retryAfterMs: Math.max(0, lease.nextRetryAt - now()) } : {}),
         ...(failure ? { failure } : {}),
         ...(lease.start && (lease.status === "acquiring" || lease.status === "unavailable") ? { start: { ...lease.start, epoch: lease.epoch } } : {}),
+        ...(lease.status === "acquiring" && lease.hostId ? { booting: { epoch: lease.epoch, hostId: lease.hostId } } : {}),
       }
     }
     const booted = resource.labels?.[SANDBOX_IMAGE_LABEL]
@@ -235,12 +251,18 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     enteredAt: number,
   ): Promise<SandboxEnsureResult> {
     try {
+      const leaseEnv = await managerInput.leaseEnv?.({ epoch: lease.epoch, hostId: leaseHostId(options.driver, workspaceId, lease, managerInput) })
+      const identityConflicts = workspaceRuntimeIdentityEnvConflicts(leaseEnv)
+      if (identityConflicts.length) {
+        return { status: "unavailable", error: `sandbox env cannot set runtime identity: ${identityConflicts.join(", ")}`, epoch: lease.epoch, homeRegion }
+      }
       const ensure = ensureHostInput({
         driver: options.driver,
         workspaceId,
         homeRegion,
         lease,
         managerInput,
+        ...(leaseEnv ? { leaseEnv } : {}),
         appLabel: options.appLabel ?? DEFAULT_APP_LABEL,
       })
       // Fail-closed: a brokered secret must never be downgraded to readable
@@ -326,7 +348,13 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         return hostGone(workspaceId, lease, managerInput, message, enteredAt)
       }
       const bootFailed = isSandboxRuntimeBootFailure(err)
-      const error = bootFailed ? sandboxRuntimeBootFailedError(message) : message
+      const startLimit = !bootFailed && isSandboxProviderRateLimited(err) ? err.providerRateLimited : undefined
+      const error = bootFailed
+        ? sandboxRuntimeBootFailedError(message)
+        : startLimit ? sandboxProviderRateLimitedError(options.driver.id, startLimit)
+        : isSandboxProviderKeyRefused(err) ? sandboxProviderKeyRefusedError(options.driver.id, message)
+        : isSandboxStartRefusal(err) || sandboxLeaseEndedUnderStart(message) ? message
+        : sandboxProviderFailedError(options.driver.id, message)
       if (lease.status === "ready" && !bootFailed) {
         // A single resume blip must not demote a serving lease: the existing
         // ready target keeps resolving for relay routing while we record the
@@ -339,26 +367,33 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         }
       }
       const nextRetryCount = lease.retryCount + 1
-      const retryCapped = nextRetryCount >= maxRetryCount
+      // A day's start limit is refused again at every attempt until it frees
+      // up, at a time the provider does not name, so nothing retries it: the
+      // next start is a person's.
+      const startLimitRetryMs = startLimit ? sandboxStartLimitRetryMs(startLimit.window) : undefined
+      const dayLimited = startLimit !== undefined && startLimitRetryMs === undefined
+      const retryCapped = dayLimited || nextRetryCount >= maxRetryCount
       // A boot failure is never retried on its own and a capped lease waits
       // out a cooldown nobody drives: a host held through either would run
       // unattended. A provider failure is retried within its backoff on the
       // host as it is, since stopping and resuming it costs minutes.
-      const unstopped = bootFailed || retryCapped ? await stopHeldHost(workspaceId, lease.epoch) : undefined
-      const recorded = unstopped ? `${error}; ${unstopped}` : error
-      lifecycle.failed(lease, { bootFailed, retrying: !bootFailed && !retryCapped })
-      const failed = await options.leaseStore.recordFailure(
-        workspaceId,
-        lease.epoch,
-        recorded,
-        now() + (retryCapped ? retryCapCooldownMs : retryDelayMs(nextRetryCount)),
-      )
+      const hostLeftRunning = bootFailed || retryCapped ? !(await stopHeldHost(workspaceId, lease.epoch)) : false
+      lifecycle.failed(lease, {
+        bootFailed,
+        retrying: !bootFailed && !retryCapped,
+        ...(startLimit ? { startLimit: startLimit.window } : {}),
+        ...(hostLeftRunning ? { hostLeftRunning: true as const } : {}),
+      })
+      const backoffMs = retryCapped ? retryCapCooldownMs : retryDelayMs(nextRetryCount)
+      const retryInMs = dayLimited ? undefined : Math.max(backoffMs, startLimitRetryMs ?? 0)
+      const failed = await options.leaseStore.recordFailure(workspaceId, lease.epoch, error, retryInMs === undefined ? undefined : now() + retryInMs)
       return {
         status: "unavailable",
-        retryAfterMs: failed?.nextRetryAt ? Math.max(0, failed.nextRetryAt - now()) : retryAfterMs,
-        error: recorded,
+        ...(dayLimited ? {} : { retryAfterMs: failed?.nextRetryAt ? Math.max(0, failed.nextRetryAt - now()) : retryAfterMs }),
+        error,
         epoch: lease.epoch,
         homeRegion,
+        ...(retryCapped ? { exhausted: true as const } : {}),
       }
     }
   }
@@ -396,6 +431,15 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     return true
   }
 
+  /** Ends the lease of a host the provider stopped on its own, its boot closing at the last moment the host was proven serving; false when the epoch moved on first. */
+  async function endStoppedHostLease(workspaceId: string, lease: SandboxLease): Promise<boolean> {
+    const endedAt = hostLastProvenAliveAt(lease)
+    const ended = await options.leaseStore.update(workspaceId, lease.epoch, { status: "stopped", ...(endedAt === undefined ? {} : { endedAt }) })
+    if (!ended) return false
+    lifecycle.hostStopped(lease, endedAt)
+    return true
+  }
+
   /**
    * The latest moment the lease's own record proves its host served: the last
    * start phase observed on it, the last liveness report, the last activity.
@@ -421,17 +465,24 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     }
   }
 
-  /** Stops the host the epoch holds, if it holds one and the driver can; otherwise why it still runs, or nothing. */
-  async function stopHeldHost(workspaceId: string, epoch: number): Promise<string | undefined> {
+  /**
+   * Stops the host the epoch holds, if it holds one and the driver can; false
+   * when that stop failed and the host may still run. The failure is the
+   * operator's, so it is logged rather than added to the start's reason.
+   */
+  async function stopHeldHost(workspaceId: string, epoch: number): Promise<boolean> {
     const current = await options.leaseStore.get(workspaceId)
     const resource = current?.epoch === epoch ? leaseResource(current) : undefined
     const stopHost = options.driver.suspend ?? options.driver.stop
-    if (!current || !resource || !stopHost) return undefined
+    if (!current || !resource || !stopHost) return true
     try {
       await stopHost({ ...resource, ...(current.checkpoint ? { checkpoint: current.checkpoint.providerReference } : {}) })
-      return undefined
+      return true
     } catch (stopError) {
-      return `host ${resource.sandboxId} not stopped: ${stopError instanceof Error ? stopError.message : String(stopError)}`
+      console.warn("A sandbox host was not stopped after its start failed", {
+        workspaceId, epoch, sandboxId: resource.sandboxId, error: stopError instanceof Error ? stopError.message : String(stopError),
+      })
+      return false
     }
   }
 
@@ -463,14 +514,17 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         error: existing.lastError,
         epoch: existing.epoch,
         homeRegion: existing.homeRegion,
+        ...(existing.retryCount >= maxRetryCount ? { exhausted: true as const } : {}),
       }
     }
-    if (existing.status === "unavailable" && existing.retryCount >= maxRetryCount && existing.nextRetryAt === undefined) {
+    // A day's start limit leaves no retry scheduled, and the next start runs the driver.
+    if (existing.status === "unavailable" && existing.retryCount >= maxRetryCount && existing.nextRetryAt === undefined
+      && sandboxProviderRateLimit(existing.lastError) !== "day") {
       // Capped lease without a cooldown timestamp (legacy rows): stay
       // unavailable until an operator releases the lease.
       return {
         status: "unavailable",
-        error: existing.lastError ?? "runtime_retry_cap_exceeded",
+        error: existing.lastError ?? SANDBOX_RETRY_CAP_EXCEEDED,
         epoch: existing.epoch,
         homeRegion: existing.homeRegion,
       }
@@ -655,12 +709,17 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         return (await ended(resource, await hostStopped(stopHost, resource))) ?? { ok: false, reason: "runtime_lease_changed" }
       })
     },
-    async endIfHostGone(workspaceId, epoch) {
+    async endIfHostDown(workspaceId, epoch) {
       const lease = await options.leaseStore.get(workspaceId)
-      if (!lease || lease.epoch !== epoch || !options.driver.inspect) return false
+      if (!lease || lease.epoch !== epoch || !options.driver.inspect) return undefined
       const target = await leaseTarget(lease)
-      if (target.status !== "ready" || await options.driver.inspect(target)) return false
-      return await endGoneHostLease(workspaceId, lease, `${target.sandboxId} is gone`)
+      if (target.status !== "ready") return undefined
+      const state = await options.driver.inspect(target)
+      if (state === "serving") return undefined
+      const ended = state === "gone"
+        ? await endGoneHostLease(workspaceId, lease, `${target.sandboxId} is gone`)
+        : await endStoppedHostLease(workspaceId, lease)
+      return ended ? state : undefined
     },
     async destroy(workspaceId) {
       return await mutationLifecycle(workspaceId, "destroy", async () => {

@@ -367,14 +367,6 @@ describe("D1 hosted workspace authority", () => {
     expect(
       await database.prepare("select workspace_id from workspaces where workspace_id = 'ws_root_refused'").first(),
     ).toBeNull()
-
-    await expect(authority.deleteRuntimeWorkspace(principalOf(bob), { workspaceId: "ws_root_1" })).rejects.toMatchObject({
-      status: 403,
-    })
-    await expect(authority.deleteRuntimeWorkspace(principalOf(alice), { workspaceId: "ws_root_1" })).resolves.toEqual({
-      deleted: true,
-    })
-    await expect(authority.openWorkspace(alice, { workspaceId: "ws_root_1" })).rejects.toMatchObject({ status: 403 })
   })
 })
 

@@ -15,8 +15,9 @@ const bootstrap = {
   events: { hostAggregate: false },
 }
 
-function worker(options: { unauthorized?: boolean; malformed?: boolean; identityUnavailable?: boolean } = {}) {
+function worker(options: { unauthorized?: boolean; malformed?: boolean; identityUnavailable?: boolean; databaseUnavailable?: number } = {}) {
   const calls: { path: string; init?: RequestInit }[] = []
+  let unavailable = options.databaseUnavailable ?? 0
   globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input)
     calls.push({ path: `${url.pathname}${url.search}`, init })
@@ -27,6 +28,10 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean; identity
     }
     if (url.pathname === "/api/workspace/create") return Response.json({ workspaceId: "ws_cloud", directory: "workspace:ws_cloud" })
     if (url.pathname === "/api/workspace") {
+      if (unavailable > 0 && url.searchParams.get("host") === "provisioner") {
+        unavailable -= 1
+        return Response.json({ error: { code: "database_unavailable", message: "The database did not answer. Try again.", retryable: true } }, { status: 503 })
+      }
       if (options.identityUnavailable) return Response.json({ error: { code: "auth_verifier_unavailable", message: "Application identity mapping is unavailable", retryable: false } }, { status: 503 })
       if (options.unauthorized) return Response.json({ error: { code: "session_expired", message: "Sign in again" } }, { status: 401 })
       if (options.malformed) return Response.json({ workspaces: "wrong" })
@@ -86,6 +91,39 @@ for (const [options, failure] of [
     })
   })
 }
+
+test("a transient database failure on the account catalog is retried before the shell opens", async () => {
+  const calls = worker({ databaseUnavailable: 1 })
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
+    try {
+      await server.ready
+      expect(server.startup().kind).toBe("ready")
+      expect(server.placements.list().map((placement) => String(placement.id))).toEqual(["ws_cloud", "ws_machine"])
+      expect(calls.filter((call) => call.path === "/api/workspace?host=provisioner")).toHaveLength(2)
+    } finally { server.dispose(); dispose() }
+  })
+}, 10_000)
+
+test("an account catalog that stays unavailable opens the shell and fails only the sections that read it, which recover on retry", async () => {
+  const calls = worker({ databaseUnavailable: Number.POSITIVE_INFINITY })
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
+    const originalError = console.error
+    console.error = () => undefined
+    try {
+      await server.ready
+      expect(server.startup().kind).toBe("ready")
+      expect(server.capabilities()).toMatchObject({ signedIn: true })
+      expect(server.placements.complete()).toBe(false)
+      await expect(server.queryClient.fetchQuery(server.queries.projects.list())).rejects.toMatchObject({ class: "network", code: "database_unavailable", retryable: true })
+      expect(calls.filter((call) => call.path === "/api/workspace?host=provisioner").length).toBeGreaterThan(3)
+      worker()
+      expect((await server.queryClient.fetchQuery(server.queries.projects.list())).map((project) => String(project.id))).toEqual(["prj_app"])
+      expect(server.placements.complete()).toBe(true)
+    } finally { console.error = originalError; server.dispose(); dispose() }
+  })
+}, 20_000)
 
 for (const action of ["update", "remove", "reclone"] as const) {
   test(`hosted project ${action} refuses daemon configuration without a request`, async () => {

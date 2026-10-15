@@ -5,7 +5,7 @@ import { Select, useDialog } from "@/ui"
 import { useAccountsText } from "../i18n"
 import { useSandboxKeys, type SandboxKeysStore, type SandboxListing } from "../sandbox-store"
 import { DrawerSandboxKey } from "./sandbox-key-form"
-import { SandboxKeyRow } from "./sandbox-key-row"
+import { KeyRow } from "./key-row"
 
 const LINK = "rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base"
 
@@ -44,7 +44,7 @@ function SandboxKeys(props: { readonly listing: SandboxListing; readonly store: 
       <SettingsIntro description={t("settings.sandbox.description")} action={add} />
       <SettingsList>
         <DefaultDriver listing={props.listing} store={props.store} />
-        <For each={props.listing.keys}>{(account) => <SandboxKeyRow account={account} label={label(account.providerId)} store={props.store} />}</For>
+        <For each={props.listing.keys}>{(account) => <KeyRow account={account} label={label(account.providerId)} store={props.store} />}</For>
       </SettingsList>
       <Show when={props.listing.keys.length === 0}>
         <SettingsEmpty>

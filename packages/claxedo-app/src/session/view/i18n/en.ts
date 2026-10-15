@@ -38,6 +38,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.permission.allowOnce"
   | "sessionScreen.permission.workingDirectory"
   | "sessionScreen.permission.details"
+  | "sessionScreen.permission.tool"
   | "sessionScreen.permission.tool.read"
   | "sessionScreen.permission.tool.edit"
   | "sessionScreen.permission.tool.glob"
@@ -77,6 +78,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.starting"
   | "sessionScreen.workspace.wakeFailed"
   | "sessionScreen.workspace.retryWake"
+  | "sessionScreen.workspace.tryAgainAfter"
   | "sessionScreen.workspace.wakeNow"
   | "sessionScreen.workspace.outdated"
   | "sessionScreen.workspace.outdated.detail"
@@ -129,6 +131,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.permission.allowOnce": "Allow once",
   "sessionScreen.permission.workingDirectory": "Working directory",
   "sessionScreen.permission.details": "Details",
+  "sessionScreen.permission.tool": "Tool",
   "sessionScreen.permission.tool.read": "Reading a file (matches the file path)",
   "sessionScreen.permission.tool.edit": "Modify files, including edits, writes, and patches",
   "sessionScreen.permission.tool.glob": "Match files using glob patterns",
@@ -162,12 +165,13 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.goal.metric.tokensUsed": "{{count}} tokens",
   "sessionScreen.goal.metric.tokenBudget": "{{count}} token budget",
   "sessionScreen.goal.metric.timeUsed": "{{seconds}}s",
-  "sessionScreen.workspace.asleep": "This workspace is asleep. It wakes when a message or a tool needs it.",
+  "sessionScreen.workspace.asleep": "This workspace is asleep. It wakes when you send a message.",
   "sessionScreen.workspace.machineOffline": "This session's machine is offline. Its messages show again when the machine is back.",
   "sessionScreen.workspace.waking": "Waking {{name}}",
   "sessionScreen.workspace.starting": "Starting {{name}}",
   "sessionScreen.workspace.wakeFailed": "Couldn't wake {{name}}",
   "sessionScreen.workspace.retryWake": "Try again",
+  "sessionScreen.workspace.tryAgainAfter": "Try again after {{time}}",
   "sessionScreen.workspace.wakeNow": "Wake now",
   "sessionScreen.workspace.outdated": "{{name}} runs an older version",
   "sessionScreen.workspace.outdated.detail": "Restart it to update. Its files are kept.",

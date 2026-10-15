@@ -40,13 +40,21 @@ async function fixture(turn = answer) {
       turn: async function* ({ session }) { yield* turn(session.binding.sessionId) },
     }),
   })
-  const host = createWorkspaceHost({
-  sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
-  cleanups.push(() => host.dispose())
-  await host.apply(snapshot)
-  const app = new Hono()
-  host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
-  const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => app.request(
+  const boot = async () => {
+    const host = createWorkspaceHost({
+      sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "state"), connectionProviders: [provider] })
+    await host.apply(snapshot)
+    const app = new Hono()
+    host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
+    return { host, app }
+  }
+  let running = await boot()
+  cleanups.push(() => running.host.dispose())
+  const restart = async () => {
+    await running.host.dispose()
+    running = await boot()
+  }
+  const request = (pathname: string, method = "GET", body?: unknown) => withWorkspaceTarget(target, () => running.app.request(
     `http://runtime.test${pathname}?directory=${encodeURIComponent(directory)}`,
     { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) },
   ))
@@ -65,7 +73,7 @@ async function fixture(turn = answer) {
     messageID: "msg_a",
     parts: [{ id: "prt_a", type: "text", text: "mine" }],
   })).status).toBe(200)
-  return { request, transcript }
+  return { request, transcript, restart }
 }
 
 test.each(["/message", "/prompt_async"])("a %s prompt naming another session's message id is refused and moves none of its rows", async (route) => {
@@ -131,6 +139,34 @@ test("resubmitting a message id in its own session reruns the turn", async () =>
   expect((await f.transcript("a")).find((message) => message.id === "msg_a")?.parts).toEqual([
     { id: "msg_a-part-0", messageID: "msg_a", sessionID: "a", text: "again" },
   ])
+})
+
+test("a prompt_async under a message id its session already holds answers as the first did and starts no second turn, after the runtime restarted too", async () => {
+  let turns = 0
+  const f = await fixture((sessionId) => {
+    turns += 1
+    return answer(sessionId)
+  })
+  const sent = { messageID: "msg_lost_ack", parts: [{ type: "text", text: "once" }] }
+  const settled = async () => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      await Bun.sleep(10)
+      const status = await (await f.request("/session/status")).json() as Record<string, { type: string } | undefined>
+      if (status.a?.type !== "busy") return
+    }
+  }
+
+  expect((await f.request("/session/a/prompt_async", "POST", sent)).status).toBe(204)
+  await settled()
+  expect(turns).toBe(2)
+
+  expect((await f.request("/session/a/prompt_async", "POST", sent)).status).toBe(204)
+  await f.restart()
+  expect((await f.request("/session/a/prompt_async", "POST", sent)).status).toBe(204)
+  await settled()
+
+  expect(turns).toBe(2)
+  expect((await f.transcript("a")).filter((message) => message.id === "msg_lost_ack")).toHaveLength(1)
 })
 
 test("two sessions whose harness reuses a tool-call id each keep their own tool part", async () => {

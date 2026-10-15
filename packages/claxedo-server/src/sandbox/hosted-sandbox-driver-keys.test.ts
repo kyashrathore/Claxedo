@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { UNDELIVERED_CREDENTIAL_CHANGE } from "../credentials/worker/org-routed"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
 import { hostedSandboxKeyDrivers } from "../authority/adapters/worker/hosted-sandbox-key-drivers"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
+import { hostedOrgAdministers } from "../credentials/worker/org-administers"
 import { hostedCredentialRoutes } from "../credentials/worker/routes"
 import { d1Authority } from "../test-support/d1-authority"
 import { hostedSandboxDriverKeys } from "./hosted-sandbox-driver-keys"
+import { createD1SandboxLeaseStore } from "./stores/d1"
 import { d1OrgSandboxDriver } from "./stores/d1-org-driver"
 
 const env = { [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 9).toString("base64") }
@@ -60,7 +63,8 @@ function app() {
     authConfig,
     resolveOrgId: async () => orgId,
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
-    changed: async () => {},
+    change: UNDELIVERED_CREDENTIAL_CHANGE,
+    administers: hostedOrgAdministers(fixture.database),
     keys: envelopeKeyProviderFromEnv(env),
     fetch: provider,
     sandboxDriverKeys: hostedSandboxDriverKeys({
@@ -68,6 +72,7 @@ function app() {
       database: fixture.database,
       authority: fixture.authority,
       drivers: hostedSandboxKeyDrivers(workerEnv).drivers,
+      leaseStore: createD1SandboxLeaseStore({ database: fixture.database }),
     }),
   })
 }

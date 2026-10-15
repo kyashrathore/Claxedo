@@ -4,7 +4,7 @@ import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
-import { orgRoutedCredentials } from "../credentials/worker/org-routed"
+import { orgRoutedCredentials, UNDELIVERED_CREDENTIAL_CHANGE } from "../credentials/worker/org-routed"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { createD1UsageLedger } from "./adapters/d1-usage-ledger"
 
@@ -24,7 +24,7 @@ test("the hosted usage limits show a member their own accounts and the organizat
       const person = request.headers.get("x-test-person")
       return person ? { org_id: request.headers.get("x-test-org") ?? "org_acme", user_id: person } : undefined
     },
-    quota: createUsageQuotaReader({ credentials: orgRoutedCredentials(credentials, async () => {}) }),
+    quota: createUsageQuotaReader({ credentials: orgRoutedCredentials(credentials, UNDELIVERED_CREDENTIAL_CHANGE) }),
     pricing: tokenTrackerPricing("bundled"),
   })
   const store = credentials("org_acme")

@@ -129,6 +129,13 @@ export interface CredentialWrite {
   expires_at?: number
   scope?: AccountScope
   consent?: CredentialConsent
+  /**
+   * For the org's own row (`owner` null): the person who must still
+   * administer the organization when the row is written. A store whose
+   * organizations have roles re-reads it inside the write; a single-tenant
+   * store has no roles to read.
+   */
+  administeredBy?: string
 }
 
 /** A secret backend stores and retrieves raw secret material. */

@@ -21,7 +21,6 @@ import {
 } from "@claxedo/server-core/agent-plugins/catalog/presentation"
 import { readPluginSkill } from "@claxedo/server-core/agent-plugins/catalog/read-skill"
 import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plugins/catalog/types"
-import type { AgentPluginMcpServer, ValidatedAgentPlugin } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import {
   builtinCatalogEntry,
@@ -45,6 +44,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import { asRecord, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { signedOrError } from "../workspace/route-support"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
+import { catalogMcpServers, type CatalogCloudDelivery } from "./mcp/catalog-servers"
 import { createRequestTiming } from "./request-timing"
 import type { HostedMcpClientMetadata } from "./mcp/client-metadata"
 import type { AgentPluginSelfRuntimeReader } from "./runtime/self-runtime"
@@ -140,40 +140,6 @@ function pin(candidate: AgentPluginCatalogCandidate, digest: AgentPluginArtifact
   }
 }
 
-/**
- * How one server reaches a cloud sandbox: HTTP through the plugin gateway, a
- * local command only when the image ships it, and otherwise not at all, with
- * the reason the runtime plan will carry.
- */
-function cloudReach(server: AgentPluginMcpServer, imageCommands: readonly string[]) {
-  if (server.type === "streamable-http") return { state: "gateway" as const }
-  if (server.type !== "stdio") return { state: "unavailable" as const, reason: "mcp_transport_unsupported" }
-  const name = server.command.split("/").at(-1) ?? server.command
-  return imageCommands.includes(name)
-    ? { state: "image-command" as const }
-    : { state: "unavailable" as const, reason: "mcp_command_not_in_image" }
-}
-
-async function mcpServerViews(input: {
-  pluginInstanceId: string
-  mcp: ValidatedAgentPlugin["mcp"]
-  authentication?: AgentPluginMcpCatalogAuthenticationResolver
-  imageCommands: readonly string[]
-}) {
-  if (input.mcp.status !== "valid") return []
-  return Promise.all(input.mcp.servers.map(async (server) => {
-    const cloud = cloudReach(server, input.imageCommands)
-    if (server.type === "stdio") return { name: server.name, type: server.type, authentication: { state: "local" as const }, cloud }
-    if (server.type === "sse") {
-      return { name: server.name, type: server.type, authentication: { state: "unavailable" as const, reason: "mcp_transport_unsupported" }, cloud }
-    }
-    const authentication = input.authentication
-      ? await input.authentication({ pluginInstanceId: input.pluginInstanceId, server })
-      : { state: "unavailable" as const, reason: "mcp_auth_management_unavailable" }
-    return { name: server.name, type: server.type, authentication, cloud }
-  }))
-}
-
 /** Each harness's activation for one plugin, from the catalog's single activation read. */
 function harnessStates(snapshots: SignedActivationSnapshots, pluginInstanceId: string) {
   const rows = snapshots.get(pluginInstanceId)
@@ -206,7 +172,7 @@ async function candidateView(input: {
   snapshots: SignedActivationSnapshots
   artifacts: AgentPluginArtifactStore
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
-  imageCommands: readonly string[]
+  delivery: CatalogCloudDelivery
 }) {
   const known = input.known.find((item) => item.pluginInstanceId === input.candidate.pluginInstanceId)
   const retained = known?.pins.user ?? known?.pins.organization ?? known?.pins.claxedo
@@ -231,11 +197,11 @@ async function candidateView(input: {
     sourceAvailable: true,
     updateAvailable: Boolean(retained && retained.digest !== input.candidate.artifactDigest),
     manifest: input.candidate.manifest,
-    mcpServers: await mcpServerViews({
+    mcpServers: await catalogMcpServers({
       pluginInstanceId: input.candidate.pluginInstanceId,
       mcp: retainedArtifact?.plugin.mcp ?? input.candidate.mcp,
       ...(input.mcpAuthentication ? { authentication: input.mcpAuthentication } : {}),
-      imageCommands: input.imageCommands,
+      delivery: input.delivery,
     }),
     componentDiagnostics: input.candidate.componentDiagnostics,
     harnesses: harnessStates(input.snapshots, input.candidate.pluginInstanceId),
@@ -247,7 +213,7 @@ async function retainedView(input: {
   snapshots: SignedActivationSnapshots
   artifacts: AgentPluginArtifactStore
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
-  imageCommands: readonly string[]
+  delivery: CatalogCloudDelivery
 }) {
   const retainedPin = input.known.pins.user ?? input.known.pins.organization ?? input.known.pins.claxedo
   let retained: Awaited<ReturnType<AgentPluginArtifactStore["get"]>>
@@ -272,11 +238,11 @@ async function retainedView(input: {
     updateAvailable: false,
     manifest: retained?.plugin.manifest ?? null,
     mcpServers: retained
-      ? await mcpServerViews({
+      ? await catalogMcpServers({
           pluginInstanceId: input.known.pluginInstanceId,
           mcp: retained.plugin.mcp,
           ...(input.mcpAuthentication ? { authentication: input.mcpAuthentication } : {}),
-          imageCommands: input.imageCommands,
+          delivery: input.delivery,
         })
       : [],
     componentDiagnostics: [],
@@ -338,6 +304,10 @@ export function HostedAgentPluginRoutes(input: {
     }
     const me: unknown = await input.services.authority.usersMe(result.auth)
     return { auth: result.auth, me }
+  }
+  const organizationSecretBrokering = async (auth: SignedControlPlaneAuth) => {
+    const brokering = input.services.sandbox.orgSecretBrokering
+    return brokering && input.services.authority ? await brokering(await input.services.authority.resolveOrgId(auth)) : "none" as const
   }
   const builtInIds = () => input.builtIn.groups.map((group) => builtinPluginInstanceId(group.id))
   const builtInEntry = (snapshots: SignedActivationSnapshots) => builtinCatalogEntry({
@@ -401,17 +371,17 @@ export function HostedAgentPluginRoutes(input: {
     timing.mark("sources")
     // The source listing must not have moved activation state; the rest of
     // the read is independent of it, so those reads share one wait.
-    const [after, known, workspaceResult, organizationManager] = await Promise.all([
+    const [after, known, workspaceResult, organizationManager, secretBrokering] = await Promise.all([
       input.activations.revision(auth),
       input.activations.listKnown(auth),
       input.services.authority?.listWorkspaces(auth),
       input.administersOrganization(auth),
+      organizationSecretBrokering(auth),
     ])
+    const delivery: CatalogCloudDelivery = { imageCommands: input.imageCommands ?? [], secretBrokering }
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
     const candidateIds = new Set(resolved.candidates.map((candidate) => candidate.pluginInstanceId))
-    // A group's activation row is the built-in entry's own state; listed
-    // on its own it would be a plugin with no source and no artifact.
-    const retainedEntries = known.filter((entry) => !candidateIds.has(entry.pluginInstanceId) && !isBuiltinPluginInstanceId(entry.pluginInstanceId))
+    const retainedEntries = known.filter((entry) => !candidateIds.has(entry.pluginInstanceId))
     const snapshots = await input.activations.read(auth, {
       pluginInstanceIds: [...builtInIds(), ...candidateIds, ...retainedEntries.map((entry) => entry.pluginInstanceId)],
       ...(projectId ? { projectId } : {}),
@@ -425,14 +395,14 @@ export function HostedAgentPluginRoutes(input: {
         snapshots,
         artifacts: input.artifacts,
         ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
-        imageCommands: input.imageCommands ?? [],
+        delivery,
       }))),
       Promise.all(retainedEntries.map((entry) => retainedView({
         known: entry,
         snapshots,
         artifacts: input.artifacts,
         ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
-        imageCommands: input.imageCommands ?? [],
+        delivery,
       }))),
     ])
     timing.mark("views")

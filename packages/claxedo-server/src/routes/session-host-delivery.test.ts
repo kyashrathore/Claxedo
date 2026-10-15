@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { decodeJwt, importPKCS8, SignJWT } from "jose"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
-import { sandboxRuntimeBootFailedError } from "@claxedo/sandbox-manager"
+import { sandboxProviderFailedError, sandboxRuntimeBootFailedError } from "@claxedo/sandbox-manager"
 import { parseTurnDelivery, parseTurnExecutionAccess } from "@claxedo/harness/contract"
+import { ORG_ACCOUNT_UNAVAILABLE } from "@claxedo/agent-runtime-contract"
 import { DIRECTORY, WORKSPACE_ID, sessionHostPlane, type SessionHostPlane } from "../test-support/session-host-plane"
 
 let plane: SessionHostPlane
@@ -151,6 +152,22 @@ describe("/turn-delivery", () => {
     expect(released.status).toBe(401)
   })
 
+  test("a provider the owner chose the organization's account for, where it has none, is handed over as that refusal instead of their own account", async () => {
+    const ownerId = plane.owner.principal!.userId
+    const accounts = plane.credentials(plane.orgId)
+    await accounts.setAccountSources(["anthropic"], "org", plane.orgId, ownerId)
+    try {
+      const proof = await hostProof("rat_delivery_org")
+      const lease = await plane.acquire(proof, ROOT, "turn_delivery_org")
+      const delivery = parseTurnDelivery(await (await plane.post("/turn-delivery", { turnLease: lease.leaseId })).json())
+      expect(delivery!.auth.accounts).toEqual({ [ownerId]: { anthropic: { unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE } } })
+      expect(delivery!.auth.direct?.[ownerId]?.anthropic).toBeUndefined()
+      await release(proof, ROOT, lease)
+    } finally {
+      await accounts.setAccountSources(["anthropic"], "own", plane.orgId, ownerId)
+    }
+  })
+
   test("a machine's lease gets nothing for the session it serves", async () => {
     const lease = await plane.acquire(await vmProof("rat_vm_delivery"), VM, "turn_vm_delivery")
     expect((await plane.post("/turn-delivery", { turnLease: lease.leaseId })).status).toBe(403)
@@ -215,7 +232,13 @@ describe("/turn-credential-refused", () => {
     const cursor = await accounts.putCredential({ owner: ownerId, provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "cursor-owner-2" })
     const health = async (id: string) => (await accounts.getCredential!(id))?.health ?? null
     const lease = await plane.acquire(proof, root, "turn_refused")
-    const refused = (credentialId: string, turnLease = lease.leaseId) => plane.post("/turn-credential-refused", { turnLease, credentialId })
+    const refused = (credentialId: string, turnLease = lease.leaseId, report: { revision?: number; status?: number } = {}) =>
+      plane.post("/turn-credential-refused", { turnLease, credentialId, revision: 1, status: 401, ...report })
+
+    expect(await (await refused(spent.id, lease.leaseId, { status: 403 })).json()).toEqual({ refusal: "ignored" })
+    expect(await (await refused(spent.id, lease.leaseId, { status: 402 })).json()).toEqual({ refusal: "ignored" })
+    expect(await (await refused(spent.id, lease.leaseId, { revision: 7 })).json()).toEqual({ refusal: "stale" })
+    expect(await health(spent.id)).toBeNull()
 
     const first = await refused(spent.id)
     expect(first.status).toBe(200)
@@ -235,6 +258,7 @@ describe("/turn-credential-refused", () => {
     expect(await health(cursor.id)).toBeNull()
     expect((await refused(spent.id, await expiredLease())).status).toBe(401)
     expect((await plane.post("/turn-credential-refused", { turnLease: lease.leaseId })).status).toBe(400)
+    expect((await plane.post("/turn-credential-refused", { turnLease: lease.leaseId, credentialId: spent.id })).status).toBe(400)
   })
 })
 
@@ -264,7 +288,7 @@ describe("/turn-execution", () => {
     expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
   })
 
-  test("a call that asks starts a machine that is not running as the workspace's owner and answers at once that this call started it; a call while it starts joins that start", async () => {
+  test("a call that asks starts a machine that is not running as the workspace's owner and answers at once that this call started it, when to ask again, and, joining that start, how long it has run", async () => {
     const root = "ses_pi_execution_start"
     const proof = await plane.createHostedSession(root)
     const lease = await plane.acquire(proof, root, "turn_execution_start")
@@ -273,10 +297,15 @@ describe("/turn-execution", () => {
     plane.starting({ status: "provisioning", epoch: 2, retryAfterMs: 2_000, homeRegion: "us-east" })
     const started = await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })
     expect(started.status).toBe(409)
-    expect(await started.json()).toEqual({ error: { code: "cloud_runtime_starting", started: true } })
+    expect(await started.json()).toEqual({ error: { code: "cloud_runtime_starting", started: true, retryAfterMs: 2_000 } })
+    const requestedAt = Date.now() - 35_000
+    plane.serve({ ...NOT_RUNNING, start: { epoch: 2, requestedAt, startedAt: requestedAt, markedAt: requestedAt, bootMode: "resume", phases: [] } })
     plane.starting({ status: "provisioning", epoch: 2, retryAfterMs: 2_000, homeRegion: "us-east", joined: true })
     const joined = await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })
-    expect(await joined.json()).toEqual({ error: { code: "cloud_runtime_starting", started: false } })
+    const answer = (await joined.json()) as { error: { sinceStartMs: number } }
+    expect(answer).toEqual({ error: { code: "cloud_runtime_starting", started: false, retryAfterMs: 2_000, sinceStartMs: expect.any(Number) } })
+    expect(answer.error.sinceStartMs).toBeGreaterThanOrEqual(35_000)
+    expect(answer.error.sinceStartMs).toBeLessThan(45_000)
     expect(plane.starts.slice(starts)).toEqual([{ workspaceId: WORKSPACE_ID }, { workspaceId: WORKSPACE_ID }])
     expect(plane.entitledOrgs.at(-1)).toBe(plane.orgId)
   })
@@ -287,7 +316,7 @@ describe("/turn-execution", () => {
     const lease = await plane.acquire(proof, root, "turn_execution_start_refused")
     plane.serve(NOT_RUNNING)
     const refusal = async () => await (await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })).json()
-    plane.starting({ status: "unavailable", homeRegion: "us-east", retryAfterMs: 0, error: sandboxRuntimeBootFailedError("the branch main is gone") })
+    plane.starting({ status: "unavailable", homeRegion: "us-east", retryAfterMs: 0, error: sandboxRuntimeBootFailedError("the branch main is gone\n    at checkOut (a.mjs:1:1)") })
     expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: the branch main is gone" } })
     plane.starting({ status: "failed", code: "runtime_prepare_failed", message: "the settings could not be prepared" })
     expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: the settings could not be prepared" } })
@@ -297,6 +326,24 @@ describe("/turn-execution", () => {
       expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: this organization's plan runs no cloud workspaces" } })
     } finally { plane.entitle(undefined) }
     expect(plane.starts.length).toBe(starts)
+  })
+
+  test("a start that failed and is backing off is refused in one line naming the provider, without its request or code, and when it is tried again, never answered as starting", async () => {
+    const root = "ses_pi_execution_start_backoff"
+    const proof = await plane.createHostedSession(root)
+    const lease = await plane.acquire(proof, root, "turn_execution_start_backoff")
+    plane.serve(NOT_RUNNING)
+    const refusal = async () => await (await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })).json()
+    plane.starting({ status: "unavailable", homeRegion: "us-east", epoch: 3, retryAfterMs: 30_000, error: sandboxProviderFailedError("boat", "Boat POST /sandboxes/bx_23456789/resume was rejected (internal_error)\nretry later") })
+    expect(await refusal()).toEqual({ error: {
+      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: Boat returned an error.", retryAfterMs: 30_000,
+    } })
+    plane.starting({ status: "unavailable", homeRegion: "us-east", epoch: 3, error: "runtime_lease_stopped" })
+    expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: it was stopped or replaced while it started" } })
+    plane.starting({ status: "provisioning", epoch: 3, retryAfterMs: 12_000, homeRegion: "us-east", joined: true, failure: "Boat returned an error." })
+    expect(await refusal()).toEqual({ error: {
+      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: Boat returned an error.", retryAfterMs: 12_000,
+    } })
   })
 
   test("a machine target the store refuses answers the store's refusal, never an anonymous failure", async () => {

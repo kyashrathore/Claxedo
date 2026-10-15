@@ -1,4 +1,8 @@
 import type { SandboxLease } from "./contract"
+import type { SandboxStartWindow } from "./lease-failure"
+
+/** Who stopped the host: a person or the plane's explicit stop, the idle policy, or the provider on its own. */
+export type SandboxStopCause = "explicit" | "idle" | "provider"
 
 /**
  * The lease transitions a deployment meters. A lease epoch is one boot: a wake
@@ -8,7 +12,9 @@ import type { SandboxLease } from "./contract"
  * when the provider lost its host, rather than Claxedo destroying it. A failed
  * epoch whose start goes
  * on in the next epoch is `retrying`; the start the person waits on has not
- * failed until an epoch fails without one.
+ * failed until an epoch fails without one. `startLimit` is the provider's
+ * start-limit window an epoch was refused at. `hostLeftRunning` is a failed
+ * start whose host the manager could not stop, so it may still bill.
  */
 export type SandboxLifecycleEvent = {
   workspaceId: string
@@ -16,9 +22,9 @@ export type SandboxLifecycleEvent = {
   driver: string
   labels: Record<string, string>
 } & (
-  | { kind: "stopped"; idle: boolean; activeMs?: number }
+  | { kind: "stopped"; cause: SandboxStopCause; activeMs?: number }
   | { kind: "destroyed"; hostGone: boolean; activeMs?: number }
-  | { kind: "failed"; bootFailed: boolean; retrying: boolean }
+  | { kind: "failed"; bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow; hostLeftRunning?: true }
 )
 
 export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) => void) | undefined, now: () => number) {
@@ -33,10 +39,12 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
     }
   }
   return {
-    stopped: (lease: SandboxLease, idle: boolean) => report({ ...base(lease), kind: "stopped", idle, ...active(lease) }),
+    stopped: (lease: SandboxLease, idle: boolean) => report({ ...base(lease), kind: "stopped", cause: idle ? "idle" : "explicit", ...active(lease) }),
+    /** `endedAt` is when the host was last proven serving: a stop the provider made on its own is learned after the fact. */
+    hostStopped: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "stopped", cause: "provider", ...active(lease, endedAt) }),
     destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", hostGone: false, ...active(lease) }),
     /** `endedAt` is when the host was last proven serving: the provider's loss is learned after the fact. */
     hostGone: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "destroyed", hostGone: true, ...active(lease, endedAt) }),
-    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean }) => report({ ...base(lease), kind: "failed", ...failure }),
+    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow; hostLeftRunning?: true }) => report({ ...base(lease), kind: "failed", ...failure }),
   }
 }

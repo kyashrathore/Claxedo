@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { build as esbuildBuild } from "esbuild"
+import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { workspaceRuntimeRoot } from "../../../src/hosts/workspace-runtime/startup"
 import {
   esbuildHostBundleOptions,
@@ -220,6 +221,23 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).not.toContain("/usr/local/bin/opencode")
       expect(dockerfile).toContain(`RUN node /opt/workspace-runtime/${IMAGE_SMOKE_FILENAME}`)
     }
+  })
+
+  test("the Cloudflare image ships the HOME its driver boots the runtime with, as root's private directory", async () => {
+    let home = ""
+    const driver = createCloudflareSandboxDriver({
+      workerUrl: "https://sandbox.test/",
+      apiToken: "worker-token",
+      controlEnv: { relayJwksUrl: "https://relay.test/jwks.json", managementJwksUrl: "https://control.test/jwks.json" },
+      fetch: (async (_url: string, init: { body: string }) => {
+        home = (JSON.parse(init.body) as { env: { HOME: string } }).env.HOME
+        return Response.json({ ready: true, url: "https://sandbox.test/sandbox/claxedo-ws_home/proxy", port: 2593 })
+      }) as typeof fetch,
+    })
+    await driver.ensureHost({ workspaceId: "ws_home", homeRegion: "us-east", epoch: 1, labels: { workspaceId: "ws_home", epoch: "1" } })
+    const dockerfile = fs.readFileSync(path.resolve(import.meta.dirname, "../cloudflare-worker/Dockerfile"), "utf8")
+    expect(home).toMatch(/^\/home\//)
+    expect(dockerfile).toContain(`RUN install -d -m 0700 -o root -g root ${home}`)
   })
 
   test("workspace package build order is topological (dependencies before dependents, workspace-runtime last)", () => {

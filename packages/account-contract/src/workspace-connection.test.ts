@@ -39,6 +39,11 @@ test("a session connection mint names only the session on the fixed connection r
   expect(() => resolveHostedOperation("session.connection.mint", { id: "ws_1" })).toThrow()
 })
 
+test("a workspace connection mint is a person's retry only when the caller says so", () => {
+  expect(resolveHostedOperation("workspace.connection.mint", { id: "ws_1", retry: true })).toEqual({ method: "POST", path: "/api/workspace/ws_1/connection", body: { retry: true } })
+  expect(resolveHostedOperation("workspace.connection.mint", { id: "ws_1" })).toEqual({ method: "POST", path: "/api/workspace/ws_1/connection", body: {} })
+})
+
 test("a session reservation carries the harness it will run", () => {
   const harness = { id: "pi", access: "native" }
   expect(resolveHostedOperation("session.reserve", { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1", harness })).toMatchObject({

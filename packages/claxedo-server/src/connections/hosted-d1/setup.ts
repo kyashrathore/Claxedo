@@ -26,6 +26,7 @@ import {
   createIntegrationRegistry,
   createIntegrationsRoutes,
   linearIntegration,
+  type ConnectionsService,
   type IntegrationCapability,
   type IntegrationDeclaration,
   type IntegrationImpl,
@@ -40,10 +41,9 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
-import { signedOrError } from "../../workspace/route-support"
+import { signedOrError, type RepositoryConnectionAccess } from "../../workspace/route-support"
 import { cloudRootPrivateRepository } from "../../workspace/cloud-root-backing"
-import { githubCloneSecret } from "../../workspace/repository-clone"
-import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
+import type { HostedRepositoryClone } from "../../workspace/repository-clone"
 import { createCredentialStoreAdapter } from "../credential-store-adapter"
 import { githubIntegrationForEnv } from "../github-oauth"
 import { createD1ConnectionAttempts, HOSTED_ATTEMPT_SWEEP_RATE, type HostedConnectionAttempts } from "./attempts"
@@ -245,58 +245,72 @@ async function hostedCallback(input: HostedD1ConnectionsSetupInput, c: Context, 
 }
 
 /**
- * Proves the signed caller can read `fullName` through their org's code-host
- * connection, for the hosted workspace-create route. The clone token is minted
- * at each boot instead (`createHostedRepositoryCloneSecrets`). A fresh
- * per-request service, like `handle` above — connection metadata and
+ * Which of the signed caller's code-host connections, their own or their
+ * organization's, can read `fullName`, for the hosted workspace-create route:
+ * the one they picked, or with none picked the first that lists the
+ * repository readable, their own before their organization's as capability
+ * resolution orders them. A listing that failed outranks a plain "not
+ * listed", since that connection may still have been the one. The clone
+ * token is minted at each boot instead (`createHostedRepositoryClone`).
+ * A fresh per-request service, like `handle` above — connection metadata and
  * credentials are org-scoped reads, not process state.
  */
 export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInput) {
-  return async (auth: SignedControlPlaneAuth | undefined, connectionId: string, fullName: string) => {
-    if (!auth) return { ok: false as const, status: 403 as const, code: "connections_org_required" }
+  return async (auth: SignedControlPlaneAuth | undefined, connectionId: string | undefined, fullName: string): Promise<RepositoryConnectionAccess> => {
+    if (!auth) return { ok: false, status: 403, code: "connections_org_required" }
     const membership = await hostedMembership(input, auth)
-    if (!membership) return { ok: false as const, status: 403 as const, code: "connections_org_membership_required" }
+    if (!membership) return { ok: false, status: 403, code: "connections_org_membership_required" }
     const service = await hostedConnectionsService(input, { ownerUserId: membership.userId, orgId: membership.orgId })
     try {
-      const visible = (await service.list({ orgOwner: `org:${membership.orgId}`, scope: "org" }))
-        .some((connection) => connection.id === connectionId)
-      if (!visible) return { ok: false as const, status: 404 as const, code: "connection_not_found" }
-      const listed = await service.listRepositories(connectionId)
-      if (!listed.ok) return listed
-      const repository = listed.repositories.find((item) => item.fullName === fullName)
-      if (!repository) return { ok: false as const, status: 404 as const, code: "repository_not_found" }
-      if (!repository.permissions.read) {
-        return { ok: false as const, status: 403 as const, code: "repository_read_required" }
-      }
-      return { ok: true as const, repository }
+      const candidates = (await service.list({ owner: `user:${membership.userId}`, orgOwner: `org:${membership.orgId}` }))
+        .filter((connection) => connectionId === undefined
+          ? connection.grantedCapabilities.includes("code-host") && connection.status !== "broken"
+          : connection.id === connectionId)
+        .sort((a, b) => Number(b.scope === "personal") - Number(a.scope === "personal"))
+      const answers = await Promise.all(candidates.map((connection) => readableThrough(service, connection.id, fullName)))
+      return answers.find((answer) => answer.ok)
+        ?? answers.find((answer) => !answer.ok && answer.status >= 500)
+        ?? answers.find((answer) => !answer.ok && answer.code === "repository_read_required")
+        ?? answers[0]
+        ?? { ok: false, status: 404, code: "connection_not_found" }
     } finally {
       service.dispose()
     }
   }
 }
 
+async function readableThrough(service: ConnectionsService, connectionId: string, fullName: string): Promise<RepositoryConnectionAccess> {
+  const listed = await service.listRepositories(connectionId)
+  if (!listed.ok) return listed
+  const wanted = fullName.toLowerCase()
+  const repository = listed.repositories.find((item) => item.fullName.toLowerCase() === wanted)
+  if (!repository) return { ok: false, status: 404, code: "repository_not_found" }
+  if (!repository.permissions.read) return { ok: false, status: 403, code: "repository_read_required" }
+  return { ok: true, repository, connectionId }
+}
+
 /**
- * The clone credential a cloud workspace's boot delivers: none for a
- * repository anyone can clone, else a fresh token of the connection its
- * private repository was created through. Nothing is listed, and a connection
- * that is gone or refused yields none, so a checkout that already exists boots
- * without it and a clone that needs it fails in git. A token read that failed
- * transiently fails the preparation instead: answering none would withdraw the
- * credential's name and restart a running runtime over a blip.
+ * The clone a cloud workspace's sandbox is given, read afresh on every call:
+ * none for a repository anyone can clone, else a fresh token of the
+ * connection its private repository was created through. Nothing is listed,
+ * and a connection that is gone or refused yields none, so a checkout that
+ * already exists boots without it and a clone that needs it fails in git. A
+ * token read that failed transiently throws instead: answering none would
+ * withdraw the credential and restart a running runtime over a blip.
  */
-export function createHostedRepositoryCloneSecrets(input: HostedD1ConnectionsSetupInput) {
-  return async (workspace: { workspaceId: string; ownerUserId: string; orgId: string }): Promise<SandboxBrokeredSecret[]> => {
+export function createHostedRepositoryClone(input: HostedD1ConnectionsSetupInput) {
+  return async (workspace: { workspaceId: string; ownerUserId: string; orgId: string }): Promise<HostedRepositoryClone | undefined> => {
     const repository = await cloudRootPrivateRepository(input.database, workspace.workspaceId)
-    if (!repository) return []
+    if (!repository) return undefined
     const service = await hostedConnectionsService(input, { ownerUserId: workspace.ownerUserId, orgId: workspace.orgId })
     try {
       const owned = (await service.list({ owner: `user:${workspace.ownerUserId}`, orgOwner: `org:${workspace.orgId}` }))
         .some((connection) => connection.id === repository.connectionId)
-      if (!owned) return []
+      if (!owned) return undefined
       const token = await service.getToken(repository.connectionId, "code-host")
-      if (token.ok) return [githubCloneSecret(repository.repoUrl, token.response.token)]
+      if (token.ok) return { repoUrl: repository.repoUrl, connectionId: repository.connectionId, token: token.response.token }
       if (token.status === 503) throw new Error(`The repository connection is unavailable: ${token.code}`)
-      return []
+      return undefined
     } finally {
       service.dispose()
     }

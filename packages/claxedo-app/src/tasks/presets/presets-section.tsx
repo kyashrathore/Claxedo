@@ -44,10 +44,10 @@ function createPresetCommands(store: PresetsStore) {
       draftId !== undefined && revision !== undefined
         ? ({ type: "preset.edit", input: { ...parsed.draft, presetId: draftId, revision } } as const)
         : ({ type: "preset.create", input: parsed.draft } as const)
-    void run(() => api.client.command({ clientRequestId: uuid(), command }), store.close)
+    void run(() => api.command({ clientRequestId: uuid(), command }), store.close)
   }
   const archive = (type: "preset.archive" | "preset.restore", input: { presetId: string; revision: number }) =>
-    void run(() => api.client.command({ clientRequestId: uuid(), command: { type, input } }))
+    void run(() => api.command({ clientRequestId: uuid(), command: { type, input } }))
   return { busy, save, archive }
 }
 

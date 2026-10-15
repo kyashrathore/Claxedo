@@ -189,7 +189,7 @@ export class Sandbox extends CloudflareSandbox {
    * deletes whatever the lease did not commit.
    */
   async captureBackups(directories: readonly string[], committed: string | undefined) {
-    const bucket = this.backupBucket()
+    const bucket = this.checkpointBucket()
     await this.settleBackups(committed)
     const ids: string[] = []
     try {
@@ -207,7 +207,7 @@ export class Sandbox extends CloudflareSandbox {
   }
 
   async deleteCheckpointBackups(ids: readonly string[]) {
-    await deleteBackups(this.backupBucket(), ids)
+    await deleteBackups(this.checkpointBucket(), ids)
     const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
     await this.ctx.storage.put(PENDING_BACKUPS_KEY, pending.filter((id) => !ids.includes(id)))
   }
@@ -215,11 +215,11 @@ export class Sandbox extends CloudflareSandbox {
   private async settleBackups(committed: string | undefined) {
     const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
     if (pending.length === 0) return
-    await deleteBackups(this.backupBucket(), uncommittedBackups(pending, committed))
+    await deleteBackups(this.checkpointBucket(), uncommittedBackups(pending, committed))
     await this.ctx.storage.delete(PENDING_BACKUPS_KEY)
   }
 
-  private backupBucket() {
+  private checkpointBucket() {
     if (!this.workerEnv.BACKUP_BUCKET) throw new Error("backups require the BACKUP_BUCKET binding")
     return this.workerEnv.BACKUP_BUCKET
   }
@@ -330,8 +330,10 @@ async function unregisterSandbox(env: Env, sandboxId: string) {
   })
 }
 
-function registrationNames(registrations: EgressRegistration[]) {
-  return registrations.map((row) => row.name).sort().join("\u0000")
+/** Whether `next` names a placeholder `previous` did not, which a running process's environment cannot carry. */
+function placeholderAdded(previous: EgressRegistration[], next: EgressRegistration[]) {
+  const held = new Set(previous.map((row) => row.name))
+  return next.some((row) => !held.has(row.name))
 }
 
 async function readRegistrations(env: Env, sandboxId: string): Promise<EgressRegistration[]> {
@@ -685,10 +687,11 @@ export default {
           } else {
             registrations = previous
           }
-          // Which placeholders the runtime's environment must carry. Only the
-          // NAMES matter: a rotated value keeps the same placeholder, so it
-          // needs no new process, while an added or dropped name does.
-          const placeholdersChanged = registrationNames(previous) !== registrationNames(registrations)
+          // Only an added placeholder NAME needs a new process: a rotated value
+          // keeps its placeholder, and a dropped one stays in the running
+          // process's environment as a string this Worker no longer swaps, so
+          // the turns that runtime is serving go on.
+          const placeholdersAdded = placeholderAdded(previous, registrations)
           await sandbox.setCredentialHosts(sandboxId, registrations.flatMap((row) => row.hosts))
           for (const row of registrations) containerEnv[row.name] = credentialPlaceholder(row.name)
           // Runtime bring-up is a Durable Object RPC with a per-sandbox
@@ -696,7 +699,7 @@ export default {
           // overlap, but they must join one process launch rather than cancel
           // each other's container operations.
           const runtime: RuntimeEnsure = await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, {
-            reuseRunning: !placeholdersChanged,
+            reuseRunning: !placeholdersAdded,
             ...(restore ? { restore } : {}),
           })
           if (runtime.state === "exited") return json({ ready: false, exited: true, error: runtime.reason }, 502)

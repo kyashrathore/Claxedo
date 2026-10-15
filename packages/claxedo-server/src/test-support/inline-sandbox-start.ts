@@ -19,11 +19,24 @@ export const unusedSandboxStart: SandboxStart = async () => {
   throw new Error("this test composed no sandbox start drive")
 }
 
+/** The settings push a composition test hands a delivery whose sandboxes it never re-delivers. */
+export const unusedSandboxRedeliver = async (): Promise<void> => {
+  throw new Error("this test composed no sandbox redelivery")
+}
+
+/** The provisioner hand-off a composition test hands a delivery that never pushes settings outside a start. */
+export const unusedSandboxFollow = async (): Promise<void> => {
+  throw new Error("this test composed no sandbox follow-ups")
+}
+
 /** The sandbox binding a composition test hands over when it never starts a sandbox. */
-export const unusedSandboxStarts = { start: unusedSandboxStart, refresh: unusedSandboxStart, inFlight: async () => undefined } as const
+export const unusedSandboxStarts = { start: unusedSandboxStart, refresh: unusedSandboxStart, redeliver: unusedSandboxRedeliver, follow: unusedSandboxFollow, inFlight: async () => undefined } as const
 
 /** The provisioner namespace a Node test composes the full-hosted sandbox with; its starts run inline over `drive`. */
 export function inlineSandboxProvisioner(drive?: SandboxStartDrive): SandboxProvisionerNamespace {
   const start = drive ? inlineSandboxStart(drive) : unusedSandboxStart
-  return { idFromName: (name) => name, get: () => ({ start, refresh: start, inFlight: async () => undefined }) }
+  const redeliver = async (workspaceId: string) => {
+    if (drive) await drive.renew(workspaceId)
+  }
+  return { idFromName: (name) => name, get: () => ({ start, refresh: start, redeliver, follow: unusedSandboxFollow, inFlight: async () => undefined }) }
 }

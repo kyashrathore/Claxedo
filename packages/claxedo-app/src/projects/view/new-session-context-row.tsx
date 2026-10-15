@@ -64,7 +64,7 @@ export function NewSessionContextRow(
       return { value: project.id, label: project.name, ...(detail ? { detail } : {}), avatar: avatarOf(project, project.name) }
     }),
     onSelect: (value) => openProject(projectId(value)),
-    actions: [{ label: t("projects.chip.create"), onSelect: () => dialog.show(() => <DialogCreateProject onCreated={(project) => openProject(project.id)} />) }],
+    actions: [{ label: t("projects.chip.create"), onSelect: () => dialog.show(() => <DialogCreateProject onCreated={(project, placementId) => (placementId ? props.onOpen({ projectId: project.id, placementId }) : openProject(project.id))} />) }],
   })
   const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }), (id) => props.onPlaced(id))
   props.resolver.attach(context)

@@ -15,7 +15,7 @@ import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plu
 import { createHostedMcpRuntimePreparer } from "../mcp/runtime-preparation"
 import { verifyMcpGatewayToken } from "../mcp/runtime-token"
 import { createHostedAgentPluginRuntimeProvisioner, type SignedAgentPluginRuntimeSnapshot } from "./provision"
-import { createSessionHostPlugins } from "./session-host-launch"
+import { createSessionHostPlugins, machineServing } from "./session-host-launch"
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))))
@@ -96,7 +96,7 @@ async function plane() {
   const machinePreparation = await preparer.forSnapshot(snapshot, { secretBrokering: "native" })
   machineEnv = brokeredPlaceholderEnv(machinePreparation.secrets)
   const running = new Set(["workspace-1"])
-  const plugins = createSessionHostPlugins({ cloudWorkspace: async (id) => id === "workspace-1", machineRunning: async (id) => running.has(id), activations, preparer, provisioner })
+  const plugins = createSessionHostPlugins({ cloudWorkspace: async (id) => id === "workspace-1", machineServing: async (id) => running.has(id), activations, preparer, provisioner })
   return { env, provisioner, plugins, running }
 }
 
@@ -126,6 +126,19 @@ describe("the Pi plugins a session host is delivered", () => {
     const provision = vi.spyOn(provisioner, "provision")
     expect(await plugins("workspace-1")).toEqual({ harnessLaunch: {}, mcp: {} })
     expect(provision).not.toHaveBeenCalled()
+  })
+
+  test("a machine serves while its lease is ready and no start run is replacing its runtime", async () => {
+    const lease = { status: "ready" }
+    let run: unknown
+    const serving = machineServing({ target: async () => lease, inFlight: async () => run })
+    expect(await serving("workspace-1")).toBe(true)
+    run = { status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east", joined: true }
+    expect(await serving("workspace-1")).toBe(false)
+    run = undefined
+    lease.status = "unavailable"
+    expect(await serving("workspace-1")).toBe(false)
+    expect(await machineServing({ target: async () => ({ status: "ready" }) })("workspace-1")).toBe(true)
   })
 
   test("deliver nothing for a workspace that is not a cloud root", async () => {

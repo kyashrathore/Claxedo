@@ -129,7 +129,15 @@ const ENTRIES = [
   // lease has recorded (`connections/cloud-start-progress.ts`), and starts a
   // cloud workspace's machine through one module, for a person's connect and
   // a session host's tool call alike (`workspace/cloud-workspace-start.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 169, packages: 22 },
+  // Every entry's workspace create finds the connection a new cloud
+  // workspace's repository is read through, picked or matched to a pasted
+  // GitHub URL, in one module (`workspace/repository-connection.ts`).
+  // The account a cloud turn's usage is filed under is the D1 session
+  // authority's own module (`authority/adapters/d1/cloud-turn-usage-owner.ts`).
+  // Every entry asks who manages the organization's own rows, its team model
+  // accounts and its sandbox provider keys, of the D1 authority's `administer`
+  // rule in one module (`credentials/worker/org-administers.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 172, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -139,8 +147,17 @@ const ENTRIES = [
   // The activation store reads a plugin set's state and builds its writes in
   // two modules beside it (`activation/d1-activation-snapshots.ts`,
   // `activation/d1-activation-writes.ts`), and both D1 stores key rows by the
-  // one `agent-plugins/scope-keys.ts`.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 224, packages: 26 },
+  // one `agent-plugins/scope-keys.ts`. They own a private repository's clone,
+  // so they install on the plane's broker how its repository binding resolves
+  // for a sandbox with no provider edge
+  // (`credentials/hosted-egress-broker/repository-binding.ts`). The catalog
+  // says where each MCP server works in the cloud from the organization's
+  // sandbox driver (`agent-plugins/mcp/catalog-servers.ts`), by the one rule
+  // runtime preparation also follows for whether a driver carries a gateway
+  // credential (`agent-plugins/mcp/gateway-reach.ts`).
+  // The Tasks routes both entries mount read the workspace and session rows
+  // their Start dispatches through from D1 in one module (`tasks/d1-host-reads.ts`).
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 231, packages: 26 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -150,8 +167,12 @@ const ENTRIES = [
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
   // has a sandbox to start, and the notice that start sends the workspace
   // owner's live-sync room when it begins and settles
-  // (`workspace/start-notice.ts`).
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 234, packages: 26 },
+  // (`workspace/start-notice.ts`). When the idle watch finds a cloud runtime
+  // gone, it ends that runtime's sessions' turns in the registry and tells
+  // their readers (`workspace/runtime-lost.ts`,
+  // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
+  // has cloud runtimes to lose.
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 243, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

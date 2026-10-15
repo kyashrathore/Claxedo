@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { ProviderBinding } from "@claxedo/agent-runtime-contract"
+import { classifyFirstTurnError, ORG_ACCOUNT_UNAVAILABLE, type ProviderBinding } from "@claxedo/agent-runtime-contract"
 import { CredentialSelectionError, selectSessionCredentials, type CredentialSelectionInput } from "./credentials"
 
 const binding = (person: string): ProviderBinding => ({ baseUrl: `https://${person}.example`, placeholder: person, authMode: "api-key" })
@@ -66,11 +66,11 @@ test("a harness that does not take direct delivery never receives the owner's di
 
 test("a plan handed over directly stands in for the binding a cloud edge refused it", () => {
   const plan = { delivery: "direct" as const, baseUrl: "https://chatgpt.com", secret: "plan-B", authKind: "subscription" as const }
-  const refused = { "codex-app-server": { unavailable: true as const, reason: "org_account_unavailable" } }
+  const refused = { "codex-app-server": { unavailable: true as const, reason: ORG_ACCOUNT_UNAVAILABLE } }
   const cloud = { ...snapshot, placement: "cloud" as const, canUseOwnLogin: false, accounts: { B: refused }, directDelivery: true }
   expect(selectSessionCredentials({ ...cloud, direct: { B: { "codex-app-server": plan } } }, { kind: "person", userId: "B" }))
     .toMatchObject({ providers: refused, direct: { "codex-app-server": plan } })
-  expect(() => selectSessionCredentials(cloud, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ detail: { reason: "org_account_unavailable" } }))
+  expect(() => selectSessionCredentials(cloud, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ detail: { reason: ORG_ACCOUNT_UNAVAILABLE } }))
 })
 
 test("an account the sandbox cannot broker is refused as needing brokering, naming the Pi provider that spends it", () => {
@@ -80,4 +80,29 @@ test("an account the sandbox cannot broker is refused as needing brokering, nami
     .toThrow(expect.objectContaining({ name: "CredentialSelectionError", code: "harness_needs_brokering", detail: { piProvider: "anthropic" } }))
   const cursor = { ...refused, providerIds: ["cursor-sdk"], accounts: { B: { "cursor-sdk": { unavailable: true as const, reason: "harness_needs_brokering" } } } }
   expect(() => selectSessionCredentials(cursor, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ code: "harness_needs_brokering", detail: {} }))
+})
+
+function thrown(run: () => unknown): unknown {
+  try {
+    run()
+  } catch (error) {
+    return error
+  }
+  throw new Error("expected a refusal")
+}
+
+test("a provider its owner chose the organization's account for, where the organization holds no team key, names the vendor and the way out, not that no account was chosen", () => {
+  const missing = { unavailable: true as const, reason: ORG_ACCOUNT_UNAVAILABLE }
+  const claude = { ...snapshot, placement: "cloud" as const, canUseOwnLogin: false, providerIds: ["claude-sdk", "claude-acp", "anthropic"],
+    accounts: { B: { "claude-sdk": missing, "claude-acp": missing, anthropic: missing } } }
+  expect(() => selectSessionCredentials(claude, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({
+    code: "account_unavailable",
+    message: "Your organization has no Anthropic API key, and this harness is set to use the organization's account. Ask an admin to add a team key, or choose your own account in Settings → Models.",
+    detail: { reason: ORG_ACCOUNT_UNAVAILABLE },
+  }))
+  expect(classifyFirstTurnError(thrown(() => selectSessionCredentials(claude, { kind: "person", userId: "B" })))).toBe("credential")
+  const codex = { ...claude, providerIds: ["codex-app-server", "openai"], directDelivery: true, accounts: { B: { "codex-app-server": missing } } }
+  expect(() => selectSessionCredentials(codex, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ message: expect.stringContaining("no OpenAI API key") }))
+  const groq = { ...claude, providerIds: ["groq"], accounts: { B: { groq: missing } } }
+  expect(() => selectSessionCredentials(groq, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ message: expect.stringContaining("no Groq API key") }))
 })

@@ -55,7 +55,6 @@ export default {
   "settings.providers.agents.removingAccount": "Fjerner…",
   "settings.providers.accountSource.own": "Din egen konto",
   "settings.providers.accountSource.org": "Organisasjonskonto",
-  "settings.providers.accountSource.unavailable": "{{name}} kan ikke kjøre for deg: organisasjonen din har ingen konto for denne leverandøren. Velg din egen konto for å bruke den.",
   "settings.providers.accountSource.label": "Konto brukt for {{name}}",
   "settings.providers.live.ok": "Fungerer",
   "settings.providers.live.authFailed": "Avvist av leverandøren",

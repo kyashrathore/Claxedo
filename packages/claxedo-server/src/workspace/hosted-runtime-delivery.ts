@@ -8,15 +8,18 @@ import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
 import { credentialUnavailableReason } from "@claxedo/server-core/credentials/health"
 import {
+  deliveredAccountsIdentity,
   nativeProviderAuth,
   nativeProviderDeliveriesFromRepository,
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { projectEnvironment } from "@claxedo/server-core/projects/environment"
-import { workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { RUNTIME_LEASE_ENV_PATH, workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import { storeRenewal } from "../credentials/store-renewal"
+import type { CredentialChange } from "../credentials/worker/org-routed"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createWorkspaceRuntimeClient, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
@@ -25,9 +28,10 @@ import { cloudRootBacking } from "./cloud-root-backing"
 import { createHostedRuntimeFetch } from "./relay-runtime-client"
 import { withTimeout } from "../platform/runtime/timeout"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
-import type { ReadySandboxTarget, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { ReadySandboxTarget, SandboxFollowUps, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { accountsRenewalDueAt, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
-import type { BrokerLease, HostedEgressBroker } from "../credentials/hosted-egress-broker"
+import { PLACEHOLDER_TTL_SECONDS, type BrokerLease, type HostedEgressBroker } from "../credentials/hosted-egress-broker"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
@@ -35,6 +39,14 @@ import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, workspaceIdleStopDue } from ".
 import type { WorkspaceIdleStop } from "./routes/checkpoints"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
+
+const runtimeContext = (workspaceId: string, capabilities: AgentPluginExecutionSelection | undefined): WorkspaceRuntimeContext =>
+  capabilities ? { workspaceId, capabilities } : { workspaceId }
+
+const soonestDue = (...times: (number | undefined)[]) => {
+  const due = times.filter((time): time is number => time !== undefined)
+  return due.length ? Math.min(...due) : undefined
+}
 
 const RUNTIME_HEALTH_PATH = "/api/wr/health"
 
@@ -80,6 +92,16 @@ export type HostedRuntimeHooks = {
   pluginRuntime?: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<AgentPluginRuntimeContribution>
 }
 
+/** The organization's stored accounts a sandbox can be delivered, each with the reason it cannot be spent now, if any. */
+function deliverableRows(rows: readonly CredentialMetadata[]) {
+  return rows
+    .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token") && !!builtInProviderRow(credential.provider_id))
+    .map((credential) => {
+      const unavailable = credentialUnavailableReason(credential)
+      return { credential, ...(unavailable ? { unavailable } : {}) }
+    })
+}
+
 export function createHostedRuntimeDelivery(input: {
   authority: WorkspaceAuthority
   /** The control-plane database whose workspace row says whether a hosted sandbox serves the workspace. */
@@ -101,8 +123,14 @@ export function createHostedRuntimeDelivery(input: {
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** The workspace's provisioner's refresh, which re-delivers a running sandbox's settings without racing a start on the same epoch. */
   sandboxRefresh: SandboxStart
+  /** The workspace's provisioner's settings push to a serving sandbox, with no driver step; a run in flight delivers them instead. */
+  sandboxRedeliver: (workspaceId: string) => Promise<void>
+  /** Hands the workspace's provisioner the follow-ups of a push made outside a start run. */
+  sandboxFollow: (context: WorkspaceRuntimeContext, due: SandboxFollowUps) => Promise<void>
   /** Stops a lease generation the idle watch found idle, or unreachable for the whole failure budget. */
   idleStop: WorkspaceIdleStop
+  /** Ends the turns the workspace's runtime was running when the idle watch found that runtime gone at `at`. */
+  runtimeLost?: (workspaceId: string, at: number) => Promise<void>
   /** A request to a ready sandbox's runtime over the relay; a test hands in its own runtime. */
   runtimeFetch?: (workspaceId: string, orgId: string, path: string, init: RequestInit) => Promise<Response>
 }) {
@@ -121,13 +149,7 @@ export function createHostedRuntimeDelivery(input: {
    */
   const deliveries = async (workspaceId: string, person: { userId: string; orgId: string }, lease?: BrokerLease) => {
     const credentials = input.credentials(person.orgId)
-    const selected = (await credentials.listCredentials())
-      .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token")
-        && !!builtInProviderRow(credential.provider_id))
-      .map((credential) => {
-        const unavailable = credentialUnavailableReason(credential)
-        return { credential, ...(unavailable ? { unavailable } : {}) }
-      })
+    const selected = deliverableRows(await credentials.listCredentials())
     const selections = await credentials.accountSelections()
     const secretBrokering = await input.workspaceSecretBrokering(workspaceId)
     const broker = secretBrokering !== "native" && input.broker
@@ -159,40 +181,71 @@ export function createHostedRuntimeDelivery(input: {
       env: workspaceRuntimeProjectEnv(await projectEnvironment(input.credentials(person.orgId), person.orgId).values(person.projectId)),
     }
   }
-  /** Delivers a ready sandbox its settings; answers when the placeholders it delivered are due again, if any expire. */
-  const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined): Promise<number | undefined> => {
-    if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return undefined
+  /**
+   * Delivers a ready sandbox its settings; answers when the placeholders it
+   * delivered are due again, if any expire, and when its idleness is first
+   * read, if its host reads none itself.
+   */
+  const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined): Promise<SandboxFollowUps> => {
+    if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const person = await owner(workspaceId)
     const appliedAt = Date.now()
     const supervisor = supervisorClient(input.services, workspaceId, input.signingEnv)
-    const [config, { client, options }, auth, plugins] = await Promise.all([
+    const lease = supervisor.then(({ target }): BrokerLease => ({ epoch: target.epoch, hostId: target.hostId }))
+    const [config, { client, options }, auth, plugins, leaseEnv] = await Promise.all([
       userAgentConfigStore(input.settings, person.userId).read(),
       supervisor,
-      supervisor.then(({ target }) => runtimeAuth(workspaceId, person, { epoch: target.epoch, hostId: target.hostId })),
+      lease.then((current) => runtimeAuth(workspaceId, person, current)),
       hooks.pluginRuntime ? hooks.pluginRuntime(workspaceId, preparation) : { mcp: {}, harnessLaunch: {} },
+      preparation?.leaseEnv
+        ? lease.then(preparation.leaseEnv).catch((error: unknown) => {
+            log.warn("lease env was not minted; the runtime keeps what it holds until the next renewal", { workspaceId, error: String(error) })
+            return undefined
+          })
+        : undefined,
     ])
     const snapshot = composeRuntimeConfigSnapshot({ config, provisionedRunner: input.provisionedRunner, providers: [], commands: [], auth, plugins })
     await client.applyConfig(snapshot, options)
-    // The brokered rows alone: a direct plan token is renewed by the harness
-    // mid-turn through the credential refresh route, and an edge placeholder
-    // never expires.
-    const renewAt = accountsRenewalDueAt(snapshot.auth, appliedAt)
+    const runtime = (path: string, init: RequestInit) => runtimeFetch(workspaceId, person.orgId, path, init)
+    // The brokered rows and the lease env alone: a direct plan token is
+    // renewed by the harness mid-turn through the credential refresh route,
+    // and an edge placeholder never expires.
+    const renewAt = soonestDue(
+      accountsRenewalDueAt(snapshot.auth, appliedAt),
+      preparation?.leaseEnv ? appliedAt + (PLACEHOLDER_TTL_SECONDS * 1_000) / 2 : undefined,
+    )
     await Promise.all([
+      leaseEnv && runtime(RUNTIME_LEASE_ENV_PATH, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(leaseEnv),
+      }).then((response) => {
+        if (!response.ok) throw new Error(`the runtime answered ${response.status} for its lease env`)
+      }).catch((error: unknown) => {
+        log.warn("lease env delivery failed; the runtime keeps what it holds until the next renewal", { workspaceId, error: String(error) })
+      }),
       input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
         log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
       }),
       recordRuntimeStartPhases({
         sandboxManager: input.sandboxManager,
         workspaceId,
-        runtimeFetch: (path, init) => runtimeFetch(workspaceId, person.orgId, path, init),
+        runtimeFetch: runtime,
       }).catch((error: unknown) => {
         log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
       }),
     ])
-    return renewAt
+    return {
+      ...(renewAt === undefined ? {} : { renewAt }),
+      ...(hostWatchesIdle((await supervisor).target) ? {} : { watchAt: Date.now() + IDLE_CHECK_MS }),
+    }
   }
+  // A push outside a start run (a Task root's first settings) hands the
+  // follow-ups a ready start would schedule to the workspace's provisioner,
+  // which renews and watches the sandbox from then on as it does any other.
   const provisionRuntime = async (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
-    await push(context.workspaceId, preparation)
+    if (await cloudRootBacking(input.database, context.workspaceId) !== "cloud") return
+    await input.sandboxFollow(context, await push(context.workspaceId, preparation))
   }
   const hooks: HostedRuntimeHooks = { prepareRuntime: prepare }
   const refused = (code: "runtime_prepare_failed" | "runtime_provision_failed", cause: unknown, message: string): SandboxStartAnswer =>
@@ -202,10 +255,10 @@ export function createHostedRuntimeDelivery(input: {
   // rebuilt on every step so a credential that changed mid-start reaches the
   // driver and the runtime alike.
   const step = async (
-    workspaceId: string,
+    context: WorkspaceRuntimeContext,
     run: (sandboxInput: SandboxManagerInput) => Promise<SandboxEnsureResult>,
   ): Promise<SandboxStartAnswer> => {
-    const context = { workspaceId }
+    const workspaceId = context.workspaceId
     let preparation: WorkspaceRuntimePreparation
     try {
       preparation = await hooks.prepareRuntime(context)
@@ -214,24 +267,26 @@ export function createHostedRuntimeDelivery(input: {
     }
     const ensured = await run(await input.sandboxInput(workspaceId, { preparation, secrets: [] }))
     if (ensured.status !== "ready") return ensured
-    let renewAt: number | undefined
     try {
-      renewAt = await push(workspaceId, preparation)
+      return { ...ensured, ...await push(workspaceId, preparation) }
     } catch (cause) {
       return refused("runtime_provision_failed", cause, "Runtime provisioning failed")
     }
-    return {
-      ...ensured,
-      ...(renewAt === undefined ? {} : { renewAt }),
-      ...(hostWatchesIdle(ensured) ? {} : { watchAt: Date.now() + IDLE_CHECK_MS }),
+  }
+  const runtimeLost = async (workspaceId: string) => {
+    try {
+      await input.runtimeLost?.(workspaceId, Date.now())
+    } catch (error) {
+      log.warn("the turns of a lost runtime's sessions were not ended", { workspaceId, error: String(error) })
     }
   }
   /**
    * One read of a serving runtime's idleness over the relay. A runtime that
-   * does not answer on a host the provider no longer has ends its lease at
-   * once, so the workspace stops reading as running; one that answered
-   * nothing for the whole failure budget is stopped too: its host is metered
-   * while nobody reaches what it serves.
+   * does not answer on a host the provider stopped or no longer has ends its
+   * lease at once, so the workspace stops reading as running; one that
+   * answered nothing for the whole failure budget is stopped too: its host is
+   * metered while nobody reaches what it serves. Either way the turns its
+   * sessions were running end with it.
    */
   const watch = async (workspaceId: string, failures: number): Promise<number | undefined> => {
     const target = await input.sandboxManager.target(workspaceId)
@@ -244,13 +299,16 @@ export function createHostedRuntimeDelivery(input: {
       report = asRecord(await response.json())
       if (report?.workspaceId !== workspaceId) throw new Error("the runtime answered for another workspace")
     } catch (error) {
-      if (await input.sandboxManager.endIfHostGone(workspaceId, target.epoch)) {
-        log.warn("sandbox lease ended: its runtime answered no idle check and the provider no longer has its host", { workspaceId, epoch: target.epoch, error: String(error) })
+      const down = await input.sandboxManager.endIfHostDown(workspaceId, target.epoch)
+      if (down) {
+        log.warn(`sandbox lease ended: its runtime answered no idle check and the provider ${down === "gone" ? "no longer has" : "stopped"} its host`, { workspaceId, epoch: target.epoch, error: String(error) })
+        await runtimeLost(workspaceId)
         return undefined
       }
       if (failures + 1 < IDLE_CHECK_FAILURE_LIMIT) throw error
       log.warn("sandbox stopped: its runtime answered no idle check for the whole failure budget", { workspaceId, epoch: target.epoch, error: String(error) })
       await input.idleStop(workspaceId, target.epoch, {})
+      await runtimeLost(workspaceId)
       return undefined
     }
     const idleBefore = workspaceIdleStopDue(report ?? {}, Date.now())
@@ -271,21 +329,22 @@ export function createHostedRuntimeDelivery(input: {
     return target
   }
   const start: SandboxStartDrive = {
-    acquire: async (workspaceId) => {
+    acquire: async (workspaceId, capabilities) => {
       let opened = false
-      const answer = await step(workspaceId, (sandboxInput) =>
+      const answer = await step(runtimeContext(workspaceId, capabilities), (sandboxInput) =>
         input.sandboxManager.acquire(workspaceId, { ...sandboxInput, onLeaseOpened: () => { opened = true } }))
       return answer.status === "provisioning" && opened ? { ...answer, opened: true } : answer
     },
-    provision: (workspaceId, epoch) => step(workspaceId, (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, sandboxInput)),
+    provision: (workspaceId, epoch, capabilities) =>
+      step(runtimeContext(workspaceId, capabilities), (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, sandboxInput)),
     target: (workspaceId) => input.sandboxManager.target(workspaceId),
     live,
     // A renewal re-delivers the settings of a sandbox that is serving, with
     // placeholders minted afresh; one that stopped is left to the start that
     // resumes it, which delivers again.
-    renew: async (workspaceId) => {
+    renew: async (workspaceId, capabilities) => {
       if (!await live(workspaceId)) return undefined
-      return push(workspaceId, await hooks.prepareRuntime({ workspaceId }))
+      return (await push(workspaceId, await hooks.prepareRuntime(runtimeContext(workspaceId, capabilities)))).renewAt
     },
     watch,
     flushTelemetry: async () => {
@@ -296,9 +355,9 @@ export function createHostedRuntimeDelivery(input: {
     const leases = await input.sandboxManager.list()
     const workspaces = await Promise.all(leases.filter((lease) => lease.status === "ready").map(async (lease) => {
       const person = await input.authority.resolveWorkspaceOwner?.(lease.workspaceId)
-      return person && predicate(person) ? lease.workspaceId : undefined
+      return person && predicate(person) ? [{ workspaceId: lease.workspaceId, person }] : []
     }))
-    return workspaces.filter((workspaceId): workspaceId is string => !!workspaceId)
+    return workspaces.flat()
   }
   const refresh = async (workspaceId: string) => {
     if ((await input.sandboxManager.target(workspaceId)).status !== "ready") return
@@ -307,7 +366,39 @@ export function createHostedRuntimeDelivery(input: {
     if (answer.status === "unavailable") throw new Error(`hosted runtime refresh failed: ${answer.error}`)
   }
   const refreshRunning = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
-    await Promise.all((await running(predicate)).map(refresh))
+    await Promise.all((await running(predicate)).map(({ workspaceId }) => refresh(workspaceId)))
+  }
+  /** The identity of the accounts each of the organization's running workspaces is delivered, keyed by workspace. */
+  const deliveredIdentities = async (orgId: string) => {
+    const credentials = input.credentials(orgId)
+    const [rows, selections, workspaces] = await Promise.all([
+      credentials.listCredentials(),
+      credentials.accountSelections(),
+      running((person) => person.orgId === orgId),
+    ])
+    const selected = deliverableRows(rows)
+    return new Map(await Promise.all(workspaces.map(async ({ workspaceId, person }) => [
+      workspaceId,
+      await deliveredAccountsIdentity({ owner: person.userId, machineOwnerUserId: person.userId, selections, selected }),
+    ] as const)))
+  }
+  /**
+   * A workspace whose driver installs accounts on its provider edge takes them
+   * through the driver again; one served through the plane's broker or direct
+   * takes them in a settings push alone, which its runtime holds until a turn
+   * in flight ends.
+   */
+  const redeliverAccounts = async (workspaceId: string) => {
+    if (await input.workspaceSecretBrokering(workspaceId) === "native") return refresh(workspaceId)
+    await input.sandboxRedeliver(workspaceId)
+  }
+  const credentialChange: CredentialChange = async (orgId) => {
+    const before = await deliveredIdentities(orgId)
+    return async () => {
+      const after = await deliveredIdentities(orgId)
+      await Promise.all([...after].flatMap(([workspaceId, identity]) =>
+        before.get(workspaceId) === identity ? [] : [redeliverAccounts(workspaceId)]))
+    }
   }
   return {
     prepareRuntime: prepare,
@@ -332,6 +423,6 @@ export function createHostedRuntimeDelivery(input: {
     },
     settingsChanged: (userId: string) => refreshRunning((person) => person.userId === userId),
     pluginsChanged: (userId: string) => refreshRunning((person) => person.userId === userId),
-    reconcileCredentialDelivery: (orgId: string) => refreshRunning((person) => person.orgId === orgId),
+    credentialChange,
   }
 }

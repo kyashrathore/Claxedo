@@ -18,7 +18,7 @@ import {
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import { cloudRuntimeLifecycle, cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
+import { cloudRuntimeLifecycle } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
@@ -243,8 +243,9 @@ export async function hostedConnectionInfo(
   auth: SignedControlPlaneAuth,
   workspaceId: string,
   lease: FirstLease,
-  previousJti?: string,
+  connect: { previousJti?: string; retry?: true } = {},
 ) {
+  const { previousJti, retry } = connect
   const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
   if ("error" in ingress) return ingress
   if ("tunnel" in ingress) {
@@ -257,7 +258,7 @@ export async function hostedConnectionInfo(
 
   const current = await hostManager.target(workspaceId)
   const [started, actor] = await Promise.all([
-    startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current }),
+    startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current, ...(retry ? { request: { retry } } : {}) }),
     settledActor(authority, auth),
   ])
   if ("denied" in started) return started.denied
@@ -291,9 +292,8 @@ export async function hostedConnectionInfo(
     })
     // A boot that failed fails the same way until the person changes what it
     // boots from, so its reason is the answer rather than a wait.
-    const bootFailure = sandboxRuntimeBootFailure(started.error)
-    if (bootFailure) {
-      return { error: apiError("cloud_runtime_boot_failed", cloudRuntimeStartFailure(bootFailure)), status: 409 } as const
+    if (started.error && sandboxRuntimeBootFailure(started.error) !== undefined) {
+      return { error: apiError("cloud_runtime_boot_failed", sandboxStartFailureReason(started.error)), status: 409 } as const
     }
     const failure = startFailure(started.error)
     return {

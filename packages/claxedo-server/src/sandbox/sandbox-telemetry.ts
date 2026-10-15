@@ -1,4 +1,4 @@
-import type { SandboxEgressUnenforcedEvent, SandboxLifecycleEvent, SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
+import type { SandboxEgressUnenforcedEvent, SandboxLifecycleEvent, SandboxStartPhaseEvent, SandboxStopCause } from "@claxedo/sandbox-manager"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { SANDBOX_ORG_LABEL } from "./org-sandbox-manager"
 
@@ -45,10 +45,12 @@ export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
   }
 }
 
+const STOP_CAUSES: Record<SandboxStopCause, string> = { explicit: "explicit", idle: "idle", provider: "host_stopped" }
+
 /**
  * The close of a metered interval is `workspace_stopped` with the boot's
  * `active_ms`, whether the machine was stopped by hand, by idleness,
- * destroyed while serving, or lost by its provider. Destroying a machine that was already stopped
+ * destroyed while serving, or stopped or lost by its provider. Destroying a machine that was already stopped
  * closes nothing. An epoch that failed while its start goes on in the next
  * one is not a failure the person saw; `workspace_failed` is the start's end.
  */
@@ -57,11 +59,17 @@ export function sandboxLifecycleSink(telemetry: ControlPlaneTelemetry) {
     const machine = machineProperties(event)
     if (event.kind === "failed") {
       if (event.retrying) return
-      telemetry.capture("system", "workspace_failed", { ...machine, code: event.bootFailed ? "boot_failed" : "provision_failed" })
+      const code = event.bootFailed ? "boot_failed" : event.startLimit ? "provider_rate_limited" : "provision_failed"
+      telemetry.capture("system", "workspace_failed", {
+        ...machine,
+        code,
+        ...(event.startLimit ? { window: event.startLimit } : {}),
+        ...(event.hostLeftRunning ? { host_left_running: true } : {}),
+      })
       return
     }
     if (event.activeMs === undefined) return
-    const cause = event.kind === "destroyed" ? (event.hostGone ? "host_gone" : "deleted") : event.idle ? "idle" : "explicit"
+    const cause = event.kind === "destroyed" ? (event.hostGone ? "host_gone" : "deleted") : STOP_CAUSES[event.cause]
     telemetry.capture("system", "workspace_stopped", { ...machine, cause, active_ms: event.activeMs })
   }
 }

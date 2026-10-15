@@ -34,7 +34,7 @@ export function DialogCreateTask(props: {
     setBusy(true)
     setRefusal(undefined)
     try {
-      const response = await api.client.command({
+      const response = await api.command({
         clientRequestId: uuid(),
         command: { type: "task.create", input: draft() },
       })

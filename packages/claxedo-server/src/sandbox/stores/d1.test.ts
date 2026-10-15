@@ -609,6 +609,33 @@ describe("d1 sandbox lease store", () => {
     expect(next).toMatchObject({ acquired: true, lease: { epoch: 2 } })
     expect((await leaseStore.get("ws_1"))?.start).toBeUndefined()
   })
+
+  test("a start whose first epoch failed and whose next serves keeps the failed epoch's reason in start_json once last_error is cleared", async () => {
+    let at = NOW
+    const { target, leaseStore } = await store(() => at)
+    let attempts = 0
+    const driver: SandboxDriver = {
+      ...fakeDriver(),
+      ensureHost: async (input) => {
+        attempts += 1
+        await input.onResource?.({ sandboxId: "sandbox_ws_1", hostId: "host_ws_1", labels: input.labels })
+        if (attempts === 1) throw new Error("Boat sandbox_ws_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr'")
+        return { sandboxId: "sandbox_ws_1", url: "https://runtime.test/ws_1", hostId: "host_ws_1", labels: input.labels }
+      },
+      resumeHost: async ({ ensure }) => ({ sandboxId: "sandbox_ws_1", url: "https://runtime.test/ws_1", hostId: "host_ws_1", labels: ensure.labels }),
+    }
+    const manager = () => createSandboxManager({ leaseStore, driver, now: () => at, retryDelayMs: () => 0 })
+
+    await expect(manager().ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", epoch: 1 })
+    at += 5_000
+    await expect(manager().ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready", epoch: 2 })
+
+    const failures = [{ epoch: 1, failedAt: NOW, error: "provider_failed:test-provider: Boat sandbox_ws_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr'" }]
+    const row = await target.prepare("select status, epoch, last_error, start_json from sandbox_leases where workspace_id = 'ws_1'").first()
+    expect(row).toMatchObject({ status: "ready", epoch: 2, last_error: null })
+    expect(JSON.parse(String(row?.start_json))).toMatchObject({ requestedAt: NOW, startedAt: NOW + 5_000, failures })
+    await expect(leaseStore.get("ws_1")).resolves.toMatchObject({ start: { failures } })
+  })
 })
 
 for (const action of ["resume", "release"] as const) {

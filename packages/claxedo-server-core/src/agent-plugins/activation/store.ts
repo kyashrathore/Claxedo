@@ -112,6 +112,7 @@ export type SignedAgentPluginActivationStore = {
   /** Authorizes a project even when the catalog and retained set are empty. */
   authorizeProject(auth: SignedControlPlaneAuth, projectId: string): Promise<void>
   revision(auth: SignedControlPlaneAuth): Promise<number>
+  /** Sourced plugins only: a built-in tool group has no artifact, and its rows are read by ID. */
   listKnown(auth: SignedControlPlaneAuth): Promise<SignedKnownPlugin[]>
   /** Every listed plugin's activation on every supported harness, in one read whatever the count. */
   read(

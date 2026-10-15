@@ -47,6 +47,37 @@ describe("GitHub code-host repositories", () => {
     expect(JSON.stringify(repositories)).not.toContain("github-secret")
   })
 
+  test("an app user token's installations say where the app is granted more repositories", async () => {
+    const calls: string[] = []
+    const integration = githubIntegration({
+      fetchImpl: async (input: string | URL | Request) => {
+        calls.push(input instanceof Request ? input.url : input.toString())
+        return Response.json({ total_count: 2, installations: [
+          { id: 7, account: { login: "acme" }, html_url: "https://github.com/organizations/acme/settings/installations/7", repository_selection: "selected" },
+          { id: 8, account: { login: "octo" }, html_url: "https://github.com/settings/installations/8", repository_selection: "all" },
+        ] })
+      },
+    })
+    expect(await integration.impl.actions["code-host"]!.repositoryAccess?.({}, "ghu_secret")).toEqual({ kind: "app", installations: [
+      { account: "acme", settingsUrl: "https://github.com/organizations/acme/settings/installations/7", repositorySelection: "selected" },
+      { account: "octo", settingsUrl: "https://github.com/settings/installations/8", repositorySelection: "all" },
+    ] })
+    expect(calls).toEqual(["https://api.github.com/user/installations?per_page=100"])
+  })
+
+  test("an app installed nowhere the user reaches has no installation to grant from", async () => {
+    const integration = githubIntegration({ fetchImpl: async () => Response.json({ total_count: 0, installations: [] }) })
+    expect(await integration.impl.actions["code-host"]!.repositoryAccess?.({}, "ghu_secret")).toEqual({ kind: "app", installations: [] })
+  })
+
+  test("a personal access token, which GitHub refuses installations to, is granted repositories in its own settings", async () => {
+    const integration = githubIntegration({ fetchImpl: async () => new Response("must authenticate with an app token", { status: 403 }) })
+    expect(await integration.impl.actions["code-host"]!.repositoryAccess?.({}, "github_pat_secret")).toEqual({
+      kind: "token",
+      settingsUrl: "https://github.com/settings/personal-access-tokens",
+    })
+  })
+
   test("fails without echoing provider response bodies", async () => {
     const integration = githubIntegration({
       fetchImpl: (async () => new Response("token github-secret denied", { status: 403 })),

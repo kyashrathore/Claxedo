@@ -13,10 +13,10 @@ import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/au
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
-import { inlineSandboxStart } from "../../test-support/inline-sandbox-start"
+import { inlineSandboxStart, unusedSandboxFollow } from "../../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "../../workspace/hosted-runtime-delivery"
-import { unusedSandboxStart, unusedWorkspaceIdleStop } from "../../test-support/inline-sandbox-start"
+import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../../test-support/inline-sandbox-start"
 import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 
@@ -138,6 +138,8 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
   // the manager is what `hostedSandboxInput` rebuilds from the workspace row.
   const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
+      sandboxRedeliver: unusedSandboxRedeliver,
+      sandboxFollow: unusedSandboxFollow,
       idleStop: unusedWorkspaceIdleStop,
     authority: services.authority as unknown as WorkspaceAuthority,
     database: backing.database,
@@ -331,6 +333,6 @@ describe("the hosted manager steps cannot omit the egress policy", () => {
   test("the connect route and a session host's tool call run no manager step of their own: a start reaches the driver only through the drive", () => {
     for (const source of [routeSource, startSource, turnExecutionSource]) expect([...code(source).matchAll(MANAGER_STEP)]).toEqual([])
     expect(code(routeSource)).toContain("startCloudWorkspace(services, options.sandboxStart,")
-    expect(code(startSource)).toContain("await start(workspaceId)")
+    expect(code(startSource)).toContain("await start(workspaceId, input.request)")
   })
 })

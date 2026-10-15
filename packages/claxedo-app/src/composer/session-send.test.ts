@@ -60,6 +60,25 @@ test("a lost send that the runtime queued is spent once the queue holds it", asy
   expect(promptText(store.draft(KEY).prompt)).toBe("")
 })
 
+test("Enter on a returned draft sends it again under the message id it first went out under, so the runtime runs it once", async () => {
+  const sent: string[] = []
+  const { send } = sessionComposer(lostAnswer(sent))
+  await send.send()
+  await send.send()
+  expect(sent).toHaveLength(2)
+  expect(sent[1]).toBe(sent[0])
+})
+
+test("a returned draft the person edits goes out under a new message id", async () => {
+  const sent: string[] = []
+  const { store, send } = sessionComposer(lostAnswer(sent))
+  await send.send()
+  store.setPrompt(KEY, [{ type: "text", content: "Reply only DONE-B.", start: 0, end: 18 }], 18)
+  await send.send()
+  expect(sent).toHaveLength(2)
+  expect(sent[1]).not.toBe(sent[0])
+})
+
 test("a returned draft the person edits is a new message, which the earlier send arriving does not take away", async () => {
   const sent: string[] = []
   const [messages, setMessages] = createSignal<TranscriptMessage[]>([])

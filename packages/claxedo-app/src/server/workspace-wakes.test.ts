@@ -29,7 +29,9 @@ function eventFeed() {
   }
 }
 
-function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; startProgress?: readonly WorkspaceStartProgress[] } = {}) {
+const NOW = 1_000_000
+
+function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; failure?: string; startProgress?: readonly WorkspaceStartProgress[] } = {}) {
   const starts: Start[] = []
   const follows: Start[] = []
   const settles: NonNullable<StartOptions["settled"]>[] = []
@@ -57,13 +59,13 @@ function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; s
   const lifecycle = (): Lifecycle => (running.value ? "live" : server.lifecycle ?? "asleep")
   const workspaces = {
     load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
-    byId: (id: string) => ({ ...placements[id], ...(id === "ws_cloud" ? { lifecycle: lifecycle() } : {}), reachable: id === "ws_cloud" && running.value }),
+    byId: (id: string) => ({ ...placements[id], ...(id === "ws_cloud" ? { lifecycle: lifecycle(), ...(server.failure ? { failure: server.failure } : {}) } : {}), reachable: id === "ws_cloud" && running.value }),
     locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
   const waits: number[] = []
   const wait = async (ms: number) => { waits.push(ms) }
-  return { starts, follows, waits, images, settles, emit, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, events, wait)) }
+  return { starts, follows, waits, images, settles, emit, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, events, wait, () => NOW)) }
 }
 
 async function settle() {
@@ -85,6 +87,20 @@ test("wakes: a send to an asleep cloud workspace starts it once, however many se
   starts[0].resolve()
   await Promise.all([first, second])
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
+})
+
+test("wakes: Wake clicked twice, and Wake now in the picker beside it, run one start", async () => {
+  const running = { value: false }
+  const { starts, wakes } = fixture(running)
+
+  const clicks = [wakes.start(cloud), wakes.start(cloud), wakes.start(cloud)]
+  await settle()
+  expect(starts).toHaveLength(1)
+
+  running.value = true
+  starts[0].resolve()
+  await Promise.all(clicks)
+  expect(starts).toHaveLength(1)
 })
 
 test("wakes: a refused start leaves the workspace asleep with the server's reason, and a retry can wake it", async () => {
@@ -251,4 +267,24 @@ test("wakes: the start it runs hears the server's notice that this workspace's s
   stop()
   emit({ type: "cloudWorkspaceChanged", workspaceId: cloud, status: { kind: "ready" } })
   expect(heard).toHaveLength(3)
+})
+
+test("wakes: a start the server refused until a retry time reads failed with its reason and that time, and nothing asks again on its own", async () => {
+  const running = { value: false }
+  const { starts, wakes } = fixture(running)
+  const refusal = new ServerError({ class: "conflict", code: "cloud_runtime_unavailable", message: "Boat POST /sandboxes was rejected (rate_limited)", details: { retryAfterMs: 484_180 } })
+
+  const send = wakes.wakeIfStopped(cloud)
+  await settle()
+  starts[0].reject(refusal)
+  await expect(send).rejects.toBe(refusal)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal, retryAt: NOW + 484_180 })
+  expect(starts).toHaveLength(1)
+})
+
+test("wakes: after a reload, a workspace whose start failed reads failed with the reason the catalog names, not asleep", () => {
+  const { wakes } = fixture({ value: false }, { lifecycle: "failed", failure: "Boat's daily start limit (200) is used up; try again later." })
+  const runtime = wakes.runtime(cloud)
+  expect(runtime.kind).toBe("wakeFailed")
+  expect(runtime.kind === "wakeFailed" && runtime.error.message).toBe("Boat's daily start limit (200) is used up; try again later.")
 })

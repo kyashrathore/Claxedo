@@ -7,7 +7,7 @@
  * (`./d1-boots`), under the same guard.
  */
 
-import { applySandboxLeasePatch, applySandboxProvisionedTarget, sandboxLeaseHeldHost } from "@claxedo/sandbox-manager"
+import { applySandboxLeaseFailure, applySandboxLeasePatch, applySandboxProvisionedTarget, sandboxLeaseHeldHost } from "@claxedo/sandbox-manager"
 import type {
   SandboxLease,
   SandboxLeaseAcquireInput,
@@ -317,16 +317,9 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       if (!current || current.epoch !== expectedEpoch) return undefined
       if (sandboxLeaseStatus(current.status) === "stopped" || sandboxLeaseStatus(current.status) === "destroyed") return undefined
       const failedAt = clock()
-      const next: SandboxLease = {
-        ...toSandboxLease(current),
-        status: "unavailable",
-        retryCount: current.retry_count + 1,
-        lastError: error,
-        nextRetryAt,
-        updatedAt: failedAt,
-      }
+      const next = applySandboxLeaseFailure(toSandboxLease(current), error, nextRetryAt, failedAt)
       return await writeFenced(workspaceId, expectedEpoch, next, current,
-        ["status", "retry_count", "next_retry_at", "last_error", "last_health_failure_at", "updated_at"], current.status, failedAt)
+        ["status", "retry_count", "next_retry_at", "last_error", "start_json", "last_health_failure_at", "updated_at"], current.status, failedAt)
     },
 
     async release(workspaceId: string) {

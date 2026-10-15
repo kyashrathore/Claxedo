@@ -1,4 +1,4 @@
-import { credentialSnapshot, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
+import { credentialSnapshot, isProviderUnavailable, type CredentialSnapshot, type ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { isNonEmptyString, isRecord } from "@claxedo/helpers/guards"
 import { readProviderDefinitions, type CustomProviderDefinition } from "./provider-definitions"
 
@@ -13,7 +13,7 @@ export type FirstPartyMcpDelivery = { name: string; url: string; token: string; 
 
 export type TurnDelivery = {
   expiresAt: number
-  auth: CredentialSnapshot
+  auth: CredentialSnapshot<ProviderUnavailable>
   plugins: RuntimeConfigSnapshotPlugins
   providerDefinitions: readonly CustomProviderDefinition[]
   firstPartyMcp?: FirstPartyMcpDelivery
@@ -58,10 +58,25 @@ function firstPartyMcp(input: unknown): FirstPartyMcpDelivery | undefined {
   return { name, url, token, toolGroups }
 }
 
+function refusalsOnly(accounts: CredentialSnapshot["accounts"]): Record<string, Record<string, ProviderUnavailable>> | undefined {
+  const refused: Record<string, Record<string, ProviderUnavailable>> = {}
+  for (const [user, rows] of Object.entries(accounts)) {
+    const providers: Record<string, ProviderUnavailable> = {}
+    for (const [providerId, row] of Object.entries(rows)) {
+      if (!isProviderUnavailable(row)) return undefined
+      providers[providerId] = { unavailable: true, reason: row.reason }
+    }
+    refused[user] = providers
+  }
+  return refused
+}
+
 export function parseTurnDelivery(input: unknown): TurnDelivery | undefined {
   if (!isRecord(input) || !onlyKeys(input, ["expiresAt", "auth", "plugins", "providerDefinitions", "firstPartyMcp", "directory"]) || !epochMillis(input.expiresAt)) return undefined
-  const auth = credentialSnapshot(input.auth, {})
-  if (!auth || Object.keys(auth.accounts).length > 0) return undefined
+  const snapshot = credentialSnapshot(input.auth, {})
+  const accounts = snapshot && refusalsOnly(snapshot.accounts)
+  if (!snapshot || !accounts) return undefined
+  const auth = { ...snapshot, accounts }
   const section = plugins(input.plugins)
   const providerDefinitions = input.providerDefinitions === undefined ? undefined : readProviderDefinitions(input.providerDefinitions)
   const mcp = input.firstPartyMcp === undefined ? undefined : firstPartyMcp(input.firstPartyMcp)

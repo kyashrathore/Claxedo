@@ -69,7 +69,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     catalog,
     picked,
   })
-  const { asleep, waking } = createSelectorRuntime(placementId)
+  const { runtime, asleep } = createSelectorRuntime(placementId, harness)
   const isPolling = createMemo(() => selection().readiness === "polling")
   const reprobing = createMemo(() => isPolling() && !asleep())
   watchScopeHarnessReprobe({ active, scope, scopeInput, placementId, sessionId, polling: reprobing, controller })
@@ -93,7 +93,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const style = createTriggerStyle(() => props.triggerStyle)
   const account = createHarnessAccountState(server, harness)
   const unavailableHere = createUnavailableHere({ selection, harness, harnessLabel: optionList.label, adopt: harnessSwitch.adopt })
-  const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, asleep, waking, account, placementId, openProviders, unavailableHere })
+  const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, runtime, account, placementId, openProviders, unavailableHere })
   const { notice, modelError } = createSelectorNotice({
     active,
     controller,

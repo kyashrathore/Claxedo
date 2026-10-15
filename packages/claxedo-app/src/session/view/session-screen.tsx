@@ -165,7 +165,7 @@ function SessionBody(props: {
             <SessionConnectionLine />
           </Show>
           <Show when={composing()} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
-            <PlacementNoticeSlot placementId={props.view.ref.placementId}>
+            <PlacementNoticeSlot placementId={props.view.ref.placementId} composerKey={sessionComposerKey(props.view.ref)}>
             <Composer
               readOnly={!props.controls.send}
               manageSession={props.controls.owner}

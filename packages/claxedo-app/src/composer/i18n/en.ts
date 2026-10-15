@@ -15,6 +15,9 @@ export type ComposerTextKey =
   | "composer.harnessElsewhere.keep"
   | "composer.models.asleep"
   | "composer.models.asleep.detail"
+  | "composer.models.wakeNow"
+  | "composer.models.wakeFailed"
+  | "composer.models.retryWake"
   | "composer.models.waking"
   | "composer.models.waking.detail"
   | "composer.unavailableHere"
@@ -154,7 +157,10 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.harnessElsewhere.startNew": "Start a new session",
   "composer.harnessElsewhere.keep": "Keep this session's harness",
   "composer.models.asleep": "{{name}} is asleep",
-  "composer.models.asleep.detail": "Its models load when it wakes; your next message wakes it.",
+  "composer.models.asleep.detail": "Its models load once it wakes.",
+  "composer.models.wakeNow": "Wake now",
+  "composer.models.wakeFailed": "Couldn't wake {{name}}",
+  "composer.models.retryWake": "Try again",
   "composer.models.waking": "{{name}} is waking",
   "composer.models.waking.detail": "Its models load once it is running.",
   "composer.unavailableHere": "{{harness}} runs inside the workspace, and your organization's cloud provider can't keep your key out of it.",

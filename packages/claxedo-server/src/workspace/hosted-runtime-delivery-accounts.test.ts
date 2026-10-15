@@ -1,10 +1,12 @@
 import { expect, test, vi } from "vitest"
 import { vercelBrokeredNetworkPolicy } from "@claxedo/sandbox-manager/drivers/vercel"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
+import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
+
+const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
 
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied })) }))
@@ -24,6 +26,8 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
     const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
+      sandboxRedeliver: unusedSandboxRedeliver,
+      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
       authority: { resolveWorkspaceOwner: async (workspaceId: string) => ({ userId: OWNERS[workspaceId], orgId: "org" }) } as unknown as Input["authority"],
       database: database.database,
@@ -72,6 +76,8 @@ test("a key saved for Pi never moves Claude Code off its Anthropic login; only c
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
     const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
+      sandboxRedeliver: unusedSandboxRedeliver,
+      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
       authority: { resolveWorkspaceOwner: async () => ({ userId: owner, orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
       database: database.database,

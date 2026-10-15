@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
-import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
+import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, useSelectedHarness, type Submission } from "@/composer"
+import { runsInSessionHost } from "@/lib/harness-selection"
 import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
 import { sessionId, useServer, type PlacementId, type PromptInput, type ReservationHold } from "@/server"
 import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
@@ -24,6 +25,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const workbench = useWorkbench()
   const key = () => draftComposerKey(props.state.draftId)
   const where = () => draftWhere(props.state)
+  const harness = useSelectedHarness(key)
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
   let pane: HTMLDivElement | undefined
@@ -60,7 +62,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   }
   const thinking = () => {
     const state = firstSend.state()
-    return state.kind === "sending" && server.cloud.runtime(state.placementId).kind === "live"
+    return state.kind === "sending" && (runsInSessionHost(harness()) || server.cloud.runtime(state.placementId).kind === "live")
   }
   const startSession = async (submission: Submission, input: PromptInput): Promise<SessionView | undefined> => {
     const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
@@ -84,8 +86,8 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
               data-component="session-new-design-content"
               classList={{ "w-full": true, "max-w-[720px]": !sent(), "pointer-events-auto px-3 md:max-w-192 md:mx-auto 2xl:max-w-[880px]": !!sent() }}
             >
-              <Show when={sent()} fallback={<PlacementNotice placementId={where()} />}>
-                <FirstSendNotice state={firstSend.state()} onRetry={firstSend.retry} onEdit={firstSend.edit} />
+              <Show when={sent()} fallback={<PlacementNotice placementId={where()} composerKey={key()} />}>
+                <FirstSendNotice state={firstSend.state()} composerKey={key()} onRetry={firstSend.retry} onEdit={firstSend.edit} />
               </Show>
               <ComposerNoticeRow notices={notice.notices()} />
               <div hidden={!!sent()} class="relative" classList={{ "z-10 -mt-2": notice.notices().length > 0 }}>

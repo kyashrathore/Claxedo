@@ -7,9 +7,9 @@ import { ServerError } from "./errors"
 import { placementId, type PlacementId, type ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
-import type { CloudProjectCreateInput, CloudSourceCreateInput, CloudWorkspace, CodeHostRepository } from "./cloud-types"
+import type { CloudProjectCreateInput, CloudSourceCreateInput, CloudWorkspace, CodeHostRepositoryListing } from "./cloud-types"
 import type { FetchQuery, Project, ProjectSource } from "./types"
-import { cloudWorkspaceFromRow, codeHostRepositoryFromRow } from "./wire/cloud"
+import { cloudWorkspaceFromRow, codeHostRepositoryListingFromBody } from "./wire/cloud"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 
@@ -24,13 +24,8 @@ export function cloudQueries(transport: Transport) {
         return workspace ? [workspace] : []
       })
     })
-  const repositories = (connectionId: string): FetchQuery<readonly CodeHostRepository[]> => fetchQuery(queryKeys.codeHostRepositories(server, connectionId), async () => {
-      const body = await transport.json(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/repositories`)
-      return (readArray(body, "repositories") ?? []).flatMap((row) => {
-        const repository = codeHostRepositoryFromRow(row)
-        return repository ? [repository] : []
-      })
-    })
+  const repositories = (connectionId: string): FetchQuery<CodeHostRepositoryListing> => fetchQuery(queryKeys.codeHostRepositories(server, connectionId), async () =>
+      codeHostRepositoryListingFromBody(await transport.json(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/repositories`)))
   return { cloud: { list }, codeHost: { repositories } }
 }
 

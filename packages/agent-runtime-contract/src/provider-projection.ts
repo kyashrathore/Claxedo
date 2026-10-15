@@ -36,7 +36,8 @@ export type ProviderBinding = {
   account?: BindingAccount
 }
 
-export type BindingAccount = { credentialId: string; providerId: string; label?: string }
+/** `revision` names the stored value handed over, so a refusal of it is told apart from a refusal of an older one. */
+export type BindingAccount = { credentialId: string; providerId: string; label?: string; revision?: number }
 
 export type ProviderUnavailable = {
   unavailable: true
@@ -49,6 +50,9 @@ export type ProviderUnavailable = {
  * A harness that calls the vendor from outside the sandbox still can.
  */
 export const HARNESS_NEEDS_BROKERING = "harness_needs_brokering"
+
+/** The refusal a provider carries for a person who chose the organization's account for it while the organization has none. */
+export const ORG_ACCOUNT_UNAVAILABLE = "org_account_unavailable"
 
 /**
  * Whether a row is the refusal rather than a binding.
@@ -192,10 +196,11 @@ function bindingExtras(row: Record<string, unknown>): Pick<ProviderBinding, "exp
 
 function bindingAccount(input: unknown): BindingAccount | undefined {
   if (!isRecord(input)) return undefined
-  const { credentialId, providerId, label } = input
+  const { credentialId, providerId, label, revision } = input
   if (typeof credentialId !== "string" || !credentialId || typeof providerId !== "string" || !providerId) return undefined
   if (label !== undefined && typeof label !== "string") return undefined
-  return { credentialId, providerId, ...(label ? { label } : {}) }
+  if (revision !== undefined && (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision < 1)) return undefined
+  return { credentialId, providerId, ...(label ? { label } : {}), ...(revision === undefined ? {} : { revision }) }
 }
 
 /**

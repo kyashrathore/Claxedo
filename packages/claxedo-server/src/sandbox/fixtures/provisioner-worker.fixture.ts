@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { createSandboxManager, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
+import { createSandboxManager, liftSandboxRetryWait, SandboxProviderKeyRefusedError, SandboxProviderRateLimitedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createD1SandboxLeaseStore } from "../stores/d1"
 import { sandboxProvisionerClass } from "../provisioner.cf"
 import { FIXTURE_OUTCOME_HELD_MS } from "./provisioner-outcome-held"
@@ -26,12 +26,27 @@ async function driverCalls(database: D1Database, workspaceId: string) {
   return calls?.n ?? 0
 }
 
+const FIXED_KEYS_TABLE = "fixture_fixed_keys"
+
+async function keyFixed(database: D1Database, workspaceId: string) {
+  await database.prepare(`create table if not exists ${FIXED_KEYS_TABLE} (workspace_id text not null)`).run()
+  return !!(await database.prepare(`select 1 from ${FIXED_KEYS_TABLE} where workspace_id = ?`).bind(workspaceId).first())
+}
+
+/** The person replaces the key `ws_key_refused` starts on, and the key change lifts the lease's wait. */
+async function fixKey(database: D1Database, workspaceId: string) {
+  await keyFixed(database, workspaceId)
+  await database.prepare(`insert into ${FIXED_KEYS_TABLE} (workspace_id) values (?)`).bind(workspaceId).run()
+  return liftSandboxRetryWait(createD1SandboxLeaseStore({ database }), workspaceId)
+}
+
 /**
  * A driver scripted by the workspace id: `ws_slow_<ms>` becomes ready after
  * that long, `ws_poll_<n>` asks to be polled n times first, `ws_boot_fail`
  * exits before it is ready, `ws_flaky` fails once at the provider and
- * `ws_flaky_<n>` n times,
- * `ws_step_throws` throws out of the start step once the lease is ready (its
+ * `ws_flaky_<n>` n times, `ws_key_refused` has its key refused until `/fix-key`,
+ * `ws_day_limited_<n>` is refused at its provider's daily start limit n times,
+ * `ws_hour_limited` at its hourly one every time, `ws_step_throws` throws out of the start step once the lease is ready (its
  * runtime is not provisioned until a second step), `ws_stopped_under` has its
  * lease stopped while the driver runs its first boot, and a workspace named
  * `asleep` has a runtime that never answers a ready lease.
@@ -50,6 +65,12 @@ function scriptedDriver(database: D1Database): SandboxDriver {
     const poll = /^ws_poll_(\d+)/.exec(input.workspaceId)
     if (poll && calls <= Number(poll[1])) return { provisioning: true as const, retryAfterMs: 100 }
     if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
+    if (input.workspaceId.startsWith("ws_key_refused") && !(await keyFixed(database, input.workspaceId))) {
+      throw new SandboxProviderKeyRefusedError("the key was rejected (unauthorized)")
+    }
+    const dayLimited = /^ws_day_limited_(\d+)/.exec(input.workspaceId)
+    if (dayLimited && calls <= Number(dayLimited[1])) throw new SandboxProviderRateLimitedError({ window: "day", limit: 200 }, "the start limit is used up")
+    if (input.workspaceId.startsWith("ws_hour_limited")) throw new SandboxProviderRateLimitedError({ window: "hour", limit: 60 }, "the start limit is used up")
     const flaky = /^ws_flaky(?:_(\d+))?/.exec(input.workspaceId)
     if (flaky && calls <= Number(flaky[1] ?? 1)) throw new Error("provider hiccup")
     if (input.workspaceId.startsWith("ws_stopped_under") && calls === 1) {
@@ -80,12 +101,17 @@ function scriptedDriver(database: D1Database): SandboxDriver {
   }
 }
 
+const FIXTURE_MAX_RETRY_COUNT = 4
+const FIXTURE_RETRY_CAP_COOLDOWN_MS = 60_000
+
 function manager(env: Env) {
   return createSandboxManager({
     leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
     driver: scriptedDriver(env.CONTROL_PLANE_DB),
     retryAfterMs: 100,
     retryDelayMs: () => 200,
+    maxRetryCount: FIXTURE_MAX_RETRY_COUNT,
+    retryCapCooldownMs: FIXTURE_RETRY_CAP_COOLDOWN_MS,
   })
 }
 
@@ -106,6 +132,26 @@ async function renewals(database: D1Database, workspaceId: string) {
 
 /** `ws_renew_<n>`: its settings are due again 200 ms after every delivery, and it keeps serving through n renewals. */
 const RENEWAL_DUE_MS = 200
+
+const ROOT_RENEWALS_TABLE = "fixture_root_renewals"
+
+/**
+ * `ws_root_<name>`: a Task root, whose start schedules nothing and whose
+ * settings a push outside any run delivered; every renewal records the
+ * capability set it was prepared with, and it is due again 200 ms later for
+ * as long as its lease is ready.
+ */
+async function recordRootRenewal(database: D1Database, workspaceId: string, capabilities: unknown) {
+  await database.prepare(`create table if not exists ${ROOT_RENEWALS_TABLE} (workspace_id text not null, capabilities text)`).run()
+  await database.prepare(`insert into ${ROOT_RENEWALS_TABLE} (workspace_id, capabilities) values (?, ?)`).bind(workspaceId, capabilities === undefined ? null : JSON.stringify(capabilities)).run()
+}
+
+async function rootRenewals(database: D1Database, workspaceId: string): Promise<unknown[]> {
+  const table = await database.prepare(`select count(*) as n from sqlite_master where type = 'table' and name = ?`).bind(ROOT_RENEWALS_TABLE).first<{ n: number }>()
+  if (!table?.n) return []
+  const rows = await database.prepare(`select capabilities from ${ROOT_RENEWALS_TABLE} where workspace_id = ? order by rowid`).bind(workspaceId).all<{ capabilities: string | null }>()
+  return rows.results.map((row) => (row.capabilities === null ? null : JSON.parse(row.capabilities)))
+}
 
 const WATCHES_TABLE = "fixture_watches"
 
@@ -161,7 +207,12 @@ function drive(env: Env): SandboxStartDrive {
       if (watching(workspaceId) && answer.status === "ready") return { ...answer, watchAt: Date.now() + WATCH_DUE_MS }
       return answer
     },
-    renew: async (workspaceId) => {
+    renew: async (workspaceId, capabilities) => {
+      if (workspaceId.startsWith("ws_root_")) {
+        if ((await sandboxes.target(workspaceId)).status !== "ready") return undefined
+        await recordRootRenewal(env.CONTROL_PLANE_DB, workspaceId, capabilities)
+        return Date.now() + RENEWAL_DUE_MS
+      }
       const scripted = renewing(workspaceId)
       if (!scripted) return undefined
       const count = await recordRenewal(env.CONTROL_PLANE_DB, workspaceId)
@@ -201,13 +252,30 @@ export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url)
     const workspaceId = url.searchParams.get("ws") ?? ""
-    if (url.pathname === "/start") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId))
+    if (url.pathname === "/start") {
+      return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId, url.searchParams.has("retry") ? { retry: true } : {}))
+    }
     if (url.pathname === "/refresh") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).refresh(workspaceId))
+    if (url.pathname === "/redeliver") {
+      await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).redeliver(workspaceId)
+      return Response.json({ redelivered: true })
+    }
+    if (url.pathname === "/follow") {
+      const capabilities = { plugins: [{ sourceId: "src", pluginName: url.searchParams.get("plugin") ?? "" }], skills: [] }
+      await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).follow({ workspaceId, capabilities }, { renewAt: Date.now() + RENEWAL_DUE_MS })
+      return Response.json({ followed: true })
+    }
+    if (url.pathname === "/stop") {
+      const current = await manager(env).target(workspaceId)
+      return Response.json(await manager(env).stop(workspaceId, current.status === "ready" ? { expectedEpoch: current.epoch } : {}))
+    }
+    if (url.pathname === "/root-renewals") return Response.json({ renewals: await rootRenewals(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/in-flight") return Response.json((await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).inFlight()) ?? null)
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/renewals") return Response.json({ renewals: await renewals(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/notices") return Response.json({ notices: await notices(env.CONTROL_PLANE_DB, workspaceId) })
+    if (url.pathname === "/fix-key") return Response.json({ lifted: await fixKey(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/watches") return Response.json({ watches: await watches(env.CONTROL_PLANE_DB, workspaceId) })
     return new Response("not found", { status: 404 })
   },

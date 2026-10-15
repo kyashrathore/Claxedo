@@ -40,7 +40,7 @@ function setup() {
     await ports.drainProviderEvent("s1", turn, { event: { type: "text-delta", delta: "The report arrived." } })
     await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
   })
-  return { store, prompt, continueTurn }
+  return { store, prompt, continueTurn, ports }
 }
 
 test("continuations keep one real prompt and distinct replies, including latest-turn paging", async () => {
@@ -90,6 +90,39 @@ test("a continuation consumed by a human turn while waiting never writes another
   if (!held) throw new Error("Lease missing")
   let current = true
   const pending = continueTurn(() => current)
+  current = false
+  store.releaseTurnLease("s1", held)
+  expect(await pending).toEqual({ admitted: false, reason: "busy" })
+  expect(store.getMessages("s1")).toHaveLength(2)
+})
+
+test("a turn the harness began on its own opens with its own harness message and leaves the latest prompt's answer to that prompt", async () => {
+  const { store, prompt, ports } = setup()
+  const first = prompt()
+  const admitted = await ports.admitProviderTurn("s1", { reason: "provider", current: () => true }, async (turn) => {
+    await ports.drainProviderEvent("s1", turn, { event: { type: "text-delta", delta: "The background job finished." } })
+    await ports.drainProviderEvent("s1", turn, { event: { type: "finish", sessionId: "s1" } })
+  })
+  if (!admitted.admitted) throw new Error("Provider turn refused")
+  expect(await admitted.settled).toEqual({ state: "completed" })
+  const messages = store.getMessages("s1")
+  const opening = messages.find((message) => message.info.role === "user" && message.info.id !== first.userMessageId)
+  if (!opening) throw new Error("The provider turn opened with no message")
+  expect(opening.info).toMatchObject({ claxedo: { author: { id: "harness:claude", name: "Claude Code", kind: "agent" } } })
+  expect(opening.parts).toMatchObject([{ type: "text", text: "Continued on its own" }])
+  expect(messages.find((message) => message.info.id === admitted.turn.assistantMessageId)?.info.parentID).toBe(opening.info.id)
+  expect(messages.find((message) => message.info.id === first.assistantMessageId)?.info.parentID).toBe(first.userMessageId)
+  expect(store.getMessagePage("s1", { view: "latest-surface" })?.messages.map((message) => message.info.id))
+    .toEqual([opening.info.id, admitted.turn.assistantMessageId])
+})
+
+test("a turn the harness began on its own that a human turn consumed while it waited writes nothing", async () => {
+  const { store, prompt, ports } = setup()
+  prompt()
+  const held = store.acquireTurnLease("s1")
+  if (!held) throw new Error("Lease missing")
+  let current = true
+  const pending = ports.admitProviderTurn("s1", { reason: "provider", current: () => current }, async () => {})
   current = false
   store.releaseTurnLease("s1", held)
   expect(await pending).toEqual({ admitted: false, reason: "busy" })

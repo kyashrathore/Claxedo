@@ -179,8 +179,10 @@ export type SandboxLease = {
  * "provisioning" is polled again from another request, often another isolate.
  *
  * `startedAt` is this epoch's boot, the interval the epoch is metered by;
- * `requestedAt` and `bootMode` are the start the person is waiting on, which
- * an epoch that retries a failed attempt or takes over a stale one inherits.
+ * `requestedAt`, `bootMode` and `failures` are the start the person is waiting
+ * on, which an epoch that retries a failed attempt or takes over a stale one
+ * inherits. A failure is recorded here as well as in the lease's `lastError`,
+ * which the next epoch's acquire and the target it then records clear.
  */
 export type SandboxStartProgress = {
   requestedAt: number
@@ -189,7 +191,11 @@ export type SandboxStartProgress = {
   /** When the last phase the control plane itself observed ended; the next one is timed from here. */
   markedAt: number
   phases: SandboxStartPhase[]
+  /** The epochs of this start that failed, in order, each with the reason the lease recorded. */
+  failures?: SandboxStartFailure[]
 }
+
+export type SandboxStartFailure = { epoch: number; failedAt: number; error: string }
 
 export type SandboxEpochStart = SandboxStartProgress & { epoch: number }
 
@@ -303,6 +309,21 @@ export type SandboxProvisionedTarget = {
   persistence?: SandboxPersistenceCapabilities
 }
 
+/** The lease after its epoch failed: unavailable, a retry counted, and the reason on the lease and on the start it was on. */
+export function applySandboxLeaseFailure(current: SandboxLease, error: string, nextRetryAt: number | undefined, failedAt: number): SandboxLease {
+  return {
+    ...current,
+    status: "unavailable",
+    retryCount: current.retryCount + 1,
+    lastError: error,
+    nextRetryAt,
+    updatedAt: failedAt,
+    ...(current.start
+      ? { start: { ...current.start, failures: [...current.start.failures ?? [], { epoch: current.epoch, failedAt, error }] } }
+      : {}),
+  }
+}
+
 export function applySandboxProvisionedTarget(
   current: SandboxLease,
   target: SandboxProvisionedTarget,
@@ -411,6 +432,9 @@ export type SandboxTarget = {
 
 export type SandboxResource = Omit<SandboxTarget, "url"> & { url?: string }
 
+/** What the provider says of a host: running or booting, held but not running, or no longer had. */
+export type SandboxHostState = "serving" | "stopped" | "gone"
+
 export type SandboxSnapshotResult = { snapshotId: string }
 export type SandboxCommandResult = { stdout: string; stderr: string; exitCode: number }
 
@@ -446,8 +470,7 @@ export type SandboxDriver = {
   snapshot?: (target: SandboxTarget, committed?: string) => Promise<SandboxSnapshotResult>
   /** Deletes a snapshot `snapshot` returned; implemented by drivers whose snapshots outlive their sandbox. */
   deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
-  /** Undefined for a host the provider no longer has. */
-  inspect?: (target: SandboxTarget) => Promise<SandboxTarget | undefined>
+  inspect?: (target: SandboxTarget) => Promise<SandboxHostState>
   exec?: (target: SandboxTarget, command: string) => Promise<SandboxCommandResult>
   clone?: (target: SandboxTarget, input: { name: string }) => Promise<SandboxTarget>
 }
@@ -475,8 +498,13 @@ export type SandboxManager = {
   checkpoint: (workspaceId: string, input: SandboxCheckpointCaptureInput) => Promise<SandboxCheckpointResult>
   restore: (workspaceId: string, input: SandboxCheckpointRestoreInput) => Promise<SandboxCheckpointResult>
   stop: (workspaceId: string, input?: SandboxStopInput) => Promise<SandboxMutationResult>
-  /** True when the provider no longer has the host the epoch serves from, which ends that lease destroyed; a driver that cannot inspect its hosts answers false. */
-  endIfHostGone: (workspaceId: string, epoch: number) => Promise<boolean>
+  /**
+   * Ends the serving lease at `epoch` when the provider says its host is not
+   * running: `stopped` (held, not running) ends it stopped, so the next start
+   * resumes that host; `gone` ends it destroyed. Nothing while the host
+   * serves, the epoch moved on, or the driver cannot inspect its hosts.
+   */
+  endIfHostDown: (workspaceId: string, epoch: number) => Promise<Exclude<SandboxHostState, "serving"> | undefined>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>
   release: (workspaceId: string) => Promise<{ released: boolean }>
   garbageCollect: () => Promise<SandboxGarbageCollectResult>
@@ -508,6 +536,13 @@ export type SandboxManagerInput = {
   env?: Record<string, string>
   /** Brokered secrets: injected on egress, never readable inside the sandbox. */
   secrets?: SandboxBrokeredSecret[]
+  /**
+   * Env minted for the lease the driver boots, joined to `env`: a credential
+   * bound to one lease generation and host can only be minted once the start
+   * has settled which epoch it runs, and a failed attempt's retry takes a new
+   * one.
+   */
+  leaseEnv?: (lease: { epoch: number; hostId: string }) => Promise<Record<string, string>>
   /** The machine the workspace chose; refused before a lease is taken when its driver declares no such class. */
   machineClass?: SandboxMachineClass
   source?: SandboxSource
@@ -570,7 +605,15 @@ export type SandboxEnsureResult =
       stale?: true
     })
   | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: SandboxRegion; bootMode?: SandboxBootMode }
-  | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: SandboxRegion }
+  | {
+      status: "unavailable"
+      retryAfterMs?: number
+      error?: string
+      epoch?: number
+      homeRegion: SandboxRegion
+      /** The start's retry budget is spent: `retryAfterMs` is the cooldown every start waits out, which nothing drives. */
+      exhausted?: true
+    }
 
 export type SandboxTargetResult =
   | ({ status: "ready" } & SandboxTarget & {
@@ -598,6 +641,8 @@ export type SandboxTargetResult =
       failure?: SandboxLeaseFailure
       /** The start the lease is on while it is acquiring or waiting out a retry, as far as it has been observed. */
       start?: SandboxEpochStart
+      /** The epoch and host an acquiring lease is booting, once the driver has handed it a host. */
+      booting?: { epoch: number; hostId: string }
     }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }

@@ -1,6 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import type { SandboxKeys } from "./account-types"
-import type { AccountsApi } from "./api"
+import type { AccountsApi, SandboxKeys } from "./account-types"
 import type { AccountWrite } from "./account-writes"
 import { contractMismatch, responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"

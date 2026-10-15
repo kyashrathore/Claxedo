@@ -4,14 +4,15 @@ import type { WorkspaceStartProgress } from "./cloud-types"
 import { ServerError } from "./errors"
 import { followWorkspaceStart, startWorkspace } from "./workspace-start"
 import { createWorkspaceConnections } from "./transport"
+import { workspaceStopped } from "./wire/connection"
 
 const READY = { relayUrl: "https://relay.test/", runtimeAccessToken: "rat", tokenExpiresAt: 1_900_000_000_000 }
 
 function answers(...responses: readonly Response[]) {
-  const calls: { path: string; method: string | undefined }[] = []
+  const calls: { path: string; method: string | undefined; body?: string }[] = []
   let next = 0
   const request = async (path: string, init?: RequestInit) => {
-    calls.push({ path, method: init?.method })
+    calls.push({ path, method: init?.method, ...(typeof init?.body === "string" ? { body: init.body } : {}) })
     const response = responses[next++]
     if (!response) throw new Error("no answer left")
     return response
@@ -22,10 +23,10 @@ function answers(...responses: readonly Response[]) {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status })
 
-test("workspace start: polls the explicit connect while it provisions, each wait the server's own, and adopts the ready link", async () => {
+test("workspace start: asks the explicit connect once as the person's retry, polls it while it provisions, each wait the server's own, and adopts the ready link", async () => {
   const server = answers(
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 1_500, bootMode: "resume" }),
-    json({ error: { code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable", retryAfterMs: 20 } }, 409),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 20 }),
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 90_000 }),
     json(READY),
   )
@@ -34,25 +35,26 @@ test("workspace start: polls the explicit connect while it provisions, each wait
   const link = await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void waits.push(ms) })
 
   expect(link).toEqual({ workspaceId: "ws_1", relayUrl: "https://relay.test", runtimeAccessToken: "rat", tokenExpiresAt: READY.tokenExpiresAt })
-  expect(server.calls).toEqual(Array(4).fill({ path: "/api/workspace/ws_1/connection", method: "POST" }))
+  const connect = { path: "/api/workspace/ws_1/connection", method: "POST" }
+  expect(server.calls).toEqual([{ ...connect, body: '{"retry":true}' }, ...Array(3).fill({ ...connect, body: "{}" })])
   expect(waits).toEqual([1_500, 500, 30_000])
   expect(progress).toEqual([{ kind: "provisioning", bootMode: "resume" }, { kind: "provisioning" }, { kind: "provisioning" }])
 })
 
-test("workspace start: a start the server retries after a failed step reports that failure with its progress until a step succeeds", async () => {
+test("workspace start: a start the server retries after a failed step reports that failure and when the retry runs, until a step succeeds", async () => {
   const server = answers(
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" }),
-    json({ error: { code: "cloud_runtime_unavailable", message: "quota exceeded", retryAfterMs: 15_000, failure: "quota exceeded" } }, 409),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 15_000, failure: "quota exceeded" }),
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume" }),
     json(READY),
   )
   const progress: WorkspaceStartProgress[] = []
 
-  await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async () => undefined })
+  await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async () => undefined, now: () => 1_000_000 })
 
   expect(progress).toEqual([
-    { kind: "provisioning", bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" },
-    { kind: "provisioning", failure: "quota exceeded" },
+    { kind: "provisioning", bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device", retryAt: 1_002_000 },
+    { kind: "provisioning", failure: "quota exceeded", retryAt: 1_015_000 },
     { kind: "provisioning", bootMode: "resume" },
   ])
 })
@@ -68,14 +70,14 @@ test("workspace start: a refusal with no retry hint fails at once with the serve
 })
 
 test("workspace start: a read that says the boot failed ends the start with that reason, under the boot-failure code", async () => {
-  const server = answers(json({ status: "failed", workspaceId: "ws_1", error: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git' }))
+  const server = answers(json({ status: "failed", workspaceId: "ws_1", error: 'The branch "missing" does not exist in https://github.com/acme/widgets.git' }))
 
   const start = startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
 
   await expect(start).rejects.toMatchObject({
     class: "conflict",
     code: "cloud_runtime_boot_failed",
-    message: 'The cloud workspace could not start: The branch "missing" does not exist in https://github.com/acme/widgets.git',
+    message: 'The branch "missing" does not exist in https://github.com/acme/widgets.git',
   })
   expect(server.calls).toHaveLength(1)
 })
@@ -121,7 +123,7 @@ test("following a start ends with no link when the server says the workspace sto
   expect(await followWorkspaceStart(stopped.read, "ws_1", { wait: async () => undefined })).toBeUndefined()
   expect(stopped.calls).toHaveLength(2)
 
-  const failed = answers(json({ status: "failed", workspaceId: "ws_1", error: "The cloud workspace could not start: no such branch" }))
+  const failed = answers(json({ status: "failed", workspaceId: "ws_1", error: "no such branch" }))
   expect(await followWorkspaceStart(failed.read, "ws_1", { wait: async () => undefined })).toBeUndefined()
 })
 
@@ -172,31 +174,81 @@ test("workspace start: a poll the server never answers is asked again once its d
   expect(calls).toBe(3)
 })
 
-test("workspace start: the server's notice that the start settled ends the wait and the unanswered poll at once, and the next poll adopts the ready link", async () => {
+function startNotices() {
   const listeners = new Set<() => void>()
   const settled = (listener: () => void) => {
     listeners.add(listener)
     return () => void listeners.delete(listener)
   }
-  const announce = () => [...listeners].forEach((listener) => listener())
-  const polled = [pending(), pending()]
-  const answered = [json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }), undefined, json(READY)]
+  return { listeners, settled, announce: () => [...listeners].forEach((listener) => listener()) }
+}
+
+test("workspace start: the server's notice that the start settled ends the wait at once, and the next poll adopts the ready link", async () => {
+  const { listeners, settled, announce } = startNotices()
+  const polled = pending()
+  const answered = [json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }), json(READY)]
   let calls = 0
   const connections = createWorkspaceConnections(async () => {
     const index = calls++
-    polled[index]?.resolve()
+    if (index === 0) polled.resolve()
     return answered[index] ?? never()
   })
 
   const start = startWorkspace(connections.start, "ws_1", { wait: never, settled })
-  await polled[0].promise
-  await Bun.sleep(0)
-  announce()
-  await polled[1].promise
+  await polled.promise
   await Bun.sleep(0)
   announce()
 
   expect((await start).runtimeAccessToken).toBe("rat")
-  expect(calls).toBe(3)
+  expect(calls).toBe(2)
   expect(listeners.size).toBe(0)
+})
+
+test("workspace start: notices that the start settled while a poll is in flight send no second connect, and the next poll goes at once after that poll's answer", async () => {
+  const { listeners, settled, announce } = startNotices()
+  const inFlight = Promise.withResolvers<Response>()
+  const answered = [Promise.resolve(json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 })), inFlight.promise, Promise.resolve(json(READY))]
+  const bodies: (string | undefined)[] = []
+  const connections = createWorkspaceConnections(async (_path, init) => {
+    const index = bodies.push(typeof init?.body === "string" ? init.body : undefined) - 1
+    return answered[index] ?? never()
+  })
+
+  const start = startWorkspace(connections.start, "ws_1", { wait: never, settled })
+  await Bun.sleep(0)
+  announce()
+  await Bun.sleep(0)
+  announce()
+  announce()
+  await Bun.sleep(0)
+  expect(bodies).toHaveLength(2)
+
+  inFlight.resolve(json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }))
+  expect((await start).runtimeAccessToken).toBe("rat")
+  expect(bodies).toEqual(['{"retry":true}', "{}", "{}"])
+  expect(listeners.size).toBe(0)
+})
+
+test("workspace start: a 409 refusal that names a wait ends the start at once with the server's reason and the wait, since nothing retries it before then", async () => {
+  const reason = "Boat POST /sandboxes was rejected (rate_limited)"
+  const server = answers(json({ error: { code: "cloud_runtime_unavailable", message: reason, retryAfterMs: 484_180, failure: reason } }, 409))
+
+  const start = startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
+
+  await expect(start).rejects.toBeInstanceOf(ServerError)
+  await expect(start).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: reason, details: { retryAfterMs: 484_180 } })
+  expect(server.calls).toHaveLength(1)
+})
+
+test("workspace start: a server that answers the start stopped ends it in one line naming no workspace id, and a stopped workspace's read refusal names none either", async () => {
+  const stopped = answers(json({ status: "stopped", workspaceId: "ws_1" }))
+  await expect(startWorkspace(stopped.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ message: "The workspace stopped while it was starting" })
+  expect(workspaceStopped().message).toBe("The cloud workspace is not running")
+})
+
+test("workspace start: a 409 refusal with no wait ends the start with the server's plain reason, as a provider's daily start limit does", async () => {
+  const reason = "Boat's daily start limit (200) is used up; try again later."
+  const server = answers(json({ error: { code: "cloud_runtime_unavailable", message: reason, failure: reason } }, 409))
+  await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: reason })
+  expect(server.calls).toHaveLength(1)
 })

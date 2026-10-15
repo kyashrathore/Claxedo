@@ -50,6 +50,12 @@ export type AgentPluginRuntimeProjectionPlan = {
   execution?: AgentPluginRuntimeExecutionPlan
 }
 
+/**
+ * A plugin enabled without a retained artifact is left out rather than
+ * refused: the Marketplace reports it as artifact unavailable, which is where
+ * the user can fix it, and one such plugin must not stop a machine from
+ * starting with every other plugin.
+ */
 export function desiredAgentPluginSelections(snapshot: SignedAgentPluginRuntimeSnapshot) {
   return snapshot.plugins.flatMap((plugin) => {
     const byDigest = new Map<ArtifactDigest, AgentPluginHarnessId[]>()
@@ -65,10 +71,7 @@ export function desiredAgentPluginSelections(snapshot: SignedAgentPluginRuntimeS
         claxedoDefault: state.claxedoDefault,
         pins: state.pins,
       })
-      if (!effective.effective) continue
-      if (effective.status !== "ready") {
-        throw new Error(`Agent Plugin ${plugin.pluginInstanceId} is enabled for ${harnessId} without a retained artifact`)
-      }
+      if (!effective.effective || effective.status !== "ready") continue
       const harnesses = byDigest.get(effective.artifactDigest) ?? []
       harnesses.push(harnessId)
       byDigest.set(effective.artifactDigest, harnesses)

@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
-import { classifyFirstTurnError, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import { vendorHttpStatus, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { TurnExecutionAccess } from "@claxedo/harness/contract"
 import {
   errorBody, remoteWorkspaceSessionAccessPolicy, RuntimeStoreSchemaMismatchError, type SessionAccessPolicy,
@@ -17,15 +17,24 @@ import { DurablePiPlacement } from "./pi-placement"
 import { SessionHostMeta } from "./session-host-meta"
 import { SessionHostTurns, TurnAuthorityError, type ExecutionRequest } from "./turn-delivery"
 import { TurnLeases, type StoredTurnLease } from "./turn-leases"
-import { workspaceMachineUnavailable } from "./workspace-machine"
+import { workspaceMachineAccess } from "./workspace-machine"
 
 /** A request or control-plane call at or past this is logged with its timing, so a slow composer read can be placed. */
 const SLOW_REQUEST_MS = 1_000
 
-/** The stored account a failed turn spent when its failure reads as the vendor refusing that account's credential. */
-function refusedStoredAccount(outcome: AgentTurnOutcome): string | undefined {
+type StoredAccountRefusal = { credentialId: string; revision: number; status: number }
+
+/**
+ * The stored account a failed turn spent, the revision of it this turn was
+ * handed and the vendor's own status, when that status is 401: the only
+ * answer the plane counts against an account, as its broker does. Prose about
+ * a key, a 403 or billing is never a refusal of the credential.
+ */
+function refusedStoredAccount(outcome: AgentTurnOutcome): StoredAccountRefusal | undefined {
   if (outcome.status !== "failed" || outcome.account?.kind !== "stored") return undefined
-  return (outcome.errorClass ?? classifyFirstTurnError(outcome.error)) === "credential" ? outcome.account.credentialId : undefined
+  const status = vendorHttpStatus(outcome.error)
+  const { credentialId, revision } = outcome.account
+  return status === 401 && revision !== undefined ? { credentialId, revision, status } : undefined
 }
 
 export type SessionHostEnv = {
@@ -54,6 +63,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
   private key: Promise<RelayHostAuthOptions["key"]> | undefined
   private hosting: Promise<SessionHost> | undefined
   private erasing = false
+  private erased = false
 
   constructor(ctx: DurableObjectState, env: SessionHostEnv) {
     super(ctx, env)
@@ -75,7 +85,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     this.pi = new PiHarness({ harness: (input) => this.placement.factory(() => this.boot())(input) })
     this.placement = new DurablePiPlacement({
       root, pi: this.pi, report: (error) => console.error("Pi extension failure", error),
-      execution: (request) => this.execution(request),
+      execution: (request, signal) => this.execution(request, signal),
       machine: async () => {
         const workspaceId = this.meta.workspaceId()
         const directory = (await this.turns.delivery(root)).delivery.directory
@@ -101,6 +111,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
    * a typed refusal, and can still be deleted.
    */
   async fetch(request: Request): Promise<Response> {
+    if (this.erased) return Response.json(errorBody("session_deleted", "This session was deleted"), { status: 404 })
     const arrivedAt = Date.now()
     let failure: unknown
     const started = await this.lifecycle.start().then(() => true, (error: unknown) => { failure = error; return false })
@@ -188,8 +199,8 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     return { status: answer.status === 401 || answer.status === 403 ? 403 : 502, message: `The control plane did not delete the session: ${answer.status} ${await answer.text()}` }
   }
 
-  private async execution(request: ExecutionRequest): Promise<TurnExecutionAccess> {
-    const access = await this.turns.execution(this.root, request).catch((error: unknown) => { throw workspaceMachineUnavailable(error) ?? error })
+  private async execution(request: ExecutionRequest, signal?: AbortSignal): Promise<TurnExecutionAccess> {
+    const access = await workspaceMachineAccess(() => this.turns.execution(this.root, request), { wait: request.wait === true, ...(signal ? { signal } : {}) })
     if (!this.meta.claimDirectory(access)) throw new TurnAuthorityError(409, "session_host_directory_mismatch")
     return access
   }
@@ -236,10 +247,15 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     await conversation?.abort(BACKGROUND_CONTEXT)
   }
 
+  /**
+   * The object answers its delete before the runtime evicts it, so it is not
+   * aborted: an abort fails the reply still on its way out, and the caller
+   * reads an erased session as a failed delete.
+   */
   private async erase(): Promise<void> {
+    this.erased = true
     await this.pi.dispose()
     await this.ctx.storage.deleteAlarm()
     await this.ctx.storage.deleteAll()
-    setTimeout(() => this.ctx.abort("The session was deleted"), 0)
   }
 }

@@ -38,6 +38,7 @@ import { connectionRateLimitError, controlPlaneRateLimitError } from "../../work
 import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
 import { isGitBranchName } from "../../workspace/git-branch-name"
+import { anonymousGitHubVisibility, repositoryConnection, type GitHubRepositoryVisibility } from "../../workspace/repository-connection"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 
 // `requireCloudWorkspaceEntitlement` (cloud-workspace admission for both
@@ -90,6 +91,11 @@ export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
    * egress entry lets the provisioned sandbox actually reach the host.
    */
   privateRepoHosts?: readonly string[]
+  /**
+   * Whether a pasted GitHub repository no connection of the caller lists is
+   * one anyone may clone; absent, GitHub is asked anonymously.
+   */
+  repositoryVisibility?: GitHubRepositoryVisibility
 }
 
 const refreshConnectionBody = z
@@ -102,6 +108,7 @@ const connectionBody = z
   .object({
     previousJti: z.string().optional(),
     session: z.object({ sessionId: z.string().min(1) }).strict().optional(),
+    retry: z.literal(true).optional(),
   })
   .strict()
   .refine((body) => !(body.previousJti && body.session), { message: "A session connection is minted fresh, never refreshed from a previous token" })
@@ -167,6 +174,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     resolve: options.resolveRepoAddresses ?? dohAddressResolver((url, init) => fetch(url, init)),
     ...(options.privateRepoHosts ? { privateHosts: options.privateRepoHosts } : {}),
   }
+  const repositoryVisibility = options.repositoryVisibility ?? anonymousGitHubVisibility((url, init) => fetch(url, init))
   const hostAssignment = hostAssignmentHandlers(services, options, controlPlaneRateLimiter)
   const deleteCloudWorkspace = cloudWorkspaceDeletion(services, options, controlPlaneRateLimiter)
 
@@ -174,7 +182,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     ...options,
     requireSigned: true as const,
   })
-  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean; session?: { sessionId: string } } = {}) => {
+  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean; session?: { sessionId: string }; retry?: true } = {}) => {
     const workspaceId = routeParam(c, "id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
@@ -207,7 +215,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           ? await hostedSessionHostConnection(services, options, auth, { workspaceId, ...input.session })
           : input.readOnly
           ? await hostedConnectionStatus(services, options, auth, workspaceId)
-          : await hostedConnectionInfo(services, options, auth, workspaceId, { admission: createAdmission, usage: options.sandboxUsage }, input.previousJti)
+          : await hostedConnectionInfo(services, options, auth, workspaceId, { admission: createAdmission, usage: options.sandboxUsage }, {
+            ...(input.previousJti ? { previousJti: input.previousJti } : {}),
+            ...(input.retry ? { retry: input.retry } : {}),
+          })
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so
@@ -350,27 +361,24 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           )
         }
         let repoConnectionId: string | undefined
-        if (body.connectionId && body.repo) {
-          // The connection proves the caller can read the repository. A
-          // private one is bound to it: every boot's runtime preparation reads
-          // a fresh clone token through that connection, which rides to the
-          // sandbox as a brokered secret, never in the row or the clone URL.
-          if (!options.connections) {
-            return c.json(
-              { error: apiError("repository_connections_unavailable", "Repository connections are unavailable") },
-              501,
-            )
-          }
-          const access = await options.connections.repositoryForAuth(auth, body.connectionId, body.repo.fullName)
-          if (!access.ok) return c.json({ error: apiError(access.code, "Repository connection is not available") }, access.status)
-          repoUrl = access.repository.cloneUrl
+        const connected = await repositoryConnection(auth, { ...body, ...(repoUrl ? { repoUrl } : {}) }, {
+          ...(options.connections ? { connections: options.connections } : {}),
+          visibility: repositoryVisibility,
+        })
+        if (connected && !connected.ok) return c.json({ error: apiError(connected.code, connected.message) }, connected.status)
+        if (connected) {
+          // A private repository is bound to the connection that reads it:
+          // every boot's runtime preparation reads a fresh clone token through
+          // that connection, which rides to the sandbox as a brokered secret,
+          // never in the row or the clone URL.
+          repoUrl = connected.repository.cloneUrl
           if (!(await admittedRepoUrl(repoUrl, repoAdmission))) {
             return c.json(
               { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
               400,
             )
           }
-          if (access.repository.private) repoConnectionId = body.connectionId
+          if (connected.repository.private) repoConnectionId = connected.connectionId
         }
         if (!repoUrl) {
           return c.json(

@@ -5,6 +5,7 @@ import {
   hostedTasksRuntimeClient,
   type HostedTasksCompositionInput,
 } from "../../tasks/hosted-composition"
+import { createD1TasksHostReads } from "../../tasks/d1-host-reads"
 import { tasksGrantRenewalContribution, type TasksGrantRenewalInput } from "../../tasks/grant-renewal"
 import {
   createHostedTasksSessionBridge,
@@ -31,11 +32,12 @@ export function hostedTasksRouteContributions(
   input: Omit<HostedTasksCompositionInput, "bridge" | "cloudSelectedCapabilities"> & {
     selectedCapabilities?: NonNullable<HostedTasksSessionBridgeInput["selectedCapabilities"]>
     /**
-     * The environment the workspace routes launch every cloud root with. A
-     * task's root is launched by the bridge, so it is handed the same one.
+     * The grants the workspace routes launch every cloud root with, and the
+     * runtime delivery every cloud workspace starts with. A task's root is
+     * launched by the bridge, so it is handed the same two.
      */
     rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
-    releaseRuntime?: HostedTasksSessionBridgeInput["releaseRuntime"]
+    workspaceRuntime?: HostedTasksSessionBridgeInput["workspaceRuntime"]
     sandboxUsage?: HostedTasksSessionBridgeInput["sandboxUsage"]
     /**
      * The deployment's half of the create admission a task's cloud root is
@@ -52,6 +54,7 @@ export function hostedTasksRouteContributions(
     services: input.services,
     ...input.cloudCreateAdmission,
   })
+  const reads = createD1TasksHostReads(input.database)
   const composition = createHostedTasksComposition({
     ...input,
     cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
@@ -59,12 +62,13 @@ export function hostedTasksRouteContributions(
       createHostedTasksSessionBridge({
         services: input.services,
         runtimeClient: hostedTasksRuntimeClient(input.services),
+        reads,
         principal,
         auth,
         owner,
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
         ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
-        ...(input.releaseRuntime ? { releaseRuntime: input.releaseRuntime } : {}),
+        ...(input.workspaceRuntime ? { workspaceRuntime: input.workspaceRuntime } : {}),
         ...(input.sandboxUsage ? { sandboxUsage: input.sandboxUsage } : {}),
         cloudCreateAdmission: createAdmission,
         sandboxEgress: input.sandboxEgress,

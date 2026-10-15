@@ -6,6 +6,8 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import { harnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import type { HostedSandboxDriverKeys } from "../credentials/worker/routes"
+import type { SandboxLeaseStore } from "@claxedo/sandbox-manager"
+import { liftOrgKeyRetryWaits } from "./org-sandbox-manager"
 import { d1OrgSandboxDriver } from "./stores/d1-org-driver"
 
 /** The organization's sandbox provider keys on a D1 plane: org rows in the shared store, the choice on the `orgs` row. */
@@ -15,6 +17,8 @@ export function hostedSandboxDriverKeys(input: {
   drivers: readonly SandboxDriverID[]
   /** Whether this plane brokers for a driver without a provider edge, which decides what its accounts report as reachable. */
   hostedBroker: boolean
+  /** The leases of the plane's cloud workspaces, which record the key each one starts on. */
+  leaseStore: SandboxLeaseStore
   now?: () => number
 }): HostedSandboxDriverKeys {
   const store = d1OrgSandboxDriver(input.database, input.now)
@@ -25,7 +29,6 @@ export function hostedSandboxDriverKeys(input: {
   }
   return {
     drivers: input.drivers,
-    administers: async (auth, orgId) => await store.administers(await person(auth), orgId),
     chosen: store.chosen,
     choose: async (auth, orgId, driver) => {
       if (!await store.choose(await person(auth), orgId, driver)) {
@@ -33,6 +36,7 @@ export function hostedSandboxDriverKeys(input: {
       }
     },
     remove: async (auth, orgId, keyId) => await store.remove(await person(auth), orgId, keyId),
+    changed: (orgId, keyId) => liftOrgKeyRetryWaits(input.leaseStore, orgId, keyId),
     brokering: (driver) => harnessSecretDelivery(sandboxDriverCatalog[driver].metadata.secretBrokering, input.hostedBroker),
     machineClasses: (driver) => sandboxDriverCatalog[driver].metadata.machineClasses,
   }

@@ -1,5 +1,6 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
-import { useTranslator } from "@/i18n"
+import { useErrorCopy, useTranslator } from "@/i18n"
+import { FailureNotice } from "@/lib/failure"
 import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores } from "@/session"
@@ -12,8 +13,22 @@ import { ProjectBlock } from "./project-block"
 import { createRowNavigation } from "./row-navigation"
 import { createSessionActions } from "./session-actions"
 
-export function ProjectTree(): JSX.Element {
+function ProjectTreeEmpty(): JSX.Element {
   const t = useTranslator(railDictionary)
+  const projects = useProjectList()
+  const errorCopy = useErrorCopy("projects")
+  return (
+    <Show when={projects.failure()} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noProjects")}</div>}>
+      {(error) => (
+        <div class="px-2 py-2">
+          <FailureNotice title={t("rail.projectsFailed")} message={errorCopy(error()).message} retryLabel={errorCopy(error()).retry} onRetry={projects.retry} />
+        </div>
+      )}
+    </Show>
+  )
+}
+
+export function ProjectTree(): JSX.Element {
   const projects = useProjectList()
   const server = useServer()
   const stores = useSessionStores()
@@ -38,7 +53,7 @@ export function ProjectTree(): JSX.Element {
   }
   return (
     <div class="flex-1 flex flex-col py-1.5 gap-0.5">
-      <Show when={sections().length > 0} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noProjects")}</div>}>
+      <Show when={sections().length > 0} fallback={<ProjectTreeEmpty />}>
         <For each={sections().map((section) => section.key)}>
           {(key) => {
             const section = () => sectionByKey().get(key)

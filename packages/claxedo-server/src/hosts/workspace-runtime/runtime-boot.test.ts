@@ -2,7 +2,7 @@ import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test, vi } from "vitest"
 import { execFile, execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -94,6 +94,24 @@ describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot po
       await rm(directory, { recursive: true, force: true })
     }
   })
+  test("a boot whose HOME does not exist fails on one line naming it, before git writes anything under it", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "missing-home-test-"))
+    const home = path.join(directory, "home", "claxedo")
+    try {
+      await expect(claxedoWorkspaceRuntimeBootFromEnv({
+        PATH: process.env.PATH,
+        HOME: home,
+        GIT_CONFIG_NOSYSTEM: "1",
+        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-home",
+        WORKSPACE_RUNTIME_DIRECTORY: directory,
+        WORKSPACE_RUNTIME_GIT_REPO_URL: "https://github.com/octocat/Hello-World.git",
+      })).rejects.toThrow(new Error(`This sandbox has no home directory ${home}; redeploy its sandbox image`))
+      expect(existsSync(path.join(directory, "home"))).toBe(false)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test("the boot's own git presents the clone header to a repository that refuses a clone without it", async () => {
     const origin = await serveGitOrigin()
     origin.served.authorization = "Bearer clone-token"
@@ -118,6 +136,86 @@ describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot po
       await expect(boot()).rejects.toThrow("could not read Username")
       await boot({ CLAXEDO_GITHUB_CLONE_AUTH: "Bearer clone-token" })
       expect(origin.git(["log", "-1", "--format=%s"], env.WORKSPACE_RUNTIME_DIRECTORY)).toBe("commit 5")
+    } finally {
+      await origin.close()
+    }
+  }, 90_000)
+
+  test("without a provider edge, git reaches the workspace repository alone at the broker, and a later boot of either form withdraws the other", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "broker-git-test-"))
+    const env = {
+      PATH: process.env.PATH,
+      HOME: directory,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: path.join(directory, "gitconfig"),
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-git",
+      WORKSPACE_RUNTIME_DIRECTORY: directory,
+      WORKSPACE_RUNTIME_GIT_REPO_URL: "https://github.com/acme/private.git",
+      CLAXEDO_GITHUB_CLONE_AUTH: "Bearer broker-pass",
+      CLAXEDO_GITHUB_CLONE_BROKER_URL: "https://api.claxedo.test/bindings/b1",
+    }
+    const brokered = "https://api.claxedo.test/bindings/b1/acme/private.git"
+    const git = (args: string[]) => execFileSync("git", args, { env, cwd: directory, encoding: "utf8" }).trim()
+    const all = () => git(["config", "--global", "--list"]).split("\n").sort()
+    try {
+      await claxedoWorkspaceRuntimeBootFromEnv(env)
+      expect(all()).toEqual([
+        `http.${brokered}.extraheader=Authorization: Bearer broker-pass`,
+        `url.${brokered}.insteadof=https://github.com/acme/private.git`,
+      ])
+      await claxedoWorkspaceRuntimeBootFromEnv({ ...env, CLAXEDO_GITHUB_CLONE_AUTH: "Bearer renewed-pass" })
+      expect(git(["config", "--get-all", `http.${brokered}.extraheader`])).toBe("Authorization: Bearer renewed-pass")
+      await expect(claxedoWorkspaceRuntimeBootFromEnv({ ...env, CLAXEDO_GITHUB_CLONE_BROKER_URL: "http://api.claxedo.test/bindings/b1" }))
+        .rejects.toThrow("Invalid GitHub clone broker URL")
+      const { CLAXEDO_GITHUB_CLONE_AUTH: _pass, ...brokerWithoutPass } = env
+      await expect(claxedoWorkspaceRuntimeBootFromEnv(brokerWithoutPass)).rejects.toThrow("names no authorization")
+
+      const { CLAXEDO_GITHUB_CLONE_BROKER_URL: _broker, ...edge } = env
+      await claxedoWorkspaceRuntimeBootFromEnv({ ...edge, CLAXEDO_GITHUB_CLONE_AUTH: "secret_ref_clone" })
+      expect(all()).toEqual(["http.https://github.com/acme/private.git.extraheader=Authorization: secret_ref_clone"])
+      await claxedoWorkspaceRuntimeBootFromEnv(env)
+      expect(all()).toHaveLength(2)
+      const { CLAXEDO_GITHUB_CLONE_AUTH: _withdrawn, ...withdrawn } = edge
+      await claxedoWorkspaceRuntimeBootFromEnv(withdrawn)
+      expect(git(["config", "--global", "--list"])).toBe("")
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("a boot with no provider edge clones the private repository through the broker, and the checkout's own fetch keeps going there", async () => {
+    const origin = await serveGitOrigin()
+    origin.served.authorization = "Bearer broker-pass"
+    const seen: string[] = []
+    origin.served.onRequest = (request) => { seen.push(request.url ?? "") }
+    // The broker answers at its binding URL followed by the repository's path.
+    await mkdir(path.join(origin.directory, "bindings", "b1", "acme"), { recursive: true })
+    await symlink(path.join(origin.directory, "origin.git"), path.join(origin.directory, "bindings", "b1", "acme", "private.git"))
+    const env = {
+      PATH: process.env.PATH,
+      HOME: origin.directory,
+      GIT_CONFIG_NOSYSTEM: "1",
+      CLAXEDO_DATA_DIR: path.join(origin.directory, "claxedo"),
+      WORKSPACE_RUNTIME_DATA_DIR: path.join(origin.directory, "workspace-runtime"),
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-brokered-clone",
+      WORKSPACE_RUNTIME_DIRECTORY: path.join(origin.directory, "workspace"),
+      WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+      WORKSPACE_RUNTIME_GIT_REPO_URL: "https://github.com/acme/private.git",
+      CLAXEDO_GITHUB_CLONE_AUTH: "Bearer broker-pass",
+      CLAXEDO_GITHUB_CLONE_BROKER_URL: `${new URL(origin.repoUrl).origin}/bindings/b1`,
+    }
+    const script = `import { claxedoWorkspaceRuntimeBootFromEnv } from ${JSON.stringify(path.join(import.meta.dirname, "runtime-boot.ts"))}\n`
+      + "await claxedoWorkspaceRuntimeBootFromEnv()\nprocess.exit(0)\n"
+    const checkout = (args: string[]) => execFileSync("git", args, { cwd: env.WORKSPACE_RUNTIME_DIRECTORY, env, encoding: "utf8" }).trim()
+    try {
+      await promisify(execFile)("bun", ["--eval", script], { cwd: import.meta.dirname, env, timeout: 60_000 })
+      expect(origin.git(["log", "-1", "--format=%s"], env.WORKSPACE_RUNTIME_DIRECTORY)).toBe("commit 5")
+      expect(checkout(["config", "--get", "remote.origin.url"])).toBe("https://github.com/acme/private.git")
+      expect(seen.length).toBeGreaterThan(0)
+      expect(seen.every((url) => url.startsWith("/bindings/b1/acme/private.git/"))).toBe(true)
+      const before = seen.length
+      await promisify(execFile)("git", ["fetch", "--quiet", "--deepen=1", "origin", "trunk"], { cwd: env.WORKSPACE_RUNTIME_DIRECTORY, env })
+      expect(seen.length).toBeGreaterThan(before)
     } finally {
       await origin.close()
     }
@@ -416,7 +514,7 @@ describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot po
         assistant("msg_tail"),
       ]) options.onPresentationEvent!(event)
       await policy.endTurn?.(turn)
-      expect(await policy.releaseTurn!(turn)).toEqual({ released: true })
+      expect(await policy.releaseTurn!(turn)).toMatchObject({ released: true, usageProof: { proof: expect.any(String) } })
       options.onPresentationEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
 
       await options.onDrain!()

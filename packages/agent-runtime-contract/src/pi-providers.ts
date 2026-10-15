@@ -1,4 +1,5 @@
 import { vendorCredentialProviderIds } from "./harness-table"
+import type { PromptModel } from "./sessions"
 
 /**
  * The providers Pi can be launched on, and the stored rows each one can be
@@ -47,6 +48,17 @@ export const PI_PROVIDER_LABELS: Readonly<Record<PiLaunchProvider, string>> = {
   google: "Google",
   groq: "Groq",
   xai: "xAI",
+}
+
+/**
+ * The vendor and the vendor's own model id a model selection runs. Pi keys a
+ * model as `<vendor>/<model>` under its own provider `pi`; every other
+ * harness's selection already names its vendor.
+ */
+export function vendorModel(model: PromptModel): PromptModel {
+  const slash = model.modelID.indexOf("/")
+  if (model.providerID !== "pi" || slash < 1 || slash === model.modelID.length - 1) return model
+  return { providerID: model.modelID.slice(0, slash), modelID: model.modelID.slice(slash + 1) }
 }
 
 export function isPiLaunchProvider(providerID: string): providerID is PiLaunchProvider {

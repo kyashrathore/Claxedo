@@ -649,8 +649,31 @@ export const desktopRenderer: Policy = {
   // notice for a harness the runtime refuses because it runs in another host
   // (owner: the app's composer domain, `composer/view/harness-elsewhere.ts`).
   // They add no package edge.
-  // 1375/36, no headroom.
-  ceilings: { modules: 1375, packages: 36 },
+  // What a permission ask shows from the request the harness sent (owner: the
+  // app's session domain, `session/view/docks/permission-facts.ts`), where a
+  // plugin works in the cloud from its MCP servers' reach (owner: the app's
+  // marketplace domain, `marketplace/cloud-reach.ts`), and the repository
+  // picker's hint about where a code host grants more repositories (owner:
+  // the app's projects domain, `projects/repository-access.ts`,
+  // `projects/view/project-repository-access.tsx`). They add no package edge.
+  // The organization's team accounts page and its add drawer, their store, and
+  // the Check and Remove actions it shares with the sandbox keys (owner: the
+  // app's accounts domain, `accounts/view/team-section.tsx`,
+  // `accounts/view/team-account-form.tsx`, `accounts/team-store.ts`,
+  // `accounts/key-actions.ts`). They add no package edge.
+  // The one Wake now the placement notice and the model picker share (owner:
+  // the app's cloud domain, `cloud/view/wake-workspace.ts`), the picker's
+  // words for an empty model list split from its wiring (owner: the app's
+  // composer domain, `composer/view/models-empty-notice.ts`), and the
+  // composer's selected harness that the session screens read to keep a
+  // session-host harness free of machine notices (owner: the app's composer
+  // domain, `composer/harness/selected-harness.ts`). They add no package edge.
+  // A cloud preset's harness picker and the model it saves without asking a
+  // machine (owner: the app's tasks domain,
+  // `tasks/presets/cloud-configuration-picker.tsx`,
+  // `tasks/presets/cloud-model.ts`). They add no package edge.
+  // 1388/36, no headroom.
+  ceilings: { modules: 1388, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

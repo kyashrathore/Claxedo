@@ -53,10 +53,11 @@ export function safeStartIndex(text: string, index: number): number {
   if (isLowSurrogate(text.charCodeAt(start))) start += 1
 
   // Walk back far enough to see whether `start` sits inside an escape sequence.
-  // Escapes are short; scanning a bounded window keeps this O(1) per trim.
-  const windowStart = Math.max(0, start - MAX_ESCAPE_SCAN)
-  const escIndex = text.lastIndexOf(ESC, start - 1)
-  if (escIndex === -1 || escIndex < windowStart) return start
+  // Escapes are short, so the walk stops at the window. `lastIndexOf` would
+  // cross the whole text whenever it holds no ESC, a full scan of a
+  // megabytes-long buffer on every trim.
+  const escIndex = lastEscapeInWindow(text, start)
+  if (escIndex === -1) return start
 
   // ESC found behind us — is it still open at `start`? A sequence is closed by
   // its final byte; if the terminator appears between the ESC and our cut, the
@@ -73,6 +74,14 @@ export function safeStartIndex(text: string, index: number): number {
     if (isEscapeFinal(text, escIndex, i)) return i + 1
   }
   return limit
+}
+
+function lastEscapeInWindow(text: string, start: number): number {
+  const windowStart = Math.max(0, start - MAX_ESCAPE_SCAN)
+  for (let i = start - 1; i >= windowStart; i -= 1) {
+    if (text.charCodeAt(i) === 0x1b) return i
+  }
+  return -1
 }
 
 /**

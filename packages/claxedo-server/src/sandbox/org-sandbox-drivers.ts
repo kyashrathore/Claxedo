@@ -1,5 +1,5 @@
 import { effectiveSandboxDriver, type SandboxDriverID, type SandboxSecretBrokering } from "@claxedo/sandbox-contract"
-import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import { SandboxStartRefusedError, type SandboxDriver } from "@claxedo/sandbox-manager"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -42,7 +42,7 @@ export function orgSandboxDrivers(input: {
       .sort((left, right) => left.created_at - right.created_at)
   const keyRow = async (orgId: string, key: string) => {
     const row = (await orgKeys(orgId)).find((candidate) => candidate.id === key)
-    if (!row) throw new Error("The sandbox provider key this workspace was created with has been removed")
+    if (!row) throw new SandboxStartRefusedError("The sandbox provider key this workspace was created with has been removed")
     return row
   }
   const built = new Map<string, SandboxKeyBinding>()

@@ -44,6 +44,11 @@ function harness(gates: {
                 private: true,
                 permissions: { read: true, write: false },
               }],
+              repositoryAccess: async () => ({ kind: "app" as const, installations: [{
+                account: "acme",
+                settingsUrl: "https://github.com/organizations/acme/settings/installations/7",
+                repositorySelection: "selected" as const,
+              }] }),
             },
             "work-source": workSourcePort,
           }
@@ -268,7 +273,7 @@ describe("integrations routes", () => {
     expect((await app.request("/?capability=nonsense")).status).toBe(422)
   })
 
-  test("lists visible code-host repositories without exposing the connection token", async () => {
+  test("lists visible code-host repositories, and where more are granted, without exposing the connection token", async () => {
     const { app } = harness({ codeHost: true })
     await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })
     const listing = await (await app.request("/")).json() as { connections: Array<{ id: string }> }
@@ -283,7 +288,11 @@ describe("integrations routes", () => {
       cloneUrl: "https://github.com/acme/app.git",
       private: true,
       permissions: { read: true, write: false },
-    }] })
+    }], access: { kind: "app", installations: [{
+      account: "acme",
+      settingsUrl: "https://github.com/organizations/acme/settings/installations/7",
+      repositorySelection: "selected",
+    }] } })
     expect(JSON.stringify(body)).not.toContain("good")
   })
 

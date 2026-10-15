@@ -1,5 +1,16 @@
 import { expect, test } from "bun:test"
-import { cloudWorkspaceFromRow } from "./cloud"
+import { cloudWorkspaceFromRow, codeHostRepositoryListingFromBody } from "./cloud"
+
+test("repository listing: the code host's access parses, keeping only https settings links", () => {
+  const installations = [{ account: "kyashrathore", settingsUrl: "https://github.com/settings/installations/7", repositorySelection: "selected" }] as const
+  const read = codeHostRepositoryListingFromBody({
+    repositories: [{ id: "1", fullName: "kyashrathore/site", private: false }],
+    access: { kind: "app", installations: [{ account: "evil", settingsUrl: "javascript:alert(1)", repositorySelection: "all" }, ...installations] },
+  })
+  expect(read).toEqual({ repositories: [{ id: "1", fullName: "kyashrathore/site", private: false }], access: { kind: "app", installations } })
+  expect(codeHostRepositoryListingFromBody({ repositories: [], access: { kind: "token", settingsUrl: "http://github.com/settings" } })).toEqual({ repositories: [] })
+  expect(codeHostRepositoryListingFromBody({ repositories: [] })).toEqual({ repositories: [] })
+})
 
 const row = { workspace_id: "ws_1", project_id: "prj_1", workspace_name: "Payments", backing: "cloud-vm" }
 

@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ../../script/test-deadline.mjs node --conditions=development --import tsx --test src/server-sent-events.node-test.ts src/session-do.node-test.ts"
+    "test": "node ../../script/test-deadline.mjs node --conditions=development --import tsx --test src/server-sent-events.node-test.ts src/workspace-machine.node-test.ts src/session-do.node-test.ts"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",

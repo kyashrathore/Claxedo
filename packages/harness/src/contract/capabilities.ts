@@ -4,6 +4,7 @@ import type {
   HarnessInstructionChannel,
   ModelSelection,
 } from "@claxedo/agent-runtime-contract"
+import type { DraftLaunch } from "./transport"
 
 export type TransportCapabilities = {
   modelSelection: ModelSelection
@@ -24,4 +25,5 @@ export type TransportCapabilities = {
 export type CapabilityContext = {
   sessionId?: string
   directory: string
+  draft?: DraftLaunch
 }

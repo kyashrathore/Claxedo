@@ -2,6 +2,7 @@ import { createSignal } from "solid-js"
 import type { ConfigurationSlot, Preset, SessionRef, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { uuid } from "@/lib/uuid"
+import { showToast } from "@/ui"
 import { tasksDictionary, type TasksKey } from "../i18n"
 import { useOpenPresetSettings, useOpenTaskSession } from "../links"
 import { SLOT_KEYS, groupLinksBySlot, openableSlot, slotAttempt } from "../model"
@@ -135,7 +136,11 @@ function useStartCommands() {
   const t = useTranslator(tasksDictionary)
   const calls = createStartCalls()
   return {
-    startNow: (task: Task | TaskSummary, choice: StartChoiceInput) => startNow(calls, t, task, choice),
+    startNow: async (task: Task | TaskSummary, choice: StartChoiceInput) => {
+      const outcome = await startNow(calls, t, task, choice)
+      if (!outcome.ok) showToast({ variant: "error", title: t("tasks.start.failed", { title: task.title }), description: outcome.message })
+      return outcome
+    },
     openLatestSession: (taskId: string) => openLatest(calls, t, taskId),
   }
 }

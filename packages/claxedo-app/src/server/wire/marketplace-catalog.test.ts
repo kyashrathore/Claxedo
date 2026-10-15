@@ -43,3 +43,15 @@ test("plugin catalog from the wire: an unknown target or a candidate missing a t
   const withoutPi = Object.fromEntries(HOSTED_TARGETS.filter((id) => id !== "pi").map((id) => [id, activation]))
   expect(marketplaceCatalogFromWire(catalog(["opencode"], withoutPi))).toBeUndefined()
 })
+
+test("plugin catalog from the wire: an MCP server's cloud reach parses, and one naming an unknown harness or no reason is a contract mismatch", () => {
+  const read = (cloud: unknown) => marketplaceCatalogFromWire({
+    revision: 1, supportedHarnesses: ["pi"], errors: [],
+    candidates: [{ ...candidate(everyTarget), mcpServers: [{ name: "docs", type: "streamable-http", authentication: { state: "oauth", integrationId: "docs:docs" }, cloud }] }],
+  })
+  expect(read({ state: "gateway", onlyHarnesses: ["pi"], reason: "secret_brokering_unsupported" })?.candidates[0]?.mcpServers[0]?.cloud)
+    .toEqual({ state: "gateway", onlyHarnesses: ["pi"], reason: "secret_brokering_unsupported" })
+  expect(read(undefined)?.candidates[0]?.mcpServers[0]?.cloud).toBeUndefined()
+  expect(read({ state: "gateway", onlyHarnesses: ["acme"], reason: "secret_brokering_unsupported" })).toBeUndefined()
+  expect(read({ state: "gateway", onlyHarnesses: ["pi"] })).toBeUndefined()
+})

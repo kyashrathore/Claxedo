@@ -1,5 +1,5 @@
 import type { AgentAgent, AgentCommand } from "@claxedo/agent-runtime-contract"
-import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, HarnessSession,
+import type { AttachInput, CapabilityContext, ConfigApplied, ConfigTarget, HarnessServices, HarnessSession,
   HarnessTransport, DraftLaunch, ScopedSessionTools, SessionBroker, SessionToolOperations, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline } from "../../contract"
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { loadLaunchDocument } from "./launch-policy.js"
@@ -145,10 +145,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     return this.open(input, broker, input.binding.upstreamSessionId)
   }
 
-  async capabilities(context: { directory: string; sessionId?: string }) {
+  async capabilities(context: CapabilityContext) {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : undefined
-    const scope = entry?.scope ?? WorkspaceScope.authorize({ workspaceID: "opencode-catalog", directory: context.directory })
-    return openCodeCapabilities(await this.runtime.catalog.models(scope))
+    if (entry) return openCodeCapabilities(await this.runtime.catalog.models(entry.scope))
+    if (context.draft) return openCodeCapabilities(await this.readAsDraft(context.draft, (scope) => this.runtime.catalog.models(scope)))
+    return openCodeCapabilities(await this.runtime.catalog.models(WorkspaceScope.authorize({ workspaceID: "opencode-catalog", directory: context.directory })))
   }
 
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker) {

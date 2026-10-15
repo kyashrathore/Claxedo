@@ -1,5 +1,6 @@
+import { chooseProjectWorkspace } from "@claxedo/server-core/tasks-host/project-workspace"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
-  chooseProjectWorkspace,
   createTasksSessionBridge,
   type TasksCloudOrigin,
   type TasksCloudTargetChoice,
@@ -10,7 +11,7 @@ import {
   createWorkspaceRuntimeClient,
   type WorkspaceRuntimeClientOptions,
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
-import { getWorkspace, listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
@@ -30,12 +31,21 @@ import {
   allocateOriginCloudWorkspace,
   originCloudWorkspaceId,
 } from "../workspace/origin-cloud-workspace"
+import type { TasksHostReads } from "./d1-host-reads"
 import type { TasksRootIdentity } from "./root-capability"
-import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
+import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
+
+const log = Log.create({ service: "tasks-session-bridge" })
 
 export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
   runtimeClient: WorkspaceRuntimeClientOptions
+  /**
+   * The workspace and session rows the deployment's authorities write. The
+   * sessions this bridge creates are recorded there by the runtime's own
+   * registration, so the bridge only reads them.
+   */
+  reads: TasksHostReads
   /**
    * The signed request a Tasks actor was minted from.
    *
@@ -76,8 +86,17 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
       capabilities: TasksCloudOrigin["capabilities"]
     }): Promise<WorkspaceRuntimePreparation>
     /** Projects it, and resolves only once the runtime acknowledged that exact selection. */
-    apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
+    apply(input: { workspaceId: string; capabilities: TasksCloudOrigin["capabilities"]; preparation: WorkspaceRuntimePreparation }): Promise<void>
   }
+  /**
+   * What every hosted cloud workspace starts with, the deployment's runtime
+   * delivery: its owner's model accounts (edge secrets where the driver has a
+   * provider edge) and its project's environment. A root is created through
+   * `ensure` rather than a workspace start, so its accounts reach an edge only
+   * through this preparation; a deployment that names none launches roots no
+   * harness can spend an account in.
+   */
+  workspaceRuntime?: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   /**
    * The Tasks grant this root's sessions act with, minted beside the cloud
    * root's other credentials and handed to its runtime as environment. A
@@ -85,8 +104,6 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    * tools, which is what a control plane those sessions cannot reach means.
    */
   capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>
-  /** The withdrawal the workspace routes run on deletion; a discarded root is deleted here, so it runs here too. */
-  releaseRuntime?: (context: { workspaceId: string }) => Promise<void>
   /**
    * The admission a cloud root's create passes through — the same gates `POST
    * /api/workspace/create` applies, keyed on whoever the root is created as.
@@ -115,38 +132,29 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
   return createTasksSessionBridge({
     async target(workspaceId, starter) {
-      const workspace = await resolveWorkspace({ workspaceId }).catch(() => undefined)
+      const workspace = await input.reads.workspace(workspaceId)
       return workspace ? dispatchTarget(workspace, startingAs(input, starter)) : null
     },
 
     async projectTarget(projectId, starter) {
-      const chosen = chooseProjectWorkspace(projectId, await listWorkspaces().catch(() => []))
+      const userId = starterUserId(input, starter)
+      const chosen = chooseProjectWorkspace(projectId, userId ? await input.reads.projectWorkspaces(projectId, userId) : [])
       if (!("workspace" in chosen)) return chosen
       const target = dispatchTarget(chosen.workspace, startingAs(input, starter))
       return target ? { target } : {
-        detail: `Workspace ${chosen.workspace.id} is not reachable from this control plane`,
+        detail: "The task's workspace cannot be reached from here",
       }
     },
 
     cloudTarget: createTasksCloudTarget(input),
 
-    sessionMetas: (sessionIds) => input.services.projectionStore.session_metas([...sessionIds]),
+    sessionMetas: (sessionIds) => input.reads.sessions(sessionIds),
+
+    registeredSessions: (sessionIds) => input.reads.sessions(sessionIds),
 
     reserve: createTasksSessionReserve(input),
 
     release: createTasksSessionRelease(input),
-
-    projectSessionMeta: (created) => input.services.projectionStore.put_session_meta(created.sessionId, {
-      ws: created.target.workspace,
-      host: "workspace",
-      workspaceID: created.target.workspace.id,
-      title: created.title,
-      model: created.model,
-      createdAt: created.time.created,
-      updatedAt: created.time.updated,
-    }),
-
-    forgetSessionMeta: (sessionId) => input.services.projectionStore.delete_session_meta(sessionId),
   })
 }
 
@@ -175,16 +183,18 @@ function createTasksCloudTarget(
     // create budget, the authority's create admission, the deployment's
     // cloud-workspace admission, and the concurrent-lease cap. A caller nobody resolved keeps
     // its refusal inside `admit` below, where it always was. `existing` marks
-    // the retry that re-admits an already-filed row: its lease is the cap's
-    // own, so the cap does not count it a second time.
+    // the retry of a root that already holds its lease: that lease is the
+    // cap's own, so the cap does not count it a second time. A root with no
+    // row yet has no lease, and a deployment's manager cannot place a
+    // workspace its authority has never heard of to look one up.
     if (creator) {
-      const existing = Boolean(
-        await getWorkspace(
-          await originCloudWorkspaceId(
-            startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
-          ),
-        ).catch(() => undefined),
+      const rootId = await originCloudWorkspaceId(
+        startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
       )
+      const lease = await input.reads.workspace(rootId)
+        ? await input.services.sandbox.sandboxManager?.target(rootId)
+        : undefined
+      const existing = lease !== undefined && !(lease.status === "unavailable" && lease.reason === "runtime_lease_missing")
       const admitted =
         await admission.preflight(creator.caller) ??
         await admission.admit(creator.caller, { projectId: origin.task.projectId }, { existing })
@@ -198,21 +208,28 @@ function createTasksCloudTarget(
     // and one that has a driver but cannot project a selection stops before a
     // sandbox exists rather than after paying for one.
     const allocate = () => allocateOriginCloudWorkspace({
+      rows: input.reads,
       prepare: async (workspace) => {
         if (!port) {
           throw new Error("this control plane cannot project a selected capability set into a cloud root")
         }
-        const preparation = await port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities })
-        projected = () => port.apply({ workspaceId: workspace.id, preparation })
+        const [workspaceRuntime, preparation] = await Promise.all([
+          input.workspaceRuntime?.({ workspaceId: workspace.id }),
+          port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities }),
+        ])
+        projected = () => port.apply({ workspaceId: workspace.id, capabilities: origin.capabilities, preparation })
         // The capability names the workspace's owner, and `admit` below makes
         // this creator that owner. The application user id is the authority's
         // own name for them; the actor's `ownerId` is the token subject, which
         // no workspace row records.
         const owner = creator?.owner
-        const env = owner
+        const grant = owner
           ? await input.capability?.({ ...owner, projectId: origin.task.projectId, workspaceId: workspace.id })
           : undefined
-        return { ...(preparation.secrets ? { secrets: preparation.secrets } : {}), ...(env ? { env } : {}) }
+        return {
+          secrets: [...workspaceRuntime?.secrets ?? [], ...preparation.secrets ?? []],
+          env: { ...workspaceRuntime?.env, ...grant },
+        }
       },
       services: input.services,
       egress: {
@@ -244,20 +261,15 @@ function createTasksCloudTarget(
         })
         // Same position the first start fires it: the authority row exists,
         // the sandbox does not yet, and `startedAt` covers the cold start.
-        if (context.created) {
+        if (context.opensLease) {
           input.sandboxUsage?.leaseOpened({
             caller: creator.caller,
             workspaceId: workspace.id,
-            driver: context.placed.id,
+            driver: context.driver,
             startedAt: Date.now(),
             services: input.services,
           })
         }
-      },
-      discard: async (workspace) => {
-        if (!creator) return
-        await creator.discard(requireAuthority(input.services), { workspaceId: workspace.id })
-        await input.releaseRuntime?.({ workspaceId: workspace.id })
       },
     })
     let allocated
@@ -286,7 +298,7 @@ function createTasksCloudTarget(
     return target ? { target } : {
       blocker: {
         code: "source_unavailable",
-        detail: `Cloud root ${allocated.workspace.id} is not reachable from this control plane`,
+        detail: "The task's cloud workspace cannot be reached from here",
       },
     }
   }
@@ -316,7 +328,6 @@ type RootCreator = {
   caller: CloudCreateCaller
   owner: { userId: string; orgId: string } | undefined
   admit(authority: WorkspaceAuthority, args: RootWorkspaceArgs): Promise<void>
-  discard(authority: WorkspaceAuthority, args: { workspaceId: string }): Promise<void>
 }
 
 /**
@@ -334,7 +345,6 @@ function rootCreator(input: HostedTasksSessionBridgeInput, origin: TasksCloudOri
       caller: { kind: "signed", auth },
       owner: userId ? { userId, orgId: origin.actor.scopeId } : undefined,
       admit: (authority, args) => authority.createCloudWorkspace(auth, args).then(() => undefined),
-      discard: (authority, args) => authority.deleteWorkspace(auth, args).then(() => undefined),
     }
   }
   const owner = input.owner?.(origin.actor)
@@ -349,30 +359,49 @@ function rootCreator(input: HostedTasksSessionBridgeInput, origin: TasksCloudOri
       }
       await authority.createRuntimeCloudWorkspace(principal, { ...args, orgId: owner.orgId })
     },
-    discard: async (authority, args) => {
-      await authority.deleteRuntimeWorkspace?.(principal, args)
-    },
   }
 }
 
 function capabilityBlocker(origin: TasksCloudOrigin, error: unknown): StartBlocker {
-  return {
-    code: "capability_unavailable",
-    detail: `The capability set for ${origin.task.id} (${origin.slot}, attempt ${origin.attempt}) could not be applied: ${error instanceof Error ? error.message : String(error)}`,
-  }
+  log.warn("A task start's capability set could not be applied", {
+    taskId: origin.task.id, slot: origin.slot, attempt: origin.attempt, error: error instanceof Error ? error.message : String(error),
+  })
+  return { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." }
 }
 
 /**
- * The runtime client a Start dispatches through: the control plane's service
- * actor, carrying the person it starts for, so a session it creates is theirs
- * and spends their accounts. The signed caller, or the owner a grant resolved
- * to; the reservation refuses a starter neither names before anything is
- * created.
+ * The runtime client a Start dispatches through, as the person it starts for,
+ * so a session it creates is theirs and spends their accounts.
+ *
+ * A signed caller is dispatched as their own canonical actor, with their
+ * request behind the token: the runtime registers the session it creates as
+ * the token's actor, and the reservation was made as that person, so a token
+ * naming anyone else is a registration the authority refuses. The owner a
+ * grant resolved to has no signed request to mint a token under; that Start
+ * dispatches as the control plane's service actor carrying the owner's user.
  */
 function startingAs(input: HostedTasksSessionBridgeInput, starter: TasksActor | null): WorkspaceRuntimeClientOptions {
-  const userId = starter ? input.auth?.(starter)?.principal?.userId ?? input.owner?.(starter)?.userId : undefined
-  if (!userId || !input.runtimeClient.runtimeActor) return input.runtimeClient
-  return { ...input.runtimeClient, runtimeActor: { ...input.runtimeClient.runtimeActor, userId } }
+  if (!starter) return input.runtimeClient
+  const auth = input.auth?.(starter)
+  const person = auth?.principal
+  if (auth && person?.actorKind === "human") {
+    return {
+      ...input.runtimeClient,
+      auth,
+      runtimeActor: { principalKind: "user", actorId: person.actorId, actorKind: "human", userId: person.userId },
+    }
+  }
+  const owner = input.owner?.(starter)
+  if (!owner) return input.runtimeClient
+  return {
+    ...input.runtimeClient,
+    ownerGrant: true,
+    runtimeActor: { principalKind: "user", actorId: owner.actorId, actorKind: "human", userId: owner.userId },
+  }
+}
+
+function starterUserId(input: HostedTasksSessionBridgeInput, starter: TasksActor): string | undefined {
+  return input.auth?.(starter)?.principal?.userId ?? input.owner?.(starter)?.userId
 }
 
 function dispatchTarget(workspace: Workspace, options: WorkspaceRuntimeClientOptions): TasksRuntimeTarget | null {

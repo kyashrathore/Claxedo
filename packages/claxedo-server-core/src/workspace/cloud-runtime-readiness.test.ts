@@ -34,14 +34,14 @@ describe("readyCloudWorkspaces", () => {
     expect(await readyCloudWorkspaces(undefined, [{ workspace_id: "ws_cloud", backing: "cloud-vm" }])).toEqual(new Set())
   })
 
-  test("a lease waiting out a scheduled retry is still provisioning, with the failure it retries, and one that stopped retrying fails with its reason in words", async () => {
+  test("a lease waiting out a scheduled retry is still provisioning, with the failure it retries, and one that stopped retrying fails with its one-line reason alone, since every reader shows it under a headline of its own", async () => {
     const unavailable = (failure?: Extract<SandboxTargetResult, { status: "unavailable" }>["failure"]): SandboxTargetResult =>
       ({ status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "unavailable", ...(failure ? { failure } : {}) })
     const targets: Record<string, SandboxTargetResult> = {
       ws_backoff: unavailable({ kind: "provider", message: "quota exceeded", retrying: true }),
       ws_gave_up: unavailable({ kind: "provider", message: "quota exceeded", retrying: false }),
       ws_boot: unavailable({ kind: "boot", message: "fatal: couldn't find remote ref refs/heads/missing", retrying: false }),
-      ws_silent: unavailable({ kind: "unhealthy", message: "runtime_unhealthy", retrying: false }),
+      ws_silent: unavailable({ kind: "unhealthy", message: "The workspace machine stopped answering.", retrying: false }),
       ws_unknown: unavailable(),
     }
     const lifecycles = await cloudWorkspaceLifecycles(
@@ -51,9 +51,9 @@ describe("readyCloudWorkspaces", () => {
 
     expect(Object.fromEntries(lifecycles)).toEqual({
       ws_backoff: { status: "provisioning", failure: "quota exceeded" },
-      ws_gave_up: { status: "failed", error: "The cloud workspace could not start: quota exceeded" },
-      ws_boot: { status: "failed", error: "The cloud workspace could not start: fatal: couldn't find remote ref refs/heads/missing" },
-      ws_silent: { status: "failed", error: "The cloud workspace stopped answering" },
+      ws_gave_up: { status: "failed", error: "quota exceeded" },
+      ws_boot: { status: "failed", error: "fatal: couldn't find remote ref refs/heads/missing" },
+      ws_silent: { status: "failed", error: "The workspace machine stopped answering." },
       ws_unknown: { status: "failed", error: "The cloud workspace is not running" },
     })
   })

@@ -52,7 +52,11 @@ export async function sessionHostMachineAccess(deps: SessionHostMachineDeps, inp
   })
   const record = { jti: token.jti, workspaceId, hostId: target.hostId, sessionId, expiresAt: token.tokenExpiresAt }
   if (input.scope === "turn") await deps.sessionHosts.recordTurnRuntimeAccessToken(actorId, record)
-  else await deps.sessionHosts.recordSessionMcpRuntimeAccessToken(actorId, record)
+  else {
+    await deps.sessionHosts.recordOwnerRuntimeAccessToken(actorId, {
+      jti: token.jti, workspaceId, hostId: target.hostId, expiresAt: token.tokenExpiresAt, role: "editor", servedSession: sessionId,
+    })
+  }
   const relayUrl = await deps.relayEndpoint(workspaceId, target.homeRegion)
   return {
     relayUrl: relayUrl.replace(/\/+$/, ""),

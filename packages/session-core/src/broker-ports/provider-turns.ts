@@ -73,7 +73,7 @@ export class BrokerProviderTurns {
       this.store.releaseTurnLease(sessionId, leaseId)
       return { admitted: false, reason: "closed" }
     }
-    if (input.reason === "continuation" && !input.current()) {
+    if (input.reason !== "goal" && !input.current()) {
       this.store.releaseTurnLease(sessionId, leaseId)
       return { admitted: false, reason: "busy" }
     }

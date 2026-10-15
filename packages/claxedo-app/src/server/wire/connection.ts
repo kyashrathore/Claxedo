@@ -18,9 +18,11 @@ export type ConnectionAnswer =
   | { readonly kind: "stopped" }
   | { readonly kind: "failed"; readonly reason: string }
 
+export type StartRequest = { readonly retry?: true }
+
 export type WorkspaceConnections = {
   readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
-  readonly start: (workspaceId: string) => Promise<ConnectionAnswer>
+  readonly start: (workspaceId: string, request?: StartRequest) => Promise<ConnectionAnswer>
   readonly mintSession: (workspaceId: string, sessionId: string) => Promise<ConnectionAnswer>
 }
 
@@ -30,8 +32,8 @@ export const CLOUD_RUNTIME_BOOT_FAILED = "cloud_runtime_boot_failed"
 const WORKSPACE_HOST_OFFLINE = "workspace_host_offline"
 const WORKSPACE_CHECKPOINT_FROZEN = "workspace_checkpoint_frozen"
 
-export function workspaceStopped(workspaceId: string): ServerError {
-  return new ServerError({ class: "conflict", code: WORKSPACE_STOPPED, message: `The cloud workspace ${workspaceId} is not running` })
+export function workspaceStopped(): ServerError {
+  return new ServerError({ class: "conflict", code: WORKSPACE_STOPPED, message: "The cloud workspace is not running" })
 }
 
 const CLOUD_RUNTIME_IMAGE_OUTDATED = "cloud_runtime_image_outdated"
@@ -97,10 +99,19 @@ export function connectionAnswerFromWire(body: unknown, workspaceId: string, ses
   return { kind: "ready", link, ...(row.backing === "durable-object" && sessionId ? { sessionHostRoot: sessionId } : {}) }
 }
 
-export function unavailableRetry(body: unknown): Extract<ConnectionAnswer, { kind: "provisioning" }> | undefined {
-  const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
-  const retryAfterMs = durationOf(error?.retryAfterMs)
-  if (retryAfterMs === undefined) return undefined
-  const failure = nonEmptyString(error?.failure)
-  return { kind: "provisioning", retryAfterMs, ...(failure ? { failure } : {}) }
+export function startRefused(error: ServerError, body: unknown): ServerError {
+  const envelope = isRecord(body) && isRecord(body.error) ? body.error : undefined
+  const retryAfterMs = durationOf(envelope?.retryAfterMs)
+  if (retryAfterMs === undefined) return error
+  return new ServerError({
+    class: error.class,
+    message: error.message,
+    ...(error.status !== undefined ? { status: error.status } : {}),
+    ...(error.code !== undefined ? { code: error.code } : {}),
+    details: { ...error.details, retryAfterMs },
+  })
+}
+
+export function startRetryAfterMs(error: unknown): number | undefined {
+  return error instanceof ServerError && error.code === CLOUD_RUNTIME_UNAVAILABLE ? durationOf(error.details?.retryAfterMs) : undefined
 }

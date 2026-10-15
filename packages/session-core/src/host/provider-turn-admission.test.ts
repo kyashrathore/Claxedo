@@ -30,7 +30,7 @@ test("a provider turn the harness starts as its prompted turn ends is admitted o
       broker.associateChild("toolu_agent", ref!)
       child = ref!.sessionId
       yield { type: "finish" as const, sessionId: "parent" }
-      admissions.push(brokers.get("parent")!.admitProviderTurn({ reason: "provider" }, report))
+      admissions.push(brokers.get("parent")!.admitProviderTurn({ reason: "provider", current: () => true }, report))
     })(),
   })
   const f = createHostFixture({ transports: { pi: transport } })
@@ -55,7 +55,7 @@ test("disposing the runtime ends a provider turn's wait for its session at once,
   const held = f.store.acquireTurnLease("parent")
   if (!held) throw new Error("Expected the session's lease")
   let decided: ProviderTurnResult | undefined
-  void brokers.get("parent")!.admitProviderTurn({ reason: "provider" }, async function* () {
+  void brokers.get("parent")!.admitProviderTurn({ reason: "provider", current: () => true }, async function* () {
     yield { event: { type: "finish", sessionId: "parent" } }
   }).then((result) => { decided = result })
   await new Promise((resolve) => setTimeout(resolve, 20))

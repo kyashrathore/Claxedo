@@ -40,12 +40,16 @@ const composition = settledCompositionCache(
     if (!env.SANDBOX_PROVISIONER) {
       throw new HostedWorkerCompositionError("hosted_dependency_missing", "The full-hosted Worker requires the SANDBOX_PROVISIONER binding")
     }
+    if (!env.LIVE_SYNC_ROOM) {
+      throw new HostedWorkerCompositionError("hosted_dependency_missing", "The full-hosted Worker requires the LIVE_SYNC_ROOM binding")
+    }
     return composeWithCloudSandbox(
       {
         database: env.CONTROL_PLANE_DB,
         signingEnv: stringEnvironment(env),
         provisioner: env.SANDBOX_PROVISIONER,
         keyDrivers: hostedSandboxKeyDrivers(stringEnvironment(env)),
+        room: env.LIVE_SYNC_ROOM,
       },
       (extra) => composeBetterAuthD1AgentPlugins(env, extra),
     )

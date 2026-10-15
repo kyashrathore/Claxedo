@@ -70,6 +70,8 @@ export type HostedControlPlaneSandbox = Omit<ControlPlaneSandbox, "sandboxManage
   workspaceSecretBrokering?: (workspaceId: string) => Promise<SandboxSecretBrokering>
   /** The driver a new workspace of the organization would be provisioned with; refused while the organization holds no key. */
   orgDriver?: (orgId: string) => Promise<SandboxDriver>
+  /** How the driver a new workspace of the organization would be provisioned with brokers secrets; "none" while it holds no key. */
+  orgSecretBrokering?: (orgId: string) => Promise<SandboxSecretBrokering>
 }
 
 export type ControlPlaneServicesOptions = {

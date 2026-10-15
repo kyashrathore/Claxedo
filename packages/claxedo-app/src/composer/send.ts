@@ -168,7 +168,7 @@ async function sendToSession(input: SendInput, view: SessionView, goal: GoalInte
   const key = input.key()
   const mode = input.mode()
   const draft = input.store.take(key)
-  const messageId = input.newMessageId()
+  const messageId = draft.sentAs ?? input.newMessageId()
   try {
     const prompt = await buildPromptInput({ draft, submission: await input.submission(), goal, delivery })
     await view.send({ ...prompt, clientRequestId, messageId })

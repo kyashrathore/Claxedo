@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { directProviderDeliveriesFromRepository, nativeProviderDeliveriesFromRepository, type HarnessCredentialBroker } from "./native-delivery-plan"
+import { deliveredAccountsIdentity, directProviderDeliveriesFromRepository, nativeProviderDeliveriesFromRepository, type HarnessCredentialBroker } from "./native-delivery-plan"
 import type { CredentialMetadata } from "./types"
 
 function credential(input: Partial<CredentialMetadata> & Pick<CredentialMetadata, "id" | "provider_id" | "kind">): CredentialMetadata {
@@ -36,7 +36,7 @@ describe("direct provider delivery", () => {
         secret: "chatgpt-access",
         authKind: "subscription",
         expiresAt: 9_000_000_000_000,
-        account: { credentialId: "plan", providerId: "codex-app-server", label: "Plan" },
+        account: { credentialId: "plan", providerId: "codex-app-server", label: "Plan", revision: 1 },
       },
     })
   })
@@ -58,6 +58,32 @@ describe("direct provider delivery", () => {
       .toEqual([{ providerId: "anthropic", credentialId: "key", unavailable: "revoked" }])
     expect(await deliver([credential({ id: "missing", provider_id: "anthropic", kind: "api_key" })]))
       .toEqual([{ providerId: "anthropic", credentialId: "missing", unavailable: "unreadable_secret" }])
+  })
+})
+
+describe("the identity of the accounts a person's runtime is delivered", () => {
+  const identity = (selected: CredentialMetadata[], selections = {}) => deliveredAccountsIdentity({
+    owner: "user_owner",
+    machineOwnerUserId: "user_owner",
+    selections,
+    selected: selected.map((row) => ({ credential: row, ...(row.status !== "available" ? { unavailable: row.status } : {}) })),
+  })
+  const plan = credential({ id: "plan", provider_id: "claude-sdk", kind: "oauth_token", activated_at: 20 })
+
+  test("stays the same for a write no runtime spends: an unmarked account on a host already held, or another person's account", async () => {
+    const held = await identity([plan])
+    expect(held).not.toBe("")
+    expect(await identity([plan, credential({ id: "bogus", provider_id: "anthropic", kind: "api_key" })])).toBe(held)
+    expect(await identity([plan, credential({ id: "other", provider_id: "openai", kind: "api_key", owner: "user_other" })])).toBe(held)
+  })
+
+  test("moves when the delivered account changes: marked over the held one, rotated, refused, or replaced by an organization account that does not exist", async () => {
+    const held = await identity([plan])
+    const marked = credential({ id: "bogus", provider_id: "anthropic", kind: "api_key", activated_at: 30 })
+    expect(await identity([plan, marked])).not.toBe(held)
+    expect(await identity([{ ...plan, revision: 2 }])).not.toBe(held)
+    expect(await identity([{ ...plan, status: "revoked" }])).not.toBe(held)
+    expect(await identity([plan], { user_owner: { "claude-sdk": "org" } })).not.toBe(held)
   })
 })
 

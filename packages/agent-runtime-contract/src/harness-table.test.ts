@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { PI_PERMISSION_MODES } from "./harness-permission-modes"
 import {
+  declaredPermissionModes,
   effectivePermissionModeId,
   effectiveSessionModel,
   HARNESS_IDS,
@@ -157,8 +159,15 @@ describe("a session's effective selections", () => {
     }
   })
 
+  test("Pi declares its ask and full modes and runs full until one is chosen", () => {
+    expect(declaredPermissionModes(pi)).toBe(PI_PERMISSION_MODES)
+    expect(effectivePermissionModeId(pi, null)).toBe("full")
+    expect(effectivePermissionModeId(pi, "ask")).toBe("ask")
+    expect(effectivePermissionModeId(pi, "plan")).toBe("full")
+  })
+
   test("a harness the table does not describe runs only what was stored", () => {
-    expect(effectivePermissionModeId(pi, null)).toBeNull()
+    expect(declaredPermissionModes(acp)).toBeUndefined()
     expect(effectivePermissionModeId(acp, null)).toBeNull()
     expect(effectivePermissionModeId(acp, "agent-mode")).toBe("agent-mode")
   })

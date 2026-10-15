@@ -2,12 +2,11 @@ import { AGENT_HARNESS_IDS, HARNESS_EFFORT_LEVELS, HARNESS_TABLE } from "@claxed
 import { createSignal, type Accessor } from "solid-js"
 import { machineId } from "./ids"
 import type { Capabilities, HarnessInfo, ServingMachine } from "./types"
-import type { Workspaces } from "./workspaces"
 import type { BootstrapDeclaration } from "./wire/placements"
 
 export type CapabilitiesOwner = {
   readonly value: Accessor<Capabilities | undefined>
-  readonly load: () => Promise<void>
+  readonly declare: (declaration: BootstrapDeclaration) => void
 }
 
 const GOAL_MODES: Readonly<Record<string, HarnessInfo["goalMode"]>> = { claude: "evaluated", codex: "native", cursor: "native", pi: "evaluated" }
@@ -44,10 +43,7 @@ function capabilitiesFromDeclaration(declaration: BootstrapDeclaration): Capabil
   }
 }
 
-export function createCapabilities(workspaces: Workspaces): CapabilitiesOwner {
+export function createCapabilities(): CapabilitiesOwner {
   const [value, setValue] = createSignal<Capabilities | undefined>(undefined)
-  const load = async () => {
-    setValue(capabilitiesFromDeclaration((await workspaces.load()).declaration))
-  }
-  return { value, load }
+  return { value, declare: (declaration) => { setValue(capabilitiesFromDeclaration(declaration)) } }
 }

@@ -1,5 +1,12 @@
 import { placementId, projectId } from "../ids"
-import type { CloudWorkspace, CloudWorkspaceStatus, CodeHostRepository } from "../cloud-types"
+import type {
+  CloudWorkspace,
+  CloudWorkspaceStatus,
+  CodeHostAppInstallation,
+  CodeHostRepository,
+  CodeHostRepositoryAccess,
+  CodeHostRepositoryListing,
+} from "../cloud-types"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import { cloudWorkspaceName } from "./workspace-name"
 
@@ -53,9 +60,44 @@ export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined 
   }
 }
 
-export function codeHostRepositoryFromRow(row: unknown): CodeHostRepository | undefined {
+function codeHostRepositoryFromRow(row: unknown): CodeHostRepository | undefined {
   if (!isRecord(row)) return undefined
   const id = nonEmptyString(row.id)
   const fullName = nonEmptyString(row.fullName)
   return id && fullName ? { id, fullName, private: row.private === true } : undefined
+}
+
+export function httpsLink(value: unknown) {
+  const link = nonEmptyString(value)
+  return link && URL.canParse(link) && new URL(link).protocol === "https:" ? link : undefined
+}
+
+function installationFromWire(value: unknown): CodeHostAppInstallation | undefined {
+  if (!isRecord(value)) return undefined
+  const account = nonEmptyString(value.account)
+  const settingsUrl = httpsLink(value.settingsUrl)
+  const selection = value.repositorySelection
+  return account && settingsUrl && (selection === "all" || selection === "selected")
+    ? { account, settingsUrl, repositorySelection: selection }
+    : undefined
+}
+
+function repositoryAccessFromWire(value: unknown): CodeHostRepositoryAccess | undefined {
+  if (!isRecord(value)) return undefined
+  if (value.kind === "token") {
+    const settingsUrl = httpsLink(value.settingsUrl)
+    return settingsUrl ? { kind: "token", settingsUrl } : undefined
+  }
+  if (value.kind !== "app" || !Array.isArray(value.installations)) return undefined
+  return { kind: "app", installations: value.installations.flatMap((row) => installationFromWire(row) ?? []) }
+}
+
+export function codeHostRepositoryListingFromBody(body: unknown): CodeHostRepositoryListing {
+  const record = isRecord(body) ? body : {}
+  const rows: unknown[] = Array.isArray(record.repositories) ? record.repositories : []
+  const access = repositoryAccessFromWire(record.access)
+  return {
+    repositories: rows.flatMap((row) => codeHostRepositoryFromRow(row) ?? []),
+    ...(access ? { access } : {}),
+  }
 }

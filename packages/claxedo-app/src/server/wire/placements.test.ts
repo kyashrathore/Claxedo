@@ -18,7 +18,7 @@ const signedBody = {
         ws_running: { id: "ws_running", backing: "cloud-vm", workspace_name: "main", status: "ready", reachable: true, directory: "workspace:ws_running", remote_directory: "/workspace" },
         ws_stopped: { id: "ws_stopped", backing: "cloud-vm", workspace_name: "fix", status: "stopped", reachable: false, directory: "workspace:ws_stopped" },
         ws_booting: { id: "ws_booting", backing: "cloud-vm", workspace_name: "boot", status: "provisioning", reachable: false, directory: "workspace:ws_booting" },
-        ws_failed: { id: "ws_failed", backing: "cloud-vm", workspace_name: "bad", status: "failed", error: "The cloud workspace could not start: no such branch", reachable: false, directory: "workspace:ws_failed" },
+        ws_failed: { id: "ws_failed", backing: "cloud-vm", workspace_name: "bad", status: "failed", error: "no such branch", reachable: false, directory: "workspace:ws_failed" },
         ws_unsaid: { id: "ws_unsaid", backing: "cloud-vm", workspace_name: "quiet", reachable: false, directory: "workspace:ws_unsaid" },
       },
     },

@@ -4,14 +4,14 @@ import { bootstrapCatalog } from "./wire/placements"
 
 const catalog = bootstrapCatalog({ deployment: { serverKind: "hosted", issuesSessions: true }, events: { hostAggregate: false } })
 
-test("retry reloads capabilities after the stream opened without opening a second stream", async () => {
+test("retry declares capabilities again after the stream opened without opening a second stream", async () => {
   let opens = 0
   let retries = 0
   let loads = 0
   const startup = createStartup({
-    workspaces: { load: async () => catalog },
+    workspaces: { boot: async () => catalog },
     streams: { open: () => { opens += 1 }, retry: () => { retries += 1 } },
-    capabilities: { value: () => undefined, load: async () => { if (++loads === 1) throw new Error("capabilities failed") } },
+    capabilities: { value: () => undefined, declare: () => { if (++loads === 1) throw new Error("capabilities failed") } },
     setConnection: () => undefined,
   })
   await startup.ready
@@ -28,9 +28,9 @@ test("focus and online retries share the pending startup read", async () => {
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })
   const startup = createStartup({
-    workspaces: { load: async () => { reads += 1; await held; return catalog } },
+    workspaces: { boot: async () => { reads += 1; await held; return catalog } },
     streams: { open: () => undefined, retry: () => undefined },
-    capabilities: { value: () => undefined, load: async () => undefined },
+    capabilities: { value: () => undefined, declare: () => undefined },
     setConnection: () => undefined,
   })
   const retried = startup.retry()

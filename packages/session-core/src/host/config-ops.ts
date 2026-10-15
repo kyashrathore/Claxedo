@@ -104,7 +104,11 @@ export function createHarnessReads(input: {
   }
 
   const declaredFor = (resolved: ResolvedTarget) =>
-    resolved.handle.transport.capabilities({ directory: resolved.directory, ...(resolved.sessionId ? { sessionId: resolved.sessionId } : {}) })
+    resolved.handle.transport.capabilities({
+      directory: resolved.directory,
+      ...(resolved.sessionId ? { sessionId: resolved.sessionId } : {}),
+      ...("draft" in resolved.target ? { draft: resolved.target.draft } : {}),
+    })
 
   return {
     async providerCatalog(target: Extract<HarnessTarget, { harness: SessionHarness }>) {

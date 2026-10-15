@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { vendorBody } from "./vendor-body"
+import { vendorBody, vendorHttpStatus } from "./vendor-body"
 
 /** What chatgpt.com answered a Cloudflare Worker's request on 2026-10-15 (Ray a4abfe3368bcce65), trimmed. */
 const CHALLENGE_PAGE = `<!DOCTYPE html>
@@ -27,4 +27,13 @@ describe("vendor body", () => {
       expect(vendorBody(text)).toEqual({ kind: "text" })
     },
   )
+})
+
+test("the vendor's HTTP status is read from pi-ai's error or a leading status, and from nowhere else", () => {
+  expect(vendorHttpStatus("OpenAI API error (401): {\"type\":\"invalid_request_error\"}")).toBe(401)
+  expect(vendorHttpStatus("Anthropic API error (403): {\"type\":\"error\"}")).toBe(403)
+  expect(vendorHttpStatus("401 Incorrect API key provided")).toBe(401)
+  expect(vendorHttpStatus("401: unauthorized")).toBe(401)
+  expect(vendorHttpStatus("Your API key was revoked after 401 attempts")).toBeUndefined()
+  expect(vendorHttpStatus("billing problem with this key")).toBeUndefined()
 })

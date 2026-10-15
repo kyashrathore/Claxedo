@@ -1,4 +1,4 @@
-import type { CodeHostRepository, ConnectionFields } from "../types.js"
+import type { CodeHostRepository, CodeHostRepositoryAccess, ConnectionFields } from "../types.js"
 
 /**
  * `code-host` — the repository host a workspace clones from.
@@ -13,4 +13,6 @@ import type { CodeHostRepository, ConnectionFields } from "../types.js"
 export type CodeHostPort = {
   readonly capability: "code-host"
   listRepositories(fields: ConnectionFields, secret: string): Promise<CodeHostRepository[]>
+  /** Where the listed repositories come from, for a host that can say how more are granted. */
+  repositoryAccess?(fields: ConnectionFields, secret: string): Promise<CodeHostRepositoryAccess>
 }

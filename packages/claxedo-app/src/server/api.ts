@@ -1,12 +1,11 @@
-import type { AccountScope, AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { ProductTelemetry } from "./telemetry"
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
-import type { Account, AccountCheck, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
-import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
+import type { Account, AccountsApi, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
+import type { CloudCreateInput, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
@@ -34,7 +33,7 @@ import type {
 } from "./git-types"
 import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { TasksClient } from "@claxedo/tasks/client"
+import type { TasksApi } from "./tasks"
 import type {
   MarketplaceCatalog,
   PluginActivationInput,
@@ -112,7 +111,7 @@ export type SessionsApi = {
 
 export type ProjectsApi = {
   readonly configurationAvailable: () => boolean
-  readonly create: (input: { readonly name?: string; readonly source: ProjectSource }) => Promise<Project>
+  readonly create: (input: { readonly name?: string; readonly source: ProjectSource; readonly onPlacement?: (id: PlacementId) => void }) => Promise<Project>
   readonly update: (id: ProjectId, input: ProjectUpdate) => Promise<Project>
   readonly remove: (id: ProjectId) => Promise<void>
   readonly reclone: (id: ProjectId) => Promise<Project>
@@ -153,20 +152,6 @@ export type CloudApi = {
   readonly remove: (id: PlacementId) => Promise<void>
 }
 
-export type AccountsApi = {
-  readonly select: (ids: readonly string[]) => Promise<void>
-  readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
-  readonly setSource: (providerIds: readonly string[], source: AccountSource) => Promise<void>
-  readonly setScope: (ids: readonly string[], scope: AccountScope) => Promise<void>
-  readonly remove: (ids: readonly string[]) => Promise<void>
-  readonly check: (id: string) => Promise<AccountCheck>
-  readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
-  readonly rescan: () => Promise<void>
-  readonly refresh: () => Promise<void>
-  readonly saveSandboxKey: (driver: string, fields: Readonly<Record<string, string>>) => Promise<Account>
-  readonly chooseSandboxDriver: (driver: string | null) => Promise<void>
-}
-
 export type MarketplaceApi = {
   readonly refresh: (projectId?: ProjectId) => Promise<MarketplaceCatalog>
   readonly setActivation: (input: PluginActivationInput) => Promise<PluginChange>
@@ -174,25 +159,6 @@ export type MarketplaceApi = {
   readonly update: (pluginInstanceId: string, revision: number, authority?: "user") => Promise<PluginChange>
   readonly addSource: (input: PluginSourceInput) => Promise<PluginSourceRecord>
   readonly removeSource: (id: string) => Promise<void>
-}
-
-export type TaskListKey = {
-  readonly projectId: string
-  readonly status: string | null
-  readonly parent: "any" | "root"
-  readonly includeArchived: boolean
-}
-
-export type TasksApi = {
-  readonly client: TasksClient
-  readonly keys: {
-    readonly scope: readonly unknown[]
-    readonly capabilities: readonly unknown[]
-    readonly presets: (includeArchived: boolean) => readonly unknown[]
-    readonly list: (filter: TaskListKey) => readonly unknown[]
-    readonly detail: (taskId: string) => readonly unknown[]
-    readonly children: (taskId: string) => readonly unknown[]
-  }
 }
 
 export type LivePluginsApi = {
@@ -237,7 +203,7 @@ export type ServerQueries = {
   }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
-    readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
+    readonly repositories: (connectionId: string) => FetchQuery<CodeHostRepositoryListing>
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries

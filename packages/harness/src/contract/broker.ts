@@ -72,10 +72,10 @@ export type ChildSessionRef = {
   created: number
 }
 
-export type ProviderTurnInput = {
-  reason: "goal" | "provider"
-  detail?: string
-} | { reason: "continuation"; current: () => boolean }
+export type ProviderTurnInput =
+  | { reason: "goal"; detail?: string }
+  | { reason: "provider"; detail?: string; current: () => boolean }
+  | { reason: "continuation"; current: () => boolean }
 
 export type ProviderTurnResult =
   | { admitted: true; turn: TurnRef; settled: Promise<ProviderTurnSettlement> }
