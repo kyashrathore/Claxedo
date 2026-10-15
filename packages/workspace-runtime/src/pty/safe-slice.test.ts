@@ -69,6 +69,14 @@ describe("safeStartIndex", () => {
     const cut = text.length - 4
     expect(safeStartIndex(text, cut)).toBe(cut)
   })
+
+  test("a cut costs the same however much escape-free text lies before it", () => {
+    const text = "y\r\n".repeat(6 * 1024 * 1024)
+    const cut = text.length - 2 * 1024 * 1024
+    const started = performance.now()
+    for (let i = 0; i < 10_000; i += 1) expect(safeStartIndex(text, cut + i)).toBe(cut + i)
+    expect(performance.now() - started).toBeLessThan(250)
+  })
 })
 
 describe("safeChunkEnd", () => {

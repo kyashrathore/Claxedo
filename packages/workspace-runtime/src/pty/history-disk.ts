@@ -103,8 +103,13 @@ export async function createDiskHistory(input: { directory: string; id: string; 
   let staged = ""
   let timer: ReturnType<typeof setTimeout> | undefined
   let queue = Promise.resolve()
+  // A compaction rewrites the whole file on the event loop that serves the
+  // terminal. Trimming to exactly `limit` would leave no room, so every flush
+  // of a flooding terminal would rewrite the full file; a quarter of headroom
+  // spreads one rewrite over that much new output.
+  const retained = input.limit - Math.floor(input.limit / 4)
 
-  /** Trim the FILE to its last `limit` on a safe boundary. */
+  /** Trim the FILE to its last `retained` on a safe boundary once it passes `limit`. */
   const compact = async () => {
     try {
       const existing = await fs.readFile(file, "utf8")
@@ -114,7 +119,7 @@ export async function createDiskHistory(input: { directory: string; id: string; 
       }
       // Cut on a safe boundary: a raw slice can leave the retained history
       // starting mid-escape, which xterm prints as literal junk on restore.
-      const kept = safeTrimStart(existing, input.limit)
+      const kept = safeTrimStart(existing, retained)
       await fs.writeFile(file, kept)
       bytes = kept.length
     } catch {}

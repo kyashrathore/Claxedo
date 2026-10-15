@@ -127,4 +127,25 @@ describe("createDiskHistory memory contract", () => {
     expect(onDisk.length).toBeLessThanOrEqual(limit)
     expect(onDisk).toContain("NEWEST-CONTENT")
   })
+
+  test("output after a compaction appends to the file instead of rewriting it again", async () => {
+    const directory = path.join(root, "headroom")
+    const limit = 4096
+    const history = await createDiskHistory({ directory, id: "pty_headroom", limit })
+    const file = historyPath(directory, "pty_headroom")
+    history.append("O".repeat(limit + 1))
+    await history.close()
+    const compacted = await fs.readFile(file, "utf8")
+    expect(compacted.length).toBeLessThan(limit)
+
+    let appended = ""
+    for (let flush = 0; flush < 8; flush += 1) {
+      const line = `line-${flush}\n`
+      history.append(line)
+      appended += line
+      await history.close()
+    }
+
+    expect(await fs.readFile(file, "utf8")).toBe(compacted + appended)
+  })
 })

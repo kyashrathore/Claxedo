@@ -314,6 +314,71 @@ describe("Pty lifecycle cleanup", () => {
   }))
 })
 
+describe("Pty output delivery", () => {
+  const outputFrames = (ws: ReturnType<typeof socket>) =>
+    (ws.send as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(([data]) => data).filter((data): data is string => typeof data === "string")
+
+  test("a burst of reads reaches a subscriber as its first read at once and the rest as one frame", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+    const { Pty } = await import("./index")
+    const info = await Pty.create({ cwd: tmpDir, title: "burst" }, ownership)
+    const ws = socket()
+    Pty.connect(info.id, ws)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const read = (data: string) => fakeProcesses.get(info.pid)!.dataHandlers.forEach((handler) => handler(data))
+    const lines = Array.from({ length: 50 }, (_, index) => `line-${index}\n`)
+
+    read("first\n")
+    for (const line of lines) read(line)
+    expect(outputFrames(ws)).toEqual(["first\n"])
+
+    await waitFor(() => outputFrames(ws).length > 1)
+    expect(outputFrames(ws)).toEqual(["first\n", lines.join("")])
+    expect(Pty.snapshot(info.id).endsWith(`first\n${lines.join("")}`)).toBe(true)
+  }))
+
+  test("output still waiting to be joined is in the terminal before its exit is handled", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+    const { Pty } = await import("./index")
+    const info = await Pty.create({ cwd: tmpDir, title: "last-words" }, ownership)
+    Pty.commit(info.id)
+    const process = fakeProcesses.get(info.pid)!
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    process.dataHandlers.forEach((handler) => handler("opening\n"))
+    process.dataHandlers.forEach((handler) => handler("LAST-WORDS\n"))
+    const exited = Promise.all(process.exitHandlers.map((handler) => handler({ exitCode: 0 })))
+
+    expect(Pty.snapshot(info.id)).toContain("LAST-WORDS")
+    await exited
+  }))
+})
+
+describe("Pty replay buffer", () => {
+  test("is cut back to its 2 MB limit only once it passes a quarter over it", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+    const { Pty } = await import("./index")
+    const info = await Pty.create({ cwd: tmpDir, title: "replay" }, ownership)
+    Pty.commit(info.id)
+    const read = (data: string) => fakeProcesses.get(info.pid)!.dataHandlers.forEach((handler) => handler(data))
+    const replayLength = () => {
+      const ws = socket()
+      Pty.connect(info.id, ws, 1)
+      return (ws.send as unknown as { mock: { calls: unknown[][] } }).mock.calls
+        .map(([data]) => data)
+        .filter((data): data is string => typeof data === "string")
+        .join("").length
+    }
+    const limit = 2 * 1024 * 1024
+    const block = "y\r\n".repeat(1024 * 4)
+
+    for (let total = 0; total <= limit; total += block.length) read(block)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(replayLength()).toBeGreaterThan(limit)
+
+    for (let total = 0; total <= limit / 4; total += block.length) read(block)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(replayLength()).toBeLessThanOrEqual(limit)
+  }))
+})
+
 describe("Pty activity changes", () => {
   test("create, native exit and removal each notify with the new activity already readable", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
