@@ -1,7 +1,8 @@
-import { z } from "zod"
+import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import type { McpToolResult } from "../mcp-tool"
 import type { McpToolAccess, McpToolContext } from "../context"
 import type { ToolRegistrar } from "./registry"
+import { z } from "zod"
 
 const YOUCOM_ENDPOINT = "https://api.you.com/v1/agents/search"
 const DEFAULT_MAX = 5
@@ -55,7 +56,7 @@ export function registerYouSearchTools(registry: ToolRegistrar): void {
 			url.searchParams.set("max_results", String(max))
 
 			try {
-				const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+				const response = await withDeadlineSignal(REQUEST_TIMEOUT_MS, (signal) => fetch(url, { signal }))
 				if (!response.ok) {
 					return {
 						content: [{ type: "text" as const, text: `You.com search failed (${response.status} ${response.statusText})` }],
@@ -74,8 +75,9 @@ export function registerYouSearchTools(registry: ToolRegistrar): void {
 				if (web.length === 0) {
 					return { content: [{ type: "text" as const, text: "No results found." }] }
 				}
-				const lines = web.slice(0, max).map(
-					(r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.description ? `\n   ${r.description}` : ""}`,
+				const valid = web.filter((r) => typeof r.url === "string" && r.url.length > 0)
+				const lines = valid.slice(0, max).map(
+					(r, i) => `${i + 1}. ${r.title ?? "(untitled)"}\n   ${r.url}${r.description ? `\n   ${r.description}` : ""}`,
 				)
 				return {
 					content: [

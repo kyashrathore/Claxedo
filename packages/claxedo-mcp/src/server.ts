@@ -264,7 +264,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     const registry = createToolRegistry(server, ctx)
     const groups = enabled
       ? options.registerTools.filter((group) => enabled.includes(group.id))
-      : options.registerTools
+      : options.registerTools.filter((group) => group.reach !== "account")
     for (const group of groups) group.register(registry)
     if (registry.listed.length === 0) {
       server.server.registerCapabilities({ tools: {} })

@@ -208,4 +208,36 @@ describe("you_web_search handler", () => {
 		const text = (result.content[0] as { type: "text"; text: string }).text
 		expect(text.toLowerCase()).toContain("untrusted")
 	})
+
+	test("filters out results with missing or empty url", async () => {
+		const { registrar, tools } = captureRegistrar()
+		registerYouSearchTools(registrar)
+		const handler = tools.get("you_web_search")!.handler
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				new Response(
+					JSON.stringify({
+						results: {
+							web: [
+								{ title: "Valid", url: "https://example.com/valid" },
+								{ title: "No URL", url: "" },
+								{ title: "Undefined URL" },
+								{ title: "Also Valid", url: "https://example.com/also" },
+							],
+						},
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			),
+		)
+
+		const result = await handler({ query: "test" }, mockCtx)
+		const text = (result.content[0] as { type: "text"; text: string }).text
+		expect(text).toContain("https://example.com/valid")
+		expect(text).toContain("https://example.com/also")
+		expect(text).not.toContain("No URL")
+		expect(text).not.toContain("Undefined URL")
+	})
 })
