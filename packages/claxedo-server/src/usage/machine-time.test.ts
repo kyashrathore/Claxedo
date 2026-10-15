@@ -128,13 +128,13 @@ test("each ended boot is recorded once with its owner and machine class, and a p
   at += 15 * MINUTE
 
   expect(await bootRows()).toEqual([
-    { workspace_id: "ws_bob", epoch: 1, org_id: "org_acme", owner_user_id: "usr_bob", driver: "test-provider", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 100 * MINUTE },
-    { workspace_id: "ws_cross", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "large", started_at: PERIOD - 30 * MINUTE, stopped_at: PERIOD + 30 * MINUTE },
-    { workspace_id: "ws_delete", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 180 * MINUTE, stopped_at: PERIOD + 185 * MINUTE },
-    { workspace_id: "ws_idle", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 120 * MINUTE, stopped_at: PERIOD + 140 * MINUTE },
-    { workspace_id: "ws_old", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD - 180 * MINUTE, stopped_at: PERIOD - 120 * MINUTE },
-    { workspace_id: "ws_released", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 200 * MINUTE, stopped_at: PERIOD + 207 * MINUTE },
-    { workspace_id: "ws_stop", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 70 * MINUTE },
+    { workspace_id: "ws_bob", epoch: 1, org_id: "org_acme", owner_user_id: "usr_bob", driver: "test-provider", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 100 * MINUTE, error: null },
+    { workspace_id: "ws_cross", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "large", started_at: PERIOD - 30 * MINUTE, stopped_at: PERIOD + 30 * MINUTE, error: null },
+    { workspace_id: "ws_delete", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 180 * MINUTE, stopped_at: PERIOD + 185 * MINUTE, error: null },
+    { workspace_id: "ws_idle", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 120 * MINUTE, stopped_at: PERIOD + 140 * MINUTE, error: null },
+    { workspace_id: "ws_old", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD - 180 * MINUTE, stopped_at: PERIOD - 120 * MINUTE, error: null },
+    { workspace_id: "ws_released", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 200 * MINUTE, stopped_at: PERIOD + 207 * MINUTE, error: null },
+    { workspace_id: "ws_stop", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "small", started_at: PERIOD + 60 * MINUTE, stopped_at: PERIOD + 70 * MINUTE, error: null },
   ])
 
   const until = PERIOD + 255 * MINUTE
@@ -186,7 +186,7 @@ test("a boot that failed on the host it created is the machine time it spent, it
   at = PERIOD + 10 * MINUTE
   expect(await manager.ensure("ws_stop", { homeRegion: "us-east", machineClass: "large" })).toMatchObject({ status: "unavailable", epoch: 1 })
   expect(await bootRows()).toEqual([
-    { workspace_id: "ws_stop", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "large", started_at: PERIOD + 10 * MINUTE, stopped_at: PERIOD + 13 * MINUTE },
+    { workspace_id: "ws_stop", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test-provider", machine_class: "large", started_at: PERIOD + 10 * MINUTE, stopped_at: PERIOD + 13 * MINUTE, error: "runtime_boot_failed: the image has no runtime" },
   ])
   expect(await machineTime("usr_alice")).toMatchObject({ activeMs: 3 * MINUTE, running: 0, workspaces: [expect.objectContaining({ workspaceId: "ws_stop", machineClass: "large", activeMs: 3 * MINUTE })] })
 
@@ -195,9 +195,9 @@ test("a boot that failed on the host it created is the machine time it spent, it
   expect(await manager.ensure("ws_stop", { homeRegion: "us-east" })).toMatchObject({ status: "ready", epoch: 2 })
   at += 7 * MINUTE
   expect(await manager.stop("ws_stop")).toMatchObject({ ok: true, status: "stopped" })
-  expect((await bootRows()).map((row) => [row.epoch, row.started_at, row.stopped_at])).toEqual([
-    [1, PERIOD + 10 * MINUTE, PERIOD + 13 * MINUTE],
-    [2, PERIOD + 60 * MINUTE, PERIOD + 70 * MINUTE],
+  expect((await bootRows()).map((row) => [row.epoch, row.started_at, row.stopped_at, row.error])).toEqual([
+    [1, PERIOD + 10 * MINUTE, PERIOD + 13 * MINUTE, "runtime_boot_failed: the image has no runtime"],
+    [2, PERIOD + 60 * MINUTE, PERIOD + 70 * MINUTE, null],
   ])
   expect(await machineTime("usr_alice")).toMatchObject({ activeMs: 13 * MINUTE, running: 0 })
 

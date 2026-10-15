@@ -201,7 +201,10 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       .bind(...columns.map((column) => values[COLUMNS.indexOf(column)] ?? null), ...guard.binds)
     const endsHosting = columns.includes("status") && next.status !== "ready" && next.status !== "acquiring"
     const result = endsHosting
-      ? (await database.batch<Record<string, unknown>>([closeBoot(database, guard, endedAt ?? next.updatedAt), write]))[1]?.results[0]
+      ? (await database.batch<Record<string, unknown>>([
+        closeBoot(database, guard, endedAt ?? next.updatedAt, next.status === "unavailable" ? next.lastError : undefined),
+        write,
+      ]))[1]?.results[0]
       : await write.first()
     return result ? toSandboxLease(toLeaseRow(result)) : undefined
   }

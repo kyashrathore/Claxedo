@@ -378,7 +378,7 @@ describe("d1 sandbox lease store", () => {
     await expect(leaseStore.recordFailure("ws_1", 1, "runtime_boot_failed: no runtime", at + 5_000))
       .resolves.toMatchObject({ status: "unavailable", epoch: 1, sandboxId: "sandbox_1", retryCount: 1 })
     await expect(bootRows(target)).resolves.toEqual([
-      { workspace_id: "ws_1", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test", machine_class: "large", started_at: NOW, stopped_at: NOW + 90_000 },
+      { workspace_id: "ws_1", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test", machine_class: "large", started_at: NOW, stopped_at: NOW + 90_000, error: "runtime_boot_failed: no runtime" },
     ])
 
     // The next epoch resumes the host where it is placed, on the size the acquire names; the failure's reason is the old epoch's.
@@ -389,7 +389,13 @@ describe("d1 sandbox lease store", () => {
       lease: { epoch: 2, status: "acquiring", sandboxId: "sandbox_1", hostId: "host_1", labels: { placed: "here" }, machineClass: "small", retryCount: 1 },
     })
     expect(next.lease.lastError).toBeUndefined()
-    await expect(bootRows(target)).resolves.toHaveLength(1)
+    await expect(bootRows(target)).resolves.toMatchObject([{ epoch: 1, error: "runtime_boot_failed: no runtime" }])
+
+    // The epoch that then serves clears the lease's error; the boot that failed keeps the reason it failed for.
+    await leaseStore.recordTarget("ws_1", 2, { sandboxId: "sandbox_1", hostId: "host_1", url: "https://runtime.test/ws_1", labels: { placed: "here" } })
+    await expect(leaseStore.get("ws_1")).resolves.toMatchObject({ status: "ready", epoch: 2 })
+    expect((await leaseStore.get("ws_1"))?.lastError).toBeUndefined()
+    await expect(bootRows(target)).resolves.toMatchObject([{ epoch: 1, error: "runtime_boot_failed: no runtime" }])
 
     // A lease that failed before any host was reported is placed afresh.
     await leaseStore.acquire("ws_2", { ...ACQUIRE, now: at, labels: { placed: "here" }, machineClass: "large" })
@@ -529,7 +535,7 @@ describe("d1 sandbox lease store", () => {
     const ended = await leaseStore.update("ws_1", 1, { status: "destroyed", lastError: "runtime_host_gone: not_found", endedAt: NOW + 150_000 })
     expect(ended).toMatchObject({ status: "destroyed", lastError: "runtime_host_gone: not_found", updatedAt: at })
     await expect(bootRows(target)).resolves.toEqual([
-      { workspace_id: "ws_1", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test", machine_class: "small", started_at: NOW, stopped_at: NOW + 150_000 },
+      { workspace_id: "ws_1", epoch: 1, org_id: "org_acme", owner_user_id: "usr_alice", driver: "test", machine_class: "small", started_at: NOW, stopped_at: NOW + 150_000, error: null },
     ])
     const next = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: at, machineClass: "small" })
     expect(next).toMatchObject({ acquired: true, lease: { epoch: 2, status: "acquiring", machineClass: "small" } })

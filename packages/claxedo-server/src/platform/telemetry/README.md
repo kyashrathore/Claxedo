@@ -87,7 +87,8 @@ Token ids, relay URLs, relay rooms, driver resource ids and free-text reasons st
 VM minutes per period in Usage → Cloud are not read from analytics. The D1 lease store
 (`sandbox/stores/d1.ts`) records each boot's interval in `sandbox_boots` (`sandbox/stores/d1-boots.ts`) in the
 same batch as the write that takes a serving epoch out of `ready`: a stop by hand or by idleness, a delete, a
-restore that replaces the machine, a release, or a failure. `GET /api/claxedo/usage/machine-time` sums the
+restore that replaces the machine, a release, or a failure. A boot that failed keeps the reason in its `error`,
+which the lease loses to the next epoch. `GET /api/claxedo/usage/machine-time` sums the
 signed person's own boots in the period, plus their epochs still serving. `workspace_stopped.active_ms` is the
 same interval, but only stops and deletes send it.
 
