@@ -40,14 +40,17 @@ slice 5, when a workspace has one.
 |---|---|---|
 | `lease_decision` | The manager has chosen resume, restore or cold start | `SandboxManager.ensure` |
 | `provider_ready` | The driver reports the provider resource (`onResource`) | sandbox manager |
-| `image_ready` | The driver sees the sandbox running from its image or snapshot (`onImageReady`: Boat after the container starts, Vercel after create) | sandbox manager |
+| `machine_ready` | The provider's machine, created or resumed, takes commands (`onMachineReady`: Boat once the sandbox reports ready, before the image is prepared) | sandbox manager |
+| `image_ready` | The driver sees the sandbox running from its image or snapshot (`onImageReady`: Boat after the image is pulled and its container started, Vercel after create) | sandbox manager |
 | `repository_checkout` | The runtime has checked out the repository, timed inside the sandbox | runtime, taken by the control plane after provisioning |
 | `start_script` | `.claxedo/start.sh` or the detected install has finished (slice 3) | runtime |
 | `runtime_ready` | The driver returns a serving target | sandbox manager |
 | `first_session_ready` | The runtime publishes the first session created after the start began | session rows ingest |
 
-The control-plane phases are timed from the previous one, so `lease_decision + provider_ready + image_ready +
-runtime_ready` is the wall time from the first `ensure` to a serving runtime. A driver that cannot tell a phase apart
+The control-plane phases are timed from the previous one, so `lease_decision + provider_ready + machine_ready +
+image_ready + runtime_ready` is the wall time from the first `ensure` to a serving runtime (`start_ms` of
+`workspace_ready`/`workspace_woken`). On Boat a wake has no `provider_ready`: `machine_ready` is the resume of the
+archived VM and `image_ready` the image pull and container start on it. A driver that cannot tell a phase apart
 (Modal's create returns only once the runtime is up) leaves it out, and its time falls into the next phase.
 `repository_checkout` and `start_script` happen inside the `runtime_ready` span and break it down.
 `first_session_ready` is timed from `runtime_ready`.
@@ -70,6 +73,7 @@ select
   max(toInt(properties.repo_size_bytes)) as repo_size_bytes,
   maxIf(toInt(properties.duration_ms), properties.phase = 'lease_decision') as lease_decision_ms,
   maxIf(toInt(properties.duration_ms), properties.phase = 'provider_ready') as provider_ready_ms,
+  maxIf(toInt(properties.duration_ms), properties.phase = 'machine_ready') as machine_ready_ms,
   maxIf(toInt(properties.duration_ms), properties.phase = 'image_ready') as image_ready_ms,
   maxIf(toInt(properties.duration_ms), properties.phase = 'repository_checkout') as checkout_ms,
   maxIf(toInt(properties.duration_ms), properties.phase = 'start_script') as start_script_ms,
@@ -92,8 +96,8 @@ limit 50
 
 - [x] The phase vocabulary and `createSandboxPhaseTimer` live in `@claxedo/sandbox-contract` (`start-phases.ts`).
 - [x] `SandboxManager` records each epoch's start in the lease (`SandboxLease.start`, D1 column
-  `sandbox_leases.start_json`) and emits `onStartPhase`. One provision call writes what it observed once, after the
-  driver work. A phase is emitted at most once per epoch. A serving lease that is re-ensured does not start.
+  `sandbox_leases.start_json`) and emits `onStartPhase`. Each phase is written as it ends, so a connection read mid-boot
+  reports how far the start has come. A phase is emitted at most once per epoch. A serving lease that is re-ensured does not start.
 - [x] `recordStartPhases` takes runtime-timed phases; `markStartPhase` ends a phase from outside the manager, refusing
   evidence older than the start.
 - [x] The runtime times its checkout and repository size (`hosts/workspace-runtime/runtime-start-phases.ts`). Only the

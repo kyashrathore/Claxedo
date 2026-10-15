@@ -360,6 +360,8 @@ export type SandboxSource = { kind: "git"; repoUrl: string; branch?: string } | 
 export type SandboxDriverEnsureInput = {
   /** Await before readiness polling so the manager can durably fence the resource identity. */
   onResource?: (resource: Omit<SandboxProvisionedTarget, "url" | "persistence">) => Promise<void>
+  /** Called by a driver whose provider machine, created or resumed, takes commands before the image is prepared on it. */
+  onMachineReady?: () => Promise<void>
   /** Called by a driver that sees its sandbox running from the image or snapshot before the runtime is up. */
   onImageReady?: () => Promise<void>
   workspaceId: string

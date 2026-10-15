@@ -446,6 +446,23 @@ describe("boat sandbox driver", () => {
     expect(seen).not.toContain("host 2593 --public")
   })
 
+  test("reports its machine ready once Boat says a created or resumed sandbox is ready, before anything is written to it", async () => {
+    const created = fakeBoat({ states: ["provisioning", "ready"] })
+    const createDriver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: created.fetchImpl, provisionIntervalMs: 0, healthIntervalMs: 0 })
+    let atCreate: string[] = []
+    await createDriver.ensureHost({ ...ensureInput(), onMachineReady: async () => { atCreate = created.calls.map((c) => `${c.method} ${c.path}`) } })
+    expect(atCreate).toEqual(["POST /sandboxes", `GET /sandboxes/${ID}`, `GET /sandboxes/${ID}`])
+
+    const resumed = fakeBoat({ states: ["archived", "provisioning", "ready"] })
+    const resumeDriver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: resumed.fetchImpl, provisionIntervalMs: 0, healthIntervalMs: 0 })
+    let atResume: string[] = []
+    await resumeDriver.resumeHost?.({
+      lease: sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" }),
+      ensure: { ...ensureInput(), onMachineReady: async () => { atResume = resumed.calls.map((c) => `${c.method} ${c.path}`) } },
+    })
+    expect(atResume).toEqual([`GET /sandboxes/${ID}`, `POST /sandboxes/${ID}/resume`, `GET /sandboxes/${ID}`, `GET /sandboxes/${ID}`])
+  })
+
   test("refuses a published URL that still carries Boat's access token", async () => {
     const boat = fakeBoat({ hostUrl: "https://machine-2593.on.boat.dev?_token=synthetic-host-token" })
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })

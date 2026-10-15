@@ -1,6 +1,7 @@
 export const sandboxStartPhases = [
   "lease_decision",
   "provider_ready",
+  "machine_ready",
   "image_ready",
   "repository_checkout",
   "setup_script",

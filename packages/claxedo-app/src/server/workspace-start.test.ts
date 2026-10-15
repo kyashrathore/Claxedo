@@ -142,3 +142,11 @@ test("workspace start: the steps the server has recorded become the start's prog
     { kind: "provisioning" },
   ])
 })
+
+test("workspace start: the machine is done once the provider says it takes commands, not when it only accepted the create", async () => {
+  const answer = (phases: readonly string[]) => json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, progress: { phases, sinceStartMs: 5_000, sinceStepMs: 1_000 } })
+  const server = answers(answer(["lease_decision", "provider_ready"]), answer(["lease_decision", "provider_ready", "machine_ready"]), answer(["lease_decision", "machine_ready", "image_ready"]), json(READY))
+  const done: (readonly string[] | undefined)[] = []
+  await startWorkspace(server.connect, "ws_1", { onProgress: (step) => done.push(step.steps?.done), wait: async () => undefined })
+  expect(done).toEqual([[], ["machine"], ["machine", "image"]])
+})

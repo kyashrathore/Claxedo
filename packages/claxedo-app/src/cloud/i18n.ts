@@ -17,7 +17,7 @@ const en = {
   "cloud.wake.step.starting": "Starting the machine",
   "cloud.wake.step.resuming": "Resuming the machine",
   "cloud.wake.step.restoring": "Restoring your files",
-  "cloud.wake.step.image": "Preparing the workspace image",
+  "cloud.wake.step.image": "Downloading the workspace image",
   "cloud.wake.step.runtime": "Starting the agent runtime",
   "cloud.wake.step.connecting": "Connecting",
   "cloud.wake.stepFor": "{{step}} · {{elapsed}}",

@@ -50,6 +50,8 @@ describe("sandbox start telemetry", () => {
     const { manager, events } = compose(scriptedDriver([async (ensure) => {
       time.advance(400)
       await ensure.onResource?.({ sandboxId: "sb_1", hostId: "host_ws_1", labels: ensure.labels })
+      time.advance(900)
+      await ensure.onMachineReady?.()
       time.advance(1_500)
       await ensure.onImageReady?.()
       time.advance(2_000)
@@ -58,7 +60,7 @@ describe("sandbox start telemetry", () => {
 
     expect((await manager.ensure("ws_1", input)).status).toBe("ready")
 
-    expect(timeline(events)).toEqual([["lease_decision", 0], ["provider_ready", 400], ["image_ready", 1_500], ["runtime_ready", 2_000]])
+    expect(timeline(events)).toEqual([["lease_decision", 0], ["provider_ready", 400], ["machine_ready", 900], ["image_ready", 1_500], ["runtime_ready", 2_000]])
     expect(events[0]).toMatchObject({ workspaceId: "ws_1", epoch: 1, driver: "test-driver", homeRegion: "us-east", bootMode: "cold-start" })
     expect(events.every((event) => event.labels.projectId === "prj_1")).toBe(true)
   })
@@ -177,6 +179,27 @@ describe("sandbox start telemetry", () => {
     await manager.markStartPhase("ws_1", { epoch: 1, phase: "first_session_ready", notBefore: time.now() })
 
     expect(timeline(events)).toEqual([["first_session_ready", 5_000]])
+  })
+
+  test("a wake times the machine's resume apart from the image it then prepares", async () => {
+    const time = clock()
+    const resumeHost: SandboxDriver["resumeHost"] = async ({ ensure }) => {
+      time.advance(20_000)
+      await ensure.onMachineReady?.()
+      time.advance(60_000)
+      await ensure.onImageReady?.()
+      time.advance(3_000)
+      return target(ensure)
+    }
+    const { manager, events } = compose(scriptedDriver([async (ensure) => target(ensure)], resumeHost), time)
+    await manager.ensure("ws_1", input)
+    expect((await manager.stop("ws_1")).ok).toBe(true)
+    events.length = 0
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+
+    expect(timeline(events)).toEqual([["lease_decision", 0], ["machine_ready", 20_000], ["image_ready", 60_000], ["runtime_ready", 3_000]])
+    expect(events.at(-1)).toMatchObject({ bootMode: "resume", sinceStartMs: 83_000 })
   })
 
   test("a stopped lease's next ensure is a new epoch with its own start", async () => {

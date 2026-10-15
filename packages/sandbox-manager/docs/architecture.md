@@ -83,9 +83,11 @@ lease that is re-ensured is not a start, and the next `acquire` begins a new
 epoch with no start recorded.
 
 `provision()` ends `lease_decision` when it begins a start, `provider_ready`
-when the driver calls `onResource`, `image_ready` when a driver that can tell
-calls `onImageReady`, and `runtime_ready` when the driver returns a serving
-target. Each phase is timed from the one before, written into `lease.start` as
+when the driver calls `onResource`, `machine_ready` when a driver whose machine
+takes commands before its image is prepared calls `onMachineReady` (Boat, once a
+created or resumed sandbox reports ready), `image_ready` when a driver that can
+tell calls `onImageReady`, and `runtime_ready` when the driver returns a
+serving target. Each phase is timed from the one before, written into `lease.start` as
 it ends and emitted through the `onStartPhase` option, so `target()` of a lease
 that is acquiring or waiting out a retry carries its `start` with the phases
 observed so far: the connection answer reports them while the driver is still

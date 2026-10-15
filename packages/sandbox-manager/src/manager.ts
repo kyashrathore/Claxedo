@@ -267,6 +267,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         if (!recorded) throw new Error("runtime_lease_changed")
         await start?.end("provider_ready")
       }
+      ensure.onMachineReady = async () => start?.end("machine_ready")
       ensure.onImageReady = async () => start?.end("image_ready")
       const target = resuming
         ? await options.driver.resumeHost!({ lease, ensure })

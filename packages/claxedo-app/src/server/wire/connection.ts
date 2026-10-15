@@ -59,7 +59,7 @@ function durationOf(value: unknown): number | undefined {
 const START_STEPS: readonly WorkspaceStartStep[] = ["machine", "image", "runtime"]
 
 const STEPS_DONE_BY_PHASE: Readonly<Record<string, readonly WorkspaceStartStep[]>> = {
-  provider_ready: ["machine"],
+  machine_ready: ["machine"],
   image_ready: ["machine", "image"],
   runtime_ready: ["machine", "image", "runtime"],
 }

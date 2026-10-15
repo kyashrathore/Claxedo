@@ -381,6 +381,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   }
 
   async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
+    await input.onMachineReady?.()
     const port = runtimePort(input)
     const secrets = await startContainer(sandboxId, input, hostId)
     await input.onImageReady?.()
