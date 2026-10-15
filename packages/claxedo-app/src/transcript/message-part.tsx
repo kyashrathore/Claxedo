@@ -57,7 +57,7 @@ import { MessageDivider } from "./message-divider"
 import { NoticePartDisplay } from "./notice-part"
 import { isRetractedPart, RetractedPartDisplay } from "./retracted-part"
 import { DiagnosticsDisplay, getDiagnostics } from "./tool-diagnostics"
-import { readPartText } from "./message-part-text"
+import { readPartText, type AssistantCopy } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { FoldedUserMessageBody } from "./folded-user-message-body"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
@@ -87,7 +87,7 @@ export interface MessagePartProps {
   deferToolContent?: boolean
   virtualizeDiff?: boolean
   onContentRendered?: () => void
-  showAssistantCopyPartId?: string | null
+  assistantCopy?: AssistantCopy | null
   turnDurationMs?: number
   turnInterrupted?: boolean
 }
@@ -840,7 +840,7 @@ export function Part(props: MessagePartProps) {
         deferToolContent={props.deferToolContent}
         virtualizeDiff={props.virtualizeDiff}
         onContentRendered={props.onContentRendered}
-        showAssistantCopyPartId={props.showAssistantCopyPartId}
+        assistantCopy={props.assistantCopy}
         turnDurationMs={props.turnDurationMs}
         turnInterrupted={props.turnInterrupted}
       />
@@ -1169,11 +1169,11 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       props.turnInterrupted !== true,
   )
   const text = () => readPartText(part())
-  const showCopy = createMemo(() => props.message.role === "assistant" && props.showAssistantCopyPartId === part().id)
+  const showCopy = createMemo(() => props.message.role === "assistant" && props.assistantCopy?.partId === part().id)
   const [copied, setCopied] = createSignal(false)
 
   const handleCopy = async () => {
-    const content = text()
+    const content = props.assistantCopy?.text()
     if (!content) return
     if ((await copyText(content)).copied) {
       setCopied(true)

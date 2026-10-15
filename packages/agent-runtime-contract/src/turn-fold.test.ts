@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentAssistantMessage, AgentContentPart, AgentToolPart } from "./content"
 import {
+  answerPartRefs,
   countFoldableGroups,
   foldedGroupKeys,
   groupParts,
@@ -166,6 +167,13 @@ describe("foldedGroupKeys", () => {
     expect(countFoldableGroups(turnGroups, lookup(turn))).toBe(3)
     const keys = foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true }), turnGroups, lookup(turn))
     expect([...keys]).toEqual(["part:a1:t0", "part:a1:b1", "part:a1:p1"])
+  })
+
+  test("the answer's parts are the texts the fold leaves, in order, and none when the turn ended on a tool", () => {
+    const split = [text("t1", "Yep, all good!"), reasoning("p1", "short reply"), text("t2", ".")]
+    expect(answerPartRefs(groupsOf(split), lookup(split)).map((ref) => ref.partId)).toEqual(["t1", "t2"])
+    const endsOnTool = [text("t0", "running it"), tool("b1", "bash")]
+    expect(answerPartRefs(groupsOf(endsOnTool), lookup(endsOnTool))).toEqual([])
   })
 
   test("keeps a group the reader opened, unless the fold was their explicit choice", () => {

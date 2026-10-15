@@ -31,6 +31,8 @@ import {
   TurnFoldRow,
   WorkGroup,
   SessionRetry,
+  responseText,
+  type AssistantCopy,
 } from "@/transcript"
 import { isPhoneWidth } from "@/lib/viewport"
 import { holdPaneReveal } from "@/workbench"
@@ -811,24 +813,16 @@ export function MessageTimeline(props: MessageTimelineProps) {
       info()?.lastTurn,
     )
 
-  const assistantCopyPartId = (userMessageId: string) => {
+  const assistantCopy = (userMessageId: string): AssistantCopy | null => {
     if (workingTurn(userMessageId)) return null
-    const all = assistantMessagesByParent().get(userMessageId) ?? emptyAssistantMessages
-    const finalTurn = props.userMessages.at(-1)?.id === userMessageId
-    const messages = initialTurnExpanded() || !finalTurn ? all : all.slice(-1)
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i]
-      if (!message) continue
-
-      const parts = getMsgParts(message.id)
-      for (let j = parts.length - 1; j >= 0; j--) {
-        const part = parts[j]
-        if (!part || part.type !== "text" || sessionConversation()?.partsWithText[part.id] !== true) continue
-        return part.id
-      }
-    }
-    return undefined
+    const messages = assistantMessagesByParent().get(userMessageId) ?? emptyAssistantMessages
+    const withText = sessionConversation()?.partsWithText
+    const partIds = Timeline.turnAnswerPartIds(messages, getMsgParts, (part) => withText?.[part.id] === true, info()?.lastTurn)
+    const partId = partIds.at(-1)
+    if (!partId) return null
+    const answer = new Set(partIds)
+    const text = () => responseText(messages.flatMap((message) => getMsgParts(message.id)).flatMap((part) => (part.type === "text" && answer.has(part.id) ? [part] : [])))
+    return { partId, text }
   }
 
   const getMsgPart = (messageId: string, partId: string) => getMsgParts(messageId).find((part) => part.id === partId)
@@ -966,7 +960,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <MessagePart
                 part={part()}
                 message={message()}
-                showAssistantCopyPartId={assistantCopyPartId(row().userMessageId)}
+                assistantCopy={assistantCopy(row().userMessageId)}
                 turnDurationMs={turnDurationMs(row().userMessageId)}
                 turnInterrupted={turnInterrupted(row().userMessageId)}
                 defaultOpen={defaultOpen()}

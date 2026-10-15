@@ -72,6 +72,21 @@ test("a reply split around a thought, in a turn with no tool, shows both texts a
   expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
 })
 
+test("the turn's answer, which Copy response copies, is every text after the last tool, in order", () => {
+  const assistant = { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2, completed: 3 } } as unknown as AgentAssistantMessage
+  const base = { sessionID: "s1", messageID: "a1" }
+  const parts = [
+    { ...base, id: "t0", type: "text", text: "Looking first." },
+    { ...base, id: "b1", type: "tool", tool: "bash", state: { status: "completed", input: { command: "ls" }, output: "", title: "", metadata: {}, time: { start: 1, end: 2 } } },
+    { ...base, id: "t1", type: "text", text: "Yep, all good! Fill me in and I'll get going" },
+    { ...base, id: "r1", type: "reasoning", text: "Keep it short.", time: { start: 2, end: 3 } },
+    { ...base, id: "t2", type: "text", text: ".\n" },
+  ] as never[]
+  const hasText = (part: { type: string }) => "text" in part && !!part.text
+  expect(Timeline.turnAnswerPartIds([assistant], (id) => (id === "a1" ? parts : []), hasText)).toEqual(["t1", "t2"])
+  expect(Timeline.turnAnswerPartIds([assistant], (id) => (id === "a1" ? parts.slice(0, 2) : []), hasText)).toEqual([])
+})
+
 test("the running turn of a session whose run stopped under it is drawn interrupted: its open tools stop, and the divider does not say the person stopped it", () => {
   const assistant = { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2 } } as unknown as AgentAssistantMessage
   const base = { sessionID: "s1", messageID: "a1" }

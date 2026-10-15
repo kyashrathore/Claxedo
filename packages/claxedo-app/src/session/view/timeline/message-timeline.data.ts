@@ -13,6 +13,7 @@ import type {
 import type { SessionStatus } from "@/server"
 import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import {
+  answerPartRefs,
   assistantMessageSettled,
   cancelledAssistantMessageId,
   countFoldableGroups,
@@ -404,6 +405,24 @@ export namespace Timeline {
     lastTurn?: TurnOutcome,
   ) {
     return turnInterruption(assistantMessages, cancelledAssistantMessageId(lastTurn)).index !== -1
+  }
+
+  export function turnAnswerPartIds(
+    assistantMessages: AssistantMessage[],
+    getMessageParts: (messageId: string) => Part[],
+    hasText: (part: Part) => boolean,
+    lastTurn?: TurnOutcome,
+  ): string[] {
+    const shape = turnFoldShape({
+      assistantMessages,
+      partsOf: getMessageParts,
+      hasText,
+      showReasoning: false,
+      compaction: false,
+      cancelledAssistantMessageId: cancelledAssistantMessageId(lastTurn),
+    })
+    const partById = new Map(shape.refs.map((ref) => [ref.part.id, ref.part] as const))
+    return answerPartRefs(turnSegments(shape.refs, shape).flat(), (ref) => partById.get(ref.partId)).map((ref) => ref.partId)
   }
 
   export type GroupMember = { message: PresentationMessage; part: ToolPart | ReasoningPart }

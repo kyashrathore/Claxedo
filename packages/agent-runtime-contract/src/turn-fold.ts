@@ -250,14 +250,17 @@ function holdsTool(group: PartGroup, part: FoldablePartLookup): boolean {
   return group.type !== "part" || part(group.ref)?.type === "tool"
 }
 
-function answerGroupKeys(groups: readonly PartGroup[], part: FoldablePartLookup): ReadonlySet<string> {
+function answerGroups(groups: readonly PartGroup[], part: FoldablePartLookup): PartGroup[] {
   const lastTool = groups.findLastIndex((group) => holdsTool(group, part))
-  return new Set(
-    groups
-      .slice(lastTool + 1)
-      .filter((group) => group.type === "part" && part(group.ref)?.type === "text")
-      .map((group) => group.key),
-  )
+  return groups.slice(lastTool + 1).filter((group) => group.type === "part" && part(group.ref)?.type === "text")
+}
+
+function answerGroupKeys(groups: readonly PartGroup[], part: FoldablePartLookup): ReadonlySet<string> {
+  return new Set(answerGroups(groups, part).map((group) => group.key))
+}
+
+export function answerPartRefs(groups: readonly PartGroup[], part: FoldablePartLookup): PartRef[] {
+  return answerGroups(groups, part).flatMap(groupMembers)
 }
 
 function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, answerKeys: ReadonlySet<string>): boolean {
