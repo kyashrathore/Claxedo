@@ -11,7 +11,7 @@ import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryableServerError } from "./errors"
-import { createEventIntake } from "./event-intake"
+import { createEventIntake, type EventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
 import { createMarketplaceApi } from "./marketplace"
@@ -65,11 +65,11 @@ export type ServerHandle = Server & {
   readonly dispose: () => void
 }
 
-function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
+function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, events: EventIntake["subscribe"], queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
   const telemetry = createProductTelemetry(account)
   const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
-  const wakes = createWorkspaceWakes(transport, workspaces)
+  const wakes = createWorkspaceWakes(transport, workspaces, events)
   const cloud = createCloudApi(transport, workspaces, wakes, project, account)
   return {
     telemetry,
@@ -130,7 +130,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     startup: startup.state,
     queryClient,
     subscribe: intake.subscribe,
-    ...serverApis(transport, workspaces, status, queryClient, queries, projection, account, port),
+    ...serverApis(transport, workspaces, status, intake.subscribe, queryClient, queries, projection, account, port),
     attachPlacement: placementStreams.attach,
     watchPlacement: placementStreams.watch,
     queries,

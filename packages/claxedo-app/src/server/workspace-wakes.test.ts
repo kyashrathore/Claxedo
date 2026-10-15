@@ -4,6 +4,7 @@ import { createRoot } from "solid-js"
 import { ServerError } from "./errors"
 import { placementId } from "./ids"
 import type { Placement } from "./types"
+import type { ServerEvent } from "./events"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { WorkspaceStartProgress } from "./cloud-types"
 import type { StartOptions } from "./workspace-start"
@@ -17,9 +18,22 @@ type Start = { resolve: () => void; reject: (error: unknown) => void }
 
 type Lifecycle = Extract<Placement, { kind: "cloud" }>["lifecycle"]
 
+function eventFeed() {
+  const listeners = new Set<(event: ServerEvent) => void>()
+  return {
+    emit: (event: ServerEvent) => listeners.forEach((listener) => listener(event)),
+    events: (listener: (event: ServerEvent) => void) => {
+      listeners.add(listener)
+      return () => void listeners.delete(listener)
+    },
+  }
+}
+
 function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; startProgress?: readonly WorkspaceStartProgress[] } = {}) {
   const starts: Start[] = []
   const follows: Start[] = []
+  const settles: NonNullable<StartOptions["settled"]>[] = []
+  const { emit, events } = eventFeed()
   const placements: Record<string, Placement> = {
     ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", lifecycle: "asleep", reachable: false, onThisMachine: false },
     ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false, onThisMachine: false },
@@ -31,6 +45,7 @@ function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; s
       return () => undefined
     },
     startRuntime: (_workspaceId: string, options?: StartOptions) => {
+      if (options?.settled) settles.push(options.settled)
       for (const progress of server.startProgress ?? [{ kind: "provisioning", bootMode: "resume" }]) options?.onProgress?.(progress)
       return new Promise<void>((resolve, reject) => starts.push({ resolve, reject }))
     },
@@ -48,7 +63,7 @@ function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; s
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
   const waits: number[] = []
   const wait = async (ms: number) => { waits.push(ms) }
-  return { starts, follows, waits, images, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, wait)) }
+  return { starts, follows, waits, images, settles, emit, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, events, wait)) }
 }
 
 async function settle() {
@@ -214,4 +229,26 @@ test("wakes: a start the server retries after a failed step reads waking with th
   expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "resume", failure: "quota exceeded" })
   starts[0].resolve()
   await settle()
+})
+
+test("wakes: the start it runs hears the server's notice that this workspace's start ended, and no other workspace's or a start still in progress", async () => {
+  const { settles, emit, wakes } = fixture({ value: false })
+  void wakes.start(cloud)
+  await settle()
+  const heard: string[] = []
+  const stop = settles[0]!(() => heard.push("settled"))
+
+  emit({ type: "cloudWorkspaceChanged", workspaceId: cloud, status: { kind: "provisioning", step: "starting" } })
+  emit({ type: "cloudWorkspaceChanged", workspaceId: folder, status: { kind: "ready" } })
+  emit({ type: "placementsChanged" })
+  expect(heard).toEqual([])
+
+  emit({ type: "cloudWorkspaceChanged", workspaceId: cloud, status: { kind: "ready" } })
+  emit({ type: "cloudWorkspaceChanged", workspaceId: cloud, status: { kind: "failed", reason: "boot failed" } })
+  emit({ type: "cloudWorkspaceChanged", workspaceId: cloud, status: { kind: "stopped" } })
+  expect(heard).toEqual(["settled", "settled", "settled"])
+
+  stop()
+  emit({ type: "cloudWorkspaceChanged", workspaceId: cloud, status: { kind: "ready" } })
+  expect(heard).toHaveLength(3)
 })

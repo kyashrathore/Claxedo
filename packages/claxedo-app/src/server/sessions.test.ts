@@ -46,7 +46,7 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
   const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
 
   const refusal = await sessions.create({ placementId: placementId("ws_cloud") }).then(
     () => undefined,
@@ -99,7 +99,7 @@ test("sessions: a first send resent after its create failed creates under the dr
   const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
   let held: SessionReservation | undefined
   const reservation = { held: () => held, hold: (next: SessionReservation) => { held = next } }
   const send = (messageId: string, text: string) => ({ placementId: placementId("ws_cloud"), reservation, prompt: { clientRequestId: messageId, messageId, text, attachments: [] } })

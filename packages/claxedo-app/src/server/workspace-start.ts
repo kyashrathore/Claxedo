@@ -7,11 +7,14 @@ export type StartOptions = {
   readonly onProgress?: (progress: WorkspaceStartProgress) => void
   readonly wait?: (ms: number) => Promise<void>
   readonly now?: () => number
+  readonly settled?: (listener: () => void) => () => void
+  readonly pollDeadlineMs?: number
 }
 
 const DEFAULT_RETRY_MS = 2_000
 const MIN_RETRY_MS = 500
 const MAX_RETRY_MS = 30_000
+const POLL_DEADLINE_MS = 30_000
 
 const retryDelay = (retryAfterMs: number | undefined) => Math.min(MAX_RETRY_MS, Math.max(MIN_RETRY_MS, retryAfterMs ?? DEFAULT_RETRY_MS))
 
@@ -29,14 +32,31 @@ function startProgressOf(answer: Provisioning, receivedAt: number): WorkspaceSta
   }
 }
 
+function unlessCutShort<T>(work: Promise<T>, settled: StartOptions["settled"], deadlineMs?: number): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let stopListening: (() => void) | undefined
+    const finish = (settle: () => void) => {
+      clearTimeout(timer)
+      stopListening?.()
+      settle()
+    }
+    const cut = () => finish(() => resolve(undefined))
+    stopListening = settled?.(cut)
+    if (deadlineMs !== undefined) timer = setTimeout(cut, deadlineMs)
+    work.then((value) => finish(() => resolve(value)), (error: unknown) => finish(() => reject(error)))
+  })
+}
+
 async function settledAnswer(connect: Connect, workspaceId: string, options: StartOptions): Promise<Exclude<ConnectionAnswer, { kind: "provisioning" }>> {
   const wait = options.wait ?? sleep
   const now = options.now ?? Date.now
   for (;;) {
-    const answer = await connect(workspaceId)
+    const answer = await unlessCutShort(connect(workspaceId), options.settled, options.pollDeadlineMs ?? POLL_DEADLINE_MS)
+    if (answer === undefined) continue
     if (answer.kind !== "provisioning") return answer
     options.onProgress?.(startProgressOf(answer, now()))
-    await wait(retryDelay(answer.retryAfterMs))
+    await unlessCutShort(wait(retryDelay(answer.retryAfterMs)), options.settled)
   }
 }
 

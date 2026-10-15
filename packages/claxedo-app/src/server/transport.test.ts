@@ -59,7 +59,7 @@ test("the public workspace wake owner sends a signed desktop cloud wake to the a
     refresh: async () => { running = true },
     byId: () => ({ kind: "cloud", reachable: running }),
   } as unknown as Workspaces
-  const wakes = createWorkspaceWakes(transport, workspaces)
+  const wakes = createWorkspaceWakes(transport, workspaces, () => () => undefined)
   const id = placementId("ws_cloud")
   await wakes.start(id)
   await transport.runtime(cloud, "/api/wr/health")
@@ -158,7 +158,7 @@ test("a workspace read as outdated reads live again once a connection answers re
   const { transport } = signed(new Error(`HOSTED_HTTP 409 ${JSON.stringify({ body: { error: { code: "cloud_runtime_image_outdated", message: "The workspace runs an older image" } } })}`), link)
   fetcher.mockResolvedValue(Response.json({}))
   const workspaces = { byId: () => ({ kind: "cloud", reachable: true }) } as unknown as Workspaces
-  const wakes = createWorkspaceWakes(transport, workspaces)
+  const wakes = createWorkspaceWakes(transport, workspaces, () => () => undefined)
   const id = placementId("ws_cloud")
   await expect(transport.runtime(cloud, "/api/wr/health")).rejects.toMatchObject({ code: "cloud_runtime_image_outdated" })
   expect(wakes.runtime(id)).toEqual({ kind: "outdated" })
@@ -182,7 +182,7 @@ test("a session's own connection answering ready leaves a workspace outdated, be
   const { transport, calls } = signed(outdated, { ...link, sessionId: "ses_pi", sessionHostRoot: "ses_pi" })
   fetcher.mockResolvedValue(Response.json({}))
   const workspaces = { byId: () => ({ kind: "cloud", reachable: true }) } as unknown as Workspaces
-  const wakes = createWorkspaceWakes(transport, workspaces)
+  const wakes = createWorkspaceWakes(transport, workspaces, () => () => undefined)
   const id = placementId("ws_cloud")
   await expect(transport.runtime(cloud, "/api/wr/health")).rejects.toMatchObject({ code: "cloud_runtime_image_outdated" })
   await transport.runtime({ ...cloud, sessionHost: { sessionId: "ses_pi" } }, "/session/ses_pi/config-options")
