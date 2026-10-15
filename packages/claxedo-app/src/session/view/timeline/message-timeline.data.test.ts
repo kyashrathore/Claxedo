@@ -62,7 +62,7 @@ test("the running turn of a session whose run stopped under it is drawn interrup
   const base = { sessionID: "s1", messageID: "a1" }
   const parts = [
     { ...base, id: "p1", type: "text", text: "Running the sleep." },
-    { ...base, id: "p2", type: "tool", callID: "c1", tool: "bash", state: { status: "running", input: { command: "sleep 120" }, time: { start: 3 } } },
+    { ...base, id: "p2", type: "tool", tool: "bash", state: { status: "running", input: { command: "sleep 120" }, time: { start: 3 } } },
   ] as never[]
   const hasText = (part: { type: string }) => "text" in part && !!part.text
   const earlierStop = { status: "cancelled" as const, completedAt: 1, assistantMessageId: "a0" }
