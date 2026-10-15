@@ -1074,9 +1074,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
       case "TurnDivider": {
         const turnDividerRow = rowOfTag(row, "TurnDivider", current)
         const label = () => {
-          if (turnDividerRow().label === "compaction") return host.t("ui.messagePart.compaction")
-          if (turnDividerRow().label === "handoff") return `Session handed off to ${turnDividerRow().harness}`
-          const durationMs = turnDividerRow().durationMs
+          const divider = turnDividerRow()
+          if (divider.label === "worked") return host.t("ui.message.workedDuration", { duration: formatDuration(divider.durationMs) })
+          if (divider.label === "compaction") return host.t("ui.messagePart.compaction")
+          if (divider.label === "handoff") return `Session handed off to ${divider.harness}`
+          const durationMs = divider.durationMs
           return typeof durationMs === "number"
             ? host.t("ui.message.interruptedDuration", { duration: formatDuration(durationMs) })
             : host.t("ui.message.interrupted")

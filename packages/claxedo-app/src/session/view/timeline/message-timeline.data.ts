@@ -246,6 +246,11 @@ export namespace Timeline {
 
     if (isActive && status === "retrying") rows.push(TimelineRow.Retry({ userMessageId: userMessage.id }))
 
+    const replied = assistantPartRefs.some((ref) => ref.part.type === "text" && hasText(ref.part))
+    if (shape.settled && !working && !interrupted && !error && !fold.canFold && !replied && typeof durationMs === "number") {
+      rows.push(TimelineRow.TurnDivider({ userMessageId: userMessage.id, label: "worked", durationMs }))
+    }
+
     const diffs = uniqueSummaryDiffs(userMessage.summary?.diffs)
     if (diffs.length > 0 && (status === "idle" || !isActive)) {
       rows.push(

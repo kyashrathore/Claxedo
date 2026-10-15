@@ -214,6 +214,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.ui.message.attachment.alt": "attachment",
   "sessionScreen.timeline.ui.message.interrupted": "Interrupted",
   "sessionScreen.timeline.ui.message.interruptedDuration": "You stopped after {{duration}}",
+  "sessionScreen.timeline.ui.message.workedDuration": "Worked for {{duration}}",
   "sessionScreen.timeline.ui.message.queued": "Queued",
   "sessionScreen.timeline.ui.message.queued.accepted": "Accepted · transcript position unconfirmed",
   "sessionScreen.timeline.ui.message.queued.cancelEdit": "Cancel edit",
