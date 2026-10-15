@@ -80,7 +80,7 @@ export type Turn = {
   userMessageId?: string
   parentMessageId?: string
   assistantMessageId: string
-  agent: string
+  agent?: string
   model?: Model
   parts: PromptInput["parts"]
   tools?: Record<string, boolean>
@@ -2365,7 +2365,7 @@ export class RuntimeStore {
               id: segment?.id ?? active.assistant_message_id,
               sessionID: input.sessionId,
               parentID: segment?.parentID ?? active.user_message_id ?? control.parentMessageId ?? input.sessionId,
-              agent: control.agent ?? "build",
+              ...(control.agent ? { agent: control.agent } : {}),
               model: control.model,
               directory: session?.directory ?? "",
               created: segment?.time?.created ?? active.created_at,

@@ -4,7 +4,6 @@ import type { Clock, ProviderTurnInput, ProviderTurnResult, ProviderTurnSettleme
 import { harnessAuthor, providerTurnNotice } from "./provider-turn-message"
 import { resolveSessionModel } from "../session/session-model"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "../host/turn-outcome"
-import { sessionTurnAgent } from "../host/turn-record"
 import type { RuntimeStore } from "../store"
 import type { BrokerSessionEvents } from "./session-events"
 import type { BrokerEventDelivery } from "./delivery"
@@ -91,7 +90,7 @@ export class BrokerProviderTurns {
       }
       const started = this.store.startTurn({
         sessionId, agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
-        ...opening, assistantMessageId: turnId, agent: sessionTurnAgent(config), ...(model ? { model } : {}),
+        ...opening, assistantMessageId: turnId, ...(config.agent ? { agent: config.agent } : {}), ...(model ? { model } : {}),
       })
       for (const event of started.events) this.delivery.broadcast(sessionId, event)
     } catch (error) {

@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from "jose"
 import { CLAXEDO_MCP_PATH, CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, createClaxedoMcpRoutes } from "@claxedo/mcp"
 import { createClaxedoMcpClient, type ClaxedoFetch } from "@claxedo/mcp/client"
 import type { ProviderDirect } from "@claxedo/agent-runtime-contract"
+import { asString } from "@claxedo/helpers/guards"
 import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import { bearerToken } from "@claxedo/session-core"
 import { mintRuntimeAccessToken, verifyRelayHostToken } from "@claxedo/workspace-relay"
@@ -12,7 +13,7 @@ export const WORKSPACE_ID = "ws_session_host"
 export const OWNER = "user_owner"
 export const MACHINE_HOST = "host_machine"
 
-type Lease = { sessionId: string; turnId: string; fencingToken: number; released: boolean; userId: string }
+type Lease = { sessionId: string; turnId: string; fencingToken: number; released: boolean; userId: string; expiresAt: number }
 
 const WRITES: ReadonlySet<string> = new Set(["write", "start", "register", "turn_acquire", "turn_grant"])
 
@@ -35,7 +36,11 @@ export type ControlPlaneInput = {
  * and nothing more. `/session-authorize` admits a caller whose relay host
  * token verifies for this session's host, refuses a create whose operation is
  * not the session's reservation and every write by a viewer, and mints real
- * turn-lease tokens it verifies again on renewal, release and delivery.
+ * turn-lease tokens it verifies again on renewal, release and delivery; an
+ * acquire while another turn's lease is live is a 409, as on the real plane. A
+ * deferred turn grant is minted for the caller and one turn id, and admits
+ * that turn's acquire only when it arrives without a bearer, as the real
+ * authority requires.
  * `/turn-delivery` hands over the session creator's accounts, as the real
  * route does, and with `firstPartyMcp` on a fresh first-party MCP bearer the
  * real `/api/claxedo/mcp` route below admits until the session is deleted;
@@ -65,6 +70,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
 
   const mint = async (lease: Lease) => {
     const expiresAt = Date.now() + control.leaseTtlMs
+    lease.expiresAt = expiresAt
     const token = await new SignJWT({ sessionId: lease.sessionId, turnId: lease.turnId, fencingToken: lease.fencingToken })
       .setProtectedHeader({ alg: "HS256" }).setExpirationTime(Math.floor(expiresAt / 1000)).sign(leaseSecret)
     return { allowed: true, turnId: lease.turnId, leaseId: token, fencingToken: lease.fencingToken, acquiredAt: Date.now(), expiresAt }
@@ -87,7 +93,14 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       : undefined
     return claims ? claims.user_id ?? claims.actor_id : undefined
   }
-  const refused = (c: Context, status: 401 | 403, code: string) => c.json({ error: { code } }, status)
+  const acquire = async (c: Context, turnId: string, userId: string) => {
+    const held = [...leases.values()].find((lease) => !lease.released && lease.expiresAt > Date.now() && lease.turnId !== turnId)
+    if (held) return c.json({ error: { code: "session_turn_in_progress" } }, 409)
+    const lease = { sessionId: input.root, turnId, fencingToken: ++fencing, released: false, userId, expiresAt: 0 }
+    leases.set(turnId, lease)
+    return c.json(await mint(lease))
+  }
+  const refused = (c: Context, status: 400 | 401 | 403, code: string) => c.json({ error: { code } }, status)
 
   const runtime = new Hono()
     .get("/experimental/session", (c) => c.json(input.workspaceSessions()))
@@ -139,16 +152,25 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
         calls.renewals += 1
         return control.refuseRenewals ? refused(c, 401, "session_turn_lease_invalid") : c.json(await mint(lease))
       }
+      if (action === "turn_acquire" && typeof body.grant === "string") {
+        if (c.req.header("authorization")) return refused(c, 400, "session_turn_grant_invalid")
+        const granted = await jwtVerify(body.grant, leaseSecret).catch(() => undefined)
+        const userId = asString(granted?.payload.grantedTo)
+        if (!userId || granted?.payload.sessionId !== input.root || granted.payload.turnId !== body.turnId || deleted) return refused(c, 401, "session_turn_grant_invalid")
+        return acquire(c, String(body.turnId), userId)
+      }
       const userId = await relayCaller(c)
       if (!userId || body.sessionId !== input.root || deleted) return refused(c, 403, "session_private")
       if (WRITES.has(action) && control.viewers.has(userId)) return refused(c, 403, "workspace_authorization_denied")
       if ((action === "start" || action === "register") && body.operationId !== control.reservation) return refused(c, 403, "workspace_authorization_denied")
       if (action === "register") creator = userId
-      if (action === "turn_acquire") {
-        const lease = { sessionId: input.root, turnId: String(body.turnId), fencingToken: ++fencing, released: false, userId }
-        leases.set(lease.turnId, lease)
-        return c.json(await mint(lease))
+      if (action === "turn_grant") {
+        const expiresAt = Date.now() + control.leaseTtlMs
+        const grant = await new SignJWT({ sessionId: input.root, turnId: body.turnId, grantedTo: userId })
+          .setProtectedHeader({ alg: "HS256" }).setExpirationTime(Math.floor(expiresAt / 1000)).sign(leaseSecret)
+        return c.json({ grant, expiresAt })
       }
+      if (action === "turn_acquire") return acquire(c, String(body.turnId), userId)
       if (body.stream === true) return c.json({ lease: `stream_${crypto.randomUUID()}`, expiresAt: Date.now() + 15_000 })
       return c.json({ allowed: true })
     })

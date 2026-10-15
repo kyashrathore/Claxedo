@@ -1,12 +1,10 @@
 import { batch } from "solid-js"
-import { toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads, type TranscriptPage } from "@/server"
+import { isSessionMissing, toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
 import { isOptimisticMessage } from "./merge"
 import { isReading, outlineOf } from "./model"
-
-const RUNTIME_SESSION_MISSING = "session_not_found"
 
 function hasOlderLoaded(context: TranscriptContext, page: TranscriptPage): boolean {
   const first = page.entries[0]?.info.id
@@ -39,7 +37,7 @@ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: numb
   const { ref, deps } = context
   reads.runtime.then(
     () => context.setRuntimeMissing(false),
-    (cause) => context.setRuntimeMissing(toAppError(cause).code === RUNTIME_SESSION_MISSING),
+    (cause) => context.setRuntimeMissing(isSessionMissing(cause)),
   )
   landSide(context, "runtime details", Promise.all([reads.first, reads.runtime]), ([, live]) => {
     if (!live) return
@@ -60,10 +58,18 @@ function landSides(context: TranscriptContext, reads: SessionReads, sentAt: numb
 }
 
 export function readSnapshot(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {
-  context.snapshotRead.current ??= readOnce(context, held).finally(() => {
-    context.snapshotRead.current = undefined
+  const read = context.snapshotRead
+  if (read.current) {
+    read.next ??= read.current.then(() => {
+      read.next = undefined
+      return readSnapshot(context)
+    })
+    return read.next
+  }
+  read.current = readOnce(context, held).finally(() => {
+    read.current = undefined
   })
-  return context.snapshotRead.current
+  return read.current
 }
 
 async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Promise<void> {

@@ -295,6 +295,52 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(assistantText(await host.messages()).includes("PISTOP"), false)
   })
 
+  void it("runs a message queued behind a turn once that turn is stopped, under its own turn id", { timeout: 120_000 }, async () => {
+    const root = "ses_stop_queued"
+    const host = await session(root)
+    const pidFile = path.join(directory, "stop-queued.pid")
+    model.scriptTool({ name: "bash", input: { command: holdCommand(pidFile) }, whenPromptIncludes: "PISTOPQUEUED" })
+    await host.prompt("msg_stopped", "Run it, then reply with exactly this one token: PISTOPQUEUED")
+    const pid = await pidFrom(pidFile)
+    assert.deepEqual(await host.json(`/session/${root}/prompt_async`, { method: "POST", body: {
+      parts: [{ type: "text", text: "Reply with exactly this one token: PIQUEUEDAFTERSTOP" }], messageID: "msg_queued_after_stop", model: MODEL, delivery: "queue",
+    } }), { delivery: "queue" })
+    const inspected = await host.json<{ target: { ownerGeneration: string } }>(`/session/${root}/recovery`)
+    await host.json(`/session/${root}/recovery`, { method: "POST", body: {
+      requestId: "stop_queued", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
+    } })
+    await eventually(`the held command ${pid} retired`, async () => pidAlive(pid) ? undefined : true, 15_000)
+    await host.settled("PIQUEUEDAFTERSTOP").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
+    assert.deepEqual(await host.json(`/session/${root}/queue`), [])
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_stopped", "msg_queued_after_stop"])
+    assert.equal(assistantText(await host.messages()).includes("PISTOPQUEUED"), false)
+  })
+
+  void it("draws every turn's tool rows in the first read a reload takes, as the live stream showed them, after the object restarts", { timeout: 120_000 }, async () => {
+    const root = "ses_reload_tools"
+    const host = await session(root)
+    const pidFile = path.join(directory, "reload-tools.pid")
+    model.scriptTool({ name: "bash", input: { command: "echo RELOADTOOL" }, whenPromptIncludes: "PIRELOADTOOL" })
+    await host.prompt("msg_reload_tool", "Run it, then reply with exactly this one token: PIRELOADTOOL")
+    await host.settled("PIRELOADTOOL")
+    model.scriptTool({ name: "bash", input: { command: holdCommand(pidFile) }, whenPromptIncludes: "PIRELOADSTOP" })
+    await host.prompt("msg_reload_stop", "Run it, then reply with exactly this one token: PIRELOADSTOP")
+    const pid = await pidFrom(pidFile)
+    const inspected = await host.json<{ target: { ownerGeneration: string } }>(`/session/${root}/recovery`)
+    await host.json(`/session/${root}/recovery`, { method: "POST", body: {
+      requestId: "stop_reload_tools", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
+    } })
+    await eventually(`the held command ${pid} retired`, async () => pidAlive(pid) ? undefined : true, 15_000)
+    await host.prompt("msg_reload_text", "Reply with exactly this one token: PIRELOADTEXT")
+    await host.settled("PIRELOADTEXT")
+    const toolRows = (messages: StoredMessage[]) => messages.flatMap((message) => message.parts).filter((part) => part.type === "tool").map((part) => [part.tool, part.state?.status])
+    const expected = [["bash", "completed"], ["bash", "error"]]
+    assert.deepEqual(toolRows(await host.messages()), expected, JSON.stringify(await host.messages()))
+    await host.crash()
+    const first = await host.json<{ page: { turns: Array<{ messages: StoredMessage[] }> } }>(`/session/${root}/outline?rows=40&cols=120&reasoning=0&shell=0&edit=0`)
+    assert.deepEqual(toolRows(first.page.turns.flatMap((turn) => turn.messages)), expected, JSON.stringify(first))
+  })
+
   void it("resumes a run lost mid-tool when Pi's wake alarm restarts the object, under the lease it took over", { timeout: 120_000 }, async () => {
     const root = "ses_evict"
     const host = await session(root)

@@ -2,7 +2,7 @@ import { isAgentSnapshotFileDiff, NO_BACKGROUND_WORK, type AgentSession } from "
 import { readField } from "@claxedo/helpers/readers"
 import { readCentralFirst, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
-import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
+import { onHistory, onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { NO_GOAL } from "./session-goal"
 import { withQuery, type RuntimeRoute } from "./transport"
 import type { SessionStatus } from "./status-types"
@@ -43,12 +43,14 @@ async function readHeldFirst(context: SessionContext, homeRead: Promise<SessionH
   return { ...row, outline: held.outline, transcript: held.latestTurn, latestTurn: held.latestTurn }
 }
 
-async function readFirst(context: SessionContext, homeRead: Promise<SessionHome>, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
-  const home = await homeRead
-  if (!home.central) {
-    return onRuntime(context, ref, (route) => readRuntimeFirst(context, route, ref, shape), (workspaceId) => readOfflineFirst(context, workspaceId, ref))
-  }
-  return readCentralFirst(context, home.route.workspaceId, ref, shape)
+function readFirst(context: SessionContext, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {
+  return onHistory(
+    context,
+    ref,
+    (route) => readRuntimeFirst(context, route, ref, shape),
+    (workspaceId) => readCentralFirst(context, workspaceId, ref, shape),
+    (workspaceId) => readOfflineFirst(context, workspaceId, ref),
+  )
 }
 
 async function readCentralRuntime(context: SessionContext, homeRead: Promise<SessionHome>, ref: SessionLocation): Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined> {
@@ -74,7 +76,7 @@ function todosOf(view: SessionOpenView) {
 export function startSessionReads(context: SessionContext, ref: SessionLocation, shape: PageShape, held?: HeldSessionReads): SessionReads {
   const { transport } = context
   const home = context.workspaces.home(ref)
-  const first = held ? readHeldFirst(context, home, ref, held) : readFirst(context, home, ref, shape)
+  const first = held ? readHeldFirst(context, home, ref, held) : readFirst(context, ref, shape)
   const runtime = readCentralRuntime(context, home, ref)
   const opened = onRuntime<SessionOpenView | undefined>(
     context,

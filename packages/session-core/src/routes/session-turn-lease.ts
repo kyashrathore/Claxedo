@@ -52,6 +52,35 @@ type HeldSessionTurnLease = {
   access: SessionAccessPolicyInput & { sessionId: string }
   onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
   now?: () => number
+  held?: HeldTurnLeases
+}
+
+/**
+ * The turn leases this host holds at the authority, by session. A turn ends
+ * in the runtime before its route has checkpointed it and released its lease,
+ * and the authority refuses another turn on the session until that release
+ * lands, so a turn the host starts for itself waits these out first.
+ */
+export type HeldTurnLeases = ReturnType<typeof createHeldTurnLeases>
+
+export function createHeldTurnLeases() {
+  const held = new Map<string, Set<Promise<void>>>()
+  return {
+    hold(sessionId: string): () => void {
+      const done = Promise.withResolvers<void>()
+      const leases = held.get(sessionId) ?? new Set()
+      held.set(sessionId, leases.add(done.promise))
+      return () => {
+        leases.delete(done.promise)
+        if (leases.size === 0 && held.get(sessionId) === leases) held.delete(sessionId)
+        done.resolve()
+      }
+    },
+    holds: (sessionId: string) => held.has(sessionId),
+    async released(sessionId: string): Promise<void> {
+      for (let leases = held.get(sessionId); leases; leases = held.get(sessionId)) await Promise.all(leases)
+    },
+  }
 }
 
 /**
@@ -106,6 +135,7 @@ function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSession
   let expiryTimer: Timer | undefined
   let lossStarted = false
   let lossResult: SessionTurnLeaseLossResult | undefined
+  const unhold = input.held?.hold(input.access.sessionId) ?? (() => {})
 
   const clearTimers = () => {
     if (renewTimer) clearTimeout(renewTimer)
@@ -121,6 +151,7 @@ function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSession
     lossStarted = true
     leaseLost = true
     clearTimers()
+    unhold()
     controller.abort(new Error("Durable session turn lease was lost"))
     let timer: Timer | undefined
     const expired = new Promise<SessionTurnLeaseLossResult>((resolve) => {
@@ -209,9 +240,13 @@ function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSession
         leaseId: current.leaseId,
         fencingToken: current.fencingToken,
       }
-      await Promise.resolve().then(() => policy.endTurn?.(turn)).catch(() => undefined)
-      if (leaseLost) return { released: false }
-      return await policy.releaseTurn!(turn)
+      try {
+        await Promise.resolve().then(() => policy.endTurn?.(turn)).catch(() => undefined)
+        if (leaseLost) return { released: false }
+        return await policy.releaseTurn!(turn)
+      } finally {
+        unhold()
+      }
     },
   }
 }

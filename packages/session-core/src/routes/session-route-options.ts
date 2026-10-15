@@ -21,6 +21,7 @@ import {
 import type { ChildSessionHost } from "./session-children"
 import type { AttachmentReader } from "./tool-image"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
+import type { HeldTurnLeases } from "./session-turn-lease"
 
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
@@ -84,6 +85,8 @@ export type SessionRouteOptions = {
   childSessions?: ChildSessionHost
   /** Where a prompt admitted behind a running turn is persisted while it waits. */
   queuedPrompts?: SessionDeliveryOwner
+  /** The turn leases this host holds at the authority, which `queuedPrompts` waits out before it starts a session's next turn. */
+  heldTurnLeases?: HeldTurnLeases
   getStatus?: (c: Ctx, directory: RuntimeDirectory) => SessionStatusSnapshot | Promise<SessionStatusSnapshot>
   afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSession[]) => Promise<void> | void
   afterCreateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void

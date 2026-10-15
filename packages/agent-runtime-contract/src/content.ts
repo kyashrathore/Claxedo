@@ -53,7 +53,7 @@ export type AgentAssistantMessage = {
   modelID?: string
   providerID?: string
   mode: string
-  agent: string
+  agent?: string
   path: { cwd: string; root: string }
   summary?: boolean
   cost: number

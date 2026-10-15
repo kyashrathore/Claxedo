@@ -160,7 +160,7 @@ export type PromptInput = {
   /** Existing user intent that owns a provider-initiated continuation. */
   parentMessageId?: string
   assistantMessageId: string
-  agent: string
+  agent?: string
   model?: PromptModel
   tools?: Record<string, boolean>
   format?: PromptFormat

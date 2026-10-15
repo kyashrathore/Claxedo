@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { SessionAccessPolicy, SessionTurnLeaseDecision } from "../session-access-policy"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { DEFAULT_RECOVERY_BUDGETS, type RecoveryFacts, type RecoveryOutcome, type RecoveryOperationState, type RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
-import { acquireSessionTurnLease, adoptSessionTurnLease } from "./session-turn-lease"
+import { acquireSessionTurnLease, adoptSessionTurnLease, createHeldTurnLeases } from "./session-turn-lease"
 
 const target: RecoveryTurnTarget = {
   scope: "turn",
@@ -154,6 +154,39 @@ describe("durable session turn lease controller", () => {
       expect(await acquisition.lease.release()).toEqual({ released: true })
     }
     expect(released).toBe(2)
+  })
+
+  test("holds its session for the host until the authority has answered the release, and a lost lease holds nothing", async () => {
+    const started = Date.now()
+    let localNow = started
+    const release = Promise.withResolvers<{ released: boolean }>()
+    const held = createHeldTurnLeases()
+    const acquire = (turnId: string) => acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId, leaseId: `proof_${turnId}`, fencingToken: 1, acquiredAt: started, expiresAt: started + 60_000 }),
+        renewTurn: async () => await new Promise(() => {}),
+        releaseTurn: () => release.promise,
+      }), access, turnId, onLost: () => contained(), now: () => localNow, held,
+    })
+    const acquisition = await acquire("msg_held")
+    if (!acquisition.acquired) throw new Error("the fixture admits the turn")
+    let waited = false
+    const waiting = held.released("ses_1").then(() => { waited = true })
+    const releasing = acquisition.lease.release()
+    await Bun.sleep(0)
+    expect(held.holds("ses_1")).toBe(true)
+    expect(waited).toBe(false)
+    release.resolve({ released: true })
+    await releasing
+    await waiting
+    expect(held.holds("ses_1")).toBe(false)
+
+    const lost = await acquire("msg_lost_held")
+    if (!lost.acquired) throw new Error("the fixture admits the turn")
+    expect(held.holds("ses_1")).toBe(true)
+    localNow = started + SESSION_TURN_LEASE_TTL_MS
+    expect(lost.lease.valid()).toBe(false)
+    expect(held.holds("ses_1")).toBe(false)
   })
 
   test("an invalid renewal stops the admitted producer", async () => {
