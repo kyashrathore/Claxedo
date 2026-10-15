@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import type { GoalCapabilities, RuntimeGoalSnapshot, AgentEventEnvelope, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import type { HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
+import type { CapabilityContext, HarnessSession, NativeGoalOperations, PermissionRequest, RequestAnswer, TransportCapabilities, TurnRequest } from "@claxedo/harness/contract"
 import type { Hono, MiddlewareHandler } from "hono"
 import { createStoreBrokerPorts, managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy, type SessionAccessPolicyInput } from "@claxedo/session-core"
 import { fetchDouble } from "../test-support/fetch-double"
@@ -144,8 +144,8 @@ describe("session Goal routes", () => {
       }
     }
     readonly goals: NativeGoalOperations
-    override async capabilities(): Promise<TransportCapabilities> {
-      return { ...await super.capabilities(), goals: this.declared }
+    override async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
+      return { ...await super.capabilities(context), goals: this.declared }
     }
   }
 
@@ -612,10 +612,10 @@ describe("session prompt route", () => {
 
   it("returns harness capabilities for a draft and for a live session", async () => {
     class VaryingTransport extends FakeTransport {
-      override async capabilities(input?: { directory: string; sessionId?: string }): Promise<TransportCapabilities> {
+      override async capabilities(input: CapabilityContext): Promise<TransportCapabilities> {
         return {
-          ...await super.capabilities(),
-          requests: { permissions: true, questions: !input?.sessionId, elicitation: false },
+          ...await super.capabilities(input),
+          requests: { permissions: true, questions: !input.sessionId, elicitation: false },
           subagents: true,
         }
       }
@@ -1452,9 +1452,9 @@ describe("archiving between a queued prompt's claim and its admission", () => {
     const reachedGate = new Promise<void>((resolve) => { reached = resolve })
     let open!: () => void
     class GatedTransport extends ScriptedTransport {
-      override async capabilities() {
+      override async capabilities(context: CapabilityContext) {
         if (gate) { reached(); await gate }
-        return super.capabilities()
+        return super.capabilities(context)
       }
     }
     let finish!: () => void

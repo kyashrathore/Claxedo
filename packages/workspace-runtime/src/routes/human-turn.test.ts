@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import type { GoalCapabilities, RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { HarnessTransport, NativeGoalOperations, TransportCapabilities } from "@claxedo/harness/contract"
+import type { CapabilityContext, HarnessTransport, NativeGoalOperations, TransportCapabilities } from "@claxedo/harness/contract"
 import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "@claxedo/session-core/testing"
 import { createFakeWorkspaceApp, type FakeWorkspaceApp } from "../test-support/fake-workspace-app"
 
@@ -115,8 +115,8 @@ describe("a person's send that starts no turn of its own", () => {
         stop: async () => ({ ok: true, goal }),
         delete: async () => ({ ok: true, goal: null }),
       }
-      override async capabilities(): Promise<TransportCapabilities> {
-        return { ...await super.capabilities(), goals: capabilities }
+      override async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
+        return { ...await super.capabilities(context), goals: capabilities }
       }
     }
     const { wa, sender } = await workspace(() => new GoalTransport())
