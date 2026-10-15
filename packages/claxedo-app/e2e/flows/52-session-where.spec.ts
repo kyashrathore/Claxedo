@@ -70,7 +70,7 @@ test("52 the Where chip lists cloud workspaces by name with their status in word
   await create.click()
   await expect(dialog).toHaveCount(0)
   await expect(chip).toHaveText("checkout")
-  await expect(page.locator('[data-notice="workspace-lifecycle"]')).toContainText("Waking checkout")
+  await expect(page.locator('[data-notice="workspace-lifecycle"]')).toContainText("Starting checkout")
   expect(await cloudWorkspaceNames(signed)).toContain("checkout")
   await expect(chip).toHaveText("checkout")
 })

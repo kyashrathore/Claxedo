@@ -28,14 +28,14 @@ function runtimeOf(wake: WakeState, placement: Placement | undefined): Workspace
   }
   if (wake.kind === "outdated" && !asleep) return { kind: "outdated" }
   if (wake.kind === "failed" && (asleep || wake.restart)) return { kind: "wakeFailed", error: wake.error }
-  if (isStartingCloud(placement)) return { kind: "waking" }
+  if (isStartingCloud(placement)) return { kind: "waking", followed: true }
   return asleep ? { kind: "asleep" } : { kind: "live" }
 }
 
 type Run = (workspaceId: string, options: { onProgress: (progress: WorkspaceStartProgress) => void }) => Promise<void>
 
-async function driveWake(run: Run, workspaces: Workspaces, id: PlacementId, send: (event: WakeEvent) => void) {
-  send({ type: "wakeStarted" })
+async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id: PlacementId, send: (event: WakeEvent) => void) {
+  send({ type: "wakeStarted", ...(followed ? { followed: true } : {}) })
   try {
     const { workspaceId } = await workspaces.locate(id)
     await run(workspaceId, { onProgress: ({ kind: _kind, ...progress }) => send({ type: "provisioning", ...progress }) })
@@ -52,14 +52,14 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
   const send = (id: PlacementId, event: WakeEvent) => setWakes(id, (state) => wakeTransition(state ?? WAKE_IDLE, event))
   const running = new Map<string, Promise<void>>()
   onCleanup(transport.onRuntimeImage((workspaceId, outdated) => send(placementId(workspaceId), { type: outdated ? "imageOutdated" : "imageCurrent" })))
-  const drive = (id: PlacementId, run: Run) => {
+  const drive = (id: PlacementId, run: Run, followed: boolean) => {
     const current = running.get(id)
     if (current) return current
-    const next = driveWake(run, workspaces, id, (event) => send(id, event)).finally(() => running.delete(id))
+    const next = driveWake(run, followed, workspaces, id, (event) => send(id, event)).finally(() => running.delete(id))
     running.set(id, next)
     return next
   }
-  const start = (id: PlacementId) => drive(id, transport.startRuntime)
+  const start = (id: PlacementId) => drive(id, transport.startRuntime, false)
   const wakeIfStopped = async (id: PlacementId) => {
     await workspaces.load()
     if (!isStoppedCloud(workspaces.byId(id))) return false
@@ -71,7 +71,7 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
     start,
     follow: async (id) => {
       if (!isStartingCloud(workspaces.byId(id))) return
-      await drive(id, transport.followRuntime).catch((error: unknown) => console.warn("A start the server is driving could not be followed", { placementId: id, error: toAppError(error) }))
+      await drive(id, transport.followRuntime, true).catch((error: unknown) => console.warn("A start the server is driving could not be followed", { placementId: id, error: toAppError(error) }))
     },
     wakeIfStopped,
     settle: async (id) => {

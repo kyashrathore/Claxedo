@@ -632,8 +632,15 @@ export const desktopRenderer: Policy = {
   // wording the session notice, the first run and the terminal creator share
   // (owner: the app's cloud domain, `cloud/view/wake-progress.ts`). It adds no
   // package edge.
-  // 1370/36, no headroom.
-  ceilings: { modules: 1370, packages: 36 },
+  // The placement owner's watch of its two catalog queries, split from the
+  // placement reads when it began reading a catalog again on every
+  // invalidation (owner: the app's server adapter, `server/merged-catalog.ts`),
+  // and the placement notice's wording apart from its view, so a fresh start
+  // and a wake can be told apart without the composer (owner: the app's
+  // session domain, `session/view/placement-notice-text.ts`). They add no
+  // package edge.
+  // 1372/36, no headroom.
+  ceilings: { modules: 1372, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

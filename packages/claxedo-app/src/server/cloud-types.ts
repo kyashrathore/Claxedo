@@ -28,7 +28,7 @@ export type WorkspaceStartProgress = { readonly kind: "provisioning"; readonly b
 export type WorkspaceRuntime =
   | { readonly kind: "live" }
   | { readonly kind: "asleep" }
-  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps }
+  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps; readonly followed?: true }
   | { readonly kind: "wakeFailed"; readonly error: AppError }
   | { readonly kind: "outdated" }
 

@@ -1,6 +1,6 @@
 import type { DomainTranslate } from "@/i18n"
 import { unreachable } from "@/lib/machine"
-import type { TerminalAgentId, WorkspaceRuntime } from "@/server"
+import { isFreshStart, type TerminalAgentId, type WorkspaceRuntime } from "@/server"
 import type { TerminalKey } from "./i18n"
 
 export type TerminalAgentIcon = "claude" | "openai" | "cursor" | "terminal"
@@ -49,6 +49,7 @@ export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRu
     case "wakeFailed":
       return t("terminal.creator.agentsWakeFailed", { name, reason: runtime.error.message })
     case "waking":
+      if (isFreshStart(runtime)) return facts.wakeProgress ? t("terminal.creator.startingProgress", { name, progress: facts.wakeProgress }) : t("terminal.creator.startingWorkspace", { name })
       return facts.wakeProgress ? t("terminal.creator.wakingProgress", { name, progress: facts.wakeProgress }) : t("terminal.creator.waking", { name })
     case "live":
       if (agents.isError) return t("terminal.creator.agentsFailed")

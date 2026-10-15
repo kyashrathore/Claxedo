@@ -96,7 +96,7 @@ test("wakes: a workspace the server is starting reads waking before anything her
   const running = { value: false }
   const server: { lifecycle?: Lifecycle } = { lifecycle: "starting" }
   const { starts, wakes } = fixture(running, server)
-  expect(wakes.runtime(cloud)).toEqual({ kind: "waking" })
+  expect(wakes.runtime(cloud)).toEqual({ kind: "waking", followed: true })
 
   const send = wakes.wakeIfStopped(cloud)
   await settle()
@@ -117,7 +117,7 @@ test("wakes: following a start the server is driving reads the connection until 
   await settle()
   expect(follows).toHaveLength(1)
   expect(starts).toHaveLength(0)
-  expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "cold-start" })
+  expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "cold-start", followed: true })
 
   running.value = true
   follows[0].resolve()

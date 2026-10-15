@@ -37,6 +37,8 @@ const en = {
   "terminal.creator.agentsWakeFailed": "Couldn't wake {{name}}: {{reason}}",
   "terminal.creator.waking": "Waking {{name}}…",
   "terminal.creator.wakingProgress": "Waking {{name}}: {{progress}}",
+  "terminal.creator.startingWorkspace": "Starting {{name}}…",
+  "terminal.creator.startingProgress": "Starting {{name}}: {{progress}}",
   "terminal.creator.starting": "Starting…",
   "terminal.command.new.description": "Create a new terminal tab",
   "terminal.command.toggle": "Toggle terminal",

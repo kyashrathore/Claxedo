@@ -1,3 +1,4 @@
+import type { WorkspaceRuntime } from "./cloud-types"
 import type { Machine, Placement } from "./types"
 
 export function isStoppedCloud(placement: Placement | undefined): boolean {
@@ -6,6 +7,10 @@ export function isStoppedCloud(placement: Placement | undefined): boolean {
 
 export function isStartingCloud(placement: Placement | undefined): boolean {
   return placement?.kind === "cloud" && placement.lifecycle === "starting"
+}
+
+export function isFreshStart(runtime: Extract<WorkspaceRuntime, { kind: "waking" }>): boolean {
+  return runtime.bootMode === "cold-start" || (runtime.bootMode === undefined && runtime.followed === true)
 }
 
 export function isOfflineMachine(placement: Placement | undefined): boolean {

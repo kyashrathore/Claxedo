@@ -74,6 +74,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.asleep"
   | "sessionScreen.workspace.machineOffline"
   | "sessionScreen.workspace.waking"
+  | "sessionScreen.workspace.starting"
   | "sessionScreen.workspace.wakeFailed"
   | "sessionScreen.workspace.retryWake"
   | "sessionScreen.workspace.wakeNow"
@@ -164,6 +165,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.workspace.asleep": "This workspace is asleep. It wakes when a message or a tool needs it.",
   "sessionScreen.workspace.machineOffline": "This session's machine is offline. Its messages show again when the machine is back.",
   "sessionScreen.workspace.waking": "Waking {{name}}",
+  "sessionScreen.workspace.starting": "Starting {{name}}",
   "sessionScreen.workspace.wakeFailed": "Couldn't wake {{name}}",
   "sessionScreen.workspace.retryWake": "Try again",
   "sessionScreen.workspace.wakeNow": "Wake now",
