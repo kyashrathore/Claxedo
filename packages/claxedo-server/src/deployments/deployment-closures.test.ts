@@ -148,8 +148,10 @@ const ENTRIES = [
   // this entry has cloud runtimes to publish rows. It alone hosts the Durable
   // Object a sandbox start runs under (`sandbox/provisioner.cf.ts`) and the
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
-  // has a sandbox to start.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 233, packages: 26 },
+  // has a sandbox to start, and the notice that start sends the workspace
+  // owner's live-sync room when it begins and settles
+  // (`workspace/start-notice.ts`).
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 234, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

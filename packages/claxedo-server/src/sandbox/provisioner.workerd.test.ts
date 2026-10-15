@@ -242,13 +242,13 @@ describe("a sandbox start on workerd", () => {
 })
 
 describe("the workspace owner's clients on workerd", () => {
-  test("are told a start began before its answer, and that it is ready once it settles; a poll that joins it or finds it live tells nothing", async () => {
-    expect(await start("ws_slow_300_notice")).toMatchObject({ status: "provisioning", epoch: 1 })
-    expect(await notices("ws_slow_300_notice")).toEqual(["starting"])
-    expect(await start("ws_slow_300_notice")).toMatchObject({ status: "provisioning", joined: true })
-    expect(await until(() => notices("ws_slow_300_notice"), (steps) => steps.length > 1)).toEqual(["starting", "ready"])
-    expect(await until(() => start("ws_slow_300_notice"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready" })
-    expect(await notices("ws_slow_300_notice")).toEqual(["starting", "ready"])
+  test("are told a start began, and that it is ready once it settles; a poll that joins it or finds it live tells nothing", async () => {
+    expect(await start("ws_slow_1000_notice")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await until(() => notices("ws_slow_1000_notice"), (steps) => steps.length > 0)).toEqual(["starting"])
+    expect(await start("ws_slow_1000_notice")).toMatchObject({ status: "provisioning", joined: true })
+    expect(await until(() => notices("ws_slow_1000_notice"), (steps) => steps.length > 1)).toEqual(["starting", "ready"])
+    expect(await until(() => start("ws_slow_1000_notice"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready" })
+    expect(await notices("ws_slow_1000_notice")).toEqual(["starting", "ready"])
   })
 
   test("are told a start whose boot failed ended in error", async () => {

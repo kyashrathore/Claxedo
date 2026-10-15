@@ -158,21 +158,27 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       }
       await this.ctx.storage.put("run", begun)
       await this.ctx.storage.setAlarm(Date.now())
-      await this.#announce(workspaceId, "starting")
+      this.#announce(workspaceId, "starting")
       return admitted
     }
 
-    /** A notice that fails costs the clients a live update until their next read, never the start. */
-    async #announce(workspaceId: string, step: StartStep) {
-      await drive(this.env).announce?.(workspaceId, step).catch((cause: unknown) => {
+    /**
+     * Sent beside the answer rather than before it, so the start's own answer
+     * never waits on the owner lookup and the room. A notice that fails costs
+     * the clients a live update until their next read, never the start.
+     */
+    #announce(workspaceId: string, step: StartStep) {
+      const announce = drive(this.env).announce
+      if (!announce) return
+      this.ctx.waitUntil(announce(workspaceId, step).catch((cause: unknown) => {
         console.warn("[sandbox-provisioner] the start notice was not delivered", { workspaceId, step, error: cause instanceof Error ? cause.message : String(cause) })
-      })
+      }))
     }
 
     /** A ready answer's follow-ups replace the ones on record; the alarm is theirs again now that no run holds it. */
     async #settled(workspaceId: string, answer: SandboxStartAnswer) {
       const storage = this.ctx.storage
-      await this.#announce(workspaceId, settledStep(answer))
+      this.#announce(workspaceId, settledStep(answer))
       if (answer.status === "ready") {
         for (const key of FOLLOW_UP_KEYS) {
           const at = answer[FOLLOW_UPS[key].due]
