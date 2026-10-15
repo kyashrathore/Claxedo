@@ -14,6 +14,8 @@ import { sessionHostAdmits, type SessionHostPlacement } from "../authority/sessi
 import type { SessionMcpCredentials } from "../mcp/session-mcp-credentials"
 import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 import { sessionHostMachineAccess, type SessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
+import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
+import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
 import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
 import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
@@ -30,6 +32,8 @@ export type SessionHostDeliveryOptions = SessionHostMachineDeps & {
   sessionMcp?: Pick<SessionMcpCredentials, "issue">
   /** The plane's one rule for a vendor refusing a stored account; the broker's by default. */
   credentialRefusals?: CredentialRefusals
+  /** How the plane reaches a vendor to check a team key a host reports refused; the global fetch when absent. */
+  fetch?: typeof fetch
   /** The workspace's machine start, run as its owner for a tool call that finds it not running; absent, such a call is only refused. */
   startMachine?: OwnerMachineStart
 }
@@ -37,7 +41,12 @@ export type SessionHostDeliveryOptions = SessionHostMachineDeps & {
 const EXECUTION_TTL_SECONDS = 10 * 60
 const requestSchema = z.object({ turnLease: z.string().min(1) }).strict()
 const executionSchema = z.object({ turnLease: z.string().min(1), start: z.boolean().optional() }).strict()
-const refusedSchema = z.object({ turnLease: z.string().min(1), credentialId: z.string().min(1) }).strict()
+const refusedSchema = z.object({
+  turnLease: z.string().min(1),
+  credentialId: z.string().min(1),
+  revision: z.number().int().positive(),
+  status: z.number().int().min(100).max(599),
+}).strict()
 const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
 
 const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeTargetError && error.status === 409
@@ -53,10 +62,12 @@ const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeT
  * at once that it is starting, never waiting for it.
  * Both answer only that session's own host, only while its lease is the live
  * one, and only while the turn's actor may still send its turns.
- * `/turn-credential-refused` takes the host's word that the vendor refused
- * one of the accounts it was handed, under the same rule the plane's broker
- * applies to its own refusals; the lease may be released by then, since the
- * turn ends on the refusal. `/session-host-delete` deletes the session's row
+ * `/turn-credential-refused` takes the vendor status and the revision of an
+ * account the host was handed: only a 401 of the current revision counts, as
+ * for the plane's broker. A person's own account is then marked by the
+ * broker's two-refusals rule; an organization's team key, which one member's
+ * host must not take off everyone, only by the plane's own check of it. The
+ * lease may be released by then, since the turn ends on the refusal. `/session-host-delete` deletes the session's row
  * for a request the host was relayed, as that request's actor, before the
  * host erases itself.
  */
@@ -223,9 +234,18 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
       if (!owner || owner.orgId !== claims.orgId) return denied(c)
       const holder = placement.session!.creatorUserId ?? owner.userId
-      const credential = await input.credentials(owner.orgId).getCredential?.(parsed.data.credentialId)
-      if (!credential || credential.owner !== holder || !PI_DIRECT_PROVIDERS.has(credential.provider_id)) return denied(c)
-      return c.json({ refusal: await refusals.refused(owner.orgId, credential, credential.revision) })
+      const accounts = input.credentials(owner.orgId)
+      const credential = await accounts.getCredential?.(parsed.data.credentialId)
+      if (!credential || !PI_DIRECT_PROVIDERS.has(credential.provider_id)) return denied(c)
+      const spent = credential.owner === holder
+        || (credential.owner === null && spendsAccount(credential, holder, holderAccountSources(await accounts.accountSelections(), holder, holder), holder))
+      if (!spent) return denied(c)
+      const { revision, status } = parsed.data
+      if (status !== 401) return c.json({ refusal: "ignored" })
+      if (revision !== credential.revision) return c.json({ refusal: "stale" })
+      if (credential.owner !== null) return c.json({ refusal: await refusals.refused(owner.orgId, credential, revision) })
+      const checked = await checkCredential(accounts, credential, { org: owner.orgId, ...(input.fetch ? { fetch: input.fetch } : {}) })
+      return c.json({ refusal: checked.status === "checked" && checked.health === "auth_failed" ? "marked" : "kept" })
     })
     .post("/session-host-delete", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       const refused = () => c.json({ error: { code: "session_host_delete_denied" } }, 403)

@@ -21,7 +21,7 @@ function snapshot(fields: { cloudOnly?: boolean; stored?: readonly Account[]; ef
     stored: fields.stored ?? [],
     effective: fields.effective ? new Map(fields.effective.map((row) => [row.providerId, row])) : undefined,
     machineLogins: fields.cloudOnly ? [] : [{ harness: "claude", providerIds: claude.providerIds, state: "signed_in" }],
-    sources: { sources: new Map(Object.entries(fields.sources ?? {})), org: fields.org ?? [], canRemoveOrgAccounts: false },
+    sources: { sources: new Map(Object.entries(fields.sources ?? {})), org: fields.org ?? [], canManageOrgAccounts: false },
     scannedAt: 1,
   }
 }
@@ -40,11 +40,11 @@ test("accounts: a harness whose every provider spends the org account selects th
   expect(harnessRunnable(claude, snapshot({ stored: [own], org: [account("org-1", "claude-sdk", { health: "auth_failed", lastValidatedAt: 5 })], sources: allOrg }), {})).toBe(false)
 })
 
-test("accounts: a person who chose the org account where the organization holds none cannot run and is told why", () => {
+test("accounts: a person whose organization holds no team key for their org choice cannot run and is told so, naming the vendor", () => {
   const chosen = snapshot({ stored: [account("own-1", "claude-sdk", { active: true })], sources: allOrg })
   expect(selectedAccountKey(claude, chosen)).toBe(ORG_ACCOUNT_KEY)
   expect(harnessRunnable(claude, chosen, {})).toBe(false)
-  const unavailable = t("settings.providers.accountSource.unavailable", { name: "Claude Code" })
+  const unavailable = t("settings.providers.accountSource.unavailable", { name: "Anthropic" })
   expect(orgAccountWords(words, claude, chosen, true, true)).toMatchObject({ label: "Organization account", detail: unavailable, alert: unavailable, disabled: true, ids: [] })
   expect(orgAccountWords(words, claude, snapshot(), false, false)).toBeUndefined()
   expect(orgAccountWords(words, claude, snapshot(), false, true)).toBeUndefined()

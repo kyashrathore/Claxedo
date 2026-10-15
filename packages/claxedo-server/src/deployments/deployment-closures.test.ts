@@ -134,7 +134,10 @@ const ENTRIES = [
   // GitHub URL, in one module (`workspace/repository-connection.ts`).
   // The account a cloud turn's usage is filed under is the D1 session
   // authority's own module (`authority/adapters/d1/cloud-turn-usage-owner.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 171, packages: 22 },
+  // Every entry asks who manages the organization's own rows, its team model
+  // accounts and its sandbox provider keys, of the D1 authority's `administer`
+  // rule in one module (`credentials/worker/org-administers.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 172, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -154,7 +157,7 @@ const ENTRIES = [
   // credential (`agent-plugins/mcp/gateway-reach.ts`).
   // The Tasks routes both entries mount read the workspace and session rows
   // their Start dispatches through from D1 in one module (`tasks/d1-host-reads.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 230, packages: 26 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 231, packages: 26 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -169,7 +172,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 242, packages: 26 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 243, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

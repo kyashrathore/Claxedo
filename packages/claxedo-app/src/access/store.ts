@@ -26,8 +26,8 @@ export function useAccess(): Access {
     principal,
     can: (action, facts) => {
       switch (action) {
-        case "accounts.removeOrg":
-          return facts?.canRemoveOrgAccounts === true
+        case "accounts.manageOrg":
+          return facts?.canManageOrgAccounts === true
         case "sandbox.manage":
           return facts?.canManageSandboxKeys === true
         default:

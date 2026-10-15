@@ -1,6 +1,6 @@
-import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, ORG_ACCOUNT_UNAVAILABLE, isHarnessId, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs,
-  piProviderSpending, vendorModel, type CredentialSnapshot, type PiLaunchProvider, type PromptModel, type ProviderProjection,
-  type SessionHarness } from "@claxedo/agent-runtime-contract"
+import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, harnessForProviderId, isHarnessId, isProviderUnavailable, ORG_ACCOUNT_UNAVAILABLE,
+  PI_LAUNCH_PROVIDERS, PI_PROVIDER_LABELS, piCredentialProviderIDs, piProviderSpending, vendorModel, type CredentialSnapshot,
+  type PiLaunchProvider, type PromptModel, type ProviderProjection, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
 import type { TurnActor } from "../contract/session"
 import { ownerMayUseMachineLogin, selectedProviderProjection, type MachineLoginPolicy } from "../contract/credentials"
@@ -23,11 +23,8 @@ export class CredentialSelectionError extends Error {
   }
 }
 
-export function accountUnusable(reason: string) {
-  if (reason === ORG_ACCOUNT_UNAVAILABLE) {
-    return new CredentialSelectionError("account_unavailable",
-      "Your organization has no account for this provider, and this harness is set to use the organization's. Choose your own account for it in Settings → Models.", { reason })
-  }
+export function accountUnusable(reason: string, providerId?: string) {
+  if (reason === ORG_ACCOUNT_UNAVAILABLE) return orgAccountMissing(providerId)
   return new CredentialSelectionError("account_unavailable", "The account chosen for this harness can't be used here. Check it in Settings → Models.", { reason })
 }
 
@@ -35,8 +32,22 @@ export function noAccountChosen() {
   return new CredentialSelectionError("account_unavailable", "No account is chosen for this harness. Add one in Settings → Models.")
 }
 
+function vendorName(providerId: string): string {
+  const harness = harnessForProviderId(providerId)
+  if (harness) return HARNESS_TABLE[harness].vendor
+  const piProvider = piProviderSpending(providerId)
+  return piProvider ? PI_PROVIDER_LABELS[piProvider] : providerId
+}
+
+function orgAccountMissing(providerId: string | undefined) {
+  const key = providerId ? `${vendorName(providerId)} API key` : "API key for this provider"
+  return new CredentialSelectionError("account_unavailable",
+    `Your organization has no ${key}, and this harness is set to use the organization's account. Ask an admin to add a team key, or choose your own account in Settings → Models.`,
+    { reason: ORG_ACCOUNT_UNAVAILABLE })
+}
+
 function unavailableAccount(providers: Readonly<Record<string, ProviderProjection>>, providerIds: readonly string[], reason: string) {
-  if (reason !== HARNESS_NEEDS_BROKERING) return accountUnusable(reason)
+  if (reason !== HARNESS_NEEDS_BROKERING) return accountUnusable(reason, providerIds.find((id) => Object.hasOwn(providers, id)))
   const refused = providerIds.find((id) => Object.hasOwn(providers, id) && isProviderUnavailable(providers[id]!))
   const piProvider = refused ? piProviderSpending(refused) : undefined
   return new CredentialSelectionError(HARNESS_NEEDS_BROKERING, "This cloud provider can't keep the account's key out of the workspace.",

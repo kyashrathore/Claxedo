@@ -55,7 +55,6 @@ export default {
   "settings.providers.agents.removingAccount": "正在移除…",
   "settings.providers.accountSource.own": "你自己的账户",
   "settings.providers.accountSource.org": "组织账户",
-  "settings.providers.accountSource.unavailable": "{{name}} 无法为你运行：你的组织没有此提供商的账户。选择你自己的账户即可使用。",
   "settings.providers.accountSource.label": "{{name}} 使用的账户",
   "settings.providers.live.ok": "可用",
   "settings.providers.live.authFailed": "被提供方拒绝",

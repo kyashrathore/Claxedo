@@ -53,6 +53,8 @@ import { parseUsageWindows, serializeUsageWindows } from "@claxedo/server-core/c
 import { fanoutEligible, fanoutEligibleAuth } from "@claxedo/server-core/credentials/account-kinds"
 import { deliveryOrigin } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
+import { OrgAccountWriteRefusedError } from "@claxedo/server-core/credentials/routes/org-accounts"
+import { mayGuard } from "../../authority/adapters/d1/authorization"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
 
@@ -211,12 +213,14 @@ export function hostedOrgCredentials(
     const owner = input.owner
     const kind = storedCredentialKind(input)
     const mark = await savedMark({ owner, provider_id: input.provider_id, kind }, id, timestamp)
+    const guard = administeredGuard(input)
+    const values = "?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?"
     const row = await database
       .prepare(
         `insert into hosted_provider_credentials (
            id, owner, org_id, provider_id, kind, source, label, account_id, status, health,
            expires_at, last_validated_at, last_error, secret_envelope, revision, activated_at, created_at, updated_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?)
+          ) ${guard ? `select ${values} where ${guard.sql}` : `values (${values})`}
          on conflict (org_id, id) do update set
            kind = excluded.kind,
            source = excluded.source,
@@ -250,10 +254,19 @@ export function hostedOrgCredentials(
         mark,
         timestamp,
         timestamp,
+        ...(guard?.bind ?? []),
       )
       .first()
     return row ? credentialMetadataRow(row) : undefined
   }
+
+  /**
+   * The organization's own row is written only while `administeredBy` still
+   * administers it, re-read inside the write itself, so an admin demoted after
+   * the route's check has passed adds, rotates and removes nothing.
+   */
+  const administeredGuard = (input: { owner: string | null; administeredBy?: string }) =>
+    input.owner === null && input.administeredBy ? mayGuard({ userId: input.administeredBy }, "administer", { kind: "org", orgId: org }) : undefined
 
   const changed = async (statement: HostedCredentialStatement) => ((await statement.run()).meta.changes ?? 0) > 0
 
@@ -308,14 +321,21 @@ export function hostedOrgCredentials(
       const found = await existingId(input.owner, input.provider_id)
       const inserted = await upsert(input, found ?? crypto.randomUUID())
       if (inserted) return inserted
+      const unwritten = () => administeredGuard(input)
+        ? new OrgAccountWriteRefusedError()
+        : new PublicApiError("resource_conflict", "Credential owner changed concurrently")
       const winner = await existingId(input.owner, input.provider_id)
-      if (!winner) throw new PublicApiError("resource_conflict", "Credential owner changed concurrently")
+      if (!winner) throw unwritten()
       const updated = await upsert(input, winner)
-      if (!updated) throw new PublicApiError("resource_conflict", "Credential owner changed concurrently")
+      if (!updated) throw unwritten()
       return updated
     },
-    deleteCredential: (id) =>
-      changed(database.prepare("delete from hosted_provider_credentials where org_id = ? and id = ?").bind(org, id)),
+    deleteCredential: (id, _org, administeredBy) => {
+      const guard = administeredGuard({ owner: null, ...(administeredBy ? { administeredBy } : {}) })
+      return changed(guard
+        ? database.prepare(`delete from hosted_provider_credentials where org_id = ? and id = ? and owner is null and ${guard.sql}`).bind(org, id, ...guard.bind)
+        : database.prepare("delete from hosted_provider_credentials where org_id = ? and id = ?").bind(org, id))
+    },
     deleteCredentialsByProvider: async (providerId, kind) => {
       const result = await database
         .prepare(

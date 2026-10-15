@@ -55,7 +55,6 @@ export default {
   "settings.providers.agents.removingAccount": "Kaldırılıyor…",
   "settings.providers.accountSource.own": "Kendi hesabınız",
   "settings.providers.accountSource.org": "Kuruluş hesabı",
-  "settings.providers.accountSource.unavailable": "{{name}} sizin için çalışamıyor: kuruluşunuzun bu sağlayıcı için bir hesabı yok. Kullanmak için kendi hesabınızı seçin.",
   "settings.providers.accountSource.label": "{{name}} için kullanılan hesap",
   "settings.providers.live.ok": "Çalışıyor",
   "settings.providers.live.authFailed": "Sağlayıcı reddetti",

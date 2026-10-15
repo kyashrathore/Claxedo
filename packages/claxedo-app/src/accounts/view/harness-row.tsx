@@ -29,7 +29,7 @@ function useAccountRows(props: HarnessRowProps) {
     const words = { t, windowName, machineName: props.accounts.machineName(), locale: i18n.intlTag() }
     const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
-    const org = orgAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === ORG_ACCOUNT_KEY, access.can("accounts.removeOrg", props.snapshot.sources))
+    const org = orgAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === ORG_ACCOUNT_KEY, access.can("accounts.manageOrg", props.snapshot.sources))
     return [...stored, ...(login ? [machineLoginWords(words, login, props.harness, props.snapshot)] : []), ...(org ? [org] : [])]
   })
 }

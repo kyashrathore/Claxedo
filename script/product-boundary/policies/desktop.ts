@@ -656,8 +656,13 @@ export const desktopRenderer: Policy = {
   // picker's hint about where a code host grants more repositories (owner:
   // the app's projects domain, `projects/repository-access.ts`,
   // `projects/view/project-repository-access.tsx`). They add no package edge.
-  // 1379/36, no headroom.
-  ceilings: { modules: 1379, packages: 36 },
+  // The organization's team accounts page and its add drawer, their store, and
+  // the Check and Remove actions it shares with the sandbox keys (owner: the
+  // app's accounts domain, `accounts/view/team-section.tsx`,
+  // `accounts/view/team-account-form.tsx`, `accounts/team-store.ts`,
+  // `accounts/key-actions.ts`). They add no package edge.
+  // 1383/36, no headroom.
+  ceilings: { modules: 1383, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -22,6 +22,16 @@ export function vendorBody(text: string): VendorBody {
   return HTML_DOCUMENT.test(text) ? { kind: "page" } : { kind: "text" }
 }
 
+/**
+ * The HTTP status a vendor answered, as pi-ai's error states it ("OpenAI API
+ * error (401): {…}") or an SDK's error leads with ("401 {…}", "401: …"): the
+ * one fact about a refusal that is the vendor's own and not prose around it.
+ */
+export function vendorHttpStatus(text: string): number | undefined {
+  const match = /\bAPI error \((\d{3})\)/.exec(text) ?? /^\s*(\d{3})(?=[\s:]|$)/.exec(text)
+  return match?.[1] ? Number(match[1]) : undefined
+}
+
 function parseDocument(text: string): Record<string, unknown> | undefined {
   try {
     const value: unknown = JSON.parse(text)

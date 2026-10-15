@@ -122,10 +122,10 @@ function sourcesFromWire(value: unknown): ReadonlyMap<string, AccountSource> | u
 }
 
 export function accountSourcesFromWire(value: unknown): AccountSources | undefined {
-  const canRemoveOrgAccounts = asRecord(value)?.can_remove_org_accounts
+  const canManageOrgAccounts = asRecord(value)?.can_manage_org_accounts
   const sources = sourcesFromWire(asRecord(value)?.sources)
   const org = rowsFromWire(value, "org", accountFromWire)
-  return sources && org && typeof canRemoveOrgAccounts === "boolean" ? { sources, org, canRemoveOrgAccounts } : undefined
+  return sources && org && typeof canManageOrgAccounts === "boolean" ? { sources, org, canManageOrgAccounts } : undefined
 }
 
 export function piProviderAccountIds(providerId: string): readonly string[] {

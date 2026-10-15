@@ -189,7 +189,7 @@ describe("hosted production Pi and connection discovery", () => {
       return hostedOrgCredentials(orgId, { database: controlPlane.database, env: base.env })
     }
     try {
-      const app = createHostedCoreApp(base, { ...options, accountSetup: { change: UNDELIVERED_CREDENTIAL_CHANGE } }) as unknown as Hono
+      const app = createHostedCoreApp(base, { ...options, accountSetup: { change: UNDELIVERED_CREDENTIAL_CHANGE, administers: async () => false } }) as unknown as Hono
       const connected = async (subject: string) => (await (await app.request(catalogPath, { headers: headers(subject) })).json()).connected
       const key = { provider_id: "openai", kind: "api_key", source: "managed", label: "openai", secret: "alice-key", org_id: "internal-bob" }
       expect((await app.request("/api/claxedo/credentials?orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify(key) })).status).toBe(200)
@@ -826,7 +826,7 @@ describe("hosted-core usage", () => {
         throw new Error("chatgpt.com unreachable")
       })
       const ledger = { writeRevision: vi.fn(async () => ({ status: "accepted" as const, firstSettled: true })) }
-      const app = createHostedCoreApp(base, { ...options, usageLedger: ledger, accountSetup: { change: UNDELIVERED_CREDENTIAL_CHANGE, fetch: vendor as unknown as typeof fetch } })
+      const app = createHostedCoreApp(base, { ...options, usageLedger: ledger, accountSetup: { change: UNDELIVERED_CREDENTIAL_CHANGE, administers: async () => false, fetch: vendor as unknown as typeof fetch } })
       const response = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2&timezone=UTC&view=quota", {
         headers: { authorization: "Bearer alice" },
       }))

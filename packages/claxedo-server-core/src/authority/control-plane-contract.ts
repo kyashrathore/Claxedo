@@ -112,7 +112,8 @@ export type ControlPlaneCredentials = {
   resolveCredentialSecret?: (providerId: string, org?: string) => Promise<string | null>
   resolveCredentialSecretById?: (id: string, org?: string) => Promise<string | null>
   putCredential: (input: CredentialWrite, org?: string) => Promise<CredentialMetadata>
-  deleteCredential: (id: string, org?: string) => Promise<boolean>
+  /** `administeredBy`: for the org's own row, the person who must still administer the organization when it is deleted. */
+  deleteCredential: (id: string, org?: string, administeredBy?: string) => Promise<boolean>
   deleteCredentialsByProvider: (providerId: string, kind?: CredentialKind, org?: string) => Promise<number>
   updateCredentialStatus: (id: string, status: CredentialStatus, error?: string, org?: string) => Promise<void>
   /** Keep a Check's verdict; `evidence` is the vendor's status and error type behind it, written to `last_error`. */

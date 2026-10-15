@@ -1,7 +1,7 @@
 import type { MachineLoginPolicy, TurnActor } from "@claxedo/harness/contract"
 import { sessionAccountOwner } from "@claxedo/harness/registry"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
-import { credentialAdmitted } from "@claxedo/server-core/credentials/account-holder"
+import { connectionSecretAdmitted } from "@claxedo/server-core/credentials/account-holder"
 import { localMachineOwnerUserId } from "../../workspace/host-provider-config"
 
 /**
@@ -15,19 +15,19 @@ export const DESKTOP_PLACEMENT: MachineLoginPolicy = { placement: "desktop", mac
 export type LocalConnectionSecretScope = {
   /** Whether a connection with no stored secret may run on the machine's own login for this session. */
   machineLoginAllowed: boolean
-  admits: (credential: Pick<CredentialMetadata, "owner">) => boolean
+  admits: (credential: Pick<CredentialMetadata, "owner" | "kind" | "provider_id">) => boolean
 }
 
 /**
  * Which stored credentials a session's connection may spend on this desktop:
- * its owner's own rows and the org's own (owner NULL) rows, never another
- * person's. Rows the unsigned loopback operator stored are the machine owner's.
+ * its owner's own stored keys (`connectionSecretAdmitted`), never another
+ * person's or the org's. Rows the unsigned loopback operator stored are the machine owner's.
  */
 export function localConnectionSecretScope(owner: TurnActor): LocalConnectionSecretScope {
   const machineOwnerUserId = localMachineOwnerUserId()
   const account = sessionAccountOwner({ ...DESKTOP_PLACEMENT, machineOwnerUserId }, owner)
   return {
     machineLoginAllowed: account.machineLoginAllowed,
-    admits: (credential) => credentialAdmitted(credential.owner, account.userId, machineOwnerUserId),
+    admits: (credential) => connectionSecretAdmitted(credential, account.userId, machineOwnerUserId),
   }
 }

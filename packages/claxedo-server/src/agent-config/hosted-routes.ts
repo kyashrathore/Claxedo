@@ -11,7 +11,8 @@ import {
   setDefaultHarness,
 } from "@claxedo/server-core/agent-config/mutations"
 import { explicitDefaultHarness } from "@claxedo/server-core/agent-config/connections"
-import type { ControlPlaneServices } from "../authority/services"
+import { connectionSecretAdmitted } from "@claxedo/server-core/credentials/account-holder"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -21,6 +22,8 @@ export function hostedAgentConfigRoutes(input: {
   authentication: RequestAuthenticationAdapter
   repository: UserAgentConfigRepository
   changed(userId: string): Promise<void>
+  /** The organization's credential store a connection's secret reference is checked against; absent, no reference is admitted. */
+  credentials?: (orgId: string) => ControlPlaneCredentials
 }) {
   const app = new Hono()
   const storeFor = async (c: Context) => {
@@ -30,7 +33,7 @@ export function hostedAgentConfigRoutes(input: {
     const person = asRecord(await requireAuthority(input.services).usersMe(result.auth))
     const userId = person?.user_id
     if (typeof userId !== "string" || !userId) throw new Error("workspace authority returned no user id")
-    return { store: userAgentConfigStore(input.repository, userId), userId }
+    return { store: userAgentConfigStore(input.repository, userId), userId, auth: result.auth }
   }
   const mutation = async (c: Context, run: (scope: Awaited<ReturnType<typeof storeFor>> & { store: NonNullable<Awaited<ReturnType<typeof storeFor>>["store"]> }) => Promise<unknown>) => {
     try {
@@ -52,10 +55,15 @@ export function hostedAgentConfigRoutes(input: {
       if ("response" in scope) return scope.response
       return c.json({ status: "supported", connections: connectionRows(await scope.store.read()) })
     })
-    .put("/connections/:connectionId", (c) => mutation(c, async ({ store }) => ({
-      ok: true,
-      connections: await putConnection(store, c.req.param("connectionId"), await c.req.json()),
-    })))
+    .put("/connections/:connectionId", (c) => mutation(c, async ({ store, userId, auth }) => {
+      const credentials = input.credentials
+      const admitsSecretRef = async (reference: string) => {
+        if (!credentials) return false
+        const row = await credentials(await requireAuthority(input.services).resolveOrgId(auth)).getCredential?.(reference)
+        return !!row && connectionSecretAdmitted(row, userId, userId)
+      }
+      return { ok: true, connections: await putConnection(store, c.req.param("connectionId"), await c.req.json(), admitsSecretRef) }
+    }))
     .delete("/connections/:connectionId", (c) => mutation(c, async ({ store }) => {
       await deleteConnection(store, c.req.param("connectionId"))
       return { ok: true }

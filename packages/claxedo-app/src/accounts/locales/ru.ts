@@ -55,7 +55,6 @@ export default {
   "settings.providers.agents.removingAccount": "Удаление…",
   "settings.providers.accountSource.own": "Ваш собственный аккаунт",
   "settings.providers.accountSource.org": "Аккаунт организации",
-  "settings.providers.accountSource.unavailable": "{{name}} не может работать для вас: у вашей организации нет аккаунта для этого провайдера. Выберите собственный аккаунт, чтобы использовать его.",
   "settings.providers.accountSource.label": "Аккаунт для {{name}}",
   "settings.providers.live.ok": "Работает",
   "settings.providers.live.authFailed": "Отклонено провайдером",

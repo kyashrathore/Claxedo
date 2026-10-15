@@ -69,7 +69,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     /** Each session rows publication: the turn whose lease was its bearer and the rows it carried. */
     rows: [] as Array<{ turnId: string; released: boolean; hostId: string; rows: Record<string, unknown>[] }>,
     /** Each stored account the host reported the vendor refusing, with the turn that spent it. */
-    refusals: [] as Array<{ turnId: string; credentialId: string }>,
+    refusals: [] as Array<{ turnId: string; credentialId: string; revision: unknown; status: unknown }>,
   }
   const mcpBearers = new Set<string>()
   let fencing = 0
@@ -239,10 +239,10 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       return c.json(access)
     })
     .post("/turn-credential-refused", async (c) => {
-      const body = await c.req.json<{ turnLease?: string; credentialId?: string }>()
+      const body = await c.req.json<{ turnLease?: string; credentialId?: string; revision?: unknown; status?: unknown }>()
       const lease = await issuedLease(body.turnLease)
       if (!lease || typeof body.credentialId !== "string") return refused(c, 401, "session_turn_lease_invalid")
-      calls.refusals.push({ turnId: lease.turnId, credentialId: body.credentialId })
+      calls.refusals.push({ turnId: lease.turnId, credentialId: body.credentialId, revision: body.revision, status: body.status })
       return c.json({ refusal: "waiting" })
     })
     .post("/session-host-delete", async (c) => {

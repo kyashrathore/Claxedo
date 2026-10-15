@@ -29,7 +29,6 @@ export function hostedSandboxDriverKeys(input: {
   }
   return {
     drivers: input.drivers,
-    administers: async (auth, orgId) => await store.administers(await person(auth), orgId),
     chosen: store.chosen,
     choose: async (auth, orgId, driver) => {
       if (!await store.choose(await person(auth), orgId, driver)) {

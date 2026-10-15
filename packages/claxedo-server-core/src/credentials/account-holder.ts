@@ -1,5 +1,7 @@
 import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import { LOCAL_USER_ID } from "../platform/auth/local-identity"
+import { builtInProviderRow } from "./built-in-destinations"
+import type { CredentialKind } from "./types"
 
 /**
  * The person a stored personal row is spent for: the machine owner for a row
@@ -11,13 +13,21 @@ export function accountHolderOf(rowOwner: string, machineOwnerUserId: string): s
 }
 
 /**
- * Whether a session whose accounts are `accountHolder`'s may use a stored
- * connection secret: the holder's own rows and the org's own (owner NULL) rows,
- * never another person's.
+ * Whether a connection's secret reference may resolve to this stored row for
+ * a session whose accounts are `holder`'s: a key the holder stored themselves,
+ * and never an organization's row, another person's row, a sandbox provider
+ * key or a model account. Those reach their consumers only through paths that
+ * keep the value out of the sandbox (the sandbox manager, the plane's broker,
+ * the provider edge), while a connection hands its secret to the sandbox.
  */
-export function credentialAdmitted(rowOwner: string | null | undefined, accountHolder: string, machineOwnerUserId: string): boolean {
-  if (rowOwner === null || rowOwner === undefined) return true
-  return accountHolderOf(rowOwner, machineOwnerUserId) === accountHolder
+export function connectionSecretAdmitted(
+  row: { owner?: string | null; kind: CredentialKind; provider_id: string },
+  holder: string,
+  machineOwnerUserId: string,
+): boolean {
+  if (row.owner === null || row.owner === undefined) return false
+  if (row.kind === "sandbox_driver" || builtInProviderRow(row.provider_id)) return false
+  return accountHolderOf(row.owner, machineOwnerUserId) === holder
 }
 
 /** One person's choice per provider id; a provider they never chose for is `own`. */

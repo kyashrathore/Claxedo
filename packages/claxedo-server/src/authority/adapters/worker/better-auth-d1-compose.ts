@@ -16,6 +16,7 @@ import { createCredentialRefusals } from "../../../credentials/credential-refusa
 import { createHostedEgressBroker, HOSTED_EGRESS_BROKER_GUARD_EXEMPTION, type HostedEgressBroker } from "../../../credentials/hosted-egress-broker"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
+import { hostedOrgAdministers } from "../../../credentials/worker/org-administers"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
 import { hostedWorkspaceIdleStop } from "../../../workspace/routes/checkpoints"
 import { ownerSessionList } from "../../../session/list"
@@ -263,6 +264,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     ? createHostedEgressBroker({
         credentials: plane.orgCredentials,
         read: (orgId) => hostedBrokerCredentialReader(orgId, { database: input.controlPlaneDatabase, env: input.env }),
+        workspaceOwner: async (workspaceId) => await authority.resolveWorkspaceOwner?.(workspaceId),
         sandboxManager,
         env: input.env,
         origin,
@@ -309,6 +311,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         draftCredentials: delivery.credentialSnapshot,
         accountSetup: {
           change: delivery.credentialChange,
+          administers: hostedOrgAdministers(input.controlPlaneDatabase),
           sandboxDriverKeys: hostedSandboxDriverKeys({
             database: input.controlPlaneDatabase,
             authority,

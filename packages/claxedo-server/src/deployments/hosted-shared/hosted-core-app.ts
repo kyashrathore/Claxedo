@@ -1,6 +1,6 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
-import { ownerDirectRows, PI_DIRECT_PROVIDERS } from "../../credentials/direct-rows"
+import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../../credentials/direct-rows"
 import { defaultSessionHarnessId } from "../../session/default-session-harness"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
@@ -138,7 +138,7 @@ export type HostedCoreAppOptions = {
    * running workspaces, with the organization's sandbox provider keys on a
    * plane that provisions cloud sandboxes.
    */
-  accountSetup?: Pick<HostedCredentialRoutesInput, "change" | "sandboxDriverKeys" | "fetch">
+  accountSetup?: Pick<HostedCredentialRoutesInput, "change" | "administers" | "sandboxDriverKeys" | "fetch">
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -407,13 +407,14 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authentication: options.authentication,
       repository: options.agentConfigRepository,
       changed: options.settingsChanged ?? (async () => {}),
+      ...(plane.orgCredentials ? { credentials: plane.orgCredentials } : {}),
     }))
   }
   const orgCredentials = plane.orgCredentials
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, {
     ...workspaceOptions,
     ...(orgCredentials ? {
-      ownerPiDirectRows: async (auth) => ownerDirectRows(orgCredentials(await requireAuthority(services).resolveOrgId(auth)), auth.user.subject, { providers: PI_DIRECT_PROVIDERS }),
+      ownerPiDirectRows: async (auth) => (await ownerDirectDelivery(orgCredentials(await requireAuthority(services).resolveOrgId(auth)), auth.user.subject, { providers: PI_DIRECT_PROVIDERS })).direct,
     } : {}),
   }))
   app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {

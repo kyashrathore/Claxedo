@@ -1,6 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { SandboxKeyRemoval } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
-import { may, mayGuard, maySql } from "../../authority/adapters/d1/authorization"
+import { mayGuard, maySql } from "../../authority/adapters/d1/authorization"
 import { SANDBOX_KEY_LABEL, SANDBOX_ORG_LABEL } from "../org-sandbox-manager"
 
 /**
@@ -14,7 +14,6 @@ export function d1OrgSandboxDriver(database: D1Database, now: () => number = Dat
         .prepare("select sandbox_driver from orgs where org_id = ? and deleted_at is null")
         .bind(orgId)
         .first<{ sandbox_driver: string | null }>())?.sandbox_driver ?? undefined,
-    administers: (userId: string, orgId: string) => may(database, { userId }, "administer", { kind: "org", orgId }),
     choose: async (userId: string, orgId: string, driver: string | undefined) => {
       const administers = maySql({ userId }, "administer", { kind: "org", orgId: "org.org_id" })
       const result = await database

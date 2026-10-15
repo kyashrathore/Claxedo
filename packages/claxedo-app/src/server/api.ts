@@ -1,11 +1,10 @@
-import type { AccountScope, AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { ProductTelemetry } from "./telemetry"
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
-import type { Account, AccountCheck, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
+import type { Account, AccountsApi, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
@@ -151,20 +150,6 @@ export type CloudApi = {
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
   readonly stop: (id: PlacementId) => Promise<void>
   readonly remove: (id: PlacementId) => Promise<void>
-}
-
-export type AccountsApi = {
-  readonly select: (ids: readonly string[]) => Promise<void>
-  readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
-  readonly setSource: (providerIds: readonly string[], source: AccountSource) => Promise<void>
-  readonly setScope: (ids: readonly string[], scope: AccountScope) => Promise<void>
-  readonly remove: (ids: readonly string[]) => Promise<void>
-  readonly check: (id: string) => Promise<AccountCheck>
-  readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
-  readonly rescan: () => Promise<void>
-  readonly refresh: () => Promise<void>
-  readonly saveSandboxKey: (driver: string, fields: Readonly<Record<string, string>>) => Promise<Account>
-  readonly chooseSandboxDriver: (driver: string | null) => Promise<void>
 }
 
 export type MarketplaceApi = {

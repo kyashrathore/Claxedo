@@ -103,7 +103,7 @@ function directFromDestination(credential: CredentialMetadata, destination: Prov
     secret: destination.value,
     authKind: isSubscriptionKind(credential.kind) ? "subscription" : "api-key",
     ...(credential.expires_at ? { expiresAt: credential.expires_at } : {}),
-    account: { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}) },
+    account: { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}), revision: credential.revision },
   }
 }
 

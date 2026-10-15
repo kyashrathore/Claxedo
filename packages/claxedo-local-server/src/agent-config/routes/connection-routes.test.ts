@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, test } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -11,14 +11,26 @@ const root = path.join(os.tmpdir(), `agent-config-connections-${randomUUID().sli
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const [{ agentConfigConnectionRoutes }, { createAgentConfigRoutes }, { loadUserConfig, saveUserConfig }, { ClaxedoDB }] = await Promise.all([
+const [{ agentConfigConnectionRoutes }, { createAgentConfigRoutes }, { loadUserConfig, saveUserConfig }, { ClaxedoDB }, registry, backends] = await Promise.all([
   import("./connection-routes"),
   import("./index"),
   import("@claxedo/server-core/agent-config/index"),
   import("@claxedo/server-core/platform/db/index"),
+  import("@claxedo/server-core/credentials/registry"),
+  import("@claxedo/server-core/credentials/backend-registry"),
 ])
 
+let fixtureToken = ""
+let teamToken = ""
+
+beforeEach(async () => {
+  backends.setBackendOverride(backends.createTestBackend())
+  fixtureToken = (await registry.putCredential({ owner: "local", provider_id: "fixture-token", kind: "api_key", source: "managed", secret: "fixture-secret" })).id
+  teamToken = (await registry.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-org" })).id
+})
+
 afterEach(async () => {
+  backends.setBackendOverride(undefined)
   ClaxedoDB.close()
   await fs.rm(root, { recursive: true, force: true })
 })
@@ -50,7 +62,7 @@ function descriptor(
       },
       modelSelection: { status: "optional" },
     },
-    secretRefs: { token: "credentials/fixture-token" },
+    secretRefs: { token: fixtureToken },
     ...overrides,
   }
 }
@@ -69,6 +81,14 @@ describe("generic agent connection config API", () => {
     const response = await host.request("/api/claxedo/agent-config/connections")
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: "supported", connections: [] })
+  })
+  test("refuses a secret reference that is not the operator's own stored key", async () => {
+    for (const reference of [teamToken, "credentials/absent"]) {
+      const refused = await upsert("conn-org", descriptor("conn-org", { secretRefs: { token: reference } }))
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toMatchObject({ error: { code: "agent_config_secret_ref_refused" } })
+    }
+    expect((await loadUserConfig()).connections["conn-org"]).toBeUndefined()
   })
   test("persists a trusted descriptor and exposes only its sanitized public projection", async () => {
     const response = await upsert("conn-primary", descriptor("conn-primary"))
@@ -106,7 +126,7 @@ describe("generic agent connection config API", () => {
     expect(serialized).not.toContain("configRevision")
     expect(serialized).not.toContain("endpoint")
     expect(serialized).not.toContain("trusted-only")
-    expect(serialized).not.toContain("fixture-token")
+    expect(serialized).not.toContain(fixtureToken)
 
     expect((await loadUserConfig()).connections["conn-primary"]).toEqual(descriptor("conn-primary"))
   })

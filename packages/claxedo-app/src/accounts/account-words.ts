@@ -121,7 +121,7 @@ export function orgAccountWords(words: Words, harness: Harness, snapshot: Accoun
   const row = orgAccountOf(harness, snapshot)
   if (row === undefined) {
     if (!chosen) return undefined
-    const unavailable = t("settings.providers.accountSource.unavailable", { name: harness.label })
+    const unavailable = t("settings.providers.accountSource.unavailable", { name: harness.vendor })
     return {
       key: ORG_ACCOUNT_KEY,
       ids: [],

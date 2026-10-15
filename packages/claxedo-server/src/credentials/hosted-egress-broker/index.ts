@@ -2,6 +2,7 @@ import { bindingBaseUrl, brokerErrorBody, createEgressBroker, presentedRuntimeTo
 import type { CredentialBrokerErrorCode, ProviderBindingSource } from "@claxedo/agent-runtime-contract"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
+import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import { destinationAuthMode } from "@claxedo/server-core/credentials/built-in-destinations"
 import type { HarnessCredentialBroker } from "@claxedo/server-core/credentials/native-delivery-plan"
 import type { ControlPlaneCredentials } from "../../authority/services"
@@ -134,6 +135,7 @@ function recent<K, V>(capacity: number) {
 export function createHostedEgressBroker(input: {
   credentials: (orgId: string) => ControlPlaneCredentials
   read: (orgId: string) => HostedBrokerCredentialRead
+  workspaceOwner: (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
   sandboxManager: Pick<SandboxManager, "target">
   env: Record<string, string | undefined>
   /** The public origin sandboxes reach the plane at; a binding's base URL is under it. */
@@ -158,7 +160,7 @@ export function createHostedEgressBroker(input: {
   }
   let repositories: HostedRepositoryBindings | undefined
   const authority = hostedBindingAuthority({
-    credentials: input.credentials, read, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now,
+    credentials: input.credentials, read, workspaceOwner: input.workspaceOwner, sandboxManager: input.sandboxManager, ...(input.fetch ? { fetch: input.fetch } : {}), now,
     ...(input.credentialRefusals ? { credentialRefusals: input.credentialRefusals } : {}),
     repositories: () => repositories,
   })

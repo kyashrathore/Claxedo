@@ -8,7 +8,7 @@ import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/
 import type { HarnessConnectionDescriptor } from "@claxedo/server-core/agent-config/connections"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { credentialSecretInScope } from "@claxedo/server-core/credentials/secret-scope"
-import { credentialAdmitted } from "@claxedo/server-core/credentials/account-holder"
+import { connectionSecretAdmitted } from "@claxedo/server-core/credentials/account-holder"
 import type { ControlPlaneCredentials } from "../authority/services"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 import { turnLeaseAuthority, type TurnLeaseProofs } from "../session/turn-lease-authority"
@@ -94,7 +94,7 @@ export function RuntimeConnectionSecretRoutes(input: RuntimeConnectionSecretOpti
       && meta.status === "available"
       && credentialSecretInScope(meta, "shared")
       && meta.org_id === workspaceOwner.orgId
-      && credentialAdmitted(meta.owner, request.ownerUserId, workspaceOwner.userId)
+      && connectionSecretAdmitted(meta, request.ownerUserId, workspaceOwner.userId)
       && (meta.expires_at == null || meta.expires_at > Date.now())
     const sameStoredSecret = (a: CredentialMetadata, b: Pick<CredentialMetadata, "incarnation" | "revision">) =>
       a.incarnation === b.incarnation && a.revision === b.revision

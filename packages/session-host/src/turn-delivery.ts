@@ -103,9 +103,9 @@ export class SessionHostTurns {
     for (const start of [true, false]) this.asking.delete(askedKey(key, { start }))
   }
 
-  /** Tells the control plane the vendor refused `credentialId` in the session's current turn; the plane decides what that does to the account. */
-  async credentialRefused(sessionId: string, credentialId: string): Promise<void> {
-    await this.post("turn-credential-refused", this.lease(sessionId), { credentialId })
+  /** Tells the control plane the vendor answered `status` to the revision of a stored account the session's current turn was handed; the plane decides what that does to the account. */
+  async credentialRefused(sessionId: string, refusal: { credentialId: string; revision: number; status: number }): Promise<void> {
+    await this.post("turn-credential-refused", this.lease(sessionId), refusal)
   }
 
   private lease(sessionId: string): TurnLease {

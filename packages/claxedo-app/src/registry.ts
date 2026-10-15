@@ -1,4 +1,4 @@
-import { modelsSettingsSection, sandboxSettingsSection } from "@/accounts"
+import { modelsSettingsSection, sandboxSettingsSection, teamSettingsSection } from "@/accounts"
 import { authRoutes } from "@/auth"
 import { onboardingRoute } from "@/onboarding"
 import { pluginsSettingsSection } from "@/plugins"
@@ -20,7 +20,7 @@ export const firstParty: FirstPartyEntries = {
     paneKindEntry(pageTabPaneKind),
   ],
   panelViews: [subagentPanelView],
-  settingsSections: [...settingsSections, modelsSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection, presetsSettingsSection],
+  settingsSections: [...settingsSections, modelsSettingsSection, teamSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection, presetsSettingsSection],
   sidebarItems: [],
   overlays: [],
   commands: [],
