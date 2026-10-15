@@ -85,9 +85,11 @@ epoch with no start recorded.
 `provision()` ends `lease_decision` when it begins a start, `provider_ready`
 when the driver calls `onResource`, `image_ready` when a driver that can tell
 calls `onImageReady`, and `runtime_ready` when the driver returns a serving
-target. Each phase is timed from the one before. One provision call writes what
-it observed once, after the driver work, and emits each phase through the
-`onStartPhase` option. Phases from outside the manager join the same epoch:
+target. Each phase is timed from the one before, written into `lease.start` as
+it ends and emitted through the `onStartPhase` option, so `target()` of a lease
+that is acquiring or waiting out a retry carries its `start` with the phases
+observed so far: the connection answer reports them while the driver is still
+booting. Phases from outside the manager join the same epoch:
 `recordStartPhases` takes durations the runtime measured inside the sandbox, and
 `markStartPhase` ends a phase now, refusing evidence older than the start. A
 phase reaches the sink at most once per epoch. The vocabulary and the

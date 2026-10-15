@@ -179,6 +179,7 @@ const BOOT_MODES: readonly SandboxStartProgress["bootMode"][] = ["restore", "res
 
 function isStartProgress(value: Record<string, unknown>): value is SandboxStartProgress {
   return (
+    typeof value.requestedAt === "number" &&
     typeof value.startedAt === "number" &&
     typeof value.markedAt === "number" &&
     BOOT_MODES.some((mode) => mode === value.bootMode) &&

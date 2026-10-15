@@ -66,13 +66,13 @@ export function createSandboxStartRecorder(options: {
 
   return {
     /**
-     * The phases one provision call observes, timed as they end. The epoch's
-     * first call writes the start before the driver runs (`opened`), so a stop
-     * that lands mid-boot finds the boot it ends on the row; every later phase
-     * is written once when the call is done (`flush`), adding no lease write to
-     * the path a start waits on. A serving lease is not starting. An epoch
-     * acquired with a start it continues has that start and no phase yet; one
-     * acquired without begins its own here.
+     * The phases one provision call observes, each timed and written into the
+     * lease as it ends, so a poller reading the lease mid-boot sees how far the
+     * start has come. `opened` writes the epoch's `lease_decision` before the
+     * driver runs, so a stop that lands mid-boot finds the boot it ends on the
+     * row. A serving lease is not starting. An epoch acquired with a start it
+     * continues has that start and no phase yet; one acquired without begins
+     * its own here.
      */
     observe(lease: SandboxLease, input: { bootMode: SandboxBootMode; enteredAt: number; labels: Record<string, string> }) {
       if (lease.status === "ready") return undefined
@@ -80,7 +80,7 @@ export function createSandboxStartRecorder(options: {
         ?? { requestedAt: input.enteredAt, startedAt: input.enteredAt, bootMode: input.bootMode, markedAt: input.enteredAt, phases: [] }
       const ended: Timing[] = []
       let markedAt = progress.markedAt
-      const end = (phase: SandboxStartPhase) => {
+      const mark = (phase: SandboxStartPhase) => {
         if (progress.phases.includes(phase) || ended.some((timing) => timing.phase === phase)) return
         const at = options.now()
         ended.push({ phase, durationMs: Math.max(0, at - markedAt) })
@@ -90,11 +90,13 @@ export function createSandboxStartRecorder(options: {
         const written = await append(lease, progress, ended.splice(0), { labels: input.labels, markedAt }).catch(() => undefined)
         if (written) progress = written
       }
-      if (!progress.phases.length) end("lease_decision")
+      if (!progress.phases.length) mark("lease_decision")
       return {
-        end,
-        opened: () => (lease.start ? Promise.resolve() : write()),
-        flush: write,
+        opened: write,
+        end: async (phase: SandboxStartPhase) => {
+          mark(phase)
+          await write()
+        },
       }
     },
     async report(workspaceId: string, input: SandboxStartPhasesReport) {

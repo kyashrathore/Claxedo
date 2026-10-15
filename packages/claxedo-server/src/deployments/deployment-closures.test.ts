@@ -124,8 +124,10 @@ const ENTRIES = [
   // which the hosted runtime delivery's idle watch applies to Boat. A cloud
   // runtime's usage report is a module of its own
   // (`usage/runtime-usage-report.ts`), split from the runtime session
-  // authority routes.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 167, packages: 22 },
+  // authority routes. Every entry answers a cloud start still provisioning
+  // through one module, the connect and the read alike, with the phases its
+  // lease has recorded (`connections/cloud-start-progress.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 168, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -136,7 +138,7 @@ const ENTRIES = [
   // two modules beside it (`activation/d1-activation-snapshots.ts`,
   // `activation/d1-activation-writes.ts`), and both D1 stores key rows by the
   // one `agent-plugins/scope-keys.ts`.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 222, packages: 26 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 223, packages: 26 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -145,7 +147,7 @@ const ENTRIES = [
   // Object a sandbox start runs under (`sandbox/provisioner.cf.ts`) and the
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
   // has a sandbox to start.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 231, packages: 26 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 232, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
