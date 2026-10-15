@@ -6,8 +6,7 @@ import type { WorkspaceRuntimePreparation } from "../../workspace/route-support"
 import { agentPluginMcpRuntimePlan } from "../mcp/runtime-preparation"
 import type { AgentPluginRuntimeProjectionPlan, SignedAgentPluginRuntimeSnapshot } from "./provision"
 import { runtimeMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
-
-const HARNESS = "pi"
+import { SESSION_HOST_HARNESS as HARNESS } from "../mcp/gateway-reach"
 
 /**
  * The Pi launch a session's own Durable Object runs with: the workspace

@@ -146,6 +146,7 @@ export function createOrgSandboxManager(input: {
         : input.drivers.secretBrokering(await orgOf(workspaceId, lease))
     },
     orgDriver: async (orgId: string): Promise<SandboxDriver> => (await input.drivers.forOrg(orgId)).driver,
+    orgSecretBrokering: (orgId: string): Promise<SandboxSecretBrokering> => input.drivers.secretBrokering(orgId),
   }
 }
 

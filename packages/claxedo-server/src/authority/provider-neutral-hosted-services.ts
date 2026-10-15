@@ -341,6 +341,7 @@ export function composeProviderNeutralHostedControlPlane(
           workspaceDriver: sandbox.workspaceDriver,
           workspaceSecretBrokering: sandbox.workspaceSecretBrokering,
           orgDriver: sandbox.orgDriver,
+          orgSecretBrokering: sandbox.orgSecretBrokering,
         }
       : {}),
     telemetry,

@@ -239,6 +239,7 @@ async function fixture(options: {
   mcpClientMetadata?: ReturnType<typeof hostedMcpClientMetadata>
   authentication?: RequestAuthenticationAdapter
   builtInConsentChanged?: (auth: SignedControlPlaneAuth, groupId: string) => Promise<void>
+  secretBrokering?: "native" | "none"
 } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-hosted-agent-plugins-"))
   roots.push(root)
@@ -283,7 +284,9 @@ async function fixture(options: {
     authority: {
       usersMe,
       listWorkspaces: vi.fn(async () => []),
+      resolveOrgId: vi.fn(async () => "org-main"),
     },
+    sandbox: { orgSecretBrokering: vi.fn(async () => options.secretBrokering ?? "native") },
     telemetry: { capture: vi.fn() },
   } as unknown as ControlPlaneServices
   const activations = new MemorySignedActivations()
@@ -401,6 +404,29 @@ describe("hosted Agent Plugins routes", () => {
     }])
     expect(JSON.stringify(catalog)).not.toContain("token")
     expect(JSON.stringify(catalog)).not.toContain("connectionId")
+  })
+
+  test("a signed-in MCP server on a driver that cannot carry its credential reaches only the session host in the cloud", async () => {
+    const mcpAuthentication = vi.fn<AgentPluginMcpCatalogAuthenticationResolver>(async ({ pluginInstanceId, server }) => ({
+      state: "oauth",
+      integrationId: `${pluginInstanceId}:${server.name}`,
+    }))
+    const subject = await fixture({ mcp: true, mcpAuthentication, secretBrokering: "none" })
+    const catalog = await (await request(subject.app, "/")).json()
+
+    expect(catalog.candidates[0].mcpServers[0].cloud).toEqual({
+      state: "gateway",
+      onlyHarnesses: ["pi"],
+      reason: "secret_brokering_unsupported",
+    })
+  })
+
+  test("a public MCP server reaches every cloud harness whatever the driver brokers", async () => {
+    const mcpAuthentication = vi.fn<AgentPluginMcpCatalogAuthenticationResolver>(async () => ({ state: "public" }))
+    const subject = await fixture({ mcp: true, mcpAuthentication, secretBrokering: "none" })
+    const catalog = await (await request(subject.app, "/")).json()
+
+    expect(catalog.candidates[0].mcpServers[0].cloud).toEqual({ state: "gateway" })
   })
 
   test("projects the icon, skills, and named source of every candidate instead of a free-text label", async () => {

@@ -107,6 +107,16 @@ function isAuthentication(value: unknown): boolean {
   )
 }
 
+function isCloudReach(value: unknown): boolean {
+  if (value === undefined) return true
+  if (!isRecord(value)) return false
+  if (value.state === "unavailable") return isString(value.reason)
+  if (value.state === "image-command") return value.onlyHarnesses === undefined
+  if (value.state !== "gateway") return false
+  if (value.onlyHarnesses === undefined) return value.reason === undefined
+  return Array.isArray(value.onlyHarnesses) && value.onlyHarnesses.every(isHarness) && isString(value.reason)
+}
+
 function isMcpServers(value: unknown): value is PluginMcpServer[] {
   return (
     Array.isArray(value) &&
@@ -115,7 +125,8 @@ function isMcpServers(value: unknown): value is PluginMcpServer[] {
         isRecord(server) &&
         isString(server.name) &&
         (server.type === "stdio" || server.type === "streamable-http" || server.type === "sse") &&
-        isAuthentication(server.authentication),
+        isAuthentication(server.authentication) &&
+        isCloudReach(server.cloud),
     )
   )
 }
