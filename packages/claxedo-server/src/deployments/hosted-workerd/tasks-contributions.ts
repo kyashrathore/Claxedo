@@ -32,10 +32,12 @@ export function hostedTasksRouteContributions(
   input: Omit<HostedTasksCompositionInput, "bridge" | "cloudSelectedCapabilities"> & {
     selectedCapabilities?: NonNullable<HostedTasksSessionBridgeInput["selectedCapabilities"]>
     /**
-     * The environment the workspace routes launch every cloud root with. A
-     * task's root is launched by the bridge, so it is handed the same one.
+     * The grants the workspace routes launch every cloud root with, and the
+     * runtime delivery every cloud workspace starts with. A task's root is
+     * launched by the bridge, so it is handed the same two.
      */
     rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
+    workspaceRuntime?: HostedTasksSessionBridgeInput["workspaceRuntime"]
     sandboxUsage?: HostedTasksSessionBridgeInput["sandboxUsage"]
     /**
      * The deployment's half of the create admission a task's cloud root is
@@ -66,6 +68,7 @@ export function hostedTasksRouteContributions(
         owner,
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
         ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
+        ...(input.workspaceRuntime ? { workspaceRuntime: input.workspaceRuntime } : {}),
         ...(input.sandboxUsage ? { sandboxUsage: input.sandboxUsage } : {}),
         cloudCreateAdmission: createAdmission,
         sandboxEgress: input.sandboxEgress,

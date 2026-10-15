@@ -33,7 +33,7 @@ import {
 } from "../workspace/origin-cloud-workspace"
 import type { TasksHostReads } from "./d1-host-reads"
 import type { TasksRootIdentity } from "./root-capability"
-import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
+import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
 
 const log = Log.create({ service: "tasks-session-bridge" })
@@ -88,6 +88,15 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
     /** Projects it, and resolves only once the runtime acknowledged that exact selection. */
     apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
   }
+  /**
+   * What every hosted cloud workspace starts with, the deployment's runtime
+   * delivery: its owner's model accounts (edge secrets where the driver has a
+   * provider edge) and its project's environment. A root is created through
+   * `ensure` rather than a workspace start, so its accounts reach an edge only
+   * through this preparation; a deployment that names none launches roots no
+   * harness can spend an account in.
+   */
+  workspaceRuntime?: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   /**
    * The Tasks grant this root's sessions act with, minted beside the cloud
    * root's other credentials and handed to its runtime as environment. A
@@ -204,17 +213,23 @@ function createTasksCloudTarget(
         if (!port) {
           throw new Error("this control plane cannot project a selected capability set into a cloud root")
         }
-        const preparation = await port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities })
+        const [workspaceRuntime, preparation] = await Promise.all([
+          input.workspaceRuntime?.({ workspaceId: workspace.id }),
+          port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities }),
+        ])
         projected = () => port.apply({ workspaceId: workspace.id, preparation })
         // The capability names the workspace's owner, and `admit` below makes
         // this creator that owner. The application user id is the authority's
         // own name for them; the actor's `ownerId` is the token subject, which
         // no workspace row records.
         const owner = creator?.owner
-        const env = owner
+        const grant = owner
           ? await input.capability?.({ ...owner, projectId: origin.task.projectId, workspaceId: workspace.id })
           : undefined
-        return { ...(preparation.secrets ? { secrets: preparation.secrets } : {}), ...(env ? { env } : {}) }
+        return {
+          secrets: [...workspaceRuntime?.secrets ?? [], ...preparation.secrets ?? []],
+          env: { ...workspaceRuntime?.env, ...grant },
+        }
       },
       services: input.services,
       egress: {
