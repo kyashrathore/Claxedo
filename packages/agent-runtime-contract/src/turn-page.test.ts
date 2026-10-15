@@ -143,10 +143,16 @@ describe("estimateTurnLines", () => {
     expect(estimateTurnLines(turn, { ...request, reasoning: true })).toBe(3 + 1 + 2 + 1)
   })
 
-  test("a part the fold never hides stays drawn under the fold row", () => {
+  test("a part the fold never hides stays drawn under the fold row, and text before the turn's last tool folds with the work", () => {
     const id = nextId("user")
     const turn = [user(id, "Draw it"), assistant(id, [text("Working."), tool("bash"), text("Here it is."), file()]), assistant(id, [tool("bash")])]
-    expect(estimateTurnLines(turn, request)).toBe(3 + 1 + 2 + (1 + 2))
+    expect(estimateTurnLines(turn, request)).toBe(3 + 1 + 2 + 2)
+  })
+
+  test("a reply split around a thought is drawn whole, with no fold row", () => {
+    const id = nextId("user")
+    const turn = [user(id, "you okay?"), assistant(id, [text("Yep, all good! Fill me in and I'll get going"), reasoning("Short."), text(".")])]
+    expect(estimateTurnLines(turn, { ...request, reasoning: true })).toBe(3 + 1 + (1 + 2 + 1))
   })
 })
 

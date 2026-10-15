@@ -147,10 +147,25 @@ describe("foldedGroupKeys", () => {
   const parts = [tool("r1", "read"), tool("b1", "bash"), tool("b2", "bash"), reasoning("p1", "thinking"), text("t1", "the answer")]
   const groups = groupsOf(parts)
 
-  test("folds every foldable group but the answer, the last text part", () => {
+  test("folds every foldable group but the answer, the text after the last tool", () => {
     expect(countFoldableGroups(groups, lookup(parts))).toBe(3)
     const keys = foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true }), groups, lookup(parts))
     expect([...keys]).toEqual(["context:r1", "work:b1", "part:a1:p1"])
+  })
+
+  test("a reply split around a thought, with no tool in the turn, is all answer and does not fold", () => {
+    const split = [text("t1", "Yep, all good! Fill me in and I'll get going"), reasoning("p1", "short reply"), text("t2", ".")]
+    const splitGroups = groupsOf(split)
+    expect(countFoldableGroups(splitGroups, lookup(split))).toBe(1)
+    expect(turnFoldDecision({ foldableCount: 1, settled: true }).canFold).toBe(false)
+  })
+
+  test("every text after the last tool is the answer; text before it folds with the work", () => {
+    const turn = [text("t0", "checking"), tool("b1", "bash"), text("t1", "Here it is"), reasoning("p1", "and"), text("t2", "that's all")]
+    const turnGroups = groupsOf(turn)
+    expect(countFoldableGroups(turnGroups, lookup(turn))).toBe(3)
+    const keys = foldedGroupKeys(turnFoldDecision({ foldableCount: 3, settled: true }), turnGroups, lookup(turn))
+    expect([...keys]).toEqual(["part:a1:t0", "part:a1:b1", "part:a1:p1"])
   })
 
   test("keeps a group the reader opened, unless the fold was their explicit choice", () => {

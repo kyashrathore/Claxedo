@@ -47,7 +47,7 @@ test("a notice stays on screen when a settled turn folds its work", () => {
   const parts = [
     { ...base, id: "p1", type: "reasoning", text: "thinking", time: { start: 1, end: 2 } },
     { ...base, id: "p2", type: "notice", notice: { kind: "harness", code: "claude_sdk.informational", message: "Hook blocked", severity: "warn" }, time: { created: 2 } },
-    { ...base, id: "p3", type: "text", text: "Checking the hook." },
+    { ...base, id: "p3", type: "tool", tool: "bash", state: { status: "completed", input: { command: "hook" }, output: "", title: "", metadata: {}, time: { start: 1, end: 2 } } },
     { ...base, id: "p4", type: "text", text: "Done." },
   ] as never[]
   const hasText = (part: { type: string }) => "text" in part && !!part.text
@@ -55,6 +55,21 @@ test("a notice stays on screen when a settled turn folds its work", () => {
   const shown = rows.flatMap((row) => (row._tag === "AssistantPart" && row.group.type === "part" ? [row.group.ref.partId] : []))
   expect(shown).toContain("p2")
   expect(rows.some((row) => row._tag === "TurnFold" && row.folded)).toBe(true)
+})
+
+test("a reply split around a thought, in a turn with no tool, shows both texts and folds nothing", () => {
+  const assistant = { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2, completed: 3 } } as unknown as AgentAssistantMessage
+  const base = { sessionID: "s1", messageID: "a1" }
+  const parts = [
+    { ...base, id: "t1", type: "text", text: "Yep, all good! I just didn't have much to go on. Fill me in and I'll get going" },
+    { ...base, id: "r1", type: "reasoning", text: "Keep it short.", time: { start: 2, end: 3 } },
+    { ...base, id: "t2", type: "text", text: "." },
+  ] as never[]
+  const hasText = (part: { type: string }) => "text" in part && !!part.text
+  const rows = Timeline.constructMessageRows(user, (id) => (id === "a1" ? parts : []), hasText, [assistant], true, "idle", true)
+  const shown = rows.flatMap((row) => (row._tag === "AssistantPart" ? groupMembers(row.group).map((ref) => ref.partId) : []))
+  expect(shown).toEqual(["t1", "r1", "t2"])
+  expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
 })
 
 test("the running turn of a session whose run stopped under it is drawn interrupted: its open tools stop, and the divider does not say the person stopped it", () => {
