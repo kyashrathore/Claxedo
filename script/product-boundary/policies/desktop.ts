@@ -628,8 +628,12 @@ export const desktopRenderer: Policy = {
   // ends on a tool with no reply gained its "Worked for" divider (owner: the
   // app's session domain, `session/view/timeline/turn-divider-label.ts`). It
   // adds no package edge.
-  // 1369/36, no headroom.
-  ceilings: { modules: 1369, packages: 36 },
+  // A cloud workspace's start said in words with its steps and times, the one
+  // wording the session notice, the first run and the terminal creator share
+  // (owner: the app's cloud domain, `cloud/view/wake-progress.ts`). It adds no
+  // package edge.
+  // 1370/36, no headroom.
+  ceilings: { modules: 1370, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -87,6 +87,59 @@ describe("sandbox start telemetry", () => {
     expect(timeline(second.events)).toEqual([["runtime_ready", 2_500]])
   })
 
+  test("each phase is on the lease's target as it ends, while the driver is still booting", async () => {
+    const time = clock()
+    const seen: unknown[] = []
+    const read = async () => {
+      const current = await manager.target("ws_1")
+      seen.push(current.status === "unavailable" ? current.start : current.status)
+    }
+    const { manager } = compose(scriptedDriver([async (ensure) => {
+      await read()
+      time.advance(400)
+      await ensure.onResource?.({ sandboxId: "sb_1", hostId: "host_ws_1", labels: ensure.labels })
+      await read()
+      time.advance(1_500)
+      await ensure.onImageReady?.()
+      await read()
+      time.advance(2_000)
+      return target(ensure)
+    }]), time)
+    const requestedAt = time.now()
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+
+    const start = { epoch: 1, requestedAt, startedAt: requestedAt, bootMode: "cold-start" }
+    expect(seen).toEqual([
+      { ...start, markedAt: requestedAt, phases: ["lease_decision"] },
+      { ...start, markedAt: requestedAt + 400, phases: ["lease_decision", "provider_ready"] },
+      { ...start, markedAt: requestedAt + 1_900, phases: ["lease_decision", "provider_ready", "image_ready"] },
+    ])
+    const served = await manager.target("ws_1")
+    expect(served.status === "unavailable" ? served.start : undefined).toBeUndefined()
+  })
+
+  test("a start an epoch continues is on its target before its driver step has ended a phase", async () => {
+    const time = clock()
+    const seen: unknown[] = []
+    const store = createMemoryLeaseStore()
+    const { manager } = compose(scriptedDriver([
+      async (ensure) => {
+        await ensure.onResource?.({ sandboxId: "sb_1", hostId: "host_ws_1", labels: ensure.labels })
+        return { provisioning: true, retryAfterMs: 2_000 }
+      },
+      async (ensure) => {
+        const current = await manager.target("ws_1")
+        seen.push(current.status === "unavailable" ? current.start?.phases : current.status)
+        return target(ensure)
+      },
+    ]), time, store)
+    expect((await manager.ensure("ws_1", input)).status).toBe("provisioning")
+    time.advance(2_500)
+    expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+    expect(seen).toEqual([["lease_decision", "provider_ready"]])
+  })
+
   test("re-ensuring a serving lease is not a start", async () => {
     const time = clock()
     const { manager, events } = compose(scriptedDriver([async (ensure) => target(ensure), async (ensure) => target(ensure)]), time)

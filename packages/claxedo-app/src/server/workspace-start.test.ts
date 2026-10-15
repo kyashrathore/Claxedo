@@ -124,3 +124,21 @@ test("following a start ends with no link when the server says the workspace sto
   const failed = answers(json({ status: "failed", workspaceId: "ws_1", error: "The cloud workspace could not start: no such branch" }))
   expect(await followWorkspaceStart(failed.read, "ws_1", { wait: async () => undefined })).toBeUndefined()
 })
+
+test("workspace start: the steps the server has recorded become the start's progress, timed from the server's own elapsed times on this clock", async () => {
+  const server = answers(
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume", progress: { phases: ["lease_decision"], sinceStartMs: 12_000, sinceStepMs: 11_900 } }),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, progress: { phases: ["lease_decision", "provider_ready", "image_ready", "repository_checkout"], sinceStartMs: 80_000, sinceStepMs: 3_000 } }),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, progress: { phases: ["warp"], sinceStartMs: "soon" } }),
+    json(READY),
+  )
+  const progress: WorkspaceStartProgress[] = []
+  let now = 1_000_000
+  await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void (now += ms), now: () => now })
+
+  expect(progress).toEqual([
+    { kind: "provisioning", bootMode: "resume", steps: { done: [], startedAt: 1_000_000 - 12_000, stepStartedAt: 1_000_000 - 11_900 } },
+    { kind: "provisioning", steps: { done: ["machine", "image"], startedAt: 1_002_000 - 80_000, stepStartedAt: 1_002_000 - 3_000 } },
+    { kind: "provisioning" },
+  ])
+})

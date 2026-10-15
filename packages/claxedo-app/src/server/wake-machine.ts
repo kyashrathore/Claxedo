@@ -1,22 +1,33 @@
 import { unreachable } from "../lib/machine"
-import type { WorkspaceBootMode } from "./cloud-types"
+import type { WorkspaceBootMode, WorkspaceStartSteps } from "./cloud-types"
 import type { AppError } from "./types"
 
 export type WakeState =
   | { readonly kind: "idle" }
-  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly restart?: true }
+  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps; readonly restart?: true }
   | { readonly kind: "failed"; readonly error: AppError; readonly restart?: true }
   | { readonly kind: "outdated" }
 
 export type WakeEvent =
   | { readonly type: "wakeStarted" }
-  | { readonly type: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string }
+  | { readonly type: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps }
   | { readonly type: "woke" }
   | { readonly type: "wakeFailed"; readonly error: AppError }
   | { readonly type: "imageOutdated" }
   | { readonly type: "imageCurrent" }
 
 export const WAKE_IDLE: WakeState = { kind: "idle" }
+
+const ANCHOR_JITTER_MS = 2_000
+
+function steadyAnchor(previous: number, next: number): number {
+  return Math.abs(previous - next) < ANCHOR_JITTER_MS ? Math.min(previous, next) : next
+}
+
+function steadySteps(previous: WorkspaceStartSteps | undefined, next: WorkspaceStartSteps | undefined): WorkspaceStartSteps | undefined {
+  if (!next || !previous) return next ?? previous
+  return { done: next.done, startedAt: steadyAnchor(previous.startedAt, next.startedAt), stepStartedAt: steadyAnchor(previous.stepStartedAt, next.stepStartedAt) }
+}
 
 function isRestart(state: WakeState): boolean {
   return state.kind === "outdated" || (state.kind === "failed" && state.restart === true)
@@ -30,10 +41,12 @@ export function wakeTransition(state: WakeState, event: WakeEvent): WakeState {
     case "provisioning": {
       if (state.kind !== "waking") return state
       const bootMode = event.bootMode ?? state.bootMode
+      const steps = steadySteps(state.steps, event.steps)
       return {
         kind: "waking",
         ...(bootMode ? { bootMode } : {}),
         ...(event.failure ? { failure: event.failure } : {}),
+        ...(steps ? { steps } : {}),
         ...(state.restart ? { restart: true } : {}),
       }
     }

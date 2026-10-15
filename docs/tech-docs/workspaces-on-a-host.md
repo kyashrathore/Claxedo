@@ -331,7 +331,13 @@ holds one connection promise per workspace:
    does not settle (a boot failure, a refusal with no retry window, the
    provisioner's 15-minute wall). Either answer carries `failure` while the
    server retries a step that failed, and the app shows it as "Start failed,
-   retrying: <failure>". The request is then sent once more on the new link.
+   retrying: <failure>". A `provisioning` answer carries `progress` once the
+   lease has recorded the start: `{ phases, sinceStartMs, sinceStepMs }`, the
+   start phases written into `sandbox_leases.start_json` as each ends and the
+   server's own time since the start began and since its last phase ended
+   (`connections/cloud-start-progress.ts`); the app says the step it is on,
+   the steps done and both times. The request is then sent once more on the
+   new link.
 
 `transport.startRuntime` is the same start for an explicit wake; off loopback
 the relay adopts the link it returns.

@@ -182,8 +182,12 @@ export const serverWorkerd: Policy = {
   // +1 module (owner: the runtime session authority routes): a cloud
   // runtime's usage report is its own module (`usage/runtime-usage-report.ts`),
   // split from `routes/runtime-session-authority.ts`.
-  // 167/22, no headroom.
-  ceilings: { modules: 167, packages: 22 },
+  // +1 module (owner: the hosted connection routes): the one provisioning
+  // connection answer the connect and the read both give, with the start
+  // phases the lease has recorded and the server's own elapsed times
+  // (`connections/cloud-start-progress.ts`). It imports types alone.
+  // 168/22, no headroom.
+  ceilings: { modules: 168, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

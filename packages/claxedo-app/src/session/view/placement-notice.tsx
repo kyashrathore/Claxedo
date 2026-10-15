@@ -1,23 +1,24 @@
 import { createEffect, type Accessor, type JSX } from "solid-js"
 import { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, publishComposerNotice, type ComposerNotice } from "@/composer"
-import { useWorkspaceName } from "@/cloud"
+import { useWakeProgress, useWorkspaceName } from "@/cloud"
 import { isOfflineMachine, isStartingCloud, useServer, type Placement, type PlacementId, type WorkspaceRuntime } from "@/server"
 import { useSessionScreenText, type SessionScreenText } from "./text"
 
-function bootDetail(t: SessionScreenText, runtime: Extract<WorkspaceRuntime, { kind: "waking" }>) {
-  if (runtime.failure) return t("sessionScreen.workspace.retrying", { reason: runtime.failure })
-  const bootMode = runtime.bootMode
-  if (bootMode === "restore") return t("sessionScreen.workspace.restoring")
-  if (bootMode === "resume") return t("sessionScreen.workspace.resuming")
-  return t("sessionScreen.workspace.starting")
+type PlacementFacts = {
+  readonly placement: Placement | undefined
+  readonly name: string
+  readonly runtime: WorkspaceRuntime
+  readonly wakeProgress: string | undefined
+  readonly offline: boolean
+  readonly wake: () => void
 }
-
-type PlacementFacts = { readonly placement: Placement | undefined; readonly name: string; readonly runtime: WorkspaceRuntime; readonly offline: boolean; readonly wake: () => void }
 
 export function placementNotice(t: SessionScreenText, facts: PlacementFacts): ComposerNotice | undefined {
   const name = facts.name
   const runtime = facts.runtime
-  if (runtime.kind === "waking") return { kind: "workspace-lifecycle", tone: "progress", message: t("sessionScreen.workspace.waking", { name }), detail: bootDetail(t, runtime) }
+  if (runtime.kind === "waking") {
+    return { kind: "workspace-lifecycle", tone: "progress", message: t("sessionScreen.workspace.waking", { name }), ...(facts.wakeProgress ? { detail: facts.wakeProgress } : {}) }
+  }
   if (runtime.kind === "wakeFailed") {
     return { kind: "workspace-lifecycle", tone: "critical", message: t("sessionScreen.workspace.wakeFailed", { name }), detail: runtime.error.message, action: { label: t("sessionScreen.workspace.retryWake"), run: facts.wake } }
   }
@@ -34,12 +35,17 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
   const named = useWorkspaceName()
   const wake = (id: PlacementId) => () =>
     void server.cloud.start(id).catch((error: unknown) => console.warn("The workspace could not be woken", { placementId: id, error }))
+  const runtime = (): WorkspaceRuntime => {
+    const id = placementId()
+    return id ? server.cloud.runtime(id) : { kind: "live" }
+  }
+  const wakeProgress = useWakeProgress(runtime)
   return () => {
     const id = placementId()
     if (!id) return undefined
     const placement = server.placements.byId(id)
     const name = placement ? named(placement.label, placement.branch) : ""
-    return placementNotice(t, { placement, name, runtime: server.cloud.runtime(id), offline: isOfflineMachine(placement), wake: wake(id) })
+    return placementNotice(t, { placement, name, runtime: runtime(), wakeProgress: wakeProgress(), offline: isOfflineMachine(placement), wake: wake(id) })
   }
 }
 

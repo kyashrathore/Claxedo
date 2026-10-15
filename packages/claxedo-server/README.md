@@ -66,7 +66,10 @@ manager step over `hostedSandboxInput` of the live workspace row, and a ready
 runtime's settings. A start still not settled 15 minutes after it began ends
 with that as its reason; the lease keeps what the driver last recorded and the
 next start continues it. The app polls the start with the `retryAfterMs` it
-answers.
+answers; each `provisioning` answer, the connect's and the read's alike
+(`connections/cloud-start-progress.ts`), carries the phases the lease has
+recorded for that epoch's start so far with the time since the start began and
+since its last phase ended, measured here.
 
 ## Repository scripts and machine class
 

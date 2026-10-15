@@ -210,6 +210,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         leaseStatus: lease.status,
         ...(lease.nextRetryAt !== undefined ? { retryAfterMs: Math.max(0, lease.nextRetryAt - now()) } : {}),
         ...(failure ? { failure } : {}),
+        ...(lease.start && (lease.status === "acquiring" || lease.status === "unavailable") ? { start: { ...lease.start, epoch: lease.epoch } } : {}),
       }
     }
     const booted = resource.labels?.[SANDBOX_IMAGE_LABEL]
@@ -226,7 +227,6 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     managerInput: SandboxManagerInput,
     enteredAt: number,
   ): Promise<SandboxEnsureResult> {
-    let start: ReturnType<typeof starts.observe>
     try {
       const ensure = ensureHostInput({
         driver: options.driver,
@@ -256,7 +256,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       // A host that never published a URL never served, so resuming it is the
       // workspace's first start as the person sees it, not a wake.
       const bootMode: SandboxBootMode = resuming && lease.url ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start"
-      start = starts.observe(lease, { bootMode, enteredAt, labels: ensure.labels })
+      const start = starts.observe(lease,{ bootMode, enteredAt, labels: ensure.labels })
       await start?.opened()
       ensure.onResource = async (resource) => {
         const recorded = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
@@ -265,7 +265,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           persistence: options.driver.metadata.persistence,
         })
         if (!recorded) throw new Error("runtime_lease_changed")
-        start?.end("provider_ready")
+        await start?.end("provider_ready")
       }
       ensure.onImageReady = async () => start?.end("image_ready")
       const target = resuming
@@ -303,7 +303,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       if (!updated) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion }
       const resolved = await leaseTarget(updated)
       if (resolved.status === "ready") {
-        start?.end("runtime_ready")
+        await start?.end("runtime_ready")
         return resolved
       }
       return {
@@ -315,7 +315,6 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (isSandboxHostGone(err) && lease.sandboxId) {
-        await start?.flush()
         return hostGone(workspaceId, lease, managerInput, message, enteredAt)
       }
       const bootFailed = isSandboxRuntimeBootFailure(err)
@@ -340,7 +339,6 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       const unstopped = bootFailed || retryCapped ? await stopHeldHost(workspaceId, lease.epoch) : undefined
       const recorded = unstopped ? `${error}; ${unstopped}` : error
       lifecycle.failed(lease, { bootFailed, retrying: !bootFailed && !retryCapped })
-      await start?.flush()
       const failed = await options.leaseStore.recordFailure(
         workspaceId,
         lease.epoch,
@@ -354,8 +352,6 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         epoch: lease.epoch,
         homeRegion,
       }
-    } finally {
-      await start?.flush()
     }
   }
 

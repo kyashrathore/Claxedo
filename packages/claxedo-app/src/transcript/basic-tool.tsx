@@ -19,7 +19,7 @@ import { useTranscriptI18n, type TranscriptI18n, type TranscriptTextKey } from "
 import { createStore } from "solid-js/store"
 import { Collapsible, Icon, type IconProps, TextShimmer } from "@/ui"
 import { useSecondClock } from "@/lib/clock"
-import { formatDuration } from "./format-duration"
+import { formatDuration } from "@/lib/duration"
 import { safeLinkHref } from "./safe-link"
 import { ScrollableOutput } from "./scrollable-output"
 

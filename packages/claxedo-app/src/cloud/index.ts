@@ -2,4 +2,5 @@ export { useCloudCommandFailureText, useCloudStatusText } from "./view/cloud-sta
 export { useCloudWorkspaces, useRunningCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "./store"
 export { canStart, canStop, cloudFailureReason } from "./model"
 export { useWorkspaceName, type WorkspaceName } from "./view/workspace-name"
+export { useWakeProgress } from "./view/wake-progress"
 export { createMachineSizeChoice, MachineSizeField, useMachineSizeName, type MachineSizeChoice } from "./view/machine-size"

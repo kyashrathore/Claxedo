@@ -75,9 +75,11 @@ describe("toSandboxLeaseRow", () => {
     expect(toSandboxLeaseRow({ ...ready, restore: JSON.stringify(missingTimestamp) }).restore).toBeNull()
   })
 
-  test("a start is kept only when its boot mode and every phase are known", () => {
-    const start = { startedAt: 1, bootMode: "cold-start", markedAt: 2, phases: ["lease_decision", "runtime_ready"] }
+  test("a start is kept only when its request time, boot mode and every phase are known", () => {
+    const start = { requestedAt: 1, startedAt: 1, bootMode: "cold-start", markedAt: 2, phases: ["lease_decision", "runtime_ready"] }
     expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify(start) }).start).toEqual(start)
+    const { requestedAt: _requestedAt, ...unrequested } = start
+    expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify(unrequested) }).start).toBeNull()
     expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify({ ...start, phases: ["warp"] }) }).start).toBeNull()
     expect(toSandboxLeaseRow({ ...ready, start: JSON.stringify({ ...start, bootMode: "teleport" }) }).start).toBeNull()
   })

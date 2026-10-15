@@ -6,6 +6,7 @@ import { CLOUD_RUNTIME_BOOT_FAILED, type ConnectionAnswer, type RelayConnection 
 export type StartOptions = {
   readonly onProgress?: (progress: WorkspaceStartProgress) => void
   readonly wait?: (ms: number) => Promise<void>
+  readonly now?: () => number
 }
 
 const DEFAULT_RETRY_MS = 2_000
@@ -16,12 +17,25 @@ const retryDelay = (retryAfterMs: number | undefined) => Math.min(MAX_RETRY_MS, 
 
 type Connect = (workspaceId: string) => Promise<ConnectionAnswer>
 
+type Provisioning = Extract<ConnectionAnswer, { kind: "provisioning" }>
+
+function startProgressOf(answer: Provisioning, receivedAt: number): WorkspaceStartProgress {
+  const elapsed = answer.progress
+  return {
+    kind: "provisioning",
+    ...(answer.bootMode ? { bootMode: answer.bootMode } : {}),
+    ...(answer.failure ? { failure: answer.failure } : {}),
+    ...(elapsed ? { steps: { done: elapsed.done, startedAt: receivedAt - elapsed.sinceStartMs, stepStartedAt: receivedAt - elapsed.sinceStepMs } } : {}),
+  }
+}
+
 async function settledAnswer(connect: Connect, workspaceId: string, options: StartOptions): Promise<Exclude<ConnectionAnswer, { kind: "provisioning" }>> {
   const wait = options.wait ?? sleep
+  const now = options.now ?? Date.now
   for (;;) {
     const answer = await connect(workspaceId)
     if (answer.kind !== "provisioning") return answer
-    options.onProgress?.({ kind: "provisioning", ...(answer.bootMode ? { bootMode: answer.bootMode } : {}), ...(answer.failure ? { failure: answer.failure } : {}) })
+    options.onProgress?.(startProgressOf(answer, now()))
     await wait(retryDelay(answer.retryAfterMs))
   }
 }

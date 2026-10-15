@@ -191,6 +191,8 @@ export type SandboxStartProgress = {
   phases: SandboxStartPhase[]
 }
 
+export type SandboxEpochStart = SandboxStartProgress & { epoch: number }
+
 export type SandboxStartPhaseEvent = SandboxPhaseTiming<SandboxStartPhase> & {
   /** Since the start the person is waiting on began, across the epochs it took. */
   sinceStartMs: number
@@ -590,6 +592,8 @@ export type SandboxTargetResult =
       retryAfterMs?: number
       /** What the lease's last start or health report failed on, when it is unavailable for that reason. */
       failure?: SandboxLeaseFailure
+      /** The start the lease is on while it is acquiring or waiting out a retry, as far as it has been observed. */
+      start?: SandboxEpochStart
     }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }

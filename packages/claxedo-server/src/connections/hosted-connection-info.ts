@@ -20,11 +20,12 @@ import {
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeLifecycle, cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager, type SandboxTargetResult } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
 import type { CloudCreateAdmission, CloudCreateUsage } from "../workspace/cloud-create-admission"
+import { provisioningConnection } from "./cloud-start-progress"
 
 type HostedConnectionDenial = {
   error: ReturnType<typeof apiError>
@@ -247,9 +248,9 @@ async function firstLeaseMeter(
   services: ControlPlaneServices | undefined,
   lease: FirstLease,
   auth: SignedControlPlaneAuth,
-  input: { workspaceId: string; hostManager: SandboxManager },
+  input: { workspaceId: string; current: SandboxTargetResult },
 ): Promise<HostedConnectionDenial | (() => void) | undefined> {
-  const current = await input.hostManager.target(input.workspaceId)
+  const { current } = input
   if (current.status !== "unavailable" || current.reason !== "runtime_lease_missing") return undefined
   const denied = await lease.admission.capLease({ kind: "signed", auth })
   if (denied) return { error: denied.body.error, status: denied.status }
@@ -288,7 +289,8 @@ export async function hostedConnectionInfo(
     return { error: apiError("sandbox_unavailable", "Cloud sandbox is not configured"), status: 503 } as const
   }
 
-  const meter = await firstLeaseMeter(services, lease, auth, { workspaceId, hostManager })
+  const current = await hostManager.target(workspaceId)
+  const meter = await firstLeaseMeter(services, lease, auth, { workspaceId, current })
   if (meter && typeof meter !== "function") return meter
   const [started, actor] = await Promise.all([options.sandboxStart(workspaceId), settledActor(authority, auth)])
   if (started.status === "provisioning" && started.opened) {
@@ -317,18 +319,14 @@ export async function hostedConnectionInfo(
   }
   if (started.status === "provisioning") {
     return {
-      connection: {
-        status: "provisioning" as const,
+      connection: provisioningConnection({
         workspaceId,
         homeRegion,
+        epoch: started.epoch,
         retryAfterMs: started.retryAfterMs,
-        // Which boot path this cycle is on (restore | resume | cold-start),
-        // when the manager knows it — the connect UI renders it instead of a
-        // generic "preparing" spinner. Absent while the lease is still queued
-        // behind a retry window or another caller.
         ...(started.bootMode ? { bootMode: started.bootMode } : {}),
         ...(started.failure ? { failure: sandboxStartFailureReason(started.failure) } : {}),
-      },
+      }, current),
     } as const
   }
   if (started.status === "failed") {
@@ -426,14 +424,14 @@ export async function hostedConnectionStatus(
   // not the runtime it is replacing, is what this read reports.
   if (running?.status === "provisioning") {
     return {
-      connection: {
-        status: "provisioning" as const,
+      connection: provisioningConnection({
         workspaceId,
         homeRegion,
+        epoch: running.epoch,
         retryAfterMs: running.retryAfterMs,
         ...(running.bootMode ? { bootMode: running.bootMode } : {}),
         ...(running.failure ? { failure: sandboxStartFailureReason(running.failure) } : {}),
-      },
+      }, target),
     } as const
   }
   captureWorkspaceTelemetry({
@@ -452,13 +450,22 @@ export async function hostedConnectionStatus(
   if (target.status !== "ready") {
     // The same reading the catalog row gives: a boot that failed says so, with its reason, rather than reading as asleep.
     const lifecycle = cloudRuntimeLifecycle(target)
+    if (lifecycle.status === "provisioning") {
+      return {
+        connection: provisioningConnection({
+          workspaceId,
+          homeRegion,
+          ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
+          ...(lifecycle.failure ? { failure: lifecycle.failure } : {}),
+        }, target),
+      } as const
+    }
     return {
       connection: {
         status: lifecycle.status,
         workspaceId,
         homeRegion,
         ...(lifecycle.status === "failed" ? { error: lifecycle.error } : {}),
-        ...(lifecycle.status === "provisioning" && lifecycle.failure ? { failure: lifecycle.failure } : {}),
         ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
       },
     } as const

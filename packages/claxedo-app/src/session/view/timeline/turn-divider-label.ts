@@ -1,4 +1,4 @@
-import { formatDuration } from "@/transcript"
+import { formatDuration } from "@/lib/duration"
 import type { TimelineTranslate } from "./model"
 import type { TimelineRow } from "./timeline-row-model"
 
