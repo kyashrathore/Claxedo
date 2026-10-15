@@ -108,7 +108,7 @@ function RepositorySection(props: { choice: RepositoryChoice; url: string; onUrl
             <Show when={props.choice.usable().length > 1}>
               <AccountSelect connections={props.choice.usable()} current={connection()} onSelect={props.choice.setChosenId} />
             </Show>
-            <RepositoryList repositories={props.choice.repositories.data} loading={props.choice.repositories.isPending} error={props.choice.repositories.error} query={props.query} onQuery={props.onQuery} selected={props.selected} onSelect={props.onSelect} />
+            <RepositoryList listing={props.choice.repositories.data} host={host() ?? connection().providerName} loading={props.choice.repositories.isPending} error={props.choice.repositories.error} query={props.query} onQuery={props.onQuery} selected={props.selected} onSelect={props.onSelect} />
           </>
         )}
       </Show>

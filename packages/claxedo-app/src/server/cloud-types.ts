@@ -58,3 +58,18 @@ export type CodeHostConnection = {
 }
 
 export type CodeHostRepository = { readonly id: string; readonly fullName: string; readonly private: boolean }
+
+export type CodeHostAppInstallation = {
+  readonly account: string
+  readonly settingsUrl: string
+  readonly repositorySelection: "all" | "selected"
+}
+
+export type CodeHostRepositoryAccess =
+  | { readonly kind: "app"; readonly installations: readonly CodeHostAppInstallation[] }
+  | { readonly kind: "token"; readonly settingsUrl: string }
+
+export type CodeHostRepositoryListing = {
+  readonly repositories: readonly CodeHostRepository[]
+  readonly access?: CodeHostRepositoryAccess
+}

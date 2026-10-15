@@ -1,7 +1,9 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
-import type { AppError, CodeHostConnection, CodeHostRepository } from "@/server"
+import type { AppError, CodeHostConnection, CodeHostRepository, CodeHostRepositoryListing } from "@/server"
 import { Field, Select } from "@/ui"
 import { useProjectsText } from "../i18n"
+import { shownRepositoryAccess } from "../repository-access"
+import { RepositoryAccessHint } from "./project-repository-access"
 
 export const FIELD_BOX = "h-10 rounded-lg border border-border-base bg-surface-inset-base px-3"
 
@@ -24,7 +26,8 @@ export function AccountSelect(props: { connections: readonly CodeHostConnection[
 }
 
 type RepositoryListProps = {
-  repositories: readonly CodeHostRepository[] | undefined
+  listing: CodeHostRepositoryListing | undefined
+  host: string
   loading: boolean
   error: AppError | null
   query: string
@@ -48,7 +51,7 @@ function RepositoryRows(props: RepositoryListProps & { matches: readonly CodeHos
           </p>
         )}
       </Show>
-      <Show when={props.repositories && props.matches.length === 0}>
+      <Show when={props.listing && props.matches.length === 0}>
         <span class={`px-2.5 py-2 ${row()} text-text-weak`}>
           {props.query.trim() ? t("projects.add.repositories.empty") : t("projects.create.repositories.none")}
         </span>
@@ -77,9 +80,10 @@ export function RepositoryList(props: RepositoryListProps) {
   const t = useProjectsText()
   const matches = createMemo(() => {
     const needle = props.query.trim().toLowerCase()
-    const all = props.repositories ?? []
+    const all = props.listing?.repositories ?? []
     return needle ? all.filter((repository) => repository.fullName.toLowerCase().includes(needle)) : all
   })
+  const access = () => shownRepositoryAccess(props.listing, matches().length)
   return (
     <div class="flex flex-col gap-2">
       <input
@@ -99,6 +103,7 @@ export function RepositoryList(props: RepositoryListProps) {
       >
         <RepositoryRows {...props} matches={matches()} />
       </div>
+      <Show when={access()}>{(value) => <RepositoryAccessHint access={value()} host={props.host} />}</Show>
     </div>
   )
 }

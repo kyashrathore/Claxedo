@@ -87,6 +87,17 @@ export type CodeHostRepository = {
   permissions: { read: boolean; write: boolean }
 }
 
+export type CodeHostAppInstallation = {
+  account: string
+  settingsUrl: string
+  repositorySelection: "all" | "selected"
+}
+
+/** Who decides which repositories a connection lists, and where its owner grants it more. */
+export type CodeHostRepositoryAccess =
+  | { kind: "app"; installations: CodeHostAppInstallation[] }
+  | { kind: "token"; settingsUrl: string }
+
 // The reference impls only ever call `(url, init)`, so the injectable seam is
 // typed to that shape rather than to `typeof fetch` — the full interface drags
 // in statics like `preconnect` that a test double has no reason to supply.

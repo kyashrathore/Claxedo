@@ -14,6 +14,7 @@ import { timeoutFetch, type IntegrationFetchOptions } from "./fetch-timeout.js"
 import { record, text } from "../json.js"
 import { workSourcePort } from "../ports/index.js"
 import { publicApiFailure } from "@claxedo/helpers/api-error"
+import { githubRepositoryAccess } from "./github-repository-access.js"
 
 const DEVICE_CODE_URL = "https://github.com/login/device/code"
 const TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -161,7 +162,11 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
     },
     impl: {
       actions: {
-        "code-host": { capability: "code-host", listRepositories },
+        "code-host": {
+          capability: "code-host",
+          listRepositories,
+          repositoryAccess: (_fields, secret) => githubRepositoryAccess(fetchImpl, secret),
+        },
         "work-source": workSourcePort,
       },
       auth: {
