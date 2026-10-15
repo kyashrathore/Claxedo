@@ -19,12 +19,12 @@ export class CodexUsageLedger {
     const params = asRecordOrEmpty(message.params)
     const reported = message.method ? codexReportedModel(message.method, params) : undefined
     if (reported) this.models.set(reported.turnId ? `${reported.threadId}\0${reported.turnId}` : reported.threadId, reported.model)
-    if (message.method !== "thread/tokenUsage/updated") return {}
+    if (message.method !== "thread/tokenUsage/updated" || ownership === "side") return {}
     const threadId = asString(params.threadId)
     if (!threadId) return {}
     const turnId = asString(params.turnId)
     const growth = codexUsageGrowth({ payload: params, previousTotal: this.totals.get(threadId),
-      scope: ownership === "owned" ? threadId : `${ownership === "side" ? "title" : "detached"}:${threadId}`,
+      scope: ownership === "owned" ? threadId : `detached:${threadId}`,
       model: (turnId ? this.models.get(`${threadId}\0${turnId}`) : undefined) ?? this.models.get(threadId) })
     if (growth.total) this.totals.set(threadId, growth.total)
     if (ownership === "owned" || !growth.event) return {}
