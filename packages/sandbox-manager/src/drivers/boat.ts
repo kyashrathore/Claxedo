@@ -107,6 +107,7 @@ const IMAGE_TREES = ["root", "usr", "etc", "var", "opt", "home", "srv"] as const
 const IMAGE_TREE_SEED_EXCLUDES = ["root/.cache", "root/.npm/_cacache"] as const
 const IMAGE_TREES_COMPLETE_MARKER = ".complete"
 const SEED_CONTAINER_NAME = "claxedo-seed"
+const CONTAINER_SECURITY_OPTIONS = "--security-opt seccomp=unconfined --security-opt apparmor=unconfined"
 // `--init` mounts Docker's init at /sbin/docker-init, which the image's merged
 // /usr resolves into the bind-mounted /usr, where it does not exist; the VM's
 // binary is mounted at a path of its own instead.
@@ -265,12 +266,18 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const mounts = [["workspace", directory], ...PERSISTENT_HOME_MOUNTS]
     // Without an init the runtime is PID 1 and reaps no orphan, so an exited
     // git child stays a zombie and keeps a retired harness's process group alive.
+    // Codex sandboxes each command with bubblewrap (--unshare-user, --proc,
+    // --dev inside the new namespace); Docker's default seccomp profile refuses
+    // unshare to a container without CAP_SYS_ADMIN and its AppArmor profile
+    // refuses mount, so under them every Codex command failed to start and fell
+    // back to an approval prompt (staging, 2026-10-15). The VM is single-tenant
+    // and is the isolation boundary, so the container runs unconfined.
     const run = `docker run -d --name ${containerName} --hostname ${shell(containerHostname(input.workspaceId))} -p ${port}:${port} `
       + `-v ${VM_DOCKER_INIT}:${CONTAINER_INIT_PATH}:ro `
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
       + IMAGE_TREES.map((tree) => `-v ${trees}/${tree}:/${tree} `).join("")
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
-      + `--entrypoint ${CONTAINER_INIT_PATH} ${image} -- sh -lc ${shell(bootScript)}`
+      + `${CONTAINER_SECURITY_OPTIONS} --entrypoint ${CONTAINER_INIT_PATH} ${image} -- sh -lc ${shell(bootScript)}`
     // Streamed out of a created container of the image and unpacked as root so
     // the image's owners and setuid bits survive the copy (the command runs as
     // the VM user). The persistent root is made as root too: Docker made it as
