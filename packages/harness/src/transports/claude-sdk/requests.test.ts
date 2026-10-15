@@ -132,3 +132,17 @@ test("a subagent's request stays answerable after the parent turn it was asked i
   const parent = { ...broker, signal: parentTurn.signal, ask: async () => { parentTurn.abort(); return { kind: "permission" as const, decision: "allow_once" as const } } } as TurnBroker
   expect(await askClaudePermission(input, parent, "Bash", { command: "ls" }, { ...options, agentID: undefined }, "t1")).toMatchObject({ behavior: "deny" })
 })
+
+test("a Claude permission ask carries the tool and its whole input for the person to read", async () => {
+  const requests: TurnRequest[] = []
+  const broker = { signal: new AbortController().signal, ask: async (request: TurnRequest) => {
+    requests.push(request)
+    return { kind: "permission" as const, decision: "deny" as const }
+  } } as TurnBroker
+  const toolInput = { command: "rm -rf build", description: "Remove the build folder" }
+  await askClaudePermission(input, broker, "Bash", toolInput,
+    { signal: new AbortController().signal, description: "Claude will run a shell command", toolUseID: "tu-1" } as Parameters<CanUseTool>[2])
+  const asked = requests[0]
+  expect(asked?.kind === "permission" ? asked.permission : undefined).toMatchObject({
+    permission: "Bash", metadata: { input: toolInput, description: "Claude will run a shell command" } })
+})

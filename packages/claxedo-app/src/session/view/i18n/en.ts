@@ -38,6 +38,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.permission.allowOnce"
   | "sessionScreen.permission.workingDirectory"
   | "sessionScreen.permission.details"
+  | "sessionScreen.permission.tool"
   | "sessionScreen.permission.tool.read"
   | "sessionScreen.permission.tool.edit"
   | "sessionScreen.permission.tool.glob"
@@ -129,6 +130,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.permission.allowOnce": "Allow once",
   "sessionScreen.permission.workingDirectory": "Working directory",
   "sessionScreen.permission.details": "Details",
+  "sessionScreen.permission.tool": "Tool",
   "sessionScreen.permission.tool.read": "Reading a file (matches the file path)",
   "sessionScreen.permission.tool.edit": "Modify files, including edits, writes, and patches",
   "sessionScreen.permission.tool.glob": "Match files using glob patterns",

@@ -4,11 +4,11 @@ import type { AgentRequestReply } from "@/server"
 import type { RequestState } from "@/session"
 import { DockPrompt } from "@/transcript"
 import { ClaxedoIcon as Icon, Button } from "@/ui"
-import { isRecord } from "@claxedo/helpers/guards"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
 import { createDockAction } from "./dock-action"
 import { replyError } from "./model"
+import { permissionFacts, type PermissionFacts as Facts } from "./permission-facts"
 
 const TOOL_KEYS: Readonly<Record<string, SessionScreenTextKey>> = {
   read: "sessionScreen.permission.tool.read",
@@ -27,40 +27,14 @@ const TOOL_KEYS: Readonly<Record<string, SessionScreenTextKey>> = {
   doom_loop: "sessionScreen.permission.tool.doom_loop",
 }
 
-function record(value: unknown) {
-  return isRecord(value) ? value : undefined
-}
-
-function agentText(tool: Record<string, unknown> | undefined) {
-  const content = Array.isArray(tool?.content) ? tool.content : []
-  return content.flatMap((item) => {
-    const block = record(item)
-    const value = record(block?.content)
-    return block?.type === "content" && value?.type === "text" && typeof value.text === "string" ? [value.text] : []
-  })
-}
-
-function permissionFacts(request: AgentPermission) {
-  const tool = record(request.metadata.acpToolCall)
-  const meta = record(request.metadata.acpRequestMeta)
-  const permission = record(meta?.permission)
-  const input = record(tool?.rawInput)
-  const description = permission?.version === 1 && typeof permission.description === "string" ? permission.description : undefined
-  return {
-    command: typeof request.metadata.command === "string" ? request.metadata.command : undefined,
-    reason: description ?? (typeof request.metadata.reason === "string" ? request.metadata.reason : undefined),
-    directory: typeof input?.cwd === "string" ? input.cwd : undefined,
-    agentText: agentText(tool),
-    details: tool || meta ? JSON.stringify({ toolCall: tool, request: meta }, null, 2) : undefined,
-  }
-}
-
-type Facts = ReturnType<typeof permissionFacts>
-
 function PermissionFacts(props: { facts: Facts; patterns: readonly string[] }) {
   const t = useSessionScreenText()
+  const summarized = () => Boolean(props.facts.command) || props.facts.inputFields.length > 0
   return (
     <>
+      <div class="text-12-medium text-text-strong">
+        {t("sessionScreen.permission.tool")}: <code class="break-all">{props.facts.tool}</code>
+      </div>
       <Show when={props.facts.command}>
         {(value) => <pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre>}
       </Show>
@@ -74,12 +48,19 @@ function PermissionFacts(props: { facts: Facts; patterns: readonly string[] }) {
           </div>
         )}
       </Show>
+      <For each={props.facts.inputFields}>
+        {(field) => (
+          <div class="text-12-regular text-text-base">
+            {field.name}: <code class="break-all">{field.value}</code>
+          </div>
+        )}
+      </For>
       <For each={props.facts.agentText}>
         {(value) => <pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value}</pre>}
       </For>
       <Show when={props.facts.details}>
         {(value) => (
-          <details>
+          <details open={!summarized()}>
             <summary>{t("sessionScreen.permission.details")}</summary>
             <pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre>
           </details>
@@ -158,7 +139,7 @@ export function PermissionDock(props: {
   const facts = () => permissionFacts(props.request)
   const busy = () => props.replyState.kind === "answering" || stop.running()
   const hint = () => {
-    const key = TOOL_KEYS[props.request.permission]
+    const key = TOOL_KEYS[props.request.permission.toLowerCase()]
     return key ? t(key) : ""
   }
   const runStop = () => {
