@@ -75,7 +75,7 @@ test("a person on the team account is handed it, not their own key, and a report
 test("once the team account is removed the turn is refused in words that say so, and nothing is handed over in its place", async () => {
   const accounts = plane.credentials(plane.orgId)
   const [team] = (await accounts.listCredentials()).filter((row) => row.owner === null)
-  await accounts.deleteCredential(team!.id)
+  await accounts.deleteCredential(team.id)
 
   const { delivery } = await delivered("turn_team_removed")
   const ownerId = plane.owner.principal!.userId

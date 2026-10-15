@@ -9,7 +9,7 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
 import { mintTasksCapability } from "./capability"
 
-const FIXTURE_WORKER = fileURLToPath(new URL("./fixtures/hosted-task-start-worker.fixture.ts", import.meta.url))
+const FIXTURE_WORKER = fileURLToPath(new URL("../test-support/hosted-task-start-worker.ts", import.meta.url))
 const ORIGIN = "https://core.test"
 const TASKS = `${ORIGIN}/api/claxedo/tasks`
 const REPO = "https://github.com/acme/importer.git"
@@ -121,13 +121,13 @@ afterAll(async () => {
   await miniflare?.dispose()
 })
 
-async function post<T>(url: string, subject: string | undefined, body: unknown): Promise<{ status: number; body: T }> {
+async function post(url: string, subject: string | undefined, body: unknown): Promise<{ status: number; body: unknown }> {
   const response = await miniflare.dispatchFetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...(subject ? { authorization: `Bearer ${subject}` } : {}) },
     body: JSON.stringify(body),
   })
-  return { status: response.status, body: (await response.json()) as T }
+  return { status: response.status, body: await response.json() }
 }
 
 async function get<T>(url: string, subject: string): Promise<T> {
@@ -144,7 +144,7 @@ type Rows = {
 const rows = async () => (await (await miniflare.dispatchFetch(`${ORIGIN}/__rows`)).json()) as Rows
 
 async function command<T>(subject: string, clientRequestId: string, body: Record<string, unknown>) {
-  const response = await post<{ result: T }>(`${TASKS}/commands`, subject, { clientRequestId, command: body })
+  const response = (await post(`${TASKS}/commands`, subject, { clientRequestId, command: body }) as { status: number; body: { result: T } })
   expect(response.status).toBe(200)
   return response.body.result
 }
@@ -162,13 +162,13 @@ type Preview = { preview: { digest: string; available: boolean; blockers: Array<
 type Started = { created: boolean; link: { sessionRef: { sessionId: string; workspaceId: string } } }
 
 async function person(subject: string) {
-  const response = await post<{ userId: string }>(`${ORIGIN}/__person`, undefined, { subject })
+  const response = (await post(`${ORIGIN}/__person`, undefined, { subject }) as { status: number; body: { userId: string } })
   expect(response.status).toBe(200)
   return response.body.userId
 }
 
 async function project(subject: string, workspaceId: string) {
-  const response = await post<{ projectId: string; orgId: string }>(`${ORIGIN}/__workspace`, undefined, { subject, workspaceId, repoUrl: REPO, gitBranch: "main" })
+  const response = (await post(`${ORIGIN}/__workspace`, undefined, { subject, workspaceId, repoUrl: REPO, gitBranch: "main" }) as { status: number; body: { projectId: string; orgId: string } })
   expect(response.status).toBe(200)
   return response.body
 }
@@ -198,16 +198,16 @@ async function task(subject: string, projectId: string, title: string) {
 }
 
 async function start(subject: string, taskId: string, presetId: string, attempt = 1, from: Record<string, unknown> = {}) {
-  const preview = await post<Preview>(`${TASKS}/tasks/${taskId}/start-preview`, subject, { ...startBody(presetId, attempt), ...from })
+  const preview = (await post(`${TASKS}/tasks/${taskId}/start-preview`, subject, { ...startBody(presetId, attempt), ...from }) as { status: number; body: Preview })
   expect(preview.status).toBe(200)
   if (!preview.body.preview.available) return { preview: preview.body.preview, started: undefined }
-  const started = await post<Started>(`${TASKS}/tasks/${taskId}/sessions`, subject, {
+  const started = (await post(`${TASKS}/tasks/${taskId}/sessions`, subject, {
     ...startBody(presetId, attempt),
     ...from,
     clientRequestId: `start-${taskId}-${attempt}`,
     previewDigest: preview.body.preview.digest,
     handoffText: null,
-  })
+  }) as { status: number; body: Started })
   return { preview: preview.body.preview, started }
 }
 
@@ -278,13 +278,13 @@ describe("a hosted cloud task start on workerd", () => {
       signingEnv,
     )
 
-    const created = await post<{ result: { task: { id: string } } }>(`${TASKS}/commands`, token, {
+    const created = (await post(`${TASKS}/commands`, token, {
       clientRequestId: "gina-agent-task",
       command: {
         type: "task.create",
         input: { projectId, title: "Gina's agent task", description: "", workspaceId: null, parentTaskId: null, createdFrom: root },
       },
-    })
+    }) as { status: number; body: { result: { task: { id: string } } } })
     expect(created.status).toBe(200)
     const hop = await start(token, created.body.result.task.id, presetId, 1, { startedFrom: root })
     expect(hop.preview).toMatchObject({ available: true, blockers: [] })
@@ -344,7 +344,7 @@ describe("a hosted cloud task start on workerd", () => {
     expect(started).toMatchObject({ status: 200 })
 
     await person("mallory")
-    const refused = await post<Preview>(`${TASKS}/tasks/${taskId}/start-preview`, "mallory", startBody(presetId))
+    const refused = (await post(`${TASKS}/tasks/${taskId}/start-preview`, "mallory", startBody(presetId)) as { status: number; body: Preview })
     expect(refused.status).not.toBe(200)
   })
 })

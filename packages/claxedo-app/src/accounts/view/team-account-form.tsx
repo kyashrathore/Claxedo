@@ -7,7 +7,7 @@ import type { TeamAccountsStore } from "../team-store"
 export function DrawerTeamAccount(props: { readonly store: TeamAccountsStore }) {
   const t = useAccountsText()
   const dialog = useDialog()
-  const [vendor, setVendor] = createSignal(TEAM_VENDORS[0]!)
+  const [vendor, setVendor] = createSignal(TEAM_VENDORS[0])
   const [label, setLabel] = createSignal("")
   const [secret, setSecret] = createSignal("")
   const [missing, setMissing] = createSignal(false)
