@@ -145,7 +145,11 @@ function createFormState(props: ProjectCreateFormProps) {
     if (choice.view() !== "url") return undefined
     return repoUrl().trim() ? { kind: "repository", url: repoUrl().trim() } : undefined
   }
-  return { name, setName, folder, setFolder, repoUrl, setRepoUrl, busy, setBusy, error, setError, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
+  const editUrl = (url: string) => {
+    setError("")
+    setRepoUrl(url)
+  }
+  return { name, setName, folder, setFolder, repoUrl, editUrl, busy, setBusy, error, setError, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
 }
 
 type FormState = ReturnType<typeof createFormState>
@@ -212,7 +216,7 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
       <Show
         when={form.mode() === "folder" ? props.folderMachine : undefined}
         fallback={
-          <RepositorySection choice={form.choice} url={form.repoUrl()} onUrl={form.setRepoUrl} query={form.query()} onQuery={form.setQuery} selected={form.selected()} onSelect={form.setSelected} />
+          <RepositorySection choice={form.choice} url={form.repoUrl()} onUrl={form.editUrl} query={form.query()} onQuery={form.setQuery} selected={form.selected()} onSelect={form.setSelected} />
         }
       >
         {(machine) => <FolderField machine={machine()} folder={form.folder()} onChoose={() => void chooseFolder()} />}
