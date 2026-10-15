@@ -50,6 +50,9 @@ export type ProviderUnavailable = {
  */
 export const HARNESS_NEEDS_BROKERING = "harness_needs_brokering"
 
+/** The refusal a provider carries for a person who chose the organization's account for it while the organization has none. */
+export const ORG_ACCOUNT_UNAVAILABLE = "org_account_unavailable"
+
 /**
  * Whether a row is the refusal rather than a binding.
  *

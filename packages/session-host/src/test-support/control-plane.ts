@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { SignJWT, jwtVerify } from "jose"
 import { CLAXEDO_MCP_PATH, CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, createClaxedoMcpRoutes } from "@claxedo/mcp"
 import { createClaxedoMcpClient, type ClaxedoFetch } from "@claxedo/mcp/client"
-import type { ProviderDirect } from "@claxedo/agent-runtime-contract"
+import type { ProviderDirect, ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { asString } from "@claxedo/helpers/guards"
 import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import { bearerToken } from "@claxedo/session-core"
@@ -23,6 +23,8 @@ export type ControlPlaneInput = {
   runtimeAccessKey: CryptoKey
   /** Each person's Pi accounts by user id; a person without an entry holds none. */
   accounts: () => Record<string, Record<string, ProviderDirect>>
+  /** Each person's providers whose account the control plane refuses, with why. */
+  refused?: () => Record<string, Record<string, ProviderUnavailable>>
   plugins: () => RuntimeConfigSnapshotPlugins
   machine: () => { relayUrl: string; directory: string; routingId?: string }
   /** The workspace runtime's root sessions, which the first-party MCP endpoint lists for a session that carries its turn's bearer. */
@@ -191,12 +193,16 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       return c.json({ allowed: true })
     })
     .post("/turn-delivery", async (c) => {
+      const refusals = (person: string) => {
+        const refused = input.refused?.()[person]
+        return refused ? { [person]: refused } : {}
+      }
       const lease = await liveLease((await c.req.json<{ turnLease?: string }>()).turnLease)
       if (!lease || !creator) return refused(c, 401, "session_turn_lease_invalid")
       calls.deliveries.push(lease.turnId)
       const delivery: TurnDelivery = {
         expiresAt: Date.now() + control.leaseTtlMs,
-        auth: { machineOwnerUserId: OWNER, accounts: {}, direct: { [creator]: input.accounts()[creator] ?? {} } },
+        auth: { machineOwnerUserId: OWNER, accounts: refusals(creator), direct: { [creator]: input.accounts()[creator] ?? {} } },
         plugins: input.plugins(),
         providerDefinitions: [],
         ...(control.firstPartyMcp ? { firstPartyMcp: firstPartyMcp(new URL(c.req.url).origin) } : {}),

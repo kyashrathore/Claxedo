@@ -15,7 +15,7 @@ import type { SessionMcpCredentials } from "../mcp/session-mcp-credentials"
 import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 import { sessionHostMachineAccess, type SessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
 import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
-import { ownerDirectRows, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
+import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
 import type { OwnerMachineStart } from "../workspace/cloud-workspace-start"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
@@ -162,7 +162,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
       if (!owner || owner.orgId !== claims.orgId) return denied(c)
       const holder = placement.session!.creatorUserId ?? owner.userId
-      const direct = await ownerDirectRows(input.credentials(owner.orgId), holder, { providers: PI_DIRECT_PROVIDERS })
+      const { direct, refused } = await ownerDirectDelivery(input.credentials(owner.orgId), holder, { providers: PI_DIRECT_PROVIDERS })
       let plugins: RuntimeConfigSnapshotPlugins = { harnessLaunch: {}, mcp: {} }
       try {
         if (input.plugins) plugins = await input.plugins(claims.workspaceId)
@@ -177,7 +177,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const directory = placement.workspace.directory
       const delivery: TurnDelivery = {
         expiresAt,
-        auth: { machineOwnerUserId: owner.userId, accounts: {}, direct: { [holder]: direct } },
+        auth: { machineOwnerUserId: owner.userId, accounts: Object.keys(refused).length ? { [holder]: refused } : {}, direct: { [holder]: direct } },
         plugins,
         providerDefinitions: [],
         ...(firstPartyMcp ? { firstPartyMcp } : {}),

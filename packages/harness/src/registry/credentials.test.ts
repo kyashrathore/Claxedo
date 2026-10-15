@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { ProviderBinding } from "@claxedo/agent-runtime-contract"
+import { ORG_ACCOUNT_UNAVAILABLE, type ProviderBinding } from "@claxedo/agent-runtime-contract"
 import { CredentialSelectionError, selectSessionCredentials, type CredentialSelectionInput } from "./credentials"
 
 const binding = (person: string): ProviderBinding => ({ baseUrl: `https://${person}.example`, placeholder: person, authMode: "api-key" })
@@ -66,11 +66,21 @@ test("a harness that does not take direct delivery never receives the owner's di
 
 test("a plan handed over directly stands in for the binding a cloud edge refused it", () => {
   const plan = { delivery: "direct" as const, baseUrl: "https://chatgpt.com", secret: "plan-B", authKind: "subscription" as const }
-  const refused = { "codex-app-server": { unavailable: true as const, reason: "org_account_unavailable" } }
+  const refused = { "codex-app-server": { unavailable: true as const, reason: ORG_ACCOUNT_UNAVAILABLE } }
   const cloud = { ...snapshot, placement: "cloud" as const, canUseOwnLogin: false, accounts: { B: refused }, directDelivery: true }
   expect(selectSessionCredentials({ ...cloud, direct: { B: { "codex-app-server": plan } } }, { kind: "person", userId: "B" }))
     .toMatchObject({ providers: refused, direct: { "codex-app-server": plan } })
-  expect(() => selectSessionCredentials(cloud, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ detail: { reason: "org_account_unavailable" } }))
+  expect(() => selectSessionCredentials(cloud, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ detail: { reason: ORG_ACCOUNT_UNAVAILABLE } }))
+})
+
+test("a provider its owner chose the organization's account for, where the organization has none, is refused as that, not as no account chosen", () => {
+  const cloud = { ...snapshot, placement: "cloud" as const, canUseOwnLogin: false, directDelivery: true,
+    accounts: { B: { "codex-app-server": { unavailable: true as const, reason: ORG_ACCOUNT_UNAVAILABLE } } } }
+  expect(() => selectSessionCredentials(cloud, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({
+    code: "account_unavailable",
+    message: "Your organization has no account for this provider, and this harness is set to use the organization's. Choose your own account for it in Settings → Models.",
+    detail: { reason: ORG_ACCOUNT_UNAVAILABLE },
+  }))
 })
 
 test("an account the sandbox cannot broker is refused as needing brokering, naming the Pi provider that spends it", () => {

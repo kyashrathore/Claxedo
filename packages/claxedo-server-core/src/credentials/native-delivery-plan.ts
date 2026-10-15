@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
-import { accountHolderOf, holderAccountSources, ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
-import { HARNESS_NEEDS_BROKERING, type CredentialSnapshot, type ProviderBindingSource, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { accountHolderOf, holderAccountSources, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
+import { HARNESS_NEEDS_BROKERING, ORG_ACCOUNT_UNAVAILABLE, type CredentialSnapshot, type ProviderBindingSource, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { destinationAuthMode, builtInProviderDestination, builtInProviderDestinationShape, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { isSubscriptionKind } from "./secret-material"
