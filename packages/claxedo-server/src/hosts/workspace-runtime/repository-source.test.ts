@@ -49,6 +49,27 @@ describe.skipIf(process.platform === "win32")("sandbox repository preparation", 
     await expect(failure).rejects.toMatchObject({ cause: expect.objectContaining({ message: expect.stringContaining("couldn't find remote ref refs/heads/missing") }) })
   })
 
+  test("a repository that asks for sign-in, cloned with no credential, fails naming it private, with git's reason beneath", async () => {
+    const f = await origin()
+    f.served.authorization = "Bearer granted"
+    const failure = prepareRuntimeRepository(f.checkout, f.env)
+    await expect(failure).rejects.toThrow(`${f.repoUrl} is private or does not exist. Connect 127.0.0.1 with access to it, or use a public repository.`)
+    await expect(failure).rejects.toMatchObject({ cause: expect.objectContaining({ message: expect.stringContaining("terminal prompts disabled") }) })
+  })
+
+  test("a repository the delivered clone credential cannot read fails naming the connection, for a selected branch too", async () => {
+    const f = await origin()
+    f.served.authorization = "Bearer granted"
+    const env = { ...f.env, CLAXEDO_GITHUB_CLONE_AUTH: "Bearer placeholder", WORKSPACE_RUNTIME_GIT_BRANCH: "feature" }
+    await expect(prepareRuntimeRepository(f.checkout, env)).rejects.toThrow(`The 127.0.0.1 connection this workspace clones with cannot read ${f.repoUrl}. Give it access to the repository, or choose another connection.`)
+  })
+
+  test("a repository the origin does not have fails as private or missing", async () => {
+    const f = await origin()
+    const repoUrl = f.repoUrl.replace("origin.git", "missing.git")
+    await expect(prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_REPO_URL: repoUrl })).rejects.toThrow(`${repoUrl} is private or does not exist.`)
+  })
+
   test("a boot whose fetch failed leaves nothing that refuses the next boot, which finishes the checkout", async () => {
     const f = await origin()
     f.served.uploads = false
