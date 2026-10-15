@@ -189,10 +189,10 @@ test("workspace start: the server's notice that the start settled ends the wait 
   })
 
   const start = startWorkspace(connections.start, "ws_1", { wait: never, settled })
-  await polled[0]!.promise
+  await polled[0].promise
   await Bun.sleep(0)
   announce()
-  await polled[1]!.promise
+  await polled[1].promise
   await Bun.sleep(0)
   announce()
 

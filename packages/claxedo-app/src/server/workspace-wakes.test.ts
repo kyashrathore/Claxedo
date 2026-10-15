@@ -236,7 +236,7 @@ test("wakes: the start it runs hears the server's notice that this workspace's s
   void wakes.start(cloud)
   await settle()
   const heard: string[] = []
-  const stop = settles[0]!(() => heard.push("settled"))
+  const stop = settles[0](() => heard.push("settled"))
 
   emit({ type: "cloudWorkspaceChanged", workspaceId: cloud, status: { kind: "provisioning", step: "starting" } })
   emit({ type: "cloudWorkspaceChanged", workspaceId: folder, status: { kind: "ready" } })
