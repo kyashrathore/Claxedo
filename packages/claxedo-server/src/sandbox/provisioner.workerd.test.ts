@@ -180,7 +180,7 @@ describe("a sandbox start on workerd", () => {
   test("a ready sandbox whose host reads no idleness has it read from the alarm until a read stops it, and the next start resumes it", async () => {
     await start("ws_watch_3")
     await until(() => target("ws_watch_3"), (lease) => lease.status === "ready")
-    expect(await until(() => target("ws_watch_3"), (lease) => lease.status === "unavailable")).toMatchObject({ leaseStatus: "stopped" })
+    expect(await until(() => target("ws_watch_3"), (lease) => lease.status === "unavailable" && lease.leaseStatus === "stopped")).toMatchObject({ leaseStatus: "stopped" })
     expect(await watches("ws_watch_3")).toEqual([0, 0, 0])
     await new Promise((resolve) => setTimeout(resolve, 700))
     expect(await watches("ws_watch_3")).toHaveLength(3)
@@ -191,7 +191,7 @@ describe("a sandbox start on workerd", () => {
 
   test("an idle read that throws is counted and tried again, and the count reaches the read that stops the sandbox as unreachable", async () => {
     await start("ws_watchfail_2")
-    expect(await until(() => target("ws_watchfail_2"), (lease) => lease.status === "unavailable")).toMatchObject({ leaseStatus: "stopped" })
+    expect(await until(() => target("ws_watchfail_2"), (lease) => lease.status === "unavailable" && lease.leaseStatus === "stopped")).toMatchObject({ leaseStatus: "stopped" })
     expect(await watches("ws_watchfail_2")).toEqual([0, 1, 2])
   })
 
