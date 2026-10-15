@@ -1,9 +1,13 @@
+import { accountUnavailableKind, type AccountUnavailable, type AccountUnavailableKind } from "./harness/options-state"
 import type { HarnessReadiness } from "./harness/selection"
 
 export type SubmitAuthorityBlock = "session-share"
 
+type AccountBlockReason = `account-${AccountUnavailableKind}`
+
 export type SubmitBlockReason =
   | SubmitAuthorityBlock
+  | AccountBlockReason
   | "session-loading"
   | "harness-degraded"
   | "harness-error"
@@ -12,10 +16,13 @@ export type SubmitBlockReason =
   | "models-loading"
   | "empty"
 
+export type SubmitBlockAction = "choose-model" | "open-models"
+
 export type SubmitBlock = {
   readonly reason: SubmitBlockReason
   readonly copy: string
   readonly actionable: boolean
+  readonly action?: SubmitBlockAction
 }
 
 export type SubmitBlockInput = {
@@ -25,6 +32,7 @@ export type SubmitBlockInput = {
   readonly harnessMode: boolean
   readonly harnessReadiness: HarnessReadiness
   readonly harnessConfigError: boolean
+  readonly accountUnavailable?: AccountUnavailable
   readonly harnessOptionsLoading: boolean
   readonly harnessReadyForSubmit: boolean
   readonly modelBlocked: boolean
@@ -36,6 +44,9 @@ export type SubmitBlockInput = {
 const COPY = {
   "session-loading": "Checking session…",
   "session-share": "You can follow this session, not send to it",
+  "account-not-set-up": "The agent has no account yet",
+  "account-refused": "The agent's account was refused by its provider",
+  "account-unusable": "The agent's account can't be used here",
   "harness-degraded": "The selected agent is unavailable",
   "harness-error": "The agent isn't running",
   "harness-polling": "Checking the agent…",
@@ -45,17 +56,28 @@ const COPY = {
 } as const satisfies Record<SubmitBlockReason, string>
 
 const ACTIONABLE: ReadonlySet<SubmitBlockReason> = new Set<SubmitBlockReason>([
+  "account-not-set-up",
+  "account-refused",
+  "account-unusable",
   "harness-degraded",
   "harness-error",
   "no-model",
 ])
+
+const ACTIONS: Partial<Record<SubmitBlockReason, SubmitBlockAction>> = {
+  "no-model": "choose-model",
+  "account-not-set-up": "open-models",
+  "account-refused": "open-models",
+  "account-unusable": "open-models",
+}
 
 export function submitBlockCopy(reason: SubmitBlockReason) {
   return COPY[reason]
 }
 
 function block(reason: SubmitBlockReason): SubmitBlock {
-  return { reason, copy: COPY[reason], actionable: ACTIONABLE.has(reason) }
+  const action = ACTIONS[reason]
+  return { reason, copy: COPY[reason], actionable: ACTIONABLE.has(reason), ...(action ? { action } : {}) }
 }
 
 export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
@@ -65,6 +87,7 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
   if (input.harnessMode && !input.draftConnectionAllowsNoModel) {
+    if (input.accountUnavailable) return block(`account-${accountUnavailableKind(input.accountUnavailable)}`)
     if (input.harnessReadiness === "degraded") return block("harness-degraded")
     if (input.harnessReadiness === "error" || input.harnessConfigError) return block("harness-error")
     if (input.harnessReadiness === "polling") return block("harness-polling")

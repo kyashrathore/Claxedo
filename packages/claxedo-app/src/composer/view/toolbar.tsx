@@ -47,6 +47,7 @@ export type PromptToolbarProps = {
   submitExcludeFromTab: Accessor<boolean>
   submitBlock: Accessor<SubmitBlock | null>
   onChooseModel: VoidFunction
+  onOpenModels: VoidFunction
   readOnly: Accessor<boolean>
   t: (key: ComposerTextKey) => string
 }
@@ -135,6 +136,7 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
         excludeFromTab={props.submitExcludeFromTab}
         block={props.submitBlock}
         onChooseModel={props.onChooseModel}
+        onOpenModels={props.onOpenModels}
         stopLabel={props.t("prompt.action.stop")}
         sendLabel={props.t("prompt.action.send")}
       />

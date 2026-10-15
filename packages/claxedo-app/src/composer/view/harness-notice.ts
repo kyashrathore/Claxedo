@@ -1,7 +1,6 @@
-import { isRefusal } from "@/lib/account-health"
 import type { ComposerNoticeTone } from "./notice-slot"
 import type { HarnessConnectionState } from "@/server"
-import type { AccountUnavailable } from "../harness/options-state"
+import { accountUnavailableKind, type AccountUnavailable } from "../harness/options-state"
 
 export type HarnessNoticeInput = {
   harnessLabel: string
@@ -57,8 +56,9 @@ function accountRefusedNotice(label: string, open: () => void): HarnessNotice {
 
 function accountUnavailableNotice(input: HarnessNoticeInput, account: AccountUnavailable, open: () => void): HarnessNotice {
   const label = input.harnessLabel
-  if (account.reason === undefined) return setupRequiredNotice(label, open)
-  if (isRefusal(account.reason)) return accountRefusedNotice(label, open)
+  const kind = accountUnavailableKind(account)
+  if (kind === "not-set-up") return setupRequiredNotice(label, open)
+  if (kind === "refused") return accountRefusedNotice(label, open)
   return { kind: "account-unusable", tone: "warning", message: `${label}'s account can't be used here`, detail: input.configError, retry: false, action: openModels(open) }
 }
 

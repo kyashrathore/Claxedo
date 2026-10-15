@@ -1,3 +1,4 @@
+import { isRefusal } from "@/lib/account-health"
 import type { HarnessOptionChoice, HarnessOptions, HarnessOptionsSource, HarnessUnavailableHere } from "@/server"
 import {
   isNativeSdkHarness,
@@ -21,6 +22,13 @@ export type HarnessOptionsStatePatch = {
 }
 
 export type AccountUnavailable = { readonly reason?: string }
+
+export type AccountUnavailableKind = "not-set-up" | "refused" | "unusable"
+
+export function accountUnavailableKind(account: AccountUnavailable): AccountUnavailableKind {
+  if (account.reason === undefined) return "not-set-up"
+  return isRefusal(account.reason) ? "refused" : "unusable"
+}
 
 export type HarnessOptionsDecision = {
   patch: HarnessOptionsStatePatch
