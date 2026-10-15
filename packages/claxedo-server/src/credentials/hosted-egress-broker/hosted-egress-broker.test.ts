@@ -244,6 +244,20 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     ])
   })
 
+  test("a present token that is no pass is invalid, whatever its shape, and only two that disagree are no token", async () => {
+    const { app, store, upstream, delivered } = await composition()
+    const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
+    const { baseUrl } = await delivered(key, { workspaceId: "ws_root" })
+    const refused = async (headers: Record<string, string>) => {
+      const response = await app.request(`${baseUrl}/v1/models`, { headers })
+      return [response.status, (await response.json() as { error: { code: string } }).error.code]
+    }
+    expect(await refused({ authorization: "Bearer garbage.token.value" })).toEqual([401, "runtime_token_invalid"])
+    expect(await refused({ "x-api-key": "garbage" })).toEqual([401, "runtime_token_invalid"])
+    expect(await refused({ authorization: "Bearer garbage.token.value", "x-api-key": "garbage" })).toEqual([401, "runtime_token_required"])
+    expect(upstream.seen).toHaveLength(0)
+  })
+
   test("a placeholder spends only the binding it was minted for: not another workspace's, not another person's", async () => {
     const { app, store, upstream, delivered } = await composition()
     const alice = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-alice" })
