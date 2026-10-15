@@ -9,10 +9,9 @@ import {
   type UsageOwnedTurnReader,
   type UsageOwner,
   type UsageRevisionReader,
-  type UsageRevisionWriteResult,
   type UsageRevisionWriter,
 } from "../contracts"
-import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter } from "../usage-report"
+import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter, type UsageReportWriteResult } from "../usage-report"
 import { ClaxedoUsageTurnCurrentTable, ClaxedoUsageTurnOwnerTable, ClaxedoUsageTurnRevisionTable } from "../usage.sql"
 
 type Database = {
@@ -92,17 +91,15 @@ export type SqliteUsageLedger = UsageRevisionWriter &
     reports: UsageReportWriter
   }
 
-type TurnFull = { status: "refused"; code: "usage_turn_full" }
-
 export function createSqliteUsageLedger(
   input: {
     database?: Database
   } = {},
 ): SqliteUsageLedger {
   const database = input.database ?? ClaxedoDB
-  function write(item: TurnUsageRevision, filing: { owner?: UsageOwner }): Promise<UsageRevisionWriteResult>
-  function write(item: TurnUsageRevision, filing: { owner: UsageOwner; turnId: string }): Promise<UsageRevisionWriteResult | TurnFull>
-  async function write(item: TurnUsageRevision, filing: { owner?: UsageOwner; turnId?: string }) {
+  function write(item: TurnUsageRevision, filing: { owner?: UsageOwner }): Promise<Exclude<UsageReportWriteResult, { status: "refused" }>>
+  function write(item: TurnUsageRevision, filing: { owner: UsageOwner; turnId: string }): Promise<UsageReportWriteResult>
+  async function write(item: TurnUsageRevision, filing: { owner?: UsageOwner; turnId?: string }): Promise<UsageReportWriteResult> {
     assertTurnUsageRevision(item)
     const hash = await usageRevisionHash(item)
     return database.transaction((db) => {
@@ -110,6 +107,7 @@ export function createSqliteUsageLedger(
         .select({
           revision: ClaxedoUsageTurnCurrentTable.revision,
           payload_hash: ClaxedoUsageTurnCurrentTable.payload_hash,
+          settlement: ClaxedoUsageTurnCurrentTable.settlement,
         })
         .from(ClaxedoUsageTurnCurrentTable)
         .where(
@@ -174,12 +172,15 @@ export function createSqliteUsageLedger(
         if (turnId === undefined) filed.onConflictDoUpdate({ target, set: stamp }).run()
         else filed.onConflictDoNothing({ target }).run()
       }
-      return { status: "accepted" } as const
+      return { status: "accepted", firstSettled: item.settlement !== "provisional" && (!current || current.settlement === "provisional") } as const
     })
   }
 
   return {
-    writeRevision: (item, options) => write(item, options?.owner ? { owner: options.owner } : {}),
+    async writeRevision(item, options) {
+      const result = await write(item, options?.owner ? { owner: options.owner } : {})
+      return result.status === "accepted" ? { status: "accepted" } : result
+    },
     reports: { writeRevision: (item, filing) => write(item, filing) },
 
     async current(filter = {}) {

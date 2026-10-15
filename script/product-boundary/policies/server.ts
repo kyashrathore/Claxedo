@@ -179,8 +179,11 @@ export const serverWorkerd: Policy = {
   // (owner: the hosted runtime delivery), which the provisioner's idle watch
   // applies over the relay for a driver whose host reads no idleness (Boat) and
   // the Cloudflare sandbox Worker bundles from the same file; it imports nothing.
-  // 166/22, no headroom.
-  ceilings: { modules: 166, packages: 22 },
+  // +1 module (owner: the runtime session authority routes): a cloud
+  // runtime's usage report is its own module (`routes/runtime-usage-report.ts`),
+  // split from `routes/runtime-session-authority.ts`.
+  // 167/22, no headroom.
+  ceilings: { modules: 167, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

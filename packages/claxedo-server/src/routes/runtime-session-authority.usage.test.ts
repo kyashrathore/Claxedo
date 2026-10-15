@@ -293,7 +293,7 @@ describe("usage reports over the runtime session authority", () => {
       usageWriter: {
         async writeRevision(fact, filing) {
           filings.push({ messageId: fact.messageId, turnId: filing.turnId, user: filing.owner.user_id })
-          return fact.messageId === "msg_over_cap" ? { status: "refused", code: "usage_turn_full" } : { status: "accepted" }
+          return fact.messageId === "msg_over_cap" ? { status: "refused", code: "usage_turn_full" } : { status: "accepted", firstSettled: true }
         },
       },
     })

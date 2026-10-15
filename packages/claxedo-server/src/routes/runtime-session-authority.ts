@@ -13,16 +13,7 @@ import { SessionTurnGrantError, type SessionTurnAuthority } from "@claxedo/serve
 import { sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
-import type { TurnUsageRevision, UsageOwner } from "@claxedo/server-core/usage/contracts"
-import {
-  cloudWorkspaceUsageRevision,
-  readUsageReportFacts,
-  usageReportFactInBounds,
-  USAGE_REPORT_ACTION,
-  type UsageReportFact,
-  type UsageReportResult,
-  type UsageReportWriter,
-} from "@claxedo/server-core/usage/usage-report"
+import { USAGE_REPORT_ACTION, type UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
 import { connectionTurnOwner } from "../connections/turn-owner"
 import {
@@ -34,6 +25,7 @@ import {
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeSandboxSecretRoutes, type RuntimeSandboxSecretOptions } from "./runtime-sandbox-secrets"
+import { reportRuntimeUsage } from "./runtime-usage-report"
 import { SessionHostDeliveryRoutes, type SessionHostDeliveryOptions } from "./session-host-delivery"
 import { placedSessionHostRoot, type SessionHostAuthority } from "../authority/session-hosts"
 import {
@@ -54,7 +46,6 @@ import {
   isHostAuthorityAction,
   isTurnAction,
   parseSessionAuthorityRequest,
-  positiveInteger,
   type HostAuthorityAction,
   type SessionAuthorityRequest,
 } from "../session/runtime-authority-request"
@@ -194,8 +185,6 @@ export type RuntimeSessionAuthorityOptions = RuntimeSandboxSecretOptions & {
   usageWriter?: UsageReportWriter
 }
 
-const USAGE_REPORT_KEYS: ReadonlySet<string> = new Set(["action", "sessionId", "turnId", "leaseId", "fencingToken", "facts"])
-
 /**
  * Narrow provider-neutral oracle for isolated workspace runtimes.
  *
@@ -328,77 +317,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     const proven = host === undefined ? undefined : sessionHostRootOf(host)
     const placement = await options.sessionHosts?.readSessionHostPlacement({ workspaceId: claims.workspaceId, sessionId })
     return proven !== placedSessionHostRoot(placement)
-  }
-
-  /**
-   * A cloud workspace runtime's usage for one session, proven by a turn lease
-   * the plane minted for that session. Session and workspace come from the
-   * lease, location and host from the plane; the report names none of them.
-   * Each fact names the turn it was metered under and is owned by that turn's
-   * recorded producer, so a fact retried under a later turn's lease stays its
-   * own turn's. A fact is refused alone when it is out of bounds, when its
-   * turn is not one a cloud workspace's session admitted for an account, or
-   * when its turn already holds the most messages one turn files; a malformed
-   * fact, or too many of them, refuses the report.
-   * The lease may already be released: it proves the turn was admitted, and
-   * its own expiry bounds how late a report can arrive.
-   */
-  async function reportUsage(context: Context, body: Record<string, unknown>) {
-    const sessionId = trimToUndefined(body.sessionId)
-    const turnId = trimToUndefined(body.turnId)
-    const leaseId = trimToUndefined(body.leaseId)
-    const fencingToken = positiveInteger(body.fencingToken)
-    const facts = readUsageReportFacts(body.facts)
-    if (Object.keys(body).some((key) => !USAGE_REPORT_KEYS.has(key)) || !sessionId || !turnId || !leaseId || !fencingToken || !facts) {
-      return context.json(
-        { error: { code: "usage_report_invalid", message: "A usage report carries a session turn lease and well-formed facts only" } },
-        400,
-      )
-    }
-    const lease = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(leaseId).catch(() => undefined)
-    if (!lease || lease.sessionId !== sessionId || lease.turnId !== turnId || lease.fencingToken !== fencingToken) {
-      return context.json(
-        { error: { code: "session_turn_lease_invalid", message: "Session turn lease is invalid or mismatched" } },
-        401,
-      )
-    }
-    if (await sessionHostMismatch(lease, sessionId)) return sessionHostRefusal(context)
-    let revisions: Array<{ fact: UsageReportFact; revision: TurnUsageRevision }>
-    try {
-      revisions = facts.map((fact) => ({ fact, revision: cloudWorkspaceUsageRevision(fact, lease) }))
-    } catch {
-      return context.json({ error: { code: "usage_report_invalid", message: "A reported usage revision is malformed" } }, 400)
-    }
-    try {
-      const denial = await proofDenial({ authority: options.authority, resolveWorkspaceOwner }, lease)
-      if (denial) return context.json({ error: denial }, 401)
-      const writer = options.usageWriter
-      const authority = options.authority
-      if (!writer || !authority.resolveCloudTurnUsageOwner) {
-        return context.json({ error: { code: "usage_report_unavailable", message: "Usage reporting is not configured" } }, 503)
-      }
-      const window = { admittedAt: lease.acquiredAt, now: Date.now() }
-      const inBounds = revisions.filter(({ fact }) => usageReportFactInBounds(fact, window))
-      const owners = new Map<string, UsageOwner | undefined>()
-      for (const factTurnId of new Set(inBounds.map(({ fact }) => fact.turnId))) {
-        owners.set(factTurnId, await authority.resolveCloudTurnUsageOwner({ sessionId, turnId: factTurnId }))
-      }
-      const results: UsageReportResult[] = []
-      for (const item of revisions) {
-        const { fact, revision } = item
-        const reported = { messageId: revision.messageId, revision: revision.revision }
-        const owner = owners.get(fact.turnId)
-        if (!inBounds.includes(item)) results.push({ ...reported, status: "refused", code: "usage_fact_out_of_bounds" })
-        else if (!owner) results.push({ ...reported, status: "refused", code: "usage_owner_unresolved" })
-        else results.push({ ...reported, ...await writer.writeRevision(revision, { owner, turnId: fact.turnId, ...(fact.turnId === lease.turnId ? { admittedAt: lease.acquiredAt } : {}) }) })
-      }
-      return context.json({ results })
-    } catch {
-      return context.json(
-        { error: { code: "session_authority_unavailable", message: "Session authority is temporarily unavailable" } },
-        503,
-      )
-    }
   }
 
   /**
@@ -670,7 +588,15 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   if (options.sessionHostDelivery) app.route("/", SessionHostDeliveryRoutes({ ...options.sessionHostDelivery, ...proofs }))
   return app.post("/session-authorize", limitedBody, async (context) => {
     const body = await readJsonRecord(context.req.raw)
-    if (body?.action === USAGE_REPORT_ACTION) return reportUsage(context, body)
+    if (body?.action === USAGE_REPORT_ACTION) {
+      return reportRuntimeUsage(context, body, {
+        verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
+        hostRefusal: async (context, lease, sessionId) => (await sessionHostMismatch(lease, sessionId)) ? sessionHostRefusal(context) : undefined,
+        proofDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
+        ...(options.authority.resolveCloudTurnUsageOwner ? { resolveCloudTurnUsageOwner: options.authority.resolveCloudTurnUsageOwner } : {}),
+        ...(options.usageWriter ? { usageWriter: options.usageWriter } : {}),
+      })
+    }
     if (isHostAuthorityAction(body?.action)) return authorizeHost(context, body.action, body)
     const request = parseSessionAuthorityRequest(body)
     if (!request) {

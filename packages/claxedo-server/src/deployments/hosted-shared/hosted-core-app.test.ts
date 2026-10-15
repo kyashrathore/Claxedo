@@ -738,7 +738,7 @@ describe("hosted-core usage", () => {
     }))
     const cloudUsageFacts = vi.fn(async () => [])
     const machineTime = vi.fn(async () => ({ activeMs: 600_000, running: 1, workspaces: [], providers: [] }))
-    const writeRevision = vi.fn(async () => ({ status: "accepted" as const }))
+    const writeRevision = vi.fn(async () => ({ status: "accepted" as const, firstSettled: true }))
     const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts, machineTime } })
 
     const view = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2", {
@@ -824,7 +824,7 @@ describe("hosted-core usage", () => {
         if (url === "https://api.anthropic.com/api/oauth/profile") return Response.json({ account: { email_address: "contactyash@example.com" } })
         throw new Error("chatgpt.com unreachable")
       })
-      const ledger = { writeRevision: vi.fn(async () => ({ status: "accepted" as const })) }
+      const ledger = { writeRevision: vi.fn(async () => ({ status: "accepted" as const, firstSettled: true })) }
       const app = createHostedCoreApp(base, { ...options, usageLedger: ledger, accountSetup: { changed: async () => {}, fetch: vendor as unknown as typeof fetch } })
       const response = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2&timezone=UTC&view=quota", {
         headers: { authorization: "Bearer alice" },

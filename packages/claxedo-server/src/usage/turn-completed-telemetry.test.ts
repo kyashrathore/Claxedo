@@ -50,9 +50,9 @@ describe("turn_completed from the filed usage row", () => {
     const { writer, captured } = await filed()
 
     expect(await writer.writeRevision(revision({ revision: 1, settlement: "provisional", status: "running" }), { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 }))
-      .toEqual({ status: "accepted" })
+      .toEqual({ status: "accepted", firstSettled: false })
     expect(await writer.writeRevision(revision({ revision: 2 }), { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 }))
-      .toEqual({ status: "accepted" })
+      .toEqual({ status: "accepted", firstSettled: true })
     expect(await writer.writeRevision(revision({ revision: 2 }), { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 }))
       .toEqual({ status: "duplicate" })
 
@@ -72,6 +72,32 @@ describe("turn_completed from the filed usage row", () => {
         $groups: { org: "org_acme" },
       },
     }])
+  })
+
+  test("a message settles once: provider usage that lands after the answer completed revises the row without a second event", async () => {
+    const { writer, captured } = await filed()
+    const filing = { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 }
+
+    expect(await writer.writeRevision(revision({ revision: 1, settlement: "provisional", status: "running" }), filing)).toEqual({ status: "accepted", firstSettled: false })
+    expect(await writer.writeRevision(revision({ revision: 2, firstOutputAt: DAY + 700 }), filing)).toEqual({ status: "accepted", firstSettled: true })
+    expect(await writer.writeRevision(revision({
+      revision: 3, observedAt: DAY + 7_000, firstOutputAt: DAY + 700,
+      tokens: { input: 22_000, output: 800, reasoning: null, cache: { read: 2_000, write: 600 } },
+    }), filing)).toEqual({ status: "accepted", firstSettled: false })
+
+    expect(captured.map((entry) => entry.properties)).toEqual([
+      expect.objectContaining({ outcome: "completed", settlement: "final", first_token_ms: 1_700, duration_ms: 5_000 }),
+    ])
+  })
+
+  test("a stopped turn whose usage is recovered later is the stopped turn's one event", async () => {
+    const { writer, captured } = await filed()
+    const filing = { owner: ALICE, turnId: "turn_1", admittedAt: DAY - 1_000 }
+
+    await writer.writeRevision(revision({ revision: 1, settlement: "partial", status: "stopped" }), filing)
+    await writer.writeRevision(revision({ revision: 2, settlement: "recovered", status: "stopped", observedAt: DAY + 9_000 }), filing)
+
+    expect(captured.map((entry) => entry.properties)).toEqual([expect.objectContaining({ outcome: "stopped", settlement: "partial" })])
   })
 
   test("the first token's latency and a failed turn's class ride the event, both from the turn's admission", async () => {

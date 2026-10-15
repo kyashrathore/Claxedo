@@ -94,6 +94,17 @@ export const USAGE_REPORT_RESULT_STATUSES = [
 ] as const satisfies readonly UsageReportResult["status"][]
 
 /**
+ * A store's answer for one filed revision. An accepted revision says whether
+ * it is the first of its message to settle it: a later revision of a settled
+ * message, such as provider usage landing after the answer completed, revises
+ * the row without settling the message again.
+ */
+export type UsageReportWriteResult =
+  | Exclude<UsageRevisionWriteResult, { status: "accepted" }>
+  | { status: "accepted"; firstSettled: boolean }
+  | { status: "refused"; code: "usage_turn_full" }
+
+/**
  * A central store the plane files reported revisions into, each under the
  * account and the turn it resolved for it. A store that counts a turn's
  * messages refuses one past {@link USAGE_REPORT_MAX_MESSAGES_PER_TURN}.
@@ -102,7 +113,12 @@ export type UsageReportWriter = {
   writeRevision(
     fact: TurnUsageRevision,
     filing: { owner: UsageOwner; turnId: string; admittedAt?: number },
-  ): Promise<UsageRevisionWriteResult | { status: "refused"; code: "usage_turn_full" }>
+  ): Promise<UsageReportWriteResult>
+}
+
+/** What the plane answers a runtime for a filed revision: the store's verdict, without what only the plane reads. */
+export function usageReportAnswer(result: UsageReportWriteResult): UsageRevisionWriteResult | { status: "refused"; code: "usage_turn_full" } {
+  return result.status === "accepted" ? { status: "accepted" } : result
 }
 
 const REPORT_REVISION_KEYS: ReadonlySet<string> = new Set([

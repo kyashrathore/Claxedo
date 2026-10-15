@@ -69,11 +69,11 @@ describe("the D1 usage ledger", () => {
   test("a later revision updates a message's usage but never refiles it under another member or turn", async () => {
     const store = await ledger()
     const range = { since: DAY - 1, until: DAY + 1, limit: 10 }
-    expect(await store.writeRevision(cloud({ messageId: "msg_1", revision: 1 }), { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted" })
+    expect(await store.writeRevision(cloud({ messageId: "msg_1", revision: 1 }), { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted", firstSettled: true })
     expect(await store.writeRevision(
       cloud({ messageId: "msg_1", revision: 2, tokens: { input: 5, output: 1, reasoning: null, cache: { read: null, write: null } } }),
       { owner: BOB, turnId: "msg_user_bob" },
-    )).toEqual({ status: "accepted" })
+    )).toEqual({ status: "accepted", firstSettled: false })
 
     expect(await store.cloudUsageFacts({ ...BOB, ...range })).toEqual([])
     expect(await store.cloudUsageFacts({ ...ALICE, ...range })).toEqual([expect.objectContaining({ messageId: "msg_1", revision: 2, tokens: expect.objectContaining({ input: 5 }) })])
@@ -84,8 +84,8 @@ describe("the D1 usage ledger", () => {
     const first = cloud({ messageId: "msg_1", revision: 1, settlement: "provisional", status: "running" })
     const final = cloud({ messageId: "msg_1", revision: 2 })
 
-    expect(await store.writeRevision(first, { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted" })
-    expect(await store.writeRevision(final, { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted" })
+    expect(await store.writeRevision(first, { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted", firstSettled: false })
+    expect(await store.writeRevision(final, { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted", firstSettled: true })
     expect(await store.writeRevision(final, { owner: ALICE, turnId: TURN })).toEqual({ status: "duplicate" })
     expect(await store.writeRevision({ ...final, tokens: { ...final.tokens, output: 1 } }, { owner: ALICE, turnId: TURN }))
       .toEqual({ status: "conflict", currentRevision: 2 })
@@ -181,18 +181,18 @@ describe("the D1 usage ledger under load", () => {
       owner: ALICE,
       turnId: TURN,
     })))
-    expect(await store.writeRevision(cloud({ messageId: "msg_last" }), { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted" })
+    expect(await store.writeRevision(cloud({ messageId: "msg_last" }), { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted", firstSettled: true })
 
     expect(await store.writeRevision(cloud({ messageId: "msg_over" }), { owner: ALICE, turnId: TURN }))
       .toEqual({ status: "refused", code: "usage_turn_full" })
     expect(await store.writeRevision(cloud({ messageId: "msg_0", revision: 2 }), { owner: ALICE, turnId: TURN }))
-      .toEqual({ status: "accepted" })
+      .toEqual({ status: "accepted", firstSettled: false })
     expect(await store.writeRevision(cloud({ messageId: "msg_over" }), { owner: ALICE, turnId: "msg_user_2" }))
-      .toEqual({ status: "accepted" })
+      .toEqual({ status: "accepted", firstSettled: true })
     expect(await store.writeRevision(
       cloud({ messageId: "msg_over_elsewhere", sessionId: "ses_2", sessionRef: "workspace:ws_main:session:ses_2" }),
       { owner: ALICE, turnId: TURN },
-    )).toEqual({ status: "accepted" })
+    )).toEqual({ status: "accepted", firstSettled: true })
 
     const range = { since: DAY - 1, until: DAY + 1, timeZone: "UTC" }
     const totals = (await store.usageDashboard({ ...ALICE, ...range }) as CentralUsageProjection).totals
@@ -240,7 +240,7 @@ describe("the D1 usage ledger under load", () => {
     facts.push(cloud({ messageId: "msg_before", observedAt: since - 1 }), cloud({ messageId: "msg_after", observedAt: until + 1 }))
     const [written, ...seeded] = facts
     if (!written) throw new Error("the range holds facts")
-    expect(await store.writeRevision(written, { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted" })
+    expect(await store.writeRevision(written, { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted", firstSettled: true })
     await seed(database, seeded.map((fact) => ({ fact, owner: ALICE, turnId: `turn_${fact.messageId}` })))
     await store.writeRevision(cloud({ messageId: "msg_bob", observedAt: since + 1_000 }), { owner: BOB, turnId: TURN })
     const inRange = facts.filter((fact) => fact.observedAt >= since && fact.observedAt <= until)

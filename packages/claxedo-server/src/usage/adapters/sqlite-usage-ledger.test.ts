@@ -170,18 +170,18 @@ describe("sqlite usage ledger", () => {
     const filing = { owner, turnId: "msg_user_1" }
     const cloud = (input: Partial<TurnUsageRevision>) => revision({ location: "cloud-workspace", ...input })
     for (let index = 0; index < USAGE_REPORT_MAX_MESSAGES_PER_TURN; index++) {
-      expect(await ledger.reports.writeRevision(cloud({ messageId: `msg_${index}` }), filing)).toEqual({ status: "accepted" })
+      expect(await ledger.reports.writeRevision(cloud({ messageId: `msg_${index}` }), filing)).toEqual({ status: "accepted", firstSettled: false })
     }
 
     expect(await ledger.reports.writeRevision(cloud({ messageId: "msg_over" }), filing))
       .toEqual({ status: "refused", code: "usage_turn_full" })
-    expect(await ledger.reports.writeRevision(cloud({ messageId: "msg_0", revision: 2 }), filing)).toEqual({ status: "accepted" })
+    expect(await ledger.reports.writeRevision(cloud({ messageId: "msg_0", revision: 2 }), filing)).toEqual({ status: "accepted", firstSettled: false })
     expect(await ledger.reports.writeRevision(cloud({ messageId: "msg_over" }), { owner, turnId: "msg_user_2" }))
-      .toEqual({ status: "accepted" })
+      .toEqual({ status: "accepted", firstSettled: false })
     expect(await ledger.reports.writeRevision(
       cloud({ messageId: "msg_over_elsewhere", sessionRef: "workspace:ws_main:session:other" }),
       filing,
-    )).toEqual({ status: "accepted" })
+    )).toEqual({ status: "accepted", firstSettled: false })
     expect(await ledger.ownedBy(owner)).toHaveLength(USAGE_REPORT_MAX_MESSAGES_PER_TURN + 2)
   })
 
@@ -190,11 +190,11 @@ describe("sqlite usage ledger", () => {
     const alice = { org_id: "org-a", user_id: "alice" }
     const bob = { org_id: "org-a", user_id: "bob" }
     const cloud = (input: Partial<TurnUsageRevision>) => revision({ location: "cloud-workspace", ...input })
-    expect(await ledger.reports.writeRevision(cloud({}), { owner: alice, turnId: "msg_user_alice" })).toEqual({ status: "accepted" })
+    expect(await ledger.reports.writeRevision(cloud({}), { owner: alice, turnId: "msg_user_alice" })).toEqual({ status: "accepted", firstSettled: false })
     expect(await ledger.reports.writeRevision(cloud({ revision: 2, tokens: { input: 5, output: 1, reasoning: null, cache: { read: null, write: null } } }), {
       owner: bob,
       turnId: "msg_user_bob",
-    })).toEqual({ status: "accepted" })
+    })).toEqual({ status: "accepted", firstSettled: false })
 
     expect(await ledger.ownedBy(bob)).toEqual([])
     expect(await ledger.ownedBy(alice)).toEqual([expect.objectContaining({ revision: 2, tokens: expect.objectContaining({ input: 5 }) })])

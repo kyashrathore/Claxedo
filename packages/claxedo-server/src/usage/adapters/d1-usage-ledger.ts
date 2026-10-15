@@ -47,7 +47,7 @@ type FactRow = {
   quality_json: string
 }
 
-type CurrentRow = { revision: number; payload_hash: string }
+type CurrentRow = { revision: number; payload_hash: string; settlement: string }
 
 function usageFactFromRow(row: FactRow): TurnUsageRevision | undefined {
   const { settlement, status, location } = row
@@ -87,7 +87,7 @@ function usageFactFromRow(row: FactRow): TurnUsageRevision | undefined {
 }
 
 /** Where `item` stands against the stored revision, or nothing when it is newer and should be written. */
-function against(item: TurnUsageRevision, hash: string, current: CurrentRow | null): UsageRevisionWriteResult | undefined {
+function against(item: TurnUsageRevision, hash: string, current: CurrentRow | null): Exclude<UsageRevisionWriteResult, { status: "accepted" }> | undefined {
   if (!current || item.revision > current.revision) return undefined
   if (item.revision < current.revision) return { status: "stale", currentRevision: current.revision }
   return current.payload_hash === hash ? { status: "duplicate" } : { status: "conflict", currentRevision: current.revision }
@@ -244,7 +244,7 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
   const { database } = input
   const now = input.now ?? Date.now
   const current = (item: TurnUsageRevision) => database
-    .prepare("select revision, payload_hash from usage_turn_facts where host_id = ? and session_ref = ? and message_id = ?")
+    .prepare("select revision, payload_hash, settlement from usage_turn_facts where host_id = ? and session_ref = ? and message_id = ?")
     .bind(item.hostId, item.sessionRef, item.messageId)
     .first<CurrentRow>()
   return {
@@ -253,7 +253,8 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
       if (!filing?.owner || !filing.turnId) throw new Error("A central usage revision requires the account and the turn that produced it")
       const { owner, turnId } = filing
       const hash = await usageRevisionHash(item)
-      const settled = against(item, hash, await current(item))
+      const before = await current(item)
+      const settled = against(item, hash, before)
       if (settled) return settled
       // One statement, so the count a new message is admitted against is
       // the one it is inserted under: two reports racing for a turn's last
@@ -310,7 +311,9 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
         now(),
         USAGE_REPORT_MAX_MESSAGES_PER_TURN,
       ).run()
-      if (written.meta.changes > 0) return { status: "accepted" }
+      if (written.meta.changes > 0) {
+        return { status: "accepted", firstSettled: item.settlement !== "provisional" && (!before || before.settlement === "provisional") }
+      }
       const after = await current(item)
       if (!after) return { status: "refused", code: "usage_turn_full" }
       // A concurrent report landed between the read and the write; the row it
