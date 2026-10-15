@@ -134,6 +134,7 @@ describe("the hosted Worker Tasks closure", () => {
     expect(emitted.modules.filter((module) => module.startsWith("src/tasks/")).sort()).toEqual([
       // The grant a cloud root launches with, and the signer that mints it.
       "src/tasks/capability.ts",
+      "src/tasks/d1-host-reads.ts",
       "src/tasks/d1-store.ts",
       "src/tasks/grant-renewal.ts",
       "src/tasks/grant-withdrawal.ts",

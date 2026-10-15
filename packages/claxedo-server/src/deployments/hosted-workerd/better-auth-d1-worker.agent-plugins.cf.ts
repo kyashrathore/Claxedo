@@ -109,7 +109,6 @@ export function composeBetterAuthD1AgentPlugins(
       ),
       ...(await feature.rootEnvironment(root)),
     }),
-    releaseRuntime: feature.releaseRuntime,
     cloudCreateAdmission: {
       // The same entitlement gate the create route answers through, so a
       // task-driven create is billed or refused on the same tenant — the

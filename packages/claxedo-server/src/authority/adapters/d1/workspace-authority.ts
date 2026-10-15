@@ -38,7 +38,6 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "createCloudWorkspace",
   "createRuntimeCloudWorkspace",
   "deleteWorkspace",
-  "deleteRuntimeWorkspace",
   "setWorkspaceMachineClass",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
@@ -478,10 +477,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   async deleteWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     return await this.deleteWorkspaceAs(await this.requirePrincipal(auth), args)
-  }
-
-  async deleteRuntimeWorkspace(principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) {
-    return await this.deleteWorkspaceAs(await this.requireRuntimeActor(principal), args)
   }
 
   async setWorkspaceMachineClass(auth: SignedControlPlaneAuth, args: { workspaceId: string; machineClass: SandboxMachineClass | null }) {

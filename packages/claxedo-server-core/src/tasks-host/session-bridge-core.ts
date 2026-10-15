@@ -1,11 +1,11 @@
 import {
+  cloudHarnessHost,
   harnessEffortRefusal,
   parseHarnessEffortLevels,
   sessionVariantForEffort,
 } from "@claxedo/agent-runtime-contract"
-import { isAgentMessage, type AgentMessage, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import { renderSessionHandoff } from "@claxedo/agent-runtime-contract"
-import { asFiniteNumber, asRecord, isRecord } from "@claxedo/helpers/guards"
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import {
   sessionCreateRequest,
   sessionHarnessQuery,
@@ -13,12 +13,10 @@ import {
 import {
   TasksError,
   attachmentDataUrl,
-  hashRequest,
   startDigest,
   startFirstMessage,
   startInstructions,
   startModelGroup,
-  startOriginId,
   tasksErrorDetail,
   type ConfigurationSlot,
   type ModelConfiguration,
@@ -44,6 +42,18 @@ import {
   type TasksSessionBridgePort,
 } from "@claxedo/tasks"
 import type { Workspace } from "../workspace/store/index"
+import { originIds } from "./origin-ids"
+import { registeredSessionStates, type RegisteredSession } from "./registered-sessions"
+import {
+  alreadySent,
+  readMessages,
+  readSessionConfiguration,
+  runtimeRefusal,
+  sessionTimes,
+  untimedSession,
+  type SessionConfiguration,
+  type SessionTimes,
+} from "./session-runtime-answers"
 
 const PREVIEW_TTL_MS = 5 * 60_000
 
@@ -91,11 +101,12 @@ export type TasksSessionReservation =
 /** What differs between the hosts that run Tasks sessions. */
 export type TasksSessionHost = {
   /**
-   * The workspace's runtime, or null when this host cannot reach one for it.
-   * `starter` is the person a Start acts for, whose accounts a session it
-   * creates spends; a read or a removal acts for nobody.
+   * The workspace's runtime, or null when this host cannot reach one for it,
+   * reached as `actor`: the person a Start acts for, whose accounts a session
+   * it creates spends, or who reads a previous transcript or removes an
+   * unlinked session. A liveness reading acts for nobody.
    */
-  target(workspaceId: string, starter: TasksActor | null): Promise<TasksRuntimeTarget | null>
+  target(workspaceId: string, actor: TasksActor | null): Promise<TasksRuntimeTarget | null>
   /**
    * Where a task with no workspace preference runs. A task names a project;
    * naming a workspace inside it is optional, and most tasks created from the
@@ -113,6 +124,13 @@ export type TasksSessionHost = {
   sessionMetas(
     sessionIds: readonly string[],
   ): Promise<ReadonlyMap<string, { workspaceID?: string; archived?: number }>>
+  /**
+   * The rows these sessions' runtimes publish to this host's registry, for a
+   * host whose runtimes publish every session they hold: liveness is read
+   * from them and never from a runtime. Absent, each session's runtime is
+   * asked.
+   */
+  registeredSessions?(sessionIds: readonly string[]): Promise<ReadonlyMap<string, RegisteredSession>>
   /**
    * Admission this host requires before a session may be created under an
    * origin. `operationId` is the origin and the configuration digest, so a
@@ -139,8 +157,12 @@ export type TasksSessionHost = {
     workspaceId: string
     reason: string
   }): Promise<void>
-  /** Record the created session where this host's session lists read it from. */
-  projectSessionMeta(input: {
+  /**
+   * Record the created session where this host's session lists read it from.
+   * Absent on a host whose runtime registers every session it creates with
+   * the authority `sessionMetas` reads: that registration is the record.
+   */
+  projectSessionMeta?(input: {
     sessionId: string
     target: TasksRuntimeTarget
     title: string
@@ -148,13 +170,14 @@ export type TasksSessionHost = {
     time: SessionTimes
   }): Promise<void>
   /** Remove what `projectSessionMeta` wrote, so an abandoned session leaves no row behind. */
-  forgetSessionMeta(sessionId: string): Promise<void>
+  forgetSessionMeta?(sessionId: string): Promise<void>
 }
 
 export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBridgePort {
   return {
     async sessionState(origins) {
-      return sessionStates(host, origins)
+      if (!host.registeredSessions) return sessionStates(host, origins)
+      return registeredSessionStates(origins, await host.registeredSessions(origins.map((origin) => origin.sessionRef.sessionId)))
     },
 
     async preview(command) {
@@ -295,47 +318,6 @@ function effortBlockers(value: unknown, configuration: ModelConfiguration): Star
   return detail ? [{ code: "effort_unsupported", detail }] : []
 }
 
-async function readMessages(target: TasksRuntimeTarget, sessionId: string): Promise<AgentMessage[] | null> {
-  const response = await target.request(`/session/${encodeURIComponent(sessionId)}/message`).catch(() => undefined)
-  if (!response?.ok) return null
-  const body: unknown = await response.json().catch(() => undefined)
-  return Array.isArray(body) ? body.filter(isAgentMessage) : null
-}
-
-/**
- * What the runtime says a session runs, or null when it does not answer. The
- * model is optional because a session may leave the harness's own selection in
- * place, and the harness alone is what rendering its transcript needs.
- */
-type SessionConfiguration = {
-  harness: SessionHarness
-  model: ModelReference | null
-  effort: string | null
-  instructions: string
-}
-
-async function readSessionConfiguration(
-  target: TasksRuntimeTarget,
-  sessionId: string,
-): Promise<SessionConfiguration | null> {
-  const response = await target.request(`/session/${encodeURIComponent(sessionId)}/config`).catch(() => undefined)
-  if (!response?.ok) return null
-  const body = asRecord(await response.json().catch(() => undefined))
-  const harness = asRecord(body?.harness)
-  const id = typeof harness?.id === "string" ? harness.id : undefined
-  const access = harness?.access === "native" || harness?.access === "connection" ? harness.access : undefined
-  if (!id || !access) return null
-  const model = asRecord(body?.model)
-  const providerID = typeof model?.providerID === "string" ? model.providerID : undefined
-  const modelID = typeof model?.modelID === "string" ? model.modelID : undefined
-  return {
-    harness: { id, access },
-    model: providerID && modelID ? { providerID, modelID } : null,
-    effort: typeof body?.variant === "string" ? body.variant : null,
-    instructions: typeof body?.instructions === "string" ? body.instructions : "",
-  }
-}
-
 /**
  * The previous session's conversation, rendered by the runtime's own renderer.
  *
@@ -349,10 +331,11 @@ async function readHandoff(
   fallback: TasksRuntimeTarget,
   previous: SessionRef | null,
   authorize: TranscriptGrant,
+  reader: TasksActor,
 ): Promise<{ ok: true; handoff: Handoff | null } | Refusal> {
   if (!previous) return { ok: true, handoff: null }
   const target = previous.workspaceId !== fallback.workspace.id
-    ? await host.target(previous.workspaceId, null)
+    ? await host.target(previous.workspaceId, reader)
     : fallback
   if (!target) return { ok: true, handoff: null }
   if (!(await authorize())) {
@@ -399,6 +382,15 @@ async function cloudTarget(
       },
     }
   }
+  const harness = command.preset.configurations[command.slot]?.harness
+  if (harness && cloudHarnessHost(harness.id) === "session-host") {
+    return {
+      blocker: {
+        code: "harness_unavailable",
+        detail: `${harness.id} runs in its own session host on a cloud workspace, not in the workspace's runtime a cloud task starts its session in; choose another harness for this preset`,
+      },
+    }
+  }
   return host.cloudTarget({
     actor: command.actor,
     task: command.task,
@@ -412,35 +404,6 @@ async function startTarget(host: TasksSessionHost, task: Task, starter: TasksAct
   if (!task.workspaceId) return host.projectTarget(task.projectId, starter)
   const target = await host.target(task.workspaceId, starter)
   return target ? { target } : { detail: `Workspace ${task.workspaceId} is not reachable from this host` }
-}
-
-/**
- * Which of a project's workspaces a task without a preference starts in.
- *
- * The project's own root workspace is the answer wherever there is one. Past
- * that the rows are worktrees and clones of one repository, and picking the
- * oldest or the first would silently run the task somewhere the user did not
- * choose — so an unresolved choice is handed back to them by name.
- */
-export function chooseProjectWorkspace(
-  projectId: string,
-  workspaces: readonly Workspace[],
-): { workspace: Workspace } | { detail: string } {
-  const candidates = workspaces.filter((workspace) => (workspace.project_id ?? workspace.id) === projectId)
-  const only = candidates.length === 1 ? candidates.at(0) : undefined
-  if (only) return { workspace: only }
-  if (candidates.length === 0) {
-    return { detail: `Project ${projectId} has no workspace this host can start a session in` }
-  }
-  const root = candidates.find((workspace) => workspace.id === projectId)
-  if (root) return { workspace: root }
-  const checkouts = candidates.filter((workspace) => !workspace.repo_root || workspace.repo_root === workspace.directory)
-  const checkout = checkouts.length === 1 ? checkouts.at(0) : undefined
-  if (checkout) return { workspace: checkout }
-  const names = candidates.map((workspace) => workspace.workspace_name || workspace.directory).join(", ")
-  return {
-    detail: `Project ${projectId} has ${candidates.length} workspaces (${names}); name one on the task before starting`,
-  }
 }
 
 async function resolveStart(
@@ -460,7 +423,7 @@ async function resolveStart(
 
   let readable: Handoff | null = null
   if (target && blockers.length === 0) {
-    const read = await readHandoff(host, target, previousSessionOf(command), command.authorizeTranscript)
+    const read = await readHandoff(host, target, previousSessionOf(command), command.authorizeTranscript, command.actor)
     if (!read.ok) return read
     readable = read.handoff
   }
@@ -534,22 +497,6 @@ function destination(
     ...(transcriptDropped > 0 ? [`${transcriptDropped} bytes of the previous session`] : []),
   ]
   return dropped.length === 0 ? where : `${where}. The instruction block cap dropped ${dropped.join(" and ")}.`
-}
-
-/**
- * The ids an origin decides, so two clients racing one slot and attempt
- * converge on one session and one first message instead of two of each, and a
- * handoff that runs long after the create addresses the same message.
- */
-async function originIds(input: {
-  scopeId: string
-  taskId: string
-  slot: ConfigurationSlot
-  attempt: number
-}): Promise<{ origin: string; sessionId: string; messageId: string }> {
-  const origin = startOriginId(input.scopeId, input.taskId, input.slot, input.attempt)
-  const hash = (await hashRequest(origin)).slice(0, 32)
-  return { origin, sessionId: `ses_tasks_${hash}`, messageId: `msg_tasks_${hash}` }
 }
 
 const creating = new Map<string, Promise<unknown>>()
@@ -633,7 +580,7 @@ async function startSession(
     }
     const time = await sessionTimes(created)
     if (!time) return untimedSession(sessionId)
-    await host.projectSessionMeta({
+    await host.projectSessionMeta?.({
       sessionId,
       target,
       title: command.task.title,
@@ -725,7 +672,7 @@ async function abandonSession(
   host: TasksSessionHost,
   command: SessionAbandonCommand,
 ): Promise<TasksResult<{ removed: boolean }>> {
-  const target = await host.target(command.sessionRef.workspaceId, null)
+  const target = await host.target(command.sessionRef.workspaceId, command.actor)
   if (!target) {
     return {
       ok: false,
@@ -752,7 +699,7 @@ async function abandonSession(
   }
   const removed = await target.request(`/session/${encodeURIComponent(sessionId)}`, { method: "DELETE" })
   if (!removed.ok) return { ok: false, error: await runtimeRefusal("delete this session", removed) }
-  await host.forgetSessionMeta(sessionId)
+  await host.forgetSessionMeta?.(sessionId)
   await host.release?.({
     actor: command.actor,
     operationId: `${origin}:${command.configurationDigest}`,
@@ -801,6 +748,15 @@ async function recoverSession(
   // this session is still running.
   const metas = await host.sessionMetas([sessionId])
   if (!metas.has(sessionId)) {
+    if (!host.projectSessionMeta) {
+      return {
+        ok: false,
+        error: tasksErrorDetail(
+          "conflict",
+          `Session ${sessionId} exists but its registration with this control plane is unresolved, so this Start did not adopt it`,
+        ),
+      }
+    }
     const time = await sessionTimes(session)
     if (!time) return untimedSession(sessionId)
     await host.projectSessionMeta({
@@ -814,22 +770,6 @@ async function recoverSession(
   return { ok: true }
 }
 
-type SessionTimes = { created: number; updated: number }
-
-async function sessionTimes(response: Response): Promise<SessionTimes | undefined> {
-  const time = asRecord(asRecord(await response.json().catch(() => undefined))?.time)
-  const created = asFiniteNumber(time?.created)
-  const updated = asFiniteNumber(time?.updated)
-  return created === undefined || updated === undefined ? undefined : { created, updated }
-}
-
-function untimedSession(sessionId: string): Refusal {
-  return {
-    ok: false,
-    error: tasksErrorDetail("unsupported", `The workspace runtime answered session ${sessionId} without its creation and update times`),
-  }
-}
-
 function sameConfiguration(stored: SessionConfiguration, resolved: ResolvedStart): boolean {
   return stored.harness.id === resolved.configuration.harness.id
     && stored.harness.access === resolved.configuration.harness.access
@@ -837,26 +777,4 @@ function sameConfiguration(stored: SessionConfiguration, resolved: ResolvedStart
     && stored.model?.modelID === resolved.configuration.model.modelID
     && stored.effort === (resolved.configuration.effort ?? null)
     && stored.instructions === resolved.instructions
-}
-
-/**
- * Whether this origin's first message is already on the session. The runtime
- * does not deduplicate by `messageID`, so a retry that skipped this read would
- * send the task a second time — and a history it would not return is not the
- * same answer as a history without the message.
- */
-async function alreadySent(
-  target: TasksRuntimeTarget,
-  sessionId: string,
-  messageId: string,
-): Promise<"present" | "absent" | "unreadable"> {
-  const messages = await readMessages(target, sessionId)
-  if (!messages) return "unreadable"
-  return messages.some((message) => message.info.id === messageId) ? "present" : "absent"
-}
-
-async function runtimeRefusal(operation: string, response: Response): Promise<TasksErrorDetail> {
-  const error = asRecord(asRecord(await response.json().catch(() => undefined))?.error)
-  const detail = typeof error?.message === "string" ? error.message : `status ${response.status}`
-  return tasksErrorDetail("unsupported", `The workspace runtime refused to ${operation}: ${detail}`)
 }

@@ -57,6 +57,13 @@ export type RelayTokenInput = {
    */
   auth?: SignedControlPlaneAuth
   channelIdentity?: import("../platform/auth/authority").AuthorizedChannelIdentity
+  /**
+   * A USER-principal token for the workspace's owner, minted with no signed
+   * caller because the owner was resolved from a grant this control plane
+   * verified. Recorded through the owner door, which admits the workspace's
+   * owner alone.
+   */
+  ownerGrant?: true
 }
 
 export type RelayToken = {

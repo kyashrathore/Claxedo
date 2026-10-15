@@ -28,7 +28,7 @@ export function createTaskCommands(store: TasksStore, busyWhile: BusyWhile) {
   const run = (command: TasksCommand, taskId: string) =>
     busyWhile(taskId, async () => {
       try {
-        await api.client.command({ clientRequestId: uuid(), command })
+        await api.command({ clientRequestId: uuid(), command })
         await invalidate.afterCommand(taskId)
         store.taskSaved(taskId)
       } catch (error) {

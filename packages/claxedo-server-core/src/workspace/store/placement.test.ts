@@ -172,14 +172,15 @@ function callArguments(source: string, open: number) {
 }
 
 /**
- * Every production write of a `cloud` row, as the arguments passed to
- * `ensureWorkspace`.
+ * Every production `ensureWorkspace` call, and among them each write of a
+ * `cloud` row as the arguments passed.
  *
  * A conditional spread (`...(x ? { driver } : {})`) is not a placement: it
  * leaves the row naming no machine whenever the condition is false, so only a
  * plain `driver:` property counts.
  */
-async function productionCloudWorkspaceWrites() {
+async function productionWorkspaceWrites() {
+  let calls = 0
   const writes: { file: string; literal: string }[] = []
   const files = await productionSources()
   const sources = await Promise.all(files.map((file) => fs.readFile(file, "utf-8")))
@@ -188,17 +189,18 @@ async function productionCloudWorkspaceWrites() {
     let cursor = source.indexOf("ensureWorkspace(")
     while (cursor !== -1) {
       const literal = callArguments(source, cursor + "ensureWorkspace".length)
+      calls += 1
       if (/\bkind: "cloud"/.test(literal)) writes.push({ file: path.relative(repositoryRoot, file), literal })
       cursor = source.indexOf("ensureWorkspace(", cursor + 1)
     }
   }
-  return writes
+  return { calls, writes }
 }
 
 describe("production cloud rows", () => {
   test("every production cloud row names its driver", async () => {
-    const writes = await productionCloudWorkspaceWrites()
-    expect(writes.length).toBeGreaterThan(0)
+    const { calls, writes } = await productionWorkspaceWrites()
+    expect(calls).toBeGreaterThan(0)
     expect(writes.filter((write) => !/^\s+driver\s*[,:]/m.test(write.literal)).map((write) => write.file))
       .toEqual([])
   })

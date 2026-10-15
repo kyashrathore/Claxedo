@@ -34,7 +34,7 @@ import type {
 } from "./git-types"
 import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { TasksClient } from "@claxedo/tasks/client"
+import type { TasksApi } from "./tasks"
 import type {
   MarketplaceCatalog,
   PluginActivationInput,
@@ -174,25 +174,6 @@ export type MarketplaceApi = {
   readonly update: (pluginInstanceId: string, revision: number, authority?: "user") => Promise<PluginChange>
   readonly addSource: (input: PluginSourceInput) => Promise<PluginSourceRecord>
   readonly removeSource: (id: string) => Promise<void>
-}
-
-export type TaskListKey = {
-  readonly projectId: string
-  readonly status: string | null
-  readonly parent: "any" | "root"
-  readonly includeArchived: boolean
-}
-
-export type TasksApi = {
-  readonly client: TasksClient
-  readonly keys: {
-    readonly scope: readonly unknown[]
-    readonly capabilities: readonly unknown[]
-    readonly presets: (includeArchived: boolean) => readonly unknown[]
-    readonly list: (filter: TaskListKey) => readonly unknown[]
-    readonly detail: (taskId: string) => readonly unknown[]
-    readonly children: (taskId: string) => readonly unknown[]
-  }
 }
 
 export type LivePluginsApi = {

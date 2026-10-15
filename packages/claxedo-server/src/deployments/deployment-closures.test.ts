@@ -152,7 +152,9 @@ const ENTRIES = [
   // sandbox driver (`agent-plugins/mcp/catalog-servers.ts`), by the one rule
   // runtime preparation also follows for whether a driver carries a gateway
   // credential (`agent-plugins/mcp/gateway-reach.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 229, packages: 26 },
+  // The Tasks routes both entries mount read the workspace and session rows
+  // their Start dispatches through from D1 in one module (`tasks/d1-host-reads.ts`).
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 230, packages: 26 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -167,7 +169,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 241, packages: 26 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 242, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

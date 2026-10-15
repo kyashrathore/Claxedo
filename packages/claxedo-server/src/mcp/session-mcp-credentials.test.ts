@@ -167,17 +167,17 @@ describe("the first-party MCP credential of a session served by its own host", (
     expect((await mcpRequest(mcp.url, mcp.token)).status).toBe(200)
     await plane.store.deleteHostedSession({ workspaceId: WORKSPACE_ID, sessionId: root })
     expect((await mcpRequest(mcp.url, mcp.token)).status).toBe(401)
-    const record = { jti: "rat_mcp_deleted", workspaceId: WORKSPACE_ID, hostId: VM_HOST, sessionId: root, expiresAt: Date.now() + 60_000 }
-    await expect(plane.store.recordSessionMcpRuntimeAccessToken(plane.owner.principal!.actorId, record)).rejects.toThrow()
+    const record = { jti: "rat_mcp_deleted", workspaceId: WORKSPACE_ID, hostId: VM_HOST, servedSession: root, expiresAt: Date.now() + 60_000, role: "editor" as const }
+    await expect(plane.store.recordOwnerRuntimeAccessToken(plane.owner.principal!.actorId, record)).rejects.toThrow()
   })
 
   test("the owner token is recorded only for the workspace owner, for a live session served by its own host, on the machine", async () => {
     const expiresAt = Date.now() + 60_000
-    const record = (jti: string, sessionId: string, hostId = VM_HOST) => ({ jti, workspaceId: WORKSPACE_ID, hostId, sessionId, expiresAt })
-    await expect(plane.store.recordSessionMcpRuntimeAccessToken(plane.member.principal!.actorId, record("rat_mcp_member", ROOT))).rejects.toThrow()
-    await expect(plane.store.recordSessionMcpRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_vm", VM))).rejects.toThrow()
-    await expect(plane.store.recordSessionMcpRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_host", ROOT, sessionHostId(ROOT)))).rejects.toThrow()
-    await plane.store.recordSessionMcpRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_owner", ROOT))
+    const record = (jti: string, sessionId: string, hostId = VM_HOST) => ({ jti, workspaceId: WORKSPACE_ID, hostId, servedSession: sessionId, expiresAt, role: "editor" as const })
+    await expect(plane.store.recordOwnerRuntimeAccessToken(plane.member.principal!.actorId, record("rat_mcp_member", ROOT))).rejects.toThrow()
+    await expect(plane.store.recordOwnerRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_vm", VM))).rejects.toThrow()
+    await expect(plane.store.recordOwnerRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_host", ROOT, sessionHostId(ROOT)))).rejects.toThrow()
+    await plane.store.recordOwnerRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_owner", ROOT))
     expect(await plane.store.runtimeAccessTokenActive({ jti: "rat_mcp_owner", workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
   })
 
