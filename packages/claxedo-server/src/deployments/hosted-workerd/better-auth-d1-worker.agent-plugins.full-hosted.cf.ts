@@ -2,6 +2,7 @@ import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedSandboxKeyDrivers } from "../../authority/adapters/worker/hosted-sandbox-key-drivers"
 import { sandboxProvisionerClass } from "../../sandbox/provisioner.cf"
 import type { SandboxProvisionerNamespace } from "../../workspace/sandbox-start"
+import { liveSyncStartNotice } from "../../workspace/start-notice"
 import { composeWithCloudSandbox } from "./full-hosted-sandbox"
 import {
   composeBetterAuthD1AgentPlugins,
@@ -53,9 +54,17 @@ const composition = settledCompositionCache(
 )
 
 export class SandboxProvisioner extends sandboxProvisionerClass((env: BetterAuthD1FullHostedWorkerEnv) => {
-  const delivery = composition(env).runtimeDelivery
+  const composed = composition(env)
+  const delivery = composed.runtimeDelivery
   if (!delivery) throw new HostedWorkerCompositionError("hosted_capability_unavailable", "The full-hosted Worker composed no sandbox delivery")
-  return delivery.start
+  const authority = composed.plane.services.authority
+  if (!env.LIVE_SYNC_ROOM || !authority?.resolveWorkspaceOwner) {
+    throw new HostedWorkerCompositionError("hosted_dependency_missing", "The full-hosted Worker requires the LIVE_SYNC_ROOM binding and an authority that resolves workspace owners")
+  }
+  return {
+    ...delivery.start,
+    announce: liveSyncStartNotice({ room: env.LIVE_SYNC_ROOM, owner: authority.resolveWorkspaceOwner.bind(authority) }),
+  }
 }) {}
 
 const handler = createBetterAuthD1Worker({ composition })

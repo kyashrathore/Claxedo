@@ -59,6 +59,11 @@ async function watches(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/watches?ws=${workspaceId}`)).json()) as { watches: number[] }).watches
 }
 
+/** The steps the workspace owner's clients were told of, in order. */
+async function notices(workspaceId: string) {
+  return ((await (await miniflare.dispatchFetch(`${ORIGIN}/notices?ws=${workspaceId}`)).json()) as { notices: string[] }).notices
+}
+
 /** Polls `read` until `settled` admits its answer, within 10 s. */
 async function until<T>(read: () => Promise<T>, settled: (value: T) => boolean): Promise<T> {
   const deadline = Date.now() + 10_000
@@ -233,5 +238,26 @@ describe("a sandbox start on workerd", () => {
     expect(await inFlight("ws_flaky_3")).toMatchObject({ status: "provisioning", failure: "provider hiccup" })
     expect(await until(() => start("ws_flaky_3"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 4 })
     expect(await inFlight("ws_flaky_3")).toBeNull()
+  })
+})
+
+describe("the workspace owner's clients on workerd", () => {
+  test("are told a start began before its answer, and that it is ready once it settles; a poll that joins it or finds it live tells nothing", async () => {
+    expect(await start("ws_slow_300_notice")).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(await notices("ws_slow_300_notice")).toEqual(["starting"])
+    expect(await start("ws_slow_300_notice")).toMatchObject({ status: "provisioning", joined: true })
+    expect(await until(() => notices("ws_slow_300_notice"), (steps) => steps.length > 1)).toEqual(["starting", "ready"])
+    expect(await until(() => start("ws_slow_300_notice"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready" })
+    expect(await notices("ws_slow_300_notice")).toEqual(["starting", "ready"])
+  })
+
+  test("are told a start whose boot failed ended in error", async () => {
+    await start("ws_boot_fail_notice")
+    expect(await until(() => notices("ws_boot_fail_notice"), (steps) => steps.length > 1)).toEqual(["starting", "error"])
+  })
+
+  test("are told a lease stopped under its run is stopped, not failed", async () => {
+    await start("ws_stopped_under_notice")
+    expect(await until(() => notices("ws_stopped_under_notice"), (steps) => steps.length > 1)).toEqual(["starting", "stopped"])
   })
 })

@@ -7,7 +7,6 @@ import { accountCatalogFromWire, type AccountCatalog } from "./wire/account-cata
 import type { BootstrapCatalog, PlacementRecord } from "./wire/placements"
 
 export type AccountPlacements = {
-  readonly key: readonly unknown[]
   readonly load: () => Promise<void>
   readonly reread: () => Promise<void>
   readonly link: (local: readonly PlacementRecord[]) => LinkedCatalog | undefined
@@ -22,7 +21,6 @@ export function createAccountPlacements(account: HostedAccount, serverUrl: strin
   const fetch = async (staleTime: number) => { await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime }) }
   let last: { local: readonly PlacementRecord[]; account: AccountCatalog; linked: LinkedCatalog } | undefined
   return {
-    key,
     load: () => fetch(Number.POSITIVE_INFINITY),
     reread: () => fetch(0),
     link: (local) => {

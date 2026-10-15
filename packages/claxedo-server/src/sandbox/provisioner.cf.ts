@@ -9,6 +9,7 @@ type Outcome = { epoch: number; answer: SandboxStartAnswer; settledAt: number }
 type FollowUp = { workspaceId: string; at: number; failures: number }
 
 type ReadyAnswer = Extract<SandboxStartAnswer, { status: "ready" }>
+type StartStep = Parameters<NonNullable<SandboxStartDrive["announce"]>>[1]
 
 /**
  * The steps a ready sandbox is followed up with from the alarm, each recorded
@@ -47,6 +48,11 @@ function nextStepAfter(answer: SandboxStartAnswer): number | undefined {
   return sandboxRuntimeBootFailure(answer.error) === undefined ? answer.retryAfterMs : undefined
 }
 
+function settledStep(answer: SandboxStartAnswer): StartStep {
+  if (answer.status === "ready") return "ready"
+  return answer.status === "unavailable" && sandboxLeaseEndedUnderStart(answer.error) ? "stopped" : "error"
+}
+
 /**
  * A step that threw, as the run's answer. An exception out of the alarm would
  * leave `run` in storage, and `start` answers `provisioning` for as long as a
@@ -66,7 +72,10 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * stale window let the next start take it over. Here a start takes the lease
  * and answers at once; the alarm drives the driver, step by step, until the
  * lease is ready or the start has failed, and the first `start` within
- * `outcomeHeldMs` of a failed settling reports that failure.
+ * `outcomeHeldMs` of a failed settling reports that failure. A run's
+ * beginning and its settling are announced to the workspace owner's open
+ * clients, so a tab learns of a start another tab or a session's tool call
+ * asked for.
  *
  * A `start` on a ready lease, a held ready outcome included, asks the runtime
  * itself: one that answers is reported ready with no driver step, so
@@ -149,12 +158,21 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       }
       await this.ctx.storage.put("run", begun)
       await this.ctx.storage.setAlarm(Date.now())
+      await this.#announce(workspaceId, "starting")
       return admitted
+    }
+
+    /** A notice that fails costs the clients a live update until their next read, never the start. */
+    async #announce(workspaceId: string, step: StartStep) {
+      await drive(this.env).announce?.(workspaceId, step).catch((cause: unknown) => {
+        console.warn("[sandbox-provisioner] the start notice was not delivered", { workspaceId, step, error: cause instanceof Error ? cause.message : String(cause) })
+      })
     }
 
     /** A ready answer's follow-ups replace the ones on record; the alarm is theirs again now that no run holds it. */
     async #settled(workspaceId: string, answer: SandboxStartAnswer) {
       const storage = this.ctx.storage
+      await this.#announce(workspaceId, settledStep(answer))
       if (answer.status === "ready") {
         for (const key of FOLLOW_UP_KEYS) {
           const at = answer[FOLLOW_UPS[key].due]

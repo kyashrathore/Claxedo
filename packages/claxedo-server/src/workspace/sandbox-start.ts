@@ -1,4 +1,5 @@
 import type { SandboxEnsureResult, SandboxTargetResult } from "@claxedo/sandbox-manager"
+import type { ProvisionEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { timed } from "../platform/http/server-timing"
 
 /**
@@ -43,6 +44,8 @@ export type SandboxStartDrive = {
   watch(workspaceId: string, failures: number): Promise<number | undefined>
   /** Sends the telemetry a step queued, inside the Durable Object invocation that ran it; no request flushes a step for it. */
   flushTelemetry?(): Promise<void>
+  /** Tells the workspace owner's open clients that a start began or settled, whoever asked for it. */
+  announce?(workspaceId: string, step: ProvisionEvent["step"]): Promise<void>
 }
 
 export type SandboxProvisionerStub = {

@@ -32,6 +32,7 @@ function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown)
 export function provisionStatus(frame: Record<string, unknown>): CloudWorkspaceStatus {
   const step = frame.step
   if (step === "ready") return { kind: "ready" }
+  if (step === "stopped") return { kind: "stopped" }
   if (step === "error") return { kind: "failed", reason: nonEmptyString(frame.message) ?? "Provisioning failed" }
   return { kind: "provisioning", step: nonEmptyString(step) ?? "provisioning" }
 }

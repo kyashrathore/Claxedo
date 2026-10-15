@@ -123,6 +123,20 @@ async function watches(database: D1Database, workspaceId: string): Promise<numbe
   return rows.results.map((row) => row.failures)
 }
 
+const NOTICES_TABLE = "fixture_notices"
+
+async function recordNotice(database: D1Database, workspaceId: string, step: string) {
+  await database.prepare(`create table if not exists ${NOTICES_TABLE} (workspace_id text not null, step text not null)`).run()
+  await database.prepare(`insert into ${NOTICES_TABLE} (workspace_id, step) values (?, ?)`).bind(workspaceId, step).run()
+}
+
+async function notices(database: D1Database, workspaceId: string): Promise<string[]> {
+  const table = await database.prepare(`select count(*) as n from sqlite_master where type = 'table' and name = ?`).bind(NOTICES_TABLE).first<{ n: number }>()
+  if (!table?.n) return []
+  const rows = await database.prepare(`select step from ${NOTICES_TABLE} where workspace_id = ? order by rowid`).bind(workspaceId).all<{ step: string }>()
+  return rows.results.map((row) => row.step)
+}
+
 /**
  * `ws_watch_<n>`: its idleness is read 200 ms after it is ready and after every
  * read; the n-th read finds it idle and stops it. `ws_watchfail_<n>`: every
@@ -170,6 +184,7 @@ function drive(env: Env): SandboxStartDrive {
       return undefined
     },
     target: (workspaceId) => sandboxes.target(workspaceId),
+    announce: (workspaceId, step) => recordNotice(env.CONTROL_PLANE_DB, workspaceId, step),
     live: async (workspaceId) => {
       const target = await sandboxes.target(workspaceId)
       if (target.status !== "ready") return undefined
@@ -192,6 +207,7 @@ export default {
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/renewals") return Response.json({ renewals: await renewals(env.CONTROL_PLANE_DB, workspaceId) })
+    if (url.pathname === "/notices") return Response.json({ notices: await notices(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/watches") return Response.json({ watches: await watches(env.CONTROL_PLANE_DB, workspaceId) })
     return new Response("not found", { status: 404 })
   },

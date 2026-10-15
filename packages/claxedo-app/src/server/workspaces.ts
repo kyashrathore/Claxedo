@@ -1,11 +1,11 @@
-import { QueryObserver, type QueryClient } from "@tanstack/solid-query"
-import { createSignal, type Accessor } from "solid-js"
+import type { QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import type { LinkedCatalog } from "./account-link"
-import { createAccountPlacements, withAccountPlacements, type AccountPlacements } from "./account-placements"
+import { createAccountPlacements } from "./account-placements"
 import type { PlacementsApi } from "./api"
 import { ServerError, toAppError } from "./errors"
 import { placementId, sessionId as asSessionId, type PlacementId, type ProjectId } from "./ids"
+import { mergedCatalog } from "./merged-catalog"
 import { queryKeys } from "./query-keys"
 import { createSharedSessions, type SharedSessions } from "./shared-sessions"
 import type { RuntimeRoute, Transport } from "./transport"
@@ -60,17 +60,6 @@ function placementRecordAt(records: readonly PlacementRecord[], directory: strin
   const byWorkspace = workspaceId ? records.find((record) => record.route.workspaceId === workspaceId) : undefined
   const wanted = trimmedDirectory(directory)
   return byWorkspace ?? records.find((record) => locatedAt(record, wanted))
-}
-
-function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { readonly revision: Accessor<number>; readonly dispose: () => void } {
-  const [revision, setRevision] = createSignal(0)
-  let seen: unknown
-  const dispose = new QueryObserver(queryClient, { queryKey: key, enabled: false }).subscribe((result) => {
-    if (result.data === seen) return
-    seen = result.data
-    setRevision((value) => value + 1)
-  })
-  return { revision, dispose }
 }
 
 function placementReads(records: () => readonly PlacementRecord[]) {
@@ -197,35 +186,6 @@ function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSes
   }
 }
 
-function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined) {
-  const watched = [observeQuery(queryClient, key), ...(accountPlacements ? [observeQuery(queryClient, accountPlacements.key)] : [])]
-  let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
-  const merge = (local: BootstrapCatalog) => {
-    const linked = accountPlacements?.link(local.placements)
-    if (last?.local !== local || last.linked !== linked) last = { local, linked, merged: withAccountPlacements(local, linked) }
-    return last.merged
-  }
-  const local = () => queryClient.getQueryData<BootstrapCatalog>(key)
-  const catalog = () => {
-    for (const watch of watched) watch.revision()
-    const current = local()
-    return current && merge(current)
-  }
-  const linked = () => {
-    const current = local()
-    return current && accountPlacements?.link(current.placements)
-  }
-  return {
-    merge,
-    linked,
-    published: {
-      catalog,
-      complete: () => catalog() !== undefined && (accountPlacements === undefined || linked() !== undefined),
-    } satisfies Pick<Workspaces, "catalog" | "complete">,
-    dispose: () => watched.forEach((watch) => watch.dispose()),
-  }
-}
-
 async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<void> | undefined): Promise<BootstrapCatalog> {
   const [read, accountRead] = await Promise.allSettled([local, account])
   if (read.status === "rejected") throw read.reason
@@ -259,10 +219,10 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const shared = createSharedSessions(account, transport.serverUrl, queryClient)
   const key = queryKeys.bootstrap(transport.serverUrl)
   const accountPlacements = account ? createAccountPlacements(account, transport.serverUrl, queryClient) : undefined
-  const merged = mergedCatalog(queryClient, key, accountPlacements)
   const relearned = new Set<string>()
   const read = async () => bootstrapCatalog(await transport.json(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
+  const merged = mergedCatalog(queryClient, transport.serverUrl, reread, accountPlacements)
   const load = async () => {
     return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }

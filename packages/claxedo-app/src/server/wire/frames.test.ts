@@ -148,6 +148,17 @@ test("frames: a hosted status notice becomes the session's statusChanged with it
   expect(elsewhere && serverEventFromFrame(elsewhere, byWorkspace)).toBeUndefined()
 })
 
+test("frames: a hosted machine-start notice becomes cloudWorkspaceChanged for its workspace, in the step it names", () => {
+  const notice = (step: string) => frameFromWire({ type: "provision", workspaceId: "ws_1", ownerUserId: "user_owner", orgId: "org_1", step, ts: 9 })
+  const event = (step: string) => {
+    const frame = notice(step)
+    return frame && serverEventFromFrame(frame, address)
+  }
+  expect(event("starting")).toEqual({ type: "cloudWorkspaceChanged", workspaceId: placementId("ws_1"), status: { kind: "provisioning", step: "starting" } })
+  expect(event("ready")).toEqual({ type: "cloudWorkspaceChanged", workspaceId: placementId("ws_1"), status: { kind: "ready" } })
+  expect(event("stopped")).toEqual({ type: "cloudWorkspaceChanged", workspaceId: placementId("ws_1"), status: { kind: "stopped" } })
+})
+
 test("frames: a reader notice becomes the session's readerChanged with the marks it carries, located by its workspace", () => {
   const located: Address = { placementFor: (directory, workspaceId) => (directory === "workspace:ws_1" && workspaceId === "ws_1" ? { placementId: placementId("p1"), projectId: projectId("j1") } : undefined) }
   const notice = (workspaceId: string) => frameFromWire({ type: "session.reader.changed", ownerUserId: "local", sessionId: "s1", workspaceId, seenAt: 40, ts: 9 })

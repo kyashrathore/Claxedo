@@ -5,11 +5,11 @@ import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/li
  * the hosted `LiveSyncRoom` so the two never disagree about what a
  * reconnecting reader can recover.
  *
- * A doorbell settles something nothing re-states — a provision reaching
- * ready or error, a worktree landing, a document doorbell (the client only
+ * A doorbell settles something nothing re-states — a machine start
+ * settling, a worktree landing, a document doorbell (the client only
  * re-reads when nudged, so a lost one stalls live sync until the next
  * unrelated mutation), a share grant. `createSseReplayBuffer` keeps these in
- * its second, independent ring; a provision's intermediate steps, quota
+ * its second, independent ring; a machine start's beginning, quota
  * doorbells, session status notices and reader notices are the frames it lets
  * the main ring evict, and an evicted one surfaces as a replay gap.
  */
@@ -31,7 +31,7 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
       // doorbells above out of the ring. The view re-reads on a gap anyway.
       return false
     case "provision":
-      return event.step === "ready" || event.step === "error"
+      return event.step !== "starting"
     default:
       return false
   }

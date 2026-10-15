@@ -183,6 +183,24 @@ export type PluginsChangedEvent = {
 }
 
 /**
+ * A cloud workspace's machine start began (`starting`) or settled: serving
+ * (`ready`), its lease stopped or replaced under it (`stopped`), or failed
+ * (`error`). A doorbell: the client re-reads the workspace catalog. The hosted
+ * sandbox provisioner publishes it whoever asked for the start, so a tab that
+ * did not start the machine learns of it too.
+ */
+export type ProvisionEvent = {
+  type: "provision"
+  workspaceId: string
+  /** The workspace's owner, the one person the notice reaches. */
+  ownerUserId: string
+  /** Org that owns the workspace (`Workspace.org_id`, the AUTHORITY-INTERNAL org id namespace). */
+  orgId: string
+  step: "starting" | "ready" | "stopped" | "error"
+  ts: number
+}
+
+/**
  * What the control plane tells its clients on `cp/events`: something changed
  * and the reader re-reads, or a session's list status as it stands. Never a
  * session's content — that is the workspace runtime's stream. One bus, one
@@ -193,27 +211,15 @@ export type PluginsChangedEvent = {
  * (`session/meta/reads.ts` and the hosted `session_reads`).
  *
  * The local daemon serves every kind it publishes to its unsigned user. A
- * signed subscriber gets only share, status, quota and its own reader notices
- * (`event-visibility.ts`), and the hosted plane's room
+ * signed subscriber gets only share, status, provision, quota and its own
+ * reader notices (`event-visibility.ts`), and the hosted plane's room
  * (`hosted-workerd/live-sync-room.cf.ts`) carries `session.share.changed`,
- * `session.status.changed` and `session.reader.changed` alone, so a signed
- * client learns of a provision step or a Page change by its next read, not by
- * a notice.
+ * `session.status.changed`, `session.reader.changed` and `provision` alone,
+ * so a signed client learns of a Page change by its next read, not by a
+ * notice.
  */
 export type ControlPlaneEvent =
-  | {
-      type: "provision"
-      workspaceId: string
-      /**
-       * Org that owns the workspace (`Workspace.org_id`, the AUTHORITY-INTERNAL
-       * org id namespace), stamped at publish; absent for local workspaces.
-       */
-      orgId?: string
-      step: "acquiring_sandbox" | "cloning" | "starting_runtime" | "waiting_health" | "ready" | "error"
-      message?: string
-      totalMs?: number
-      ts: number
-    }
+  | ProvisionEvent
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | DocumentChangedEvent

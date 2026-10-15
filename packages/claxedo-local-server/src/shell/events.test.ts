@@ -76,8 +76,8 @@ function harness() {
 }
 
 const worktree = (name: string): ControlPlaneEvent => ({ type: "worktree.ready", directory: `/tmp/central/${name}`, name, branch: name })
-const provision = (workspaceId: string, step: "cloning" | "ready", orgId?: string): ControlPlaneEvent => ({
-  type: "provision", workspaceId, step, ts: 1, ...(orgId ? { orgId } : {}),
+const provision = (workspaceId: string, step: "starting" | "ready", orgId = "org_owner"): ControlPlaneEvent => ({
+  type: "provision", workspaceId, ownerUserId: "user_owner", orgId, step, ts: 1,
 })
 
 describe("signed control-plane visibility", () => {
@@ -205,7 +205,7 @@ describe("cp/events — the control plane's notice stream", () => {
 
   test("emits a replay-gap notice when the cursor has fallen out of the retention window", async () => {
     const { bus, app } = harness()
-    for (let i = 1; i <= 300; i += 1) bus.publish(provision("ws_1", "cloning"))
+    for (let i = 1; i <= 300; i += 1) bus.publish(provision("ws_1", "starting"))
 
     const stream = await connect(app, "1")
     const text = await stream.until((seen) => seen.includes("stream.replay-gap"), "no gap notice")
@@ -213,10 +213,10 @@ describe("cp/events — the control plane's notice stream", () => {
     expect(text).toContain("cp.sse_replay_gap")
   })
 
-  test("a settling notice survives eviction by a provision's intermediate steps", async () => {
+  test("a settling notice survives eviction by machine-starting notices", async () => {
     const { bus, app } = harness()
     bus.publish(worktree("kept"))
-    for (let i = 1; i <= 300; i += 1) bus.publish(provision("ws_1", "cloning"))
+    for (let i = 1; i <= 300; i += 1) bus.publish(provision("ws_1", "starting"))
 
     const stream = await connect(app, "0")
     const text = await stream.until((seen) => seen.includes('"name":"kept"'), "settling notice was evicted")

@@ -65,13 +65,16 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
       // read from the session's owner and people shares, each reader getting
       // its own copy; for a reader notice, the reader who wrote its marks.
       return event.ownerUserId === principal.subject
+    case "provision":
+      // A workspace is one person's: only its owner hears its machine start.
+      return event.ownerUserId === principal.subject
     case "usage.quota.changed":
       // Carries no figures and names no account: the quota read it provokes
       // is what applies `operator_required`.
       return true
     default:
-      // A Page notice names a Page its creator may not have shared; a
-      // provision or inventory notice is about one person's workspace; and
+      // A Page notice names a Page its creator may not have shared; an
+      // inventory notice is about one person's workspace; and
       // worktree.* is a local daemon's notice about its own checkout. None
       // reaches a signed subscriber, only the unsigned machine's single user.
       return false

@@ -244,12 +244,13 @@ async function pushEvent(room: LiveSyncRoom, event: ControlPlaneEvent) {
   expect(response.status).toBe(200)
 }
 
-const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ControlPlaneEvent => ({
+const provisionStep = (ownerUserId: string, step: "starting" | "ready"): ControlPlaneEvent => ({
   type: "provision",
-  workspaceId,
-  orgId: "acme",
+  workspaceId: "ws_acme",
+  ownerUserId,
+  orgId: "org_internal_acme",
   step,
-  ts: Date.now(),
+  ts: 7,
 })
 
 describe("LiveSyncRoom — fan-out core", () => {
@@ -414,17 +415,40 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(JSON.stringify(replayed.frames)).not.toContain("session.reader.changed")
   })
 
-  test("a Page or provision nudge reaches no member of the org room, live or on replay", async () => {
+  test("a Page nudge reaches no member of the org room, live or on replay", async () => {
     const namespace = createFakeNamespace()
     const room = liveSyncRoomNameForPrincipal({ orgId: "org_internal_acme" })
     const alice = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
     expect(await readFrame(alice.body!.getReader())).toEqual({ type: "heartbeat" })
 
-    for (const event of [documentChanged("org_internal_acme"), provisionStep("ws_acme", "ready")]) {
-      await expect(nudgeLiveSyncRoom(namespace, room, event)).rejects.toThrow()
-    }
+    await expect(nudgeLiveSyncRoom(namespace, room, documentChanged("org_internal_acme"))).rejects.toThrow()
     const replayed = await openRoom(namespace.instances.get(room)!, { subject: "alice", org: "org_internal_acme", lastEventId: "0" })
     expect(replayed.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
+  })
+
+  test("a workspace's machine start reaches only its owner's connections in the org room, live and on replay, with only the fields the room verified", async () => {
+    const namespace = createFakeNamespace()
+    const room = liveSyncRoomNameForPrincipal({ orgId: "org_internal_acme" })
+    const aliceRes = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
+    const carolRes = await connectLiveSyncRoom(namespace, subscriber("carol", "org_internal_acme"), 60_000)
+    const aliceReader = aliceRes.body!.getReader()
+    expect(await readFrame(aliceReader)).toEqual({ type: "heartbeat" })
+    expect(await readFrame(carolRes.body!.getReader())).toEqual({ type: "heartbeat" })
+
+    const starting = provisionStep("alice", "starting")
+    const result = await nudgeLiveSyncRoom(namespace, room, { ...starting, message: "not verified" } as unknown as ControlPlaneEvent)
+    expect(result).toEqual({ delivered: 1, held: 2 })
+    expect(await readFrame(aliceReader)).toEqual(starting)
+    await nudgeLiveSyncRoom(namespace, room, provisionStep("alice", "ready"))
+    expect(await readFrame(aliceReader)).toEqual(provisionStep("alice", "ready"))
+
+    const replayed = await openRoom(namespace.instances.get(room)!, { subject: "alice", org: "org_internal_acme", lastEventId: "0" })
+    expect(replayed.frames.map((frame) => frame.data)).toContainEqual(provisionStep("alice", "ready"))
+    const other = await openRoom(namespace.instances.get(room)!, { subject: "carol", org: "org_internal_acme", lastEventId: "0" })
+    expect(JSON.stringify(other.frames)).not.toContain("provision")
+
+    await expect(nudgeLiveSyncRoom(namespace, room, { ...provisionStep("alice", "ready"), step: "cloning" } as unknown as ControlPlaneEvent)).rejects.toThrow()
+    await expect(nudgeLiveSyncRoom(namespace, room, { ...provisionStep("", "ready") })).rejects.toThrow()
   })
 
   test("cancelling the client stream drops the held connection", async () => {

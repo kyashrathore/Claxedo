@@ -29,7 +29,8 @@ function sessionStatusEvent(row: Record<string, unknown>, ts: number): ControlPl
 
 /**
  * The events this room admits onto a client stream, a session share's
- * doorbell, a session's status notice and a reader's own marks, rebuilt field
+ * doorbell, a session's status notice, a reader's own marks and a workspace's
+ * machine start, rebuilt field
  * by field so the room forwards exactly the fields it verified and nothing
  * else the sender put in the object.
  */
@@ -53,6 +54,16 @@ function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
   }
   if (row.type === "session.reader.changed" && typeof ownerUserId === "string" && ownerUserId && typeof sessionId === "string" && typeof workspaceId === "string") {
     return { type: "session.reader.changed", ts, ownerUserId, sessionId, workspaceId, ...sessionReaderState(numberField(row, "seenAt"), numberField(row, "settledAt")) }
+  }
+  const { orgId, step } = row
+  if (
+    row.type === "provision"
+    && typeof ownerUserId === "string" && ownerUserId
+    && typeof orgId === "string" && orgId
+    && typeof workspaceId === "string" && workspaceId
+    && (step === "starting" || step === "ready" || step === "stopped" || step === "error")
+  ) {
+    return { type: "provision", ts, ownerUserId, orgId, workspaceId, step }
   }
   return undefined
 }
