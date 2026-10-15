@@ -713,6 +713,24 @@ describe("boat sandbox driver", () => {
     expect(boat.healthChecks).toBe(1)
   })
 
+  test("a runtime that exited after printing its boot-failure line reports that line's reason, not the stack trace that filled the log tail", async () => {
+    const boat = fakeBoat({ failHealthOnce: true, containerState: "exited" })
+    const reason = 'The branch "lane-r2-no-such-branch" does not exist in https://github.com/octocat/Spoon-Knife'
+    const frames = ["checkOut", "async prepareRuntimeRepository", "async Object.measure", "async claxedoWorkspaceRuntimeBootFromEnv", "async runWorkspaceRuntimeHost", "async file:///opt/workspace-runtime/workspace-runtime-host.mjs:82847:1"]
+      .map((frame, index) => `    at ${frame} (file:///opt/workspace-runtime/workspace-runtime-host.mjs:${80772 + index * 100}:${13 + index})`)
+    const logs = ["status=exited exit=1 oom=false", "[claxedo-workspace-runtime] starting", `[claxedo-workspace-runtime] workspace_runtime_boot_failed: Error: ${reason}`, ...frames].join("\n")
+    expect(frames.join("\n").length).toBeGreaterThan(600)
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, fetchImpl: async (url, init) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (body?.command?.includes("docker logs")) return Response.json({ ok: true, ...commandFinished({ stdout: logs }) })
+      return boat.fetchImpl(url, init)
+    } })
+    const failure = await driver.ensureHost(ensureInput()).catch((error: unknown) => error as Error)
+    expect(isSandboxRuntimeBootFailure(failure)).toBe(true)
+    expect((failure as Error).message).toBe(`Boat ${ID} runtime did not become healthy: the runtime container is exited; workspace_runtime_boot_failed: ${reason}`)
+    expect(sandboxRuntimeBootFailure(`runtime_boot_failed: ${(failure as Error).message}`)).toBe(reason)
+  })
+
   test("an unhealthy runtime reports bounded container diagnostics with staged secrets redacted", async () => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthTimeoutMs: 0,

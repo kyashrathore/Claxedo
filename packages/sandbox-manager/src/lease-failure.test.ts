@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailedError, sandboxRuntimeBootFailure, workspaceRuntimeBootReason } from "./lease-failure"
+import { runtimeBootDiagnostic, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailedError, sandboxRuntimeBootFailure, workspaceRuntimeBootReason } from "./lease-failure"
 
 describe("the reason a person is told for a boot that failed", () => {
   const diagnostic = [
@@ -13,6 +13,13 @@ describe("the reason a person is told for a boot that failed", () => {
   test("is the runtime's own line from the driver's diagnostic, without the stack beneath it", () => {
     expect(workspaceRuntimeBootReason(diagnostic)).toBe("The branch \"lane-b-no-such-branch\" does not exist in https://github.com/octocat/git-consortium")
     expect(sandboxRuntimeBootFailure(sandboxRuntimeBootFailedError(diagnostic))).toBe("The branch \"lane-b-no-such-branch\" does not exist in https://github.com/octocat/git-consortium")
+  })
+
+  test("survives a driver's bound on the log: the boot-failure line is kept whole and the stack under it dropped, while a log without one keeps its tail", () => {
+    const kept = runtimeBootDiagnostic(`${diagnostic}\n${"    at async run (file:///opt/claxedo-runtime/workspace-runtime-host.mjs:74300:1)\n".repeat(20)}`, 600)
+    expect(kept).toBe("workspace_runtime_boot_failed: The branch \"lane-b-no-such-branch\" does not exist in https://github.com/octocat/git-consortium")
+    expect(sandboxRuntimeBootFailure(sandboxRuntimeBootFailedError(kept))).toBe("The branch \"lane-b-no-such-branch\" does not exist in https://github.com/octocat/git-consortium")
+    expect(runtimeBootDiagnostic(`${"x".repeat(800)}\nStartup failed: bun install failed\n`, 600)).toBe(`${"x".repeat(565)}\nStartup failed: bun install failed`)
   })
 
   test("is the driver's whole diagnostic when the runtime never named one", () => {

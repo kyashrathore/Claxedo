@@ -70,6 +70,19 @@ export function workspaceRuntimeBootReason(diagnostic: string): string | undefin
   return reason.trim().replace(/^Error: /, "") || undefined
 }
 
+/**
+ * What a driver keeps of a runtime's log within `maxChars`. A Node stack
+ * under the boot-failure line is longer than the bound a driver puts on the
+ * tail (600 chars on Boat, 2026-10-15 staging), so a tail alone keeps the
+ * frames and loses the one line that names the reason.
+ */
+export function runtimeBootDiagnostic(log: string, maxChars: number): string {
+  const trimmed = log.trim()
+  const reason = workspaceRuntimeBootReason(trimmed)
+  if (reason === undefined) return trimmed.slice(-maxChars)
+  return `${WORKSPACE_RUNTIME_BOOT_FAILED_LINE}${reason}`.slice(0, maxChars)
+}
+
 /** The boot's own reason when an ensure error says a runtime's boot failed. */
 export function sandboxRuntimeBootFailure(error: string | undefined) {
   if (!error?.startsWith(RUNTIME_BOOT_FAILED)) return undefined

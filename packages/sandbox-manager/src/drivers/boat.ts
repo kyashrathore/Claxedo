@@ -7,7 +7,7 @@ import {
   type SandboxTarget,
   type SandboxResource,
 } from "../contract"
-import { SandboxHostGoneError, SandboxRuntimeBootError } from "../lease-failure"
+import { SandboxHostGoneError, SandboxRuntimeBootError, runtimeBootDiagnostic } from "../lease-failure"
 import { workspaceRuntimeBootEnv, workspaceRuntimeBootSecrets, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
@@ -136,14 +136,17 @@ function sleep(ms: number) {
 }
 
 /**
- * Redacts before bounding, so a secret the tail would cut in half is already
+ * Redacts before bounding, so a secret the bound would cut in half is already
  * gone. Values shorter than the floor (ports, flags) are left readable.
  */
-function scrubbedTail(text: string, secrets: readonly string[]) {
-  const redacted = secrets
+function scrubbed(text: string, secrets: readonly string[]) {
+  return secrets
     .filter((secret) => secret.length >= REDACTED_VALUE_MIN_LENGTH)
     .reduce((output, secret) => output.split(secret).join("[redacted]"), text)
-  return redacted.trim().slice(-STDERR_TAIL_CHARS)
+}
+
+function scrubbedTail(text: string, secrets: readonly string[]) {
+  return scrubbed(text, secrets).trim().slice(-STDERR_TAIL_CHARS)
 }
 
 /** A directory name an image reference maps to, one per image; references differ in characters the mapping keeps. */
@@ -329,7 +332,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
         command: `docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' ${shell(containerName)}; docker logs --tail 20 ${shell(containerName)} 2>&1`,
         timeoutSeconds: 10,
       })
-      diagnostic = scrubbedTail(`${result.stdout}\n${result.stderr}`, secrets)
+      diagnostic = runtimeBootDiagnostic(scrubbed(`${result.stdout}\n${result.stderr}`, secrets), STDERR_TAIL_CHARS)
     } catch {
       diagnostic = "container diagnostics unavailable"
     }
