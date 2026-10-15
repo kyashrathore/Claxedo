@@ -104,7 +104,9 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     return admittedTurn(c, parsed.data.turnLease, { live: true })
   }
 
-  const starting = (c: Context, started: boolean) => c.json({ error: { code: "cloud_runtime_starting", started } }, 409)
+  /** `retryAfterMs` is when the start's next step can answer differently, `sinceStartMs` how long the start has run, each when known. */
+  const starting = (c: Context, answer: { started: boolean; retryAfterMs?: number; sinceStartMs?: number }) =>
+    c.json({ error: { code: "cloud_runtime_starting", ...answer } }, 409)
 
   /** Begins or joins the start of the turn's workspace machine as the workspace's owner; nothing once the machine is ready. */
   async function startedMachine(c: Context, claims: TurnLeaseClaims, start: OwnerMachineStart): Promise<Response | undefined> {
@@ -114,10 +116,14 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     const started = await start({ owner: { userId: owner.userId, orgId: owner.orgId }, workspaceId: claims.workspaceId })
     if ("denied" in started) return refused(started.denied.error.message)
     if (started.status === "ready") return undefined
-    if (started.status === "provisioning") return starting(c, started.joined !== true)
+    if (started.status === "provisioning") {
+      const { retryAfterMs, sinceStartMs } = started
+      return starting(c, { started: started.joined !== true, retryAfterMs, ...(sinceStartMs === undefined ? {} : { sinceStartMs }) })
+    }
     if (started.status === "failed") return refused(started.message)
     const bootFailure = sandboxRuntimeBootFailure(started.error)
-    return bootFailure ? refused(bootFailure) : starting(c, false)
+    if (bootFailure) return refused(bootFailure)
+    return starting(c, { started: false, ...(started.retryAfterMs === undefined ? {} : { retryAfterMs: started.retryAfterMs }) })
   }
 
   /**
@@ -142,7 +148,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       return await access()
     } catch (error) {
       if (!machineNotRunning(error)) throw error
-      return starting(c, false)
+      return starting(c, { started: false })
     }
   }
 

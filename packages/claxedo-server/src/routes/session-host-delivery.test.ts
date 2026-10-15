@@ -264,7 +264,7 @@ describe("/turn-execution", () => {
     expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
   })
 
-  test("a call that asks starts a machine that is not running as the workspace's owner and answers at once that this call started it; a call while it starts joins that start", async () => {
+  test("a call that asks starts a machine that is not running as the workspace's owner and answers at once that this call started it, when to ask again, and, joining that start, how long it has run", async () => {
     const root = "ses_pi_execution_start"
     const proof = await plane.createHostedSession(root)
     const lease = await plane.acquire(proof, root, "turn_execution_start")
@@ -273,10 +273,15 @@ describe("/turn-execution", () => {
     plane.starting({ status: "provisioning", epoch: 2, retryAfterMs: 2_000, homeRegion: "us-east" })
     const started = await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })
     expect(started.status).toBe(409)
-    expect(await started.json()).toEqual({ error: { code: "cloud_runtime_starting", started: true } })
+    expect(await started.json()).toEqual({ error: { code: "cloud_runtime_starting", started: true, retryAfterMs: 2_000 } })
+    const requestedAt = Date.now() - 35_000
+    plane.serve({ ...NOT_RUNNING, start: { epoch: 2, requestedAt, startedAt: requestedAt, markedAt: requestedAt, bootMode: "resume", phases: [] } })
     plane.starting({ status: "provisioning", epoch: 2, retryAfterMs: 2_000, homeRegion: "us-east", joined: true })
     const joined = await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })
-    expect(await joined.json()).toEqual({ error: { code: "cloud_runtime_starting", started: false } })
+    const answer = (await joined.json()) as { error: { sinceStartMs: number } }
+    expect(answer).toEqual({ error: { code: "cloud_runtime_starting", started: false, retryAfterMs: 2_000, sinceStartMs: expect.any(Number) } })
+    expect(answer.error.sinceStartMs).toBeGreaterThanOrEqual(35_000)
+    expect(answer.error.sinceStartMs).toBeLessThan(45_000)
     expect(plane.starts.slice(starts)).toEqual([{ workspaceId: WORKSPACE_ID }, { workspaceId: WORKSPACE_ID }])
     expect(plane.entitledOrgs.at(-1)).toBe(plane.orgId)
   })
