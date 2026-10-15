@@ -8,7 +8,7 @@ const SOURCE = join(import.meta.dir, "../..")
 
 function defaultKeybinds(): readonly string[] {
   const files = readdirSync(SOURCE, { recursive: true, encoding: "utf8" }).filter((file) => /\.tsx?$/.test(file) && !file.includes(".test."))
-  return files.flatMap((file) => [...readFileSync(join(SOURCE, file), "utf8").matchAll(/keybind: "([^"]+)"/g)].map((match) => match[1]!))
+  return files.flatMap((file) => [...readFileSync(join(SOURCE, file), "utf8").matchAll(/keybind: "([^"]+)"/g)].map((match) => match[1]))
 }
 
 function press(key: string, modifiers: { readonly meta: boolean; readonly ctrl: boolean }): KeyboardEvent {
@@ -24,5 +24,5 @@ test("keybinding: every default binding a command registers names a key, so it i
 test("keybinding: mod+comma is shown with its comma and matches a mod+, key press", () => {
   expect(formatKeybindParts("mod+comma", (key) => key).at(-1)).toBe(",")
   const [combo] = parseKeybind("mod+comma")
-  expect(keybindSignature(combo!)).toBe(eventSignature(press(",", combo!)))
+  expect(keybindSignature(combo)).toBe(eventSignature(press(",", combo)))
 })
