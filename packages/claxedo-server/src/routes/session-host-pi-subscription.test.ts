@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { UNDELIVERED_CREDENTIAL_CHANGE } from "../credentials/worker/org-routed"
 import { parseTurnDelivery } from "@claxedo/harness/contract"
 import { PiCredentials } from "@claxedo/harness/pi-durable/credentials"
 import { sessionAccountCredentials } from "@claxedo/harness/registry"
@@ -39,7 +40,7 @@ function settings() {
     authConfig: { enabled: true, issuer: "https://auth.test", jwksUrl: "https://auth.test/jwks" },
     resolveOrgId: async () => plane.orgId,
     credentials: plane.credentials,
-    changed: async () => {},
+    change: UNDELIVERED_CREDENTIAL_CHANGE,
     keys: envelopeKeyProviderFromEnv(plane.env),
   })
 }

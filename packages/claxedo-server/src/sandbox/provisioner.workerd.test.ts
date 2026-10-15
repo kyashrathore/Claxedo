@@ -50,6 +50,10 @@ async function driverCalls(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/driver-calls?ws=${workspaceId}`)).json()) as { calls: number }).calls
 }
 
+async function redeliver(workspaceId: string) {
+  expect((await miniflare.dispatchFetch(`${ORIGIN}/redeliver?ws=${workspaceId}`, { method: "POST" })).status).toBe(200)
+}
+
 async function fixKey(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/fix-key?ws=${workspaceId}`, { method: "POST" })).json()) as { lifted: boolean }).lifted
 }
@@ -179,6 +183,18 @@ describe("a sandbox start on workerd", () => {
     expect(await renewals("ws_renew_2")).toBe(2)
     expect(await driverCalls("ws_renew_2")).toBe(1)
     expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
+  test("a redelivery pushes a serving sandbox's settings at once, with no driver step and no run a read would see", async () => {
+    await start("ws_renew_1")
+    await until(() => target("ws_renew_1"), (lease) => lease.status === "ready")
+    expect(await until(() => renewals("ws_renew_1"), (count) => count >= 1)).toBe(1)
+
+    await redeliver("ws_renew_1")
+    expect(await renewals("ws_renew_1")).toBe(2)
+    expect(await inFlight("ws_renew_1")).toBeNull()
+    expect(await driverCalls("ws_renew_1")).toBe(1)
+    expect(await start("ws_renew_1")).toMatchObject({ status: "ready", epoch: 1 })
   })
 
   test("a ready sandbox whose host reads no idleness has it read from the alarm until a read stops it, and the next start resumes it", async () => {

@@ -225,6 +225,10 @@ export default {
     const workspaceId = url.searchParams.get("ws") ?? ""
     if (url.pathname === "/start") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId))
     if (url.pathname === "/refresh") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).refresh(workspaceId))
+    if (url.pathname === "/redeliver") {
+      await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).redeliver(workspaceId)
+      return Response.json({ redelivered: true })
+    }
     if (url.pathname === "/in-flight") return Response.json((await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).inFlight()) ?? null)
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })

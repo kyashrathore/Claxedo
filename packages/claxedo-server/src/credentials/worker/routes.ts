@@ -10,14 +10,14 @@ import type { SandboxDriverID, SandboxMachineClass } from "@claxedo/sandbox-cont
 import type { HarnessSecretDelivery } from "@claxedo/server-core/credentials/reach"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import type { ControlPlaneCredentials } from "../../authority/services"
-import { orgRoutedCredentials } from "./org-routed"
+import { orgRoutedCredentials, type CredentialChange } from "./org-routed"
 
 export type HostedCredentialRoutesInput = {
   authentication: RequestAuthenticationAdapter
   authConfig: ControlPlaneAuthConfig
   resolveOrgId(auth: SignedControlPlaneAuth): Promise<string>
   credentials: (orgId: string) => ControlPlaneCredentials
-  changed: (orgId: string) => Promise<void>
+  change: CredentialChange
   /** The plane's credential keys: a sign-in's callback can land on another Worker instance than its authorize did. */
   keys: EnvelopeKeyProvider
   fetch?: typeof fetch
@@ -60,7 +60,7 @@ function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: R
  * claim the request carries.
  */
 export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
-  const credentials = orgRoutedCredentials(input.credentials, input.changed)
+  const credentials = orgRoutedCredentials(input.credentials, input.change)
   const signed = async (request: Request) => {
     const auth = await controlPlaneAuthContext(request, { authentication: input.authentication, config: input.authConfig })
     if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed authentication is required")

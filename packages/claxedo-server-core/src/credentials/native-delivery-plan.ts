@@ -320,6 +320,26 @@ function byMostRecentMark<T extends { credential: CredentialMetadata }>(rows: re
     || left.credential.id.localeCompare(right.credential.id))
 }
 
+/**
+ * Which stored account, at which revision, each vendor host of one person's
+ * runtime is delivered, read from the rows alone. Two equal identities deliver
+ * the same accounts, so a credential write that leaves it unchanged has
+ * nothing to hand a running sandbox.
+ */
+export async function deliveredAccountsIdentity(input: Pick<DeliveryWalk, "owner" | "machineOwnerUserId" | "selections" | "selected">): Promise<string> {
+  const walked = await walkDeliverableAccounts({
+    ...input,
+    readSecret: async () => "unread",
+    destination: ({ providerId, kind }) => {
+      const shape = builtInProviderDestinationShape({ providerId, kind })
+      return shape ? { ...shape, value: "" } : undefined
+    },
+  }, () => undefined)
+  return walked.flatMap((row) => "refused" in row ? [] : [[row.credential.provider_id, row.credential.id, String(row.credential.revision)].join(FIELD_SEPARATOR)])
+    .toSorted()
+    .join(DIGEST_SEPARATOR)
+}
+
 /** The marked accounts whose secret could not be read this time. */
 export function unreadableDeliveries(deliveries: readonly NativeProviderDelivery[]): string[] {
   return deliveries.flatMap((row) => row.unreadable ? [row.credentialId] : [])

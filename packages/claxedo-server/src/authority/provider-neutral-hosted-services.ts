@@ -114,6 +114,7 @@ export type HostedSandboxBinding = {
   leaseStore: SandboxLeaseStore
   start: SandboxStart
   refresh: SandboxStart
+  redeliver: (workspaceId: string) => Promise<void>
   inFlight: SandboxInFlight
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** The organization keys every cloud workspace of this deployment starts on. */

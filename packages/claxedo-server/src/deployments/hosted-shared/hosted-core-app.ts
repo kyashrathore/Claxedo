@@ -90,7 +90,7 @@ import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mc
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { createHostedQuotaReader } from "@claxedo/server-core/usage/hosted-quota"
-import { orgRoutedCredentials } from "../../credentials/worker/org-routed"
+import { orgRoutedCredentials, UNDELIVERED_CREDENTIAL_CHANGE } from "../../credentials/worker/org-routed"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { privateRepoHosts } from "../private-repo-hosts"
 import { hostedSandboxEgress } from "./hosted-sandbox-egress"
@@ -138,7 +138,7 @@ export type HostedCoreAppOptions = {
    * running workspaces, with the organization's sandbox provider keys on a
    * plane that provisions cloud sandboxes.
    */
-  accountSetup?: Pick<HostedCredentialRoutesInput, "changed" | "sandboxDriverKeys" | "fetch">
+  accountSetup?: Pick<HostedCredentialRoutesInput, "change" | "sandboxDriverKeys" | "fetch">
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -540,7 +540,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...(plane.orgCredentials
         ? {
             quota: createHostedQuotaReader({
-              credentials: orgRoutedCredentials(plane.orgCredentials, options.accountSetup?.changed ?? (async () => {})),
+              credentials: orgRoutedCredentials(plane.orgCredentials, options.accountSetup?.change ?? UNDELIVERED_CREDENTIAL_CHANGE),
               ...(options.accountSetup?.fetch ? { fetch: options.accountSetup.fetch } : {}),
             }),
           }

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { UNDELIVERED_CREDENTIAL_CHANGE } from "../credentials/worker/org-routed"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
@@ -61,7 +62,7 @@ function app() {
     authConfig,
     resolveOrgId: async () => orgId,
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
-    changed: async () => {},
+    change: UNDELIVERED_CREDENTIAL_CHANGE,
     keys: envelopeKeyProviderFromEnv(env),
     fetch: provider,
     sandboxDriverKeys: hostedSandboxDriverKeys({

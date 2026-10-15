@@ -4,7 +4,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { isProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
+import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 import { hostedBrokerCredentialReader, hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { createHostedEgressBroker, DRAFT_PLACEHOLDER, verifyBrokerPlaceholder } from "../credentials/hosted-egress-broker"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
@@ -58,6 +58,7 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
   type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
+    sandboxRedeliver: unusedSandboxRedeliver,
     idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database,

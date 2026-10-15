@@ -136,9 +136,8 @@ export function createLocalBrokeringSandboxDriver(options: LocalBrokeringDriverO
   async function ensureHost(input: SandboxDriverEnsureInput): Promise<SandboxTarget> {
     const existing = hosts.get(input.workspaceId)
     if (existing) {
-      const oldNames = existing.secrets.map((secret) => secret.name).sort().join("\0")
-      const newNames = (input.secrets ?? []).map((secret) => secret.name).sort().join("\0")
-      if (oldNames !== newNames) {
+      const held = new Set(existing.secrets.map((secret) => secret.name))
+      if ((input.secrets ?? []).some((secret) => !held.has(secret.name))) {
         await stop(existing.target)
         return ensureHost(input)
       }

@@ -1,15 +1,25 @@
 import type { ControlPlaneCredentials } from "../../authority/services"
 
 /**
+ * A credential write as the plane sees it: called before the write with its
+ * organization, it reads what that organization's running workspaces are
+ * delivered, and the function it answers hands their accounts again to each
+ * one whose delivery the write changed.
+ */
+export type CredentialChange = (orgId: string) => Promise<() => Promise<void>>
+
+export const UNDELIVERED_CREDENTIAL_CHANGE: CredentialChange = async () => async () => {}
+
+/**
  * The plane's per-organization credential stores as the one org-parameterized
  * contract the shared credential routes are written against. An operation
  * that names no organization is refused: there is no store for "no
- * organization". Every write that changes what a workspace may spend tells the
- * plane, so running workspaces take it.
+ * organization". Every write goes through `change`, so the running workspaces
+ * whose accounts it changed take them.
  */
 export function orgRoutedCredentials(
   storeFor: (orgId: string) => ControlPlaneCredentials,
-  changed: (orgId: string) => Promise<void>,
+  change: CredentialChange,
 ): ControlPlaneCredentials {
   const named = (org: string | undefined) => {
     if (!org) throw new Error("A hosted credential operation names its organization")
@@ -17,8 +27,9 @@ export function orgRoutedCredentials(
   }
   const at = (org: string | undefined) => storeFor(named(org))
   const write = async <T>(org: string | undefined, operation: (store: ControlPlaneCredentials) => Promise<T>) => {
+    const settle = await change(named(org))
     const result = await operation(at(org))
-    await changed(named(org))
+    await settle()
     return result
   }
   return {

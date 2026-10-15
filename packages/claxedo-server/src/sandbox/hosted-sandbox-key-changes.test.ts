@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { UNDELIVERED_CREDENTIAL_CHANGE } from "../credentials/worker/org-routed"
 import { createSandboxManager, SandboxProviderKeyRefusedError, type SandboxDriver, type SandboxTarget } from "@claxedo/sandbox-manager"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -95,7 +96,7 @@ function plane() {
     authConfig,
     resolveOrgId: async () => orgId,
     credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
-    changed: async () => {},
+    change: UNDELIVERED_CREDENTIAL_CHANGE,
     keys: envelopeKeyProviderFromEnv(env),
     sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"], hostedBroker: false, leaseStore }),
   })

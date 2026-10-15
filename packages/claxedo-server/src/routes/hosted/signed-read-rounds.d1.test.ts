@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "vitest"
+import { UNDELIVERED_CREDENTIAL_CHANGE } from "../../credentials/worker/org-routed"
 import { countD1Rounds, type D1Rounds } from "../../test-support/d1-rounds"
 import { hostedCoreD1App } from "../../test-support/hosted-core-d1-app"
 import { hostedSandboxDriverKeys } from "../../sandbox/hosted-sandbox-driver-keys"
@@ -26,7 +27,7 @@ async function signedReader(workspace = true) {
     routes: ({ authority, database }) => ({
       productWorkspace: { sandboxStart: async () => READY },
       accountSetup: {
-        changed: async () => undefined,
+        change: UNDELIVERED_CREDENTIAL_CHANGE,
         sandboxDriverKeys: hostedSandboxDriverKeys({ database, authority, drivers: ["boat"], hostedBroker: true, leaseStore: createD1SandboxLeaseStore({ database }) }),
       },
     }),

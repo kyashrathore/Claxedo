@@ -544,14 +544,16 @@ describe("runtime env reconciliation on ensure-runtime", () => {
     expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: true })
   })
 
-  test("withdrawing a credential replaces the runtime so its placeholder stops existing", async () => {
+  test("withdrawing a credential leaves the running runtime and its turns alone, and its placeholder is no longer swapped anywhere", async () => {
     const kv = credentials({ withdrawn: JSON.stringify([registration]) })
     await call("/sandbox/withdrawn/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
       method: "POST",
       body: JSON.stringify({ command: "runtime", env: {}, egress: [] }),
     })
 
-    expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: false })
+    expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: true })
+    expect(sandboxStub.setCredentialHosts).toHaveBeenLastCalledWith("withdrawn", [])
+    expect(JSON.parse(kv.values.get("withdrawn")!)).toEqual([])
   })
 })
 

@@ -126,6 +126,21 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       return this.#inFlight()
     }
 
+    /**
+     * The renewal's step run now: what the sandbox is delivered changed, and
+     * its next renewal is rescheduled from this delivery. A run in flight
+     * prepares its settings on every step, so it delivers them itself.
+     */
+    redeliver(workspaceId: string): Promise<void> {
+      return this.#flushed(async () => {
+        if (await this.ctx.storage.get<Run>("run")) return
+        const at = await drive(this.env).renew(workspaceId)
+        if (at === undefined) await this.ctx.storage.delete("renewal")
+        else await this.ctx.storage.put("renewal", { workspaceId, at, failures: 0 } satisfies FollowUp)
+        await this.#armFollowUps()
+      })
+    }
+
     /** What a step queued leaves with the invocation that ran it; the step's own answer or failure stands. */
     async #flushed<T>(work: () => Promise<T>): Promise<T> {
       try {
