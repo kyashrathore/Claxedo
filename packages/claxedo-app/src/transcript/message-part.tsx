@@ -28,7 +28,8 @@ import type {
   AgentToolPart,
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
-import { useData } from "./data"
+import { useData, useOptionalData } from "./data"
+import { userMessageHead } from "./user-message-head"
 import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsible, FileIcon, Icon, Checkbox, DiffChanges, ImagePreview, Tooltip, IconButton, TextShimmer, type IconProps } from "@/ui"
 import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils"
 import { copyText } from "@/lib/clipboard"
@@ -653,11 +654,8 @@ export function UserMessageDisplay(props: {
     return timefmt().format(created)
   })
 
-  const metaHead = createMemo(() => {
-    const agent = props.message.agent
-    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]
-    return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")
-  })
+  const data = useOptionalData()
+  const metaHead = createMemo(() => userMessageHead({ agent: props.message.agent, harnessLabel: data?.harnessLabel, model: model() }))
 
   const metaTail = stamp
 

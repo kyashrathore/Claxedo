@@ -616,8 +616,12 @@ export const desktopRenderer: Policy = {
   // read (owner: `lib/account-health.ts`), and the connect form's state apart
   // from its server reads (owner: the app's accounts domain,
   // `accounts/connect-state.ts`). They add no package edge.
-  // 1365/36, no headroom.
-  ceilings: { modules: 1365, packages: 36 },
+  // A user message's header text (owner: the app's transcript domain,
+  // `transcript/user-message-head.ts`) and the product label of the harness a
+  // session runs (owner: the app's session domain,
+  // `session/view/session-harness-label.ts`). They add no package edge.
+  // 1367/36, no headroom.
+  ceilings: { modules: 1367, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

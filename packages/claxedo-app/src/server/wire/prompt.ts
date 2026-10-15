@@ -4,8 +4,6 @@ import type { PromptAttachment, PromptDelivery, PromptInput } from "../types"
 
 export const PROMPT_ROUTE = "/prompt_async"
 
-const DEFAULT_AGENT = "build"
-
 type WirePart = RuntimePromptInput["parts"][number]
 
 function wireAttachmentPart(attachment: PromptAttachment): WirePart {
@@ -34,6 +32,8 @@ function wireAttachmentPart(attachment: PromptAttachment): WirePart {
 
 const wireModel = (input: PromptInput) => (input.model ? { model: { providerID: input.model.providerId, modelID: input.model.modelId } } : {})
 
+const wireAgent = (input: PromptInput) => (input.agent ? { agent: input.agent } : {})
+
 function promptParts(input: PromptInput): WirePart[] {
   return [{ type: "text", text: input.text } as WirePart, ...input.attachments.map(wireAttachmentPart)]
 }
@@ -41,7 +41,7 @@ function promptParts(input: PromptInput): WirePart[] {
 export function promptBody(input: PromptInput, messageId: string) {
   return {
     messageID: messageId,
-    agent: input.agent ?? DEFAULT_AGENT,
+    ...wireAgent(input),
     ...wireModel(input),
     ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),
     ...(input.effort !== undefined ? { variant: input.effort } : {}),
@@ -60,7 +60,7 @@ export function promptEcho(input: PromptInput, ids: { readonly sessionId: string
       sessionID: sessionId,
       role: "user",
       time: { created: ids.created },
-      agent: input.agent ?? DEFAULT_AGENT,
+      ...wireAgent(input),
       ...wireModel(input),
     },
     parts: promptParts(input).map((part, index) => ({ ...part, id: promptPartId(messageId, index), sessionID: sessionId, messageID: messageId })),
