@@ -91,9 +91,24 @@ export function turnAdmissionConflict(c: Ctx) {
   }, 409)
 }
 
+/**
+ * A turn's answer lands before its route checkpoints and releases the lease,
+ * and the authority refuses another turn's acquire until then, so a prompt
+ * sent in that gap waits out the release instead of failing with
+ * session_turn_in_progress. A session still running a turn is not waited on.
+ */
+async function awaitReleaseOfEndedTurn(input: { opts: Opts; c: Ctx; directory: RuntimeDirectory; sessionId: string }) {
+  const held = input.opts.heldTurnLeases
+  if (!held?.holds(input.sessionId)) return
+  const status = (await readSession(input.opts, input.c, input.directory, input.sessionId))?.status
+  if (status === "busy" || status === "retry") return
+  await held.released(input.sessionId)
+}
+
 export async function acquireManagedPromptLease(input: {
   opts: Opts
   c: Ctx
+  directory: RuntimeDirectory
   sessionId: string
   turnId?: string
   onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
@@ -107,6 +122,7 @@ export async function acquireManagedPromptLease(input: {
       ), { status: 400 }),
     }
   }
+  await awaitReleaseOfEndedTurn(input)
   const acquired = await acquireSessionTurnLease({
     policy: input.opts.sessionAccessPolicy!,
     access: {
@@ -333,6 +349,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
       const turnAdmission = await acquireManagedPromptLease({
         opts,
         c,
+        directory,
         sessionId: id,
         turnId: body.messageID,
         onLost: () => containLostTurn({ runtime: runtime.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
