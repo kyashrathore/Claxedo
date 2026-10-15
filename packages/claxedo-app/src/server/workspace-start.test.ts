@@ -150,3 +150,53 @@ test("workspace start: the machine is done once the provider says it takes comma
   await startWorkspace(server.connect, "ws_1", { onProgress: (step) => done.push(step.steps?.done), wait: async () => undefined })
   expect(done).toEqual([[], ["machine"], ["machine", "image"]])
 })
+
+function pending() {
+  let resolve: () => void = () => undefined
+  const promise = new Promise<void>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+const never = () => new Promise<never>(() => undefined)
+
+test("workspace start: a poll the server never answers is asked again once its deadline passes, and the start goes on to ready", async () => {
+  const answered = [json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }), undefined, json(READY)]
+  let calls = 0
+  const connections = createWorkspaceConnections(async () => answered[calls++] ?? never())
+
+  const link = await startWorkspace(connections.start, "ws_1", { wait: async () => undefined, pollDeadlineMs: 5 })
+
+  expect(link.runtimeAccessToken).toBe("rat")
+  expect(calls).toBe(3)
+})
+
+test("workspace start: the server's notice that the start settled ends the wait and the unanswered poll at once, and the next poll adopts the ready link", async () => {
+  const listeners = new Set<() => void>()
+  const settled = (listener: () => void) => {
+    listeners.add(listener)
+    return () => void listeners.delete(listener)
+  }
+  const announce = () => [...listeners].forEach((listener) => listener())
+  const polled = [pending(), pending()]
+  const answered = [json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }), undefined, json(READY)]
+  let calls = 0
+  const connections = createWorkspaceConnections(async () => {
+    const index = calls++
+    polled[index]?.resolve()
+    return answered[index] ?? never()
+  })
+
+  const start = startWorkspace(connections.start, "ws_1", { wait: never, settled })
+  await polled[0]!.promise
+  await Bun.sleep(0)
+  announce()
+  await polled[1]!.promise
+  await Bun.sleep(0)
+  announce()
+
+  expect((await start).runtimeAccessToken).toBe("rat")
+  expect(calls).toBe(3)
+  expect(listeners.size).toBe(0)
+})

@@ -10,7 +10,7 @@ const timerOwners: Readonly<Record<string, string>> = {
 const pacingOwners: Readonly<Record<string, string>> = {
   "src/transcript/message-part.tsx": "paced reveal of streamed text more than 512 chars behind, in 24 ms steps, as today; exp-stream owns any change to it",
   "src/terminal/backend/clipboard.ts": "paced write of a paste over 16,384 chars to the PTY in 4,096-char chunks every 5 ms, as v1",
-  "src/server/workspace-start.ts": "a cloud workspace start's provisioning poll, explicit or followed: each wait is the server's retryAfterMs clamped to 0.5–30 s, for as long as the server reports the start in progress",
+  "src/server/workspace-start.ts": "a cloud workspace start's provisioning poll, explicit or followed: each wait is the server's retryAfterMs clamped to 0.5–30 s, for as long as the server reports the start in progress; a poll unanswered after 30 s is asked again, and the server's notice that the start ended cuts a wait or an unanswered poll short",
 }
 const timers = new Set(["setInterval", "setTimeout"])
 const globals = new Set(["window", "globalThis", "self"])

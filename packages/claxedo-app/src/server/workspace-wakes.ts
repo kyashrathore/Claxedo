@@ -1,8 +1,9 @@
 import { onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { sleep } from "@claxedo/helpers"
-import type { WorkspaceRuntime, WorkspaceStartProgress } from "./cloud-types"
+import type { CloudWorkspaceStatus, WorkspaceRuntime, WorkspaceStartProgress } from "./cloud-types"
 import { toAppError } from "./errors"
+import type { ServerEvent } from "./events"
 import { placementId, type PlacementId } from "./ids"
 import { isStartingCloud, isStoppedCloud } from "./placement-runtime"
 import type { Transport } from "./transport"
@@ -32,13 +33,25 @@ function runtimeOf(wake: WakeState, placement: Placement | undefined): Workspace
   return asleep ? { kind: "asleep" } : { kind: "live" }
 }
 
-type Run = (workspaceId: string, options: { onProgress: (progress: WorkspaceStartProgress) => void }) => Promise<void>
+const START_ENDS: ReadonlySet<CloudWorkspaceStatus["kind"]> = new Set(["ready", "stopped", "failed"])
 
-async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id: PlacementId, send: (event: WakeEvent) => void) {
+type StartSettled = (listener: () => void) => () => void
+
+type Run = (workspaceId: string, options: { onProgress: (progress: WorkspaceStartProgress) => void; settled: StartSettled }) => Promise<void>
+
+type ServerEvents = (listener: (event: ServerEvent) => void) => () => void
+
+function startSettled(events: ServerEvents, id: PlacementId): StartSettled {
+  return (listener) => events((event) => {
+    if (event.type === "cloudWorkspaceChanged" && event.workspaceId === id && START_ENDS.has(event.status.kind)) listener()
+  })
+}
+
+async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id: PlacementId, settled: StartSettled, send: (event: WakeEvent) => void) {
   send({ type: "wakeStarted", ...(followed ? { followed: true } : {}) })
   try {
     const { workspaceId } = await workspaces.locate(id)
-    await run(workspaceId, { onProgress: ({ kind: _kind, ...progress }) => send({ type: "provisioning", ...progress }) })
+    await run(workspaceId, { onProgress: ({ kind: _kind, ...progress }) => send({ type: "provisioning", ...progress }), settled })
     await workspaces.refresh()
     send({ type: "woke" })
   } catch (cause) {
@@ -47,7 +60,7 @@ async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id
   }
 }
 
-export function createWorkspaceWakes(transport: Transport, workspaces: Workspaces, wait: (ms: number) => Promise<void> = sleep): WorkspaceWakes {
+export function createWorkspaceWakes(transport: Transport, workspaces: Workspaces, events: ServerEvents, wait: (ms: number) => Promise<void> = sleep): WorkspaceWakes {
   const [wakes, setWakes] = createStore<Record<string, WakeState>>({})
   const send = (id: PlacementId, event: WakeEvent) => setWakes(id, (state) => wakeTransition(state ?? WAKE_IDLE, event))
   const running = new Map<string, Promise<void>>()
@@ -55,7 +68,7 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
   const drive = (id: PlacementId, run: Run, followed: boolean) => {
     const current = running.get(id)
     if (current) return current
-    const next = driveWake(run, followed, workspaces, id, (event) => send(id, event)).finally(() => running.delete(id))
+    const next = driveWake(run, followed, workspaces, id, startSettled(events, id), (event) => send(id, event)).finally(() => running.delete(id))
     running.set(id, next)
     return next
   }
