@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
+import { vendorModel, type AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import {
   FIRST_TURN_ERROR_CLASSES,
   isRepeatedUsageObservation,
@@ -35,6 +35,15 @@ type TurnContext = {
    * unsigned; only the machine operator's sync may claim it.
    */
   owner?: { org_id: string; user_id: string }
+}
+
+/** The provider and model a fact is filed under: the vendor's own, whatever form the harness named them in. */
+function servedModel(current: Pick<State, "providerId" | "modelId" | "servedModelId">, context: Pick<TurnContext, "providerId" | "modelId">) {
+  const model = vendorModel({
+    providerID: current.providerId ?? context.providerId ?? "unknown",
+    modelID: current.servedModelId ?? current.modelId ?? context.modelId ?? "unknown",
+  })
+  return { providerId: model.providerID, modelId: model.modelID }
 }
 
 type State = {
@@ -268,8 +277,7 @@ export function createTurnMeter(input: {
         status: terminal?.status ?? "running",
         location: context.location,
         harness: context.harness,
-        providerId: current.providerId ?? context.providerId ?? "unknown",
-        modelId: current.servedModelId ?? current.modelId ?? context.modelId ?? "unknown",
+        ...servedModel(current, context),
         ...((context.nativeSessionId ?? current.nativeSessionId)
           ? { nativeSessionId: context.nativeSessionId ?? current.nativeSessionId }
           : {}),

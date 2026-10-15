@@ -1,5 +1,5 @@
 import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, isHarnessId, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs,
-  piProviderSpending, type CredentialSnapshot, type PiLaunchProvider, type PromptModel, type ProviderProjection,
+  piProviderSpending, vendorModel, type CredentialSnapshot, type PiLaunchProvider, type PromptModel, type ProviderProjection,
   type SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
 import type { TurnActor } from "../contract/session"
@@ -69,7 +69,7 @@ function accountProviderIds(harness: SessionHarness, model: PromptModel | undefi
   if (harness.access !== "native") return undefined
   if (isHarnessId(harness.id)) return HARNESS_TABLE[harness.id].providerIds
   if (harness.id === "pi") {
-    const vendor = model?.providerID === "pi" ? model.modelID.split("/")[0] : undefined
+    const vendor = model?.providerID === "pi" ? vendorModel(model).providerID : undefined
     return vendor ? piCredentialProviderIDs(vendor) : PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs)
   }
   return undefined
