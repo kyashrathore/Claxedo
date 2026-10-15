@@ -95,15 +95,11 @@ export type MarketplaceCatalog = {
   readonly errors: readonly MarketplaceCatalogError[]
 }
 
-export type PluginActivationTarget =
-  { readonly scope: "all-projects" } | { readonly scope: "projects"; readonly projectIds: readonly string[] }
-
 export type PluginActivationInput = {
   readonly pluginInstanceId: string
   readonly harnessIds: readonly PluginHarness[]
   readonly choice: boolean | null
   readonly revision: number
-  readonly target?: PluginActivationTarget
 }
 
 export type PluginOrganizationDefaultInput = {

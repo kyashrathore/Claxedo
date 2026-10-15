@@ -1,7 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js"
-import { useTranslator } from "@/i18n"
-import { failureMessage } from "@/lib/failure"
-import { useServer, type PluginCandidate, type PluginHarness } from "@/server"
+import { useErrorCopy, useTranslator } from "@/i18n"
+import { toAppError, useServer, type PluginCandidate, type PluginHarness } from "@/server"
 import { Button, Dialog, showToast, useDialog, DialogBody, DialogHeader, DialogTitle } from "@/ui"
 import { marketplaceDictionary } from "../i18n"
 import { pluginLabel } from "../model"
@@ -43,13 +42,17 @@ function createInstall(props: {
 }) {
   const t = useTranslator(marketplaceDictionary)
   const server = useServer()
+  const errorCopy = useErrorCopy("marketplace")
   const [error, setError] = createSignal<string>()
   const [busy, setBusy] = createSignal(false)
   const install = async (harnessIds: readonly PluginHarness[]) => {
+    if (harnessIds.length === 0) {
+      setError(t("marketplace.install.noHarness"))
+      return
+    }
     setError(undefined)
     setBusy(true)
     try {
-      if (harnessIds.length === 0) throw new Error(t("marketplace.install.noHarness"))
       const change = await server.marketplace.setActivation({
         pluginInstanceId: props.plugin.pluginInstanceId,
         harnessIds,
@@ -64,7 +67,7 @@ function createInstall(props: {
       }
       props.done()
     } catch (cause) {
-      setError(failureMessage(cause))
+      setError(errorCopy(toAppError(cause)).message)
     } finally {
       setBusy(false)
     }

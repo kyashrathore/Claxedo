@@ -37,6 +37,8 @@ import type { ControlPlaneServices } from "../authority/services"
 import { HostedAgentPluginRoutes } from "./routes"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
+import { createMarketplaceApi } from "../../../claxedo-app/src/server/marketplace"
+import { createTransport } from "../../../claxedo-app/src/server/transport"
 
 const roots: string[] = []
 
@@ -307,6 +309,7 @@ async function fixture(options: {
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals()
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })))
 })
 
@@ -803,5 +806,26 @@ describe("hosted Agent Plugins routes", () => {
     })
     expect(response.status).toBe(403)
     expect(await subject.activations.revision()).toBe(1)
+  })
+
+  test("the app's Marketplace install is an all-projects choice this route accepts, and it reaches every project", async () => {
+    const subject = await fixture()
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+      request(subject.app, new URL(url).pathname.slice("/api/claxedo/plugins".length) || "/", "member", init))
+    const transport = createTransport({ serverUrl: "http://control.test" })
+    const events: unknown[] = []
+    const queryClient = { setQueriesData: () => undefined, invalidateQueries: async () => undefined } as unknown as Parameters<typeof createMarketplaceApi>[1]
+    const marketplace = createMarketplaceApi(transport, queryClient, { record: (event) => void events.push(event) })
+    const catalog = await (await request(subject.app, "/")).json()
+    const plugin = catalog.candidates.find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId !== "claxedo")
+
+    const change = await marketplace.setActivation({ pluginInstanceId: plugin.pluginInstanceId, harnessIds: ["codex"], choice: true, revision: catalog.revision })
+
+    expect(change.revision).toBe(catalog.revision + 1)
+    expect(subject.artifacts.values.size).toBe(1)
+    expect(events).toEqual([{ event: "feature_used", properties: { feature: "marketplace_install" } }])
+    const future = await (await request(subject.app, "/projects/future-project")).json()
+    expect(future.candidates.find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === plugin.pluginInstanceId).harnesses.codex)
+      .toMatchObject({ userDefault: true, effective: { effective: true, winner: "user-default" } })
   })
 })

@@ -331,4 +331,24 @@ describe("unsigned Agent Plugins public route contribution", () => {
       .toMatchObject({ enabled: true })
   })
 
+  test("an all-projects target is this machine-wide route's own scope, and a project-scoped target is refused", async () => {
+    const subject = await fixture()
+    const first = await catalog(subject.app)
+    const candidate = first.candidates[0]
+    const activate = (choice: boolean, expectedRevision: number, target: unknown) =>
+      subject.app.request("http://local.test/api/claxedo/plugins/activation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pluginInstanceId: candidate.pluginInstanceId, harnessIds: ["claude"], choice, expectedRevision, target }),
+      })
+
+    const applied = await activate(true, first.revision, { scope: "all-projects" })
+    expect(applied.status).toBe(200)
+    expect(await applied.json()).toEqual({ revision: first.revision + 1, reconciliation: { state: "applied" } })
+
+    const scoped = await activate(false, first.revision + 1, { scope: "projects", projectIds: ["project-a"] })
+    expect(scoped.status).toBe(400)
+    expect(await scoped.json()).toMatchObject({ error: { code: "agent_plugins_project_scope_unsupported" } })
+    expect(subject.activations.revision()).toBe(first.revision + 1)
+  })
 })
