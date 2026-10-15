@@ -1,6 +1,6 @@
 import { deleteSessionMeta, putSessionMeta, sessionMetas } from "@claxedo/server-core/session/meta/index"
+import { chooseProjectWorkspace } from "@claxedo/server-core/tasks-host/project-workspace"
 import {
-  chooseProjectWorkspace,
   createTasksSessionBridge,
   type TasksRuntimeTarget,
 } from "@claxedo/server-core/tasks-host/session-bridge-core"

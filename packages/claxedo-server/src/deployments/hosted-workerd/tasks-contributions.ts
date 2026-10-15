@@ -5,6 +5,7 @@ import {
   hostedTasksRuntimeClient,
   type HostedTasksCompositionInput,
 } from "../../tasks/hosted-composition"
+import { createD1TasksHostReads } from "../../tasks/d1-host-reads"
 import { tasksGrantRenewalContribution, type TasksGrantRenewalInput } from "../../tasks/grant-renewal"
 import {
   createHostedTasksSessionBridge,
@@ -35,7 +36,6 @@ export function hostedTasksRouteContributions(
      * task's root is launched by the bridge, so it is handed the same one.
      */
     rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
-    releaseRuntime?: HostedTasksSessionBridgeInput["releaseRuntime"]
     sandboxUsage?: HostedTasksSessionBridgeInput["sandboxUsage"]
     /**
      * The deployment's half of the create admission a task's cloud root is
@@ -52,6 +52,7 @@ export function hostedTasksRouteContributions(
     services: input.services,
     ...input.cloudCreateAdmission,
   })
+  const reads = createD1TasksHostReads(input.database)
   const composition = createHostedTasksComposition({
     ...input,
     cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
@@ -59,12 +60,12 @@ export function hostedTasksRouteContributions(
       createHostedTasksSessionBridge({
         services: input.services,
         runtimeClient: hostedTasksRuntimeClient(input.services),
+        reads,
         principal,
         auth,
         owner,
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
         ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
-        ...(input.releaseRuntime ? { releaseRuntime: input.releaseRuntime } : {}),
         ...(input.sandboxUsage ? { sandboxUsage: input.sandboxUsage } : {}),
         cloudCreateAdmission: createAdmission,
         sandboxEgress: input.sandboxEgress,

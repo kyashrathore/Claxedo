@@ -401,8 +401,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
    * to that project as strictly as it holds a signed creator.
    */
   createRuntimeCloudWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: RuntimeCloudWorkspaceCreateArgs) => Promise<unknown>
-  /** The undo of `createRuntimeCloudWorkspace`, as the same principal. */
-  deleteRuntimeWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) => Promise<unknown>
 
   // sessions
   authorizeSessionRead: (
