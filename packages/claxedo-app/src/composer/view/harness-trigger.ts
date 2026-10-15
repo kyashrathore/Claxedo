@@ -12,6 +12,7 @@ type TriggerLabelInput = {
   picked: Accessor<PickerItem | undefined>
   catalog: SelectorCatalog
   polling: Accessor<boolean>
+  asleep: Accessor<boolean>
   availability: ModelAvailability
   harnessLabel: (harness: HarnessType) => string
   modelNames: ReturnType<typeof useModelNames>
@@ -48,6 +49,7 @@ function rememberPickedModelName(input: Pick<TriggerLabelInput, "picked" | "mode
 
 export type ModelLabelInput = {
   readonly polling: boolean
+  readonly asleep?: boolean
   readonly harness?: HarnessType
   readonly harnessLabel: (harness: HarnessType) => string
   readonly picked?: Pick<PickerItem, "id" | "name">
@@ -62,7 +64,7 @@ export type ModelLabelInput = {
 
 export function modelLabel(input: ModelLabelInput): string {
   const { harness, picked, selectedModel } = input
-  if (input.polling) return "Connecting"
+  if (input.polling) return input.asleep ? "Asleep" : "Connecting"
   if (picked && picked.name !== picked.id) return picked.name
   if (input.savedModelUnavailable !== undefined) return input.savedModelUnavailable
   if (input.managedDefault && harness) return `${input.harnessLabel(harness)} default`
@@ -85,6 +87,7 @@ function createModelLabel(input: TriggerLabelInput) {
     const selection = input.selection()
     return modelLabel({
       polling: input.polling(),
+      asleep: input.asleep(),
       harness: input.harness(),
       harnessLabel: input.harnessLabel,
       picked: input.picked(),

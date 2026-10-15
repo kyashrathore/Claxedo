@@ -4,6 +4,7 @@ import type { QueuedMessages } from "../view/timeline/model"
 
 export type SessionQueue = Omit<QueuedMessages, "beginEdit"> & {
   readonly beginEdit: (seq: number, editable: boolean) => Promise<boolean>
+  readonly draining: Accessor<boolean>
 }
 
 export type QueueInternal = SessionQueue & {
@@ -28,6 +29,10 @@ type QueueContext = {
 }
 
 const NO_ITEMS: readonly QueuedPrompt[] = Object.freeze([])
+
+function runsNext(item: QueuedPrompt): boolean {
+  return !item.held && (!item.steering || item.steering.state === "dispatching")
+}
 
 function signalField<T>(initial: T): Field<T> {
   const [get, set] = createSignal(initial)
@@ -116,6 +121,7 @@ export function createQueue(server: Server, ref: SessionLocation, onRead: (items
   }
   return {
     items: context.items.get,
+    draining: () => context.items.get().some(runsNext),
     loadFailed: () => context.readError.get() !== undefined,
     pending: context.pending.get,
     error: () => context.controlError.get()?.message,

@@ -27,6 +27,13 @@ test("submit block: an asleep workspace never sends to a harness nobody chose; S
   expect(submitBlockReason({ ...noHarness, workspaceAsleep: false })?.reason).toBe("no-model")
 })
 
+test("submit block: an existing session on an asleep workspace sends though its harness is unread there, since its runtime holds the harness the session runs and the send wakes it", () => {
+  const asleepSession: SubmitBlockInput = { ...unreadHarness, harnessMode: false, harnessReadiness: "polling", modelBlocked: true, workspaceAsleep: true, sessionExists: true }
+  expect(submitBlockReason(asleepSession)).toBeNull()
+  expect(submitBlockReason({ ...asleepSession, blank: true })?.reason).toBe("empty")
+  expect(submitBlockReason({ ...asleepSession, workspaceAsleep: false })?.reason).toBe("no-model")
+})
+
 test("submit block: a harness whose account its provider refused never sends; Send names the refusal and offers Open Models, ahead of the error the refused options load also left", () => {
   const refused: SubmitBlockInput = { ...unreadHarness, harnessReadiness: "ready", harnessConfigError: true, harnessReadyForSubmit: false, accountUnavailable: { reason: "auth_failed" } }
   expect(submitBlockReason(refused)).toEqual({ reason: "account-refused", copy: "The agent's account was refused by its provider", actionable: true, action: "open-models" })

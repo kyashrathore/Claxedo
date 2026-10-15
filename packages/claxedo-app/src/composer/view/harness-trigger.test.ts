@@ -23,3 +23,9 @@ test("model label: the placeholders show only when nothing is known", () => {
   expect(modelLabel({ ...nothing, harness: opencode, selectedModel: "claude-sonnet-4-6", catalogUnread: true, rememberedName: "Claude Sonnet 4.6" })).toBe("Claude Sonnet 4.6")
   expect(modelLabel({ ...nothing, harness: codex, selectedModel: "gpt-5", picked: { id: "gpt-5", name: "GPT-5" }, rememberedName: "Old name" })).toBe("GPT-5")
 })
+
+test("model label: a session whose harness only its asleep runtime can name reads Asleep, not Connecting, since nothing connects until a send wakes it", () => {
+  const polling: ModelLabelInput = { polling: true, harnessLabel: () => "Harness", selectedModel: "", managedDefault: false, modelLoading: false, catalogUnread: false, hasModelOptions: false }
+  expect(modelLabel({ ...polling, asleep: true })).toBe("Asleep")
+  expect(modelLabel(polling)).toBe("Connecting")
+})

@@ -32,3 +32,17 @@ test("a queue read that was asked before a pushed change and answers after it do
   await reading
   expect(queue.items()).toEqual([])
 })
+
+test("the queue drains while a row the runtime will start, or is starting, waits in it; a held or refused row waits for the person instead", () => {
+  const { queue } = queueOver(async () => [])
+  const waiting: QueuedPrompt = { ...DISPATCHING, seq: 2, steering: undefined }
+  const refused: QueuedPrompt = { ...DISPATCHING, seq: 3, steering: { mode: "start", operationId: "op-3", state: "rejected", message: "Session is still busy" } }
+  const held: QueuedPrompt = { ...DISPATCHING, seq: 4, held: true, steering: undefined }
+  expect(queue.draining()).toBe(false)
+  queue.receive([DISPATCHING])
+  expect(queue.draining()).toBe(true)
+  queue.receive([waiting])
+  expect(queue.draining()).toBe(true)
+  queue.receive([refused, held])
+  expect(queue.draining()).toBe(false)
+})

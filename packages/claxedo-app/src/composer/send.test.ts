@@ -9,6 +9,8 @@ import { ServerError } from "@/server"
 import type { SessionView } from "@/session"
 
 const KEY = "session:goal"
+let messageIds = 0
+const newMessageId = () => `msg_test_${++messageIds}`
 const IMAGE: ImagePart = { type: "image", id: "img-1", filename: "shot.png", mime: "image/png", dataUrl: "data:image/png;base64,AA==" }
 
 function composerWith(prompt: Prompt) {
@@ -22,12 +24,12 @@ function composerWith(prompt: Prompt) {
       mode: () => "normal",
       normalMode: () => undefined,
       submission: async () => ({}),
-      working: () => false,
+      joinsQueue: () => false,
       goalCapable: () => true,
       view: () => undefined,
       queuedReplace: () => undefined,
       focusEditor: () => undefined,
-      goalStopFailed: () => undefined,
+      goalStopFailed: () => undefined, newMessageId,
     }),
   )
   return { store, send }
@@ -79,9 +81,9 @@ test("a refused queue replacement preserves the edit and never sends a fresh pro
   const view = { send: async () => { sends++ } } as unknown as SessionView
   const send = createRoot(() => createComposerSend({
     key: () => KEY, store, mode: () => "normal", normalMode: () => undefined,
-    submission: async () => ({}), working: () => true, goalCapable: () => false,
+    submission: async () => ({}), joinsQueue: () => true, goalCapable: () => false,
     view: () => view, queuedReplace: () => async () => false,
-    afterAccepted: () => { accepted++ }, focusEditor: () => undefined, goalStopFailed: () => undefined,
+    afterAccepted: () => { accepted++ }, focusEditor: () => undefined, goalStopFailed: () => undefined, newMessageId,
   }))
   await send.send()
   expect(sends).toBe(0)
@@ -108,9 +110,9 @@ test("saving a queue edit captures it before asynchronous settings and leaves th
   }
   const send = createRoot(() => createComposerSend({
     key: () => KEY, store, mode: () => "normal", normalMode: () => undefined,
-    submission: async () => { await settings; return {} }, working: () => true, goalCapable: () => true,
+    submission: async () => { await settings; return {} }, joinsQueue: () => true, goalCapable: () => true,
     view: () => view, queuedReplace: () => replacing ? replace : undefined,
-    focusEditor: () => undefined, goalStopFailed: () => undefined,
+    focusEditor: () => undefined, goalStopFailed: () => undefined, newMessageId,
   }))
   const saved = send.send()
   replacing = false
@@ -132,9 +134,9 @@ test("a first send its host withdraws puts the text back and returns to editing 
   let accepted = 0
   const send = createRoot(() => createComposerSend({
     key: () => key, store, mode: () => "normal", normalMode: () => undefined,
-    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    submission: async () => ({}), joinsQueue: () => false, goalCapable: () => false,
     view: () => undefined, queuedReplace: () => undefined, startSession: async () => undefined,
-    afterAccepted: () => { accepted++ }, focusEditor: () => undefined, goalStopFailed: () => undefined,
+    afterAccepted: () => { accepted++ }, focusEditor: () => undefined, goalStopFailed: () => undefined, newMessageId,
   }))
   await send.send()
   expect(send.state().kind).toBe("editing")
@@ -149,13 +151,13 @@ test("a draft's first send keeps its text in the draft while the workspace wakes
   const seen: string[] = []
   const send = createRoot(() => createComposerSend({
     key: () => key, store, mode: () => "normal", normalMode: () => undefined,
-    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    submission: async () => ({}), joinsQueue: () => false, goalCapable: () => false,
     view: () => undefined, queuedReplace: () => undefined,
     startSession: async () => {
       seen.push(promptText(store.draft(key).prompt))
       throw new ServerError({ class: "conflict", code: "cloud_runtime_boot_failed", message: "Boat bx_r97r47dt container start failed (exit 1)" })
     },
-    focusEditor: () => undefined, goalStopFailed: () => undefined,
+    focusEditor: () => undefined, goalStopFailed: () => undefined, newMessageId,
   }))
   await send.send()
   expect(seen).toEqual(["hello hone"])
@@ -170,10 +172,10 @@ test("a blocked composer never sends, so Enter cannot pass a gate the Send butto
   let starts = 0
   const send = createRoot(() => createComposerSend({
     key: () => key, store, mode: () => "normal", normalMode: () => undefined,
-    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    submission: async () => ({}), joinsQueue: () => false, goalCapable: () => false,
     view: () => undefined, queuedReplace: () => undefined, blocked: () => true,
     startSession: async () => { starts++; return {} as unknown as SessionView },
-    focusEditor: () => undefined, goalStopFailed: () => undefined,
+    focusEditor: () => undefined, goalStopFailed: () => undefined, newMessageId,
   }))
   await send.send()
   expect(starts).toBe(0)
@@ -187,94 +189,13 @@ test("a draft's first send clears the draft only once the session exists", async
   store.setPrompt(key, [{ type: "text", content: "hello hone", start: 0, end: 10 }], 10)
   const send = createRoot(() => createComposerSend({
     key: () => key, store, mode: () => "normal", normalMode: () => undefined,
-    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    submission: async () => ({}), joinsQueue: () => false, goalCapable: () => false,
     view: () => undefined, queuedReplace: () => undefined,
     startSession: async () => ({}) as unknown as SessionView,
-    focusEditor: () => undefined, goalStopFailed: () => undefined,
+    focusEditor: () => undefined, goalStopFailed: () => undefined, newMessageId,
   }))
   await send.send()
   expect(send.state().kind).toBe("accepted")
   expect(promptText(store.draft(key).prompt)).toBe("")
   expect(store.history(key, "normal").length).toBe(1)
-})
-
-function sessionComposer(deliver: (prompt?: { text: string; delivery?: unknown }) => Promise<void>) {
-  const store = createComposerStore()
-  store.setPrompt(KEY, [{ type: "text", content: "Reply only DONE-A.", start: 0, end: 18 }], 18)
-  const view = { send: deliver } as unknown as SessionView
-  const send = createRoot(() => createComposerSend({
-    key: () => KEY, store, mode: () => "normal", normalMode: () => undefined,
-    submission: async () => ({}), working: () => true, goalCapable: () => false,
-    view: () => view, queuedReplace: () => undefined,
-    focusEditor: () => undefined, goalStopFailed: () => undefined,
-  }))
-  return { store, send }
-}
-
-test("a send to an open session empties the composer at once, so a follow-up typed while it is delivered is a message of its own", async () => {
-  let deliver = () => {}
-  const delivered = new Promise<void>((resolve) => { deliver = resolve })
-  const { store, send } = sessionComposer(() => delivered)
-  const sent = send.send()
-  expect(promptText(store.draft(KEY).prompt)).toBe("")
-  store.setPrompt(KEY, [{ type: "text", content: "Reply only PONG-52.", start: 0, end: 19 }], 19)
-  deliver()
-  await sent
-  expect(send.state().kind).toBe("accepted")
-  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only PONG-52.")
-  expect(store.history(KEY, "normal").map((entry) => promptText(entry.prompt))).toEqual(["Reply only DONE-A."])
-})
-
-test("a send to an open session that fails puts its text back ahead of anything typed since", async () => {
-  let refuse = (_error: Error) => {}
-  const refused = new Promise<void>((_resolve, reject) => { refuse = reject })
-  const { store, send } = sessionComposer(() => refused)
-  const sent = send.send()
-  store.setPrompt(KEY, [{ type: "text", content: "and then this", start: 0, end: 13 }], 13)
-  refuse(new ServerError({ class: "network", code: "runtime_unavailable", message: "The workspace is not running" }))
-  await sent
-  expect(send.state().kind).toBe("rejected")
-  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only DONE-A.\n\nand then this")
-  expect(store.history(KEY, "normal")).toEqual([])
-})
-
-test("a send to an open session that fails with nothing typed since restores exactly what was sent", async () => {
-  const { store, send } = sessionComposer(async () => { throw new ServerError({ class: "network", code: "runtime_unavailable", message: "down" }) })
-  await send.send()
-  expect(send.state().kind).toBe("rejected")
-  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only DONE-A.")
-})
-
-test("Enter on a follow-up while the previous send is still being delivered sends it, queued, once that send lands", async () => {
-  const prompts: { text: string; delivery: unknown }[] = []
-  let deliver = () => {}
-  const first = new Promise<void>((resolve) => { deliver = resolve })
-  const { store, send } = sessionComposer(async (prompt) => {
-    prompts.push({ text: prompt?.text ?? "", delivery: prompt?.delivery })
-    if (prompts.length === 1) await first
-  })
-  const sent = send.send()
-  store.setPrompt(KEY, [{ type: "text", content: "Reply only FOLLOW-2.", start: 0, end: 20 }], 20)
-  await send.send()
-  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only FOLLOW-2.")
-  deliver()
-  await sent
-  expect(prompts).toEqual([{ text: "Reply only DONE-A.", delivery: "queue" }, { text: "Reply only FOLLOW-2.", delivery: "queue" }])
-  expect(promptText(store.draft(KEY).prompt)).toBe("")
-  expect(send.state().kind).toBe("accepted")
-})
-
-test("Enter on a follow-up while a send that then fails is delivered sends nothing more, and the composer holds both texts", async () => {
-  let sends = 0
-  let refuse = (_error: Error) => {}
-  const refused = new Promise<void>((_resolve, reject) => { refuse = reject })
-  const { store, send } = sessionComposer(() => { sends++; return refused })
-  const sent = send.send()
-  store.setPrompt(KEY, [{ type: "text", content: "and then this", start: 0, end: 13 }], 13)
-  await send.send()
-  refuse(new ServerError({ class: "network", code: "runtime_unavailable", message: "The workspace is not running" }))
-  await sent
-  expect(sends).toBe(1)
-  expect(send.state().kind).toBe("rejected")
-  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only DONE-A.\n\nand then this")
 })

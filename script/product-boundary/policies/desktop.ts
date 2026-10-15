@@ -639,8 +639,14 @@ export const desktopRenderer: Policy = {
   // and a wake can be told apart without the composer (owner: the app's
   // session domain, `session/view/placement-notice-text.ts`). They add no
   // package edge.
-  // 1372/36, no headroom.
-  ceilings: { modules: 1372, packages: 36 },
+  // The harness picker's read of its placement's runtime, split from the
+  // picker when an asleep runtime stopped its re-probes (owner: the app's
+  // composer domain, `composer/view/selector-runtime.ts`), and the composer's
+  // notice for a harness the runtime refuses because it runs in another host
+  // (owner: the app's composer domain, `composer/view/harness-elsewhere.ts`).
+  // They add no package edge.
+  // 1374/36, no headroom.
+  ceilings: { modules: 1374, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -1,8 +1,10 @@
 import { createEffect, For } from "solid-js"
+import { isHarnessHostedElsewhere } from "@/server"
 import { showToast } from "@/ui"
 import type { AttachmentState } from "../model"
 import type { ComposerSetup } from "../setup"
 import { publishComposerNotice } from "./composer-notice"
+import { createHarnessElsewhereRefusal, harnessElsewhereNotice } from "./harness-elsewhere"
 
 type FailedAttachment = Extract<AttachmentState, { kind: "failed" }>
 
@@ -20,10 +22,11 @@ function attachmentToast(t: ComposerSetup["t"], state: FailedAttachment) {
 }
 
 export function createComposerToasts(composer: ComposerSetup) {
+  const hostedElsewhere = createHarnessElsewhereRefusal(composer.send.state)
   createEffect(() => {
     const state = composer.send.state()
     if (state.kind !== "rejected") return
-    showToast({ title: composer.t("prompt.toast.promptSendFailed.title"), description: state.error.message })
+    if (!isHarnessHostedElsewhere(state.error)) showToast({ title: composer.t("prompt.toast.promptSendFailed.title"), description: state.error.message })
     composer.send.edited()
   })
   createEffect(() => {
@@ -33,6 +36,21 @@ export function createComposerToasts(composer: ComposerSetup) {
       composer.store.removeAttachment(composer.key(), state.id)
     }
   })
+  return { hostedElsewhere }
+}
+
+function keepSessionHarness(composer: ComposerSetup) {
+  const input = composer.harnessScopeInput()
+  if (input.sessionHarness) void composer.harnessController.setHarness(composer.key(), input.sessionHarness, input)
+}
+
+export function HarnessElsewhereNotice(props: { composer: ComposerSetup; refusal: ReturnType<typeof createHarnessElsewhereRefusal>; startNewSession: () => void }) {
+  const { refusal, dismiss } = props.refusal
+  publishComposerNotice(() => harnessElsewhereNotice(refusal(), props.composer.t, {
+    startNewSession: () => { dismiss(); props.startNewSession() },
+    keepSessionHarness: () => { dismiss(); keepSessionHarness(props.composer) },
+  }))
+  return null
 }
 
 function ReadingNotice(props: { composer: ComposerSetup; filename: string; id: string }) {
