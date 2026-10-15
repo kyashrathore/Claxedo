@@ -75,6 +75,7 @@ const en = {
   "tasks.start.noPreset": "A preset is required to start, and you have none yet.",
   "tasks.start.noPresetForSlot": "No preset configures {{slot}} yet.",
   "tasks.start.cannotRun": "This preset cannot run here.",
+  "tasks.start.failed": "{{title}} did not start",
   "tasks.start.unreadablePrevious":
     "The previous session cannot be read from here, so there is nothing to continue from.",
   "tasks.start.noSession": "This task has no session to open.",

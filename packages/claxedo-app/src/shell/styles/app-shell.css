@@ -23,7 +23,8 @@
   z-index: var(--z-modal) !important;
 }
 
-body [data-component="menu-v2-content"] {
+body [data-component="menu-v2-content"],
+body [data-component="menu-v2-content"][data-slot="select-v2-content"] {
   z-index: var(--z-modal-popover);
 }
 
