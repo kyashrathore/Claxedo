@@ -36,6 +36,16 @@ describe("turn recovery", () => {
     expect(copy("usage_limit")).toEqual({ title: "Usage limit reached", description: "Choose another model or account.", action: undefined })
   })
 
+  test("a block page from the provider's edge says the connection was refused, not that the account is limited", () => {
+    expect(copy("egress")).toEqual({
+      title: "The provider refused this connection",
+      description: "The model provider blocked the request from the host this turn ran on. The account is fine; resend to try again.",
+      action: "Resend",
+    })
+    expect(sessionRecoveryClass(failed("<!DOCTYPE html><html><head><title>Unable to load site</title></head><body>Please try again later.</body></html>")))
+      .toBe("egress")
+  })
+
   test("the runtime's class wins over the wording", () => {
     expect(sessionRecoveryClass(failed(RATE_LIMITED, "usage_limit"))).toBe("usage_limit")
     expect(sessionRecoveryClass(failed(USAGE_LIMITED, "rate_limit"))).toBe("rate_limit")

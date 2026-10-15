@@ -1,4 +1,5 @@
-import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { vendorBody } from "@claxedo/agent-runtime-contract"
+import { jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { CredentialVerificationError } from "../verification-error"
 import type { CredentialHealth, CredentialVerdictEvidence } from "@claxedo/server-core/credentials/types"
 
@@ -24,7 +25,8 @@ export type VendorAnswer = {
 export type VendorRefusal = { health: Exclude<CredentialHealth, "ok">; evidence: CredentialVerdictEvidence }
 
 export function readVendorAnswer(reply: VendorReply): VendorAnswer {
-  const api = parseJsonRecord(reply.text)
+  const body = vendorBody(reply.text)
+  const api = body.kind === "api" ? body.document : undefined
   const type = api ? vendorErrorType(api) : undefined
   const retryAfterSeconds = retryAfter(reply.headers.get("retry-after"))
   return {

@@ -3,7 +3,7 @@ import type { AgentEvent, SubmissionId, SubmissionRecord } from "@earendil-works
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { RoutedEvent, TurnBroker } from "../../contract"
 import type { PiSessionRuntime } from "./placement"
-import { piModelError } from "./errors"
+import { piModelFailure } from "./errors"
 
 export type PiRunOwnership = { requestId: string } | { inputs: readonly SubmissionId[] }
 
@@ -51,7 +51,7 @@ export class PiRun {
     if (!this.submissions.has(record.id) || record.type !== "input") return
     if (record.status === "done") this.settle({ type: "finish", sessionId: this.sessionId })
     else if (record.status === "unanswered" && record.reason === "aborted") this.settle({ type: "cancelled", sessionId: this.sessionId })
-    else if (record.status === "unanswered") this.settle({ type: "error", error: piModelError(record) })
+    else if (record.status === "unanswered") this.settle({ type: "error", ...piModelFailure(record) })
   }
 
   private settle(event: RoutedEvent["event"]): void {
