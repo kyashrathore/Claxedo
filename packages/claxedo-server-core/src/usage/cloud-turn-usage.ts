@@ -78,8 +78,8 @@ export type CloudTurnUsage = {
   /**
    * Stops the periodic flush until the next lease, then resolves once every
    * metered event is recorded and each session's unanswered revisions have
-   * been offered under its last unexpired lease: the last delivery before the
-   * runtime goes away.
+   * been offered under its last unexpired lease, or else its last released
+   * turn's usage proof: the last delivery before the runtime goes away.
    */
   drain(): Promise<void>
 }
@@ -97,9 +97,12 @@ export type CloudTurnUsageLog = { warn(message: string, fields?: Record<string, 
  * a subagent's child session is metered under the turn that started it and
  * usage landing between turns under the turn that left it. Each revision
  * names that turn, and the plane files it under the turn's producer, so a
- * revision that waits for a later lease, whoever's, stays its own turn's. A
- * revision the plane does not answer for stays pending until the next lease
- * on the session holding its turn carries it.
+ * revision that waits for a later lease, whoever's, stays its own turn's.
+ * A revision that settles while no turn holds its session (a background
+ * task's report after the turn that started it) ships at once, under the
+ * session's live lease or else the usage proof its last released turn's
+ * release answered. A revision the plane does not answer for stays pending
+ * until the next lease on the session holding its turn carries it.
  */
 export function cloudTurnUsage(input: {
   workspaceId: string
@@ -119,6 +122,8 @@ export function cloudTurnUsage(input: {
   const activeTurns = new Map<string, string>()
   /** Each session's latest lease from the plane, until it expires: what a report on that session is proven by. */
   const leases = new Map<string, TurnProof & { expiresAt: number }>()
+  /** Each session's last released turn, proven by the usage proof its release answered, for usage that settles once no lease is live. */
+  const releasedTurns = new Map<string, TurnProof & { expiresAt: number }>()
 
   /** `sessionId`, then its parent, grandparent and on up to its root. */
   function lineage(sessionId: string) {
@@ -145,8 +150,29 @@ export function cloudTurnUsage(input: {
     return undefined
   }
 
+  /** The live lease proving `sessionId`, else its last released turn's usage proof, while either stands. */
+  function proofFor(sessionId: string) {
+    const at = now()
+    const live = leases.get(sessionId)
+    if (live && live.expiresAt > at) return live
+    const released = releasedTurns.get(sessionId)
+    if (released && released.expiresAt > at) return released
+    releasedTurns.delete(sessionId)
+    return undefined
+  }
+
   const meter = createTurnMeter({
-    writer: { writeRevision: (fact) => input.ledger.writeRevision(fact, meteringTurn(fact.sessionId)) },
+    writer: {
+      async writeRevision(fact) {
+        const turn = meteringTurn(fact.sessionId)
+        const written = await input.ledger.writeRevision(fact, turn)
+        if (turn && fact.settlement !== "provisional" && !activeTurns.has(turn.sessionId)) {
+          const proof = proofFor(turn.sessionId)
+          if (proof) queueReport(proof)
+        }
+        return written
+      },
+    },
     reader: input.ledger,
     state: input.ledger.meterState,
     reconcileProvisionalOnStart: true,
@@ -230,9 +256,10 @@ export function cloudTurnUsage(input: {
 
   const acquire = input.policy.acquireTurn?.bind(input.policy)
   const renew = input.policy.renewTurn?.bind(input.policy)
+  const release = input.policy.releaseTurn?.bind(input.policy)
   const endTurn = input.policy.endTurn?.bind(input.policy)
   return {
-    sessionAccessPolicy: acquire && renew
+    sessionAccessPolicy: acquire && renew && release
       ? {
           ...input.policy,
           async acquireTurn(turn) {
@@ -274,6 +301,14 @@ export function cloudTurnUsage(input: {
             }
             queueReport(proof)
           },
+          async releaseTurn(turn) {
+            const decision = await release(turn)
+            if ("released" in decision && decision.usageProof) {
+              const { sessionId, turnId, fencingToken } = turn
+              releasedTurns.set(sessionId, { sessionId, turnId, fencingToken, leaseId: decision.usageProof.proof, expiresAt: decision.usageProof.expiresAt })
+            }
+            return decision
+          },
         }
       : input.policy,
     onPresentationEvent: (event) => void meter.consume(event),
@@ -295,6 +330,10 @@ export function cloudTurnUsage(input: {
       stopFlushing()
       await meter.flush()
       reportLiveLeases()
+      for (const sessionId of releasedTurns.keys()) {
+        const proof = proofFor(sessionId)
+        if (proof && !leases.has(sessionId)) queueReport(proof)
+      }
       await reports
     },
   }

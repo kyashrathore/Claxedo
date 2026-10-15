@@ -17,6 +17,8 @@ const streamLeaseIssuer = "claxedo-control-plane"
 const streamLeaseAudience = "workspace-runtime-session-stream"
 const turnLeaseIssuer = "claxedo-control-plane"
 export const TURN_LEASE_AUDIENCE = "workspace-runtime-session-turn"
+/** A released turn's proof for usage its work leaves after it ended; only the usage report reads it. */
+const TURN_USAGE_AUDIENCE = "workspace-runtime-session-turn-usage"
 
 /**
  * How the runtime holding a lease proved its identity, and therefore what a
@@ -166,101 +168,114 @@ export function streamLeaseVerifier(env: Record<string, string | undefined>) {
 }
 
 export function turnLeaseMinter(env: Record<string, string | undefined>) {
-  return async (claims: TurnLeaseClaims) => {
-    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)
-    if (!pem) throw new Error("Turn lease signing key is unavailable")
-    const now = Math.floor(Date.now() / 1_000)
-    const expiry = Math.floor(claims.expiresAt / 1_000)
-    if (expiry <= now) throw new Error("Turn lease already expired before proof minting")
-    const lease = await new SignJWT({
-      principal_kind: claims.principalKind,
-      actor_id: claims.actorId,
-      actor_kind: claims.actorKind,
-      org_id: claims.orgId,
-      workspace_id: claims.workspaceId,
-      transport: claims.transport,
-      ...(claims.transport === "relay-host"
-        ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
-        : claims.transport === "deferred-grant"
-          ? { grant_id: claims.grantId, ...(claims.hostId ? { host_id: claims.hostId } : {}) }
-          : {}),
-      session_id: claims.sessionId,
-      action: "write",
-      turn_id: claims.turnId,
-      authority_lease_id: claims.authorityLeaseId,
-      fencing_token: claims.fencingToken,
-      acquired_at: claims.acquiredAt,
-      authority_expires_at: claims.expiresAt,
-    })
-      .setProtectedHeader({ alg: "EdDSA" })
-      .setIssuer(turnLeaseIssuer)
-      .setAudience(TURN_LEASE_AUDIENCE)
-      .setIssuedAt(now)
-      .setExpirationTime(expiry)
-      .setJti(crypto.randomUUID())
-      .sign(await importPKCS8(pem, "EdDSA"))
-    return { lease, expiresAt: expiry * 1_000 }
-  }
+  return (claims: TurnLeaseClaims) => signTurnClaims(env, claims, TURN_LEASE_AUDIENCE, claims.expiresAt)
 }
 
 export function turnLeaseVerifier(env: Record<string, string | undefined>) {
-  return async (lease: string): Promise<TurnLeaseClaims> => {
-    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
-    if (!pem) throw new Error("Turn lease verification key is unavailable")
-    const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
-      algorithms: ["EdDSA"],
-      issuer: turnLeaseIssuer,
-      audience: TURN_LEASE_AUDIENCE,
-    })
-    const principalKind = payload.principal_kind
-    const actorKind = payload.actor_kind
-    if (
-      (principalKind !== "user" && principalKind !== "service")
-      || (actorKind !== "human" && actorKind !== "agent")
-      || (principalKind === "user" && actorKind !== "human")
-      || (principalKind === "service" && actorKind !== "agent")
-    ) throw new Error("Turn lease principal is invalid")
-    const actorId = trimToUndefined(payload.actor_id)
-    const orgId = trimToUndefined(payload.org_id)
-    const workspaceId = trimToUndefined(payload.workspace_id)
-    const hostId = trimToUndefined(payload.host_id)
-    const parentRuntimeAccessTokenJti = trimToUndefined(payload.parent_jti)
-    const sessionId = trimToUndefined(payload.session_id)
-    const turnId = trimToUndefined(payload.turn_id)
-    const authorityLeaseId = trimToUndefined(payload.authority_lease_id)
-    const fencingToken = positiveInteger(payload.fencing_token)
-    const acquiredAt = finiteTimestamp(payload.acquired_at)
-    const expiresAt = finiteTimestamp(payload.authority_expires_at)
-    const grantId = trimToUndefined(payload.grant_id)
-    const transport = payload.transport
-    if (
-      !actorId || !orgId || !workspaceId
-      || !sessionId || !turnId || !authorityLeaseId || !fencingToken
-      || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
-    ) throw new Error("Turn lease claims are invalid")
-    const binding: TurnLeaseBinding = transport === "owner-grant"
-      ? { transport: "owner-grant" }
-      : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
-        ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
-        : transport === "deferred-grant" && grantId
-          ? { transport: "deferred-grant", grantId, ...(hostId ? { hostId } : {}) }
-          : (() => { throw new Error("Turn lease binding is invalid") })()
-    const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
-      ? { principalKind: "user", actorId, actorKind: "human" }
-      : { principalKind: "service", actorId, actorKind: "agent" }
-    return {
-      ...principal,
-      ...binding,
-      orgId,
-      workspaceId,
-      sessionId,
-      action: "write",
-      turnId,
-      authorityLeaseId,
-      fencingToken,
-      acquiredAt,
-      expiresAt,
-    }
+  return (lease: string) => readTurnClaims(env, lease, TURN_LEASE_AUDIENCE)
+}
+
+/** Proves the turn a lease admitted to the usage report until `expiresAt`, past the lease's own expiry, and to nothing else. */
+export function turnUsageProofMinter(env: Record<string, string | undefined>) {
+  return (claims: TurnLeaseClaims, expiresAt: number) => signTurnClaims(env, claims, TURN_USAGE_AUDIENCE, expiresAt)
+}
+
+export function turnUsageProofVerifier(env: Record<string, string | undefined>) {
+  return (proof: string) => readTurnClaims(env, proof, TURN_USAGE_AUDIENCE)
+}
+
+async function signTurnClaims(env: Record<string, string | undefined>, claims: TurnLeaseClaims, audience: string, expiresAt: number) {
+  const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)
+  if (!pem) throw new Error("Turn lease signing key is unavailable")
+  const now = Math.floor(Date.now() / 1_000)
+  const expiry = Math.floor(expiresAt / 1_000)
+  if (expiry <= now) throw new Error("Turn lease already expired before proof minting")
+  const lease = await new SignJWT({
+    principal_kind: claims.principalKind,
+    actor_id: claims.actorId,
+    actor_kind: claims.actorKind,
+    org_id: claims.orgId,
+    workspace_id: claims.workspaceId,
+    transport: claims.transport,
+    ...(claims.transport === "relay-host"
+      ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
+      : claims.transport === "deferred-grant"
+        ? { grant_id: claims.grantId, ...(claims.hostId ? { host_id: claims.hostId } : {}) }
+        : {}),
+    session_id: claims.sessionId,
+    action: "write",
+    turn_id: claims.turnId,
+    authority_lease_id: claims.authorityLeaseId,
+    fencing_token: claims.fencingToken,
+    acquired_at: claims.acquiredAt,
+    authority_expires_at: claims.expiresAt,
+  })
+    .setProtectedHeader({ alg: "EdDSA" })
+    .setIssuer(turnLeaseIssuer)
+    .setAudience(audience)
+    .setIssuedAt(now)
+    .setExpirationTime(expiry)
+    .setJti(crypto.randomUUID())
+    .sign(await importPKCS8(pem, "EdDSA"))
+  return { lease, expiresAt: expiry * 1_000 }
+}
+
+async function readTurnClaims(env: Record<string, string | undefined>, lease: string, audience: string): Promise<TurnLeaseClaims> {
+  const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
+  if (!pem) throw new Error("Turn lease verification key is unavailable")
+  const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
+    algorithms: ["EdDSA"],
+    issuer: turnLeaseIssuer,
+    audience,
+  })
+  const principalKind = payload.principal_kind
+  const actorKind = payload.actor_kind
+  if (
+    (principalKind !== "user" && principalKind !== "service")
+    || (actorKind !== "human" && actorKind !== "agent")
+    || (principalKind === "user" && actorKind !== "human")
+    || (principalKind === "service" && actorKind !== "agent")
+  ) throw new Error("Turn lease principal is invalid")
+  const actorId = trimToUndefined(payload.actor_id)
+  const orgId = trimToUndefined(payload.org_id)
+  const workspaceId = trimToUndefined(payload.workspace_id)
+  const hostId = trimToUndefined(payload.host_id)
+  const parentRuntimeAccessTokenJti = trimToUndefined(payload.parent_jti)
+  const sessionId = trimToUndefined(payload.session_id)
+  const turnId = trimToUndefined(payload.turn_id)
+  const authorityLeaseId = trimToUndefined(payload.authority_lease_id)
+  const fencingToken = positiveInteger(payload.fencing_token)
+  const acquiredAt = finiteTimestamp(payload.acquired_at)
+  const expiresAt = finiteTimestamp(payload.authority_expires_at)
+  const grantId = trimToUndefined(payload.grant_id)
+  const transport = payload.transport
+  if (
+    !actorId || !orgId || !workspaceId
+    || !sessionId || !turnId || !authorityLeaseId || !fencingToken
+    || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
+  ) throw new Error("Turn lease claims are invalid")
+  const binding: TurnLeaseBinding = transport === "owner-grant"
+    ? { transport: "owner-grant" }
+    : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
+      ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
+      : transport === "deferred-grant" && grantId
+        ? { transport: "deferred-grant", grantId, ...(hostId ? { hostId } : {}) }
+        : (() => { throw new Error("Turn lease binding is invalid") })()
+  const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
+    ? { principalKind: "user", actorId, actorKind: "human" }
+    : { principalKind: "service", actorId, actorKind: "agent" }
+  return {
+    ...principal,
+    ...binding,
+    orgId,
+    workspaceId,
+    sessionId,
+    action: "write",
+    turnId,
+    authorityLeaseId,
+    fencingToken,
+    acquiredAt,
+    expiresAt,
   }
 }
 

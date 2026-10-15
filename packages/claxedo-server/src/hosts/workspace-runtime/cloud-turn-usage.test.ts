@@ -52,6 +52,7 @@ function sandbox(ledger: RuntimeUsageLedger, fetch: Fetch, parents: Record<strin
     policy: remoteWorkspaceSessionAccessPolicy({ url: USAGE_REPORT_URL, fetch }),
     log: console,
     fetch,
+    now: () => Date.now(),
     ...(flushIntervalMs === undefined ? {} : { flushIntervalMs }),
   })
   usage.bindSessionConfig(() => ({
@@ -189,7 +190,7 @@ describe("cloud workspace usage metering", () => {
       events: turnEvents("ses_reported", "msg_assistant_1", { completed: true }),
     })
 
-    expect(released).toEqual({ released: true })
+    expect(released).toMatchObject({ released: true })
     expect(ledger.pending("ses_reported")).toEqual([])
     const filed = await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: plane.owner.principal!.userId })
     expect(filed).toEqual([expect.objectContaining({
@@ -500,6 +501,31 @@ describe("cloud workspace usage delivery", () => {
     expect(await filedFor(plane, "owner")).toEqual(["msg_assistant_1"])
   })
 
+  test("ships usage a turn's work settles after that turn's lease expired, a background task's report, when it settles, under the proof the turn's release answered", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_background")
+    const ledger = openLedger(ledgerPath())
+    const usage = sandbox(ledger, plane.fetch)
+    await runTurn(plane, usage, {
+      by: plane.owner,
+      sessionId: "ses_background",
+      turnId: "msg_user_1",
+      events: turnEvents("ses_background", "msg_reply", { completed: true }),
+    })
+
+    vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true })
+    try {
+      vi.setSystemTime(Date.now() + 5 * 60_000)
+      for (const event of turnEvents("ses_background", "msg_continuation", { completed: false })) usage.onPresentationEvent(event)
+      usage.onPresentationEvent(envelope(messageCompleted("ses_background", "msg_continuation")))
+      await until(async () => (await filedFor(plane, "owner")).includes("msg_continuation"), "the continuation's usage")
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(await filedFor(plane, "owner")).toEqual(["msg_reply", "msg_continuation"])
+    expect(ledger.pending("ses_background")).toEqual([])
+  })
+
   test("a batch the plane cannot read holds back no other batch of the report", async () => {
     const plane = await openPlane()
     await plane.session("ses_batches")
@@ -544,7 +570,7 @@ describe("cloud workspace usage delivery", () => {
 
     const turn = await startTurn(plane, usage, { by: plane.owner, sessionId: "ses_full", turnId: "msg_user_1" })
     for (const event of turnEvents("ses_full", "msg_assistant_1", { completed: true })) usage.onPresentationEvent(event)
-    expect(await finishTurn(usage, turn)).toEqual({ released: true })
+    expect(await finishTurn(usage, turn)).toMatchObject({ released: true })
     await usage.drain()
 
     const next = await startTurn(plane, usage, { by: plane.member, sessionId: "ses_full", turnId: "msg_user_2" })

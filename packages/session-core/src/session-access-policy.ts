@@ -156,8 +156,10 @@ export type SessionTurnLeaseDecision =
       connectionCredential?: string
     }
   | Exclude<SessionAccessDecision, { allowed: true }>
+/** What proves a released turn to the usage report, until `expiresAt`, for the usage its work leaves after it ended. */
+export type SessionTurnUsageProof = { proof: string; expiresAt: number }
 export type SessionTurnReleaseDecision =
-  | { released: boolean }
+  | { released: boolean; usageProof?: SessionTurnUsageProof }
   | Exclude<SessionAccessDecision, { allowed: true }>
 export type SessionTurnGrantDecision =
   | { allowed: true; grant: string; expiresAt: number }

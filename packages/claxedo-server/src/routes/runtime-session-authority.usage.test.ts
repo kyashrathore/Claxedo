@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import {
@@ -314,6 +314,38 @@ describe("usage reports over the runtime session authority", () => {
       { messageId: "msg_by_owner", turnId: "msg_user_owner", user: target.owner.principal!.userId },
       { messageId: "msg_over_cap", turnId: "msg_user_member", user: target.member.principal!.userId },
     ])
+  })
+
+  test("a turn's release answers a usage proof that files the usage its work leaves after its lease expired, without a duration, and proves nothing else", async () => {
+    const filings: Array<{ messageId: string; turnId: string; admittedAt?: number }> = []
+    const target = await plane({
+      usageWriter: {
+        async writeRevision(fact, filing) {
+          filings.push({ messageId: fact.messageId, turnId: filing.turnId, ...(filing.admittedAt === undefined ? {} : { admittedAt: filing.admittedAt }) })
+          return { status: "accepted", firstSettled: true }
+        },
+      },
+    })
+    await target.session("ses_background")
+    const lease = await target.acquire(target.owner, "ses_background", "msg_user_1")
+    const released = await (await target.post({ action: "turn_release", ...lease })).json() as { released: boolean; usageProof: { proof: string; expiresAt: number } }
+    expect(released).toEqual({ released: true, sessionId: "ses_background", turnId: "msg_user_1", fencingToken: lease.fencingToken, usageProof: { proof: expect.any(String), expiresAt: expect.any(Number) } })
+    expect(released.usageProof.expiresAt).toBeGreaterThan(Date.now() + 60 * 60_000)
+    const tail = { ...lease, leaseId: released.usageProof.proof }
+    expect((await target.post({ action: "turn_renew", ...tail })).status).toBe(401)
+    expect((await target.post({ action: "turn_release", ...tail })).status).toBe(401)
+
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(Date.now() + 5 * 60_000)
+      const continuation = reported({ messageId: "msg_continuation", observedAt: Date.now() - 2_000, completedAt: Date.now() - 1_000 })
+      expect((await report(target, lease, [continuation])).status).toBe(401)
+      const answer = await report(target, tail, [continuation])
+      expect(await answer.json()).toEqual({ results: [{ messageId: "msg_continuation", revision: 2, status: "accepted" }] })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(filings).toEqual([{ messageId: "msg_continuation", turnId: "msg_user_1" }])
   })
 
   test("a plane with no usage store answers a verified report as unavailable", async () => {

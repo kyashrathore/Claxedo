@@ -107,12 +107,13 @@ test("a turn the harness began on its own opens with its own harness message and
   expect(await admitted.settled).toEqual({ state: "completed" })
   const messages = store.getMessages("s1")
   const opening = messages.find((message) => message.info.role === "user" && message.info.id !== first.userMessageId)
-  expect(opening?.info).toMatchObject({ claxedo: { author: { id: "harness:claude", name: "Claude Code", kind: "agent" } } })
-  expect(opening?.parts).toMatchObject([{ type: "text", text: "Continued on its own" }])
-  expect(messages.find((message) => message.info.id === admitted.turn.assistantMessageId)?.info.parentID).toBe(opening?.info.id)
+  if (!opening) throw new Error("The provider turn opened with no message")
+  expect(opening.info).toMatchObject({ claxedo: { author: { id: "harness:claude", name: "Claude Code", kind: "agent" } } })
+  expect(opening.parts).toMatchObject([{ type: "text", text: "Continued on its own" }])
+  expect(messages.find((message) => message.info.id === admitted.turn.assistantMessageId)?.info.parentID).toBe(opening.info.id)
   expect(messages.find((message) => message.info.id === first.assistantMessageId)?.info.parentID).toBe(first.userMessageId)
   expect(store.getMessagePage("s1", { view: "latest-surface" })?.messages.map((message) => message.info.id))
-    .toEqual([opening?.info.id, admitted.turn.assistantMessageId])
+    .toEqual([opening.info.id, admitted.turn.assistantMessageId])
 })
 
 test("a turn the harness began on its own that a human turn consumed while it waited writes nothing", async () => {

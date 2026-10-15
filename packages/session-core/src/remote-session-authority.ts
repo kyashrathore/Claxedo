@@ -298,9 +298,13 @@ function decodeTurnGrant(
   return { allowed: true, grant, expiresAt }
 }
 
-function decodeTurnRelease(body: Record<string, unknown> | undefined): { released: boolean } | AuthorityDenial {
+function decodeTurnRelease(body: Record<string, unknown> | undefined): { released: boolean; usageProof?: { proof: string; expiresAt: number } } | AuthorityDenial {
   const released = asBoolean(body?.released)
-  return released === undefined ? denied(503, "session_authority_invalid_response") : { released }
+  if (released === undefined) return denied(503, "session_authority_invalid_response")
+  const usage = asRecord(body?.usageProof)
+  const proof = asString(usage?.proof)
+  const expiresAt = asNumber(usage?.expiresAt)
+  return proof && expiresAt !== undefined ? { released, usageProof: { proof, expiresAt } } : { released }
 }
 
 /**
