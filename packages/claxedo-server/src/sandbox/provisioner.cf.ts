@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers"
 import { sandboxLeaseEndedUnderStart, sandboxProviderRateLimit, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
-import type { SandboxStartAnswer, SandboxStartDrive, SandboxStartRequest } from "../workspace/sandbox-start"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
+import type { WorkspaceRuntimeContext } from "../workspace/route-support"
+import type { SandboxFollowUps, SandboxStartAnswer, SandboxStartDrive, SandboxStartRequest } from "../workspace/sandbox-start"
 
 /** `failure` is the error of the last step that failed and is being retried; a step that succeeds or ends the run clears it. */
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number; failure?: string }
@@ -16,10 +18,12 @@ type StartStep = Parameters<NonNullable<SandboxStartDrive["announce"]>>[1]
  * under its own storage key: the field of a ready answer that first schedules
  * it, and the drive step that runs it and answers when it is due again.
  */
+type FollowUpStep = (drive: SandboxStartDrive, workspaceId: string, failures: number, capabilities: AgentPluginExecutionSelection | undefined) => Promise<number | undefined>
+
 const FOLLOW_UPS = {
-  renewal: { due: "renewAt", step: (drive: SandboxStartDrive, workspaceId: string) => drive.renew(workspaceId) },
-  watch: { due: "watchAt", step: (drive: SandboxStartDrive, workspaceId: string, failures: number) => drive.watch(workspaceId, failures) },
-} as const satisfies Record<string, { due: keyof ReadyAnswer; step: (drive: SandboxStartDrive, workspaceId: string, failures: number) => Promise<number | undefined> }>
+  renewal: { due: "renewAt", step: (drive, workspaceId, _failures, capabilities) => drive.renew(workspaceId, capabilities) },
+  watch: { due: "watchAt", step: (drive, workspaceId, failures) => drive.watch(workspaceId, failures) },
+} as const satisfies Record<string, { due: keyof ReadyAnswer & keyof SandboxFollowUps; step: FollowUpStep }>
 
 type FollowUpKey = keyof typeof FOLLOW_UPS
 const FOLLOW_UP_KEYS: readonly FollowUpKey[] = ["renewal", "watch"]
@@ -90,7 +94,10 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * settling that names `renewAt` is re-delivered then, through `renew`, and
  * one that names `watchAt` has its idleness read then, through `watch`, which
  * stops a sandbox whose host reads none itself. The run owns the alarm while
- * one is in flight; the follow-ups take it back when the run settles.
+ * one is in flight; the follow-ups take it back when the run settles. A Task
+ * root is created outside any run, so `follow` hands its follow-ups here
+ * instead, with the root's capability set, which every later step of that
+ * workspace is prepared with.
  */
 export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, timing: SandboxProvisionerTiming = {}) {
   const outcomeHeldMs = timing.outcomeHeldMs ?? OUTCOME_HELD_MS
@@ -131,11 +138,24 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
     redeliver(workspaceId: string): Promise<void> {
       return this.#flushed(async () => {
         if (await this.ctx.storage.get<Run>("run")) return
-        const at = await drive(this.env).renew(workspaceId)
+        const at = await drive(this.env).renew(workspaceId, await this.#capabilities())
         if (at === undefined) await this.ctx.storage.delete("renewal")
         else await this.ctx.storage.put("renewal", { workspaceId, at, failures: 0 } satisfies FollowUp)
         await this.#armFollowUps()
       })
+    }
+
+    follow(context: WorkspaceRuntimeContext, due: SandboxFollowUps): Promise<void> {
+      return this.#flushed(async () => {
+        if (context.capabilities) await this.ctx.storage.put("capabilities", context.capabilities)
+        if (await this.ctx.storage.get<Run>("run")) return
+        await this.#schedule(context.workspaceId, due)
+      })
+    }
+
+    /** The capability set a Task root's every step is prepared with; nothing for any other workspace. */
+    #capabilities(): Promise<AgentPluginExecutionSelection | undefined> {
+      return this.ctx.storage.get<AgentPluginExecutionSelection>("capabilities")
     }
 
     /** What a step queued leaves with the invocation that ran it; the step's own answer or failure stands. */
@@ -174,7 +194,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
     }
 
     async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
-      const admitted = await drive(this.env).acquire(workspaceId)
+      const admitted = await drive(this.env).acquire(workspaceId, await this.#capabilities())
       if (admitted.status !== "provisioning") {
         await this.#settled(workspaceId, admitted)
         return admitted
@@ -207,14 +227,18 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
 
     /** A ready answer's follow-ups replace the ones on record; the alarm is theirs again now that no run holds it. */
     async #settled(workspaceId: string, answer: SandboxStartAnswer) {
-      const storage = this.ctx.storage
       this.#announce(workspaceId, settledStep(answer))
-      if (answer.status === "ready") {
-        for (const key of FOLLOW_UP_KEYS) {
-          const at = answer[FOLLOW_UPS[key].due]
-          if (at === undefined) await storage.delete(key)
-          else await storage.put(key, { workspaceId, at, failures: 0 } satisfies FollowUp)
-        }
+      if (answer.status === "ready") await this.#schedule(workspaceId, answer)
+      else await this.#armFollowUps()
+    }
+
+    /** The follow-ups a ready sandbox is due, replacing the ones on record; the alarm is theirs again. */
+    async #schedule(workspaceId: string, due: SandboxFollowUps) {
+      const storage = this.ctx.storage
+      for (const key of FOLLOW_UP_KEYS) {
+        const at = due[FOLLOW_UPS[key].due]
+        if (at === undefined) await storage.delete(key)
+        else await storage.put(key, { workspaceId, at, failures: 0 } satisfies FollowUp)
       }
       await this.#armFollowUps()
     }
@@ -230,7 +254,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       for (const key of FOLLOW_UP_KEYS) {
         const record = await storage.get<FollowUp>(key)
         if (!record || record.at > Date.now()) continue
-        const next = await FOLLOW_UPS[key].step(drive(this.env), record.workspaceId, record.failures)
+        const next = await FOLLOW_UPS[key].step(drive(this.env), record.workspaceId, record.failures, await this.#capabilities())
           .then((at) => (at === undefined ? undefined : { at, failures: 0 }), () => ({ at: Date.now() + followUpRetryMs, failures: record.failures + 1 }))
         if (next === undefined) await storage.delete(key)
         else await storage.put(key, { workspaceId: record.workspaceId, ...next } satisfies FollowUp)
@@ -255,7 +279,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
               epoch: run.epoch,
               homeRegion: run.homeRegion,
             }
-          : await drive(this.env).provision(run.workspaceId, run.epoch).catch((cause: unknown) => stepThrew(run, cause))
+          : await drive(this.env).provision(run.workspaceId, run.epoch, await this.#capabilities()).catch((cause: unknown) => stepThrew(run, cause))
         const retryAfterMs = nextStepAfter(answer)
         if (retryAfterMs !== undefined) {
           // A failed step's retry runs on the fresh epoch its answer names.

@@ -46,6 +46,7 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
       start: (workspaceId, request) => sandboxProvisioner(input.provisioner, workspaceId).start(workspaceId, request),
       refresh: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).refresh(workspaceId),
       redeliver: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).redeliver(workspaceId),
+      follow: (context, due) => sandboxProvisioner(input.provisioner, context.workspaceId).follow(context, due),
       inFlight: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).inFlight(),
       deliverSessionRowsPass: sessionRowsPasses.deliver,
       runtimeLost: d1RuntimeLost({ database: input.database, room: input.room }),

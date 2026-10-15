@@ -1,3 +1,4 @@
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import { createSessionHostPlugins, machineServing } from "./runtime/session-host-launch"
 import type { SandboxInFlight } from "../workspace/sandbox-start"
@@ -118,11 +119,8 @@ export type HostedAgentPluginsComposition = {
    * an explicit selection instead of the project's activation defaults.
    */
   selectedCapabilities: {
-    prepare(input: {
-      workspaceId: string
-      capabilities: { plugins: readonly { sourceId: string; pluginName: string }[]; skills: readonly { sourceId: string; skillName: string }[] }
-    }): Promise<WorkspaceRuntimePreparation>
-    apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
+    prepare(input: { workspaceId: string; capabilities: AgentPluginExecutionSelection }): Promise<WorkspaceRuntimePreparation>
+    apply(input: { workspaceId: string; capabilities: AgentPluginExecutionSelection; preparation: WorkspaceRuntimePreparation }): Promise<void>
   }
 }
 
@@ -386,11 +384,11 @@ export function createHostedAgentPluginsComposition(input: {
       groupEnabled: subagentsGroupEnabled,
     }),
   }
-  const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
+  const prepareRuntime = async ({ workspaceId, capabilities }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
     const [preparation, env, clone] = await Promise.all([
-      preparer.forSnapshot(snapshot),
+      preparer.forSnapshot(snapshot, capabilities ? { selection: capabilities } : {}),
       rootEnvironment({
         userId: snapshot.identity.userId,
         orgId: snapshot.identity.organizationId,
@@ -435,9 +433,9 @@ export function createHostedAgentPluginsComposition(input: {
       }
       return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId), { selection: capabilities })
     },
-    async apply({ workspaceId, preparation }) {
+    async apply({ workspaceId, capabilities, preparation }) {
       if (!input.pushRuntime) throw new Error("Selected capabilities require hosted settings delivery")
-      await input.pushRuntime({ workspaceId }, preparation)
+      await input.pushRuntime({ workspaceId, capabilities }, preparation)
     },
   }
 

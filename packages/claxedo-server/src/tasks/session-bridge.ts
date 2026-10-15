@@ -86,7 +86,7 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
       capabilities: TasksCloudOrigin["capabilities"]
     }): Promise<WorkspaceRuntimePreparation>
     /** Projects it, and resolves only once the runtime acknowledged that exact selection. */
-    apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
+    apply(input: { workspaceId: string; capabilities: TasksCloudOrigin["capabilities"]; preparation: WorkspaceRuntimePreparation }): Promise<void>
   }
   /**
    * What every hosted cloud workspace starts with, the deployment's runtime
@@ -217,7 +217,7 @@ function createTasksCloudTarget(
           input.workspaceRuntime?.({ workspaceId: workspace.id }),
           port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities }),
         ])
-        projected = () => port.apply({ workspaceId: workspace.id, preparation })
+        projected = () => port.apply({ workspaceId: workspace.id, capabilities: origin.capabilities, preparation })
         // The capability names the workspace's owner, and `admit` below makes
         // this creator that owner. The application user id is the authority's
         // own name for them; the actor's `ownerId` is the token subject, which

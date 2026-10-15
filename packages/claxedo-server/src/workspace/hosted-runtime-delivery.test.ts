@@ -8,7 +8,7 @@ import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { hostedSandboxInput } from "./hosted-sandbox-input"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
-import { inlineSandboxStart, unusedSandboxRedeliver } from "../test-support/inline-sandbox-start"
+import { inlineSandboxStart, unusedSandboxRedeliver, unusedSandboxFollow } from "../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, WORKSPACE_IDLE_MS } from "../sandbox/workspace-idle"
 
@@ -152,6 +152,7 @@ async function composition() {
     deliverSessionRowsPass: async (workspaceId) => { pushed.push(`session rows pass ${workspaceId}`) },
     sandboxRefresh: (workspaceId) => inlineSandboxStart(delivery.start)(workspaceId),
     sandboxRedeliver: unusedSandboxRedeliver,
+    sandboxFollow: unusedSandboxFollow,
     runtimeLost: async (workspaceId, at) => { lost.push({ workspaceId, at }) },
     idleStop: (workspaceId, epoch, stop) => {
       stops.push({ workspaceId, epoch, ...stop })

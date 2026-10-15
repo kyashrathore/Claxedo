@@ -133,6 +133,26 @@ async function renewals(database: D1Database, workspaceId: string) {
 /** `ws_renew_<n>`: its settings are due again 200 ms after every delivery, and it keeps serving through n renewals. */
 const RENEWAL_DUE_MS = 200
 
+const ROOT_RENEWALS_TABLE = "fixture_root_renewals"
+
+/**
+ * `ws_root_<name>`: a Task root, whose start schedules nothing and whose
+ * settings a push outside any run delivered; every renewal records the
+ * capability set it was prepared with, and it is due again 200 ms later for
+ * as long as its lease is ready.
+ */
+async function recordRootRenewal(database: D1Database, workspaceId: string, capabilities: unknown) {
+  await database.prepare(`create table if not exists ${ROOT_RENEWALS_TABLE} (workspace_id text not null, capabilities text)`).run()
+  await database.prepare(`insert into ${ROOT_RENEWALS_TABLE} (workspace_id, capabilities) values (?, ?)`).bind(workspaceId, capabilities === undefined ? null : JSON.stringify(capabilities)).run()
+}
+
+async function rootRenewals(database: D1Database, workspaceId: string): Promise<unknown[]> {
+  const table = await database.prepare(`select count(*) as n from sqlite_master where type = 'table' and name = ?`).bind(ROOT_RENEWALS_TABLE).first<{ n: number }>()
+  if (!table?.n) return []
+  const rows = await database.prepare(`select capabilities from ${ROOT_RENEWALS_TABLE} where workspace_id = ? order by rowid`).bind(workspaceId).all<{ capabilities: string | null }>()
+  return rows.results.map((row) => (row.capabilities === null ? null : JSON.parse(row.capabilities)))
+}
+
 const WATCHES_TABLE = "fixture_watches"
 
 /** Records one idle read with the failures the provisioner counted before it; answers how many reads the workspace has had. */
@@ -187,7 +207,12 @@ function drive(env: Env): SandboxStartDrive {
       if (watching(workspaceId) && answer.status === "ready") return { ...answer, watchAt: Date.now() + WATCH_DUE_MS }
       return answer
     },
-    renew: async (workspaceId) => {
+    renew: async (workspaceId, capabilities) => {
+      if (workspaceId.startsWith("ws_root_")) {
+        if ((await sandboxes.target(workspaceId)).status !== "ready") return undefined
+        await recordRootRenewal(env.CONTROL_PLANE_DB, workspaceId, capabilities)
+        return Date.now() + RENEWAL_DUE_MS
+      }
       const scripted = renewing(workspaceId)
       if (!scripted) return undefined
       const count = await recordRenewal(env.CONTROL_PLANE_DB, workspaceId)
@@ -235,6 +260,16 @@ export default {
       await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).redeliver(workspaceId)
       return Response.json({ redelivered: true })
     }
+    if (url.pathname === "/follow") {
+      const capabilities = { plugins: [{ sourceId: "src", pluginName: url.searchParams.get("plugin") ?? "" }], skills: [] }
+      await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).follow({ workspaceId, capabilities }, { renewAt: Date.now() + RENEWAL_DUE_MS })
+      return Response.json({ followed: true })
+    }
+    if (url.pathname === "/stop") {
+      const current = await manager(env).target(workspaceId)
+      return Response.json(await manager(env).stop(workspaceId, current.status === "ready" ? { expectedEpoch: current.epoch } : {}))
+    }
+    if (url.pathname === "/root-renewals") return Response.json({ renewals: await rootRenewals(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/in-flight") return Response.json((await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).inFlight()) ?? null)
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })

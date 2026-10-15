@@ -5,6 +5,8 @@ import { workspaceBackingDatabase } from "../test-support/workspace-backing-data
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 
+const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
+
 const configStatus = vi.hoisted(() => vi.fn(async (): Promise<import("@claxedo/workspace-runtime/config").RuntimeConfigApplyStatus> => ({ state: "idle", revision: 0 })))
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied, configStatus })) }))
@@ -21,6 +23,7 @@ async function createDelivery(config: UserAgentConfig, backing: "cloud-vm" | "lo
   return createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
+      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database: instance.database,
