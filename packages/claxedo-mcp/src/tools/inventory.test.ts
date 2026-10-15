@@ -150,6 +150,7 @@ describe("the registered surface", () => {
       "subagent_capabilities",
       "subagent_list",
       "subagent_status",
+      "you_web_search",
     ])
   })
 
@@ -201,6 +202,7 @@ describe("the registered surface", () => {
       "workspace_restore",
       "workspace_status",
       "workspaces_list",
+      "you_web_search",
     ])
   })
 
@@ -219,6 +221,7 @@ describe("the registered surface", () => {
       "wait_for_attention",
       "workspace_status",
       "workspaces_list",
+      "you_web_search",
     ])
   })
 
@@ -262,7 +265,7 @@ describe("the tool names the catalog publishes", () => {
     // past the session and says "runtime" is granted to every project that has
     // decided nothing. The list is short on purpose: adding to it is the
     // decision, and this is where it gets read.
-    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual(["tasks"])
+    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual(["tasks", "you-search"])
     expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["app-plugins", "documents"])
     expect(published.filter((group) => group.reach === "runtime").map((group) => group.id)).toEqual([
       "attention",

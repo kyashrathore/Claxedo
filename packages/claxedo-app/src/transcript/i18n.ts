@@ -143,6 +143,7 @@ const en = {
   "transcript.claxedoTool.app_plugin_check": "Check app plugin",
   "transcript.claxedoTool.app_plugin_add": "Add app plugin",
   "transcript.claxedoTool.app_plugin_guide": "Read app plugin guide",
+  "transcript.claxedoTool.you_web_search": "You.com web search",
   "transcript.claxedoTool.fact.preset": "Preset",
   "transcript.claxedoTool.fact.slot": "Slot",
   "transcript.claxedoTool.fact.attempt": "Attempt",
