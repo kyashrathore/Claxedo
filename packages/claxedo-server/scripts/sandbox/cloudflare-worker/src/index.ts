@@ -189,7 +189,7 @@ export class Sandbox extends CloudflareSandbox {
    * deletes whatever the lease did not commit.
    */
   async captureBackups(directories: readonly string[], committed: string | undefined) {
-    const bucket = this.backupBucket()
+    const bucket = this.checkpointBucket()
     await this.settleBackups(committed)
     const ids: string[] = []
     try {
@@ -207,7 +207,7 @@ export class Sandbox extends CloudflareSandbox {
   }
 
   async deleteCheckpointBackups(ids: readonly string[]) {
-    await deleteBackups(this.backupBucket(), ids)
+    await deleteBackups(this.checkpointBucket(), ids)
     const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
     await this.ctx.storage.put(PENDING_BACKUPS_KEY, pending.filter((id) => !ids.includes(id)))
   }
@@ -215,11 +215,11 @@ export class Sandbox extends CloudflareSandbox {
   private async settleBackups(committed: string | undefined) {
     const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
     if (pending.length === 0) return
-    await deleteBackups(this.backupBucket(), uncommittedBackups(pending, committed))
+    await deleteBackups(this.checkpointBucket(), uncommittedBackups(pending, committed))
     await this.ctx.storage.delete(PENDING_BACKUPS_KEY)
   }
 
-  private backupBucket() {
+  private checkpointBucket() {
     if (!this.workerEnv.BACKUP_BUCKET) throw new Error("backups require the BACKUP_BUCKET binding")
     return this.workerEnv.BACKUP_BUCKET
   }
