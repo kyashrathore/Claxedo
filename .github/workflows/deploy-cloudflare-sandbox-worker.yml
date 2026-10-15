@@ -153,3 +153,18 @@ jobs:
         run: |
           [ -n "$IDLE_STOP_TOKEN" ] || { echo "::error::CLAXEDO_SANDBOX_IDLE_STOP_TOKEN is not configured in the staging environment"; exit 1; }
           printf '%s' "$IDLE_STOP_TOKEN" | npx --yes wrangler@4.127.1 secret put IDLE_STOP_TOKEN
+
+      # Checkpoints (backup before stop, restore on wake) presign R2 URLs with
+      # the bucket's S3 credentials; without them every backup is refused with
+      # InvalidBackupConfigError and a stopped workspace keeps nothing.
+      - name: Synchronize the checkpoint bucket credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.CLAXEDO_SANDBOX_R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.CLAXEDO_SANDBOX_R2_SECRET_ACCESS_KEY }}
+        run: |
+          [ -n "$R2_ACCESS_KEY_ID" ] && [ -n "$R2_SECRET_ACCESS_KEY" ] || { echo "::error::CLAXEDO_SANDBOX_R2_ACCESS_KEY_ID and CLAXEDO_SANDBOX_R2_SECRET_ACCESS_KEY are not configured in the staging environment"; exit 1; }
+          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npx --yes wrangler@4.127.1 secret put CLOUDFLARE_ACCOUNT_ID
+          printf '%s' "$R2_ACCESS_KEY_ID" | npx --yes wrangler@4.127.1 secret put R2_ACCESS_KEY_ID
+          printf '%s' "$R2_SECRET_ACCESS_KEY" | npx --yes wrangler@4.127.1 secret put R2_SECRET_ACCESS_KEY
