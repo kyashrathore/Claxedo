@@ -436,6 +436,21 @@ describe("composed Better Auth + D1 authority", () => {
     await expect(authority.authorizeChannelWorkspace(request)).rejects.toMatchObject({ status: 403 })
   })
 
+  test("records a grant owner's token for the workspace's owner alone", async () => {
+    const { authority } = await setup()
+    const alice = await signed(authority, "grant-alice")
+    const bob = await signed(authority, "grant-bob")
+    await authority.createHostedOrganization(alice, { name: "Grants", orgId: "org_grants" })
+    await authority.createWorkspace(alice, { workspaceId: "ws_grants", orgId: "org_grants", displayName: "Grants workspace", backing: "cloud-vm" })
+    const token = (jti: string) => ({ jti, workspaceId: "ws_grants", hostId: "host_grants", expiresAt: Date.now() + 60_000 })
+
+    await expect(authority.recordOwnerRuntimeAccessToken!(bob.principal!.actorId, token("jti_bob"))).rejects.toMatchObject({ status: 403 })
+    await expect(authority.recordOwnerRuntimeAccessToken!("act_unknown", token("jti_unknown"))).rejects.toMatchObject({ status: 403 })
+    await authority.recordOwnerRuntimeAccessToken!(alice.principal!.actorId, token("jti_alice"))
+    expect(await authority.runtimeAccessTokenActive({ jti: "jti_alice", workspaceId: "ws_grants", hostId: "host_grants" })).toMatchObject({ active: true })
+    expect(await authority.runtimeAccessTokenActive({ jti: "jti_bob", workspaceId: "ws_grants", hostId: "host_grants" })).toMatchObject({ active: false })
+  })
+
   test("records only the configured canonical service actor and enforces deployment, workspace, JTI, and revocation", async () => {
     const { authority } = await setup()
     const alice = await signed(authority, "service-alice")

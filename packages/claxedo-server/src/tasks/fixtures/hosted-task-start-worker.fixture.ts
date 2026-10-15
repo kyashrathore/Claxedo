@@ -15,14 +15,24 @@ import { createOrgSandboxManager } from "../../sandbox/org-sandbox-manager"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 
-type Env = { CONTROL_PLANE_DB: D1Database }
+type Env = {
+  CONTROL_PLANE_DB: D1Database
+  CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: string
+  CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: string
+}
 
 const ISSUER = "https://auth.test"
 
 /** What a runtime access token carries here: the principal the bridge dispatched as, for the fake runtime's registration call back. */
 export type FixtureRuntimeToken = { workspaceId: string; actorId: string; actorKind: "human" | "agent"; principalKind: "user" | "service" }
 
-function readyDriver(provisionFailures: Set<string>): SandboxDriver {
+function tokenPrincipal(token: FixtureRuntimeToken) {
+  return token.principalKind === "user"
+    ? { principalKind: "user" as const, actorId: token.actorId, actorKind: "human" as const }
+    : { principalKind: "service" as const, actorId: token.actorId, actorKind: "agent" as const }
+}
+
+function readyDriver(provisionFailures: Set<string>, ensures: { count: number }): SandboxDriver {
   return {
     id: "modal",
     metadata: {
@@ -42,6 +52,7 @@ function readyDriver(provisionFailures: Set<string>): SandboxDriver {
       },
     },
     ensureHost: async (input) => {
+      ensures.count++
       if (provisionFailures.delete(input.workspaceId)) throw new Error("the provider is out of capacity")
       return {
         sandboxId: `sandbox_${input.workspaceId}`,
@@ -59,11 +70,13 @@ function readyDriver(provisionFailures: Set<string>): SandboxDriver {
  * Faked: the sandbox provider, the person's sign-in, and the workspace
  * runtime behind the relay (answered by the test's outbound service).
  */
-function compose(database: D1Database) {
+function compose(env: Env) {
+  const database = env.CONTROL_PLANE_DB
   const authority = createD1CoreAuthority(database, { deploymentId: "test", product: { kind: "claxedo-hosted" } })
   const principals = new Map<string, ControlPlanePrincipal>()
   const provisionFailures = new Set<string>()
-  const driver = readyDriver(provisionFailures)
+  const ensures = { count: 0 }
+  const driver = readyDriver(provisionFailures, ensures)
   const leaseStore = createD1SandboxLeaseStore({ database })
   const drivers = orgSandboxDrivers({
     keys: { drivers: ["modal"], create: () => driver, chosenDriver: async () => undefined },
@@ -133,6 +146,10 @@ function compose(database: D1Database) {
     authentication,
     selectedCapabilities: { prepare: async () => ({}), apply: async () => undefined },
     sandboxEgress: { controlPlaneOrigin: "https://core.test" },
+    signingEnv: {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
+    },
   })) {
     app.route(contribution.path, contribution.routes)
   }
@@ -190,12 +207,34 @@ function compose(database: D1Database) {
     return c.json({ ok: true })
   })
 
+  app.post("/__authorize", async (c) => {
+    const body = await c.req.json<{ token: string; sessionId: string; action: "read" | "write" }>()
+    const token = JSON.parse(atob(body.token)) as FixtureRuntimeToken
+    try {
+      await authority.authorizeRuntimeSession({ ...tokenPrincipal(token), sessionId: body.sessionId, workspaceId: token.workspaceId, action: body.action })
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 403)
+    }
+    return c.json({ allowed: true })
+  })
+
+  app.post("/__human-turn", async (c) => {
+    const { sessionId } = await c.req.json<{ sessionId: string }>()
+    await database.prepare("update sessions set last_human_turn_at = ?, status = 'busy', status_at = ? where session_id = ?").bind(Date.now(), Date.now(), sessionId).run()
+    return c.json({ ok: true })
+  })
+
+  app.post("/__stop", async (c) => {
+    const { workspaceId } = await c.req.json<{ workspaceId: string }>()
+    return c.json(await sandbox.manager.stop(workspaceId))
+  })
+
+  app.get("/__ensures", (c) => c.json({ ensures: ensures.count }))
+
   app.post("/__register", async (c) => {
     const body = await c.req.json<{ token: string; operationId: string; sessionId: string; createdAt: number; updatedAt: number; title?: string }>()
     const token = JSON.parse(atob(body.token)) as FixtureRuntimeToken
-    const principal = token.principalKind === "user"
-      ? { principalKind: "user" as const, actorId: token.actorId, actorKind: "human" as const }
-      : { principalKind: "service" as const, actorId: token.actorId, actorKind: "agent" as const }
+    const principal = tokenPrincipal(token)
     try {
       await authority.registerRuntimeSession({
         ...principal,
@@ -229,7 +268,7 @@ let composed: Hono | undefined
 
 export default {
   async fetch(request: Request, env: Env) {
-    composed ??= compose(env.CONTROL_PLANE_DB)
+    composed ??= compose(env)
     return composed.fetch(request)
   },
 }

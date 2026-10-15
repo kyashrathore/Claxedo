@@ -13,12 +13,10 @@ import {
 import {
   TasksError,
   attachmentDataUrl,
-  hashRequest,
   startDigest,
   startFirstMessage,
   startInstructions,
   startModelGroup,
-  startOriginId,
   tasksErrorDetail,
   type ConfigurationSlot,
   type ModelConfiguration,
@@ -44,6 +42,8 @@ import {
   type TasksSessionBridgePort,
 } from "@claxedo/tasks"
 import type { Workspace } from "../workspace/store/index"
+import { originIds } from "./origin-ids"
+import { registeredSessionStates, type RegisteredSession } from "./registered-sessions"
 import {
   alreadySent,
   readMessages,
@@ -101,11 +101,12 @@ export type TasksSessionReservation =
 /** What differs between the hosts that run Tasks sessions. */
 export type TasksSessionHost = {
   /**
-   * The workspace's runtime, or null when this host cannot reach one for it.
-   * `starter` is the person a Start acts for, whose accounts a session it
-   * creates spends; a read or a removal acts for nobody.
+   * The workspace's runtime, or null when this host cannot reach one for it,
+   * reached as `actor`: the person a Start acts for, whose accounts a session
+   * it creates spends, or who reads a previous transcript or removes an
+   * unlinked session. A liveness reading acts for nobody.
    */
-  target(workspaceId: string, starter: TasksActor | null): Promise<TasksRuntimeTarget | null>
+  target(workspaceId: string, actor: TasksActor | null): Promise<TasksRuntimeTarget | null>
   /**
    * Where a task with no workspace preference runs. A task names a project;
    * naming a workspace inside it is optional, and most tasks created from the
@@ -123,6 +124,13 @@ export type TasksSessionHost = {
   sessionMetas(
     sessionIds: readonly string[],
   ): Promise<ReadonlyMap<string, { workspaceID?: string; archived?: number }>>
+  /**
+   * The rows these sessions' runtimes publish to this host's registry, for a
+   * host whose runtimes publish every session they hold: liveness is read
+   * from them and never from a runtime. Absent, each session's runtime is
+   * asked.
+   */
+  registeredSessions?(sessionIds: readonly string[]): Promise<ReadonlyMap<string, RegisteredSession>>
   /**
    * Admission this host requires before a session may be created under an
    * origin. `operationId` is the origin and the configuration digest, so a
@@ -168,7 +176,8 @@ export type TasksSessionHost = {
 export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBridgePort {
   return {
     async sessionState(origins) {
-      return sessionStates(host, origins)
+      if (!host.registeredSessions) return sessionStates(host, origins)
+      return registeredSessionStates(origins, await host.registeredSessions(origins.map((origin) => origin.sessionRef.sessionId)))
     },
 
     async preview(command) {
@@ -322,10 +331,11 @@ async function readHandoff(
   fallback: TasksRuntimeTarget,
   previous: SessionRef | null,
   authorize: TranscriptGrant,
+  reader: TasksActor,
 ): Promise<{ ok: true; handoff: Handoff | null } | Refusal> {
   if (!previous) return { ok: true, handoff: null }
   const target = previous.workspaceId !== fallback.workspace.id
-    ? await host.target(previous.workspaceId, null)
+    ? await host.target(previous.workspaceId, reader)
     : fallback
   if (!target) return { ok: true, handoff: null }
   if (!(await authorize())) {
@@ -413,7 +423,7 @@ async function resolveStart(
 
   let readable: Handoff | null = null
   if (target && blockers.length === 0) {
-    const read = await readHandoff(host, target, previousSessionOf(command), command.authorizeTranscript)
+    const read = await readHandoff(host, target, previousSessionOf(command), command.authorizeTranscript, command.actor)
     if (!read.ok) return read
     readable = read.handoff
   }
@@ -487,22 +497,6 @@ function destination(
     ...(transcriptDropped > 0 ? [`${transcriptDropped} bytes of the previous session`] : []),
   ]
   return dropped.length === 0 ? where : `${where}. The instruction block cap dropped ${dropped.join(" and ")}.`
-}
-
-/**
- * The ids an origin decides, so two clients racing one slot and attempt
- * converge on one session and one first message instead of two of each, and a
- * handoff that runs long after the create addresses the same message.
- */
-async function originIds(input: {
-  scopeId: string
-  taskId: string
-  slot: ConfigurationSlot
-  attempt: number
-}): Promise<{ origin: string; sessionId: string; messageId: string }> {
-  const origin = startOriginId(input.scopeId, input.taskId, input.slot, input.attempt)
-  const hash = (await hashRequest(origin)).slice(0, 32)
-  return { origin, sessionId: `ses_tasks_${hash}`, messageId: `msg_tasks_${hash}` }
 }
 
 const creating = new Map<string, Promise<unknown>>()
@@ -678,7 +672,7 @@ async function abandonSession(
   host: TasksSessionHost,
   command: SessionAbandonCommand,
 ): Promise<TasksResult<{ removed: boolean }>> {
-  const target = await host.target(command.sessionRef.workspaceId, null)
+  const target = await host.target(command.sessionRef.workspaceId, command.actor)
   if (!target) {
     return {
       ok: false,

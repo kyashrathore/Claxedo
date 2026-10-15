@@ -505,6 +505,19 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
     role: "viewer" | "editor" | "admin" | "owner"
     expiresAt: number
   }) => Promise<unknown>
+  /**
+   * The workspace owner's own token, recorded with no signed request behind
+   * it: the owner a verified grant resolved to (`resolveWorkspaceOwner`),
+   * reaching that owner's workspace for the session the grant's Start
+   * creates there. Admitted for the workspace's owner alone, and optional
+   * because only a deployment that resolves grants to owners mints one.
+   */
+  recordOwnerRuntimeAccessToken?: (actorId: string, args: {
+    jti: string
+    workspaceId: string
+    hostId: string
+    expiresAt: number
+  }) => Promise<unknown>
   runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
   revokeRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,

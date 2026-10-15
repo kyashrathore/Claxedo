@@ -170,7 +170,7 @@ function services(
     workspace: async (workspaceId) => created.get(workspaceId),
     projectWorkspaces: async () => [],
     projectSource: async (projectId) => (projectId === PROJECT ? { repoUrl: REPO, gitBranch: "main", repoName: "importer" } : undefined),
-    sessionMetas: async (ids) => new Map([...registered].filter(([id]) => ids.includes(id))),
+    sessions: async (ids) => new Map([...registered].filter(([id]) => ids.includes(id))),
   }
   const authority = {
     reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string }) => ({

@@ -15,7 +15,7 @@ const workspace = (row: Row) =>
       values (?, 'org', 'prj', ?, ?, ?, ?, ?, '/workspace', ?, ?, ?)`)
     .bind(row.id, row.owner, row.backing ?? "cloud-vm", `name ${row.id}`, row.repoUrl ?? null, row.repoUrl ? "main" : null, row.created, row.created, row.deleted ? row.created : null)
 
-const session = (id: string, options: { archived?: boolean; deleted?: boolean } = {}) => [
+const session = (id: string, options: { archived?: boolean; deleted?: boolean; humanTurnAt?: number } = {}) => [
   database
     .prepare(`insert into session_registration_operations
       (operation_id, session_id, workspace_id, org_id, project_id, creator_actor_id, operation_kind, state, created_at, updated_at)
@@ -23,9 +23,9 @@ const session = (id: string, options: { archived?: boolean; deleted?: boolean } 
     .bind(`op_${id}`, id),
   database
     .prepare(`insert into sessions
-      (session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id, lifecycle_generation, created_at, updated_at, archived_at, deleted_at)
-      values (?, ?, 'ws_alice', 'org', 'prj', 'act_alice', 1, 1, 1, ?, ?)`)
-    .bind(id, `op_${id}`, options.archived ? 5 : null, options.deleted ? 6 : null),
+      (session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id, lifecycle_generation, created_at, updated_at, archived_at, deleted_at, last_human_turn_at)
+      values (?, ?, 'ws_alice', 'org', 'prj', 'act_alice', 1, 1, 1, ?, ?, ?)`)
+    .bind(id, `op_${id}`, options.archived ? 5 : null, options.deleted ? 6 : null, options.humanTurnAt ?? null),
 ]
 
 beforeAll(async () => {
@@ -49,6 +49,7 @@ beforeAll(async () => {
     ...sessionIds.flatMap((id) => session(id)),
     ...session("ses_archived", { archived: true }),
     ...session("ses_deleted", { deleted: true }),
+    ...session("ses_turned", { humanTurnAt: 7 }),
   ])
 })
 
@@ -90,15 +91,16 @@ describe("the hosted Tasks host's D1 reads", () => {
     expect(await reads.projectSource("prj_none")).toBeUndefined()
   })
 
-  test("reads every registered session asked about, past D1's bound-parameter limit, with archived ones marked and deleted ones absent", async () => {
+  test("reads every registered session asked about, past D1's bound-parameter limit, with archived ones and a person's last turn marked and deleted ones absent", async () => {
     const reads = createD1TasksHostReads(database)
-    const ids = [...Array.from({ length: 130 }, (_, index) => `ses_${String(index).padStart(3, "0")}`), "ses_archived", "ses_deleted", "ses_never"]
-    const metas = await reads.sessionMetas(ids)
-    expect(metas.size).toBe(131)
+    const ids = [...Array.from({ length: 130 }, (_, index) => `ses_${String(index).padStart(3, "0")}`), "ses_archived", "ses_deleted", "ses_turned", "ses_never"]
+    const metas = await reads.sessions(ids)
+    expect(metas.size).toBe(132)
     expect(metas.get("ses_129")).toEqual({ workspaceID: "ws_alice" })
     expect(metas.get("ses_archived")).toEqual({ workspaceID: "ws_alice", archived: 5 })
+    expect(metas.get("ses_turned")).toEqual({ workspaceID: "ws_alice", lastHumanTurnAt: 7 })
     expect(metas.has("ses_deleted")).toBe(false)
     expect(metas.has("ses_never")).toBe(false)
-    expect(await reads.sessionMetas([])).toEqual(new Map())
+    expect(await reads.sessions([])).toEqual(new Map())
   })
 })

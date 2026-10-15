@@ -5,7 +5,9 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import { hostedWorkerCompatibility, wranglerBundle } from "../test-support/hosted-worker-bundle"
 import { startOriginId } from "@claxedo/tasks"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
+import { mintTasksCapability } from "./capability"
 
 const FIXTURE_WORKER = fileURLToPath(new URL("./fixtures/hosted-task-start-worker.fixture.ts", import.meta.url))
 const ORIGIN = "https://core.test"
@@ -18,11 +20,18 @@ let miniflare: Miniflare
 const sessions = new Map<string, RuntimeSession>()
 const runtimeRequests: string[] = []
 
+const bearerOf = (request: Request) => (request.headers.get("authorization") ?? "").replace(/^Bearer /, "")
+
+const control = (path: string, body: unknown) =>
+  miniflare.dispatchFetch(`${ORIGIN}${path}`, { method: "POST", body: JSON.stringify(body) })
+
 /**
  * The workspace runtime behind the relay, as much of it as a Start reads: its
- * capabilities, the session create, and the reads that follow. A create that
- * carries a reservation registers the session with the control plane before it
- * answers, which is what the real runtime's session routes do.
+ * capabilities, the session create, and the reads that follow. As the real
+ * runtime's session routes do, a create that carries a reservation registers
+ * the session with the control plane before it answers, every session route
+ * asks the control plane whether the token's actor may use that session, and a
+ * human turn lands in the session's published row.
  */
 async function runtime(request: Request): Promise<Response> {
   const url = new URL(request.url)
@@ -41,10 +50,13 @@ async function runtime(request: Request): Promise<Response> {
     const session = { id: body.id, ...(body.title ? { title: body.title } : {}), instructions: body.instructions ?? "", time: { created: 10, updated: 10 }, messages: [] }
     const operationId = request.headers.get("x-claxedo-session-registration-operation")
     if (operationId) {
-      const token = (request.headers.get("authorization") ?? "").replace(/^Bearer /, "")
-      const registered = await miniflare.dispatchFetch(`${ORIGIN}/__register`, {
-        method: "POST",
-        body: JSON.stringify({ token, operationId, sessionId: body.id, createdAt: 10, updatedAt: 10, ...(body.title ? { title: body.title } : {}) }),
+      const registered = await control("/__register", {
+        token: bearerOf(request),
+        operationId,
+        sessionId: body.id,
+        createdAt: 10,
+        updatedAt: 10,
+        ...(body.title ? { title: body.title } : {}),
       })
       if (!registered.ok) return Response.json({ error: { code: "registration_denied", message: await registered.text() } }, { status: 403 })
     }
@@ -54,8 +66,22 @@ async function runtime(request: Request): Promise<Response> {
   const session = /^\/session\/([^/]+)(\/message|\/config|\/prompt_async)?$/.exec(path)
   const row = session ? sessions.get(decodeURIComponent(session[1])) : undefined
   if (session && !row) return Response.json({ error: { code: "not_found" } }, { status: 404 })
+  if (row) {
+    const authorized = await control("/__authorize", {
+      token: bearerOf(request),
+      sessionId: row.id,
+      action: request.method === "GET" ? "read" : "write",
+    })
+    if (!authorized.ok) return Response.json({ error: { code: "session_authorization_denied", message: await authorized.text() } }, { status: 403 })
+  }
+  if (row && request.method === "DELETE" && !session?.[2]) {
+    sessions.delete(row.id)
+    return Response.json({ ok: true })
+  }
   if (row && session?.[2] === "/prompt_async") {
     row.messages.push(((await request.json()) as { messageID: string }).messageID)
+    const published = await control("/__human-turn", { sessionId: row.id })
+    if (!published.ok) return new Response(await published.text(), { status: 500 })
     return new Response(null, { status: 204 })
   }
   if (row && session?.[2] === "/message") {
@@ -73,11 +99,19 @@ async function runtime(request: Request): Promise<Response> {
   return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
 }
 
+let signingEnv: Record<string, string>
+
 beforeAll(async () => {
+  const key = await generateKeyPair("EdDSA", { extractable: true })
+  signingEnv = {
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+  }
   miniflare = new Miniflare({
     ...hostedWorkerCompatibility(),
     modules: [{ type: "ESModule", path: "worker.js", contents: wranglerBundle(FIXTURE_WORKER) }],
     d1Databases: ["CONTROL_PLANE_DB"],
+    bindings: signingEnv,
     outboundService: runtime,
   })
   await applyControlPlaneBaseline((await miniflare.getD1Database("CONTROL_PLANE_DB")) as unknown as D1Database)
@@ -130,6 +164,7 @@ type Started = { created: boolean; link: { sessionRef: { sessionId: string; work
 async function person(subject: string) {
   const response = await post<{ userId: string }>(`${ORIGIN}/__person`, undefined, { subject })
   expect(response.status).toBe(200)
+  return response.body.userId
 }
 
 async function project(subject: string, workspaceId: string) {
@@ -138,14 +173,14 @@ async function project(subject: string, workspaceId: string) {
   return response.body
 }
 
-async function cloudPreset(subject: string, name: string) {
+async function cloudPreset(subject: string, name: string, agentStartable = false) {
   const result = await command<{ preset: { id: string } }>(subject, `preset-${name}`, {
     type: "preset.create",
     input: {
       name,
       instructions: "Read before you write.",
       execution: { placement: "cloud", capabilities: { mode: "selected", plugins: [], skills: [] } },
-      agentStartable: false,
+      agentStartable,
       configurations: {
         primary: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5" }, effort: null },
       },
@@ -162,12 +197,13 @@ async function task(subject: string, projectId: string, title: string) {
   return result.task.id
 }
 
-async function start(subject: string, taskId: string, presetId: string, attempt = 1) {
-  const preview = await post<Preview>(`${TASKS}/tasks/${taskId}/start-preview`, subject, startBody(presetId, attempt))
+async function start(subject: string, taskId: string, presetId: string, attempt = 1, from: Record<string, unknown> = {}) {
+  const preview = await post<Preview>(`${TASKS}/tasks/${taskId}/start-preview`, subject, { ...startBody(presetId, attempt), ...from })
   expect(preview.status).toBe(200)
   if (!preview.body.preview.available) return { preview: preview.body.preview, started: undefined }
   const started = await post<Started>(`${TASKS}/tasks/${taskId}/sessions`, subject, {
     ...startBody(presetId, attempt),
+    ...from,
     clientRequestId: `start-${taskId}-${attempt}`,
     previewDigest: preview.body.preview.digest,
     handoffText: null,
@@ -207,6 +243,54 @@ describe("a hosted cloud task start on workerd", () => {
 
     const detail = await get<{ links: Array<{ liveness: string; sessionRef: { sessionId: string } }> }>(`${TASKS}/tasks/${taskId}`, "alice")
     expect(detail.links).toMatchObject([{ liveness: "live", sessionRef: { sessionId } }])
+  })
+
+  test("a started task's link reads live and sent from its session's row, and reading it never wakes the stopped sandbox", async () => {
+    await person("erin")
+    const { projectId } = await project("erin", "ws_erin_main")
+    const presetId = await cloudPreset("erin", "Erin review")
+    const taskId = await task("erin", projectId, "Erin's task")
+    const { started } = await start("erin", taskId, presetId)
+    expect(started).toMatchObject({ status: 200 })
+    const root = started!.body.link.sessionRef.workspaceId
+    const sessionId = started!.body.link.sessionRef.sessionId
+
+    expect(await post(`${ORIGIN}/__stop`, undefined, { workspaceId: root })).toMatchObject({ status: 200, body: { ok: true, status: "stopped" } })
+    const ensures = async () => ((await (await miniflare.dispatchFetch(`${ORIGIN}/__ensures`)).json()) as { ensures: number }).ensures
+    const before = await ensures()
+    const reads = runtimeRequests.length
+
+    const detail = await get<{ links: Array<{ liveness: string; handoff: string; sessionRef: { sessionId: string } }> }>(`${TASKS}/tasks/${taskId}`, "erin")
+    expect(detail.links).toMatchObject([{ liveness: "live", handoff: "sent", sessionRef: { sessionId } }])
+    expect(await ensures()).toBe(before)
+    expect(runtimeRequests.slice(reads)).toEqual([])
+  })
+
+  test("a root's agent starts a cloud task with its grant, and the session it creates is registered as the root's owner", async () => {
+    const userId = await person("gina")
+    const { projectId, orgId } = await project("gina", "ws_gina_main")
+    const presetId = await cloudPreset("gina", "Gina agents", true)
+    const { started } = await start("gina", await task("gina", projectId, "Gina's first task"), presetId)
+    expect(started).toMatchObject({ status: 200 })
+    const root = started!.body.link.sessionRef
+    const { token } = await mintTasksCapability(
+      { userId, orgId, projectId, workspaceId: root.workspaceId, operations: ["read", "create", "start"] },
+      signingEnv,
+    )
+
+    const created = await post<{ result: { task: { id: string } } }>(`${TASKS}/commands`, token, {
+      clientRequestId: "gina-agent-task",
+      command: {
+        type: "task.create",
+        input: { projectId, title: "Gina's agent task", description: "", workspaceId: null, parentTaskId: null, createdFrom: root },
+      },
+    })
+    expect(created.status).toBe(200)
+    const hop = await start(token, created.body.result.task.id, presetId, 1, { startedFrom: root })
+    expect(hop.preview).toMatchObject({ available: true, blockers: [] })
+    expect(hop.started).toMatchObject({ status: 200, body: { created: true } })
+    const session = hop.started!.body.link.sessionRef
+    expect((await rows()).sessions).toContainEqual(expect.objectContaining({ session_id: session.sessionId, workspace_id: session.workspaceId, deleted_at: null }))
   })
 
   test("a task with no workspace preference starts in the person's own workspace of its project, not in a task's cloud root", async () => {

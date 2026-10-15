@@ -136,7 +136,9 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
 
     cloudTarget: createTasksCloudTarget(input),
 
-    sessionMetas: (sessionIds) => input.reads.sessionMetas(sessionIds),
+    sessionMetas: (sessionIds) => input.reads.sessions(sessionIds),
+
+    registeredSessions: (sessionIds) => input.reads.sessions(sessionIds),
 
     reserve: createTasksSessionReserve(input),
 
@@ -371,9 +373,13 @@ function startingAs(input: HostedTasksSessionBridgeInput, starter: TasksActor | 
       runtimeActor: { principalKind: "user", actorId: person.actorId, actorKind: "human", userId: person.userId },
     }
   }
-  const userId = input.owner?.(starter)?.userId
-  if (!userId || !input.runtimeClient.runtimeActor) return input.runtimeClient
-  return { ...input.runtimeClient, runtimeActor: { ...input.runtimeClient.runtimeActor, userId } }
+  const owner = input.owner?.(starter)
+  if (!owner) return input.runtimeClient
+  return {
+    ...input.runtimeClient,
+    ownerGrant: true,
+    runtimeActor: { principalKind: "user", actorId: owner.actorId, actorKind: "human", userId: owner.userId },
+  }
 }
 
 function starterUserId(input: HostedTasksSessionBridgeInput, starter: TasksActor): string | undefined {

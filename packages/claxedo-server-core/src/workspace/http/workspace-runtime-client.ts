@@ -18,6 +18,7 @@ export type WorkspaceRuntimeClientOptions = {
   runtimeActor?: Pick<RelayTokenInput, "principalKind" | "userId" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
   auth?: RelayTokenInput["auth"]
   channelIdentity?: RelayTokenInput["channelIdentity"]
+  ownerGrant?: RelayTokenInput["ownerGrant"]
   orgId?: string
   role?: RelayTokenInput["role"]
   /** Inspect an already-ready runtime without waking or reprovisioning it. */
@@ -105,6 +106,7 @@ export function createWorkspaceRuntimeClient(input: {
     role: options.role,
     ...(options.auth ? { auth: options.auth } : {}),
     ...(options.channelIdentity ? { channelIdentity: options.channelIdentity } : {}),
+    ...(options.ownerGrant ? { ownerGrant: options.ownerGrant } : {}),
     orgId,
   }
   const defaultHomeRegion = options.defaultHomeRegion ?? "us-east"

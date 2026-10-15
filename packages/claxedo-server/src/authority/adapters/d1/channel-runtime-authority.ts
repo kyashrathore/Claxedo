@@ -27,6 +27,7 @@ export const D1_CHANNEL_RUNTIME_AUTHORITY_METHODS = [
   "revokeChannelIdentity",
   "recordRuntimeAccessToken",
   "recordRuntimeAccessTokenForService",
+  "recordOwnerRuntimeAccessToken",
   "runtimeAccessTokenActive",
   "revokeRuntimeAccessToken",
   "revokeRuntimeAccessTokensForWorkspaceUser",
@@ -320,6 +321,10 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       .prepare(`select 1 from sessions where session_id = ? and workspace_id = ? and session_host_root = session_id and deleted_at is null`)
       .bind(requireText(token.sessionId, "sessionId"), requireText(token.workspaceId, "workspaceId"))
       .first()
+  }
+
+  async recordOwnerRuntimeAccessToken(actorId: string, args: { jti: string; workspaceId: string; hostId: string; expiresAt: number }) {
+    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...args, role: "owner" })
   }
 
   async recordRuntimeAccessTokenForService(args: {

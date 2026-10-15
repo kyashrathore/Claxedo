@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
+import type { RegisteredSession } from "@claxedo/server-core/tasks-host/registered-sessions"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { OriginCloudSource } from "../workspace/origin-cloud-workspace"
 
@@ -20,7 +21,8 @@ export type TasksHostReads = {
   projectWorkspaces(projectId: string, ownerUserId: string): Promise<Workspace[]>
   /** The repository and ref a project's cloud roots clone, from the oldest of its workspaces that names one. */
   projectSource(projectId: string): Promise<OriginCloudSource | undefined>
-  sessionMetas(sessionIds: readonly string[]): Promise<ReadonlyMap<string, { workspaceID: string; archived?: number }>>
+  /** The registered, undeleted sessions among these ids, as the rows their runtimes publish. */
+  sessions(sessionIds: readonly string[]): Promise<ReadonlyMap<string, RegisteredSession>>
 }
 
 type WorkspaceRow = {
@@ -103,22 +105,26 @@ export function createD1TasksHostReads(database: D1Database): TasksHostReads {
       }
     },
 
-    async sessionMetas(sessionIds) {
-      const metas = new Map<string, { workspaceID: string; archived?: number }>()
+    async sessions(sessionIds) {
+      const sessions = new Map<string, RegisteredSession>()
       for (let start = 0; start < sessionIds.length; start += D1_BOUND_PARAMETERS) {
         const ids = sessionIds.slice(start, start + D1_BOUND_PARAMETERS)
         const rows = await database
           .prepare(`
-            select session_id, workspace_id, archived_at from sessions
+            select session_id, workspace_id, archived_at, last_human_turn_at from sessions
             where session_id in (${ids.map(() => "?").join(", ")}) and deleted_at is null
           `)
           .bind(...ids)
-          .all<{ session_id: string; workspace_id: string; archived_at: number | null }>()
+          .all<{ session_id: string; workspace_id: string; archived_at: number | null; last_human_turn_at: number | null }>()
         for (const row of rows.results) {
-          metas.set(row.session_id, { workspaceID: row.workspace_id, ...(row.archived_at ? { archived: row.archived_at } : {}) })
+          sessions.set(row.session_id, {
+            workspaceID: row.workspace_id,
+            ...(row.archived_at ? { archived: row.archived_at } : {}),
+            ...(row.last_human_turn_at ? { lastHumanTurnAt: row.last_human_turn_at } : {}),
+          })
         }
       }
-      return metas
+      return sessions
     },
   }
 }

@@ -17,7 +17,7 @@ import type { RelayToken, RelayTokenInput } from "@claxedo/server-core/adapters/
  * compositions share so they cannot drift apart.
  */
 export async function recordRelayRuntimeToken(
-  authority: Pick<WorkspaceAuthority, "recordRuntimeAccessToken" | "recordRuntimeAccessTokenForService" | "recordChannelRuntimeAccessToken">,
+  authority: Pick<WorkspaceAuthority, "recordRuntimeAccessToken" | "recordRuntimeAccessTokenForService" | "recordChannelRuntimeAccessToken" | "recordOwnerRuntimeAccessToken">,
   input: RelayTokenInput & RelayToken,
 ) {
   const scope = {
@@ -29,8 +29,19 @@ export async function recordRelayRuntimeToken(
     role: input.role,
     expiresAt: input.expiresAt,
   }
-  if (input.auth && input.channelIdentity) throw new Error("Runtime token cannot have two caller identities")
+  if ([input.auth, input.channelIdentity, input.ownerGrant].filter(Boolean).length > 1) {
+    throw new Error("Runtime token cannot have two caller identities")
+  }
   if (input.principalKind === "user") {
+    if (input.ownerGrant) {
+      if (!authority.recordOwnerRuntimeAccessToken) throw new Error("This control plane records no owner token for a grant")
+      return authority.recordOwnerRuntimeAccessToken(input.actorId, {
+        jti: input.jti,
+        workspaceId: input.workspaceId,
+        hostId: input.hostId,
+        expiresAt: input.expiresAt,
+      })
+    }
     if (input.channelIdentity) {
       return authority.recordChannelRuntimeAccessToken(input.channelIdentity, scope)
     }

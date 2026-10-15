@@ -17,12 +17,14 @@ import {
 } from "@claxedo/server-core/tasks-host/session-bridge-conformance"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
+import type { RegisteredSession } from "@claxedo/server-core/tasks-host/registered-sessions"
 import type { TasksHostReads } from "./d1-host-reads"
 
 const mock = vi.hoisted(() => ({
   request: vi.fn(),
   clients: [] as Array<{ runtimeActor?: { userId?: string }; auth?: unknown }>,
   register: (_sessionId: string) => {},
+  humanTurn: (_sessionId: string) => {},
 }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
   createWorkspaceRuntimeClient: (input: { options?: { runtimeActor?: { userId?: string } } }) => {
@@ -71,6 +73,7 @@ function runtime(input: { refuseDelete?: boolean; offeredModelId?: string; time?
       const body: unknown = JSON.parse(init?.body ?? "{}")
       const row = typeof body === "object" && body ? (body as Record<string, unknown>) : {}
       const messageID = String(row.messageID)
+      mock.humanTurn(prompt[1])
       const parts = Array.isArray(row.parts) ? row.parts : []
       // Parts carry their own identity on the wire, and the bridge filters the
       // page through the contract's own guard: a part without one is not a
@@ -119,8 +122,12 @@ function runtime(input: { refuseDelete?: boolean; offeredModelId?: string; time?
  * completes, which is what the bridge reads liveness from.
  */
 function services() {
-  const metas = new Map<string, { workspaceID: string; archived?: number }>()
+  const metas = new Map<string, RegisteredSession>()
   mock.register = (sessionId) => metas.set(sessionId, { workspaceID: WORKSPACE.id })
+  mock.humanTurn = (sessionId) => {
+    const row = metas.get(sessionId)
+    if (row) metas.set(sessionId, { ...row, lastHumanTurnAt: Date.now() })
+  }
   // The reservation table keys one operation per origin and holds session_id
   // unique, so a second operation claiming a reserved session is a 409 here
   // exactly as it is in D1.
@@ -151,7 +158,7 @@ function services() {
     projectWorkspaces: async (projectId, ownerUserId) =>
       projectId === WORKSPACE.project_id && ownerUserId === STARTER.userId ? [WORKSPACE] : [],
     projectSource: async () => undefined,
-    sessionMetas: async (ids) => new Map([...metas].filter(([id]) => ids.includes(id))),
+    sessions: async (ids) => new Map([...metas].filter(([id]) => ids.includes(id))),
   }
   return {
     authority,
@@ -364,7 +371,7 @@ describe("hosted tasks session bridge", () => {
       messageID: expect.stringMatching(/^msg_tasks_/),
       parts: [{ type: "text", text: expect.stringContaining("Pick up from the failing import test.") }],
     })
-    expect(composition.metas.get(sessionId)).toEqual({ workspaceID: "ws_cloud" })
+    expect(composition.metas.get(sessionId)).toEqual({ workspaceID: "ws_cloud", lastHumanTurnAt: expect.any(Number) })
   })
 
   test("creates the session as the signed person who started it, the actor its reservation was made for", async () => {
@@ -389,7 +396,7 @@ describe("hosted tasks session bridge", () => {
     expect(mock.clients[create]?.auth).toMatchObject({ principal: { userId: STARTER.userId } })
   })
 
-  test("creates a grant owner's session as the service actor carrying the owner, who has no signed request to mint under", async () => {
+  test("creates a grant owner's session as that owner's own actor, through the owner's token door rather than a signed request", async () => {
     const host = runtime()
     mock.clients.length = 0
     const composition = services()
@@ -406,7 +413,10 @@ describe("hosted tasks session bridge", () => {
     expect(await kit.start(await startCommand(previewed.preview.digest))).toMatchObject({ ok: true })
 
     const create = host.calls.findIndex((call) => call.path.startsWith("/session?"))
-    expect(mock.clients[create]?.runtimeActor).toEqual({ principalKind: "service", actorId: "control-plane", actorKind: "agent", userId: STARTER.userId })
+    expect(mock.clients[create]).toMatchObject({
+      ownerGrant: true,
+      runtimeActor: { principalKind: "user", actorId: STARTER.actorId, actorKind: "human", userId: STARTER.userId },
+    })
     expect(mock.clients[create]?.auth).toBeUndefined()
   })
 
@@ -556,6 +566,69 @@ describe("hosted tasks session bridge", () => {
     await expect(kit.start(await startCommand(previewed.preview.digest))).rejects.toThrow("D1 is unreachable")
   })
 
+
+  test("reads an unlinked session's history and removes it as the person who started it, never as the service actor", async () => {
+    const host = runtime()
+    const composition = services()
+    const kit = createHostedTasksSessionBridge({
+      services: composition.value,
+      reads: composition.reads,
+      runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
+      sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
+      principal: async () => ({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human" }),
+      auth: signedStarter,
+    })
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    const started = await kit.start(await startCommand(previewed.preview.digest))
+    if (!started.ok) throw new Error("start refused")
+    mock.clients.length = 0
+    const callsBefore = host.calls.length
+
+    const abandoned = await kit.abandon({
+      actor,
+      task: task(),
+      slot,
+      attempt: 1,
+      configurationDigest: await startConfigurationDigest({ preset: preset(), slot }),
+      sessionRef: started.session.sessionRef,
+    })
+    expect(abandoned).toMatchObject({ ok: true, removed: true })
+    const removal = host.calls.slice(callsBefore)
+    expect(removal.map((call) => `${call.init?.method ?? "GET"} ${call.path.replace(/ses_tasks_\w+/, "<session>")}`)).toEqual([
+      "GET /session/<session>/message",
+      "DELETE /session/<session>",
+    ])
+    for (const client of mock.clients) {
+      expect(client.runtimeActor).toEqual({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human", userId: STARTER.userId })
+    }
+  })
+
+  test("reads a previous session's transcript in another workspace as the person continuing from it", async () => {
+    runtime()
+    const composition = services()
+    const previous: Workspace = { ...WORKSPACE, id: "ws_previous" }
+    const kit = createHostedTasksSessionBridge({
+      services: composition.value,
+      reads: { ...composition.reads, workspace: async (id) => (id === previous.id ? previous : composition.reads.workspace(id)) },
+      runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
+      sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
+      auth: signedStarter,
+    })
+    mock.clients.length = 0
+    const previewed = await kit.preview({
+      ...previewCommand(),
+      continueFromPrevious: true,
+      currentLink: { sessionRef: { sessionId: "ses_before", workspaceId: previous.id } } as never,
+      currentState: "live",
+    })
+    expect(previewed).toMatchObject({ ok: true })
+    const transcriptReads = mock.request.mock.calls.flatMap(([path], index) => (String(path).startsWith("/session/ses_before") ? [mock.clients[index]] : []))
+    expect(transcriptReads.length).toBeGreaterThan(0)
+    for (const client of transcriptReads) {
+      expect(client?.runtimeActor).toEqual({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human", userId: STARTER.userId })
+    }
+  })
 
   test("gives an unlinked session back and compensates the reservation that admitted it", async () => {
     const host = runtime()

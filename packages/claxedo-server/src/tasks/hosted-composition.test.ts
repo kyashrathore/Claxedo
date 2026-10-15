@@ -904,7 +904,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
     workspace: async (workspaceId) => registry.roots.get(workspaceId),
     projectWorkspaces: async () => [],
     projectSource: async (projectId) => (projectId === "project-a" ? { repoUrl: PROJECT_REPO, gitBranch: "main" } : undefined),
-    sessionMetas: async () => new Map(),
+    sessions: async () => new Map(),
   }
 
   beforeEach(() => {
