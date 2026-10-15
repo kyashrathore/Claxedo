@@ -13,6 +13,8 @@ export type ComposerTextKey =
   | "composer.models.empty"
   | "composer.models.asleep"
   | "composer.models.asleep.detail"
+  | "composer.models.waking"
+  | "composer.models.waking.detail"
   | "composer.unavailableHere"
   | "composer.unavailableHere.alternative"
   | "composer.unavailableHere.machines"
@@ -149,6 +151,8 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.models.empty": "{{harness}} offers no models right now",
   "composer.models.asleep": "{{name}} is asleep",
   "composer.models.asleep.detail": "Its models load when it wakes; your next message wakes it.",
+  "composer.models.waking": "{{name}} is waking",
+  "composer.models.waking.detail": "Its models load once it is running.",
   "composer.unavailableHere": "{{harness}} runs inside the workspace, and your organization's cloud provider can't keep your key out of it.",
   "composer.unavailableHere.alternative": "Use {{model}} through {{harness}} — same account.",
   "composer.unavailableHere.machines": "It runs on your machines, or pick another harness here.",

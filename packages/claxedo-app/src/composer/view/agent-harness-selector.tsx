@@ -1,6 +1,6 @@
 import { createMemo, type JSX } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { isStartingCloud, isStoppedCloud, useServer } from "@/server"
+import { useServer } from "@/server"
 import { settingsPath } from "@/shell"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import { watchCatalogDraftDefault } from "../harness/catalog-draft-default"
@@ -87,14 +87,15 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     modelNames,
   })
   const style = createTriggerStyle(() => props.triggerStyle)
-  const asleep = () => {
+  const runtime = () => {
     const id = placementId()
-    const placement = id === undefined ? undefined : server.placements.byId(id)
-    return isStoppedCloud(placement) || isStartingCloud(placement)
+    return id === undefined ? "live" : server.cloud.runtime(id).kind
   }
+  const asleep = () => runtime() === "asleep" || runtime() === "waking" || runtime() === "wakeFailed"
+  const waking = () => runtime() === "waking"
   const account = createHarnessAccountState(server, harness)
   const unavailableHere = createUnavailableHere({ selection, harness, harnessLabel: optionList.label, adopt: harnessSwitch.adopt })
-  const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, asleep, account, placementId, openProviders, unavailableHere })
+  const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, asleep, waking, account, placementId, openProviders, unavailableHere })
   const { notice, modelError } = createSelectorNotice({
     active,
     controller,
