@@ -327,8 +327,11 @@ holds one connection promise per workspace:
    `POST /api/workspace/:id/connection` until the server answers ready. It
    waits the server's `retryAfterMs` (clamped to 0.5–30 s) on a
    `provisioning` answer or a 409 `cloud_runtime_unavailable` that carries
-   one, for at most 30 attempts. The request is then sent once more on the
-   new link.
+   one, for as long as the server answers so: the server ends a start that
+   does not settle (a boot failure, a refusal with no retry window, the
+   provisioner's 15-minute wall). Either answer carries `failure` while the
+   server retries a step that failed, and the app shows it as "Start failed,
+   retrying: <failure>". The request is then sent once more on the new link.
 
 `transport.startRuntime` is the same start for an explicit wake; off loopback
 the relay adopts the link it returns.

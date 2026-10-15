@@ -105,6 +105,7 @@ function fakeTransport(options: FakeServerOptions, calls: FakeCalls): Transport 
       return readJson(response)
     },
     startRuntime: async () => undefined,
+    followRuntime: async () => undefined,
     connectSession: async () => undefined,
     onSessionHost: () => () => undefined,
     onRuntimeImage: () => () => undefined,

@@ -34,7 +34,7 @@ describe("readyCloudWorkspaces", () => {
     expect(await readyCloudWorkspaces(undefined, [{ workspace_id: "ws_cloud", backing: "cloud-vm" }])).toEqual(new Set())
   })
 
-  test("a lease waiting out a scheduled retry is still provisioning, and one that stopped retrying fails with its reason in words", async () => {
+  test("a lease waiting out a scheduled retry is still provisioning, with the failure it retries, and one that stopped retrying fails with its reason in words", async () => {
     const unavailable = (failure?: Extract<SandboxTargetResult, { status: "unavailable" }>["failure"]): SandboxTargetResult =>
       ({ status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "unavailable", ...(failure ? { failure } : {}) })
     const targets: Record<string, SandboxTargetResult> = {
@@ -50,7 +50,7 @@ describe("readyCloudWorkspaces", () => {
     )
 
     expect(Object.fromEntries(lifecycles)).toEqual({
-      ws_backoff: { status: "provisioning" },
+      ws_backoff: { status: "provisioning", failure: "quota exceeded" },
       ws_gave_up: { status: "failed", error: "The cloud workspace could not start: quota exceeded" },
       ws_boot: { status: "failed", error: "The cloud workspace could not start: fatal: couldn't find remote ref refs/heads/missing" },
       ws_silent: { status: "failed", error: "The cloud workspace stopped answering" },

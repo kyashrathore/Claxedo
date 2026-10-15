@@ -709,8 +709,9 @@ describe("bound desktop account lifecycle", () => {
       fetch: async () => Response.json({
         error: {
           code: "cloud_runtime_unavailable",
-          message: "Cloud runtime is unavailable",
+          message: "quota exceeded",
           retryAfterMs: 1_500,
+          failure: "quota exceeded",
         },
       }, { status: 409 }),
     })
@@ -719,6 +720,7 @@ describe("bound desktop account lifecycle", () => {
     await expect(h.service.run("workspace.connection.mint", { id: "ws_1" })).resolves.toEqual({
       status: "provisioning",
       retryAfterMs: 1_500,
+      failure: "quota exceeded",
     })
   })
 

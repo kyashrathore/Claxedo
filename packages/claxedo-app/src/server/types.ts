@@ -58,8 +58,10 @@ export type ServingMachine = { readonly id?: MachineId; readonly name: string }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"
 
+export type CloudLifecycle = "live" | "starting" | "asleep" | "failed"
+
 export type PlacementName =
-  | { readonly kind: "cloud"; readonly label?: string }
+  | { readonly kind: "cloud"; readonly label?: string; readonly lifecycle: CloudLifecycle }
   | { readonly kind: "folder" | "worktree"; readonly label: string }
 
 export type Placement = PlacementName & {

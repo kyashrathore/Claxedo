@@ -22,7 +22,8 @@ export function authorityRowReachable(
 
 /**
  * Authority rows as a signed list answers them, each carrying `reachable`
- * from the predicate above and a cloud row its lease's lifecycle `status`.
+ * from the predicate above and a cloud row its lease's lifecycle: `status`,
+ * a failed start's `error`, and the `failure` a start still retrying retries.
  */
 export async function withAuthorityRowReachability(
   manager: Pick<SandboxManagerPort, "target"> | undefined,

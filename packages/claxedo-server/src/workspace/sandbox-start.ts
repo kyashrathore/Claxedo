@@ -7,14 +7,14 @@ import { timed } from "../platform/http/server-timing"
  * workspace's first lease, `joined` a poll answered from the run already in
  * flight with no step of its own, `renewAt` says when a ready sandbox's
  * delivered placeholders must be delivered again, `watchAt` when its idleness
- * is first read because its host reads none, and `failed` is a runtime
- * preparation or settings delivery that refused the start before or after
- * the sandbox.
+ * is first read because its host reads none, `failure` is the error of the
+ * last step the run is retrying, and `failed` is a runtime preparation or
+ * settings delivery that refused the start before or after the sandbox.
  */
 export type SandboxStartAnswer =
   | (Extract<SandboxEnsureResult, { status: "ready" }> & { renewAt?: number; watchAt?: number })
   | Extract<SandboxEnsureResult, { status: "unavailable" }>
-  | (Extract<SandboxEnsureResult, { status: "provisioning" }> & { opened?: true; joined?: true })
+  | (Extract<SandboxEnsureResult, { status: "provisioning" }> & { opened?: true; joined?: true; failure?: string })
   | { status: "failed"; code: "runtime_prepare_failed" | "runtime_provision_failed"; message: string }
 
 export type ReadySandboxTarget = Extract<SandboxTargetResult, { status: "ready" }>

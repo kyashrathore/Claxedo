@@ -4,6 +4,10 @@ export function isStoppedCloud(placement: Placement | undefined): boolean {
   return placement?.kind === "cloud" && !placement.reachable
 }
 
+export function isStartingCloud(placement: Placement | undefined): boolean {
+  return placement?.kind === "cloud" && placement.lifecycle === "starting"
+}
+
 export function isOfflineMachine(placement: Placement | undefined): boolean {
   return !!placement && placement.kind !== "cloud" && !placement.onThisMachine && !placement.reachable && placement.machineId !== undefined
 }

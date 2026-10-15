@@ -19,12 +19,12 @@ export type CloudWorkspace = {
 
 export type WorkspaceBootMode = "restore" | "resume" | "cold-start"
 
-export type WorkspaceStartProgress = { readonly kind: "provisioning"; readonly bootMode?: WorkspaceBootMode }
+export type WorkspaceStartProgress = { readonly kind: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string }
 
 export type WorkspaceRuntime =
   | { readonly kind: "live" }
   | { readonly kind: "asleep" }
-  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode }
+  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string }
   | { readonly kind: "wakeFailed"; readonly error: AppError }
   | { readonly kind: "outdated" }
 

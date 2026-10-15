@@ -2,7 +2,8 @@ import { DurableObject } from "cloudflare:workers"
 import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
 import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox-start"
 
-type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number }
+/** `failure` is the error of the last step that failed and is being retried; a step that succeeds or ends the run clears it. */
+type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number; failure?: string }
 type Outcome = { epoch: number; answer: SandboxStartAnswer; settledAt: number }
 /** A step the alarm owes a serving sandbox: when it is next due, and how many steps in a row threw before it. */
 type FollowUp = { workspaceId: string; at: number; failures: number }
@@ -130,7 +131,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       const run = await storage.get<Run>("run")
       if (!run) return undefined
       if (!this.#driving && (await storage.getAlarm()) === null) await storage.setAlarm(Date.now())
-      return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true }
+      return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true, ...(run.failure ? { failure: run.failure } : {}) }
     }
 
     async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
@@ -205,7 +206,9 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         if (retryAfterMs !== undefined) {
           // A failed step's retry runs on the fresh epoch its answer names.
           const epoch = "epoch" in answer && answer.epoch !== undefined ? answer.epoch : run.epoch
-          await storage.put("run", { ...run, epoch, retryAfterMs })
+          const failure = answer.status === "unavailable" ? answer.error : undefined
+          const continuing: Run = { workspaceId: run.workspaceId, homeRegion: run.homeRegion, startedAt: run.startedAt, epoch, retryAfterMs, ...(failure ? { failure } : {}) }
+          await storage.put("run", continuing)
           await storage.setAlarm(Date.now() + retryAfterMs)
           return
         }
