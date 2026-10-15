@@ -36,7 +36,7 @@ describe("direct provider delivery", () => {
         secret: "chatgpt-access",
         authKind: "subscription",
         expiresAt: 9_000_000_000_000,
-        account: { credentialId: "plan", providerId: "codex-app-server", label: "Plan" },
+        account: { credentialId: "plan", providerId: "codex-app-server", label: "Plan", revision: 1 },
       },
     })
   })

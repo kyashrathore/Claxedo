@@ -727,7 +727,9 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       }
       const removable = await changeableAccount(c.req.raw, row) || await managedSandboxKey(c.req.raw, row)
       if (!removable) return c.json({ deleted: false })
-      const deleted = await credentials.deleteCredential(c.req.param("id"), org(c.req.raw), row?.owner === null ? actor(c.req.raw) : undefined)
+      const deleted = row?.owner === null
+        ? await credentials.deleteCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))
+        : await credentials.deleteCredential(c.req.param("id"), org(c.req.raw))
       return c.json({ deleted })
     })
     .delete("/provider/:providerId", async (c) => {
