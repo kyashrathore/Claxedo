@@ -142,8 +142,12 @@ const ENTRIES = [
   // one `agent-plugins/scope-keys.ts`. They own a private repository's clone,
   // so they install on the plane's broker how its repository binding resolves
   // for a sandbox with no provider edge
-  // (`credentials/hosted-egress-broker/repository-binding.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 225, packages: 26 },
+  // (`credentials/hosted-egress-broker/repository-binding.ts`). The catalog
+  // says where each MCP server works in the cloud from the organization's
+  // sandbox driver (`agent-plugins/mcp/catalog-servers.ts`), by the one rule
+  // runtime preparation also follows for whether a driver carries a gateway
+  // credential (`agent-plugins/mcp/gateway-reach.ts`).
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 227, packages: 26 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -154,7 +158,7 @@ const ENTRIES = [
   // has a sandbox to start, and the notice that start sends the workspace
   // owner's live-sync room when it begins and settles
   // (`workspace/start-notice.ts`).
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 235, packages: 26 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 237, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
