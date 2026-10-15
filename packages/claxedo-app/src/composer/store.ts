@@ -84,7 +84,16 @@ function visibleDraftWrites(table: ReturnType<typeof createEntryTable>) {
     ...table,
     updateDraft: (key: ComposerKey, update: (draft: Draft) => void) => {
       ensure(key)
-      setEntries(key, produce((entry) => update(entry.fork ?? entry.draft)))
+      setEntries(key, produce((entry) => {
+        const draft = entry.fork ?? entry.draft
+        update(draft)
+        delete draft.sentAs
+      }))
+      persist(key)
+    },
+    moveCursor: (key: ComposerKey, cursor: number) => {
+      ensure(key)
+      setEntries(key, produce((entry) => ((entry.fork ?? entry.draft).cursor = cursor)))
       persist(key)
     },
     replaceDraft: (key: ComposerKey, draft: Draft) => {
@@ -126,7 +135,7 @@ function promptActions(table: EntryTable) {
 function draftActions(table: EntryTable) {
   const { updateDraft } = table
   return {
-    setCursor: (key: ComposerKey, cursor: number) => updateDraft(key, (draft) => (draft.cursor = cursor)),
+    setCursor: table.moveCursor,
     reset: (key: ComposerKey) => table.replaceDraft(key, emptyDraft()),
     addContext: (key: ComposerKey, item: ContextItem) => {
       if (table.draft(key).context.some((existing) => existing.key === item.key)) return
@@ -146,9 +155,12 @@ function sentDraftActions(table: EntryTable) {
       table.replaceDraft(key, emptyDraft())
       return taken
     },
-    returnUnsent: (key: ComposerKey, unsent: Draft) => {
+    returnUnsent: (key: ComposerKey, unsent: Draft, messageId: string) => {
       const typed = unwrap(table.draft(key))
-      table.replaceDraft(key, draftEmpty(typed) ? unsent : appendedDraft(unsent, typed))
+      table.replaceDraft(key, draftEmpty(typed) ? { ...unsent, sentAs: messageId } : appendedDraft(unsent, typed))
+    },
+    spendSent: (key: ComposerKey, messageId: string) => {
+      if (table.draft(key).sentAs === messageId) table.replaceDraft(key, emptyDraft())
     },
   }
 }

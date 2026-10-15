@@ -57,12 +57,17 @@ function sessionWorking(view: SessionView | undefined): boolean {
   return kind === "working" || kind === "retrying"
 }
 
+function sendJoinsQueue(view: SessionView | undefined): boolean {
+  return sessionWorking(view) || view?.queue.draining() === true
+}
 
 function createSendFor(props: ComposerProps, store: ComposerStore, key: Accessor<ComposerKey>, selection: HarnessSelection, late: Late, t: ReturnType<typeof useComposerText>) {
+  const server = useServer()
   return createComposerSend({
     key,
     store,
-    working: () => sessionWorking(props.view),
+    joinsQueue: () => sendJoinsQueue(props.view),
+    newMessageId: server.sessions.newMessageId,
     mode: () => late.controller?.state.mode ?? "normal",
     normalMode: () => late.controller?.setMode("normal"),
     submission: props.manageSession === false ? async () => ({}) : selection.submission,
@@ -159,7 +164,7 @@ export function createComposer(props: ComposerProps) {
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands, late })
   late.controller = controller
-  const submit = submitState({ key, selection, controller, refs, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true, manage: () => props.manageSession !== false })
+  const submit = submitState({ key, selection, controller, refs, working, sessionExists: () => !!props.view, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true, manage: () => props.manageSession !== false })
   late.submit = submit
   props.registerRecovery?.(
     createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
@@ -186,6 +191,7 @@ function submitState(input: {
   controller: ComposerController
   refs: ComposerRefs
   working: Accessor<boolean>
+  sessionExists: Accessor<boolean>
   asleep: Accessor<boolean>
   readOnly: Accessor<boolean>
   manage: Accessor<boolean>
@@ -207,6 +213,7 @@ function submitState(input: {
       stoppable: input.working(),
       blank: input.controller.blank(),
       workspaceAsleep: input.asleep(),
+      sessionExists: input.sessionExists(),
     })
   })
   const blockFlash = createSubmitBlockFlash(submitBlock, () => chooseComposerModel(input.refs))

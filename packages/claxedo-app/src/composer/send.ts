@@ -1,4 +1,4 @@
-import { createMemo, type Accessor } from "solid-js"
+import { createEffect, createMemo, type Accessor } from "solid-js"
 import { ServerError, toAppError, type PromptAttachment, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote, formatQuoteNote } from "@/lib/comment-note"
@@ -108,7 +108,8 @@ type SendInput = {
   mode: Accessor<EditorMode>
   normalMode: () => void
   submission: () => Promise<Submission>
-  working: Accessor<boolean>
+  joinsQueue: Accessor<boolean>
+  newMessageId: () => string
   goalCapable: Accessor<boolean>
   view: Accessor<SessionView | undefined>
   blocked?: () => boolean
@@ -167,11 +168,12 @@ async function sendToSession(input: SendInput, view: SessionView, goal: GoalInte
   const key = input.key()
   const mode = input.mode()
   const draft = input.store.take(key)
+  const messageId = input.newMessageId()
   try {
     const prompt = await buildPromptInput({ draft, submission: await input.submission(), goal, delivery })
-    await view.send({ ...prompt, clientRequestId })
+    await view.send({ ...prompt, clientRequestId, messageId })
   } catch (error) {
-    input.store.returnUnsent(key, draft)
+    input.store.returnUnsent(key, draft, messageId)
     throw error
   }
   input.store.addHistory(key, mode, draft.prompt, historyComments(draft))
@@ -188,7 +190,7 @@ async function replaceQueued(input: SendInput, view: SessionView, replace: (prom
 
 async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView | undefined> {
   const replace = input.queuedReplace()
-  const delivery = input.working() ? "queue" : undefined
+  const delivery = input.joinsQueue() ? "queue" : undefined
   const existing = input.view()
   if (existing && replace) return replaceQueued(input, existing, replace, draft, delivery)
   if (existing) return sendToSession(input, existing, goal, clientRequestId, delivery)
@@ -198,6 +200,17 @@ async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, cl
 }
 
 type SendMachine = Machine<SendState, SendEvent>
+
+function spendArrivedDraft(input: SendInput) {
+  createEffect(() => {
+    const key = input.key()
+    const sentAs = input.store.draft(key).sentAs
+    const view = input.view()
+    if (!sentAs || !view) return
+    const arrived = view.messages().some((message) => message.id === sentAs) || view.queue.items().some((item) => item.messageId === sentAs)
+    if (arrived) input.store.spendSent(key, sentAs)
+  })
+}
 
 function sendAgainRequested(state: SendMachine): boolean {
   const current = state.state()
@@ -227,6 +240,7 @@ export function createComposerSend(input: SendInput) {
   const sending = createMemo(() => state.state().kind === "sending")
   const armGoal = createArmGoal(input)
   const stop = createStop(input.view, input.goalStopFailed)
+  spendArrivedDraft(input)
   const send = async (): Promise<void> => {
     const draft = input.store.draft(input.key())
     if (input.blocked?.() || !promptFilled(draft)) return

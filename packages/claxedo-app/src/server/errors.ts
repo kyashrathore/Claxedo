@@ -193,6 +193,10 @@ export function isClaimedByAnotherClient(error: unknown): boolean {
   return toAppError(error).code === "control_plane_idempotency_in_flight"
 }
 
+export function isHarnessHostedElsewhere(error: unknown): boolean {
+  return toAppError(error).code === "workspace_harness_hosted_elsewhere"
+}
+
 export function isSessionMissing(error: unknown): boolean {
   return toAppError(error).code === "session_not_found"
 }

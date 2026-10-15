@@ -1,6 +1,6 @@
 import { createMemo, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { settingsPath, useCommands } from "@/shell"
+import { draftPath, settingsPath, useCommands } from "@/shell"
 import { useDialog } from "@/ui"
 import type { FileContextItem, QuoteContextItem } from "../model"
 import { promptText } from "../model"
@@ -9,7 +9,7 @@ import { acceptedFileTypes } from "../attachments/files"
 import { renderPromptEditor } from "../editor/serialization"
 import { PromptInputFrame } from "./frame"
 import { createPromptToolbarMotion } from "./toolbar-motion"
-import { createComposerToasts, ReadingNotices } from "./notice"
+import { createComposerToasts, HarnessElsewhereNotice, ReadingNotices } from "./notice"
 import { ComposerNoticeProvider, useComposerNoticeChannel } from "./composer-notice"
 import { createComposerNoticeChannel } from "./notice-slot"
 import { SessionHealthPeek } from "./health-peek"
@@ -30,7 +30,7 @@ export function Composer(props: ComposerProps) {
   const popover = () => (controller.state.popover.kind === "closed" ? null : controller.state.popover.kind)
   const motion = createPromptToolbarMotion({ shellMode: () => mode() === "shell", pending: composer.harnessPending })
   const panel = usePanel()
-  createComposerToasts(composer)
+  const toasts = createComposerToasts(composer)
   const inherited = useComposerNoticeChannel()
   const notices = inherited ?? createComposerNoticeChannel()
 
@@ -48,6 +48,11 @@ export function Composer(props: ComposerProps) {
       <SessionHealthPeek composer={composer} />
     </Show>
     <ReadingNotices composer={composer} />
+    <HarnessElsewhereNotice
+      composer={composer}
+      refusal={toasts.hostedElsewhere}
+      startNewSession={() => props.view && navigate(draftPath(props.view.ref.placementId))}
+    />
     <PromptInputFrame
       {...popoverBindings}
       {...contextBindings}

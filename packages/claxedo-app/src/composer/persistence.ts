@@ -143,9 +143,10 @@ export function persistedEntryOf(value: unknown): PersistedEntry | undefined {
   if (!prompt) return undefined
   const cursor = readFiniteNumber(value.draft, "cursor")
   const context = (readArray(value.draft, "context") ?? []).flatMap((item) => contextOf(item) ?? [])
+  const sentAs = readString(value.draft, "sentAs")
   const history = isRecord(value.history) ? value.history : {}
   return {
-    draft: { prompt, ...(cursor !== undefined ? { cursor } : {}), context },
+    draft: { prompt, ...(cursor !== undefined ? { cursor } : {}), context, ...(sentAs ? { sentAs } : {}) },
     history: { normal: historyEntriesOf(history.normal), shell: historyEntriesOf(history.shell) },
   }
 }

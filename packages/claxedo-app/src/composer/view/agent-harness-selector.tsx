@@ -24,6 +24,7 @@ import { createSelectorNotice } from "./selector-notice"
 import { createUnavailableHere } from "./harness-unavailable-here"
 import { createSelectionWrites } from "./selection-writes"
 import { createScopeSelection, createSelectorScope } from "./selector-scope"
+import { createSelectorRuntime } from "./selector-runtime"
 
 interface AgentHarnessSelectorProps {
   triggerStyle?: JSX.CSSProperties
@@ -68,8 +69,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     catalog,
     picked,
   })
+  const { asleep, waking } = createSelectorRuntime(placementId)
   const isPolling = createMemo(() => selection().readiness === "polling")
-  watchScopeHarnessReprobe({ active, scope, scopeInput, placementId, sessionId, polling: isPolling, controller })
+  const reprobing = createMemo(() => isPolling() && !asleep())
+  watchScopeHarnessReprobe({ active, scope, scopeInput, placementId, sessionId, polling: reprobing, controller })
   const harnessSwitch = createHarnessSwitch({ controller, scope, scopeInput, harness, polling: isPolling, options: optionList.options, catalog })
   const openProviders = () => {
     navigate(settingsPath("models"))
@@ -82,17 +85,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     picked,
     catalog,
     polling: isPolling,
+    asleep,
     availability,
     harnessLabel: optionList.label,
     modelNames,
   })
   const style = createTriggerStyle(() => props.triggerStyle)
-  const runtime = () => {
-    const id = placementId()
-    return id === undefined ? "live" : server.cloud.runtime(id).kind
-  }
-  const asleep = () => runtime() === "asleep" || runtime() === "waking" || runtime() === "wakeFailed"
-  const waking = () => runtime() === "waking"
   const account = createHarnessAccountState(server, harness)
   const unavailableHere = createUnavailableHere({ selection, harness, harnessLabel: optionList.label, adopt: harnessSwitch.adopt })
   const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, asleep, waking, account, placementId, openProviders, unavailableHere })

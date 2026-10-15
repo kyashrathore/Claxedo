@@ -77,6 +77,7 @@ export type Draft = {
   cursor?: number
   context: ContextItem[]
   goalArmed: boolean
+  sentAs?: string
 }
 
 export type HistoryComment = {

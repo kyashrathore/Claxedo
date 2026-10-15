@@ -39,6 +39,7 @@ export type SubmitBlockInput = {
   readonly stoppable: boolean
   readonly blank: boolean
   readonly workspaceAsleep?: boolean
+  readonly sessionExists?: boolean
 }
 
 const COPY = {
@@ -83,7 +84,7 @@ function block(reason: SubmitBlockReason): SubmitBlock {
 export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   if (input.authorityBlock) return block(input.authorityBlock)
   if (input.stoppable && input.blank) return null
-  if (input.workspaceAsleep && input.harnessMode) return input.blank ? block("empty") : null
+  if (input.workspaceAsleep && (input.harnessMode || input.sessionExists)) return input.blank ? block("empty") : null
   if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
   if (input.harnessMode && !input.draftConnectionAllowsNoModel) {

@@ -11,6 +11,8 @@ export type ComposerTextKey =
   | "composer.models.refused.detail"
   | "composer.models.reconnect"
   | "composer.models.empty"
+  | "composer.harnessElsewhere.startNew"
+  | "composer.harnessElsewhere.keep"
   | "composer.models.asleep"
   | "composer.models.asleep.detail"
   | "composer.models.waking"
@@ -149,6 +151,8 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.models.refused.detail": "Reconnect it in Settings → Models, or add another account.",
   "composer.models.reconnect": "Open Models",
   "composer.models.empty": "{{harness}} offers no models right now",
+  "composer.harnessElsewhere.startNew": "Start a new session",
+  "composer.harnessElsewhere.keep": "Keep this session's harness",
   "composer.models.asleep": "{{name}} is asleep",
   "composer.models.asleep.detail": "Its models load when it wakes; your next message wakes it.",
   "composer.models.waking": "{{name}} is waking",
