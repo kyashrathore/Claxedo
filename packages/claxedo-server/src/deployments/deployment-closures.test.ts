@@ -150,8 +150,12 @@ const ENTRIES = [
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
   // has a sandbox to start, and the notice that start sends the workspace
   // owner's live-sync room when it begins and settles
-  // (`workspace/start-notice.ts`).
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 234, packages: 26 },
+  // (`workspace/start-notice.ts`). When the idle watch finds a cloud runtime
+  // gone, it ends that runtime's sessions' turns in the registry and tells
+  // their readers (`workspace/runtime-lost.ts`,
+  // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
+  // has cloud runtimes to lose.
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 236, packages: 26 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
