@@ -19,7 +19,7 @@ function workspaceUrl(link: RelayConnection, path: string) {
 
 async function readConnection(read: WorkspaceConnections["read"], workspaceId: string, sessionId?: string): Promise<RelayConnection> {
   const answer = await read(workspaceId, sessionId)
-  if (answer.kind !== "ready") throw workspaceStopped(workspaceId)
+  if (answer.kind !== "ready") throw workspaceStopped()
   return answer.link
 }
 

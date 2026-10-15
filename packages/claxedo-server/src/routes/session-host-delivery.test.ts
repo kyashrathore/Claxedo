@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { decodeJwt, importPKCS8, SignJWT } from "jose"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
-import { sandboxRuntimeBootFailedError } from "@claxedo/sandbox-manager"
+import { sandboxProviderFailedError, sandboxRuntimeBootFailedError } from "@claxedo/sandbox-manager"
 import { parseTurnDelivery, parseTurnExecutionAccess } from "@claxedo/harness/contract"
 import { ORG_ACCOUNT_UNAVAILABLE } from "@claxedo/agent-runtime-contract"
 import { DIRECTORY, WORKSPACE_ID, sessionHostPlane, type SessionHostPlane } from "../test-support/session-host-plane"
@@ -316,7 +316,7 @@ describe("/turn-execution", () => {
     const lease = await plane.acquire(proof, root, "turn_execution_start_refused")
     plane.serve(NOT_RUNNING)
     const refusal = async () => await (await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })).json()
-    plane.starting({ status: "unavailable", homeRegion: "us-east", retryAfterMs: 0, error: sandboxRuntimeBootFailedError("the branch main is gone") })
+    plane.starting({ status: "unavailable", homeRegion: "us-east", retryAfterMs: 0, error: sandboxRuntimeBootFailedError("the branch main is gone\n    at checkOut (a.mjs:1:1)") })
     expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: the branch main is gone" } })
     plane.starting({ status: "failed", code: "runtime_prepare_failed", message: "the settings could not be prepared" })
     expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: the settings could not be prepared" } })
@@ -328,21 +328,21 @@ describe("/turn-execution", () => {
     expect(plane.starts.length).toBe(starts)
   })
 
-  test("a start that failed and is backing off is refused with the provider's reason and when it is tried again, never answered as starting", async () => {
+  test("a start that failed and is backing off is refused in one line naming the provider, without its request or code, and when it is tried again, never answered as starting", async () => {
     const root = "ses_pi_execution_start_backoff"
     const proof = await plane.createHostedSession(root)
     const lease = await plane.acquire(proof, root, "turn_execution_start_backoff")
     plane.serve(NOT_RUNNING)
     const refusal = async () => await (await plane.post("/turn-execution", { turnLease: lease.leaseId, start: true })).json()
-    plane.starting({ status: "unavailable", homeRegion: "us-east", epoch: 3, retryAfterMs: 30_000, error: "boat_rate_limited: 429 Too Many Requests\nretry later" })
+    plane.starting({ status: "unavailable", homeRegion: "us-east", epoch: 3, retryAfterMs: 30_000, error: sandboxProviderFailedError("boat", "Boat POST /sandboxes/bx_23456789/resume was rejected (internal_error)\nretry later") })
     expect(await refusal()).toEqual({ error: {
-      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests", retryAfterMs: 30_000,
+      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: Boat returned an error.", retryAfterMs: 30_000,
     } })
     plane.starting({ status: "unavailable", homeRegion: "us-east", epoch: 3, error: "runtime_lease_stopped" })
     expect(await refusal()).toEqual({ error: { code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: it was stopped or replaced while it started" } })
-    plane.starting({ status: "provisioning", epoch: 3, retryAfterMs: 12_000, homeRegion: "us-east", joined: true, failure: "boat_rate_limited: 429 Too Many Requests" })
+    plane.starting({ status: "provisioning", epoch: 3, retryAfterMs: 12_000, homeRegion: "us-east", joined: true, failure: "Boat returned an error." })
     expect(await refusal()).toEqual({ error: {
-      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: boat_rate_limited: 429 Too Many Requests", retryAfterMs: 12_000,
+      code: "cloud_runtime_start_refused", message: "The cloud workspace could not start: Boat returned an error.", retryAfterMs: 12_000,
     } })
   })
 

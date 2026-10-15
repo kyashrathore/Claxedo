@@ -283,8 +283,8 @@ test("wakes: a start the server refused until a retry time reads failed with its
 })
 
 test("wakes: after a reload, a workspace whose start failed reads failed with the reason the catalog names, not asleep", () => {
-  const { wakes } = fixture({ value: false }, { lifecycle: "failed", failure: "The cloud workspace could not start: Boat POST /sandboxes was rejected (rate_limited)" })
+  const { wakes } = fixture({ value: false }, { lifecycle: "failed", failure: "Boat's daily start limit (200) is used up; try again later." })
   const runtime = wakes.runtime(cloud)
   expect(runtime.kind).toBe("wakeFailed")
-  expect(runtime.kind === "wakeFailed" && runtime.error.message).toBe("The cloud workspace could not start: Boat POST /sandboxes was rejected (rate_limited)")
+  expect(runtime.kind === "wakeFailed" && runtime.error.message).toBe("Boat's daily start limit (200) is used up; try again later.")
 })

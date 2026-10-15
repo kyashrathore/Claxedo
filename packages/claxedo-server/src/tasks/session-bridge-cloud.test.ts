@@ -6,7 +6,6 @@
  */
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import {
-  SandboxProviderRateLimitedError,
   createSandboxManager,
   SandboxProviderRateLimitedError,
   type SandboxDriver,
@@ -479,13 +478,13 @@ describe("hosted tasks cloud roots", () => {
     expect(await sandboxManager.list()).toMatchObject([{ workspaceId: root, epoch: 1 }])
   })
 
-  test("a sandbox refused at the provider's daily start limit is refused with the reason a person is told, not the lease's coded error", async () => {
+  test("a sandbox refused at the provider's daily start limit is refused in one line with the reason a person is told, not the lease's coded error", async () => {
     runtime()
     const { driver } = fakeDriver()
     const limited: SandboxDriver = {
       ...driver,
       ensureHost: async () => {
-        throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "the start limit is used up")
+        throw new SandboxProviderRateLimitedError({ window: "day", limit: 200 }, "the start limit is used up")
       },
     }
     const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: limited }))
@@ -496,7 +495,7 @@ describe("hosted tasks cloud roots", () => {
     if (!previewed.ok) return
     expect(previewed.preview.blockers).toEqual([{
       code: "source_unavailable",
-      detail: `The cloud workspace for this attempt could not be provisioned: ${driver.id}'s start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: try again then. A wake counts as a start too.`,
+      detail: `The cloud workspace could not start: ${driver.id}'s daily start limit (200) is used up; try again later.`,
     }])
   })
 
@@ -521,7 +520,7 @@ describe("hosted tasks cloud roots", () => {
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(false)
     expect(previewed.preview.blockers).toEqual([
-      { code: "source_unavailable", detail: expect.stringContaining("could not be provisioned") },
+      { code: "source_unavailable", detail: "The cloud workspace could not start: test-driver returned an error." },
     ])
     const root = await rootOf("tsk_one")
     expect(root).toBeDefined()
@@ -536,26 +535,6 @@ describe("hosted tasks cloud roots", () => {
     expect(ensured).toEqual([root?.id, root?.id])
     // Each lease a start opened is metered once, the released one included.
     expect(usage.leaseOpened.mock.calls.map(([opened]) => opened.workspaceId)).toEqual([root?.id, root?.id, root?.id])
-  })
-
-  test("a start the provider refuses at its daily start limit says why in the person's words, without the lease's code", async () => {
-    runtime()
-    const { driver } = fakeDriver()
-    const limited: SandboxDriver = {
-      ...driver,
-      ensureHost: async () => {
-        throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "start limit")
-      },
-    }
-    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: limited }))
-
-    const previewed = await bridge(composition).preview(previewCommand("tsk_one"))
-    expect(previewed).toMatchObject({ ok: true })
-    if (!previewed.ok) return
-    expect(previewed.preview.blockers).toEqual([{
-      code: "source_unavailable",
-      detail: "The cloud workspace for this attempt could not be provisioned: test-driver's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: press Retry then. A wake counts as a start too.",
-    }])
   })
 
   test("refuses cloud placement on a deployment that provisions no sandboxes, and allocates nothing", async () => {
@@ -659,7 +638,7 @@ describe("hosted tasks cloud roots", () => {
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(false)
     expect(previewed.preview.blockers).toEqual([
-      { code: "capability_unavailable", detail: expect.stringContaining("did not acknowledge the selected capability set") },
+      { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." },
     ])
 
     // The credentials the selection resolved travel on the create itself,
@@ -812,7 +791,7 @@ describe("hosted tasks cloud roots", () => {
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
     expect(previewed.preview.blockers).toEqual([
-      { code: "capability_unavailable", detail: expect.stringContaining("cannot project a selected capability set") },
+      { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." },
     ])
     expect(ensured).toEqual([])
   })

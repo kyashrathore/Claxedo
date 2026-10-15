@@ -3,6 +3,7 @@ import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
@@ -131,7 +132,7 @@ export async function allocateOriginCloudWorkspace(
 
   const repoUrl = workspace.repo_url
   if (!repoUrl) {
-    return { code: "source_unavailable", detail: `Cloud root ${workspace.id} has no remote to clone` }
+    return { code: "source_unavailable", detail: "The task's cloud workspace has no repository to clone" }
   }
 
   const prepared = (await input.prepare?.(workspace)) ?? {}
@@ -158,9 +159,7 @@ export async function allocateOriginCloudWorkspace(
   await sandboxManager.release(workspace.id).catch(() => undefined)
   return {
     code: "source_unavailable",
-    detail: ready.error
-      ? `The cloud workspace for this attempt could not be provisioned: ${sandboxStartFailureReason(ready.error)}`
-      : "The cloud workspace for this attempt could not be provisioned",
+    detail: ready.error ? cloudRuntimeStartFailure(sandboxStartFailureReason(ready.error)) : "The cloud workspace could not start",
   }
 }
 
@@ -177,7 +176,7 @@ async function allocate(
   if (!source) {
     return {
       code: "source_unavailable",
-      detail: `Project ${input.projectId} has no remote this control plane can clone into an isolated cloud root`,
+      detail: "This project has no repository to clone into a cloud workspace",
     }
   }
   let placed: SandboxDriver | undefined

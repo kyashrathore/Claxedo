@@ -79,7 +79,7 @@ async function settledAnswer(connect: Connect, workspaceId: string, options: Sta
 export async function startWorkspace(connect: Connect, workspaceId: string, options: StartOptions = {}): Promise<RelayConnection> {
   const answer = await settledAnswer(connect, workspaceId, options, { retry: true })
   if (answer.kind === "ready") return answer.link
-  if (answer.kind === "stopped") throw new ServerError({ class: "internal", message: `The start of ${workspaceId} answered that it is stopped` })
+  if (answer.kind === "stopped") throw new ServerError({ class: "internal", message: "The workspace stopped while it was starting" })
   throw new ServerError({ class: "conflict", code: CLOUD_RUNTIME_BOOT_FAILED, message: answer.reason })
 }
 

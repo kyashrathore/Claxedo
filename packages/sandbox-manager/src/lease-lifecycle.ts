@@ -13,7 +13,8 @@ export type SandboxStopCause = "explicit" | "idle" | "provider"
  * epoch whose start goes
  * on in the next epoch is `retrying`; the start the person waits on has not
  * failed until an epoch fails without one. `startLimit` is the provider's
- * start-limit window an epoch was refused at.
+ * start-limit window an epoch was refused at. `hostLeftRunning` is a failed
+ * start whose host the manager could not stop, so it may still bill.
  */
 export type SandboxLifecycleEvent = {
   workspaceId: string
@@ -23,7 +24,7 @@ export type SandboxLifecycleEvent = {
 } & (
   | { kind: "stopped"; cause: SandboxStopCause; activeMs?: number }
   | { kind: "destroyed"; hostGone: boolean; activeMs?: number }
-  | { kind: "failed"; bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow }
+  | { kind: "failed"; bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow; hostLeftRunning?: true }
 )
 
 export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) => void) | undefined, now: () => number) {
@@ -44,6 +45,6 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
     destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", hostGone: false, ...active(lease) }),
     /** `endedAt` is when the host was last proven serving: the provider's loss is learned after the fact. */
     hostGone: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "destroyed", hostGone: true, ...active(lease, endedAt) }),
-    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow }) => report({ ...base(lease), kind: "failed", ...failure }),
+    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow; hostLeftRunning?: true }) => report({ ...base(lease), kind: "failed", ...failure }),
   }
 }

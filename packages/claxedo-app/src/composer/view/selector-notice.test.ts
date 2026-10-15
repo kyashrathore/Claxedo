@@ -156,7 +156,7 @@ function wakingNotice(harness: HarnessType, catalogError?: string) {
     const [asleep, setAsleep] = createSignal(true)
     const reprobes: string[] = []
     let refreshes = 0
-    const failed = { ...snapshot(harness, true), configError: "The cloud workspace ws_mv92o7hc is not running" }
+    const failed = { ...snapshot(harness, true), configError: "The cloud workspace is not running" }
     const catalog = {
       unread: () => false,
       providers: { resolved: () => true, loading: () => false, error: () => catalogError, refresh: async () => { refreshes++ } },
@@ -196,7 +196,7 @@ test("selector notice: a workspace that wakes reloads the models its sleep left 
 })
 
 test("selector notice: a catalog harness on a waking workspace reads its catalog again only when the read failed", () => {
-  const failed = wakingNotice(nativeHarness("opencode"), "The cloud workspace ws_mv92o7hc is not running")
+  const failed = wakingNotice(nativeHarness("opencode"), "The cloud workspace is not running")
   failed.setAsleep(false)
   expect([failed.refreshes(), failed.reprobes.length]).toEqual([1, 0])
   failed.dispose()

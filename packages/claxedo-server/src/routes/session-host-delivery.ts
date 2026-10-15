@@ -132,10 +132,10 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     if (started.status === "ready") return undefined
     if (started.status === "failed") return refused(started.message)
     if (started.status === "unavailable") {
-      const bootFailure = sandboxRuntimeBootFailure(started.error)
-      if (bootFailure) return refused(bootFailure)
+      if (!started.error) return refused("the start failed", started.retryAfterMs)
       if (sandboxLeaseEndedUnderStart(started.error)) return refused("it was stopped or replaced while it started")
-      return refused(started.error ? sandboxStartFailureReason(started.error) : "the start failed", started.retryAfterMs)
+      const bootFailed = sandboxRuntimeBootFailure(started.error) !== undefined
+      return refused(sandboxStartFailureReason(started.error), bootFailed ? undefined : started.retryAfterMs)
     }
     if (started.failure) return refused(sandboxStartFailureReason(started.failure), started.retryAfterMs)
     const { retryAfterMs, sinceStartMs } = started

@@ -1,4 +1,5 @@
 import { chooseProjectWorkspace } from "@claxedo/server-core/tasks-host/project-workspace"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
   createTasksSessionBridge,
   type TasksCloudOrigin,
@@ -34,6 +35,8 @@ import type { TasksHostReads } from "./d1-host-reads"
 import type { TasksRootIdentity } from "./root-capability"
 import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
+
+const log = Log.create({ service: "tasks-session-bridge" })
 
 export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
   runtimeClient: WorkspaceRuntimeClientOptions
@@ -130,7 +133,7 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       if (!("workspace" in chosen)) return chosen
       const target = dispatchTarget(chosen.workspace, startingAs(input, starter))
       return target ? { target } : {
-        detail: `Workspace ${chosen.workspace.id} is not reachable from this control plane`,
+        detail: "The task's workspace cannot be reached from here",
       }
     },
 
@@ -280,7 +283,7 @@ function createTasksCloudTarget(
     return target ? { target } : {
       blocker: {
         code: "source_unavailable",
-        detail: `Cloud root ${allocated.workspace.id} is not reachable from this control plane`,
+        detail: "The task's cloud workspace cannot be reached from here",
       },
     }
   }
@@ -345,10 +348,10 @@ function rootCreator(input: HostedTasksSessionBridgeInput, origin: TasksCloudOri
 }
 
 function capabilityBlocker(origin: TasksCloudOrigin, error: unknown): StartBlocker {
-  return {
-    code: "capability_unavailable",
-    detail: `The capability set for ${origin.task.id} (${origin.slot}, attempt ${origin.attempt}) could not be applied: ${error instanceof Error ? error.message : String(error)}`,
-  }
+  log.warn("A task start's capability set could not be applied", {
+    taskId: origin.task.id, slot: origin.slot, attempt: origin.attempt, error: error instanceof Error ? error.message : String(error),
+  })
+  return { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." }
 }
 
 /**

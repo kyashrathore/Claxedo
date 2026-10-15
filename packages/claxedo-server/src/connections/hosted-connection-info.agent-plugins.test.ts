@@ -108,9 +108,9 @@ describe("Agent Plugins cloud readiness gate", () => {
     const ended = await hostedConnectionInfo(services, options(async () => ({ status: "unavailable", epoch: 2, homeRegion: "us-east", error: "runtime_lease_changed" })), auth, "ws_1", LEASED)
     expect(ended).toEqual({ status: 409, error: { code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable", retryAfterMs: undefined } })
 
-    const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: try again then. A wake counts as a start too."
+    const reason = "Boat's daily start limit (200) is used up; try again later."
     const dayLimited = await hostedConnectionInfo(services, options(async () => ({
-      status: "unavailable", exhausted: true, epoch: 2, homeRegion: "us-east", error: sandboxProviderRateLimitedError("boat", { window: "day", limit: 200, resumeCounts: true }),
+      status: "unavailable", exhausted: true, epoch: 2, homeRegion: "us-east", error: sandboxProviderRateLimitedError("boat", { window: "day", limit: 200 }),
     })), auth, "ws_1", LEASED)
     expect(dayLimited).toEqual({ status: 409, error: { code: "cloud_runtime_unavailable", message: reason, retryAfterMs: undefined, failure: reason } })
 

@@ -115,7 +115,7 @@ test("a stream to a workspace that is not running ends refused after one attempt
   const stream = openEventStream({
     open: async () => {
       opens += 1
-      return Response.json({ error: { code: "workspace_stopped", message: "The cloud workspace ws_1 is not running" } }, { status: 409 })
+      return Response.json({ error: { code: "workspace_stopped", message: "The cloud workspace is not running" } }, { status: 409 })
     },
     onFrame: () => undefined,
     onGap: () => undefined,

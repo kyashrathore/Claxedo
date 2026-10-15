@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { UNDELIVERED_CREDENTIAL_CHANGE } from "../credentials/worker/org-routed"
-import { createSandboxManager, SandboxProviderKeyRefusedError, type SandboxDriver, type SandboxTarget } from "@claxedo/sandbox-manager"
+import { createSandboxManager, sandboxStartFailureReason, SandboxProviderKeyRefusedError, type SandboxDriver, type SandboxTarget } from "@claxedo/sandbox-manager"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
@@ -222,11 +222,10 @@ describe("replacing an organization's sandbox provider key", () => {
     const rig = plane()
     const refusedKey = await rig.addKey("bx-bad")
     await rig.create("ws_key_fixed")
-    expect(await rig.ensure("ws_key_fixed")).toMatchObject({
-      status: "unavailable",
-      exhausted: true,
-      error: "Boat refused the sandbox provider key: Boat POST /sandboxes was rejected (unauthorized). Fix the key in Settings → Sandbox providers.",
-    })
+    const refused = await rig.ensure("ws_key_fixed")
+    expect(refused).toMatchObject({ status: "unavailable", exhausted: true, error: "provider_key_refused:boat: Boat POST /sandboxes was rejected (unauthorized)" })
+    expect(sandboxStartFailureReason(refused.status === "unavailable" ? refused.error ?? "" : ""))
+      .toBe("Boat refused the sandbox provider key; fix it in Settings → Sandbox providers.")
     expect(await rig.ensure("ws_key_fixed")).toMatchObject({ status: "unavailable", exhausted: true })
 
     expect(await rig.addKey("bx-org")).toBe(refusedKey)

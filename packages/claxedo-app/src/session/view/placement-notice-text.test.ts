@@ -44,6 +44,6 @@ test("a harness that answers from its own session host says nothing about the wo
 })
 
 test("a sandbox harness keeps a failed start's own notice", () => {
-  const error = { class: "rate_limit" as const, message: "Boat's start limit for this account is used up", retryable: false }
+  const error = { class: "rate_limit" as const, message: "Boat's daily start limit (200) is used up; try again later.", retryable: false }
   expect(placementNotice(t, facts({ kind: "wakeFailed", error }))).toMatchObject({ tone: "critical", message: "sessionScreen.workspace.wakeFailed main", detail: error.message })
 })

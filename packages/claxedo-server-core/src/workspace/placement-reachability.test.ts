@@ -18,7 +18,7 @@ test("cloud inventory reports the authoritative lease lifecycle without starting
   expect(calls).toEqual(Object.keys(targets))
   expect(rows).toMatchObject([
     { status: "stopped", reachable: false }, { status: "provisioning", reachable: false },
-    { status: "stopped", reachable: false }, { status: "failed", error: "The cloud workspace could not start: provider rejected", reachable: false },
+    { status: "stopped", reachable: false }, { status: "failed", error: "provider rejected", reachable: false },
     { status: "ready", reachable: true }, { reachable: true },
   ])
   expect(rows[5]).not.toHaveProperty("status")

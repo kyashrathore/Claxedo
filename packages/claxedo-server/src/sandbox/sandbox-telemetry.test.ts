@@ -47,8 +47,8 @@ describe("workspace lifecycle events", () => {
     ])
   })
 
-  const failed = (retrying: boolean, bootFailed = false, startLimit?: "minute" | "hour" | "day"): SandboxLifecycleEvent =>
-    ({ ...machine, kind: "failed", bootFailed, retrying, ...(startLimit ? { startLimit } : {}) })
+  const failed = (retrying: boolean, bootFailed = false, startLimit?: "minute" | "hour" | "day", hostLeftRunning = false): SandboxLifecycleEvent =>
+    ({ ...machine, kind: "failed", bootFailed, retrying, ...(startLimit ? { startLimit } : {}), ...(hostLeftRunning ? { hostLeftRunning: true as const } : {}) })
 
   test("an epoch that failed while its start goes on sends nothing; the start's final failure is workspace_failed", () => {
     const { captured, telemetry } = sink()
@@ -66,6 +66,14 @@ describe("workspace lifecycle events", () => {
     emit(failed(true, false, "hour"))
     emit(failed(false, false, "day"))
     expect(captured.map((entry) => [entry.event, entry.properties?.code, entry.properties?.window])).toEqual([["workspace_failed", "provider_rate_limited", "day"]])
+  })
+
+  test("a failed start whose host could not be stopped says so on workspace_failed, and one whose host stopped does not", () => {
+    const { captured, telemetry } = sink()
+    const emit = sandboxLifecycleSink(telemetry)
+    emit(failed(false, true, undefined, true))
+    emit(failed(false, true))
+    expect(captured.map((entry) => entry.properties?.host_left_running)).toEqual([true, undefined])
   })
 
   test("a stop closes the metered interval with the boot's machine time", () => {

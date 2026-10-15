@@ -234,7 +234,7 @@ test("a stream to a runtime that is not running stays closed across catalog read
   } as unknown as Workspaces
   const transport = streamTransport({ serverUrl, runtime: async () => {
     opened += 1
-    return running ? openBody() : Response.json({ error: { code: "workspace_stopped", message: "The cloud workspace ws_shared is not running" } }, { status: 409 })
+    return running ? openBody() : Response.json({ error: { code: "workspace_stopped", message: "The cloud workspace is not running" } }, { status: 409 })
   } })
   const streams = createPlacementStreams({ transport, workspaces: catalog, queryClient, onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_asleep"))

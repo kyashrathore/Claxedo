@@ -32,8 +32,8 @@ export const CLOUD_RUNTIME_BOOT_FAILED = "cloud_runtime_boot_failed"
 const WORKSPACE_HOST_OFFLINE = "workspace_host_offline"
 const WORKSPACE_CHECKPOINT_FROZEN = "workspace_checkpoint_frozen"
 
-export function workspaceStopped(workspaceId: string): ServerError {
-  return new ServerError({ class: "conflict", code: WORKSPACE_STOPPED, message: `The cloud workspace ${workspaceId} is not running` })
+export function workspaceStopped(): ServerError {
+  return new ServerError({ class: "conflict", code: WORKSPACE_STOPPED, message: "The cloud workspace is not running" })
 }
 
 const CLOUD_RUNTIME_IMAGE_OUTDATED = "cloud_runtime_image_outdated"

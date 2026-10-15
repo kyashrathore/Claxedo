@@ -442,7 +442,7 @@ describe("sandbox manager", () => {
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
       status: "unavailable",
       retryAfterMs: 30_000,
-      error: "driver quota exhausted",
+      error: "provider_failed:test-driver: driver quota exhausted",
       epoch: 1,
     })
     now += 1_000
@@ -721,7 +721,7 @@ describe("sandbox manager", () => {
       status: "ready",
       epoch: 3,
       retryCount: 0,
-      lastError: "driver hiccup",
+      lastError: "provider_failed:test-driver: driver hiccup",
     })
     expect(lease?.nextRetryAt).toBeUndefined()
     // Relay target resolution keeps resolving for everyone.
@@ -796,7 +796,7 @@ describe("sandbox manager", () => {
     await manager.ensure("ws_1", { homeRegion: "us-east" })
     await expect(manager.target("ws_1")).resolves.toMatchObject({
       leaseStatus: "unavailable",
-      failure: { kind: "provider", message: "Cloudflare ensure-runtime failed (500): quota exceeded", retrying: true },
+      failure: { kind: "provider", message: "test-driver returned an error.", retrying: true },
     })
     now += 5_001
     await expect(manager.target("ws_1")).resolves.toMatchObject({ failure: { kind: "provider", retrying: false } })
@@ -841,14 +841,14 @@ describe("sandbox manager", () => {
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
       status: "unavailable",
       retryAfterMs: 30_000,
-      error: "driver exploded",
+      error: "provider_failed:test-driver: driver exploded",
       epoch: 2,
     })
     await expect(store.get("ws_1")).resolves.toMatchObject({
       status: "unavailable",
       epoch: 2,
       retryCount: 1,
-      lastError: "driver exploded",
+      lastError: "provider_failed:test-driver: driver exploded",
       nextRetryAt: 40_000,
     })
   })
@@ -919,7 +919,7 @@ describe("sandbox manager", () => {
     const driver = hostedDriver(() => failure)
     const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 1_000, maxRetryCount: 5 })
 
-    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "provider hiccup", epoch: 1 })
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "provider_failed:test-driver: provider hiccup", epoch: 1 })
     expect(driver.suspend).not.toHaveBeenCalled()
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", epoch: 1, sandboxId: "sandbox_1", retryCount: 1 })
 
@@ -943,20 +943,23 @@ describe("sandbox manager", () => {
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", epoch: 2, sandboxId: "sandbox_1", retryCount: 2, nextRetryAt: 70_000 })
   })
 
-  test("a host that refuses to stop stays on the lease, with its reason beside the boot's", async () => {
+  test("a host that refuses to stop stays on the lease, its stop failure logged and reported apart from the boot's reason", async () => {
     const store = createMemoryLeaseStore()
     const driver = hostedDriver(() => new SandboxRuntimeBootError("the image has no runtime"))
     driver.suspend = vi.fn(async () => { throw new Error("provider busy") })
-    const manager = createSandboxManager({ leaseStore: store, driver, retryDelayMs: () => 1_000 })
+    const events: SandboxLifecycleEvent[] = []
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const manager = createSandboxManager({ leaseStore: store, driver, retryDelayMs: () => 1_000, onLifecycle: (event) => events.push(event) })
 
-    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
-      status: "unavailable",
-      error: "runtime_boot_failed: the image has no runtime; host sandbox_1 not stopped: provider busy",
-    })
-    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", sandboxId: "sandbox_1" })
-    await expect(manager.target("ws_1")).resolves.toMatchObject({
-      failure: { kind: "boot", message: "the image has no runtime; host sandbox_1 not stopped: provider busy" },
-    })
+    try {
+      await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "runtime_boot_failed: the image has no runtime" })
+      await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", sandboxId: "sandbox_1", lastError: "runtime_boot_failed: the image has no runtime" })
+      await expect(manager.target("ws_1")).resolves.toMatchObject({ failure: { kind: "boot", message: "the image has no runtime" } })
+      expect(events).toContainEqual(expect.objectContaining({ kind: "failed", bootFailed: true, hostLeftRunning: true }))
+      expect(warn).toHaveBeenCalledWith("A sandbox host was not stopped after its start failed", { workspaceId: "ws_1", epoch: 1, sandboxId: "sandbox_1", error: "provider busy" })
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test("provision waits out a failed attempt's retry, then runs the next attempt on a fresh epoch that keeps the host", async () => {
@@ -1061,12 +1064,12 @@ describe("sandbox manager", () => {
 
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
       status: "unavailable",
-      error: "driver quota exhausted",
+      error: "provider_failed:test-driver: driver quota exhausted",
       epoch: 1,
     })
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
       status: "unavailable",
-      error: "driver quota exhausted",
+      error: "provider_failed:test-driver: driver quota exhausted",
       epoch: 1,
     })
     expect(driver.ensureHost).toHaveBeenCalledTimes(1)
@@ -1098,7 +1101,7 @@ describe("sandbox manager", () => {
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({
       status: "unavailable",
       retryAfterMs: 10_000,
-      error: "driver quota exhausted",
+      error: "provider_failed:test-driver: driver quota exhausted",
       epoch: 1,
     })
     // Inside the cooldown: no paid driver attempt.
@@ -1132,17 +1135,17 @@ describe("sandbox manager", () => {
     now += 1_000
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 10_000, exhausted: true, epoch: 2 })
     now += 4_000
-    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 6_000, exhausted: true, error: "driver quota exhausted", epoch: 2 })
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 6_000, exhausted: true, error: "provider_failed:test-driver: driver quota exhausted", epoch: 2 })
     expect(driver.ensureHost).toHaveBeenCalledTimes(2)
   })
 
-  test("a driver's refusal of its provider key is told as that refusal, with where to fix the key", async () => {
+  test("a driver's refusal of its provider key is told in one line with where to fix the key, its message kept in the lease's error", async () => {
     const store = createMemoryLeaseStore()
     const driver = fakeDriver({ id: "boat", ensureHost: vi.fn(async () => { throw new SandboxProviderKeyRefusedError("Boat POST /sandboxes was rejected (unauthorized)") }) })
     const manager = createSandboxManager({ leaseStore: store, driver, now: () => 10_000, retryDelayMs: () => 1_000, maxRetryCount: 5 })
-    const reason = "Boat refused the sandbox provider key: Boat POST /sandboxes was rejected (unauthorized). Fix the key in Settings → Sandbox providers."
+    const reason = "Boat refused the sandbox provider key; fix it in Settings → Sandbox providers."
 
-    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: reason })
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "provider_key_refused:boat: Boat POST /sandboxes was rejected (unauthorized)" })
     await expect(manager.target("ws_1")).resolves.toMatchObject({ failure: { kind: "provider", message: reason, retrying: true } })
   })
 
@@ -1150,10 +1153,10 @@ describe("sandbox manager", () => {
     let now = 10_000
     const store = createMemoryLeaseStore()
     const events: SandboxLifecycleEvent[] = []
-    const refusal = new SandboxProviderRateLimitedError({ window: "hour", limit: 60, resumeCounts: true }, "Boat POST /sandboxes was rejected (rate_limited)")
+    const refusal = new SandboxProviderRateLimitedError({ window: "hour", limit: 60 }, "Boat POST /sandboxes was rejected (rate_limited)")
     const driver = fakeDriver({ id: "boat", ensureHost: vi.fn(async () => { throw refusal }) })
     const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 1_000, maxRetryCount: 5, onLifecycle: (event) => events.push(event) })
-    const reason = "Boat's start limit for this account is used up (60 starts per hour). Claxedo tries again in an hour. A wake counts as a start too."
+    const reason = "Boat's hourly start limit (60) is used up."
 
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 3_600_000 })
     await expect(manager.target("ws_1")).resolves.toMatchObject({ retryAfterMs: 3_600_000, failure: { kind: "provider", message: reason, retrying: true } })
@@ -1173,12 +1176,12 @@ describe("sandbox manager", () => {
     const driver = fakeDriver({
       id: "boat",
       ensureHost: vi.fn(async (input) => {
-        if (refused) throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "Boat POST /sandboxes was rejected (rate_limited)")
+        if (refused) throw new SandboxProviderRateLimitedError({ window: "day", limit: 200 }, "Boat POST /sandboxes was rejected (rate_limited)")
         return { sandboxId: "sandbox_1", url: "https://runtime.test/1", hostId: "host_1", labels: input.labels }
       }),
     })
     const manager = createSandboxManager({ leaseStore: store, driver, now: () => 10_000, retryDelayMs: () => 1_000, maxRetryCount: 2, onLifecycle: (event) => events.push(event) })
-    const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: try again then. A wake counts as a start too."
+    const reason = "Boat's daily start limit (200) is used up; try again later."
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       const answer = await manager.ensure("ws_1", { homeRegion: "us-east" })
@@ -1207,7 +1210,7 @@ describe("sandbox manager", () => {
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", exhausted: true, epoch: 1 })
     expect(await liftSandboxRetryWait(store, "ws_1")).toBe(true)
     expect(await liftSandboxRetryWait(store, "ws_1")).toBe(false)
-    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", retryCount: 0, nextRetryAt: undefined, lastError: "driver quota exhausted" })
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", retryCount: 0, nextRetryAt: undefined, lastError: "provider_failed:test-driver: driver quota exhausted" })
 
     now += 1_000
     fail = false
@@ -2202,7 +2205,7 @@ describe("a host the provider no longer has", () => {
     const driver = fakeDriver({ ensureHost: vi.fn(async () => { throw new SandboxHostGoneError("not_found") }) })
     const manager = createSandboxManager({ leaseStore: store, driver, retryDelayMs: () => 5_000 })
 
-    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "not_found", retryAfterMs: 5_000, epoch: 1 })
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "provider_failed:test-driver: not_found", retryAfterMs: 5_000, epoch: 1 })
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", epoch: 1, retryCount: 1 })
     expect(driver.ensureHost).toHaveBeenCalledTimes(1)
   })
