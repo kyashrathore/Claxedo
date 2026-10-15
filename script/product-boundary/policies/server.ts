@@ -186,8 +186,12 @@ export const serverWorkerd: Policy = {
   // connection answer the connect and the read both give, with the start
   // phases the lease has recorded and the server's own elapsed times
   // (`connections/cloud-start-progress.ts`). It imports types alone.
-  // 168/22, no headroom.
-  ceilings: { modules: 168, packages: 22 },
+  // +1 module (owner: the workspace routes and the session-host turn routes):
+  // the one start of a cloud workspace's machine, `workspace/cloud-workspace-start.ts`,
+  // split from the connect path so a session host's tool call starts the
+  // machine through it as the workspace's owner.
+  // 169/22, no headroom.
+  ceilings: { modules: 169, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
