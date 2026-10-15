@@ -197,3 +197,50 @@ test("a draft's first send clears the draft only once the session exists", async
   expect(promptText(store.draft(key).prompt)).toBe("")
   expect(store.history(key, "normal").length).toBe(1)
 })
+
+function sessionComposer(deliver: () => Promise<void>) {
+  const store = createComposerStore()
+  store.setPrompt(KEY, [{ type: "text", content: "Reply only DONE-A.", start: 0, end: 18 }], 18)
+  const view = { send: deliver } as unknown as SessionView
+  const send = createRoot(() => createComposerSend({
+    key: () => KEY, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => ({}), working: () => true, goalCapable: () => false,
+    view: () => view, queuedReplace: () => undefined,
+    focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  return { store, send }
+}
+
+test("a send to an open session empties the composer at once, so a follow-up typed while it is delivered is a message of its own", async () => {
+  let deliver = () => {}
+  const delivered = new Promise<void>((resolve) => { deliver = resolve })
+  const { store, send } = sessionComposer(() => delivered)
+  const sent = send.send()
+  expect(promptText(store.draft(KEY).prompt)).toBe("")
+  store.setPrompt(KEY, [{ type: "text", content: "Reply only PONG-52.", start: 0, end: 19 }], 19)
+  deliver()
+  await sent
+  expect(send.state().kind).toBe("accepted")
+  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only PONG-52.")
+  expect(store.history(KEY, "normal").map((entry) => promptText(entry.prompt))).toEqual(["Reply only DONE-A."])
+})
+
+test("a send to an open session that fails puts its text back ahead of anything typed since", async () => {
+  let refuse = (_error: Error) => {}
+  const refused = new Promise<void>((_resolve, reject) => { refuse = reject })
+  const { store, send } = sessionComposer(() => refused)
+  const sent = send.send()
+  store.setPrompt(KEY, [{ type: "text", content: "and then this", start: 0, end: 13 }], 13)
+  refuse(new ServerError({ class: "network", code: "runtime_unavailable", message: "The workspace is not running" }))
+  await sent
+  expect(send.state().kind).toBe("rejected")
+  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only DONE-A.\n\nand then this")
+  expect(store.history(KEY, "normal")).toEqual([])
+})
+
+test("a send to an open session that fails with nothing typed since restores exactly what was sent", async () => {
+  const { store, send } = sessionComposer(async () => { throw new ServerError({ class: "network", code: "runtime_unavailable", message: "down" }) })
+  await send.send()
+  expect(send.state().kind).toBe("rejected")
+  expect(promptText(store.draft(KEY).prompt)).toBe("Reply only DONE-A.")
+})
