@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { stat } from "node:fs/promises"
 import path from "node:path"
 import {
   createRuntimeCredentialIssuer,
@@ -95,6 +96,18 @@ function text(env: NodeJS.ProcessEnv, key: string) {
 }
 
 /**
+ * The host provides HOME. Git, the boot's first writer under it, cannot write
+ * its global config into a missing one and fails with a lock error that names
+ * neither the cause nor the fix.
+ */
+async function requireHomeDirectory(env: NodeJS.ProcessEnv) {
+  const home = text(env, "HOME")
+  if (!home) return
+  const found = await stat(home).catch(() => undefined)
+  if (!found?.isDirectory()) throw new Error(`This sandbox has no home directory ${home}; redeploy its sandbox image`)
+}
+
+/**
  * Claxedo's CORS origin policy for its workspace-runtime hosts. This is host
  * policy, not kit policy: the product whitelist lives here, keeping the kit
  * product-free. On loopback exposure it allows local dev
@@ -144,6 +157,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(env, port)
   const targetDirectory = workspaceDir(env)
   const harness = claxedoRuntimeHarnessFromEnv(env)
+  await requireHomeDirectory(env)
   await configureRuntimeGitAuth(env)
   const startPhases = runtimeStartPhases()
   const checkout = selectsRepository(env)

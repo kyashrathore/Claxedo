@@ -94,6 +94,24 @@ describe.skipIf(process.platform === "win32")("claxedo workspace-runtime boot po
       await rm(directory, { recursive: true, force: true })
     }
   })
+  test("a boot whose HOME does not exist fails on one line naming it, before git writes anything under it", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "missing-home-test-"))
+    const home = path.join(directory, "home", "claxedo")
+    try {
+      await expect(claxedoWorkspaceRuntimeBootFromEnv({
+        PATH: process.env.PATH,
+        HOME: home,
+        GIT_CONFIG_NOSYSTEM: "1",
+        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-home",
+        WORKSPACE_RUNTIME_DIRECTORY: directory,
+        WORKSPACE_RUNTIME_GIT_REPO_URL: "https://github.com/octocat/Hello-World.git",
+      })).rejects.toThrow(new Error(`This sandbox has no home directory ${home}; redeploy its sandbox image`))
+      expect(existsSync(path.join(directory, "home"))).toBe(false)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test("the boot's own git presents the clone header to a repository that refuses a clone without it", async () => {
     const origin = await serveGitOrigin()
     origin.served.authorization = "Bearer clone-token"

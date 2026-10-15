@@ -41,6 +41,11 @@ RUN curl -fsSL https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz -
     /opt/node-24/bin/node --version
 ENV PATH=/opt/node-24/bin:$PATH
 
+# The driver boots the runtime (as root) with HOME=/home/claxedo, a directory
+# the SDK can back up, unlike /root. Nothing at runtime creates it, and git
+# refuses to write its global config into a HOME that does not exist.
+RUN install -d -m 0700 -o root -g root /home/claxedo
+
 # Harness SDKs and CLIs skip npm's release-age gate: their releases carry the
 # protocol changes Claxedo tracks the day they ship (owner exemption,
 # 2026-09-30). npm honors these exclusions from 11.17 (Node 24.19); every other

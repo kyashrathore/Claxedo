@@ -18,8 +18,8 @@ name: deploy-cloudflare-sandbox-worker
 # Dockerfile default to change which agent CLIs ship.
 
 on:
-  # deploy-staging.yml calls this when a push to `staging` touched the Worker or
-  # a package the image bundles; it is the only automatic trigger.
+  # deploy-staging.yml calls this only for a run dispatched with the
+  # `sandbox-image` component; no push to `staging` ships it.
   workflow_call:
     inputs:
       deploy_worker:
