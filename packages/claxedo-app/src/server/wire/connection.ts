@@ -97,10 +97,19 @@ export function connectionAnswerFromWire(body: unknown, workspaceId: string, ses
   return { kind: "ready", link, ...(row.backing === "durable-object" && sessionId ? { sessionHostRoot: sessionId } : {}) }
 }
 
-export function unavailableRetry(body: unknown): Extract<ConnectionAnswer, { kind: "provisioning" }> | undefined {
-  const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
-  const retryAfterMs = durationOf(error?.retryAfterMs)
-  if (retryAfterMs === undefined) return undefined
-  const failure = nonEmptyString(error?.failure)
-  return { kind: "provisioning", retryAfterMs, ...(failure ? { failure } : {}) }
+export function startRefused(error: ServerError, body: unknown): ServerError {
+  const envelope = isRecord(body) && isRecord(body.error) ? body.error : undefined
+  const retryAfterMs = durationOf(envelope?.retryAfterMs)
+  if (retryAfterMs === undefined) return error
+  return new ServerError({
+    class: error.class,
+    message: error.message,
+    ...(error.status !== undefined ? { status: error.status } : {}),
+    ...(error.code !== undefined ? { code: error.code } : {}),
+    details: { ...error.details, retryAfterMs },
+  })
+}
+
+export function startRetryAfterMs(error: unknown): number | undefined {
+  return error instanceof ServerError && error.code === CLOUD_RUNTIME_UNAVAILABLE ? durationOf(error.details?.retryAfterMs) : undefined
 }

@@ -1,4 +1,5 @@
-import { createEffect, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, type Accessor, type JSX } from "solid-js"
+import { useI18n } from "@/i18n"
 import { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, publishComposerNotice, type ComposerNotice } from "@/composer"
 import { useWakeProgress, useWorkspaceName } from "@/cloud"
 import { isOfflineMachine, isStartingCloud, useServer, type PlacementId, type WorkspaceRuntime } from "@/server"
@@ -16,12 +17,19 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
     return id ? server.cloud.runtime(id) : { kind: "live" }
   }
   const wakeProgress = useWakeProgress(runtime)
+  const i18n = useI18n()
+  const timeFormat = createMemo(() => new Intl.DateTimeFormat(i18n.intlTag(), { hour: "numeric", minute: "2-digit" }))
+  const retryTime = () => {
+    const current = runtime()
+    return current.kind === "wakeFailed" && current.retryAt !== undefined ? timeFormat().format(current.retryAt) : undefined
+  }
   return () => {
     const id = placementId()
     if (!id) return undefined
     const placement = server.placements.byId(id)
     const name = placement ? named(placement.label, placement.branch) : ""
-    return placementNotice(t, { placement, name, runtime: runtime(), wakeProgress: wakeProgress(), offline: isOfflineMachine(placement), wake: wake(id) })
+    const time = retryTime()
+    return placementNotice(t, { placement, name, runtime: runtime(), wakeProgress: wakeProgress(), ...(time ? { retryTime: time } : {}), offline: isOfflineMachine(placement), wake: wake(id) })
   }
 }
 

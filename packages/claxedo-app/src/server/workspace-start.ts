@@ -28,6 +28,7 @@ function startProgressOf(answer: Provisioning, receivedAt: number): WorkspaceSta
     kind: "provisioning",
     ...(answer.bootMode ? { bootMode: answer.bootMode } : {}),
     ...(answer.failure ? { failure: answer.failure } : {}),
+    ...(answer.failure && answer.retryAfterMs !== undefined ? { retryAt: receivedAt + answer.retryAfterMs } : {}),
     ...(elapsed ? { steps: { done: elapsed.done, startedAt: receivedAt - elapsed.sinceStartMs, stepStartedAt: receivedAt - elapsed.sinceStepMs } } : {}),
   }
 }

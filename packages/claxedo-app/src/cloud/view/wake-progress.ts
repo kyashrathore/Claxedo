@@ -45,7 +45,9 @@ export function wakeProgressText(t: CloudText, runtime: Waking, now: number, lis
   const steps = runtime.steps
   if (runtime.failure) {
     const retrying = t("cloud.wake.retrying", { reason: runtime.failure })
-    return steps ? [retrying, t("cloud.wake.total", { elapsed: since(steps.startedAt, now) })].join(" · ") : retrying
+    const next = runtime.retryAt !== undefined && runtime.retryAt > now ? t("cloud.wake.nextTry", { wait: formatDuration(runtime.retryAt - now) }) : undefined
+    const total = steps ? t("cloud.wake.total", { elapsed: since(steps.startedAt, now) }) : undefined
+    return [retrying, next ?? total].filter((part) => part !== undefined).join(" · ")
   }
   if (!steps) return t(currentStep(runtime))
   const step = t("cloud.wake.stepFor", { step: t(currentStep(runtime)), elapsed: since(steps.stepStartedAt, now) })
@@ -59,7 +61,7 @@ export function useWakeProgress(runtime: Accessor<WorkspaceRuntime>): Accessor<s
   const listFormat = createMemo(() => new Intl.ListFormat(i18n.intlTag(), { type: "conjunction" }))
   const timed = () => {
     const current = runtime()
-    return current.kind === "waking" && current.steps !== undefined
+    return current.kind === "waking" && (current.steps !== undefined || current.retryAt !== undefined)
   }
   const now = useSecondClock(timed)
   return () => {

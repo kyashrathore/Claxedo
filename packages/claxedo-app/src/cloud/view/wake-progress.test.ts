@@ -41,6 +41,12 @@ test("a wake the server is retrying says why, with the whole wake's time", () =>
     .toBe("cloud.wake.retrying(quota exceeded) · cloud.wake.total(2m 10s)")
 })
 
+test("a wake whose retry the server scheduled says why and counts down to the next try", () => {
+  expect(say({ kind: "waking", failure: "the start limit is used up", retryAt: NOW + 500_000 })).toBe("cloud.wake.retrying(the start limit is used up) · cloud.wake.nextTry(8m 20s)")
+  expect(say({ kind: "waking", failure: "the start limit is used up", retryAt: NOW - 1_000, steps: { done: [], startedAt: NOW - 30_000, stepStartedAt: NOW - 30_000 } }))
+    .toBe("cloud.wake.retrying(the start limit is used up) · cloud.wake.total(30s)")
+})
+
 test("a clock behind the anchors reads no negative time", () => {
   expect(say({ kind: "waking", bootMode: "resume", steps: { done: [], startedAt: NOW + 400, stepStartedAt: NOW + 300 } }))
     .toBe("cloud.wake.stepFor(cloud.wake.step.resuming|0s)")
