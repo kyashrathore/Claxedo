@@ -32,6 +32,12 @@ export type SessionDeliveryOwner = {
   control(sessionId: string, seq: number, action: QueuedPromptAction): Promise<QueuedControlResult>
   queue(input: Submission): QueuedPromptRecord
   steer(input: Submission): Promise<QueuedControlResult>
+  /**
+   * How this session already took a prompt sent under `messageId`: started,
+   * once its transcript holds the message, or queued or steered while its
+   * queue still holds the row. Nothing when the session holds neither.
+   */
+  heldDelivery(sessionId: string, messageId: string): PromptDelivery | undefined
   /** The transcript now holds this user message; a steered row carrying it is done. */
   incorporated(sessionId: string, messageId: string): void
   wake(sessionId: string): void
@@ -225,6 +231,12 @@ export function createSessionDeliveryOwner(input: {
       .map(({ grant: _grant, ...item }) => ({ ...item, held: !!item.held })),
     queue(submission) { const record = persist(submission); kick(record.sessionId); return record },
     steer(submission) { const record = persist(submission); return control(record.sessionId, record.seq, "steer") },
+    heldDelivery(sessionId, messageId) {
+      const target = input.store()
+      if (!target) return undefined
+      if (target.messageSessionId(messageId) === sessionId) return "start"
+      return target.listQueuedPrompts().find((item) => item.sessionId === sessionId && item.messageId === messageId)?.delivery
+    },
     incorporated(sessionId, messageId) { announced(sessionId, store().retireSteeredPrompt(sessionId, messageId)) },
     control,
     wake: kick,

@@ -792,36 +792,28 @@ describe("session prompt route", () => {
     expect(wa.transport().turns).toHaveLength(1)
   })
 
-  it("deduplicates exact prompt_async retries while replaying an unsubmitted retry", async () => {
+  it("runs a prompt_async once however often, and however concurrently, its message id is sent", async () => {
     const wa = await workspaceApp()
     const turnsFor = (sessionId: string) => wa.transport().turns.filter((turn) => turn.session.binding.sessionId === sessionId)
-    const request = (sessionId: string, retry = false) => wa.json(`/session/${sessionId}/prompt_async`,
-      { messageID: `msg-${sessionId}`, parts: [{ type: "text", text: "hello" }] },
-      { headers: retry ? { "x-claxedo-idempotency-retry": "1" } : {} })
+    const request = (sessionId: string) => wa.json(`/session/${sessionId}/prompt_async`,
+      { messageID: `msg-${sessionId}`, parts: [{ type: "text", text: "hello" }] })
 
     await wa.createSession("live")
     expect((await request("live")).status).toBe(204)
-    expect((await request("live", true)).status).toBe(204)
+    expect((await request("live")).status).toBe(204)
     await settle()
     expect(turnsFor("live")).toHaveLength(1)
-
-    // The message is already in the transcript, so the retry has nothing left to submit.
-    expect((await request("live", true)).status).toBe(204)
+    expect((await request("live")).status).toBe(204)
     await settle()
     expect(turnsFor("live")).toHaveLength(1)
 
     await wa.createSession("concurrent")
-    const first = request("concurrent", true)
+    const first = request("concurrent")
     await Bun.sleep(0)
-    const second = request("concurrent", true)
+    const second = request("concurrent")
     expect((await Promise.all([first, second])).map((response) => response.status)).toEqual([204, 204])
     await settle()
     expect(turnsFor("concurrent")).toHaveLength(1)
-
-    await wa.createSession("prepared")
-    expect((await request("prepared", true)).status).toBe(204)
-    await settle()
-    expect(turnsFor("prepared")).toHaveLength(1)
   })
 
   it("returns typed unsupported operation failures from harness capabilities", async () => {

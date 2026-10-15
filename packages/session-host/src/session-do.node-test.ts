@@ -312,6 +312,21 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_catalog", "msg_restored_catalog"])
   })
 
+  void it("answers a prompt sent again under a message id the session already holds as it first did, running it no second time, before and after the object restarts", { timeout: 120_000 }, async () => {
+    const root = "ses_lost_ack"
+    const host = await session(root)
+    const send = () => host.prompt("msg_lost_ack", "Reply with exactly this one token: PILOSTACK")
+    const first = await send()
+    await host.settled("PILOSTACK")
+    await eventually("the lost ack turn's lease released", async () => host.controlPlane.calls.releases.includes("msg_lost_ack") ? true : undefined)
+    assert.deepEqual(await send(), first)
+    await host.crash()
+    assert.deepEqual(await send(), first)
+    await host.prompt("msg_after_lost_ack", "Reply with exactly this one token: PIAFTERLOSTACK")
+    await host.settled("PIAFTERLOSTACK")
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_lost_ack", "msg_after_lost_ack"])
+  })
+
   void it("stops a turn and the command it was running on the machine", { timeout: 120_000 }, async () => {
     const root = "ses_stop"
     const host = await session(root)
