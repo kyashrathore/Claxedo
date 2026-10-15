@@ -223,10 +223,12 @@ Lifecycle, in `drivers/boat-template.ts`, run by
    2026-10-15, a build took 144 s: boot 56 s, stop 25 s, wake 31 s, hydration
    7 s, reset and stop 14 s, save 8 s.
 3. **Share, at every deploy.** A share code (`bsh_…`) is a secret: whoever holds
-   it deploys the template, and Boat shows it once. The deploy mints a new one,
-   keeps the newest older code (the running Worker creates with it until the
-   deploy replaces it), revokes the rest, and uploads
+   it deploys the template, and Boat shows it once. Before the Worker deploy,
+   `--share-to` mints a new code, revoking none, and the deploy uploads
    `CLAXEDO_BOAT_RUNTIME_TEMPLATE` (`{"image", "shareCode"}`) as a Worker secret.
+   Only after that deploy succeeded does `--deployed-share=<share id>` revoke
+   every other code of the template, so a failed deploy leaves the live
+   Worker's code working.
 4. **Use.** `ensureHost` creates a sandbox whose image is the template's
    `from` the share code, under a create key of its own
    (`claxedo:<workspace>:<epoch>:template`: Boat refuses a key sent again with
@@ -237,9 +239,10 @@ Lifecycle, in `drivers/boat-template.ts`, run by
    key without `snapshot.read`), the driver logs it and creates the sandbox that
    pulls and seeds; any other refusal fails the start as before. A wake resumes
    the sandbox it has and never touches the template.
-5. **Prune.** Each build keeps the newest three templates of its prefix, its own
-   among them, and removes the rest; Boat removes their share codes, so a
-   Worker still carrying one seeds instead.
+5. **Prune.** After a successful deploy, the newest three templates of the
+   prefix are kept, the deployed image's among them, and the rest removed; Boat
+   removes their share codes with them. Pruning never runs before a deploy
+   succeeded, so it never removes the template the live Worker creates from.
 
 Cost: an account keeps 10 named snapshots free, then pays $1.70 a month for
 each, so three templates fit in the free ten unless the account saves others.

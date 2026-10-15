@@ -442,13 +442,11 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       `sudo find "$(pwd)/${PERSISTENT_ROOT}" -mindepth 1 -maxdepth 1 -name 'image-*' ! -path ${trees} -exec rm -rf {} +`,
     ]
     // Boat's restore creates the containers its snapshot recorded 2 s after
-    // Docker answers (2026-10-15), so a start that looked before it finds the
-    // name taken. Docker holds the name from the start of that create, so a
-    // removal right after the clash finds nothing and the next create clashes
-    // again; the 0.8 s the create took is waited out before each retry, which
-    // looks again: what Boat created is the container the stop kept, which is
-    // started. Removed instead, Boat created it again before each of five
-    // creates on a machine's first wake (2026-10-15).
+    // Docker answers, and creates them again after a removal (2026-10-15), so
+    // a start that looked before it finds the name taken by the container the
+    // stop kept. Docker holds the name from the start of that create, so each
+    // retry waits out the 0.8 s it takes, then starts the container when it is
+    // this image's and replaces it when it is another's.
     const start = `mv -f ${staged.env} ${RUNTIME_ENV_PATH} && up=; for attempt in $(seq ${CONTAINER_CREATE_ATTEMPTS}); do [ "$attempt" = 1 ] || sleep 1; `
       + `if ${labelledWithImage("container", containerName)}; then failure=$(docker start ${containerName} 2>&1 >/dev/null) && { up=1; break; }; `
       + `else docker rm -f ${containerName} >/dev/null 2>&1; failure=$(${run} 2>&1 >/dev/null) && { up=1; break; }; fi; `

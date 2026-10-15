@@ -27,8 +27,6 @@ const DEFAULT_POLL_INTERVAL_MS = 2_000
 const DEFAULT_HYDRATION_TIMEOUT_MS = 10 * 60_000
 const DEFAULT_STOP_TIMEOUT_MS = 10 * 60_000
 const DEFAULT_SAVE_TIMEOUT_MS = 10 * 60_000
-// The new code, and the one the Worker deployed before it carries until the deploy replaces it.
-const KEPT_SHARE_CODES = 2
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -157,26 +155,37 @@ async function buildTemplate(options: BoatRuntimeTemplateOptions, name: string) 
 }
 
 /**
- * A new share code for the image's template. Older codes are revoked except
- * the newest before it, which the running Worker still creates with until
- * the deploy hands it this one; a revoked code's create pulls and seeds.
+ * A new share code for the image's template, revoking none: until the deploy
+ * that carries it has succeeded, the running Worker creates with the code it
+ * holds. `shareId` names the code without being the secret.
  */
-export async function shareBoatRuntimeTemplate(options: BoatRuntimeTemplateOptions): Promise<BoatRuntimeTemplate> {
+export async function shareBoatRuntimeTemplate(options: BoatRuntimeTemplateOptions): Promise<{ template: BoatRuntimeTemplate; shareId: string }> {
   const { snapshots } = clients(options)
-  const name = await boatRuntimeTemplateName(options.image, options.prefix)
-  const created = await snapshots.share(name)
-  const older = (await snapshots.shares(name))
-    .filter((share) => share.status === "active" && share.id !== created.share.id)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-  for (const share of older.slice(KEPT_SHARE_CODES - 1)) await snapshots.revokeShare(name, share.id)
-  return { image: options.image, shareCode: created.shareCode }
+  const created = await snapshots.share(await boatRuntimeTemplateName(options.image, options.prefix))
+  return { template: { image: options.image, shareCode: created.shareCode }, shareId: created.share.id }
 }
 
 /**
- * Each template past Boat's ten free named snapshots costs $1.70 a month, and
- * a template serves only the image it was built for, so templates of the
- * prefix beyond the newest `keep` (and the image's own) are removed; Boat
- * removes their share codes with them.
+ * Run once the deploy carrying `deployedShareId` succeeded: every other code of
+ * the deployed image's template is revoked, those of earlier deploys and of
+ * deploys that failed alike.
+ */
+export async function revokeBoatRuntimeTemplateShares(options: BoatRuntimeTemplateOptions, deployedShareId: string): Promise<string[]> {
+  const { snapshots } = clients(options)
+  const name = await boatRuntimeTemplateName(options.image, options.prefix)
+  const shares = (await snapshots.shares(name)).filter((share) => share.status === "active")
+  if (!shares.some((share) => share.id === deployedShareId)) throw new Error(`Boat template ${name} has no active share ${deployedShareId}`)
+  const revoked = shares.filter((share) => share.id !== deployedShareId).map((share) => share.id)
+  for (const id of revoked) await snapshots.revokeShare(name, id)
+  return revoked
+}
+
+/**
+ * Run once the deploy of `options.image` succeeded, so the template it keeps
+ * is the one the live Worker creates from. Each template past Boat's ten free
+ * named snapshots costs $1.70 a month, and a template serves only the image it
+ * was built for, so templates of the prefix beyond the newest `keep` (the
+ * deployed image's among them) are removed; Boat removes their codes with them.
  */
 export async function pruneBoatRuntimeTemplates(options: BoatRuntimeTemplateOptions): Promise<string[]> {
   const { snapshots } = clients(options)

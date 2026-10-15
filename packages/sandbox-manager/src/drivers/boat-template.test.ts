@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { boatTemplateResetCommand, formatBoatRuntimeTemplate, parseBoatRuntimeTemplate } from "./boat"
-import { boatRuntimeTemplateName, ensureBoatRuntimeTemplate, pruneBoatRuntimeTemplates, shareBoatRuntimeTemplate, type BoatRuntimeTemplateOptions } from "./boat-template"
+import { boatRuntimeTemplateName, ensureBoatRuntimeTemplate, pruneBoatRuntimeTemplates, revokeBoatRuntimeTemplateShares, shareBoatRuntimeTemplate, type BoatRuntimeTemplateOptions } from "./boat-template"
 
 const API = "https://boat.dev/api/v1"
 const IMAGE = "ghcr.io/test/sandbox:workspace-runtime-0-10-0-5eed1d-agent-plugins-v8"
@@ -167,23 +167,35 @@ describe("the Boat runtime template builder", () => {
     expect(boat.events.at(-1)).toMatchObject({ method: "DELETE", path: `/sandboxes/${BUILDER}` })
   })
 
-  test("a share mints a code the Worker carries with the image, keeps the newest older code for the Worker still running, and revokes the rest", async () => {
-    const boat = fakeBoat({
-      snapshots: [{ name: TEMPLATE_NAME, status: "ready", createdAt: "2026-10-14T00:00:00Z" }],
-      shares: [
-        { id: "shr_oldest", status: "active", createdAt: "2026-10-13T00:00:00Z" },
-        { id: "shr_previous", status: "active", createdAt: "2026-10-14T00:00:00Z" },
-        { id: "shr_gone", status: "revoked", createdAt: "2026-10-12T00:00:00Z" },
-        { id: "shr_older", status: "active", createdAt: "2026-10-13T12:00:00Z" },
-      ],
-    })
-    const template = await shareBoatRuntimeTemplate(options(boat))
+  const SHARES: Share[] = [
+    { id: "shr_live", status: "active", createdAt: "2026-10-14T00:00:00Z" },
+    { id: "shr_failed_deploy", status: "active", createdAt: "2026-10-14T12:00:00Z" },
+    { id: "shr_gone", status: "revoked", createdAt: "2026-10-12T00:00:00Z" },
+  ]
+
+  test("a share mints a code the Worker carries with the image and revokes none, so the live Worker's code keeps working whatever the deploy does", async () => {
+    const boat = fakeBoat({ snapshots: [{ name: TEMPLATE_NAME, status: "ready", createdAt: "2026-10-14T00:00:00Z" }], shares: SHARES })
+    const { template, shareId } = await shareBoatRuntimeTemplate(options(boat))
     expect(template).toEqual({ image: IMAGE, shareCode: "bsh_secret-1" })
+    expect(shareId).toBe("shr_new1")
     expect(parseBoatRuntimeTemplate(formatBoatRuntimeTemplate(template))).toEqual(template)
+    expect(boat.events.filter((event) => event.method === "DELETE")).toEqual([])
+  })
+
+  test("once a deploy succeeded, every other active code of the deployed template is revoked, a failed deploy's among them", async () => {
+    const boat = fakeBoat({ snapshots: [{ name: TEMPLATE_NAME, status: "ready", createdAt: "2026-10-14T00:00:00Z" }], shares: SHARES })
+    const { shareId } = await shareBoatRuntimeTemplate(options(boat))
+    expect((await revokeBoatRuntimeTemplateShares(options(boat), shareId)).sort()).toEqual(["shr_failed_deploy", "shr_live"])
     expect(boat.events.filter((event) => event.method === "DELETE").map((event) => event.path).sort()).toEqual([
-      `/named-snapshots/${TEMPLATE_NAME}/shares/shr_older`,
-      `/named-snapshots/${TEMPLATE_NAME}/shares/shr_oldest`,
+      `/named-snapshots/${TEMPLATE_NAME}/shares/shr_failed_deploy`,
+      `/named-snapshots/${TEMPLATE_NAME}/shares/shr_live`,
     ])
+  })
+
+  test("a deployed share the template does not hold active revokes nothing", async () => {
+    const boat = fakeBoat({ snapshots: [{ name: TEMPLATE_NAME, status: "ready", createdAt: "2026-10-14T00:00:00Z" }], shares: SHARES })
+    await expect(revokeBoatRuntimeTemplateShares(options(boat), "shr_gone")).rejects.toThrow("has no active share shr_gone")
+    expect(boat.events.filter((event) => event.method === "DELETE")).toEqual([])
   })
 
   test("pruning keeps the image's template and the newest others of the prefix up to three, and never touches other names or a save in flight", async () => {

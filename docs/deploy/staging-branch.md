@@ -168,8 +168,9 @@ deploy that ships it, and an unchanged runtime reuses its image without a
 Docker build. The `boat-image` job then builds the image's Boat runtime
 template once (`bun run --cwd packages/claxedo-server sandbox:boat-template
 --image=<tag>`, 144 s on Boat on 2026-10-15, on one builder sandbox it deletes after),
-and the `control-plane` job mints a share code for it and uploads it as
-`CLAXEDO_BOAT_RUNTIME_TEMPLATE`; see the sandbox-manager README's "Boat runtime
+and the `control-plane` job mints a share code for it, uploads it as
+`CLAXEDO_BOAT_RUNTIME_TEMPLATE`, and only after the deploy succeeded revokes the
+template's other codes and prunes templates of older images; see the sandbox-manager README's "Boat runtime
 template" for what the template holds and costs. The `sandbox-image` component of this workflow deploys the
 Cloudflare sandbox Worker the staging organization's Cloudflare key points at;
 its URL and API token are that key's fields, entered in the app, not deploy
