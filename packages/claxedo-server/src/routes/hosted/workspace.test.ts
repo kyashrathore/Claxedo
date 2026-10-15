@@ -1171,7 +1171,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     ])
   })
 
-  test("each cloud row carries the lifecycle status its lease names, read without starting compute", async () => {
+  test("each cloud row carries the lifecycle status its lease names, and the failure a retrying start retries, read without starting compute", async () => {
     const leases: Record<string, unknown> = {
       ws_ready: { status: "ready", sandboxId: "box", url: "https://runtime.test", hostId: "host", epoch: 1, homeRegion: "eu-west" },
       ws_booting: { status: "unavailable", reason: "runtime_acquiring", leaseStatus: "acquiring" },
@@ -1190,7 +1190,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
       { workspace_id: "ws_booting", backing: "cloud-vm", status: "provisioning", reachable: false },
       { workspace_id: "ws_stopped", backing: "cloud-vm", status: "stopped", reachable: false },
       { workspace_id: "ws_never", backing: "cloud-vm", status: "stopped", reachable: false },
-      { workspace_id: "ws_retrying", backing: "cloud-vm", status: "provisioning", reachable: false },
+      { workspace_id: "ws_retrying", backing: "cloud-vm", status: "provisioning", failure: "quota exceeded", reachable: false },
       { workspace_id: "ws_broken", backing: "cloud-vm", status: "failed", error: "The cloud workspace could not start: quota exceeded", reachable: false },
     ])
     expect(ensure).not.toHaveBeenCalled()

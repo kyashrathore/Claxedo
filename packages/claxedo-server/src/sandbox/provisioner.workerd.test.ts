@@ -225,4 +225,13 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_flaky")).toBe(2)
     expect(await until(() => start("ws_flaky"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
   })
+
+  test("while a run waits out a failed step's retry, every poll that joins it is told that step's failure, and a step that succeeds clears it", async () => {
+    expect(await start("ws_flaky_3")).toMatchObject({ status: "provisioning", epoch: 1 })
+    const retrying = await until(() => start("ws_flaky_3"), (answer) => answer.status !== "provisioning" || answer.failure !== undefined)
+    expect(retrying).toMatchObject({ status: "provisioning", joined: true, failure: "provider hiccup" })
+    expect(await inFlight("ws_flaky_3")).toMatchObject({ status: "provisioning", failure: "provider hiccup" })
+    expect(await until(() => start("ws_flaky_3"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 4 })
+    expect(await inFlight("ws_flaky_3")).toBeNull()
+  })
 })

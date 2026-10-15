@@ -15,3 +15,10 @@ test("wake machine: a start moves to waking, names its boot mode, and ends idle 
   expect(wakeTransition(WAKE_IDLE, { type: "woke" })).toBe(WAKE_IDLE)
   expect(wakeTransition(WAKE_IDLE, { type: "wakeFailed", error })).toBe(WAKE_IDLE)
 })
+
+test("wake machine: a waking start names the failure the server is retrying, keeps its boot mode, and drops the failure once a step reports none", () => {
+  const resuming = wakeTransition(wakeTransition(WAKE_IDLE, { type: "wakeStarted" }), { type: "provisioning", bootMode: "resume" })
+  const retrying = wakeTransition(resuming, { type: "provisioning", failure: "quota exceeded" })
+  expect(retrying).toEqual({ kind: "waking", bootMode: "resume", failure: "quota exceeded" })
+  expect(wakeTransition(retrying, { type: "provisioning", bootMode: "resume" })).toEqual({ kind: "waking", bootMode: "resume" })
+})

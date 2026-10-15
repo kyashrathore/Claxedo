@@ -4,13 +4,13 @@ import type { AppError } from "./types"
 
 export type WakeState =
   | { readonly kind: "idle" }
-  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly restart?: true }
+  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly restart?: true }
   | { readonly kind: "failed"; readonly error: AppError; readonly restart?: true }
   | { readonly kind: "outdated" }
 
 export type WakeEvent =
   | { readonly type: "wakeStarted" }
-  | { readonly type: "provisioning"; readonly bootMode?: WorkspaceBootMode }
+  | { readonly type: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string }
   | { readonly type: "woke" }
   | { readonly type: "wakeFailed"; readonly error: AppError }
   | { readonly type: "imageOutdated" }
@@ -27,9 +27,16 @@ export function wakeTransition(state: WakeState, event: WakeEvent): WakeState {
     case "wakeStarted":
       if (state.kind === "waking") return state
       return isRestart(state) ? { kind: "waking", restart: true } : { kind: "waking" }
-    case "provisioning":
+    case "provisioning": {
       if (state.kind !== "waking") return state
-      return event.bootMode ? { ...state, bootMode: event.bootMode } : state
+      const bootMode = event.bootMode ?? state.bootMode
+      return {
+        kind: "waking",
+        ...(bootMode ? { bootMode } : {}),
+        ...(event.failure ? { failure: event.failure } : {}),
+        ...(state.restart ? { restart: true } : {}),
+      }
+    }
     case "woke":
       return state.kind === "waking" ? WAKE_IDLE : state
     case "wakeFailed":

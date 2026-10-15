@@ -8,7 +8,7 @@ import type { Placement } from "./types"
 import type { Workspaces } from "./workspaces"
 
 const own: Placement = { id: placementId("p1"), projectId: projectId("j1"), kind: "folder", label: "work", path: "/work", machineId: machineId("m1"), reachable: true, onThisMachine: true }
-const cloud: Placement = { id: placementId("ws_1"), projectId: projectId("j1"), kind: "cloud", label: "payments", path: "/workspace/repo", reachable: true, onThisMachine: false }
+const cloud: Placement = { id: placementId("ws_1"), projectId: projectId("j1"), kind: "cloud", label: "payments", lifecycle: "live", path: "/workspace/repo", reachable: true, onThisMachine: false }
 
 function installBridge(readFileContent: unknown): void {
   const method = () => Promise.resolve()

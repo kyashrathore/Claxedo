@@ -24,6 +24,7 @@ export async function startCreated(server: Server, created: Created): Promise<vo
 
 export function openingDetail(t: OnboardingText, runtime: WorkspaceRuntime): string | undefined {
   if (runtime.kind !== "waking") return undefined
+  if (runtime.failure) return t("onboarding.opening.retrying", { reason: runtime.failure })
   if (runtime.bootMode === "restore") return t("onboarding.opening.restoring")
   if (runtime.bootMode === "resume") return t("onboarding.opening.resuming")
   return t("onboarding.opening.starting")

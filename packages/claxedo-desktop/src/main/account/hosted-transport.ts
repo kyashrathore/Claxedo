@@ -111,11 +111,13 @@ export function connectionRetryResult(
   name: HostedOperationName,
   response: Response,
   value: unknown,
-): { status: "provisioning"; retryAfterMs: number } | undefined {
+): { status: "provisioning"; retryAfterMs: number; failure?: string } | undefined {
   if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return undefined
   if (response.status !== 409 && response.status !== 429) return undefined
-  const bodyDelay = readFiniteNumber(hostedError(value), "retryAfterMs")
-  if (bodyDelay !== undefined) return { status: "provisioning", retryAfterMs: bodyDelay }
+  const error = hostedError(value)
+  const bodyDelay = readFiniteNumber(error, "retryAfterMs")
+  const failure = readString(error, "failure")
+  if (bodyDelay !== undefined) return { status: "provisioning", retryAfterMs: bodyDelay, ...(failure ? { failure } : {}) }
   const header = response.headers.get("Retry-After")?.trim()
   if (header && /^\d+$/.test(header)) {
     return { status: "provisioning", retryAfterMs: Number(header) * 1_000 }

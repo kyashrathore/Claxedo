@@ -620,8 +620,12 @@ export const desktopRenderer: Policy = {
   // `transcript/user-message-head.ts`) and the product label of the harness a
   // session runs (owner: the app's session domain,
   // `session/view/session-harness-label.ts`). They add no package edge.
-  // 1367/36, no headroom.
-  ceilings: { modules: 1367, packages: 36 },
+  // A cloud placement's lease lifecycle read from its catalog row, which tells
+  // a workspace the server is starting from one that is asleep (owner: the
+  // app's server adapter, `server/wire/placement-lifecycle.ts`). It adds no
+  // package edge.
+  // 1368/36, no headroom.
+  ceilings: { modules: 1368, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

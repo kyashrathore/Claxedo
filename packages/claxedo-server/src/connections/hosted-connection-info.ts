@@ -20,7 +20,7 @@ import {
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeLifecycle, cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { sandboxRuntimeBootFailure, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
@@ -115,6 +115,11 @@ async function cloudConnectionIngress(
 }
 
 type SettledActor = { actor: RuntimeActor } | { failed: unknown }
+
+/** A lease that ended under the start was somebody's decision, not a failure to show; any other step error is told as its reason. */
+function startFailure(error: string | undefined) {
+  return error && !sandboxLeaseEndedUnderStart(error) ? sandboxStartFailureReason(error) : undefined
+}
 
 /**
  * The caller's actor, read while the sandbox is asked and held until the
@@ -322,6 +327,7 @@ export async function hostedConnectionInfo(
         // generic "preparing" spinner. Absent while the lease is still queued
         // behind a retry window or another caller.
         ...(started.bootMode ? { bootMode: started.bootMode } : {}),
+        ...(started.failure ? { failure: sandboxStartFailureReason(started.failure) } : {}),
       },
     } as const
   }
@@ -347,9 +353,11 @@ export async function hostedConnectionInfo(
     if (bootFailure) {
       return { error: apiError("cloud_runtime_boot_failed", cloudRuntimeStartFailure(bootFailure)), status: 409 } as const
     }
+    const failure = startFailure(started.error)
     return {
-      error: apiError("cloud_runtime_unavailable", "Cloud runtime is unavailable", {
+      error: apiError("cloud_runtime_unavailable", failure ?? "Cloud runtime is unavailable", {
         retryAfterMs: started.retryAfterMs,
+        ...(failure ? { failure } : {}),
       }),
       status: 409,
     } as const
@@ -424,6 +432,7 @@ export async function hostedConnectionStatus(
         homeRegion,
         retryAfterMs: running.retryAfterMs,
         ...(running.bootMode ? { bootMode: running.bootMode } : {}),
+        ...(running.failure ? { failure: sandboxStartFailureReason(running.failure) } : {}),
       },
     } as const
   }
@@ -449,6 +458,7 @@ export async function hostedConnectionStatus(
         workspaceId,
         homeRegion,
         ...(lifecycle.status === "failed" ? { error: lifecycle.error } : {}),
+        ...(lifecycle.status === "provisioning" && lifecycle.failure ? { failure: lifecycle.failure } : {}),
         ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
       },
     } as const

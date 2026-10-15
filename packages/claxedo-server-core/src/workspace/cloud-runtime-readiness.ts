@@ -21,7 +21,8 @@ function cloudWorkspaceIds(rows: readonly unknown[]) {
 }
 
 export type CloudRuntimeLifecycle =
-  | { status: "ready" | "provisioning" | "stopped" }
+  | { status: "ready" | "stopped" }
+  | { status: "provisioning"; failure?: string }
   | { status: "failed"; error: string }
 
 /** What a cloud workspace whose start failed says, the start's own answer and a catalog row alike. */
@@ -39,7 +40,7 @@ export function cloudRuntimeLifecycle(target: SandboxTargetResult | undefined): 
   }
   const failure = target.failure
   if (!failure) return { status: "failed", error: "The cloud workspace is not running" }
-  if (failure.retrying) return { status: "provisioning" }
+  if (failure.retrying) return { status: "provisioning", failure: failure.message }
   if (failure.kind === "unhealthy") return { status: "failed", error: "The cloud workspace stopped answering" }
   return { status: "failed", error: cloudRuntimeStartFailure(failure.message) }
 }

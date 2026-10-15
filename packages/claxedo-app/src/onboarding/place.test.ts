@@ -86,6 +86,7 @@ test("the opening detail names the boot a waking workspace is on, and nothing on
   expect(openingDetail(t, { kind: "waking", bootMode: "cold-start" })).toBe("onboarding.opening.starting")
   expect(openingDetail(t, { kind: "waking", bootMode: "resume" })).toBe("onboarding.opening.resuming")
   expect(openingDetail(t, { kind: "waking", bootMode: "restore" })).toBe("onboarding.opening.restoring")
+  expect(openingDetail(t, { kind: "waking", bootMode: "resume", failure: "quota exceeded" })).toBe(`onboarding.opening.retrying ${JSON.stringify({ reason: "quota exceeded" })}`)
   expect(openingDetail(t, { kind: "live" })).toBeUndefined()
   expect(openingDetail(t, { kind: "wakeFailed", error: { class: "network", retryable: true, message: "offline" } })).toBeUndefined()
 })

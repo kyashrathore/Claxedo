@@ -123,7 +123,7 @@ const ENTRIES = [
   // idle policy a cloud sandbox stops under (`sandbox/workspace-idle.ts`),
   // which the hosted runtime delivery's idle watch applies to Boat. A cloud
   // runtime's usage report is a module of its own
-  // (`routes/runtime-usage-report.ts`), split from the runtime session
+  // (`usage/runtime-usage-report.ts`), split from the runtime session
   // authority routes.
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 167, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform

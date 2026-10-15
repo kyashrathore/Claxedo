@@ -70,11 +70,29 @@ export function workspaceRuntimeBootReason(diagnostic: string): string | undefin
   return reason.trim().replace(/^Error: /, "") || undefined
 }
 
+/**
+ * What a driver keeps of a runtime's log within `maxChars`. A Node stack
+ * under the boot-failure line is longer than the bound a driver puts on the
+ * tail (600 chars on Boat, 2026-10-15 staging), so a tail alone keeps the
+ * frames and loses the one line that names the reason.
+ */
+export function runtimeBootDiagnostic(log: string, maxChars: number): string {
+  const trimmed = log.trim()
+  const reason = workspaceRuntimeBootReason(trimmed)
+  if (reason === undefined) return trimmed.slice(-maxChars)
+  return `${WORKSPACE_RUNTIME_BOOT_FAILED_LINE}${reason}`.slice(0, maxChars)
+}
+
 /** The boot's own reason when an ensure error says a runtime's boot failed. */
 export function sandboxRuntimeBootFailure(error: string | undefined) {
   if (!error?.startsWith(RUNTIME_BOOT_FAILED)) return undefined
   const diagnostic = error.slice(RUNTIME_BOOT_FAILED.length)
   return workspaceRuntimeBootReason(diagnostic) ?? diagnostic
+}
+
+/** The line a person is told for a start step's error: the runtime's own reason for a boot that failed, else the driver's first line. */
+export function sandboxStartFailureReason(error: string): string {
+  return sandboxRuntimeBootFailure(error) ?? error.split("\n", 1)[0]?.trim() ?? error
 }
 
 /** The error a lease keeps when the runtime it serves stopped answering its health reports. */
@@ -100,7 +118,7 @@ export function sandboxLeaseFailure(
   const kind = boot !== undefined ? "boot" : lease.lastError === SANDBOX_RUNTIME_UNHEALTHY ? "unhealthy" : "provider"
   const retrying = kind !== "boot" && lease.retryCount < input.maxRetryCount
     && lease.nextRetryAt !== undefined && lease.nextRetryAt > input.now
-  return { kind, message: boot ?? lease.lastError, retrying }
+  return { kind, message: sandboxStartFailureReason(lease.lastError), retrying }
 }
 
 /**

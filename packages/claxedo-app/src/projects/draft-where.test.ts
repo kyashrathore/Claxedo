@@ -6,8 +6,9 @@ import { creationOf, currentPlacement, groupedPlaces, whereEntries, worktreeRoot
 const project = projectId("prj_app")
 const box = machineId("enr_box")
 
-function placement(id: string, kind: PlacementKind, extra: Partial<Placement> = {}): Placement {
-  return { id: placementId(id), projectId: project, kind, label: id, reachable: true, onThisMachine: false, ...extra }
+function placement(id: string, kind: PlacementKind, extra: Partial<Pick<Placement, "label" | "onThisMachine" | "machineId">> = {}): Placement {
+  const shared = { id: placementId(id), projectId: project, label: id, reachable: true, onThisMachine: false, ...extra }
+  return kind === "cloud" ? { ...shared, kind, lifecycle: "live" } : { ...shared, kind }
 }
 
 const folder = placement("pl_folder", "folder", { onThisMachine: true })

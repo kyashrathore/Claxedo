@@ -442,6 +442,7 @@ export type SandboxDriver = {
   snapshot?: (target: SandboxTarget, committed?: string) => Promise<SandboxSnapshotResult>
   /** Deletes a snapshot `snapshot` returned; implemented by drivers whose snapshots outlive their sandbox. */
   deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
+  /** Undefined for a host the provider no longer has. */
   inspect?: (target: SandboxTarget) => Promise<SandboxTarget | undefined>
   exec?: (target: SandboxTarget, command: string) => Promise<SandboxCommandResult>
   clone?: (target: SandboxTarget, input: { name: string }) => Promise<SandboxTarget>
@@ -470,6 +471,8 @@ export type SandboxManager = {
   checkpoint: (workspaceId: string, input: SandboxCheckpointCaptureInput) => Promise<SandboxCheckpointResult>
   restore: (workspaceId: string, input: SandboxCheckpointRestoreInput) => Promise<SandboxCheckpointResult>
   stop: (workspaceId: string, input?: SandboxStopInput) => Promise<SandboxMutationResult>
+  /** True when the provider no longer has the host the epoch serves from, which ends that lease destroyed; a driver that cannot inspect its hosts answers false. */
+  endIfHostGone: (workspaceId: string, epoch: number) => Promise<boolean>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>
   release: (workspaceId: string) => Promise<{ released: boolean }>
   garbageCollect: () => Promise<SandboxGarbageCollectResult>

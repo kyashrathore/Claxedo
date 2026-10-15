@@ -1,10 +1,12 @@
-import type { Accessor, JSX } from "solid-js"
+import { createEffect, type Accessor, type JSX } from "solid-js"
 import { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, publishComposerNotice, type ComposerNotice } from "@/composer"
 import { useWorkspaceName } from "@/cloud"
-import { isOfflineMachine, useServer, type Placement, type PlacementId, type WorkspaceBootMode, type WorkspaceRuntime } from "@/server"
+import { isOfflineMachine, isStartingCloud, useServer, type Placement, type PlacementId, type WorkspaceRuntime } from "@/server"
 import { useSessionScreenText, type SessionScreenText } from "./text"
 
-function bootDetail(t: SessionScreenText, bootMode: WorkspaceBootMode | undefined) {
+function bootDetail(t: SessionScreenText, runtime: Extract<WorkspaceRuntime, { kind: "waking" }>) {
+  if (runtime.failure) return t("sessionScreen.workspace.retrying", { reason: runtime.failure })
+  const bootMode = runtime.bootMode
   if (bootMode === "restore") return t("sessionScreen.workspace.restoring")
   if (bootMode === "resume") return t("sessionScreen.workspace.resuming")
   return t("sessionScreen.workspace.starting")
@@ -15,7 +17,7 @@ type PlacementFacts = { readonly placement: Placement | undefined; readonly name
 export function placementNotice(t: SessionScreenText, facts: PlacementFacts): ComposerNotice | undefined {
   const name = facts.name
   const runtime = facts.runtime
-  if (runtime.kind === "waking") return { kind: "workspace-lifecycle", tone: "progress", message: t("sessionScreen.workspace.waking", { name }), detail: bootDetail(t, runtime.bootMode) }
+  if (runtime.kind === "waking") return { kind: "workspace-lifecycle", tone: "progress", message: t("sessionScreen.workspace.waking", { name }), detail: bootDetail(t, runtime) }
   if (runtime.kind === "wakeFailed") {
     return { kind: "workspace-lifecycle", tone: "critical", message: t("sessionScreen.workspace.wakeFailed", { name }), detail: runtime.error.message, action: { label: t("sessionScreen.workspace.retryWake"), run: facts.wake } }
   }
@@ -42,6 +44,10 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
 }
 
 export function PlacementNotice(props: { readonly placementId: PlacementId }) {
+  const server = useServer()
+  createEffect(() => {
+    if (isStartingCloud(server.placements.byId(props.placementId))) void server.cloud.follow(props.placementId)
+  })
   publishComposerNotice(usePlacementNotice(() => props.placementId))
   return null
 }

@@ -1,6 +1,6 @@
 import { ServerError } from "../errors"
 import type { WorkspaceBootMode } from "../cloud-types"
-import { isRecord } from "@claxedo/helpers/guards"
+import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 export type RelayConnection = {
   readonly sessionId?: string
@@ -12,7 +12,7 @@ export type RelayConnection = {
 
 export type ConnectionAnswer =
   | { readonly kind: "ready"; readonly link: RelayConnection; readonly sessionHostRoot?: string }
-  | { readonly kind: "provisioning"; readonly retryAfterMs?: number; readonly bootMode?: WorkspaceBootMode }
+  | { readonly kind: "provisioning"; readonly retryAfterMs?: number; readonly bootMode?: WorkspaceBootMode; readonly failure?: string }
   | { readonly kind: "stopped" }
   | { readonly kind: "failed"; readonly reason: string }
 
@@ -69,14 +69,18 @@ export function connectionAnswerFromWire(body: unknown, workspaceId: string, ses
   if (row.status === "provisioning") {
     const retryAfterMs = retryAfterOf(row.retryAfterMs)
     const bootMode = bootModeOf(row.bootMode)
-    return { kind: "provisioning", ...(retryAfterMs !== undefined ? { retryAfterMs } : {}), ...(bootMode ? { bootMode } : {}) }
+    const failure = nonEmptyString(row.failure)
+    return { kind: "provisioning", ...(retryAfterMs !== undefined ? { retryAfterMs } : {}), ...(bootMode ? { bootMode } : {}), ...(failure ? { failure } : {}) }
   }
   if (sessionId && row.sessionId !== sessionId) throw new ServerError({ class: "internal", message: "Session connection scope does not match the requested session" })
   const link = { ...linkOf(row, workspaceId), ...(sessionId ? { sessionId } : {}) }
   return { kind: "ready", link, ...(row.backing === "durable-object" && sessionId ? { sessionHostRoot: sessionId } : {}) }
 }
 
-export function unavailableRetryAfter(body: unknown): number | undefined {
+export function unavailableRetry(body: unknown): Extract<ConnectionAnswer, { kind: "provisioning" }> | undefined {
   const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
-  return retryAfterOf(error?.retryAfterMs)
+  const retryAfterMs = retryAfterOf(error?.retryAfterMs)
+  if (retryAfterMs === undefined) return undefined
+  const failure = nonEmptyString(error?.failure)
+  return { kind: "provisioning", retryAfterMs, ...(failure ? { failure } : {}) }
 }
