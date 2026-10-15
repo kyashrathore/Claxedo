@@ -24,12 +24,28 @@ export class AgentConfigMutationError extends Error {
   }
 }
 
-export async function putConnection(store: UserAgentConfigStore, connectionId: string, body: unknown) {
+/**
+ * Saves one connection. `admitsSecretRef` answers whether the saving person
+ * may name a stored row as the connection's secret; a reference it refuses
+ * is never stored, so no later lease has to be the only gate.
+ */
+export async function putConnection(
+  store: UserAgentConfigStore,
+  connectionId: string,
+  body: unknown,
+  admitsSecretRef: (reference: string) => Promise<boolean>,
+) {
   if (!asRecord(body)) throw new AgentConfigMutationError("agent_config_invalid_body", "Invalid JSON body")
   const config = await store.read()
   const proposed = connections.validate({ ...config.connections, [connectionId]: body })
   if (proposed.problems.length) {
     throw new AgentConfigMutationError("agent_config_connection_invalid", proposed.problems.map((item) => item.problem).join("; "), 400, proposed.problems)
+  }
+  for (const reference of Object.values(proposed.accepted[connectionId]?.secretRefs ?? {})) {
+    if (!await admitsSecretRef(reference)) {
+      throw new AgentConfigMutationError("agent_config_secret_ref_refused",
+        "A connection's secret must be a key you stored yourself. An organization's key, a model account or a sandbox provider key can't be one.")
+    }
   }
   const revisions = connections.revisionProblems(config.connections, proposed.accepted)
   if (revisions.length) {

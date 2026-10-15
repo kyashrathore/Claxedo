@@ -407,6 +407,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authentication: options.authentication,
       repository: options.agentConfigRepository,
       changed: options.settingsChanged ?? (async () => {}),
+      ...(plane.orgCredentials ? { credentials: plane.orgCredentials } : {}),
     }))
   }
   const orgCredentials = plane.orgCredentials

@@ -11,7 +11,7 @@ async function fixture(store?: ControlPlaneCredentials) {
   const keys = await generateKeyPair("EdDSA", { extractable: true })
   const descriptor = { connectionId: "custom-acp", providerKey: "acp", configRevision: 3, enabled: true,
     config: {}, secretRefs: { token: "credential-1" } }
-  const metadata = { id: "credential-1", incarnation: "incarnation-1", org_id: "org-1", owner: "user-1" as string | null, scope: "shared",
+  const metadata = { id: "credential-1", incarnation: "incarnation-1", org_id: "org-1", owner: "user-1" as string | null, provider_id: "acp-token", kind: "api_key", scope: "shared",
     source: "managed", status: "available", revision: 2, expires_at: null as number | null }
   const readSecret = vi.fn(async () => "test-secret")
   const active = vi.fn(async () => ({ active: true }))
@@ -110,12 +110,16 @@ describe("sandbox connection secret lease", () => {
     expect(f.readSecret).not.toHaveBeenCalled()
     expect((await f.request("workspace-1", 3, "owner", "actor-1", "outsider")).status).toBe(409)
   })
-  test("an editor's turn on the owner's session leases a team credential of its own org", async () => {
+  test("no turn leases an organization's row, a model account or a sandbox provider key as a connection secret", async () => {
     const f = await fixture()
     f.metadata.owner = null
-    const response = await f.request("workspace-1", 3, "editor", "actor-bob")
-    expect(response.status).toBe(200)
-    expect((await response.json()).secrets).toEqual({ token: "test-secret" })
+    expect((await f.request("workspace-1", 3, "editor", "actor-bob")).status).toBe(409)
+    f.metadata.owner = "user-1"
+    Object.assign(f.metadata, { provider_id: "anthropic" })
+    expect((await f.request()).status).toBe(409)
+    Object.assign(f.metadata, { provider_id: "boat", kind: "sandbox_driver" })
+    expect((await f.request()).status).toBe(409)
+    expect(f.readSecret).not.toHaveBeenCalled()
   })
   test("the owner's session is refused another member's personal credential and a team credential of another org", async () => {
     const f = await fixture()
