@@ -212,6 +212,6 @@ test("wakes: a start the server retries after a failed step reads waking with th
   void wakes.start(cloud)
   await settle()
   expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "resume", failure: "quota exceeded" })
-  starts[0]!.resolve()
+  starts[0].resolve()
   await settle()
 })
