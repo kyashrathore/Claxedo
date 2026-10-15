@@ -12,6 +12,7 @@ import {
 } from "@claxedo/server-core/agent-config/mutations"
 import { explicitDefaultHarness } from "@claxedo/server-core/agent-config/connections"
 import { connectionSecretAdmitted } from "@claxedo/server-core/credentials/account-holder"
+import { isRecordArray } from "@claxedo/server-core/platform/json/index"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -59,8 +60,10 @@ export function hostedAgentConfigRoutes(input: {
       const credentials = input.credentials
       const admitsSecretRef = async (reference: string) => {
         if (!credentials) return false
-        const row = await credentials(await requireAuthority(input.services).resolveOrgId(auth)).getCredential?.(reference)
-        return !!row && connectionSecretAdmitted(row, userId, userId)
+        const listed = await requireAuthority(input.services).listOrgs(auth)
+        const orgs = isRecordArray(listed) ? listed.flatMap((row) => typeof row.org_id === "string" ? [row.org_id] : []) : []
+        const rows = await Promise.all(orgs.map(async (orgId) => await credentials(orgId).getCredential?.(reference)))
+        return rows.some((row) => !!row && connectionSecretAdmitted(row, userId, userId))
       }
       return { ok: true, connections: await putConnection(store, c.req.param("connectionId"), await c.req.json(), admitsSecretRef) }
     }))

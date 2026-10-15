@@ -60,7 +60,7 @@ const repository = {
 const credentials = (org: string) => hostedOrgCredentials(org, { database: fixture.database, env })
 
 const settings = () => hostedAgentConfigRoutes({
-  services: { authority: Object.assign(Object.create(fixture.authority), { resolveOrgId: async () => orgId }), auth: { config: authConfig } } as unknown as ControlPlaneServices,
+  services: { authority: fixture.authority, auth: { config: authConfig } } as unknown as ControlPlaneServices,
   authentication,
   repository,
   changed: async () => {},
@@ -143,5 +143,16 @@ describe("a member reaching an organization row's secret through a connection", 
     const own = await lease("own-acp")
     expect(own.status).toBe(200)
     expect((await own.json()).secrets).toEqual({ token: "member-acp-secret" })
+  })
+
+  test("a member of two organizations saves a key from either, and a workspace of the other organization leases nothing from it", async () => {
+    configs.delete(memberId)
+    const orgs = await fixture.authority.listOrgs(people.member) as Array<{ org_id: string }>
+    const personal = orgs.map((row) => row.org_id).find((id) => id !== orgId)!
+    const elsewhere = await hostedOrgCredentials(personal, { database: fixture.database, env })
+      .putCredential({ owner: memberId, provider_id: "member-acp-token", kind: "api_key", source: "managed", secret: "member-personal-org-secret" })
+    const saved = await save("personal-acp", elsewhere.id)
+    expect(await saved.json()).toMatchObject({ ok: true })
+    expect((await lease("personal-acp")).status).toBe(409)
   })
 })
