@@ -624,8 +624,12 @@ export const desktopRenderer: Policy = {
   // a workspace the server is starting from one that is asleep (owner: the
   // app's server adapter, `server/wire/placement-lifecycle.ts`). It adds no
   // package edge.
-  // 1368/36, no headroom.
-  ceilings: { modules: 1368, packages: 36 },
+  // A cloud workspace's start said in words with its steps and times, the one
+  // wording the session notice, the first run and the terminal creator share
+  // (owner: the app's cloud domain, `cloud/view/wake-progress.ts`). It adds no
+  // package edge.
+  // 1369/36, no headroom.
+  ceilings: { modules: 1369, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

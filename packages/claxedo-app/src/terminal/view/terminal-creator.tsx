@@ -1,6 +1,6 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useWorkspaceName } from "@/cloud"
+import { useWakeProgress, useWorkspaceName } from "@/cloud"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { createDraftPlacementResolver, NewSessionContextRow, type WhereCreation } from "@/projects"
 import { toAppError, useServer, type PlacementId } from "@/server"
@@ -67,7 +67,8 @@ function LauncherGrid(props: {
     const placement = server.placements.byId(props.placementId)
     return placement ? named(placement.label, placement.branch) : ""
   }
-  const note = () => agentsNote(t, runtime(), placementName(), agents)
+  const wakeProgress = useWakeProgress(runtime)
+  const note = () => agentsNote(t, runtime(), { name: placementName(), wakeProgress: wakeProgress(), agents })
   return (
     <>
       <div class="grid gap-2 p-3" style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}>

@@ -1,13 +1,13 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { createMachineSizeChoice, type MachineSizeChoice } from "@/cloud"
+import { createMachineSizeChoice, useWakeProgress, type MachineSizeChoice } from "@/cloud"
 import { draftProjectName, primaryPlacement } from "@/projects"
-import { useServer, type ProjectSource } from "@/server"
+import { useServer, type ProjectSource, type WorkspaceRuntime } from "@/server"
 import { draftPath } from "@/shell"
 import { createFinish } from "./finish"
 import { useOnboardingText } from "./i18n"
 import { executionPlan, finishBlock, type ExecutionChoice, type ExecutionFacts, type ExecutionPlan, type FinishBlock, type OnboardingDraft } from "./model"
-import { createOnboardingTarget, finishFailure, openedPlacement, openingDetail, startCreated, type Placing } from "./place"
+import { createOnboardingTarget, finishFailure, openedPlacement, startCreated, type Placing } from "./place"
 import { createOnboardingFunnel, type OnboardingFunnel } from "./funnel"
 import { onboardingSteps, type OnboardingStep, type OnboardingStepId } from "./steps"
 
@@ -47,11 +47,11 @@ function useOnboardingFinish(placing: Accessor<Placing | undefined>, funnel: Onb
     },
     describe: (error, created) => finishFailure(t, error, created),
   })
-  const progress = () => {
+  const opening = (): WorkspaceRuntime => {
     const created = finish.created()
-    return created?.kind === "workspace" && finish.working() ? openingDetail(t, server.cloud.runtime(created.placementId)) : undefined
+    return created?.kind === "workspace" && finish.working() ? server.cloud.runtime(created.placementId) : { kind: "live" }
   }
-  return { finish, progress }
+  return { finish, progress: useWakeProgress(opening) }
 }
 
 function createExecution(facts: Accessor<ExecutionFacts>, draft: Accessor<OnboardingDraft | undefined>) {

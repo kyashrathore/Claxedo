@@ -1,6 +1,6 @@
 import { Show } from "solid-js"
 import { Icon } from "@/ui"
-import { formatDuration } from "./format-duration"
+import { formatDuration } from "@/lib/duration"
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`

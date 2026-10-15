@@ -22,3 +22,20 @@ test("wake machine: a waking start names the failure the server is retrying, kee
   expect(retrying).toEqual({ kind: "waking", bootMode: "resume", failure: "quota exceeded" })
   expect(wakeTransition(retrying, { type: "provisioning", bootMode: "resume" })).toEqual({ kind: "waking", bootMode: "resume" })
 })
+
+test("wake machine: a start's steps follow the server, keep the earlier anchor when a later poll only jitters it, and stay while an answer carries none", () => {
+  const waking = wakeTransition(WAKE_IDLE, { type: "wakeStarted" })
+  const first = wakeTransition(waking, { type: "provisioning", bootMode: "resume", steps: { done: [], startedAt: 10_000, stepStartedAt: 10_100 } })
+  const jittered = wakeTransition(first, { type: "provisioning", steps: { done: [], startedAt: 10_300, stepStartedAt: 10_350 } })
+  expect(jittered).toEqual({ kind: "waking", bootMode: "resume", steps: { done: [], startedAt: 10_000, stepStartedAt: 10_100 } })
+  const stepped = wakeTransition(jittered, { type: "provisioning", steps: { done: ["machine", "image"], startedAt: 10_200, stepStartedAt: 90_000 } })
+  expect(stepped).toEqual({ kind: "waking", bootMode: "resume", steps: { done: ["machine", "image"], startedAt: 10_000, stepStartedAt: 90_000 } })
+  expect(wakeTransition(stepped, { type: "provisioning", failure: "quota exceeded" })).toEqual({
+    kind: "waking",
+    bootMode: "resume",
+    failure: "quota exceeded",
+    steps: { done: ["machine", "image"], startedAt: 10_000, stepStartedAt: 90_000 },
+  })
+  const retried = wakeTransition(stepped, { type: "provisioning", steps: { done: [], startedAt: 10_100, stepStartedAt: 140_000 } })
+  expect(retried).toEqual({ kind: "waking", bootMode: "resume", steps: { done: [], startedAt: 10_000, stepStartedAt: 140_000 } })
+})

@@ -78,7 +78,7 @@ import {
 import { readTimelineMountSnapshot, writeTimelineMountSnapshot } from "./timeline-mount-cache"
 import { createTimelineScrollMemory } from "./timeline-scroll-memory"
 import { createTurnFoldStore } from "./turn-fold-store"
-import { formatDuration } from "@/transcript"
+import { formatDuration } from "@/lib/duration"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"

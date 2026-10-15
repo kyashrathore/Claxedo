@@ -37,7 +37,10 @@ export const TERMINAL_AGENTS: readonly TerminalAgent[] = [
   },
 ]
 
-export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRuntime, name: string, agents: { readonly isError: boolean; readonly isPending: boolean }): string | undefined {
+export type AgentsNoteFacts = { readonly name: string; readonly wakeProgress: string | undefined; readonly agents: { readonly isError: boolean; readonly isPending: boolean } }
+
+export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRuntime, facts: AgentsNoteFacts): string | undefined {
+  const { name, agents } = facts
   switch (runtime.kind) {
     case "asleep":
       return t("terminal.creator.agentsAsleep", { name })
@@ -46,7 +49,7 @@ export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRu
     case "wakeFailed":
       return t("terminal.creator.agentsWakeFailed", { name, reason: runtime.error.message })
     case "waking":
-      return t("terminal.creator.waking", { name })
+      return facts.wakeProgress ? t("terminal.creator.wakingProgress", { name, progress: facts.wakeProgress }) : t("terminal.creator.waking", { name })
     case "live":
       if (agents.isError) return t("terminal.creator.agentsFailed")
       return agents.isPending ? t("terminal.creator.agentsLoading") : undefined

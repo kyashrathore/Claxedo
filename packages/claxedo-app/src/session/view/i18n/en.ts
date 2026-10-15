@@ -74,16 +74,12 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.asleep"
   | "sessionScreen.workspace.machineOffline"
   | "sessionScreen.workspace.waking"
-  | "sessionScreen.workspace.restoring"
-  | "sessionScreen.workspace.resuming"
-  | "sessionScreen.workspace.retrying"
   | "sessionScreen.workspace.wakeFailed"
   | "sessionScreen.workspace.retryWake"
   | "sessionScreen.workspace.wakeNow"
   | "sessionScreen.workspace.outdated"
   | "sessionScreen.workspace.outdated.detail"
   | "sessionScreen.workspace.restartToUpdate"
-  | "sessionScreen.workspace.starting"
   | `sessionScreen.firstSend.${"creatingWorktree" | "failed" | "edit"}`
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
@@ -168,10 +164,6 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.workspace.asleep": "This workspace is asleep. Your next message wakes it.",
   "sessionScreen.workspace.machineOffline": "This session's machine is offline. Its messages show again when the machine is back.",
   "sessionScreen.workspace.waking": "Waking {{name}}",
-  "sessionScreen.workspace.starting": "Starting the machine, about a minute",
-  "sessionScreen.workspace.restoring": "Restoring files",
-  "sessionScreen.workspace.resuming": "Resuming the machine",
-  "sessionScreen.workspace.retrying": "Start failed, retrying: {{reason}}",
   "sessionScreen.workspace.wakeFailed": "Couldn't wake {{name}}",
   "sessionScreen.workspace.retryWake": "Try again",
   "sessionScreen.workspace.wakeNow": "Wake now",
