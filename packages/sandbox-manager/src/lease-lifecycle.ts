@@ -1,4 +1,5 @@
 import type { SandboxLease } from "./contract"
+import type { SandboxStartWindow } from "./lease-failure"
 
 /** Who stopped the host: a person or the plane's explicit stop, the idle policy, or the provider on its own. */
 export type SandboxStopCause = "explicit" | "idle" | "provider"
@@ -11,7 +12,8 @@ export type SandboxStopCause = "explicit" | "idle" | "provider"
  * when the provider lost its host, rather than Claxedo destroying it. A failed
  * epoch whose start goes
  * on in the next epoch is `retrying`; the start the person waits on has not
- * failed until an epoch fails without one.
+ * failed until an epoch fails without one. `startLimit` is the provider's
+ * start-limit window an epoch was refused at.
  */
 export type SandboxLifecycleEvent = {
   workspaceId: string
@@ -21,7 +23,7 @@ export type SandboxLifecycleEvent = {
 } & (
   | { kind: "stopped"; cause: SandboxStopCause; activeMs?: number }
   | { kind: "destroyed"; hostGone: boolean; activeMs?: number }
-  | { kind: "failed"; bootFailed: boolean; retrying: boolean }
+  | { kind: "failed"; bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow }
 )
 
 export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) => void) | undefined, now: () => number) {
@@ -42,6 +44,6 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
     destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", hostGone: false, ...active(lease) }),
     /** `endedAt` is when the host was last proven serving: the provider's loss is learned after the fact. */
     hostGone: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "destroyed", hostGone: true, ...active(lease, endedAt) }),
-    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean }) => report({ ...base(lease), kind: "failed", ...failure }),
+    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow }) => report({ ...base(lease), kind: "failed", ...failure }),
   }
 }

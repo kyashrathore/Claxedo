@@ -47,7 +47,8 @@ describe("workspace lifecycle events", () => {
     ])
   })
 
-  const failed = (retrying: boolean, bootFailed = false): SandboxLifecycleEvent => ({ ...machine, kind: "failed", bootFailed, retrying })
+  const failed = (retrying: boolean, bootFailed = false, startLimit?: "minute" | "hour" | "day"): SandboxLifecycleEvent =>
+    ({ ...machine, kind: "failed", bootFailed, retrying, ...(startLimit ? { startLimit } : {}) })
 
   test("an epoch that failed while its start goes on sends nothing; the start's final failure is workspace_failed", () => {
     const { captured, telemetry } = sink()
@@ -57,6 +58,14 @@ describe("workspace lifecycle events", () => {
     emit(failed(false))
     emit(failed(false, true))
     expect(captured.map((entry) => [entry.event, entry.properties?.code])).toEqual([["workspace_failed", "provision_failed"], ["workspace_failed", "boot_failed"]])
+  })
+
+  test("a start that ended at the provider's start limit is workspace_failed provider_rate_limited with the window, and one still waiting out its window sends nothing", () => {
+    const { captured, telemetry } = sink()
+    const emit = sandboxLifecycleSink(telemetry)
+    emit(failed(true, false, "hour"))
+    emit(failed(false, false, "day"))
+    expect(captured.map((entry) => [entry.event, entry.properties?.code, entry.properties?.window])).toEqual([["workspace_failed", "provider_rate_limited", "day"]])
   })
 
   test("a stop closes the metered interval with the boot's machine time", () => {

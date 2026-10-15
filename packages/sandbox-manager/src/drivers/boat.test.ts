@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
-import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, isSandboxHostGone, isSandboxProviderKeyRefused, isSandboxProviderRateLimited, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -1100,6 +1100,46 @@ describe("boat sandbox driver", () => {
       expect(isSandboxProviderKeyRefused(error)).toBe(refused)
     },
   )
+
+  // Boat's answer to a create once the account's daily starts were spent (2026-10-15), cut to the fields it read and a sample of the rest.
+  const DAY_LIMIT_REFUSAL = {
+    ok: false, type: "sandbox.error", status: 429, code: "rate_limited",
+    message: "Rate limit hit: 200 sandbox starts per day (create, fork and resume each count as one start). Your plan allows 12/min, 60/hour and 200/day.",
+    error: {
+      code: "rate_limited", status: 429, message: "Rate limit hit: 200 sandbox starts per day",
+      details: {
+        error: "rate_limited", status: "blocked", window: "day", limit: 200, creditBalanceHours: 350.01, billingUrl: "https://boat.dev/dashboard?tab=billing",
+        starts: { unlimited: false, minute: { limit: 12, used: 0, remaining: 12 }, hour: { limit: 60, used: 0, remaining: 60 }, day: { limit: 200, used: 200, remaining: 0 } },
+      },
+    },
+    requestId: "req_c963703215b743448f936894d16c3798",
+  }
+
+  test.each([["a create", false], ["a wake's resume", true]] as const)("%s Boat refuses at the account's start limit keeps the window, the limit and the starts used, and no text of Boat's", async (_kind, resume) => {
+    const boat = fakeBoat({ states: ["archived"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
+      if (init?.method === "POST" && (url.endsWith("/sandboxes") || url.endsWith("/resume"))) return Response.json(DAY_LIMIT_REFUSAL, { status: 429 })
+      return boat.fetchImpl(url, init)
+    } })
+    const lease = sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" })
+    const error = await (resume ? driver.resumeHost!({ lease, ensure: ensureInput() }) : driver.ensureHost(ensureInput())).then(() => undefined, (cause: unknown) => cause as Error)
+    expect(isSandboxProviderRateLimited(error)).toBe(true)
+    expect(error).toMatchObject({
+      code: "rate_limited",
+      status: 429,
+      providerRateLimited: { window: "day", limit: 200, resumeCounts: true },
+      startLimit: { window: "day", limit: 200, starts: { minute: { limit: 12, used: 0 }, hour: { limit: 60, used: 0 }, day: { limit: 200, used: 200 } } },
+    })
+    expect(JSON.stringify(error)).not.toMatch(/Rate limit hit|billing|creditBalance|req_/)
+    expect(error?.message).not.toContain("Rate limit hit")
+  })
+
+  test("a 429 without the start-limit facts is a plain refusal", async () => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => Response.json({ ok: false, code: "rate_limited" }, { status: 429 }) })
+    const error = await driver.ensureHost(ensureInput()).then(() => undefined, (cause: unknown) => cause)
+    expect(isSandboxProviderRateLimited(error)).toBe(false)
+    expect(error).toMatchObject({ code: "rate_limited", status: 429 })
+  })
 
   test.each([301, 302, 303, 307, 308])("a %s redirect is a refusal, never followed with the key", async (status) => {
     const calls: string[] = []

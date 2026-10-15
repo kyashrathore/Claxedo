@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { createSandboxManager, liftSandboxRetryWait, SandboxProviderKeyRefusedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
+import { createSandboxManager, liftSandboxRetryWait, SandboxProviderKeyRefusedError, SandboxProviderRateLimitedError, SandboxRuntimeBootError, type SandboxDriver, type SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createD1SandboxLeaseStore } from "../stores/d1"
 import { sandboxProvisionerClass } from "../provisioner.cf"
 import { FIXTURE_OUTCOME_HELD_MS } from "./provisioner-outcome-held"
@@ -45,7 +45,8 @@ async function fixKey(database: D1Database, workspaceId: string) {
  * that long, `ws_poll_<n>` asks to be polled n times first, `ws_boot_fail`
  * exits before it is ready, `ws_flaky` fails once at the provider and
  * `ws_flaky_<n>` n times, `ws_key_refused` has its key refused until `/fix-key`,
- * `ws_step_throws` throws out of the start step once the lease is ready (its
+ * `ws_day_limited_<n>` is refused at its provider's daily start limit n times,
+ * `ws_hour_limited` at its hourly one every time, `ws_step_throws` throws out of the start step once the lease is ready (its
  * runtime is not provisioned until a second step), `ws_stopped_under` has its
  * lease stopped while the driver runs its first boot, and a workspace named
  * `asleep` has a runtime that never answers a ready lease.
@@ -67,6 +68,9 @@ function scriptedDriver(database: D1Database): SandboxDriver {
     if (input.workspaceId.startsWith("ws_key_refused") && !(await keyFixed(database, input.workspaceId))) {
       throw new SandboxProviderKeyRefusedError("the key was rejected (unauthorized)")
     }
+    const dayLimited = /^ws_day_limited_(\d+)/.exec(input.workspaceId)
+    if (dayLimited && calls <= Number(dayLimited[1])) throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "the start limit is used up")
+    if (input.workspaceId.startsWith("ws_hour_limited")) throw new SandboxProviderRateLimitedError({ window: "hour", limit: 60, resumeCounts: true }, "the start limit is used up")
     const flaky = /^ws_flaky(?:_(\d+))?/.exec(input.workspaceId)
     if (flaky && calls <= Number(flaky[1] ?? 1)) throw new Error("provider hiccup")
     if (input.workspaceId.startsWith("ws_stopped_under") && calls === 1) {

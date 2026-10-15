@@ -274,6 +274,30 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_key_refused")).toBe(5)
   })
 
+  test("a start refused at the provider's daily start limit ends at once, its next poll is told why with no retry, and only the next start runs the driver again", async () => {
+    expect(await start("ws_day_limited_1")).toMatchObject({ status: "provisioning", epoch: 1 })
+    const ended = await until(() => start("ws_day_limited_1"), (answer) => answer.status !== "provisioning")
+    expect(ended).toMatchObject({ status: "unavailable", exhausted: true, error: expect.stringContaining("start limit for this account is used up (200 starts per day)") })
+    expect(ended).not.toHaveProperty("retryAfterMs")
+    expect(await inFlight("ws_day_limited_1")).toBeNull()
+    expect(await driverCalls("ws_day_limited_1")).toBe(1)
+    expect(await start("ws_day_limited_1")).toMatchObject({ status: "provisioning", epoch: 2 })
+    expect(await until(() => start("ws_day_limited_1"), (answer) => answer.status === "ready")).toMatchObject({ status: "ready", epoch: 2 })
+    expect(await driverCalls("ws_day_limited_1")).toBe(2)
+  })
+
+  test("a start refused at the provider's hourly start limit waits out the hour, and every poll that joins it is told the time left", async () => {
+    expect(await start("ws_hour_limited")).toMatchObject({ status: "provisioning", epoch: 1 })
+    const waiting = await until(() => start("ws_hour_limited"), (answer) => answer.status !== "provisioning" || answer.failure !== undefined)
+    expect(waiting).toMatchObject({ status: "provisioning", joined: true, failure: expect.stringContaining("(60 starts per hour)") })
+    const left = (waiting as { retryAfterMs: number }).retryAfterMs
+    expect(left).toBeGreaterThan(3_590_000)
+    expect(left).toBeLessThanOrEqual(3_600_000)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(((await start("ws_hour_limited")) as { retryAfterMs: number }).retryAfterMs).toBeLessThan(left)
+    expect(await driverCalls("ws_hour_limited")).toBe(1)
+  })
+
   test("while a run waits out a failed step's retry, every poll that joins it is told that step's failure, and a step that succeeds clears it", async () => {
     expect(await start("ws_flaky_3")).toMatchObject({ status: "provisioning", epoch: 1 })
     const retrying = await until(() => start("ws_flaky_3"), (answer) => answer.status !== "provisioning" || answer.failure !== undefined)

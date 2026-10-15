@@ -21,11 +21,15 @@ import { sweepSandboxes } from "./garbage-collect"
 import {
   isSandboxHostGone,
   isSandboxProviderKeyRefused,
+  isSandboxProviderRateLimited,
   isSandboxRuntimeBootFailure,
   sandboxHostGoneError,
   sandboxLeaseFailure,
   sandboxProviderKeyRefusedError,
+  sandboxProviderRateLimit,
+  sandboxProviderRateLimitedError,
   sandboxRuntimeBootFailedError,
+  sandboxStartLimitRetryMs,
 } from "./lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import {
@@ -340,8 +344,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         return hostGone(workspaceId, lease, managerInput, message, enteredAt)
       }
       const bootFailed = isSandboxRuntimeBootFailure(err)
+      const startLimit = !bootFailed && isSandboxProviderRateLimited(err) ? err.providerRateLimited : undefined
       const error = bootFailed
         ? sandboxRuntimeBootFailedError(message)
+        : startLimit ? sandboxProviderRateLimitedError(options.driver.id, startLimit)
         : isSandboxProviderKeyRefused(err) ? sandboxProviderKeyRefusedError(options.driver.id, message) : message
       if (lease.status === "ready" && !bootFailed) {
         // A single resume blip must not demote a serving lease: the existing
@@ -355,23 +361,25 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         }
       }
       const nextRetryCount = lease.retryCount + 1
-      const retryCapped = nextRetryCount >= maxRetryCount
+      // A day's start limit is refused again at every attempt until it frees
+      // up, at a time the provider does not name, so nothing retries it: the
+      // next start is a person's.
+      const startLimitRetryMs = startLimit ? sandboxStartLimitRetryMs(startLimit.window) : undefined
+      const dayLimited = startLimit !== undefined && startLimitRetryMs === undefined
+      const retryCapped = dayLimited || nextRetryCount >= maxRetryCount
       // A boot failure is never retried on its own and a capped lease waits
       // out a cooldown nobody drives: a host held through either would run
       // unattended. A provider failure is retried within its backoff on the
       // host as it is, since stopping and resuming it costs minutes.
       const unstopped = bootFailed || retryCapped ? await stopHeldHost(workspaceId, lease.epoch) : undefined
       const recorded = unstopped ? `${error}; ${unstopped}` : error
-      lifecycle.failed(lease, { bootFailed, retrying: !bootFailed && !retryCapped })
-      const failed = await options.leaseStore.recordFailure(
-        workspaceId,
-        lease.epoch,
-        recorded,
-        now() + (retryCapped ? retryCapCooldownMs : retryDelayMs(nextRetryCount)),
-      )
+      lifecycle.failed(lease, { bootFailed, retrying: !bootFailed && !retryCapped, ...(startLimit ? { startLimit: startLimit.window } : {}) })
+      const backoffMs = retryCapped ? retryCapCooldownMs : retryDelayMs(nextRetryCount)
+      const retryInMs = dayLimited ? undefined : Math.max(backoffMs, startLimitRetryMs ?? 0)
+      const failed = await options.leaseStore.recordFailure(workspaceId, lease.epoch, recorded, retryInMs === undefined ? undefined : now() + retryInMs)
       return {
         status: "unavailable",
-        retryAfterMs: failed?.nextRetryAt ? Math.max(0, failed.nextRetryAt - now()) : retryAfterMs,
+        ...(dayLimited ? {} : { retryAfterMs: failed?.nextRetryAt ? Math.max(0, failed.nextRetryAt - now()) : retryAfterMs }),
         error: recorded,
         epoch: lease.epoch,
         homeRegion,
@@ -492,7 +500,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         ...(existing.retryCount >= maxRetryCount ? { exhausted: true as const } : {}),
       }
     }
-    if (existing.status === "unavailable" && existing.retryCount >= maxRetryCount && existing.nextRetryAt === undefined) {
+    // A day's start limit leaves no retry scheduled, and the next start runs the driver.
+    if (existing.status === "unavailable" && existing.retryCount >= maxRetryCount && existing.nextRetryAt === undefined
+      && sandboxProviderRateLimit(existing.lastError) !== "day") {
       // Capped lease without a cooldown timestamp (legacy rows): stay
       // unavailable until an operator releases the lease.
       return {

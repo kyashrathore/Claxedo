@@ -6,6 +6,7 @@ import {
   liftSandboxRetryWait,
   SandboxHostGoneError,
   SandboxProviderKeyRefusedError,
+  SandboxProviderRateLimitedError,
   SandboxRuntimeBootError,
   sandboxRuntimeBootFailure,
   type SandboxCheckpointRuntime,
@@ -1143,6 +1144,53 @@ describe("sandbox manager", () => {
 
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: reason })
     await expect(manager.target("ws_1")).resolves.toMatchObject({ failure: { kind: "provider", message: reason, retrying: true } })
+  })
+
+  test("a start refused at an hour's start limit waits out the hour before the driver runs again, told plainly with the wait", async () => {
+    let now = 10_000
+    const store = createMemoryLeaseStore()
+    const events: SandboxLifecycleEvent[] = []
+    const refusal = new SandboxProviderRateLimitedError({ window: "hour", limit: 60, resumeCounts: true }, "Boat POST /sandboxes was rejected (rate_limited)")
+    const driver = fakeDriver({ id: "boat", ensureHost: vi.fn(async () => { throw refusal }) })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 1_000, maxRetryCount: 5, onLifecycle: (event) => events.push(event) })
+    const reason = "Boat's start limit for this account is used up (60 starts per hour). Claxedo tries again in an hour. A wake counts as a start too."
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 3_600_000 })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ retryAfterMs: 3_600_000, failure: { kind: "provider", message: reason, retrying: true } })
+    expect(events).toMatchObject([{ kind: "failed", retrying: true, startLimit: "hour" }])
+    now += 3_599_000
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", retryAfterMs: 1_000 })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(1)
+    now += 1_000
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(2)
+  })
+
+  test("a start refused at a day's start limit schedules no retry and says so, and the next start a person makes runs the driver, however many were refused", async () => {
+    const store = createMemoryLeaseStore()
+    const events: SandboxLifecycleEvent[] = []
+    let refused = true
+    const driver = fakeDriver({
+      id: "boat",
+      ensureHost: vi.fn(async (input) => {
+        if (refused) throw new SandboxProviderRateLimitedError({ window: "day", limit: 200, resumeCounts: true }, "Boat POST /sandboxes was rejected (rate_limited)")
+        return { sandboxId: "sandbox_1", url: "https://runtime.test/1", hostId: "host_1", labels: input.labels }
+      }),
+    })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => 10_000, retryDelayMs: () => 1_000, maxRetryCount: 2, onLifecycle: (event) => events.push(event) })
+    const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: press Retry then. A wake counts as a start too."
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const answer = await manager.ensure("ws_1", { homeRegion: "us-east" })
+      expect(answer).toMatchObject({ status: "unavailable", exhausted: true, epoch: attempt })
+      expect(answer).not.toHaveProperty("retryAfterMs")
+    }
+    await expect(store.get("ws_1")).resolves.toMatchObject({ nextRetryAt: undefined, retryCount: 3 })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ failure: { kind: "provider", message: reason, retrying: false } })
+    expect(events.map((event) => event.kind === "failed" && [event.retrying, event.startLimit])).toEqual([[false, "day"], [false, "day"], [false, "day"]])
+    refused = false
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready", sandboxId: "sandbox_1" })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(4)
   })
 
   test("a lifted retry wait lets the next start run the driver at once, as a start of its own with a fresh budget", async () => {
