@@ -6,6 +6,8 @@ import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/wo
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
+const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
+
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied })) }))
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: vi.fn(async () => ({ supervisorBackplaneToken: "supervisor-token" })) }))
@@ -25,6 +27,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
+      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
       authority: { resolveWorkspaceOwner: async (workspaceId: string) => ({ userId: OWNERS[workspaceId], orgId: "org" }) } as unknown as Input["authority"],
       database: database.database,
@@ -74,6 +77,7 @@ test("a key saved for Pi never moves Claude Code off its Anthropic login; only c
     const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
+      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
       authority: { resolveWorkspaceOwner: async () => ({ userId: owner, orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
       database: database.database,

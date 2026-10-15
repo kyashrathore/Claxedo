@@ -11,6 +11,8 @@ import { createHostedEgressBroker, DRAFT_PLACEHOLDER, verifyBrokerPlaceholder } 
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
+const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
+
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({
   applyConfig: configApplied,
@@ -61,6 +63,7 @@ async function composition(driver: "boat" | "cloudflare", options: { broker?: fa
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
     sandboxRedeliver: unusedSandboxRedeliver,
+    sandboxFollow: followed,
     idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database,

@@ -62,6 +62,11 @@ async function renewals(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/renewals?ws=${workspaceId}`)).json()) as { renewals: number }).renewals
 }
 
+/** The capability set each renewal of a Task root was prepared with, in order. */
+async function rootRenewals(workspaceId: string) {
+  return ((await (await miniflare.dispatchFetch(`${ORIGIN}/root-renewals?ws=${workspaceId}`)).json()) as { renewals: unknown[] }).renewals
+}
+
 /** The failures the provisioner counted before each idle read of the workspace, in order. */
 async function watches(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/watches?ws=${workspaceId}`)).json()) as { watches: number[] }).watches
@@ -183,6 +188,29 @@ describe("a sandbox start on workerd", () => {
     expect(await renewals("ws_renew_2")).toBe(2)
     expect(await driverCalls("ws_renew_2")).toBe(1)
     expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
+  test("a Task root whose settings were pushed outside a run joins the renewal with its capability set, and a stopped root is renewed no more", async () => {
+    const workspaceId = "ws_root_renewal"
+    const capabilities = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }
+    await start(workspaceId)
+    await until(() => target(workspaceId), (lease) => lease.status === "ready")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(await rootRenewals(workspaceId)).toEqual([])
+
+    const followed = await miniflare.dispatchFetch(`${ORIGIN}/follow?ws=${workspaceId}&plugin=linear`, { method: "POST" })
+    expect(followed.status).toBe(200)
+    const renewed = await until(() => rootRenewals(workspaceId), (rows) => rows.length >= 2)
+    expect(renewed.every((row) => JSON.stringify(row) === JSON.stringify(capabilities))).toBe(true)
+    expect(await driverCalls(workspaceId)).toBe(1)
+
+    expect((await miniflare.dispatchFetch(`${ORIGIN}/stop?ws=${workspaceId}`, { method: "POST" })).status).toBe(200)
+    const atStop = (await rootRenewals(workspaceId)).length
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    expect((await rootRenewals(workspaceId)).length).toBeLessThanOrEqual(atStop + 1)
+    const settled = (await rootRenewals(workspaceId)).length
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect((await rootRenewals(workspaceId)).length).toBe(settled)
   })
 
   test("a redelivery pushes a serving sandbox's settings at once, with no driver step and no run a read would see", async () => {

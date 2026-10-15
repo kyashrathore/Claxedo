@@ -19,6 +19,8 @@ import type { ControlPlaneDatabase } from "../test-support/control-plane-migrati
 import type { ControlPlaneServices } from "../authority/services"
 import { createHostedTasksSessionBridge } from "./session-bridge"
 
+const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
+
 const runtimeRequest = vi.hoisted(() => vi.fn())
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: RuntimeSnapshot) => {}))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
@@ -117,6 +119,7 @@ async function rootStart(secretBrokering: "native" | "none") {
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
     sandboxRedeliver: unusedSandboxRedeliver,
+    sandboxFollow: followed,
     idleStop: unusedWorkspaceIdleStop,
     authority: authority as unknown as DeliveryInput["authority"],
     database,
@@ -148,7 +151,7 @@ async function rootStart(secretBrokering: "native" | "none") {
     auth: () => ({ user: { subject: "owner" }, principal: { userId: owner.userId } }) as unknown as SignedControlPlaneAuth,
     selectedCapabilities: {
       prepare: async () => ({}),
-      apply: ({ workspaceId, preparation }) => delivery.provisionRuntime({ workspaceId }, preparation),
+      apply: ({ workspaceId, capabilities, preparation }) => delivery.provisionRuntime({ workspaceId, capabilities }, preparation),
     },
     workspaceRuntime: delivery.prepareRuntime,
     sandboxEgress: { controlPlaneOrigin: ORIGIN },
@@ -180,4 +183,14 @@ test("a task's root on a driver the plane brokers for gets its owner's account a
   expect(snapshot?.auth.accounts.owner?.anthropic).toMatchObject({ baseUrl: expect.stringMatching(new RegExp(`^${ORIGIN}/bindings/`)) })
   expect(JSON.stringify(seen)).not.toContain("sk-ant-api03-root-owner")
   expect(JSON.stringify(snapshot)).not.toContain("sk-ant-api03-root-owner")
+})
+
+test("a task's root on a driver the plane brokers for hands its provisioner the renewal its placeholders need, with its capability set", async () => {
+  const before = Date.now()
+  const { rootId } = await rootStart("none")
+  expect(followed).toHaveBeenCalledOnce()
+  const [context, due] = followed.mock.calls[0] ?? []
+  expect(context).toEqual({ workspaceId: rootId, capabilities: preset.execution.capabilities })
+  expect(due?.renewAt).toBeGreaterThan(before + 29 * 60_000)
+  expect(due?.renewAt).toBeLessThan(before + 31 * 60_000)
 })

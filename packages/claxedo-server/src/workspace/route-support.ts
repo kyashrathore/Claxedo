@@ -18,9 +18,12 @@ import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 import type { SandboxBrokeredSecret, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { SandboxInFlight, SandboxStart } from "./sandbox-start"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 
 export type WorkspaceRuntimeContext = {
   workspaceId: string
+  /** A Task root's own capability set, which every preparation of that root projects in place of its owner's activations. */
+  capabilities?: AgentPluginExecutionSelection
 }
 
 export type WorkspaceRuntimePreparation = {

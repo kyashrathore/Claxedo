@@ -28,7 +28,8 @@ import { cloudRootBacking } from "./cloud-root-backing"
 import { createHostedRuntimeFetch } from "./relay-runtime-client"
 import { withTimeout } from "../platform/runtime/timeout"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
-import type { ReadySandboxTarget, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { ReadySandboxTarget, SandboxFollowUps, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { accountsRenewalDueAt, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { PLACEHOLDER_TTL_SECONDS, type BrokerLease, type HostedEgressBroker } from "../credentials/hosted-egress-broker"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
@@ -38,6 +39,9 @@ import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, workspaceIdleStopDue } from ".
 import type { WorkspaceIdleStop } from "./routes/checkpoints"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
+
+const runtimeContext = (workspaceId: string, capabilities: AgentPluginExecutionSelection | undefined): WorkspaceRuntimeContext =>
+  capabilities ? { workspaceId, capabilities } : { workspaceId }
 
 const soonestDue = (...times: (number | undefined)[]) => {
   const due = times.filter((time): time is number => time !== undefined)
@@ -121,6 +125,8 @@ export function createHostedRuntimeDelivery(input: {
   sandboxRefresh: SandboxStart
   /** The workspace's provisioner's settings push to a serving sandbox, with no driver step; a run in flight delivers them instead. */
   sandboxRedeliver: (workspaceId: string) => Promise<void>
+  /** Hands the workspace's provisioner the follow-ups of a push made outside a start run. */
+  sandboxFollow: (context: WorkspaceRuntimeContext, due: SandboxFollowUps) => Promise<void>
   /** Stops a lease generation the idle watch found idle, or unreachable for the whole failure budget. */
   idleStop: WorkspaceIdleStop
   /** Ends the turns the workspace's runtime was running when the idle watch found that runtime gone at `at`. */
@@ -175,9 +181,13 @@ export function createHostedRuntimeDelivery(input: {
       env: workspaceRuntimeProjectEnv(await projectEnvironment(input.credentials(person.orgId), person.orgId).values(person.projectId)),
     }
   }
-  /** Delivers a ready sandbox its settings; answers when the placeholders it delivered are due again, if any expire. */
-  const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined): Promise<number | undefined> => {
-    if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return undefined
+  /**
+   * Delivers a ready sandbox its settings; answers when the placeholders it
+   * delivered are due again, if any expire, and when its idleness is first
+   * read, if its host reads none itself.
+   */
+  const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined): Promise<SandboxFollowUps> => {
+    if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const person = await owner(workspaceId)
     const appliedAt = Date.now()
     const supervisor = supervisorClient(input.services, workspaceId, input.signingEnv)
@@ -225,10 +235,17 @@ export function createHostedRuntimeDelivery(input: {
         log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
       }),
     ])
-    return renewAt
+    return {
+      ...(renewAt === undefined ? {} : { renewAt }),
+      ...(hostWatchesIdle((await supervisor).target) ? {} : { watchAt: Date.now() + IDLE_CHECK_MS }),
+    }
   }
+  // A push outside a start run (a Task root's first settings) hands the
+  // follow-ups a ready start would schedule to the workspace's provisioner,
+  // which renews and watches the sandbox from then on as it does any other.
   const provisionRuntime = async (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
-    await push(context.workspaceId, preparation)
+    if (await cloudRootBacking(input.database, context.workspaceId) !== "cloud") return
+    await input.sandboxFollow(context, await push(context.workspaceId, preparation))
   }
   const hooks: HostedRuntimeHooks = { prepareRuntime: prepare }
   const refused = (code: "runtime_prepare_failed" | "runtime_provision_failed", cause: unknown, message: string): SandboxStartAnswer =>
@@ -238,10 +255,10 @@ export function createHostedRuntimeDelivery(input: {
   // rebuilt on every step so a credential that changed mid-start reaches the
   // driver and the runtime alike.
   const step = async (
-    workspaceId: string,
+    context: WorkspaceRuntimeContext,
     run: (sandboxInput: SandboxManagerInput) => Promise<SandboxEnsureResult>,
   ): Promise<SandboxStartAnswer> => {
-    const context = { workspaceId }
+    const workspaceId = context.workspaceId
     let preparation: WorkspaceRuntimePreparation
     try {
       preparation = await hooks.prepareRuntime(context)
@@ -250,16 +267,10 @@ export function createHostedRuntimeDelivery(input: {
     }
     const ensured = await run(await input.sandboxInput(workspaceId, { preparation, secrets: [] }))
     if (ensured.status !== "ready") return ensured
-    let renewAt: number | undefined
     try {
-      renewAt = await push(workspaceId, preparation)
+      return { ...ensured, ...await push(workspaceId, preparation) }
     } catch (cause) {
       return refused("runtime_provision_failed", cause, "Runtime provisioning failed")
-    }
-    return {
-      ...ensured,
-      ...(renewAt === undefined ? {} : { renewAt }),
-      ...(hostWatchesIdle(ensured) ? {} : { watchAt: Date.now() + IDLE_CHECK_MS }),
     }
   }
   const runtimeLost = async (workspaceId: string) => {
@@ -318,21 +329,22 @@ export function createHostedRuntimeDelivery(input: {
     return target
   }
   const start: SandboxStartDrive = {
-    acquire: async (workspaceId) => {
+    acquire: async (workspaceId, capabilities) => {
       let opened = false
-      const answer = await step(workspaceId, (sandboxInput) =>
+      const answer = await step(runtimeContext(workspaceId, capabilities), (sandboxInput) =>
         input.sandboxManager.acquire(workspaceId, { ...sandboxInput, onLeaseOpened: () => { opened = true } }))
       return answer.status === "provisioning" && opened ? { ...answer, opened: true } : answer
     },
-    provision: (workspaceId, epoch) => step(workspaceId, (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, sandboxInput)),
+    provision: (workspaceId, epoch, capabilities) =>
+      step(runtimeContext(workspaceId, capabilities), (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, sandboxInput)),
     target: (workspaceId) => input.sandboxManager.target(workspaceId),
     live,
     // A renewal re-delivers the settings of a sandbox that is serving, with
     // placeholders minted afresh; one that stopped is left to the start that
     // resumes it, which delivers again.
-    renew: async (workspaceId) => {
+    renew: async (workspaceId, capabilities) => {
       if (!await live(workspaceId)) return undefined
-      return push(workspaceId, await hooks.prepareRuntime({ workspaceId }))
+      return (await push(workspaceId, await hooks.prepareRuntime(runtimeContext(workspaceId, capabilities)))).renewAt
     },
     watch,
     flushTelemetry: async () => {

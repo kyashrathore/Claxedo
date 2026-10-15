@@ -21,15 +21,17 @@ function composition(pushRuntime?: Input["pushRuntime"]) {
   })
 }
 
-test("Task selected capabilities use settings delivery and propagate its failure", async () => {
+const capabilities = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }
+
+test("Task selected capabilities use settings delivery with the root's capability set, and propagate its failure", async () => {
   const push = vi.fn(async () => {})
   const feature = composition(push)
-  await feature.selectedCapabilities.apply({ workspaceId: "ws", preparation })
-  expect(push).toHaveBeenCalledWith({ workspaceId: "ws" }, preparation)
+  await feature.selectedCapabilities.apply({ workspaceId: "ws", capabilities, preparation })
+  expect(push).toHaveBeenCalledWith({ workspaceId: "ws", capabilities }, preparation)
   push.mockRejectedValueOnce(new Error("Settings refused"))
-  await expect(feature.selectedCapabilities.apply({ workspaceId: "ws", preparation })).rejects.toThrow("Settings refused")
+  await expect(feature.selectedCapabilities.apply({ workspaceId: "ws", capabilities, preparation })).rejects.toThrow("Settings refused")
 })
 
 test("Task selected capabilities refuse a composition without settings delivery", async () => {
-  await expect(composition().selectedCapabilities.apply({ workspaceId: "ws", preparation })).rejects.toThrow("Selected capabilities require hosted settings delivery")
+  await expect(composition().selectedCapabilities.apply({ workspaceId: "ws", capabilities, preparation })).rejects.toThrow("Selected capabilities require hosted settings delivery")
 })

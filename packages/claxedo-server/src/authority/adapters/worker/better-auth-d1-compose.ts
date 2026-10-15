@@ -289,6 +289,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         ...(sandbox.runtimeLost ? { runtimeLost: sandbox.runtimeLost } : {}),
         sandboxRefresh: sandbox.refresh,
         sandboxRedeliver: sandbox.redeliver,
+        sandboxFollow: sandbox.follow,
         idleStop: hostedWorkspaceIdleStop(plane.services),
       })
     : undefined
