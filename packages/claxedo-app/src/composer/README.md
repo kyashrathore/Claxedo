@@ -80,7 +80,8 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
   - ACP: modes arrive through `configOptions` (`category === "mode"`) or the older `SessionModeState`; the spec makes `category` UX-only and mode ids open strings, so the set is discovered per session. Agent selection shares the mode channel.
   - Codex: the approval policy is re-sent on every `turn/start`, so the `thread/start` default never outlives the first turn.
   - Cursor: sandbox and `autoReview` are read only at `Agent.create`, so a change applies from the next session, and the SDK cannot confirm `autoReview` took effect.
-  - Pi and OpenCode have no mode surface (`noModeSurfaceReason`), so their chip is hidden and nothing is read for them. Every connection is an ACP agent.
+  - Pi: `ask` routes each write, edit, command and MCP call through Claxedo's permission request from Pi's `beforeTool` hook, and `full`, the default, asks nothing; the mode is the session's config, applied from the next turn, and its list is `PI_PERMISSION_MODES`, read from the table like the other native harnesses.
+  - OpenCode has no mode surface (`noModeSurfaceReason`), so its chip is hidden and nothing is read for it. Every connection is an ACP agent.
 
 ### Send and notices
 

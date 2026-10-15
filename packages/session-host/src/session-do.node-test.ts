@@ -64,7 +64,7 @@ async function restartableHttpMcp() {
   }
 }
 
-type StoredMessage = { info: { role: string; time?: { completed?: number } }; parts: Array<{ type: string; text?: string; tool?: string; state?: { status?: string; output?: string; error?: string } }> }
+type StoredMessage = { info: { role: string; time?: { completed?: number } }; parts: Array<{ type: string; messageID?: string; text?: string; tool?: string; state?: { status?: string; output?: string; error?: string } }> }
 
 const assistantText = (messages: StoredMessage[]) =>
   messages.filter((message) => message.info.role === "assistant").flatMap((message) => message.parts).filter((part) => part.type === "text").map((part) => part.text ?? "").join("")
@@ -182,6 +182,38 @@ void describe("SessionDO under workerd with PiHarness", () => {
       message: "Claude Code runs in the workspace's runtime on a cloud workspace, not in this session's host. Start a new Claude Code session to use it here.",
     } })
     assert.deepEqual((await host.json<{ harness: unknown }>(`/session/${root}/config`)).harness, { id: "pi", access: "native" })
+  })
+
+  void it("a session in Ask mode asks before a write, writes on Allow once, blocks it on Deny, and keeps the mode across turns", { timeout: 120_000 }, async () => {
+    const root = "ses_ask"
+    const host = await session(root)
+    type Permission = { id: string; sessionID: string; permission: string }
+    const ask = async (marker: string, file: string, response: "once" | "reject") => {
+      model.scriptTool({ name: "write", input: { path: file, content: `${marker}\n` }, whenPromptIncludes: marker })
+      await host.json(`/session/${root}/prompt_async`, { method: "POST", body: {
+        parts: [{ type: "text", text: `Write the file, then reply with exactly this one token: ${marker}` }], messageID: `msg_${marker}`, model: MODEL,
+        ...(marker === "PIASKALLOW" ? { permissionMode: "ask" } : {}),
+      } })
+      const pending = await eventually(`the permission for ${marker}`, async () => {
+        const open = await host.json<{ permissions?: { value?: Permission[] } | Permission[] }>(`/session/${root}?view=open`)
+        const rows = Array.isArray(open.permissions) ? open.permissions : open.permissions?.value ?? []
+        return rows.find((row) => row.sessionID === root)
+      }, 30_000)
+      assert.equal(existsSync(path.join(directory, file)), false, "nothing is written before the person answers")
+      assert.equal(pending.permission, "write")
+      await host.json(`/session/${root}/permissions/${encodeURIComponent(pending.id)}`, { method: "POST", body: { response } })
+      return (await host.settled(marker)).flatMap((message) => message.parts)
+        .find((part) => part.type === "tool" && part.messageID === `msg_${marker}_r`)?.state
+    }
+    const allowed = await ask("PIASKALLOW", "ask-allowed.txt", "once")
+    assert.equal(allowed?.status, "completed", JSON.stringify(allowed))
+    assert.equal(await readFile(path.join(directory, "ask-allowed.txt"), "utf8"), "PIASKALLOW\n")
+    assert.equal((await host.json<{ permissionMode?: string }>(`/session/${root}/config`)).permissionMode, "ask")
+
+    const denied = await ask("PIASKDENY", "ask-denied.txt", "reject")
+    assert.equal(denied?.status, "error", JSON.stringify(denied))
+    assert.equal(denied?.error, "Tool call blocked: The person denied this tool call")
+    assert.equal(existsSync(path.join(directory, "ask-denied.txt")), false)
   })
 
   void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for one delivery", { timeout: 120_000 }, async () => {
