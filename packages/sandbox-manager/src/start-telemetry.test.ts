@@ -331,6 +331,44 @@ describe("a start across the epochs it takes", () => {
     expect(lifecycle.at(-1)).toMatchObject({ kind: "stopped", epoch: 2, activeMs: 50_000 })
   })
 
+  test("a start that serves after a failed epoch keeps that epoch's reason on its record, where the serving target still reads it", async () => {
+    const time = clock()
+    const { manager } = composeStart(scriptedDriver([async (ensure) => {
+      await held(ensure)
+      throw new Error("Boat bx_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr': Directory not empty")
+    }], resumeAfter(time, 1_000)), time, 5)
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
+    time.advance(2_000)
+    const second = await manager.ensure("ws_1", input)
+    expect(second.status).toBe("ready")
+
+    const served = await manager.target("ws_1")
+    expect(served.status).toBe("ready")
+    expect(served.start?.failures).toEqual([
+      { epoch: 1, failedAt: expect.any(Number), error: "Boat bx_1 runtime image preparation failed (exit 1): rm: cannot remove 'usr': Directory not empty" },
+    ])
+  })
+
+  test("a start after a boot failure is a start of its own and carries none of the ended start's failures", async () => {
+    const time = clock()
+    const bootFailure = Object.assign(new Error("fatal: couldn't find remote ref"), { runtimeBootFailed: true })
+    const { manager } = composeStart(scriptedDriver([async (ensure) => {
+      await held(ensure)
+      throw bootFailure
+    }], resumeAfter(time, 1_000)), time)
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
+    const failed = await manager.target("ws_1")
+    expect(failed.status === "unavailable" ? failed.start?.failures : undefined).toEqual([
+      { epoch: 1, failedAt: expect.any(Number), error: "runtime_boot_failed: fatal: couldn't find remote ref" },
+    ])
+    time.advance(60_000)
+    expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+    const served = await manager.target("ws_1")
+    expect(served.status === "ready" ? served.start?.failures : "not ready").toBeUndefined()
+  })
+
   test("a wake that fails on its first epoch and serves on the next is one wake timed from the first request", async () => {
     const time = clock()
     let resumes = 0

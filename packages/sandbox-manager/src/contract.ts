@@ -179,8 +179,10 @@ export type SandboxLease = {
  * "provisioning" is polled again from another request, often another isolate.
  *
  * `startedAt` is this epoch's boot, the interval the epoch is metered by;
- * `requestedAt` and `bootMode` are the start the person is waiting on, which
- * an epoch that retries a failed attempt or takes over a stale one inherits.
+ * `requestedAt`, `bootMode` and `failures` are the start the person is waiting
+ * on, which an epoch that retries a failed attempt or takes over a stale one
+ * inherits. A failure is recorded here as well as in the lease's `lastError`,
+ * which the next epoch's acquire and the target it then records clear.
  */
 export type SandboxStartProgress = {
   requestedAt: number
@@ -189,7 +191,11 @@ export type SandboxStartProgress = {
   /** When the last phase the control plane itself observed ended; the next one is timed from here. */
   markedAt: number
   phases: SandboxStartPhase[]
+  /** The epochs of this start that failed, in order, each with the reason the lease recorded. */
+  failures?: SandboxStartFailure[]
 }
+
+export type SandboxStartFailure = { epoch: number; failedAt: number; error: string }
 
 export type SandboxEpochStart = SandboxStartProgress & { epoch: number }
 
@@ -301,6 +307,21 @@ export type SandboxProvisionedTarget = {
   driverResourceId?: string
   labels: Record<string, string>
   persistence?: SandboxPersistenceCapabilities
+}
+
+/** The lease after its epoch failed: unavailable, a retry counted, and the reason on the lease and on the start it was on. */
+export function applySandboxLeaseFailure(current: SandboxLease, error: string, nextRetryAt: number | undefined, failedAt: number): SandboxLease {
+  return {
+    ...current,
+    status: "unavailable",
+    retryCount: current.retryCount + 1,
+    lastError: error,
+    nextRetryAt,
+    updatedAt: failedAt,
+    ...(current.start
+      ? { start: { ...current.start, failures: [...current.start.failures ?? [], { epoch: current.epoch, failedAt, error }] } }
+      : {}),
+  }
 }
 
 export function applySandboxProvisionedTarget(

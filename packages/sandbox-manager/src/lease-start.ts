@@ -33,5 +33,6 @@ export function continuedStart(
   const failure = sandboxLeaseFailure(lease, input)
   const continued = lease.status === "acquiring" || (failure?.kind === "provider" && lease.retryCount < input.maxRetryCount)
   if (!continued) return undefined
-  return { requestedAt: lease.start.requestedAt, bootMode: lease.start.bootMode, startedAt: input.now, markedAt: input.now, phases: [] }
+  const { requestedAt, bootMode, failures } = lease.start
+  return { requestedAt, bootMode, startedAt: input.now, markedAt: input.now, phases: [], ...(failures ? { failures } : {}) }
 }

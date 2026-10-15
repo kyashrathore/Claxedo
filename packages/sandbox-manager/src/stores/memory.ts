@@ -1,4 +1,4 @@
-import { applySandboxLeasePatch, applySandboxProvisionedTarget, sandboxLeaseHeldHost } from "../contract"
+import { applySandboxLeaseFailure, applySandboxLeasePatch, applySandboxProvisionedTarget, sandboxLeaseHeldHost } from "../contract"
 import type {
   SandboxLeaseAcquireInput,
   SandboxLeaseAcquireResult,
@@ -73,14 +73,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
       const current = leases.get(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
       if (current.status === "stopped" || current.status === "destroyed") return undefined
-      const next = {
-        ...current,
-        status: "unavailable" as const,
-        retryCount: current.retryCount + 1,
-        lastError: error,
-        nextRetryAt,
-        updatedAt: Date.now(),
-      }
+      const next = applySandboxLeaseFailure(current, error, nextRetryAt, Date.now())
       leases.set(workspaceId, next)
       return next
     },
