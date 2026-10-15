@@ -41,6 +41,7 @@ export function fakeIds(): TasksIdsPort {
 export const HARNESSES: readonly HarnessDescriptor[] = [
   { id: "claude", access: "native", efforts: ["low", "high"] },
   { id: "codex", access: "native", efforts: [] },
+  { id: "pi", access: "native", efforts: [] },
   { id: "cursor", access: "connection", efforts: ["medium"] },
 ]
 

@@ -1,5 +1,4 @@
 import {
-  cloudHarnessHost,
   harnessEffortRefusal,
   parseHarnessEffortLevels,
   sessionVariantForEffort,
@@ -13,6 +12,7 @@ import {
 import {
   TasksError,
   attachmentDataUrl,
+  cloudPresetHarnessRefusal,
   startDigest,
   startFirstMessage,
   startInstructions,
@@ -383,14 +383,8 @@ async function cloudTarget(
     }
   }
   const harness = command.preset.configurations[command.slot]?.harness
-  if (harness && cloudHarnessHost(harness.id) === "session-host") {
-    return {
-      blocker: {
-        code: "harness_unavailable",
-        detail: `${harness.id} runs in its own session host on a cloud workspace, not in the workspace's runtime a cloud task starts its session in; choose another harness for this preset`,
-      },
-    }
-  }
+  const elsewhere = harness && cloudPresetHarnessRefusal(harness)
+  if (elsewhere) return { blocker: { code: "harness_unavailable", detail: elsewhere } }
   return host.cloudTarget({
     actor: command.actor,
     task: command.task,

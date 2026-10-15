@@ -15,7 +15,7 @@ import type { HarnessDescriptor, TasksCapabilitiesPort } from "../ports/capabili
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
 import type { TasksStoreOperations } from "../ports/store"
-import { draftHarnesses, validatePresetDraft } from "./model"
+import { draftHarnesses, presetCloudHarnessRefusal, validatePresetDraft } from "./model"
 
 export type PresetsServiceDeps = {
   store: TasksStoreOperations
@@ -76,7 +76,7 @@ export function createPresetsService(deps: PresetsServiceDeps): PresetsService {
       if (descriptor) descriptors.set(key, descriptor)
     }
     const checked = validatePresetDraft(draft, (reference) => descriptors.get(harnessLookupKey(reference)))
-    if (!checked.ok) refuseInvalid("The preset is not valid", checked.fields)
+    if (!checked.ok) refuseInvalid(presetCloudHarnessRefusal(draft) ?? "The preset is not valid", checked.fields)
     return checked.value
   }
 

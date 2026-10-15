@@ -55,6 +55,21 @@ describe("presets service", () => {
     expect(detail.code).toBe("unsupported")
   })
 
+  test("refuses a cloud preset whose harness runs in its own session host, naming why, and saves it for local", async () => {
+    const pi = { primary: primaryConfiguration({ harness: { id: "pi", access: "native" } }) }
+    const detail = await refusalOf(() => presets.create(ACTOR, presetDraft({ execution: CLOUD, configurations: pi })))
+    expect(detail.code).toBe("invalid_input")
+    expect(detail.message).toBe(
+      "Pi runs in its own session host on a cloud workspace, and a cloud task starts its session in the workspace's runtime. Choose another harness for a cloud preset.",
+    )
+    expect(fieldReasons(detail)).toEqual({ "configurations.primary.harness": "not_allowed" })
+    const local = await presets.create(ACTOR, presetDraft({ configurations: pi }))
+    const edit = await refusalOf(() =>
+      presets.edit(ACTOR, { ...presetDraft({ execution: CLOUD, configurations: pi }), presetId: local.id, revision: 1 }),
+    )
+    expect(fieldReasons(edit)).toEqual({ "configurations.primary.harness": "not_allowed" })
+  })
+
   test("another owner in the same scope cannot read the preset", async () => {
     const preset = await presets.create(ACTOR, presetDraft())
     const detail = await refusalOf(() => presets.get(OTHER_ACTOR, preset.id))

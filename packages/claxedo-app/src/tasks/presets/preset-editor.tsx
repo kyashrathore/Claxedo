@@ -91,6 +91,7 @@ function SlotEditor(props: {
     <div class="tsk-stack" data-testid={`preset-editor-configuration-${props.slot}`}>
       <ConfigurationEditor
         slot={props.slot}
+        placement={props.draft.placement}
         configuration={entry()}
         disabled={props.busy === true}
         onChange={(next) => untrack(() => props.onChange(rebaseConfiguration(entry(), next)))}

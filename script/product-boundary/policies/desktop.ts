@@ -668,8 +668,12 @@ export const desktopRenderer: Policy = {
   // composer's selected harness that the session screens read to keep a
   // session-host harness free of machine notices (owner: the app's composer
   // domain, `composer/harness/selected-harness.ts`). They add no package edge.
-  // 1386/36, no headroom.
-  ceilings: { modules: 1386, packages: 36 },
+  // A cloud preset's harness picker and the model it saves without asking a
+  // machine (owner: the app's tasks domain,
+  // `tasks/presets/cloud-configuration-picker.tsx`,
+  // `tasks/presets/cloud-model.ts`). They add no package edge.
+  // 1388/36, no headroom.
+  ceilings: { modules: 1388, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
