@@ -66,6 +66,66 @@ export function sandboxProviderKeyRefusedError(driver: string, reason: string) {
   return `${provider} refused the sandbox provider key: ${reason}. Fix the key in Settings → Sandbox providers.`
 }
 
+export const SANDBOX_START_WINDOWS = ["minute", "hour", "day"] as const
+
+export type SandboxStartWindow = (typeof SANDBOX_START_WINDOWS)[number]
+
+/** A provider's start limit an account used up: `limit` starts per `window`, a resume among them when `resumeCounts`. */
+export type SandboxStartLimit = { window: SandboxStartWindow; limit: number; resumeCounts: boolean }
+
+/**
+ * A driver throws this shape when its provider refused a start because the
+ * account's start limit is used up. A minute's or an hour's limit is waited
+ * out before the next attempt; a day's is not retried on its own, since every
+ * attempt until it frees up is refused again, and a person's Retry runs it.
+ */
+export type SandboxProviderRateLimited = { providerRateLimited: SandboxStartLimit; message: string }
+
+export function isSandboxProviderRateLimited(err: unknown): err is SandboxProviderRateLimited {
+  const limit = !!err && typeof err === "object" ? (err as { providerRateLimited?: unknown }).providerRateLimited : undefined
+  return !!limit && typeof limit === "object" && SANDBOX_START_WINDOWS.some((window) => window === (limit as { window?: unknown }).window)
+}
+
+export class SandboxProviderRateLimitedError extends Error implements SandboxProviderRateLimited {
+  constructor(readonly providerRateLimited: SandboxStartLimit, reason: string) {
+    super(reason)
+    this.name = "SandboxProviderRateLimitedError"
+  }
+}
+
+/** How long a start waits out a used-up limit before it is tried again; a day's limit has no automatic retry. */
+export function sandboxStartLimitRetryMs(window: SandboxStartWindow): number | undefined {
+  return window === "minute" ? 60_000 : window === "hour" ? 3_600_000 : undefined
+}
+
+/** Leads the error a lease keeps for a start refused at the provider's start limit, with the window that is used up. */
+const PROVIDER_RATE_LIMITED = "provider_rate_limited:"
+
+/**
+ * The error a lease keeps when `driver`'s provider refused a start at its
+ * start limit. The provider names no time the window frees up, so the person
+ * is told the window, and the time Claxedo tries again only for the windows it
+ * waits out.
+ */
+export function sandboxProviderRateLimitedError(driver: string, limit: SandboxStartLimit) {
+  const provider = isSandboxDriverID(driver) ? sandboxDriverLabels[driver] : driver
+  const again = limit.window === "day"
+    ? "Sandboxes can start again once that daily limit frees a start: press Retry then."
+    : `Claxedo tries again in ${limit.window === "minute" ? "a minute" : "an hour"}.`
+  return `${PROVIDER_RATE_LIMITED}${limit.window}: ${provider}'s start limit for this account is used up (${limit.limit} starts per ${limit.window}). ${again}${limit.resumeCounts ? " A wake counts as a start too." : ""}`
+}
+
+/** The used-up window when a lease's error is a start the provider refused at its start limit. */
+export function sandboxProviderRateLimit(error: string | undefined): SandboxStartWindow | undefined {
+  if (!error?.startsWith(PROVIDER_RATE_LIMITED)) return undefined
+  const window = error.slice(PROVIDER_RATE_LIMITED.length).split(":", 1)[0]
+  return SANDBOX_START_WINDOWS.find((name) => name === window)
+}
+
+function providerRateLimitedReason(error: string) {
+  return sandboxProviderRateLimit(error) === undefined ? undefined : error.slice(error.indexOf(": ") + 2)
+}
+
 /** Leads the error an ensure reports, and a lease keeps, for a runtime whose boot failed. */
 const RUNTIME_BOOT_FAILED = "runtime_boot_failed: "
 
@@ -118,7 +178,7 @@ export function sandboxRuntimeBootFailure(error: string | undefined) {
 
 /** The line a person is told for a start step's error: the runtime's own reason for a boot that failed, else the driver's first line. */
 export function sandboxStartFailureReason(error: string): string {
-  return sandboxRuntimeBootFailure(error) ?? error.split("\n", 1)[0]?.trim() ?? error
+  return sandboxRuntimeBootFailure(error) ?? providerRateLimitedReason(error) ?? error.split("\n", 1)[0]?.trim() ?? error
 }
 
 /** The error a lease keeps when the runtime it serves stopped answering its health reports. */

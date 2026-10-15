@@ -25,7 +25,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status })
 test("workspace start: polls the explicit connect while it provisions, each wait the server's own, and adopts the ready link", async () => {
   const server = answers(
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 1_500, bootMode: "resume" }),
-    json({ error: { code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable", retryAfterMs: 20 } }, 409),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 20 }),
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 90_000 }),
     json(READY),
   )
@@ -39,20 +39,20 @@ test("workspace start: polls the explicit connect while it provisions, each wait
   expect(progress).toEqual([{ kind: "provisioning", bootMode: "resume" }, { kind: "provisioning" }, { kind: "provisioning" }])
 })
 
-test("workspace start: a start the server retries after a failed step reports that failure with its progress until a step succeeds", async () => {
+test("workspace start: a start the server retries after a failed step reports that failure and when the retry runs, until a step succeeds", async () => {
   const server = answers(
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" }),
-    json({ error: { code: "cloud_runtime_unavailable", message: "quota exceeded", retryAfterMs: 15_000, failure: "quota exceeded" } }, 409),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 15_000, failure: "quota exceeded" }),
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume" }),
     json(READY),
   )
   const progress: WorkspaceStartProgress[] = []
 
-  await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async () => undefined })
+  await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async () => undefined, now: () => 1_000_000 })
 
   expect(progress).toEqual([
-    { kind: "provisioning", bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device" },
-    { kind: "provisioning", failure: "quota exceeded" },
+    { kind: "provisioning", bootMode: "resume", failure: "Boat bx_1 runtime image preparation failed (exit 1): no space left on device", retryAt: 1_002_000 },
+    { kind: "provisioning", failure: "quota exceeded", retryAt: 1_015_000 },
     { kind: "provisioning", bootMode: "resume" },
   ])
 })
@@ -199,4 +199,22 @@ test("workspace start: the server's notice that the start settled ends the wait 
   expect((await start).runtimeAccessToken).toBe("rat")
   expect(calls).toBe(3)
   expect(listeners.size).toBe(0)
+})
+
+test("workspace start: a 409 refusal that names a wait ends the start at once with the server's reason and the wait, since nothing retries it before then", async () => {
+  const reason = "Boat POST /sandboxes was rejected (rate_limited)"
+  const server = answers(json({ error: { code: "cloud_runtime_unavailable", message: reason, retryAfterMs: 484_180, failure: reason } }, 409))
+
+  const start = startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
+
+  await expect(start).rejects.toBeInstanceOf(ServerError)
+  await expect(start).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: reason, details: { retryAfterMs: 484_180 } })
+  expect(server.calls).toHaveLength(1)
+})
+
+test("workspace start: a 409 refusal with no wait ends the start with the server's plain reason, as a provider's daily start limit does", async () => {
+  const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: press Retry then. A wake counts as a start too."
+  const server = answers(json({ error: { code: "cloud_runtime_unavailable", message: reason, failure: reason } }, 409))
+  await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: reason })
+  expect(server.calls).toHaveLength(1)
 })

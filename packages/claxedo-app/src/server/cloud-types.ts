@@ -23,13 +23,13 @@ export type WorkspaceStartStep = "machine" | "image" | "runtime"
 
 export type WorkspaceStartSteps = { readonly done: readonly WorkspaceStartStep[]; readonly startedAt: number; readonly stepStartedAt: number }
 
-export type WorkspaceStartProgress = { readonly kind: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps }
+export type WorkspaceStartProgress = { readonly kind: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly retryAt?: number; readonly steps?: WorkspaceStartSteps }
 
 export type WorkspaceRuntime =
   | { readonly kind: "live" }
   | { readonly kind: "asleep" }
-  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps; readonly followed?: true }
-  | { readonly kind: "wakeFailed"; readonly error: AppError }
+  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly retryAt?: number; readonly steps?: WorkspaceStartSteps; readonly followed?: true }
+  | { readonly kind: "wakeFailed"; readonly error: AppError; readonly retryAt?: number }
   | { readonly kind: "outdated" }
 
 export type MachineClass = "small" | "default" | "large"

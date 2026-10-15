@@ -2,7 +2,7 @@ import { onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { sleep } from "@claxedo/helpers"
 import type { CloudWorkspaceStatus, WorkspaceRuntime, WorkspaceStartProgress } from "./cloud-types"
-import { toAppError } from "./errors"
+import { ServerError, toAppError } from "./errors"
 import type { ServerEvent } from "./events"
 import { placementId, type PlacementId } from "./ids"
 import { isStartingCloud, isStoppedCloud } from "./placement-runtime"
@@ -10,6 +10,7 @@ import type { Transport } from "./transport"
 import type { Placement } from "./types"
 import { WAKE_IDLE, wakeTransition, type WakeEvent, type WakeState } from "./wake-machine"
 import type { Workspaces } from "./workspaces"
+import { startRetryAfterMs } from "./wire/connection"
 
 export type WorkspaceWakes = {
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
@@ -28,10 +29,13 @@ function runtimeOf(wake: WakeState, placement: Placement | undefined): Workspace
     return waking
   }
   if (wake.kind === "outdated" && !asleep) return { kind: "outdated" }
-  if (wake.kind === "failed" && (asleep || wake.restart)) return { kind: "wakeFailed", error: wake.error }
+  if (wake.kind === "failed" && (asleep || wake.restart)) return { kind: "wakeFailed", error: wake.error, ...(wake.retryAt !== undefined ? { retryAt: wake.retryAt } : {}) }
   if (isStartingCloud(placement)) return { kind: "waking", followed: true }
+  if (placement?.kind === "cloud" && placement.lifecycle === "failed") return { kind: "wakeFailed", error: new ServerError({ class: "conflict", message: placement.failure ?? START_FAILED }) }
   return asleep ? { kind: "asleep" } : { kind: "live" }
 }
+
+const START_FAILED = "The cloud workspace could not start"
 
 const START_ENDS: ReadonlySet<CloudWorkspaceStatus["kind"]> = new Set(["ready", "stopped", "failed"])
 
@@ -47,7 +51,7 @@ function startSettled(events: ServerEvents, id: PlacementId): StartSettled {
   })
 }
 
-async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id: PlacementId, settled: StartSettled, send: (event: WakeEvent) => void) {
+async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id: PlacementId, settled: StartSettled, send: (event: WakeEvent) => void, now: () => number) {
   send({ type: "wakeStarted", ...(followed ? { followed: true } : {}) })
   try {
     const { workspaceId } = await workspaces.locate(id)
@@ -55,12 +59,13 @@ async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id
     await workspaces.refresh()
     send({ type: "woke" })
   } catch (cause) {
-    send({ type: "wakeFailed", error: toAppError(cause) })
+    const retryAfterMs = startRetryAfterMs(cause)
+    send({ type: "wakeFailed", error: toAppError(cause), ...(retryAfterMs !== undefined ? { retryAt: now() + retryAfterMs } : {}) })
     throw cause
   }
 }
 
-export function createWorkspaceWakes(transport: Transport, workspaces: Workspaces, events: ServerEvents, wait: (ms: number) => Promise<void> = sleep): WorkspaceWakes {
+export function createWorkspaceWakes(transport: Transport, workspaces: Workspaces, events: ServerEvents, wait: (ms: number) => Promise<void> = sleep, now: () => number = Date.now): WorkspaceWakes {
   const [wakes, setWakes] = createStore<Record<string, WakeState>>({})
   const send = (id: PlacementId, event: WakeEvent) => setWakes(id, (state) => wakeTransition(state ?? WAKE_IDLE, event))
   const running = new Map<string, Promise<void>>()
@@ -68,7 +73,7 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
   const drive = (id: PlacementId, run: Run, followed: boolean) => {
     const current = running.get(id)
     if (current) return current
-    const next = driveWake(run, followed, workspaces, id, startSettled(events, id), (event) => send(id, event)).finally(() => running.delete(id))
+    const next = driveWake(run, followed, workspaces, id, startSettled(events, id), (event) => send(id, event), now).finally(() => running.delete(id))
     running.set(id, next)
     return next
   }

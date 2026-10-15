@@ -59,7 +59,8 @@ export function sandboxLifecycleSink(telemetry: ControlPlaneTelemetry) {
     const machine = machineProperties(event)
     if (event.kind === "failed") {
       if (event.retrying) return
-      telemetry.capture("system", "workspace_failed", { ...machine, code: event.bootFailed ? "boot_failed" : "provision_failed" })
+      const code = event.bootFailed ? "boot_failed" : event.startLimit ? "provider_rate_limited" : "provision_failed"
+      telemetry.capture("system", "workspace_failed", { ...machine, code, ...(event.startLimit ? { window: event.startLimit } : {}) })
       return
     }
     if (event.activeMs === undefined) return

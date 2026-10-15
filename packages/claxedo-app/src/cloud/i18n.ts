@@ -28,6 +28,7 @@ const en = {
   "cloud.wake.done.runtime": "agent runtime",
   "cloud.wake.total": "{{elapsed}} in all",
   "cloud.wake.retrying": "Start failed, retrying: {{reason}}",
+  "cloud.wake.nextTry": "next try in {{wait}}",
   "cloud.unnamed": "Cloud workspace",
   "cloud.size.label": "Machine size",
   "cloud.size.small": "Small",

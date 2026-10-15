@@ -4,15 +4,15 @@ import type { AppError } from "./types"
 
 export type WakeState =
   | { readonly kind: "idle" }
-  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps; readonly restart?: true; readonly followed?: true }
-  | { readonly kind: "failed"; readonly error: AppError; readonly restart?: true }
+  | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly retryAt?: number; readonly steps?: WorkspaceStartSteps; readonly restart?: true; readonly followed?: true }
+  | { readonly kind: "failed"; readonly error: AppError; readonly retryAt?: number; readonly restart?: true }
   | { readonly kind: "outdated" }
 
 export type WakeEvent =
   | { readonly type: "wakeStarted"; readonly followed?: true }
-  | { readonly type: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly steps?: WorkspaceStartSteps }
+  | { readonly type: "provisioning"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly retryAt?: number; readonly steps?: WorkspaceStartSteps }
   | { readonly type: "woke" }
-  | { readonly type: "wakeFailed"; readonly error: AppError }
+  | { readonly type: "wakeFailed"; readonly error: AppError; readonly retryAt?: number }
   | { readonly type: "imageOutdated" }
   | { readonly type: "imageCurrent" }
 
@@ -46,6 +46,7 @@ export function wakeTransition(state: WakeState, event: WakeEvent): WakeState {
         kind: "waking",
         ...(bootMode ? { bootMode } : {}),
         ...(event.failure ? { failure: event.failure } : {}),
+        ...(event.failure && event.retryAt !== undefined ? { retryAt: event.retryAt } : {}),
         ...(steps ? { steps } : {}),
         ...(state.restart ? { restart: true } : {}),
         ...(state.followed ? { followed: true } : {}),
@@ -55,7 +56,7 @@ export function wakeTransition(state: WakeState, event: WakeEvent): WakeState {
       return state.kind === "waking" ? WAKE_IDLE : state
     case "wakeFailed":
       if (state.kind !== "waking") return state
-      return state.restart ? { kind: "failed", error: event.error, restart: true } : { kind: "failed", error: event.error }
+      return { kind: "failed", error: event.error, ...(event.retryAt !== undefined ? { retryAt: event.retryAt } : {}), ...(state.restart ? { restart: true } : {}) }
     case "imageOutdated":
       return state.kind === "waking" || (state.kind === "failed" && state.restart) ? state : { kind: "outdated" }
     case "imageCurrent":

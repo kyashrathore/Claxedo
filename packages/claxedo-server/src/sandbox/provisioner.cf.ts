@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers"
-import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
+import { sandboxLeaseEndedUnderStart, sandboxProviderRateLimit, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
 import type { SandboxStartAnswer, SandboxStartDrive } from "../workspace/sandbox-start"
 
 /** `failure` is the error of the last step that failed and is being retried; a step that succeeds or ends the run clears it. */
@@ -154,8 +154,11 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
       const storage = this.ctx.storage
       const run = await storage.get<Run>("run")
       if (!run) return undefined
-      if (!this.#driving && (await storage.getAlarm()) === null) await storage.setAlarm(Date.now())
-      return { status: "provisioning", retryAfterMs: run.retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true, ...(run.failure ? { failure: run.failure } : {}) }
+      const alarm = await storage.getAlarm()
+      if (!this.#driving && alarm === null) await storage.setAlarm(Date.now())
+      // A failed step's retry is the alarm's, so a poll that joins is told the time left until it.
+      const retryAfterMs = run.failure && alarm !== null ? Math.max(0, alarm - Date.now()) : run.retryAfterMs
+      return { status: "provisioning", retryAfterMs, epoch: run.epoch, homeRegion: run.homeRegion, joined: true, ...(run.failure ? { failure: run.failure } : {}) }
     }
 
     async #begin(workspaceId: string): Promise<SandboxStartAnswer> {
@@ -257,8 +260,12 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         // and begins what it needs, instead of being told this run's end. A
         // spent budget is the lease's own answer to every start until its
         // cooldown ends or a key change lifts it, so holding it would outlive
-        // the lift and freeze the time left.
-        if (answer.status !== "unavailable" || !(sandboxLeaseEndedUnderStart(answer.error) || answer.exhausted)) {
+        // the lift and freeze the time left. A day's start limit is no
+        // lease's answer (the next start runs the driver), so it is held
+        // like any failure: the polls of the start that hit it are told it,
+        // and only the person's next start tries again.
+        const leaseAnswers = answer.status === "unavailable" && answer.exhausted && sandboxProviderRateLimit(answer.error) !== "day"
+        if (answer.status !== "unavailable" || !(sandboxLeaseEndedUnderStart(answer.error) || leaseAnswers)) {
           const outcome: Outcome = { epoch: run.epoch, answer, settledAt: Date.now() }
           await storage.put("outcome", outcome)
         }

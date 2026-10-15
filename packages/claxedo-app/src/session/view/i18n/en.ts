@@ -78,6 +78,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.starting"
   | "sessionScreen.workspace.wakeFailed"
   | "sessionScreen.workspace.retryWake"
+  | "sessionScreen.workspace.tryAgainAfter"
   | "sessionScreen.workspace.wakeNow"
   | "sessionScreen.workspace.outdated"
   | "sessionScreen.workspace.outdated.detail"
@@ -170,6 +171,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.workspace.starting": "Starting {{name}}",
   "sessionScreen.workspace.wakeFailed": "Couldn't wake {{name}}",
   "sessionScreen.workspace.retryWake": "Try again",
+  "sessionScreen.workspace.tryAgainAfter": "Try again after {{time}}",
   "sessionScreen.workspace.wakeNow": "Wake now",
   "sessionScreen.workspace.outdated": "{{name}} runs an older version",
   "sessionScreen.workspace.outdated.detail": "Restart it to update. Its files are kept.",
