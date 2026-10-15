@@ -53,6 +53,7 @@ function port(runtimeStore: RuntimeStore, directory: string | undefined): Sessio
     completeQueuedPrompt: (sessionId, seq, operationId) => runtimeStore.deliveryQueue.completeQueuedPrompt(sessionId, seq, operationId),
     retireSteeredPrompt: (sessionId, messageId) => runtimeStore.deliveryQueue.retireSteeredPrompt(sessionId, messageId),
     settleQueuedPromptDelivery: (sessionId, seq, steering) => runtimeStore.deliveryQueue.settleQueuedPromptDelivery(sessionId, seq, steering),
+    requeueQueuedPrompt: (sessionId, seq, operationId) => runtimeStore.deliveryQueue.requeueQueuedPrompt(sessionId, seq, operationId),
     sessionDirectory: () => directory,
     sessionArchived: () => false,
     messageSessionId: () => undefined,

@@ -235,6 +235,14 @@ export class DeliveryQueue {
       .run(JSON.stringify(steering), sessionId, seq, steering.operationId).changes === 1
   }
 
+  /** A dispatch that left the input untouched hands the row back to the queue as it was before the claim. */
+  requeueQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean {
+    return this.db.prepare(`UPDATE runtime_delivery SET steering_json = NULL
+      WHERE session_id = ? AND seq = ? AND
+      json_extract(steering_json, '$.operationId') = ? AND json_extract(steering_json, '$.state') = 'dispatching'`)
+      .run(sessionId, seq, operationId).changes === 1
+  }
+
   /** Called only when no operation of a previous runtime can still be dispatching. */
   settleOrphanedDispatches() {
     this.db.prepare(`UPDATE runtime_delivery

@@ -22,7 +22,7 @@ Pi runs one round's tool calls together, so commands of one round reach the mach
 
 ## Durable runs
 
-`PiHarness` resumes pi-durable as soon as its factory returns, and pi-durable fixes its `models` and registry when it opens. So the factory (`DurablePiPlacement.factory`) opens the one Harness with the object's registry and a `Models` that forwards to the session's own credentials, then boots the session core before returning: busy sessions are marked interrupted, a stored lease is adopted (`adoptSessionTurnLease`) and its delivery fetched, and the session is attached, which installs Pi's extensions and continues a live run as a continuation turn. The adopted lease is released when Pi goes idle. When its renewal is refused, or there is no lease to take over, the run is aborted.
+`PiHarness` resumes pi-durable as soon as its factory returns, and pi-durable fixes its `models` and registry when it opens. So the factory (`DurablePiPlacement.factory`) opens the one Harness with the object's registry and a `Models` that forwards to the session's own credentials, then boots the session core before returning: busy sessions are marked interrupted, a stored lease is adopted through the session routes (`adoptTurnLease`), so the queue starts no turn until it is released, and its delivery fetched, and the session is attached, which installs Pi's extensions and continues a live run as a continuation turn. The adopted lease is released when Pi goes idle. When its renewal is refused, or there is no lease to take over, the run is aborted.
 
 An evicted object is restarted by Pi's own wake job and alarm, so a run continues without any request. Commands that were running are not rerun: Pi gives the model an interrupted result.
 

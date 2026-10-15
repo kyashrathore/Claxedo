@@ -335,6 +335,74 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.match(assistantText(await host.messages()), /PIBRIEFTURN[\s\S]*PIQUEUEDA[\s\S]*PIQUEUEDB/)
   })
 
+  type QueueRow = { seq: number; messageId: string; steering?: { state: string } }
+  const briefCommand = (pidFile: string) =>
+    `exec '${process.execPath}' -e 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setTimeout(() => {}, 3_000)' '${pidFile}'`
+  const queueBehind = async (host: Awaited<ReturnType<typeof session>>, root: string, messageID: string, token: string) => {
+    assert.deepEqual(await host.json(`/session/${root}/prompt_async`, { method: "POST", body: {
+      parts: [{ type: "text", text: `Reply with exactly this one token: ${token}` }], messageID, model: MODEL, delivery: "queue",
+    } }), { delivery: "queue" })
+    const row = (await host.json<QueueRow[]>(`/session/${root}/queue`)).find((candidate) => candidate.messageId === messageID)
+    assert.ok(row, `${messageID} was queued`)
+    return row.seq
+  }
+
+  void it("steers a queued message into the running turn on Send now, taking no turn of its own", { timeout: 120_000 }, async () => {
+    const root = "ses_send_now_busy"
+    const host = await session(root)
+    const pidFile = path.join(directory, "send-now-busy.pid")
+    model.scriptTool({ name: "bash", input: { command: briefCommand(pidFile) }, whenPromptIncludes: "PISENDNOWBUSY" })
+    await host.prompt("msg_send_now_busy", "Run it, then reply with exactly this one token: PISENDNOWBUSY")
+    await pidFrom(pidFile)
+    const seq = await queueBehind(host, root, "msg_sent_now", "PISTEEREDIN")
+    const sent = await host.as(OWNER).fetch(`/session/${root}/queue/${seq}/steer`, { method: "POST", body: {} })
+    const answer = await sent.text()
+    assert.notEqual(sent.status, 409, answer)
+    await host.settled("PISTEEREDIN")
+    await eventually("the steered row leaving the queue", async () => (await host.json<QueueRow[]>(`/session/${root}/queue`)).length === 0 ? true : undefined)
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_send_now_busy"])
+  })
+
+  void it("runs a queued message the queue could not start on Retry, as its own turn under its own grant", { timeout: 120_000 }, async () => {
+    const root = "ses_retry_idle"
+    const host = await session(root)
+    const pidFile = path.join(directory, "retry-idle.pid")
+    model.scriptTool({ name: "bash", input: { command: briefCommand(pidFile) }, whenPromptIncludes: "PIRETRYFIRST" })
+    await host.prompt("msg_retry_first", "Run it, then reply with exactly this one token: PIRETRYFIRST")
+    await pidFrom(pidFile)
+    host.controlPlane.control.refusedTurns.add("msg_retried")
+    const seq = await queueBehind(host, root, "msg_retried", "PIRETRIED")
+    await host.settled("PIRETRYFIRST")
+    await eventually("the queue's start refused", async () =>
+      (await host.json<QueueRow[]>(`/session/${root}/queue`))[0]?.steering?.state === "rejected" ? true : undefined, 30_000)
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    assert.equal((await host.json<QueueRow[]>(`/session/${root}/queue`))[0]?.steering?.state, "rejected")
+    host.controlPlane.control.refusedTurns.delete("msg_retried")
+    const retried = await host.as(OWNER).fetch(`/session/${root}/queue/${seq}/steer`, { method: "POST", body: {} })
+    assert.deepEqual({ status: retried.status, body: await retried.json() }, { status: 200, body: { ok: true } })
+    await host.settled("PIRETRIED").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
+    assert.deepEqual(await host.json(`/session/${root}/queue`), [])
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_retry_first", "msg_retried"])
+  })
+
+  void it("runs a message queued behind a run the object took over after it restarted, once that run's lease is released", { timeout: 120_000 }, async () => {
+    const root = "ses_evict_queued"
+    const host = await session(root)
+    const pidFile = path.join(directory, "evict-queued.pid")
+    model.scriptTool({ name: "bash", input: { command: holdCommand(pidFile) }, whenPromptIncludes: "PIEVICTQUEUED" })
+    await host.prompt("msg_evict_queued", "Run it, then reply with exactly this one token: PIEVICTQUEUED")
+    const pid = await pidFrom(pidFile)
+    await queueBehind(host, root, "msg_after_evict", "PIAFTEREVICT")
+    host.controlPlane.control.releaseDelayMs = 1_500
+    await host.crash()
+    await eventually(`the held command ${pid} retired with the lost object`, async () => pidAlive(pid) ? undefined : true, 15_000)
+    await host.settled("PIEVICTQUEUED")
+    await host.settled("PIAFTEREVICT").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
+    assert.deepEqual(await host.json(`/session/${root}/queue`), [])
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_evict_queued", "msg_evict_queued", "msg_after_evict"])
+    assert.ok(host.controlPlane.calls.releases.indexOf("msg_evict_queued") >= 0)
+  })
+
   void it("draws every turn's tool rows in the first read a reload takes, as the live stream showed them, after the object restarts", { timeout: 120_000 }, async () => {
     const root = "ses_reload_tools"
     const host = await session(root)

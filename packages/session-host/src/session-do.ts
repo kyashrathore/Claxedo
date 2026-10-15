@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers"
 import { classifyFirstTurnError, type AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 import type { TurnExecutionAccess } from "@claxedo/harness/contract"
 import {
-  adoptSessionTurnLease, errorBody, remoteWorkspaceSessionAccessPolicy, RuntimeStoreSchemaMismatchError, type SessionAccessPolicy,
+  errorBody, remoteWorkspaceSessionAccessPolicy, RuntimeStoreSchemaMismatchError, type SessionAccessPolicy,
 } from "@claxedo/session-core"
 import { createRelayHostAuthMiddleware, loadRelayHostVerificationKeyOrJwks, type RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
@@ -193,7 +193,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     const host = await this.host()
     host.store.recoverBusySessions()
     const stored = this.leases.current(this.root)
-    const lease = stored ? await this.adopt(stored, host.policy) : undefined
+    const lease = stored ? await this.adopt(stored, host) : undefined
     if (lease) this.placement.turnStarted(lease.signal)
     if (host.store.getSession(this.root)) await host.runtime.resumeDurableRuns([this.root])
     const harness = await this.placement.harness()
@@ -201,10 +201,14 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     else if ((await harness.inspect(BACKGROUND_CONTEXT)).tasks.length > 0) await this.abortRun()
   }
 
-  /** Takes the stored lease over through the composed policy, so the continuation turn is metered and reported as a fresh one is. */
-  private async adopt(stored: StoredTurnLease, policy: SessionAccessPolicy) {
-    const lease = adoptSessionTurnLease({
-      policy, access: { ...stored.access, operation: "prompt", sessionId: this.root }, lease: stored,
+  /**
+   * Takes the stored lease over through the session routes, under the composed
+   * policy, so the continuation turn is metered and reported as a fresh one
+   * is and the queue starts no turn until the lease is released.
+   */
+  private async adopt(stored: StoredTurnLease, host: SessionHost) {
+    const lease = host.sessions.adoptTurnLease({
+      access: { ...stored.access, operation: "prompt", sessionId: this.root }, lease: stored,
       onLost: async () => {
         await this.abortRun()
         await lease.release()
