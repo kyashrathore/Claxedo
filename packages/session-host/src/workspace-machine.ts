@@ -28,7 +28,7 @@ function refusedMachine(error: TurnAuthorityError): WorkspaceMachineUnavailableE
   return undefined
 }
 
-function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+function sleepRejectingOnAbort(ms: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(signal.reason)
     const timer = setTimeout(() => { signal?.removeEventListener("abort", aborted); resolve() }, ms)
@@ -63,7 +63,7 @@ export async function workspaceMachineAccess<T>(ask: () => Promise<T>, options: 
     if (!options.wait || waited + next > TOOL_CALL_START_WAIT_MS) {
       throw new WorkspaceMachineUnavailableError(startingMessage({ started, sinceStartMs: refusal.refusal.sinceStartMs ?? waited, waits: options.wait }))
     }
-    await pause(next, options.signal)
+    await sleepRejectingOnAbort(next, options.signal)
   }
 }
 
