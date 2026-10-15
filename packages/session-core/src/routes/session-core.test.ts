@@ -2274,6 +2274,12 @@ describe("GET /session/capabilities effort levels", () => {
       .toMatchObject({ effortLevels: resolved })
   })
 
+  test("a read with no session hands the harness the draft its reader would launch, whose accounts decide which models it lists", async () => {
+    const { h, app } = capabilityRoutes(NO_HARNESS_EFFORT)
+    await app.request("http://localhost/session/capabilities")
+    expect(h.transport.capabilityReads.at(-1)?.draft).toMatchObject({ config: { harness: CODEX }, credentials: expect.any(Object) })
+  })
+
   test("carries an unsupported catalog through rather than omitting the field", async () => {
     const { app } = capabilityRoutes(NO_HARNESS_EFFORT)
     expect(await (await app.request("http://localhost/session/capabilities")).json())

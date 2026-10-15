@@ -4,6 +4,7 @@ import type {
   AgentListOperations,
   AttachInput,
   BackgroundTaskOperations,
+  CapabilityContext,
   CommandOperations,
   ConfigApplied,
   ConfigOperations,
@@ -118,6 +119,7 @@ export class FakeTransport implements HarnessTransport {
   readonly closed: HarnessSession[] = []
   readonly releases: HarnessSession[] = []
   readonly release: ((session: HarnessSession) => Promise<boolean>) | undefined
+  readonly capabilityReads: CapabilityContext[] = []
   disposed = false
   activeStarts = 0
   activeTurns = 0
@@ -158,7 +160,8 @@ export class FakeTransport implements HarnessTransport {
     return this.cancels.map((cancel) => cancel.turn)
   }
 
-  async capabilities(): Promise<TransportCapabilities> {
+  async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
+    this.capabilityReads.push(context)
     await this.options.beforeCapabilities?.()
     return { ...FAKE_TRANSPORT_CAPABILITIES, ...this.options.capabilities }
   }
