@@ -119,7 +119,7 @@ async function setActivation(post: ReturnType<typeof createChanges>["post"], tel
     harnessIds: input.harnessIds,
     choice: input.choice,
     expectedRevision: input.revision,
-    ...(input.target ? { target: input.target } : {}),
+    target: { scope: "all-projects" },
   })
   if (input.choice === true) telemetry.record({ event: "feature_used", properties: { feature: "marketplace_install" } })
   return change

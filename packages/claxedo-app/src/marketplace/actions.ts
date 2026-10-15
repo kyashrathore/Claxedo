@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js"
-import { useTranslator, type DomainTranslate } from "@/i18n"
-import { failureMessage } from "@/lib/failure"
+import { useErrorCopy, useTranslator, type DomainTranslate } from "@/i18n"
 import {
+  toAppError,
   useServer,
   type MarketplaceCatalog,
   type PluginCandidate,
@@ -44,13 +44,14 @@ function createActivator(input: ActionInput) {
 }
 
 function createPending() {
+  const errorCopy = useErrorCopy("marketplace")
   const [pending, setPending] = createSignal<string>()
   const run = async (plugin: PluginCandidate, failure: string, work: () => Promise<void>) => {
     setPending(plugin.pluginInstanceId)
     try {
       await work()
     } catch (error) {
-      showToast({ title: failure, description: failureMessage(error) })
+      showToast({ title: failure, description: errorCopy(toAppError(error)).message })
     } finally {
       setPending(undefined)
     }

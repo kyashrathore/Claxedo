@@ -64,6 +64,27 @@ async function originDefaultBranch(run: Git, directory: string) {
 /** git's one line for a ref the remote does not have, under the command echo and before any advice. */
 const MISSING_REMOTE_REF = /couldn't find remote ref/
 
+/**
+ * git's lines for a remote that wants a credential it was not given or refused
+ * the one it was: a 401 with prompts disabled, a refused credential, a 403, and
+ * the 404 GitHub answers a credential that cannot see a private repository.
+ */
+const ACCESS_REFUSED = /could not read (Username|Password) for|Authentication failed for|The requested URL returned error: 403|repository '[^']*' not found/
+
+function hostName(repoUrl: string) {
+  const host = new URL(repoUrl).hostname
+  return host === "github.com" ? "GitHub" : host
+}
+
+function accessRefused(error: unknown, source: RepositorySource, env: NodeJS.ProcessEnv) {
+  if (!(error instanceof Error) || !ACCESS_REFUSED.test(error.message)) return undefined
+  const host = hostName(source.repoUrl)
+  const message = env.CLAXEDO_GITHUB_CLONE_AUTH
+    ? `The ${host} connection this workspace clones with cannot read ${source.repoUrl}. Give it access to the repository, or choose another connection.`
+    : `${source.repoUrl} is private or does not exist. Connect ${host} with access to it, or use a public repository.`
+  return new Error(message, { cause: error })
+}
+
 async function checkOut(run: Git, directory: string, source: RepositorySource) {
   const branch = source.branch ?? await originDefaultBranch(run, directory)
   try {
@@ -120,6 +141,6 @@ export async function prepareRuntimeRepository(directory: string, env: NodeJS.Pr
     if (error instanceof GitTimeoutError) {
       throw new Error(`The selected repository was not checked out within ${RUNTIME_PREPARATION_DEADLINE_MS / 60_000} minutes`, { cause: error })
     }
-    throw error
+    throw accessRefused(error, source, env) ?? error
   }
 }

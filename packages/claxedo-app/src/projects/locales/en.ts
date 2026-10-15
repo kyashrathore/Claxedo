@@ -39,7 +39,7 @@ export default {
   "projects.create.entry": "How to choose the repository",
   "projects.create.choose": "From {{host}}",
   "projects.add.pasteUrl": "Paste URL",
-  "projects.create.url.hint.host": "Claxedo clones it with your {{host}} account.",
+  "projects.create.url.hint.private": "Claxedo clones a public repository by its URL. Choose a private one from {{host}}.",
   "projects.create.url.hint.none": "Claxedo clones a public repository by its URL.",
   "projects.create.folder.label": "Folder on {{machine}}",
   "projects.add.name": "Name (optional)",

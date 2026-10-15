@@ -72,6 +72,10 @@ function choiceBody(value: unknown): ChoiceBody | undefined {
   }
 }
 
+function isAllProjects(target: unknown) {
+  return isRecord(target) && target.scope === "all-projects" && Object.keys(target).length === 1
+}
+
 function updateBody(value: unknown): UpdateBody | undefined {
   if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
@@ -270,7 +274,7 @@ export function LocalAgentPluginActivationRoutes(input: {
 
   app.post("/activation", async (c) => {
     const raw = await c.req.json().catch(() => undefined)
-    if (isRecord(raw) && ("projectId" in raw || "projectIds" in raw)) {
+    if (isRecord(raw) && ("projectId" in raw || "projectIds" in raw || ("target" in raw && !isAllProjects(raw.target)))) {
       return c.json(errorBody("agent_plugins_project_scope_unsupported", "Unsigned Agent Plugins activation is machine-wide"), 400)
     }
     const body = choiceBody(raw)

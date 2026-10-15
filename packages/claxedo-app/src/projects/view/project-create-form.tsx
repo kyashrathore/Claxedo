@@ -115,7 +115,7 @@ function RepositorySection(props: { choice: RepositoryChoice; url: string; onUrl
       <Show when={props.choice.view() === "url"}>
         <TextField
           label={t("projects.add.url")}
-          description={host() && props.choice.connection() ? t("projects.create.url.hint.host", { host: host() ?? "" }) : t("projects.create.url.hint.none")}
+          description={host() && props.choice.connection() ? t("projects.create.url.hint.private", { host: host() ?? "" }) : t("projects.create.url.hint.none")}
           placeholder={t("projects.create.url.placeholder")}
           value={props.url}
           onChange={props.onUrl}
