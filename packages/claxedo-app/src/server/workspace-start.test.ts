@@ -8,10 +8,10 @@ import { createWorkspaceConnections } from "./transport"
 const READY = { relayUrl: "https://relay.test/", runtimeAccessToken: "rat", tokenExpiresAt: 1_900_000_000_000 }
 
 function answers(...responses: readonly Response[]) {
-  const calls: { path: string; method: string | undefined }[] = []
+  const calls: { path: string; method: string | undefined; body?: string }[] = []
   let next = 0
   const request = async (path: string, init?: RequestInit) => {
-    calls.push({ path, method: init?.method })
+    calls.push({ path, method: init?.method, ...(typeof init?.body === "string" ? { body: init.body } : {}) })
     const response = responses[next++]
     if (!response) throw new Error("no answer left")
     return response
@@ -22,7 +22,7 @@ function answers(...responses: readonly Response[]) {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status })
 
-test("workspace start: polls the explicit connect while it provisions, each wait the server's own, and adopts the ready link", async () => {
+test("workspace start: asks the explicit connect once as the person's retry, polls it while it provisions, each wait the server's own, and adopts the ready link", async () => {
   const server = answers(
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 1_500, bootMode: "resume" }),
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 20 }),
@@ -34,7 +34,8 @@ test("workspace start: polls the explicit connect while it provisions, each wait
   const link = await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void waits.push(ms) })
 
   expect(link).toEqual({ workspaceId: "ws_1", relayUrl: "https://relay.test", runtimeAccessToken: "rat", tokenExpiresAt: READY.tokenExpiresAt })
-  expect(server.calls).toEqual(Array(4).fill({ path: "/api/workspace/ws_1/connection", method: "POST" }))
+  const connect = { path: "/api/workspace/ws_1/connection", method: "POST" }
+  expect(server.calls).toEqual([{ ...connect, body: '{"retry":true}' }, ...Array(3).fill({ ...connect, body: "{}" })])
   expect(waits).toEqual([1_500, 500, 30_000])
   expect(progress).toEqual([{ kind: "provisioning", bootMode: "resume" }, { kind: "provisioning" }, { kind: "provisioning" }])
 })
@@ -172,32 +173,58 @@ test("workspace start: a poll the server never answers is asked again once its d
   expect(calls).toBe(3)
 })
 
-test("workspace start: the server's notice that the start settled ends the wait and the unanswered poll at once, and the next poll adopts the ready link", async () => {
+function startNotices() {
   const listeners = new Set<() => void>()
   const settled = (listener: () => void) => {
     listeners.add(listener)
     return () => void listeners.delete(listener)
   }
-  const announce = () => [...listeners].forEach((listener) => listener())
-  const polled = [pending(), pending()]
-  const answered = [json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }), undefined, json(READY)]
+  return { listeners, settled, announce: () => [...listeners].forEach((listener) => listener()) }
+}
+
+test("workspace start: the server's notice that the start settled ends the wait at once, and the next poll adopts the ready link", async () => {
+  const { listeners, settled, announce } = startNotices()
+  const polled = pending()
+  const answered = [json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }), json(READY)]
   let calls = 0
   const connections = createWorkspaceConnections(async () => {
     const index = calls++
-    polled[index]?.resolve()
+    if (index === 0) polled.resolve()
     return answered[index] ?? never()
   })
 
   const start = startWorkspace(connections.start, "ws_1", { wait: never, settled })
-  await polled[0].promise
-  await Bun.sleep(0)
-  announce()
-  await polled[1].promise
+  await polled.promise
   await Bun.sleep(0)
   announce()
 
   expect((await start).runtimeAccessToken).toBe("rat")
-  expect(calls).toBe(3)
+  expect(calls).toBe(2)
+  expect(listeners.size).toBe(0)
+})
+
+test("workspace start: notices that the start settled while a poll is in flight send no second connect, and the next poll goes at once after that poll's answer", async () => {
+  const { listeners, settled, announce } = startNotices()
+  const inFlight = Promise.withResolvers<Response>()
+  const answered = [Promise.resolve(json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 })), inFlight.promise, Promise.resolve(json(READY))]
+  const bodies: (string | undefined)[] = []
+  const connections = createWorkspaceConnections(async (_path, init) => {
+    const index = bodies.push(typeof init?.body === "string" ? init.body : undefined) - 1
+    return answered[index] ?? never()
+  })
+
+  const start = startWorkspace(connections.start, "ws_1", { wait: never, settled })
+  await Bun.sleep(0)
+  announce()
+  await Bun.sleep(0)
+  announce()
+  announce()
+  await Bun.sleep(0)
+  expect(bodies).toHaveLength(2)
+
+  inFlight.resolve(json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }))
+  expect((await start).runtimeAccessToken).toBe("rat")
+  expect(bodies).toEqual(['{"retry":true}', "{}", "{}"])
   expect(listeners.size).toBe(0)
 })
 
@@ -213,7 +240,7 @@ test("workspace start: a 409 refusal that names a wait ends the start at once wi
 })
 
 test("workspace start: a 409 refusal with no wait ends the start with the server's plain reason, as a provider's daily start limit does", async () => {
-  const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: press Retry then. A wake counts as a start too."
+  const reason = "Boat's start limit for this account is used up (200 starts per day). Sandboxes can start again once that daily limit frees a start: try again then. A wake counts as a start too."
   const server = answers(json({ error: { code: "cloud_runtime_unavailable", message: reason, failure: reason } }, 409))
   await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: reason })
   expect(server.calls).toHaveLength(1)
