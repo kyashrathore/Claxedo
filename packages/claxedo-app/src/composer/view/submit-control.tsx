@@ -14,6 +14,7 @@ export function PromptSubmitControl(props: {
   excludeFromTab: Accessor<boolean>
   block: Accessor<SubmitBlock | null>
   onChooseModel: VoidFunction
+  onOpenModels: VoidFunction
   sendLabel: string
   stopLabel: string
 }) {
@@ -33,6 +34,10 @@ export function PromptSubmitControl(props: {
         onChooseModel={() => {
           dismiss()
           props.onChooseModel()
+        }}
+        onOpenModels={() => {
+          dismiss()
+          props.onOpenModels()
         }}
       />
     )

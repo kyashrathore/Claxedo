@@ -14,7 +14,7 @@ export function createSubmitBlockFlash(block: Accessor<SubmitBlock | null>, choo
     const current = block()
     if (!current?.actionable) return
     event.preventDefault()
-    if (current.reason === "no-model") {
+    if (current.action === "choose-model") {
       chooseModel()
       return
     }

@@ -27,6 +27,15 @@ test("submit block: an asleep workspace never sends to a harness nobody chose; S
   expect(submitBlockReason({ ...noHarness, workspaceAsleep: false })?.reason).toBe("no-model")
 })
 
+test("submit block: a harness whose account its provider refused never sends; Send names the refusal and offers Open Models, ahead of the error the refused options load also left", () => {
+  const refused: SubmitBlockInput = { ...unreadHarness, harnessReadiness: "ready", harnessConfigError: true, harnessReadyForSubmit: false, accountUnavailable: { reason: "auth_failed" } }
+  expect(submitBlockReason(refused)).toEqual({ reason: "account-refused", copy: "The agent's account was refused by its provider", actionable: true, action: "open-models" })
+  expect(submitBlockReason({ ...refused, accountUnavailable: { reason: "expired" } })?.reason).toBe("account-refused")
+  expect(submitBlockReason({ ...refused, accountUnavailable: { reason: "no_billing" } })?.reason).toBe("account-refused")
+  expect(submitBlockReason({ ...refused, accountUnavailable: { reason: "placeholder_env_missing: ANTHROPIC_API_KEY" } })).toEqual({ reason: "account-unusable", copy: "The agent's account can't be used here", actionable: true, action: "open-models" })
+  expect(submitBlockReason({ ...refused, accountUnavailable: {} })).toEqual({ reason: "account-not-set-up", copy: "The agent has no account yet", actionable: true, action: "open-models" })
+})
+
 test("submit block: a model already chosen sends while its options reload; only a session with no model yet waits for them", () => {
   const loading: SubmitBlockInput = { ...unreadHarness, harnessReadiness: "ready", harnessConfigError: false, harnessOptionsLoading: true }
   expect(submitBlockReason({ ...loading, harnessReadyForSubmit: true })).toBeNull()

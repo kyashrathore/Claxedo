@@ -1,5 +1,6 @@
 import { createMemo, Show } from "solid-js"
-import { useCommands } from "@/shell"
+import { useNavigate } from "@solidjs/router"
+import { settingsPath, useCommands } from "@/shell"
 import { useDialog } from "@/ui"
 import type { FileContextItem, QuoteContextItem } from "../model"
 import { promptText } from "../model"
@@ -22,6 +23,7 @@ export function Composer(props: ComposerProps) {
   const composer = createComposer(props)
   const dialog = useDialog()
   const commands = useCommands()
+  const navigate = useNavigate()
   const t = composer.t
   const controller = composer.controller
   const mode = () => controller.state.mode
@@ -123,6 +125,7 @@ export function Composer(props: ComposerProps) {
       submitExcludeFromTab={() => false}
       submitBlock={composer.submitBlock}
       onChooseModel={() => composer.refs.root()?.querySelector<HTMLElement>('[data-action="prompt-harness-model"]')?.click()}
+      onOpenModels={() => navigate(settingsPath("models"))}
       readOnly={() => props.readOnly === true}
       t={t}
     />

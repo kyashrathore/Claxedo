@@ -196,6 +196,7 @@ function submitState(input: {
       draftConnectionAllowsNoModel: state.canCreateWithoutModel,
       harnessReadiness: state.readiness,
       harnessConfigError: !!state.configError,
+      accountUnavailable: state.accountUnavailable,
       harnessOptionsLoading: state.optionsLoading,
       harnessReadyForSubmit: selection.submit.readyForSubmit(input.key()),
       modelBlocked: input.manage() && !harnessMode,
