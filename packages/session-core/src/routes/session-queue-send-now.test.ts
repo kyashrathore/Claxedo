@@ -113,9 +113,9 @@ async function queuedSession(input: { steer: "accepts" | "declines" }) {
       yield { type: "finish", sessionId: "session_1" }
     },
     steer: async (_session, _turn, turnInput): Promise<SteerResult> => {
-      steered.push(turnInput.userMessageId!)
+      steered.push(turnInput.userMessageId)
       if (input.steer === "declines") return { ok: false, status: "declined", message: "This turn takes no steering" }
-      incorporate?.(turnInput.userMessageId!)
+      incorporate?.(turnInput.userMessageId)
       return { ok: true }
     },
   })
@@ -149,7 +149,7 @@ async function openWithQueued(session: Awaited<ReturnType<typeof queuedSession>>
   expect(await queued.json()).toEqual({ delivery: "queue" })
   const [row] = await session.queue()
   expect(row?.messageId).toBe("msg_b")
-  return row!.seq
+  return row.seq
 }
 
 /** Resolves once `read` has answered the same for 100ms: nothing is still on its way. */
