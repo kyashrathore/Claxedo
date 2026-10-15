@@ -5,6 +5,7 @@ import type { ImagePart, Prompt } from "./model"
 import { promptFilled, promptImages, promptText, quoteContextItem } from "./model"
 import { buildPromptInput, createComposerSend } from "./send"
 import { createComposerStore } from "./store"
+import { ServerError } from "@/server"
 import type { SessionView } from "@/session"
 
 const KEY = "session:goal"
@@ -139,4 +140,60 @@ test("a first send its host withdraws puts the text back and returns to editing 
   expect(send.state().kind).toBe("editing")
   expect(accepted).toBe(0)
   expect(promptText(store.draft(key).prompt)).toBe("Fix the login bug")
+})
+
+test("a draft's first send keeps its text in the draft while the workspace wakes, so a wake that fails, a reload or a closed pane loses nothing", async () => {
+  const store = createComposerStore()
+  const key = "draft:wake" as const
+  store.setPrompt(key, [{ type: "text", content: "hello hone", start: 0, end: 10 }], 10)
+  const seen: string[] = []
+  const send = createRoot(() => createComposerSend({
+    key: () => key, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    view: () => undefined, queuedReplace: () => undefined,
+    startSession: async () => {
+      seen.push(promptText(store.draft(key).prompt))
+      throw new ServerError({ class: "conflict", code: "cloud_runtime_boot_failed", message: "Boat bx_r97r47dt container start failed (exit 1)" })
+    },
+    focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  await send.send()
+  expect(seen).toEqual(["hello hone"])
+  expect(send.state().kind).toBe("rejected")
+  expect(promptText(store.draft(key).prompt)).toBe("hello hone")
+})
+
+test("a blocked composer never sends, so Enter cannot pass a gate the Send button shows", async () => {
+  const store = createComposerStore()
+  const key = "draft:blocked" as const
+  store.setPrompt(key, [{ type: "text", content: "hello hone", start: 0, end: 10 }], 10)
+  let starts = 0
+  const send = createRoot(() => createComposerSend({
+    key: () => key, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    view: () => undefined, queuedReplace: () => undefined, blocked: () => true,
+    startSession: async () => { starts++; return {} as unknown as SessionView },
+    focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  await send.send()
+  expect(starts).toBe(0)
+  expect(send.state().kind).toBe("editing")
+  expect(promptText(store.draft(key).prompt)).toBe("hello hone")
+})
+
+test("a draft's first send clears the draft only once the session exists", async () => {
+  const store = createComposerStore()
+  const key = "draft:created" as const
+  store.setPrompt(key, [{ type: "text", content: "hello hone", start: 0, end: 10 }], 10)
+  const send = createRoot(() => createComposerSend({
+    key: () => key, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    view: () => undefined, queuedReplace: () => undefined,
+    startSession: async () => ({}) as unknown as SessionView,
+    focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  await send.send()
+  expect(send.state().kind).toBe("accepted")
+  expect(promptText(store.draft(key).prompt)).toBe("")
+  expect(store.history(key, "normal").length).toBe(1)
 })

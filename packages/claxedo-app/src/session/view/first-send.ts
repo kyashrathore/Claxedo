@@ -33,8 +33,6 @@ export function firstSendTransition(_state: FirstSendState, event: FirstSendEven
 export type FirstSendAttempt<Result> = (report: (event: FirstSendEvent) => void) => Promise<Result>
 
 export type FirstSendHooks<Result> = {
-  readonly failed?: () => void
-  readonly retried?: () => void
   readonly landed?: () => Promise<Result | undefined>
 }
 
@@ -56,11 +54,7 @@ export function createFirstSend() {
   }
   const settle = async <Result>(attempt: FirstSendAttempt<Result>, hooks: FirstSendHooks<Result>, error: AppError, mayHaveLanded: boolean): Promise<Result | undefined> => {
     state.send({ type: "sendFailed", error })
-    hooks.failed?.()
-    if ((await decided()) === "retry") {
-      hooks.retried?.()
-      return run(attempt, hooks)
-    }
+    if ((await decided()) === "retry") return run(attempt, hooks)
     let landed: Result | undefined
     try {
       landed = mayHaveLanded ? await hooks.landed?.() : undefined

@@ -51,7 +51,6 @@ function createKeyDown(context: ControllerContext, blank: () => boolean, setMode
     stoppable: input.working,
     abort: input.stop,
     escBlur: () => false,
-    booting: () => false,
     working: input.working,
     blank,
     promptText: context.text,

@@ -10,7 +10,6 @@ export type SubmitBlockReason =
   | "harness-polling"
   | "no-model"
   | "models-loading"
-  | "booting"
   | "empty"
 
 export type SubmitBlock = {
@@ -29,7 +28,6 @@ export type SubmitBlockInput = {
   readonly harnessOptionsLoading: boolean
   readonly harnessReadyForSubmit: boolean
   readonly modelBlocked: boolean
-  readonly booting: boolean
   readonly stoppable: boolean
   readonly blank: boolean
   readonly workspaceAsleep?: boolean
@@ -43,7 +41,6 @@ const COPY = {
   "harness-polling": "Checking the agent…",
   "no-model": "Choose a model to continue",
   "models-loading": "Loading models…",
-  booting: "Starting up…",
   empty: "Type a message to get started",
 } as const satisfies Record<SubmitBlockReason, string>
 
@@ -64,7 +61,7 @@ function block(reason: SubmitBlockReason): SubmitBlock {
 export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   if (input.authorityBlock) return block(input.authorityBlock)
   if (input.stoppable && input.blank) return null
-  if (input.workspaceAsleep) return input.blank ? block("empty") : null
+  if (input.workspaceAsleep && input.harnessMode) return input.blank ? block("empty") : null
   if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
   if (input.harnessMode && !input.draftConnectionAllowsNoModel) {
@@ -78,7 +75,6 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
 
   if (input.modelBlocked) return block("no-model")
 
-  if (input.booting) return block("booting")
   if (!input.stoppable && input.blank) return block("empty")
 
   return null

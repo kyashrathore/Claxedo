@@ -43,9 +43,8 @@ test("first send: a refused send shows the server's message and waits for Retry,
     if (attempts === 1) throw new ServerError({ class: "conflict", code: "cloud_runtime_boot_failed", message: "The cloud workspace could not start: branch main is missing" })
     return "session"
   }
-  const hooks: string[] = []
   let settled = false
-  const result = send.run(attempt, { failed: () => hooks.push("failed"), retried: () => hooks.push("retried") }).then((value) => {
+  const result = send.run(attempt).then((value) => {
     settled = true
     return value
   })
@@ -55,12 +54,10 @@ test("first send: a refused send shows the server's message and waits for Retry,
   expect(state.kind === "failed" && state.error.message).toBe("The cloud workspace could not start: branch main is missing")
   expect(settled).toBe(false)
   expect(attempts).toBe(1)
-  expect(hooks).toEqual(["failed"])
 
   send.retry()
   expect(await result).toBe("session")
   expect(attempts).toBe(2)
-  expect(hooks).toEqual(["failed", "retried"])
   expect(send.state()).toEqual({ kind: "sending", placementId: created })
 })
 

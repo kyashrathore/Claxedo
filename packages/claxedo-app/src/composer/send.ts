@@ -1,4 +1,4 @@
-import { createMemo, createSignal, type Accessor } from "solid-js"
+import { createMemo, type Accessor } from "solid-js"
 import { ServerError, toAppError, type PromptAttachment, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { formatCommentNote, formatImageMarkNote, formatQuoteNote } from "@/lib/comment-note"
@@ -111,7 +111,8 @@ type SendInput = {
   working: Accessor<boolean>
   goalCapable: Accessor<boolean>
   view: Accessor<SessionView | undefined>
-  startSession?: (submission: Submission, prompt: PromptInput, draft: Draft) => Promise<SessionView | undefined>
+  blocked?: () => boolean
+  startSession?: (submission: Submission, prompt: PromptInput) => Promise<SessionView | undefined>
   afterAccepted?: (view: SessionView) => void
   queuedReplace: () => ((input: PromptInput) => Promise<boolean>) | undefined
   focusEditor: () => void
@@ -151,31 +152,25 @@ function createArmGoal(input: SendInput) {
   }
 }
 
-async function startDraftSession(input: SendInput, submission: Submission, prompt: PromptInput, setBooting: (booting: boolean) => void): Promise<SessionView | undefined> {
+async function startDraftSession(input: SendInput, submission: Submission, prompt: PromptInput): Promise<SessionView | undefined> {
   const key = input.key()
-  const draft = input.store.take(key)
-  setBooting(true)
-  const view = await required(input.startSession)(submission, prompt, draft).catch((error: unknown) => {
-    input.store.restore(key, draft)
-    throw error
-  })
-  if (!view) {
-    input.store.restore(key, draft)
-    return undefined
-  }
+  const view = await required(input.startSession)(submission, prompt)
+  if (!view) return undefined
+  const draft = input.store.draft(key)
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
+  input.store.reset(key)
   input.normalMode()
   return view
 }
 
-async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBooting: (booting: boolean) => void): Promise<SessionView | undefined> {
+async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView | undefined> {
   const key = input.key()
   const replace = input.queuedReplace()
   const delivery = input.working() ? "queue" : undefined
   const submission = await input.submission()
   const prompt = await buildPromptInput({ draft, submission, goal, delivery })
   const existing = input.view()
-  if (!existing) return startDraftSession(input, submission, { ...prompt, clientRequestId }, setBooting)
+  if (!existing) return startDraftSession(input, submission, { ...prompt, clientRequestId })
   if (replace) {
     if (!await replace(prompt)) throw new ServerError({ class: "conflict", code: "queue_edit_conflict", message: "The queued message changed; your edit has not been sent" })
     input.normalMode()
@@ -191,12 +186,11 @@ async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, cl
 export function createComposerSend(input: SendInput) {
   const state = machine<SendState, SendEvent>({ kind: "editing" }, sendTransition)
   const sending = createMemo(() => state.state().kind === "sending")
-  const [booting, setBooting] = createSignal(false)
   const armGoal = createArmGoal(input)
   const stop = createStop(input.view, input.goalStopFailed)
   const send = async () => {
     const draft = input.store.draft(input.key())
-    if (sending() || !promptFilled(draft)) return
+    if (sending() || input.blocked?.() || !promptFilled(draft)) return
     const goal = input.queuedReplace() ? { kind: "none" as const } : goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalCapable())
     if (goal.kind === "arm") {
       input.store.setPrompt(input.key(), promptWithoutText(draft.prompt), 0)
@@ -205,20 +199,17 @@ export function createComposerSend(input: SendInput) {
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
     try {
-      const view = await deliverDraft(input, draft, goal, clientRequestId, setBooting)
+      const view = await deliverDraft(input, draft, goal, clientRequestId)
       if (!view) return state.send({ type: "sendWithdrawn", clientRequestId })
       state.send({ type: "sendAccepted", clientRequestId })
       input.afterAccepted?.(view)
     } catch (error) {
       state.send({ type: "sendRejected", error: toAppError(error) })
-    } finally {
-      setBooting(false)
     }
   }
   return {
     state: state.state,
     sending,
-    booting,
     send,
     armGoal,
     disarmGoal: () => input.store.setGoalArmed(input.key(), false),

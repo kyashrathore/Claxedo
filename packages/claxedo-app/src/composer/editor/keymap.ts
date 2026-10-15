@@ -41,7 +41,6 @@ export type EditorKeymapDeps<TEvent extends EditorKeyEvent> = {
   stoppable: () => boolean
   abort: () => void
   escBlur: () => boolean
-  booting: () => boolean
   working: () => boolean
   blank: () => boolean
   promptText: () => string
@@ -164,7 +163,7 @@ const historyArrows: KeyHandler = (deps, event) => {
 const submit: KeyHandler = (deps, event) => {
   if (event.key !== "Enter" || event.shiftKey) return false
   event.preventDefault()
-  if (event.repeat || deps.booting() || (deps.working() && deps.blank())) return true
+  if (event.repeat || (deps.working() && deps.blank())) return true
   void deps.handleSubmit(event)
   return true
 }

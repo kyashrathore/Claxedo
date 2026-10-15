@@ -117,10 +117,8 @@ export function Composer(props: ComposerProps) {
       currentAgentName={() => ""}
       onAgentSelect={() => undefined}
       stoppable={composer.working}
-      booting={composer.booting}
       working={composer.working}
       blank={controller.blank}
-      bootText={composer.bootText}
       submitDisabled={() => composer.send.sending() || (!composer.working() && !!composer.submitBlock() && !composer.submitBlock()?.actionable)}
       submitExcludeFromTab={() => false}
       submitBlock={composer.submitBlock}
