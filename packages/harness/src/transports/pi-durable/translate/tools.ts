@@ -49,8 +49,11 @@ function shownContent(content: unknown): unknown[] {
   return asArray(content).filter((item) => !RENDERED_DIAGNOSTICS.test(asString(row(item).text) ?? ""))
 }
 
-function diagnosticMessages(data: unknown): string[] {
-  return asArray(row(data).diagnostics).flatMap((diagnostic) => asString(row(diagnostic).message) ?? [])
+function diagnosticMessages(data: unknown, severity?: string): string[] {
+  return asArray(row(data).diagnostics).flatMap((item) => {
+    const diagnostic = row(item)
+    return severity === undefined || diagnostic.severity === severity ? asString(diagnostic.message) ?? [] : []
+  })
 }
 
 export function piToolEnd(state: PiDurableTranslatorState, frame: Frame): PiStep {
@@ -65,7 +68,8 @@ export function piToolEnd(state: PiDurableTranslatorState, frame: Frame): PiStep
     const error = [piResultText(content), ...diagnosticMessages(entry.data)].filter((text) => text !== "").join("\n")
     return piStep(state, [{ type: "tool-error", toolCallId: id, error }])
   }
-  const output = { content, ...(entry.data === undefined ? {} : { details: entry.data }) }
+  const notes = diagnosticMessages(entry.data, "warn").map((text) => ({ type: "text", text }))
+  const output = { content: [...content, ...notes], ...(entry.data === undefined ? {} : { details: entry.data }) }
   const images = contentBlockImages(content)
   const event: AgentRuntimeEvent = { type: "tool-output", toolCallId: id, output, ...(images.length ? { attachments: images } : {}) }
   return piStep(state, [event])
