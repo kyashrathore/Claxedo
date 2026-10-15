@@ -275,6 +275,7 @@ function vmFixture(vm: Vm) {
   const script = (command: string) => command
     .replace(/\[ -x \/usr\/libexec\/docker\/docker-init \]/, `[ -f ${path.join(dir, "docker-init")} ]`)
     .replaceAll("/var/lib/ascii-docker-images", boatImages)
+    .replaceAll("/etc/ascii-docker.json", path.join(dir, "ascii-docker.json"))
     .replaceAll("/run/lock/claxedo-boot.lock", bootLock)
   const shell = { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin`, TMPDIR: path.join(dir, "tmp") } }
   // Boat's file channel writes what a boot stages before its commands run.
@@ -1374,11 +1375,15 @@ describe("a Boat runtime template", () => {
     }
   })
 
-  onVm("the template reset removes the runtime container, the workspace, the runtime's state and every boot's env, and keeps the image's trees, stub and env", async () => {
+  onVm("the template reset removes the runtime container and Boat's record and archive of it, the workspace, the runtime's state and every boot's env, and keeps the image's trees, stub and env", async () => {
     const run = runStartCommand(await startCommands(), {})
     expect(run.started).toBe(0)
     for (const dir of ["workspace", "claxedo", "workspace-runtime"]) mkdirSync(path.join(run.dir, "claxedo-persistent", dir, "state"), { recursive: true })
     writeFileSync(path.join(run.dir, ".claxedo-runtime-env.another-boot"), "secret")
+    // Boat's record as a builder left it (2026-10-16), cut to the fields that name the machine it ran on.
+    writeFileSync(path.join(run.dir, "ascii-docker.json"), JSON.stringify([{ name: "claxedo-runtime", image: "claxedo-runtime-stub", create: { Hostname: "claxedo-rt-builder" } }]))
+    writeFileSync(path.join(run.dir, "ascii-docker-images", "e3e7db2c58a8.tar"), "")
+    writeFileSync(path.join(run.dir, "ascii-docker-images", "e3e7db2c58a8.tags"), "claxedo-runtime-stub:latest")
     const reset = spawnSync("sh", ["-c", run.script(boatTemplateResetCommand())], { ...run.shell, encoding: "utf8" })
     expect(reset.stderr).toBe("")
     expect(reset.status).toBe(0)
@@ -1386,6 +1391,8 @@ describe("a Boat runtime template", () => {
     expect(readdirSync(path.join(run.dir, "claxedo-persistent"))).toEqual([treesDirectory(IMAGE)])
     expect(readdirSync(run.trees(IMAGE)).sort()).toEqual([".complete", "image.env", "stub.tar", ...IMAGE_TREES].sort())
     expect(readdirSync(run.dir).filter((file) => file.startsWith(".claxedo-"))).toEqual([])
+    expect(JSON.parse(readFileSync(path.join(run.dir, "ascii-docker.json"), "utf8"))).toEqual([])
+    expect(run.boatSavedImages()).toEqual([])
   })
 
   onVm("a reset of a machine whose trees were never seeded fails, so no template is saved without them", async () => {

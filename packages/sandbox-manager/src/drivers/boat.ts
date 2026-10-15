@@ -173,6 +173,12 @@ const ROOT_DIRECTORIES = ["boot", "dev", "media", "mnt", "proc", "run", "sys", "
 // by the image's id, and loads it again at every resume (16–19 s for this
 // image, measured 2026-10-15); removing the image leaves the archive behind.
 const BOAT_SAVED_IMAGES = "/var/lib/ascii-docker-images"
+// Boat's record of the containers a restore creates again (a JSON array, one
+// entry per container with its create settings, hostname among them). Removing
+// a container leaves its entry for at least 20 s, and a deploy from a template
+// saved a second after the removal created the builder's container again
+// (2026-10-16).
+const BOAT_CONTAINER_RECORD = "/etc/ascii-docker.json"
 const DOCKER_NAME_IN_USE = "is already in use by container"
 const CONTAINER_CREATE_ATTEMPTS = 5
 const CONTAINER_SECURITY_OPTIONS = "--security-opt seccomp=unconfined --security-opt apparmor=unconfined"
@@ -209,7 +215,12 @@ const TEMPLATE_UNREADABLE_CODES: ReadonlySet<string> = new Set(["snapshot_not_fo
  * Turns a booted machine into one any workspace can start from: it keeps what
  * every machine of the image shares (the image's trees, stub archive and env,
  * and Boat's ~/.ascii/playbook.json) and removes what this machine's boot made
- * (the runtime container, the workspace, the runtime's state, the boot's env).
+ * (the runtime container and Boat's record and image archive of it, the
+ * workspace, the runtime's state, the boot's env). Nothing the runtime wrote
+ * into the image's trees was found there (Boat, 2026-10-16: the trees held only
+ * the image's own entries after two boots); what else differs on the machine
+ * is Boat's own, and a machine created from the template gets its own
+ * machine-id, SSH host keys, hostname and no hosted port.
  */
 export function boatTemplateResetCommand() {
   const bootFiles = [
@@ -220,7 +231,8 @@ export function boatTemplateResetCommand() {
     `${REGISTRY_PASSWORD_PATH}.*`,
   ]
   return `{ docker rm -f ${DEFAULT_CONTAINER_NAME} >/dev/null 2>&1 || true; } && sudo rm -rf ${bootFiles.join(" ")} `
-    + `&& [ -z "$(docker ps -aq)" ] && ls -d ${PERSISTENT_ROOT}/image-*/${IMAGE_TREES_COMPLETE_MARKER}`
+    + `&& [ -z "$(docker ps -aq)" ] && echo '[]' | sudo tee ${BOAT_CONTAINER_RECORD} >/dev/null && sudo find ${BOAT_SAVED_IMAGES} -mindepth 1 -delete `
+    + `&& ls -d ${PERSISTENT_ROOT}/image-*/${IMAGE_TREES_COMPLETE_MARKER}`
 }
 
 function hostGoneOrThrow(err: unknown): never {
