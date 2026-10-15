@@ -540,4 +540,17 @@ describe("tool groups", () => {
       audit: () => undefined,
     })).toThrow(/consented tool groups/)
   })
+
+  test("a hosted mount without an enabledToolGroups resolver withholds account-reach groups", async () => {
+    const { url } = await hosted({
+      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+    })
+    const { client } = await connect(url, { authorization: "Bearer cli-jwt" })
+    const names = await toolNames(client)
+    // Runtime and service-reach groups are available, but account-reach
+    // groups (tasks, you-search) are withheld until explicitly consented.
+    expect(names).toContain("sessions_board")
+    expect(names).not.toContain("you_web_search")
+    expect(names).not.toContain("task_create")
+  })
 })

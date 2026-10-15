@@ -231,7 +231,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     const client = await options.createClient(credential, request)
     const groups = enabled
       ? options.registerTools.filter((group) => enabled.includes(group.id))
-      : options.registerTools
+      : options.registerTools.filter((group) => group.reach !== "account")
     // The MCP SDK builds its protocol schemas at module scope; loading it with
     // the first MCP request keeps that work out of every Worker isolate's
     // startup, which most isolates finish without serving one.
