@@ -142,6 +142,7 @@ export async function startTerminal(
   context: StartContext,
 ) {
   const { bufferLimit: BUFFER_LIMIT, highWatermark: QUEUE_HIGH_WATERMARK, lowWatermark: QUEUE_LOW_WATERMARK } = context
+  const BUFFER_TRIM_AT = BUFFER_LIMIT + Math.floor(BUFFER_LIMIT / 4)
   const bus = currentSessionCore().bus
   const createStart = performance.now()
   const id = "pty_" + crypto.randomUUID().replace(/-/g, "")
@@ -462,7 +463,11 @@ export async function startTerminal(
 
     terminalIo.touch()
     session.buffer += data
-    if (session.buffer.length > BUFFER_LIMIT) {
+    // `+=` leaves a rope that the cut's first read flattens, a copy of the
+    // whole buffer. Cutting on every chunk past the limit would copy 2 MB per
+    // 1–4 KB read; cutting back to the limit only once it passes
+    // BUFFER_TRIM_AT pays that copy once per quarter-limit of output.
+    if (session.buffer.length > BUFFER_TRIM_AT) {
       // Cut on a safe boundary: a raw `slice(excess)` can land inside an
       // escape sequence, and the replay then starts mid-CSI — xterm prints
       // the parameter bytes as literal junk at the top of the scrollback.

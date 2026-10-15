@@ -314,6 +314,33 @@ describe("Pty lifecycle cleanup", () => {
   }))
 })
 
+describe("Pty replay buffer", () => {
+  test("is cut back to its 2 MB limit only once it passes a quarter over it", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
+    const { Pty } = await import("./index")
+    const info = await Pty.create({ cwd: tmpDir, title: "replay" }, ownership)
+    Pty.commit(info.id)
+    const read = (data: string) => fakeProcesses.get(info.pid)!.dataHandlers.forEach((handler) => handler(data))
+    const replayLength = () => {
+      const ws = socket()
+      Pty.connect(info.id, ws, 1)
+      return (ws.send as unknown as { mock: { calls: unknown[][] } }).mock.calls
+        .map(([data]) => data)
+        .filter((data): data is string => typeof data === "string")
+        .join("").length
+    }
+    const limit = 2 * 1024 * 1024
+    const block = "y\r\n".repeat(1024 * 4)
+
+    for (let total = 0; total <= limit; total += block.length) read(block)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(replayLength()).toBeGreaterThan(limit)
+
+    for (let total = 0; total <= limit / 4; total += block.length) read(block)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(replayLength()).toBeLessThanOrEqual(limit)
+  }))
+})
+
 describe("Pty activity changes", () => {
   test("create, native exit and removal each notify with the new activity already readable", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
