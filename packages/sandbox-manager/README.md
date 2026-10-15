@@ -114,11 +114,16 @@ directories), its working directory, and a `claxedo.image` label naming the
 image. The seed starts no container of the image: Boat records the containers
 it sees, and one the seed ran for a second to read the image's root was
 recreated by a later restore as soon as the image was back, so the next seed
-could not remove the image. Last it removes the image and the archive Boat
-keeps of it in `/var/lib/ascii-docker-images` (Boat loads that archive again at
-every resume, 16–19 s for this image, and removing the image leaves it behind),
-then marks the trees complete; a seed that did not complete is redone from the
-pull.
+could not remove the image. The trees are marked complete once they all
+landed, and a seed whose trees did not complete is redone from the pull; trees
+marked complete are never seeded again, since they hold what was changed since,
+so a seed missing only `stub.tar` or `image.env` (as one an earlier driver left)
+pulls the image and builds those alone. Once the runtime container runs from the
+stub, the start removes the image, any leftover container of it, and the archive
+Boat keeps of it in `/var/lib/ascii-docker-images` (Boat loads that archive
+again at every resume, 16–19 s for this image, and removing the image leaves it
+behind). It waits for the start because the container being replaced may run
+from the image itself, as an earlier driver's did.
 
 Every start then runs the container from the stub, loading `stub.tar` when
 Docker does not hold this image's stub, with every path above mounted. A wake

@@ -279,15 +279,16 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    *
    * Two commands. `prepare` changes nothing a running container serves from:
    * it waits for the daemon (a resume reboots the VM, and Docker comes up as a
-   * systemd service after Boat reports the sandbox ready), logs in, and, for an
-   * image whose trees are not seeded yet, pulls it, seeds its trees and its
-   * stub, then removes it; it loads the stub when Docker does not hold this
-   * image's, and removes other images' trees. A failure there leaves a runtime
-   * of the previous image serving. `start` then replaces another image's
-   * container with one of this image, or starts this image's container that
-   * is already there: the one the stop kept, which Boat's restore creates
-   * again stopped, or one Boat recreated after a stop that was not this
-   * driver's. A failure there leaves nothing serving.
+   * systemd service after Boat reports the sandbox ready), logs in, and, when
+   * the image's trees, stub or env are missing, pulls it and seeds what is
+   * missing; it loads the stub when Docker does not hold this image's, and
+   * removes other images' trees. A failure there leaves a runtime of the
+   * previous image serving. `start` then replaces another image's container
+   * with one of this image, or starts this image's container that is already
+   * there: the one the stop kept, which Boat's restore creates again stopped,
+   * or one Boat recreated after a stop that was not this driver's; then it
+   * removes the image if a seed left it. A failure there leaves nothing
+   * serving.
    */
   function containerScripts(input: SandboxDriverEnsureInput): { prepare: string; start: string } {
     const port = runtimePort(input)
@@ -325,14 +326,13 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // root on every sandbox that booted before the trees existed, and the VM
     // user cannot create inside it. A stream that broke leaves no tree and
     // ends the seed before it is marked complete.
-    const seedTrees = `{ docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image} >/dev/null; } `
-      + `&& sudo rm -rf ${trees} && sudo mkdir -p ${trees} `
+    const seedTrees = `sudo rm -rf ${trees} && sudo mkdir -p ${trees} `
       + `&& { docker rm -f ${SEED_CONTAINER_NAME} >/dev/null 2>&1 || true; } `
       + `&& docker create --name ${SEED_CONTAINER_NAME} ${image} true >/dev/null `
       + `&& for tree in ${IMAGE_TREES.join(" ")}; do `
       + `docker cp ${SEED_CONTAINER_NAME}:/$tree - | sudo tar -xf - -C ${trees} ${IMAGE_TREE_SEED_EXCLUDES.map((exclude) => `--exclude=${exclude}`).join(" ")} `
       + `&& [ -d ${trees}/$tree ] || exit 1; done `
-      + `&& docker rm ${SEED_CONTAINER_NAME} >/dev/null`
+      + `&& docker rm ${SEED_CONTAINER_NAME} >/dev/null && sudo touch ${trees}/${IMAGE_TREES_COMPLETE_MARKER}`
     const seedStub = `stub=$(mktemp -d) `
       + `&& docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' ${image} > "$stub/${IMAGE_ENV_FILE}" `
       + `&& workdir=$(docker image inspect --format '{{or .Config.WorkingDir "/"}}' ${image}) `
@@ -342,8 +342,15 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + `&& docker import --change "WORKDIR $workdir" --change ${shell(`LABEL ${IMAGE_LABEL}=${reference}`)} "$stub/skeleton.tar" ${STUB_IMAGE} >/dev/null `
       + `&& docker save -o "$stub/${STUB_IMAGE_ARCHIVE}" ${STUB_IMAGE} `
       + `&& sudo mv "$stub/${IMAGE_ENV_FILE}" "$stub/${STUB_IMAGE_ARCHIVE}" ${trees}/ && rm -rf "$stub"`
-    const removeImage = `id=$(docker image inspect --format '{{.Id}}' ${image}) && docker rmi ${image} >/dev/null `
-      + `&& sudo rm -f ${BOAT_SAVED_IMAGES}/"\${id#sha256:}".tar`
+    // Run by the start once the runtime container is this image's stub's: until
+    // then it may be one of the image itself (an earlier driver ran the image),
+    // and any other container of the image is a leftover, such as a seed
+    // container Boat created again.
+    const removeImage = `if docker image inspect ${image} >/dev/null 2>&1; then `
+      + `leftovers=$(docker ps -aq --filter ancestor=${image}) && { [ -z "$leftovers" ] || docker rm -f $leftovers >/dev/null; } `
+      + `&& id=$(docker image inspect --format '{{.Id}}' ${image}) && docker rmi ${image} >/dev/null `
+      + `&& sudo rm -f ${BOAT_SAVED_IMAGES}/"\${id#sha256:}".tar; fi`
+    const seeded = [IMAGE_TREES_COMPLETE_MARKER, STUB_IMAGE_ARCHIVE, IMAGE_ENV_FILE].map((file) => `[ -f ${trees}/${file} ]`).join(" && ")
     const prepare = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
@@ -353,8 +360,10 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
-      `if [ ! -f ${trees}/${IMAGE_TREES_COMPLETE_MARKER} ]; then ${seedTrees} && ${seedStub} && ${removeImage} `
-        + `&& sudo touch ${trees}/${IMAGE_TREES_COMPLETE_MARKER}; fi`,
+      // Trees an earlier start marked complete hold what a person or a harness
+      // changed since, so a seed missing only its stub or env builds those alone.
+      `if ! { ${seeded}; }; then { docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image} >/dev/null; } `
+        + `&& { [ -f ${trees}/${IMAGE_TREES_COMPLETE_MARKER} ] || { ${seedTrees}; }; } && ${seedStub}; fi`,
       `{ ${labelledWithImage("image", STUB_IMAGE)} || docker load -i ${trees}/${STUB_IMAGE_ARCHIVE} >/dev/null; }`,
       `sudo find "$(pwd)/${PERSISTENT_ROOT}" -mindepth 1 -maxdepth 1 -name 'image-*' ! -path ${trees} -exec rm -rf {} +`,
     ]
@@ -367,7 +376,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + `else created=; for attempt in $(seq ${CONTAINER_CREATE_ATTEMPTS}); do [ "$attempt" = 1 ] || sleep 1; `
       + `docker rm -f ${containerName} >/dev/null 2>&1; failure=$(${run} 2>&1 >/dev/null) && { created=1; break; }; `
       + `case "$failure" in *${shell(DOCKER_NAME_IN_USE)}*) ;; *) break ;; esac; done; `
-      + `[ -n "$created" ] || { echo "$failure" >&2; false; }; fi`
+      + `[ -n "$created" ] || { echo "$failure" >&2; false; }; fi && ${removeImage}`
     return { prepare: prepare.join(" && "), start }
   }
 

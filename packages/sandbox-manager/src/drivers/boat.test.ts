@@ -149,6 +149,12 @@ type Vm = {
   /** A create that fails without leaving a container behind. */
   runFails?: boolean
   seededImages?: string[]
+  /** Images whose trees an earlier driver seeded and marked complete, with no stub or env beside them. */
+  seededWithoutStub?: string[]
+  /** The container in the slot runs from the image itself, as an earlier driver's runtime did. */
+  existingUsesImage?: boolean
+  /** Ids of containers of the image other than the runtime, such as a seed container Boat created again. */
+  imageContainers?: string[]
   imagePulled?: boolean
   /** The image reference the label of the stub Docker holds names. */
   stubLoaded?: string
@@ -170,6 +176,8 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
   const rootfs = path.join(dir, "rootfs")
   const boatImages = path.join(dir, "ascii-docker-images")
   const recreations = path.join(dir, "recreations")
+  const imageContainers = path.join(dir, "image-containers")
+  const slotUsesImage = path.join(dir, "container-uses-image")
   const persistentRoot = path.join(dir, "claxedo-persistent")
   writeFileSync(log, "")
   if (!vm.dir) {
@@ -180,6 +188,8 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
     writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
     writeFileSync(path.join(dir, "docker-init"), "")
     writeFileSync(recreations, (vm.recreatedBeforeRun ?? []).join("\n"))
+    writeFileSync(imageContainers, (vm.imageContainers ?? []).map((id) => `${id}\n`).join(""))
+    if (vm.existingUsesImage) writeFileSync(slotUsesImage, "")
     if (vm.existingImage) writeFileSync(slot, vm.existingImage)
     if (vm.imagePulled) writeFileSync(path.join(images, "image"), "")
     if (vm.stubLoaded) writeFileSync(path.join(images, "stub"), vm.stubLoaded)
@@ -195,6 +205,13 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
       mkdirSync(trees, { recursive: true })
       writeFileSync(path.join(trees, "image.env"), "PATH=/usr/bin\n")
       writeFileSync(path.join(trees, "stub.tar"), image)
+      writeFileSync(path.join(trees, ".complete"), "")
+    }
+    for (const image of vm.seededWithoutStub ?? []) {
+      const trees = path.join(persistentRoot, treesDirectory(image))
+      for (const tree of IMAGE_TREES) mkdirSync(path.join(trees, tree), { recursive: true })
+      writeFileSync(path.join(trees, "root", ".user-dotfile"), "mine")
+      mkdirSync(path.join(trees, "usr", "local", "lib", "node_modules", "cowsay"), { recursive: true })
       writeFileSync(path.join(trees, ".complete"), "")
     }
     if (vm.persistentRootReadOnly) {
@@ -214,13 +231,14 @@ function runStartCommand(commands: StartCommands, vm: Vm) {
       `case "$1" in`,
       `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
       `  pull) touch ${images}/image ;;`,
-      `  rmi) rm ${images}/image ;;`,
+      `  rmi) if [ -s ${imageContainers} ] || [ -f ${slotUsesImage} ]; then echo 'conflict: unable to delete (must be forced) - container is using its referenced image' >&2; exit 1; fi; rm ${images}/image ;;`,
+      `  ps) cat ${imageContainers} ;;`,
       `  image) case "$last" in`,
       `    ${STUB_IMAGE}) [ -f ${images}/stub ] && cat ${images}/stub ;;`,
       `    *) [ -f ${images}/image ] || exit 1; case "$*" in *Env*) printf 'PATH=/usr/local/bin:/usr/bin\\nLANG=C.UTF-8\\n' ;; *WorkingDir*) echo /workspace ;; *.Id*) echo ${IMAGE_ID} ;; esac ;;`,
       `  esac ;;`,
       `  container) [ -f ${slot} ] && { [ "$3" != --format ] || cat ${slot}; } ;;`,
-      `  rm) case "$*" in *claxedo-seed*) ;; *) rm -f ${slot} ;; esac ;;`,
+      `  rm) for a; do case "$a" in rm|-f|claxedo-seed) ;; claxedo-runtime) rm -f ${slot} ${slotUsesImage} ;; *) sed -i.bak "/^$a$/d" ${imageContainers} ;; esac; done ;;`,
       `  create) [ -f ${images}/image ] ;;`,
       `  cp) ${vm.seedFails ? "echo 'stream broke' >&2; exit 1" : `tree=\${2#claxedo-seed:/}; tar -cf - -C ${rootfs} "$tree"`} ;;`,
       `  import) for a; do file=$prev; prev=$a; case "$a" in "LABEL claxedo.image="*) echo "\${a#LABEL claxedo.image=}" > ${images}/stub.next ;; esac; done`,
@@ -467,12 +485,14 @@ describe("boat sandbox driver", () => {
     expect(run?.body.timeoutSeconds).toBe(120)
     const prepare = boat.calls.find((c) => c.path.endsWith("/commands") && c.body.command.includes("docker info"))
     expect(prepare?.body.timeoutSeconds).toBe(600)
-    expect(prepare?.body.command).toContain(`if [ ! -f "$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"/.complete ]; then { docker image inspect 'ghcr.io/test/sandbox:1' >/dev/null 2>&1 || docker pull 'ghcr.io/test/sandbox:1'`)
+    const trees = `"$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"`
+    expect(prepare?.body.command).toContain(`if ! { [ -f ${trees}/.complete ] && [ -f ${trees}/stub.tar ] && [ -f ${trees}/image.env ]; }; then { docker image inspect 'ghcr.io/test/sandbox:1' >/dev/null 2>&1 || docker pull 'ghcr.io/test/sandbox:1'`)
     expect(prepare?.body.command).toContain("sudo rm -rf")
     expect(prepare?.body.command).toContain("sudo mkdir -p")
     expect(prepare?.body.command).toContain(`docker import --change "WORKDIR $workdir" --change 'LABEL claxedo.image=ghcr.io/test/sandbox:1' "$stub/skeleton.tar" claxedo-runtime-stub`)
-    expect(prepare?.body.command).toContain("docker rmi 'ghcr.io/test/sandbox:1'")
-    expect(prepare?.body.command).toContain(`sudo rm -f /var/lib/ascii-docker-images/"\${id#sha256:}".tar`)
+    expect(prepare?.body.command).not.toContain("docker rmi")
+    expect(run?.body.command).toContain("docker rmi 'ghcr.io/test/sandbox:1'")
+    expect(run?.body.command).toContain(`sudo rm -f /var/lib/ascii-docker-images/"\${id#sha256:}".tar`)
     expect(run?.body.command).toContain("docker run -d --name claxedo-runtime --hostname 'ws1' -p 2593:2593 -v /usr/libexec/docker/docker-init:/claxedo-init:ro ")
     expect(run?.body.command).toContain(`--env-file "$(pwd)/claxedo-persistent/image-ghcr.io-test-sandbox-1"/image.env `)
     expect(run?.body.command).toContain("--security-opt seccomp=unconfined --security-opt apparmor=unconfined --entrypoint /claxedo-init claxedo-runtime-stub -- sh -lc ")
@@ -555,19 +575,18 @@ describe("boat sandbox driver", () => {
     expect(publishes(boat.calls)).toHaveLength(attempts)
   })
 
-  const SEED_CALLS = (pulled: boolean) => [
-    "image inspect", ...(pulled ? [] : [`pull ${IMAGE}`]), "sudo rm", "sudo mkdir", "rm -f", "create --name",
-    ...IMAGE_TREES.map((tree) => `cp claxedo-seed:/${tree}`), "rm claxedo-seed",
-    "image inspect", "image inspect", "import --change", "save -o", "sudo mv",
-    "image inspect", `rmi ${IMAGE}`, "sudo rm", "sudo touch",
-  ]
+  const PULL_CALLS = ["image inspect", `pull ${IMAGE}`]
+  const TREE_SEED_CALLS = ["sudo rm", "sudo mkdir", "rm -f", "create --name", ...IMAGE_TREES.map((tree) => `cp claxedo-seed:/${tree}`), "rm claxedo-seed", "sudo touch"]
+  const STUB_SEED_CALLS = ["image inspect", "image inspect", "import --change", "save -o", "sudo mv"]
+  const SEED_CALLS = [...PULL_CALLS, ...TREE_SEED_CALLS, ...STUB_SEED_CALLS]
+  const IMAGE_REMOVAL_CALLS = ["image inspect", "ps -aq", "image inspect", `rmi ${IMAGE}`, "sudo rm"]
 
   onVm("a fresh VM waits for the Docker daemon, pulls the image, seeds its trees and a stub of its root as root, removes the image and Boat's saved copy of it, then creates the runtime container from the stub, leaving the workspace bind source for Docker to create", async () => {
     const run = runStartCommand(await startCommands(), { daemonUpAfter: 2, boatSavedImages: [IMAGE_ID.replace("sha256:", ""), "other-image"] })
     expect(run.stderr).toBe("")
     expect(run.prepared).toBe(0)
     expect(run.started).toBe(0)
-    expect(run.calls).toEqual(["info", "sleep 1", "info", "sleep 1", "info", ...SEED_CALLS(false), "image inspect", "sudo find", "container inspect", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "sleep 1", "info", "sleep 1", "info", ...SEED_CALLS, "image inspect", "sudo find", "container inspect", "rm -f", "run -d", ...IMAGE_REMOVAL_CALLS])
     for (const tree of IMAGE_TREES) expect(existsSync(path.join(run.trees(IMAGE), tree, `${tree}-from-image`))).toBe(true)
     expect(existsSync(path.join(run.trees(IMAGE), "root", ".cache"))).toBe(false)
     expect(readFileSync(path.join(run.trees(IMAGE), "image.env"), "utf8")).toBe("PATH=/usr/local/bin:/usr/bin\nLANG=C.UTF-8\n")
@@ -597,7 +616,7 @@ describe("boat sandbox driver", () => {
   onVm("a resume finds the image's trees seeded, pulls nothing, loads the stub Docker lost with the stop and creates the container again", async () => {
     const run = runStartCommand(await startCommands(), { seededImages: [IMAGE] })
     expect(run.started).toBe(0)
-    expect(run.calls).toEqual(["info", "image inspect", "load -i", "sudo find", "container inspect", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "image inspect", "load -i", "sudo find", "container inspect", "rm -f", "run -d", "image inspect"])
     expect(run.imagePulled()).toBe(false)
     expect(run.image()).toBe(IMAGE)
   })
@@ -610,6 +629,41 @@ describe("boat sandbox driver", () => {
     expect(replaced.started).toBe(0)
     expect(replaced.calls).toContain("load -i")
     expect(replaced.stub()).toBe(IMAGE)
+  })
+
+  onVm("trees an earlier driver seeded without a stub or env keep their files, get both from the image, and the image goes once the runtime that used it is replaced", async () => {
+    const run = runStartCommand(await startCommands(), {
+      seededWithoutStub: [IMAGE], existingImage: "(no label)", existingUsesImage: true, boatSavedImages: [IMAGE_ID.replace("sha256:", "")],
+    })
+    expect(run.stderr).toBe("")
+    expect(run.started).toBe(0)
+    expect(run.calls).toEqual(["info", ...PULL_CALLS, ...STUB_SEED_CALLS, "image inspect", "sudo find", "container inspect", "rm -f", "run -d", ...IMAGE_REMOVAL_CALLS])
+    expect(readFileSync(path.join(run.trees(IMAGE), "root", ".user-dotfile"), "utf8")).toBe("mine")
+    expect(existsSync(path.join(run.trees(IMAGE), "usr", "local", "lib", "node_modules", "cowsay"))).toBe(true)
+    expect(existsSync(path.join(run.trees(IMAGE), "stub.tar"))).toBe(true)
+    expect(existsSync(path.join(run.trees(IMAGE), "image.env"))).toBe(true)
+    expect(run.image()).toBe(IMAGE)
+    expect(run.imagePulled()).toBe(false)
+    expect(run.boatSavedImages()).toEqual([])
+  })
+
+  onVm("trees with a stub but no env get the env and stub again, and nothing else", async () => {
+    const commands = await startCommands()
+    const first = runStartCommand(commands, { seededImages: [IMAGE] })
+    rmSync(path.join(first.trees(IMAGE), "image.env"))
+    rmSync(path.join(first.dir, "container"))
+    const again = runStartCommand(commands, { dir: first.dir })
+    expect(again.started).toBe(0)
+    expect(again.calls).toEqual(["info", ...PULL_CALLS, ...STUB_SEED_CALLS, "image inspect", "sudo find", "container inspect", "rm -f", "run -d", ...IMAGE_REMOVAL_CALLS])
+    expect(existsSync(path.join(first.trees(IMAGE), "image.env"))).toBe(true)
+  })
+
+  onVm("containers of the image other than the runtime, such as a seed container Boat created again, are removed with the image", async () => {
+    const run = runStartCommand(await startCommands(), { seededImages: [IMAGE], stubLoaded: IMAGE, imagePulled: true, imageContainers: ["0a1b2c3d"] })
+    expect(run.stderr).toBe("")
+    expect(run.started).toBe(0)
+    expect(run.calls.slice(-6)).toEqual(["image inspect", "ps -aq", "rm -f", "image inspect", `rmi ${IMAGE}`, "sudo rm"])
+    expect(run.imagePulled()).toBe(false)
   })
 
   onVm("a seed that was interrupted before it was marked complete is redone from scratch", async () => {
@@ -655,13 +709,13 @@ describe("boat sandbox driver", () => {
   onVm("a start that finds this image's container, which a stop keeps and Boat creates again stopped, only starts it", async () => {
     const run = runStartCommand(await startCommands(), { existingImage: IMAGE, seededImages: [IMAGE], stubLoaded: IMAGE, daemonUpAfter: 1 })
     expect(run.started).toBe(0)
-    expect(run.calls).toEqual(["info", "sleep 1", "info", "image inspect", "sudo find", "container inspect", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["info", "sleep 1", "info", "image inspect", "sudo find", "container inspect", "start claxedo-runtime", "image inspect"])
   })
 
   onVm("a container of another image is replaced only once the trees of the image this boot names are seeded, and the other image's trees are removed", async () => {
     const run = runStartCommand(await startCommands(), { existingImage: "ghcr.io/test/sandbox:0", seededImages: ["ghcr.io/test/sandbox:0"], stubLoaded: "ghcr.io/test/sandbox:0" })
     expect(run.started).toBe(0)
-    expect(run.calls).toEqual(["info", ...SEED_CALLS(false), "image inspect", "sudo find", "container inspect", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", ...SEED_CALLS, "image inspect", "sudo find", "container inspect", "rm -f", "run -d", ...IMAGE_REMOVAL_CALLS])
     expect(existsSync(path.join(run.trees(IMAGE), ".complete"))).toBe(true)
     expect(existsSync(run.trees("ghcr.io/test/sandbox:0"))).toBe(false)
     expect(run.image()).toBe(IMAGE)
@@ -670,21 +724,21 @@ describe("boat sandbox driver", () => {
   onVm("a create that finds the runtime's name taken by a container Boat created again removes that container and creates the runtime once more", async () => {
     const run = runStartCommand(await startCommands(), { recreatedBeforeRun: [IMAGE], seededImages: [IMAGE], stubLoaded: IMAGE })
     expect(run.started).toBe(0)
-    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d"])
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "image inspect"])
     expect(run.image()).toBe(IMAGE)
   })
 
   onVm("a name clash whose container Boat has removed again by the retry still creates the runtime", async () => {
     const run = runStartCommand(await startCommands(), { recreatedBeforeRun: [IMAGE], recreatedVanishes: true, seededImages: [IMAGE], stubLoaded: IMAGE })
     expect(run.started).toBe(0)
-    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d"])
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "image inspect"])
     expect(run.image()).toBe(IMAGE)
   })
 
   onVm("a name Boat still holds at the first retry is retried until its create has ended", async () => {
     const run = runStartCommand(await startCommands(), { recreatedBeforeRun: [IMAGE, IMAGE], recreatedVanishes: true, seededImages: [IMAGE], stubLoaded: IMAGE })
     expect(run.started).toBe(0)
-    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "sleep 1", "rm -f", "run -d"])
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "image inspect"])
   })
 
   onVm("a name taken at each of five creates fails the start with Docker's answer", async () => {
