@@ -1,5 +1,5 @@
 import type { AgentPermission } from "@claxedo/agent-runtime-contract"
-import { isRecord } from "@claxedo/helpers/guards"
+import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 const INPUT_SUMMARY_FIELDS = ["file_path", "notebook_path", "path", "url", "pattern", "query"] as const
 
@@ -19,10 +19,6 @@ function record(value: unknown) {
   return isRecord(value) ? value : undefined
 }
 
-function text(value: unknown) {
-  return typeof value === "string" && value.trim() ? value : undefined
-}
-
 function agentText(tool: Record<string, unknown> | undefined) {
   const content = Array.isArray(tool?.content) ? tool.content : []
   return content.flatMap((item) => {
@@ -34,7 +30,7 @@ function agentText(tool: Record<string, unknown> | undefined) {
 
 function inputFields(input: Record<string, unknown> | undefined): PermissionInputField[] {
   return INPUT_SUMMARY_FIELDS.flatMap((name) => {
-    const value = text(input?.[name])
+    const value = nonEmptyString(input?.[name])
     return value ? [{ name, value }] : []
   })
 }
@@ -50,10 +46,10 @@ export function permissionFacts(request: AgentPermission): PermissionFacts {
   const meta = record(request.metadata.acpRequestMeta)
   const permission = record(meta?.permission)
   const input = record(request.metadata.input)
-  const described = permission?.version === 1 ? text(permission.description) : undefined
-  const command = text(request.metadata.command) ?? text(input?.command)
-  const reason = described ?? text(request.metadata.reason) ?? text(request.metadata.description)
-  const directory = text(record(toolCall?.rawInput)?.cwd)
+  const described = permission?.version === 1 ? nonEmptyString(permission.description) : undefined
+  const command = nonEmptyString(request.metadata.command) ?? nonEmptyString(input?.command)
+  const reason = described ?? nonEmptyString(request.metadata.reason) ?? nonEmptyString(request.metadata.description)
+  const directory = nonEmptyString(record(toolCall?.rawInput)?.cwd)
   const shown = details(toolCall, meta, input)
   return {
     tool: request.permission,

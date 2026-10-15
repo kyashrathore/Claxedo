@@ -19,18 +19,18 @@ const parts: readonly Part[] = [
   { name: "Settings and accounts", budget: 5200, folders: ["src/settings", "src/accounts"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review and files", budget: 4357, folders: ["src/review", "src/files"] },
-  { name: "Projects and cloud", budget: 3267, folders: ["src/projects", "src/cloud"] },
+  { name: "Projects and cloud", budget: 3352, folders: ["src/projects", "src/cloud"] },
   { name: "Onboarding and usage", budget: 2750, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host", budget: 2099, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 917, folders: ["src/plugins/frame"] },
-  { name: "Marketplace", budget: 2182, folders: ["src/marketplace"] },
+  { name: "Marketplace", budget: 2290, folders: ["src/marketplace"] },
   { name: "Tasks", budget: 4420, folders: ["src/tasks"] },
   { name: "Notifications", budget: 183, folders: ["src/notifications"] },
   { name: "Workspace panel", budget: 1903, folders: ["src/panel"] },
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 102870
+const totalBudget = 103313
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))

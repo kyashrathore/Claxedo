@@ -4,7 +4,7 @@ import { publicApiFailure } from "@claxedo/helpers/api-error"
 
 export const GITHUB_TOKEN_SETTINGS_URL = "https://github.com/settings/personal-access-tokens"
 
-function installation(value: unknown): CodeHostAppInstallation[] {
+function installationFromGitHub(value: unknown): CodeHostAppInstallation[] {
   const row = record(value)
   const account = text(record(row?.account)?.login)
   const settingsUrl = text(row?.html_url)
@@ -36,5 +36,5 @@ export async function githubRepositoryAccess(fetchImpl: IntegrationFetch, secret
   if (!body || !Array.isArray(body.installations)) {
     throw publicApiFailure("repository_provider_unavailable", "github_installations_invalid_response")
   }
-  return { kind: "app", installations: body.installations.flatMap(installation) }
+  return { kind: "app", installations: body.installations.flatMap(installationFromGitHub) }
 }

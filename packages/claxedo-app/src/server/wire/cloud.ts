@@ -67,15 +67,15 @@ function codeHostRepositoryFromRow(row: unknown): CodeHostRepository | undefined
   return id && fullName ? { id, fullName, private: row.private === true } : undefined
 }
 
-function httpsUrl(value: unknown) {
-  const text = nonEmptyString(value)
-  return text && URL.canParse(text) && new URL(text).protocol === "https:" ? text : undefined
+export function httpsLink(value: unknown) {
+  const link = nonEmptyString(value)
+  return link && URL.canParse(link) && new URL(link).protocol === "https:" ? link : undefined
 }
 
 function installationFromWire(value: unknown): CodeHostAppInstallation | undefined {
   if (!isRecord(value)) return undefined
   const account = nonEmptyString(value.account)
-  const settingsUrl = httpsUrl(value.settingsUrl)
+  const settingsUrl = httpsLink(value.settingsUrl)
   const selection = value.repositorySelection
   return account && settingsUrl && (selection === "all" || selection === "selected")
     ? { account, settingsUrl, repositorySelection: selection }
@@ -85,7 +85,7 @@ function installationFromWire(value: unknown): CodeHostAppInstallation | undefin
 function repositoryAccessFromWire(value: unknown): CodeHostRepositoryAccess | undefined {
   if (!isRecord(value)) return undefined
   if (value.kind === "token") {
-    const settingsUrl = httpsUrl(value.settingsUrl)
+    const settingsUrl = httpsLink(value.settingsUrl)
     return settingsUrl ? { kind: "token", settingsUrl } : undefined
   }
   if (value.kind !== "app" || !Array.isArray(value.installations)) return undefined
