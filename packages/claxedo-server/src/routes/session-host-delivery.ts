@@ -7,7 +7,7 @@ import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/
 import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { privateSessionRuntimeProof, type PrivateSessionRuntimePrincipal, type SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { asRecord } from "@claxedo/helpers/guards"
-import { sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
+import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason } from "@claxedo/sandbox-manager"
 import { cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { sessionHostAdmits, type SessionHostPlacement } from "../authority/session-hosts"
@@ -108,22 +108,31 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
   const starting = (c: Context, answer: { started: boolean; retryAfterMs?: number; sinceStartMs?: number }) =>
     c.json({ error: { code: "cloud_runtime_starting", ...answer } }, 409)
 
-  /** Begins or joins the start of the turn's workspace machine as the workspace's owner; nothing once the machine is ready. */
+  /**
+   * Begins or joins the start of the turn's workspace machine as the
+   * workspace's owner; nothing once the machine is ready. A start whose last
+   * step failed, retried later or never, is refused with that step's reason
+   * and, when it is retried, how long until then.
+   */
   async function startedMachine(c: Context, claims: TurnLeaseClaims, start: OwnerMachineStart): Promise<Response | undefined> {
-    const refused = (reason: string) => c.json({ error: { code: "cloud_runtime_start_refused", message: cloudRuntimeStartFailure(reason) } }, 409)
+    const refused = (reason: string, retryAfterMs?: number) => c.json({ error: {
+      code: "cloud_runtime_start_refused", message: cloudRuntimeStartFailure(reason), ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    } }, 409)
     const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
     if (!owner || owner.orgId !== claims.orgId) return denied(c)
     const started = await start({ owner: { userId: owner.userId, orgId: owner.orgId }, workspaceId: claims.workspaceId })
     if ("denied" in started) return refused(started.denied.error.message)
     if (started.status === "ready") return undefined
-    if (started.status === "provisioning") {
-      const { retryAfterMs, sinceStartMs } = started
-      return starting(c, { started: started.joined !== true, retryAfterMs, ...(sinceStartMs === undefined ? {} : { sinceStartMs }) })
-    }
     if (started.status === "failed") return refused(started.message)
-    const bootFailure = sandboxRuntimeBootFailure(started.error)
-    if (bootFailure) return refused(bootFailure)
-    return starting(c, { started: false, ...(started.retryAfterMs === undefined ? {} : { retryAfterMs: started.retryAfterMs }) })
+    if (started.status === "unavailable") {
+      const bootFailure = sandboxRuntimeBootFailure(started.error)
+      if (bootFailure) return refused(bootFailure)
+      if (sandboxLeaseEndedUnderStart(started.error)) return refused("it was stopped or replaced while it started")
+      return refused(started.error ? sandboxStartFailureReason(started.error) : "the start failed", started.retryAfterMs)
+    }
+    if (started.failure) return refused(sandboxStartFailureReason(started.failure), started.retryAfterMs)
+    const { retryAfterMs, sinceStartMs } = started
+    return starting(c, { started: started.joined !== true, retryAfterMs, ...(sinceStartMs === undefined ? {} : { sinceStartMs }) })
   }
 
   /**

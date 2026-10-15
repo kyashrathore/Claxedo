@@ -53,7 +53,8 @@ export type ControlPlaneInput = {
  * `/turn-execution` mints a machine token while the machine runs, and
  * otherwise refuses at once, starting a sleeping machine only when the call
  * asks to and never one already starting, with `control.start`'s next-answer
- * delay and, for a start already running, how long it has run; `/session-host-delete` deletes the
+ * delay and, for a start already running, how long it has run, or refusing
+ * every start with `control.startRefusal`; `/session-host-delete` deletes the
  * session for anyone but a viewer.
  */
 export function controlPlaneStandIn(input: ControlPlaneInput) {
@@ -79,6 +80,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     machine: "running" as "running" | "asleep" | "starting", deleteUnavailable: false, firstPartyMcp: false, toolGroups: ["sessions"],
     refusedTurns: new Set<string>(), releaseDelayMs: 0,
     start: { retryAfterMs: 60_000, sinceStartMs: 35_000 },
+    startRefusal: undefined as { message: string; retryAfterMs?: number } | undefined,
   }
   const redeemedGrants = new Map<string, string>()
 
@@ -219,6 +221,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       calls.executions.push(lease.turnId)
       if (control.machine !== "running") {
         if (body.start !== true) return c.json({ error: { code: "cloud_runtime_unavailable" } }, 409)
+        if (control.startRefusal) return c.json({ error: { code: "cloud_runtime_start_refused", ...control.startRefusal } }, 409)
         const started = control.machine === "asleep"
         if (started) {
           control.machine = "starting"

@@ -24,8 +24,11 @@ function startingMessage(input: { started: boolean; sinceStartMs: number; waits:
 
 function refusedMachine(error: TurnAuthorityError): WorkspaceMachineUnavailableError | undefined {
   if (error.code === "cloud_runtime_unavailable") return new WorkspaceMachineUnavailableError(ASLEEP)
-  if (error.code === "cloud_runtime_start_refused") return new WorkspaceMachineUnavailableError(error.refusal.message ?? "The workspace machine could not start")
-  return undefined
+  if (error.code !== "cloud_runtime_start_refused") return undefined
+  const reason = (error.refusal.message ?? "The workspace machine could not start").replace(/\.$/, "")
+  const retryAfterMs = error.refusal.retryAfterMs
+  const retry = retryAfterMs === undefined ? "" : ` It can be tried again in about ${Math.max(1, Math.round(retryAfterMs / 1_000))} s.`
+  return new WorkspaceMachineUnavailableError(`${reason}.${retry}`)
 }
 
 function sleepRejectingOnAbort(ms: number, signal: AbortSignal | undefined): Promise<void> {
