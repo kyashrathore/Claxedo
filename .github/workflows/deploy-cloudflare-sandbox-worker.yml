@@ -110,9 +110,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+          WRANGLER_LOG: debug
         run: |
           [ -n "$CONTROL_PLANE_URL" ] || { echo "::error::CLAXEDO_STAGING_API_ORIGIN is not configured in the staging environment"; exit 1; }
           npm run deploy -- --var "CONTROL_PLANE_URL:$CONTROL_PLANE_URL"
+
+      # Wrangler reports a failed container push or rollout as a bare
+      # "Generic Error" and writes the cause only to its log file.
+      - name: Show wrangler's log after a failed deploy
+        if: failure()
+        run: tail -n 200 ~/.config/.wrangler/logs/*.log
 
   synchronize-control-token:
     needs: deploy
