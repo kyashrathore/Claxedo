@@ -95,6 +95,7 @@ export function createCloudApi(
   return {
     create: (options) => ("source" in options ? forSource(options) : forProject(options)),
     start: wakes.start,
+    follow: wakes.follow,
     runtime: wakes.runtime,
     stop: async (id) => {
       await transport.json(at(id, "/lifecycle/stop"), jsonInit("POST", {}))

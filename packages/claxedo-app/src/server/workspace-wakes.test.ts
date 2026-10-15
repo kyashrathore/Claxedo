@@ -14,10 +14,13 @@ const folder = placementId("ws_folder")
 
 type Start = { resolve: () => void; reject: (error: unknown) => void }
 
-function fixture(running: { value: boolean }) {
+type Lifecycle = Extract<Placement, { kind: "cloud" }>["lifecycle"]
+
+function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle } = {}) {
   const starts: Start[] = []
+  const follows: Start[] = []
   const placements: Record<string, Placement> = {
-    ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", reachable: false, onThisMachine: false },
+    ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", lifecycle: "asleep", reachable: false, onThisMachine: false },
     ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false, onThisMachine: false },
   }
   const images: ((workspaceId: string, outdated: boolean) => void)[] = []
@@ -30,16 +33,21 @@ function fixture(running: { value: boolean }) {
       options?.onProgress?.({ kind: "provisioning", bootMode: "resume" })
       return new Promise<void>((resolve, reject) => starts.push({ resolve, reject }))
     },
-  } as Pick<Transport, "startRuntime" | "onRuntimeImage"> as Transport
+    followRuntime: (_workspaceId: string, options?: StartOptions) => {
+      options?.onProgress?.({ kind: "provisioning", bootMode: "cold-start" })
+      return new Promise<void>((resolve, reject) => follows.push({ resolve, reject }))
+    },
+  } as Pick<Transport, "startRuntime" | "followRuntime" | "onRuntimeImage"> as Transport
+  const lifecycle = (): Lifecycle => (running.value ? "live" : server.lifecycle ?? "asleep")
   const workspaces = {
     load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
-    byId: (id: string) => ({ ...placements[id], reachable: id === "ws_cloud" && running.value }),
+    byId: (id: string) => ({ ...placements[id], ...(id === "ws_cloud" ? { lifecycle: lifecycle() } : {}), reachable: id === "ws_cloud" && running.value }),
     locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
   const waits: number[] = []
   const wait = async (ms: number) => { waits.push(ms) }
-  return { starts, waits, images, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, wait)) }
+  return { starts, follows, waits, images, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, wait)) }
 }
 
 async function settle() {
@@ -81,6 +89,66 @@ test("wakes: a refused start leaves the workspace asleep with the server's reaso
   starts[1].resolve()
   await retry
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
+})
+
+test("wakes: a workspace the server is starting reads waking before anything here follows it, and a send joins that start instead of reading it asleep", async () => {
+  const running = { value: false }
+  const server: { lifecycle?: Lifecycle } = { lifecycle: "starting" }
+  const { starts, wakes } = fixture(running, server)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "waking" })
+
+  const send = wakes.wakeIfStopped(cloud)
+  await settle()
+  expect(starts).toHaveLength(1)
+  running.value = true
+  starts[0].resolve()
+  expect(await send).toBe(true)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
+})
+
+test("wakes: following a start the server is driving reads the connection until the server is done, once however many views ask, and the workspace then reads as the catalog says", async () => {
+  const running = { value: false }
+  const server: { lifecycle?: Lifecycle } = { lifecycle: "starting" }
+  const { starts, follows, wakes } = fixture(running, server)
+
+  const first = wakes.follow(cloud)
+  const second = wakes.follow(cloud)
+  await settle()
+  expect(follows).toHaveLength(1)
+  expect(starts).toHaveLength(0)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "cold-start" })
+
+  running.value = true
+  follows[0].resolve()
+  await Promise.all([first, second])
+  expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
+
+  running.value = false
+  server.lifecycle = "starting"
+  const again = wakes.follow(cloud)
+  await settle()
+  server.lifecycle = "asleep"
+  follows[1].resolve()
+  await again
+  expect(wakes.runtime(cloud)).toEqual({ kind: "asleep" })
+})
+
+test("wakes: a follow that cannot read the server leaves the reason and Try again, and following a workspace nobody is starting does nothing", async () => {
+  const running = { value: false }
+  const server: { lifecycle?: Lifecycle } = { lifecycle: "starting" }
+  const { follows, wakes } = fixture(running, server)
+  const lost = new ServerError({ class: "network", message: "The connection read failed" })
+
+  const following = wakes.follow(cloud)
+  await settle()
+  follows[0].reject(lost)
+  await following
+  expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: lost })
+
+  server.lifecycle = "asleep"
+  const { follows: idle, wakes: asleep } = fixture(running, server)
+  await asleep.follow(cloud)
+  expect(idle).toHaveLength(0)
 })
 
 test("wakes: a live workspace, or a placement that is not in the cloud, is never started by a send", async () => {

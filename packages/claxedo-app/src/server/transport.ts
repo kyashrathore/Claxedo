@@ -2,7 +2,7 @@ import { isLoopbackUrl, resolveServerUrl, type ServerConfig } from "./config"
 import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
-import { startWorkspace, type StartOptions } from "./workspace-start"
+import { followWorkspaceStart, startWorkspace, type StartOptions } from "./workspace-start"
 import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, isImageOutdated, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
 import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
 import { asArray, asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -27,6 +27,7 @@ export type Transport = {
   readonly json: (path: string, init?: RequestInit) => Promise<unknown>
   readonly runtimeJson: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<unknown>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
+  readonly followRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
   readonly connectSession: (workspaceId: string, sessionId: string) => Promise<void>
   readonly findSessionHost: (workspaceId: string, sessionId: string) => Promise<string | undefined>
   readonly onSessionHost: (listener: SessionHostListener) => () => void
@@ -215,7 +216,8 @@ export function createTransport(config: ServerConfig): Transport {
   const connections = createWorkspaceConnections(request, account)
   const hosts = sessionHostSignals()
   const image = runtimeImageSignals()
-  const relay = createRelay(connectionReader(connections, hosts, image), config.relayLinks)
+  const read = connectionReader(connections, hosts, image)
+  const relay = createRelay(read, config.relayLinks)
   const daemonProxy = loopback && config.account === undefined
   const { runtime, runtimeSocket } = runtimeRoutes(serverUrl, request, relay, daemonProxy)
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
@@ -232,6 +234,10 @@ export function createTransport(config: ServerConfig): Transport {
       const link = await startWorkspace(connections.start, workspaceId, options)
       if (!daemonProxy) relay.adopt(link)
       image.started(workspaceId)
+    },
+    followRuntime: async (workspaceId, options) => {
+      const link = await followWorkspaceStart((id) => read(id), workspaceId, options)
+      if (link && !daemonProxy) relay.adopt(link)
     },
     connectSession: sessionHostConnector(connections, relay, hosts),
     findSessionHost: daemonProxy ? async () => undefined : sessionRowHost(json, loopback ? account : undefined),

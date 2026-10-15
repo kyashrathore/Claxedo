@@ -1,7 +1,7 @@
-import type { Accessor, JSX } from "solid-js"
+import { createEffect, type Accessor, type JSX } from "solid-js"
 import { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, publishComposerNotice, type ComposerNotice } from "@/composer"
 import { useWorkspaceName } from "@/cloud"
-import { isOfflineMachine, useServer, type Placement, type PlacementId, type WorkspaceBootMode, type WorkspaceRuntime } from "@/server"
+import { isOfflineMachine, isStartingCloud, useServer, type Placement, type PlacementId, type WorkspaceBootMode, type WorkspaceRuntime } from "@/server"
 import { useSessionScreenText, type SessionScreenText } from "./text"
 
 function bootDetail(t: SessionScreenText, bootMode: WorkspaceBootMode | undefined) {
@@ -42,6 +42,10 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
 }
 
 export function PlacementNotice(props: { readonly placementId: PlacementId }) {
+  const server = useServer()
+  createEffect(() => {
+    if (isStartingCloud(server.placements.byId(props.placementId))) void server.cloud.follow(props.placementId)
+  })
   publishComposerNotice(usePlacementNotice(() => props.placementId))
   return null
 }

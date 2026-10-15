@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import type { WorkspaceStartProgress } from "./cloud-types"
 import { ServerError } from "./errors"
-import { startWorkspace } from "./workspace-start"
+import { followWorkspaceStart, startWorkspace } from "./workspace-start"
 import { createWorkspaceConnections } from "./transport"
 
 const READY = { relayUrl: "https://relay.test/", runtimeAccessToken: "rat", tokenExpiresAt: 1_900_000_000_000 }
@@ -16,7 +16,8 @@ function answers(...responses: readonly Response[]) {
     if (!response) throw new Error("no answer left")
     return response
   }
-  return { connect: createWorkspaceConnections(request).start, calls }
+  const connections = createWorkspaceConnections(request)
+  return { connect: connections.start, read: (workspaceId: string) => connections.read(workspaceId), calls }
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status })
@@ -78,4 +79,30 @@ test("workspace start: ends when the server ends the start it was following, wit
 
   await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable" })
   expect(server.calls).toHaveLength(2)
+})
+
+test("following a start somebody else began reads the connection, never starts one, and adopts the link the server mints once it is ready", async () => {
+  const server = answers(
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 1_500, bootMode: "cold-start" }),
+    json({ status: "provisioning", workspaceId: "ws_1" }),
+    json(READY),
+  )
+  const waits: number[] = []
+  const progress: WorkspaceStartProgress[] = []
+
+  const link = await followWorkspaceStart(server.read, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void waits.push(ms) })
+
+  expect(link?.runtimeAccessToken).toBe("rat")
+  expect(server.calls).toEqual(Array(3).fill({ path: "/api/workspace/ws_1/connection", method: undefined }))
+  expect(waits).toEqual([1_500, 2_000])
+  expect(progress).toEqual([{ kind: "provisioning", bootMode: "cold-start" }, { kind: "provisioning" }])
+})
+
+test("following a start ends with no link when the server says the workspace stopped or its boot failed", async () => {
+  const stopped = answers(json({ status: "provisioning", workspaceId: "ws_1" }), json({ status: "stopped", workspaceId: "ws_1" }))
+  expect(await followWorkspaceStart(stopped.read, "ws_1", { wait: async () => undefined })).toBeUndefined()
+  expect(stopped.calls).toHaveLength(2)
+
+  const failed = answers(json({ status: "failed", workspaceId: "ws_1", error: "The cloud workspace could not start: no such branch" }))
+  expect(await followWorkspaceStart(failed.read, "ws_1", { wait: async () => undefined })).toBeUndefined()
 })
