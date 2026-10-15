@@ -61,9 +61,21 @@ test("workspace start: a read that says the boot failed ends the start with that
   expect(server.calls).toHaveLength(1)
 })
 
-test("workspace start: gives up after thirty provisioning answers, and says it is still starting", async () => {
-  const server = answers(...Array.from({ length: 31 }, () => json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 })))
+test("workspace start: follows the server's start for as long as it reports progress, with no poll budget of its own", async () => {
+  const server = answers(...Array.from({ length: 200 }, () => json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000, bootMode: "resume" })), json(READY))
 
-  await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ class: "network", code: "workspace_still_starting" })
-  expect(server.calls).toHaveLength(30)
+  const link = await startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
+
+  expect(link.runtimeAccessToken).toBe("rat")
+  expect(server.calls).toHaveLength(201)
+})
+
+test("workspace start: ends when the server ends the start it was following, with the server's reason", async () => {
+  const server = answers(
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 }),
+    json({ error: { code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable" } }, 409),
+  )
+
+  await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable" })
+  expect(server.calls).toHaveLength(2)
 })
