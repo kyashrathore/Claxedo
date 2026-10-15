@@ -128,7 +128,7 @@ describe("user-deployed Cloudflare configuration", () => {
     )
   })
 
-  test("full-hosted selects the full-hosted Agent Plugins Worker with the runtime image, an optional idle-stop secret and no provider account", () => {
+  test("full-hosted selects the full-hosted Agent Plugins Worker with the runtime image, optional idle-stop and Boat runtime template secrets and no provider account", () => {
     const image = "ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-10-0-149c6f9a9d-agent-plugins-v8"
     const fullHosted = { ...env, CLAXEDO_SANDBOX_POSTURE: "full-hosted" }
     const deployment = userCloudflareDeployment({ ...fullHosted, CLAXEDO_SANDBOX_IMAGE: image }, { agentPlugins: true })
@@ -138,6 +138,8 @@ describe("user-deployed Cloudflare configuration", () => {
     expect(deployment.requiredSecrets).toContain("CLAXEDO_CREDENTIALS_KEK")
     expect(deployment.requiredSecrets).not.toContain("CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN")
     expect(deployment.optionalSecrets).toContain("CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN")
+    expect(deployment.optionalSecrets).toContain("CLAXEDO_BOAT_RUNTIME_TEMPLATE")
+    expect(Object.keys(workerVariables(deployment, "sha256:configuration"))).not.toContain("CLAXEDO_BOAT_RUNTIME_TEMPLATE")
     expect(deployment.requiredSecrets.filter((name) => /BOAT|SANDBOX_API_TOKEN|SANDBOX_DRIVER/.test(name))).toEqual([])
     expect(Object.keys(workerVariables(deployment, "sha256:configuration")).filter((name) => /SANDBOX_DRIVER|SANDBOX_WORKER_URL/.test(name))).toEqual([])
     expect(() => userCloudflareDeployment({ ...fullHosted, CLAXEDO_SANDBOX_IMAGE: image }, { agentPlugins: false })).toThrow(/--agent-plugins/)

@@ -71,6 +71,13 @@
       "import": "./dist/drivers/boat.mjs",
       "default": "./dist/drivers/boat.mjs"
     },
+    "./drivers/boat-template": {
+      "development": "./src/drivers/boat-template.ts",
+      "bun": "./src/drivers/boat-template.ts",
+      "types": "./dist/drivers/boat-template.d.ts",
+      "import": "./dist/drivers/boat-template.mjs",
+      "default": "./dist/drivers/boat-template.mjs"
+    },
     "./drivers/cloudflare": {
       "development": "./src/drivers/cloudflare.ts",
       "bun": "./src/drivers/cloudflare.ts",

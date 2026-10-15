@@ -2,8 +2,8 @@ import { spawn, spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { describe, expect, test } from "vitest"
-import { createBoatSandboxDriver, type BoatFetch } from "./boat"
+import { describe, expect, test, vi } from "vitest"
+import { boatTemplateResetCommand, createBoatSandboxDriver, formatBoatRuntimeTemplate, parseBoatRuntimeTemplate, type BoatFetch } from "./boat"
 import { createSandboxManager, isSandboxHostGone, isSandboxRuntimeBootFailure, sandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
@@ -812,31 +812,38 @@ describe("boat sandbox driver", () => {
     expect(run.image()).toBe(IMAGE)
   })
 
-  onVm("a create that finds the runtime's name taken by a container Boat created again removes that container and creates the runtime once more", async () => {
+  onVm("a create that finds the runtime's name taken by this image's container, which Boat created again from the stop's, starts that container", async () => {
     const run = runStartCommand(await startCommands(), { recreatedBeforeRun: [IMAGE], seededImages: [IMAGE], stubLoaded: IMAGE })
     expect(run.started).toBe(0)
-    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "image inspect"])
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "container inspect", "start claxedo-runtime", "image inspect"])
+    expect(run.image()).toBe(IMAGE)
+  })
+
+  onVm("a create that finds the runtime's name taken by another image's container removes it and creates the runtime once more", async () => {
+    const run = runStartCommand(await startCommands(), { recreatedBeforeRun: ["ghcr.io/test/sandbox:0"], seededImages: [IMAGE], stubLoaded: IMAGE })
+    expect(run.started).toBe(0)
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "container inspect", "rm -f", "run -d", "image inspect"])
     expect(run.image()).toBe(IMAGE)
   })
 
   onVm("a name clash whose container Boat has removed again by the retry still creates the runtime", async () => {
     const run = runStartCommand(await startCommands(), { recreatedBeforeRun: [IMAGE], recreatedVanishes: true, seededImages: [IMAGE], stubLoaded: IMAGE })
     expect(run.started).toBe(0)
-    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "image inspect"])
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "container inspect", "rm -f", "run -d", "image inspect"])
     expect(run.image()).toBe(IMAGE)
   })
 
   onVm("a name Boat still holds at the first retry is retried until its create has ended", async () => {
     const run = runStartCommand(await startCommands(), { recreatedBeforeRun: [IMAGE, IMAGE], recreatedVanishes: true, seededImages: [IMAGE], stubLoaded: IMAGE })
     expect(run.started).toBe(0)
-    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "sleep 1", "rm -f", "run -d", "image inspect"])
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", ...Array(2).fill(["sleep 1", "container inspect", "rm -f", "run -d"]).flat(), "image inspect"])
   })
 
-  onVm("a name taken at each of five creates fails the start with Docker's answer", async () => {
-    const run = runStartCommand(await startCommands(), { recreatedBeforeRun: Array(5).fill(IMAGE), seededImages: [IMAGE], stubLoaded: IMAGE })
+  onVm("a name another image's container takes at each of five creates fails the start with Docker's answer", async () => {
+    const run = runStartCommand(await startCommands(), { recreatedBeforeRun: Array(5).fill("ghcr.io/test/sandbox:0"), seededImages: [IMAGE], stubLoaded: IMAGE })
     expect(run.started).not.toBe(0)
     expect(run.stderr).toContain("is already in use by container")
-    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", ...Array(4).fill(["sleep 1", "rm -f", "run -d"]).flat()])
+    expect(run.calls.slice(3)).toEqual(["container inspect", "rm -f", "run -d", ...Array(4).fill(["sleep 1", "container inspect", "rm -f", "run -d"]).flat()])
   })
 
   onVm("a create that fails for any other reason fails the start without a retry", async () => {
@@ -1291,5 +1298,99 @@ describe("boat sandbox driver", () => {
     expect(failure.message).toContain("refs/heads/lane-b-no-such-branch at https://github.com/octocat/git-consortium")
     expect(failure.message).toContain("token [redacted]")
     expect(failure.message).not.toContain("synthetic-caller-secret")
+  })
+})
+
+describe("a Boat runtime template", () => {
+  const TEMPLATE = { image: IMAGE, shareCode: "bsh_template-code" }
+  const creates = (calls: Call[]) => calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")
+  const refusingTemplate = (boat: ReturnType<typeof fakeBoat>, code: string, status: number): BoatFetch => async (url, init) => {
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+    if (url.endsWith("/sandboxes") && body?.from) {
+      boat.calls.push({ path: "/sandboxes", method: "POST", headers: { ...init?.headers as Record<string, string> }, body })
+      return Response.json({ ok: false, code, message: "refused" }, { status })
+    }
+    return boat.fetchImpl(url, init)
+  }
+
+  test("a sandbox of the template's image is created from its share code under a create key of its own, and boots through the same start", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, runtimeTemplate: TEMPLATE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+    expect(await driver.ensureHost(ensureInput({ machineClass: "large" }))).toMatchObject({ sandboxId: ID, url: "https://machine-2593.on.boat.dev" })
+    expect(creates(boat.calls).map(({ body, headers }) => ({ body, key: headers["Idempotency-Key"] }))).toEqual([
+      { body: { noEnv: true, ttlSeconds: BOOT_TTL_SECONDS, type: "large", from: "bsh_template-code" }, key: "claxedo:ws1:1:template" },
+    ])
+    expect(commandsOf(boat.calls).some((command) => command.includes("docker info") && command.includes("stub.tar"))).toBe(true)
+    expect(commandsOf(boat.calls).some((command) => command.includes("docker run -d"))).toBe(true)
+  })
+
+  test("a template of another image is never used: a sandbox booting a chosen image pulls and seeds it", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, runtimeTemplate: TEMPLATE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+    await driver.ensureHost(ensureInput({ bootSource: { kind: "image", image: "ghcr.io/test/sandbox:2" } }))
+    expect(creates(boat.calls).map(({ body }) => body)).toEqual([{ noEnv: true, ttlSeconds: BOOT_TTL_SECONDS }])
+  })
+
+  test.each([
+    ["a wrong, revoked or removed share code", "snapshot_not_found", 404],
+    ["a key without snapshot.read", "api_key_action_forbidden", 403],
+    ["a key limited to other sandboxes", "api_key_sandbox_forbidden", 403],
+  ])("a template the key cannot read (%s) is told in the log, and the sandbox is created to pull and seed the image", async (_kind, code, status) => {
+    const boat = fakeBoat()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, runtimeTemplate: TEMPLATE, fetchImpl: refusingTemplate(boat, code, status), healthIntervalMs: 0 })
+      expect(await driver.ensureHost(ensureInput())).toMatchObject({ sandboxId: ID })
+      expect(creates(boat.calls).map(({ body, headers }) => ({ from: body.from, key: headers["Idempotency-Key"] }))).toEqual([
+        { from: "bsh_template-code", key: "claxedo:ws1:1:template" },
+        { from: undefined, key: "claxedo:ws1:1" },
+      ])
+      expect(warn).toHaveBeenCalledWith(`Boat runtime template for ${IMAGE} is unreadable with this key (${code}); the sandbox pulls and seeds the image instead`)
+      expect(String(warn.mock.calls)).not.toContain("bsh_template-code")
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test("a template create Boat refuses for another reason is that refusal, and nothing is created in its place", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, runtimeTemplate: TEMPLATE, fetchImpl: refusingTemplate(boat, "rate_limited", 429) })
+    await expect(driver.ensureHost(ensureInput())).rejects.toThrow("(rate_limited)")
+    expect(creates(boat.calls)).toHaveLength(1)
+  })
+
+  test("a wake resumes the sandbox it has and creates nothing from the template", async () => {
+    const boat = fakeBoat({ states: ["archived", "ready"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, runtimeTemplate: TEMPLATE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
+    await driver.resumeHost!({ lease: sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" }), ensure: ensureInput() })
+    expect(creates(boat.calls)).toEqual([])
+    expect(boat.calls.filter((call) => call.path.endsWith("/resume"))).toHaveLength(1)
+  })
+
+  test("the template setting carries its image and share code, and anything else is refused", () => {
+    expect(parseBoatRuntimeTemplate(formatBoatRuntimeTemplate(TEMPLATE))).toEqual(TEMPLATE)
+    for (const setting of ["bsh_template-code", "{}", "null", JSON.stringify({ image: IMAGE }), JSON.stringify({ image: IMAGE, shareCode: "web-stack" }), JSON.stringify({ image: "--privileged", shareCode: "bsh_x" })]) {
+      expect(() => parseBoatRuntimeTemplate(setting), setting).toThrow()
+    }
+  })
+
+  onVm("the template reset removes the runtime container, the workspace, the runtime's state and every boot's env, and keeps the image's trees, stub and env", async () => {
+    const run = runStartCommand(await startCommands(), {})
+    expect(run.started).toBe(0)
+    for (const dir of ["workspace", "claxedo", "workspace-runtime"]) mkdirSync(path.join(run.dir, "claxedo-persistent", dir, "state"), { recursive: true })
+    writeFileSync(path.join(run.dir, ".claxedo-runtime-env.another-boot"), "secret")
+    const reset = spawnSync("sh", ["-c", run.script(boatTemplateResetCommand())], { ...run.shell, encoding: "utf8" })
+    expect(reset.stderr).toBe("")
+    expect(reset.status).toBe(0)
+    expect(run.image()).toBeUndefined()
+    expect(readdirSync(path.join(run.dir, "claxedo-persistent"))).toEqual([treesDirectory(IMAGE)])
+    expect(readdirSync(run.trees(IMAGE)).sort()).toEqual([".complete", "image.env", "stub.tar", ...IMAGE_TREES].sort())
+    expect(readdirSync(run.dir).filter((file) => file.startsWith(".claxedo-"))).toEqual([])
+  })
+
+  onVm("a reset of a machine whose trees were never seeded fails, so no template is saved without them", async () => {
+    const vm = vmFixture({})
+    const reset = spawnSync("sh", ["-c", vm.script(boatTemplateResetCommand())], { ...vm.shell, encoding: "utf8" })
+    expect(reset.status).not.toBe(0)
   })
 })

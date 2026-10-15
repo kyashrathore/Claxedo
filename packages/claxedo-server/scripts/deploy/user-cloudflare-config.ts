@@ -229,7 +229,9 @@ export function userCloudflareDeployment(
       ...(telemetryVariables.CLAXEDO_TELEMETRY_MODE ? ["CLAXEDO_POSTHOG_KEY"] : []),
     ],
     // A Cloudflare sandbox Worker posts idle stops with the idle-stop secret; unset, every post is refused.
-    optionalSecrets: ["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET", ...(fullHosted ? ["CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"] : [])],
+    // The Boat runtime template is a share code, which deploys the template for whoever holds it; a
+    // template kept from an earlier deploy names its image, and the driver uses it only for that image.
+    optionalSecrets: ["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET", ...(fullHosted ? ["CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN", "CLAXEDO_BOAT_RUNTIME_TEMPLATE"] : [])],
   })
 }
 

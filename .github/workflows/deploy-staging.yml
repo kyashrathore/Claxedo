@@ -126,6 +126,20 @@ jobs:
           bun run --cwd packages/claxedo-server sandbox:image --agent-plugins --push-if-missing
           echo "image=$(jq -r .imageTag packages/claxedo-server/scripts/sandbox/.build/build-info.json)" >> "$GITHUB_OUTPUT"
 
+      # A new Boat sandbox of the image starts from this named snapshot, which
+      # already holds the image's trees and Boat's record of what the runtime
+      # reads first, instead of pulling and seeding the image. It lives in the
+      # release's own Boat account; an organization's key creates from it by
+      # the share code the control-plane job mints. Built once per image.
+      - name: Build the image's Boat runtime template
+        env:
+          BOAT_API_KEY: ${{ secrets.CLAXEDO_BOAT_TEMPLATE_API_KEY }}
+          IMAGE: ${{ steps.publish.outputs.image }}
+        run: |
+          set -euo pipefail
+          [ -n "$BOAT_API_KEY" ] || { echo "::error::CLAXEDO_BOAT_TEMPLATE_API_KEY is not configured"; exit 1; }
+          bun run --cwd packages/claxedo-server sandbox:boat-template --image="$IMAGE"
+
   control-plane:
     name: control plane (Better Auth + D1)
     needs: [plan, gate, unit, boat-image]
@@ -197,6 +211,17 @@ jobs:
       # A fresh checkout has none, and Vite fails to resolve @claxedo/helpers.
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
+
+      # The share code is a secret: masked in the log, carried to the deploy
+      # in the job's env file, uploaded as the Worker secret
+      # CLAXEDO_BOAT_RUNTIME_TEMPLATE.
+      - name: Share the image's Boat runtime template with the Worker
+        env:
+          BOAT_API_KEY: ${{ secrets.CLAXEDO_BOAT_TEMPLATE_API_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$BOAT_API_KEY" ] || { echo "::error::CLAXEDO_BOAT_TEMPLATE_API_KEY is not configured"; exit 1; }
+          bun run --cwd packages/claxedo-server sandbox:boat-template --image="$CLAXEDO_SANDBOX_IMAGE" --share-to="$GITHUB_ENV"
 
       - name: Print the deploy plan and bundle the Worker offline
         working-directory: packages/claxedo-server

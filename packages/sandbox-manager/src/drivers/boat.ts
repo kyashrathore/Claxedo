@@ -17,13 +17,39 @@ import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
-// VM's own kernel but no workspace-runtime baked in, so this driver unpacks
-// the canonical sandbox OCI image onto the VM's disk, runs it inside the
-// sandbox as a container of a stub image over those trees, and publishes the
-// runtime port with Boat's in-sandbox `host` command. The control plane
+// VM's own kernel but no workspace-runtime baked in, so the canonical sandbox
+// OCI image is unpacked onto the VM's disk, by this driver or ahead of time in
+// the release's runtime template a sandbox is created from; the runtime runs
+// inside the sandbox as a container of a stub image over those trees, and its
+// port is published with Boat's in-sandbox `host` command. The control plane
 // reaches that URL over the relay like the other remote drivers.
 
 export type { BoatFetch }
+
+/**
+ * A named snapshot of a machine that already holds `image`'s trees, stub and
+ * env, and Boat's record of the files the runtime opens first; another Boat
+ * account creates a sandbox from it with the share code.
+ */
+export type BoatRuntimeTemplate = { image: string; shareCode: string }
+
+export function formatBoatRuntimeTemplate(template: BoatRuntimeTemplate) {
+  return JSON.stringify({ image: template.image, shareCode: template.shareCode })
+}
+
+export function parseBoatRuntimeTemplate(setting: string): BoatRuntimeTemplate {
+  let value: unknown
+  try {
+    value = JSON.parse(setting)
+  } catch {
+    throw new BoatDriverError("A Boat runtime template is JSON naming its image and share code")
+  }
+  const { image, shareCode } = (value ?? {}) as Record<string, unknown>
+  if (typeof shareCode !== "string" || !/^bsh_\S+$/.test(shareCode) || typeof image !== "string") {
+    throw new BoatDriverError("A Boat runtime template names its image and a bsh_ share code")
+  }
+  return { image: assertSandboxImageReference(image), shareCode }
+}
 
 export type BoatSandboxDriverOptions = {
   apiKey: string
@@ -41,6 +67,8 @@ export type BoatSandboxDriverOptions = {
    * Omit for public images.
    */
   registryAuth?: { server: string; username: string; password: string }
+  /** Creates a sandbox that boots the template's image from the template instead of pulling and seeding the image. */
+  runtimeTemplate?: BoatRuntimeTemplate
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   provisionTimeoutMs?: number
   provisionIntervalMs?: number
@@ -170,6 +198,30 @@ const TRANSIENT_MARKERS = ["transport_failed", "idempotency_in_progress"] as con
 /** Boat's answers for a sandbox it no longer has: deleted, or stopped so long its disk was dropped (docs.boat.dev/snapshots/stop). */
 const GONE_CODES: ReadonlySet<string> = new Set(["not_found", "snapshot_data_expired"])
 const RESUME_UNDER_WAY = "sandbox_resuming"
+/**
+ * Boat's answers for a template this key cannot create from: a wrong, revoked
+ * or removed share code, or a key without `snapshot.read`
+ * (docs.boat.dev/snapshots/templates, docs.boat.dev/api-keys/scopes).
+ */
+const TEMPLATE_UNREADABLE_CODES: ReadonlySet<string> = new Set(["snapshot_not_found", "api_key_action_forbidden", "api_key_sandbox_forbidden"])
+
+/**
+ * Turns a booted machine into one any workspace can start from: it keeps what
+ * every machine of the image shares (the image's trees, stub archive and env,
+ * and Boat's ~/.ascii/playbook.json) and removes what this machine's boot made
+ * (the runtime container, the workspace, the runtime's state, the boot's env).
+ */
+export function boatTemplateResetCommand() {
+  const bootFiles = [
+    `${PERSISTENT_ROOT}/workspace`,
+    ...PERSISTENT_HOME_MOUNTS.map(([source]) => `${PERSISTENT_ROOT}/${source}`),
+    RUNTIME_ENV_PATH,
+    `${RUNTIME_ENV_PATH}.*`,
+    `${REGISTRY_PASSWORD_PATH}.*`,
+  ]
+  return `{ docker rm -f ${DEFAULT_CONTAINER_NAME} >/dev/null 2>&1 || true; } && sudo rm -rf ${bootFiles.join(" ")} `
+    + `&& [ -z "$(docker ps -aq)" ] && ls -d ${PERSISTENT_ROOT}/image-*/${IMAGE_TREES_COMPLETE_MARKER}`
+}
 
 function hostGoneOrThrow(err: unknown): never {
   if (err instanceof BoatApiError && GONE_CODES.has(err.code)) throw new SandboxHostGoneError(err.message)
@@ -393,12 +445,15 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // Docker answers (2026-10-15), so a start that looked before it finds the
     // name taken. Docker holds the name from the start of that create, so a
     // removal right after the clash finds nothing and the next create clashes
-    // again; the 0.8 s the create took is waited out before each retry.
-    const start = `mv -f ${staged.env} ${RUNTIME_ENV_PATH} && if ${labelledWithImage("container", containerName)}; then docker start ${containerName} >/dev/null; `
-      + `else created=; for attempt in $(seq ${CONTAINER_CREATE_ATTEMPTS}); do [ "$attempt" = 1 ] || sleep 1; `
-      + `docker rm -f ${containerName} >/dev/null 2>&1; failure=$(${run} 2>&1 >/dev/null) && { created=1; break; }; `
+    // again; the 0.8 s the create took is waited out before each retry, which
+    // looks again: what Boat created is the container the stop kept, which is
+    // started. Removed instead, Boat created it again before each of five
+    // creates on a machine's first wake (2026-10-15).
+    const start = `mv -f ${staged.env} ${RUNTIME_ENV_PATH} && up=; for attempt in $(seq ${CONTAINER_CREATE_ATTEMPTS}); do [ "$attempt" = 1 ] || sleep 1; `
+      + `if ${labelledWithImage("container", containerName)}; then failure=$(docker start ${containerName} 2>&1 >/dev/null) && { up=1; break; }; `
+      + `else docker rm -f ${containerName} >/dev/null 2>&1; failure=$(${run} 2>&1 >/dev/null) && { up=1; break; }; fi; `
       + `case "$failure" in *${shell(DOCKER_NAME_IN_USE)}*) ;; *) break ;; esac; done; `
-      + `[ -n "$created" ] || { echo "$failure" >&2; false; }; fi && ${removeImage}`
+      + `[ -n "$up" ] || { echo "$failure" >&2; false; } && ${removeImage}`
     return {
       prepare: holdingBootLock(IMAGE_PREPARATION_TIMEOUT_SECONDS, prepare.join(" && ")),
       start: holdingBootLock(CONTAINER_START_TIMEOUT_SECONDS, start),
@@ -521,14 +576,33 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     }
   }
 
+  /**
+   * A template's create carries a key of its own: Boat refuses a key sent
+   * again with another body for as long as it keeps the first (24 h), and a
+   * refused template is followed by the create that pulls and seeds the image.
+   */
+  async function createSandbox(input: SandboxDriverEnsureInput) {
+    const create = (from?: string) => client.create({
+      idempotencyKey: `claxedo:${input.workspaceId}:${input.epoch}${from ? ":template" : ""}`,
+      ttlSeconds: BOOT_TTL_SECONDS,
+      ...(input.machineClass ? { type: input.machineClass } : {}),
+      ...(from ? { from } : {}),
+    })
+    const template = options.runtimeTemplate
+    if (!template || template.image !== resolveImage(input)) return create()
+    try {
+      return await create(template.shareCode)
+    } catch (err) {
+      if (!(err instanceof BoatApiError && TEMPLATE_UNREADABLE_CODES.has(err.code))) throw err
+      console.warn(`Boat runtime template for ${template.image} is unreadable with this key (${err.code}); the sandbox pulls and seeds the image instead`)
+      return create()
+    }
+  }
+
   async function ensureHost(input: SandboxDriverEnsureInput) {
     assertNetwork(input)
     const hostId = input.hostId ?? `boat-${input.workspaceId}`
-    const created = await client.create({
-      idempotencyKey: `claxedo:${input.workspaceId}:${input.epoch}`,
-      ttlSeconds: BOOT_TTL_SECONDS,
-      ...(input.machineClass ? { type: input.machineClass } : {}),
-    })
+    const created = await createSandbox(input)
       .catch((err: unknown) => {
         if (isTransientDriverError(err, TRANSIENT_MARKERS)) return undefined
         throw err

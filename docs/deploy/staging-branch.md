@@ -153,6 +153,8 @@ deployment itself:
 | - | - | - |
 | `CLAXEDO_SANDBOX_IMAGE` | set by the `boat-image` job | the workspace-runtime image a Boat sandbox boots |
 | `CLAXEDO_SANDBOX_IDLE_STOP_TOKEN` | `staging` environment secret, optional | the shared secret a Cloudflare sandbox Worker posts idle stops with; unset, idle stops are refused |
+| `CLAXEDO_BOAT_TEMPLATE_API_KEY` | repository secret, required | the release's own Boat key, which builds, shares and prunes the image's runtime template; scopes `sandbox.create`, `sandbox.read`, `sandbox.update`, `sandbox.stop`, `sandbox.resume`, `sandbox.delete`, `exec`, `file.write`, `host`, `snapshot.read`, `snapshot.write` |
+| `CLAXEDO_BOAT_RUNTIME_TEMPLATE` | Worker secret set by the `control-plane` job | the image and the share code a new Boat sandbox of that image starts from |
 
 A Boat sandbox `docker run`s the exact workspace-runtime image the control
 plane names in `CLAXEDO_SANDBOX_IMAGE`. The `boat-image` job sets it: it bundles
@@ -163,7 +165,12 @@ names that bundle, pushes the image (`linux/amd64`, public on ghcr.io) only
 when the registry does not hold the tag yet, and hands the tag to
 `control-plane`. A runtime change therefore reaches new Boat sandboxes with the
 deploy that ships it, and an unchanged runtime reuses its image without a
-Docker build. The `sandbox-image` component of this workflow deploys the
+Docker build. The `boat-image` job then builds the image's Boat runtime
+template once (`bun run --cwd packages/claxedo-server sandbox:boat-template
+--image=<tag>`, 144 s on Boat on 2026-10-15, on one builder sandbox it deletes after),
+and the `control-plane` job mints a share code for it and uploads it as
+`CLAXEDO_BOAT_RUNTIME_TEMPLATE`; see the sandbox-manager README's "Boat runtime
+template" for what the template holds and costs. The `sandbox-image` component of this workflow deploys the
 Cloudflare sandbox Worker the staging organization's Cloudflare key points at;
 its URL and API token are that key's fields, entered in the app, not deploy
 inputs.

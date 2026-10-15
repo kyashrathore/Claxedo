@@ -6,7 +6,8 @@ export type BoatSandboxState =
   | "init" | "provisioning" | "provisioned" | "cloning" | "ready" | "idle" | "running"
   | "archiving" | "archived" | "error" | "cancelled"
 
-export type BoatSandbox = { id: string; state: BoatSandboxState }
+/** `hydrated`: Boat has downloaded every file of the snapshot the sandbox started from (docs.boat.dev/readiness). */
+export type BoatSandbox = { id: string; state: BoatSandboxState; hydrated: boolean }
 
 export type BoatCommandResult = { success: boolean; stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }
 
@@ -28,11 +29,11 @@ export class BoatApiError extends Error {
   }
 }
 
-function invalid(): never {
+export function invalid(): never {
   throw new BoatApiError("Boat API returned an invalid response", "invalid_response")
 }
 
-function requiredText(value: unknown): string {
+export function requiredText(value: unknown): string {
   return typeof value === "string" ? value : invalid()
 }
 
@@ -52,7 +53,7 @@ function sandbox(body: Record<string, unknown>): BoatSandbox {
   const value = record(body.sandbox) ?? invalid()
   const id = requiredText(value.id)
   if (!/^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/.test(id) || !isSandboxState(value.state)) invalid()
-  return { id, state: value.state }
+  return { id, state: value.state, hydrated: value.hydrated === true }
 }
 
 async function readBoundedResponseJson(response: Response): Promise<Record<string, unknown> | undefined> {
@@ -71,7 +72,12 @@ async function readBoundedResponseJson(response: Response): Promise<Record<strin
   return record(JSON.parse(text + decoder.decode()))
 }
 
-export function createBoatClient(options: { apiKey: string; baseUrl?: string; timeoutMs?: number; fetchImpl?: BoatFetch }) {
+export type BoatClientOptions = { apiKey: string; baseUrl?: string; timeoutMs?: number; fetchImpl?: BoatFetch }
+
+export type BoatApi = ReturnType<typeof createBoatApi>
+
+/** One Boat v1 call: the bearer key, the deadline, the bounded envelope, and the envelope types the call accepts. */
+export function createBoatApi(options: BoatClientOptions) {
   const base = new URL(options.baseUrl ?? DEFAULT_BASE_URL)
   if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) {
     throw new Error("Boat endpoint requires HTTPS without credentials, query or fragment")
@@ -110,13 +116,18 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
       return body
     })
   }
+  return api
+}
 
+export function createBoatClient(options: BoatClientOptions) {
+  const api = createBoatApi(options)
   const path = (id: string) => `/sandboxes/${encodeURIComponent(id)}`
   return {
-    async create(input: { idempotencyKey: string; ttlSeconds: number | null; type?: SandboxMachineClass }) {
+    /** `from` is a named snapshot or a share code (`bsh_…`) the sandbox starts from; omitted, Boat's base machine. */
+    async create(input: { idempotencyKey: string; ttlSeconds: number | null; type?: SandboxMachineClass; from?: string }) {
       return sandbox(await api("/sandboxes", ["sandbox.created"], {
         method: "POST",
-        body: { noEnv: true, ttlSeconds: input.ttlSeconds, ...(input.type ? { type: input.type } : {}) },
+        body: { noEnv: true, ttlSeconds: input.ttlSeconds, ...(input.type ? { type: input.type } : {}), ...(input.from ? { from: input.from } : {}) },
         headers: { "Idempotency-Key": input.idempotencyKey },
       }))
     },
