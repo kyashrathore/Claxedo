@@ -10,6 +10,7 @@ export type ServerConfig = {
   readonly account?: RunHostedOperation
   readonly accountEvents?: AccountEvents
   readonly cookies?: boolean
+  readonly onSignInRefused?: () => void
   readonly eventSocket?: boolean
   readonly relayLinks?: RelayLinkStorage
 }

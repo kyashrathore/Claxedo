@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test"
 import type { CloudWorkspaceRow } from "@/cloud"
 import { placementId, projectId, type MachineTime, type MachineTimeWorkspace } from "@/server"
-import { filterSandboxRows, isRunningRow, sandboxRows, sandboxTotals } from "./sandbox-rows"
+import { isRunningRow, listSandboxRows, sandboxRows, sandboxTotals } from "./sandbox-rows"
 
 const MINUTE = 60_000
 const small = { size: "small", vcpu: 2, memoryGb: 4, usdPerHour: 0.018 }
@@ -82,8 +82,22 @@ describe("sandboxRows pricing and filter", () => {
 
   test("the running filter keeps only the rows still on", () => {
     const rows = sandboxRows(time([timed({ id: "ws_run", runningSince: 1 }), timed({ id: "ws_off", lastStoppedAt: 1 })]), undefined)
-    expect(filterSandboxRows(rows, "running").map((row) => row.id)).toEqual([placementId("ws_run")])
-    expect(filterSandboxRows(rows, "all")).toHaveLength(2)
+    const read = { time: true, live: true }
+    expect(listSandboxRows(rows, "running", read)).toEqual({ kind: "rows", rows: [expect.objectContaining({ id: placementId("ws_run") })] })
+    expect(listSandboxRows(rows, "all", read)).toMatchObject({ kind: "rows", rows: { length: 2 } })
+  })
+})
+
+describe("listSandboxRows", () => {
+  test("no rows is an empty range only when both the machine time and the running list were read", () => {
+    expect(listSandboxRows([], "all", { time: true, live: true })).toEqual({ kind: "empty" })
+    expect(listSandboxRows([], "running", { time: true, live: true })).toEqual({ kind: "empty" })
+  })
+
+  test("no rows under a failed or unfinished read claims nothing, so a refused read never reads as no sandbox ran", () => {
+    expect(listSandboxRows([], "all", { time: false, live: true })).toEqual({ kind: "unknown" })
+    expect(listSandboxRows([], "all", { time: true, live: false })).toEqual({ kind: "unknown" })
+    expect(listSandboxRows([], "running", { time: false, live: false })).toEqual({ kind: "unknown" })
   })
 })
 

@@ -69,11 +69,14 @@ function withoutRouteQuery(path: string) {
 }
 
 async function fetchFromServer(config: ServerConfig, url: string, init?: RequestInit): Promise<Response> {
+  let response: Response
   try {
-    return await fetch(url, withRequestDefaults(config, init))
+    response = await fetch(url, withRequestDefaults(config, init))
   } catch (error) {
     throw toAppError(error)
   }
+  if (response.status === 401) config.onSignInRefused?.()
+  return response
 }
 
 async function readJsonResponse(response: Response, label: string): Promise<unknown> {
