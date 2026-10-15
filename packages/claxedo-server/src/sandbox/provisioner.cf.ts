@@ -168,9 +168,9 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
      * the clients a live update until their next read, never the start.
      */
     #announce(workspaceId: string, step: StartStep) {
-      const announce = drive(this.env).announce
-      if (!announce) return
-      this.ctx.waitUntil(announce(workspaceId, step).catch((cause: unknown) => {
+      const steps = drive(this.env)
+      if (!steps.announce) return
+      this.ctx.waitUntil(steps.announce(workspaceId, step).catch((cause: unknown) => {
         console.warn("[sandbox-provisioner] the start notice was not delivered", { workspaceId, step, error: cause instanceof Error ? cause.message : String(cause) })
       }))
     }
