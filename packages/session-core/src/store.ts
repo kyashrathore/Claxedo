@@ -42,6 +42,7 @@ import { buildAssistantMessage, messageCompleted, messagePartUpdated, messageUpd
 import { turnStartMessages } from "./projection/turn-start-messages"
 
 export const SESSION_INTERRUPTED = "The agent runtime restarted. Send a message to continue the interrupted work."
+const TOOL_INTERRUPTED = "Interrupted: The agent runtime stopped during this turn"
 
 export class AgentRuntimeStaleTurnError extends Error {
   readonly code = "session_turn_fence_stale"
@@ -1052,7 +1053,7 @@ export class RuntimeStore {
   }
 
   private finishTools(sessionId: string, ts: number) {
-    const error = "Tool execution interrupted"
+    const error = TOOL_INTERRUPTED
     const rows = this.db
       .prepare<{ data_json: string }>("SELECT data_json FROM part WHERE session_id = ? ORDER BY updated_at ASC")
       .all(sessionId)

@@ -326,7 +326,7 @@ void describe("the session core in a Durable Object under workerd", () => {
     const interrupted = await reopened.messages(session.id)
     assert.deepEqual(transcript(interrupted), [{ role: "user", text: "hold: the build" }, { role: "assistant", text: "working on the build" }])
     const tool = interrupted[1].parts.find((part) => part.callID === "call_held")
-    assert.deepEqual([tool?.state?.status, tool?.state?.error], ["error", "Tool execution interrupted"])
+    assert.deepEqual([tool?.state?.status, tool?.state?.error], ["error", "Interrupted: The agent runtime stopped during this turn"])
 
     const after = await reopened.stream()
     await reopened.prompt(session.id, "after")
