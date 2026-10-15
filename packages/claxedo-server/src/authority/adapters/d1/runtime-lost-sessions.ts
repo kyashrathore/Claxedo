@@ -24,5 +24,5 @@ export async function interruptD1RuntimeSessions(database: D1Database, workspace
       .bind(at, workspaceId, at),
   ])
   if (!written?.results.length) return []
-  return await sessionStatusNotices(database, new Map(before!.results.map((row) => [row.session_id, row])), written.results)
+  return await sessionStatusNotices(database, new Map(before.results.map((row) => [row.session_id, row])), written.results)
 }

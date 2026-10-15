@@ -2938,7 +2938,7 @@ void describe("RuntimeStore", () => {
 
     store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "engine", directory: "/work", agentSessionId: "a2" })
     store.updateSessionConfig("engine", { harness: { id: "pi", access: "native" } })
-    assert.equal(config("engine")?.permissionMode, null)
+    assert.equal(config("engine")?.permissionMode, "full")
 
     store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "acp", directory: "/work", agentSessionId: "a3" })
     store.updateSessionConfig("acp", { harness: { id: "scripted-acp", access: "connection" } })

@@ -48,7 +48,7 @@ test("permission surface: Pi names Ask and Full access with no read, a draft sta
     const draft = surface(nativeHarness("pi"))
     expect(draft.permissionMode.groups()?.harness.rows.map((row) => [row.option.id, row.selectable])).toEqual([["ask", true], ["full", true]])
     expect(draft.permissionMode.current()?.id).toBe("full")
-    const ask = draft.permissionMode.groups()!.harness.rows[0]!.option
+    const ask = draft.permissionMode.groups()!.harness.rows[0].option
     draft.permissionMode.select(ask)
     expect(draft.permissionMode.promptModeId()).toBe("ask")
     const session = surface(nativeHarness("pi"), { permissionMode: "ask" })

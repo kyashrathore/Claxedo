@@ -54,7 +54,7 @@ describe("a workspace whose runtime is lost", () => {
     expect(await status("ses_idle")).toMatchObject({ status: "idle", status_at: 3 })
     expect(await status("ses_own_host")).toMatchObject({ status: "busy", status_at: 3 })
     expect(await status("ses_elsewhere")).toMatchObject({ status: "busy", status_at: 3 })
-    expect(notices.map((notice) => [notice.sessionId, notice.status, notice.ownerUserId, notice.ts]).sort()).toEqual([
+    expect(notices.map((notice) => [notice.sessionId, notice.status, notice.ownerUserId, notice.ts]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))).toEqual([
       ["ses_busy", "interrupted", owner.principal!.userId, 50],
       ["ses_retry", "interrupted", owner.principal!.userId, 50],
     ])
