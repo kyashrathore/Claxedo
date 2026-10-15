@@ -511,7 +511,7 @@ describe("store broker ports", () => {
     expect(store.readTurnAuthority("s1")).toBeUndefined()
   })
 
-  test("a provider turn on a session that never picked an agent or model runs the defaults a prompted turn runs", async () => {
+  test("a provider turn on a session that never picked an agent or model runs the default model a prompted turn runs, and names no agent", async () => {
     const { store, ports } = setup()
     const lease = store.readTurnAuthority("s1")?.leaseId
     if (!lease) throw new Error("Missing initial lease")
@@ -523,7 +523,25 @@ describe("store broker ports", () => {
     })
     if (!admitted.admitted) throw new Error("Provider turn was not admitted")
     expect(await admitted.settled).toEqual({ state: "completed" })
-    expect(store.getMessages("s1").at(-1)?.info).toMatchObject({ agent: "build", providerID: "claude", modelID: "default" })
+    const reply = store.getMessages("s1").at(-1)?.info
+    expect(reply).toMatchObject({ providerID: "claude", modelID: "default" })
+    expect(reply).not.toHaveProperty("agent")
+  })
+
+  test("a failed turn that named no agent ends in a reply that names none", () => {
+    const { store } = setup()
+    const first = store.readTurnAuthority("s1")?.leaseId
+    if (!first) throw new Error("Missing initial lease")
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "t1", leaseId: first, outcome: { status: "completed", completedAt: 10 } })
+    store.releaseTurnLease("s1", first)
+    const lease = store.acquireTurnLease("s1")
+    if (!lease) throw new Error("Missing prompted lease")
+    store.startTurn({ sessionId: "s1", userMessageId: "u_failed", assistantMessageId: "a_failed", parts: [{ type: "text", text: "go" }] })
+    store.finishTurn({ sessionId: "s1", assistantMessageId: "a_failed", leaseId: lease, outcome: { status: "failed", completedAt: 20, error: "Provider request failed with HTTP 400" } })
+    const reply = store.getMessages("s1").find((message) => message.info.id === "a_failed")?.info
+    expect(reply).toMatchObject({ role: "assistant", error: { name: "UnknownError" } })
+    expect(reply).not.toHaveProperty("agent")
+    expect(store.getMessages("s1").find((message) => message.info.id === "u_failed")?.info).not.toHaveProperty("agent")
   })
 
   test("a provider turn after a prompted one opens with a message its harness authored, so the session's latest turn still pages", async () => {

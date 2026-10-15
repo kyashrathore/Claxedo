@@ -4,11 +4,6 @@ import type { PromptInput } from "@claxedo/agent-runtime-contract"
 import { resolveSessionModel, resolveTurnSystem } from "../session/session-model"
 import type { AgentRuntimeTurnStartInput } from "./contracts"
 
-/** The agent a turn runs when neither it nor the session names one. */
-export function sessionTurnAgent(config: Pick<SessionConfig, "agent">): string {
-  return config.agent ?? "build"
-}
-
 /**
  * The prompt one admitted turn runs: the turn's own choices, with the session's
  * stored config standing in wherever the caller named none.
@@ -27,11 +22,12 @@ export function turnPrompt(input: {
   const { turn, config } = input
   const system = resolveTurnSystem(config, input.channel, turn.system)
   const model = turn.model ?? resolveSessionModel(config)
+  const agent = turn.agent ?? config.agent
   return {
     parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
     userMessageId: input.userMessageId,
     assistantMessageId: input.assistantMessageId,
-    agent: turn.agent ?? sessionTurnAgent(config),
+    ...(agent ? { agent } : {}),
     ...(model ? { model } : {}),
     ...(turn.tools ? { tools: turn.tools } : {}),
     ...(turn.format ? { format: turn.format } : {}),
@@ -62,7 +58,7 @@ export function turnStartRecord(
     ...(agentSessionId ? { agentSessionId } : {}),
     userMessageId,
     assistantMessageId,
-    agent: prompt.agent,
+    ...(prompt.agent ? { agent: prompt.agent } : {}),
     model: prompt.model,
     parts: prompt.parts,
     ...(turn.tools ? { tools: turn.tools } : {}),

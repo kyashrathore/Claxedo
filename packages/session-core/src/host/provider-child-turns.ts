@@ -3,7 +3,6 @@ import { resolveSessionModel } from "../session/session-model"
 import type { ParentTurnContext } from "./child-turns"
 import type { AgentRuntimeEventEnvelope, AgentRuntimeStore } from "./contracts"
 import { normalizeDirectory } from "./execution-binding"
-import { sessionTurnAgent } from "./turn-record"
 
 /**
  * What a parent with no prompt behind it lends the children that open under
@@ -24,7 +23,7 @@ export function providerParentTurn(
   const projectors = new Map<string, TurnEventProjector>()
   return {
     directory,
-    input: { agent: sessionTurnAgent(config), ...(model ? { model } : {}), ...(config.variant ? { variant: config.variant } : {}) },
+    input: { ...(config.agent ? { agent: config.agent } : {}), ...(model ? { model } : {}), ...(config.variant ? { variant: config.variant } : {}) },
     projectChild: (target, event, source) => {
       const key = JSON.stringify([target.sessionId, target.assistantMessageId])
       let projector = projectors.get(key)

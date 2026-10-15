@@ -136,7 +136,7 @@ export function isRetainedPresentationEvent(event: AgentPresentationEvent): bool
 export function buildUserMessage(input: {
   id: string
   sessionID: string
-  agent: string
+  agent?: string
   model?: { providerID: string; modelID: string }
   created?: number
   tools?: Record<string, boolean>
@@ -150,7 +150,7 @@ export function buildUserMessage(input: {
     sessionID: input.sessionID,
     role: "user",
     time: { created: input.created ?? Date.now() },
-    agent: input.agent,
+    ...(input.agent ? { agent: input.agent } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.tools ? { tools: input.tools } : {}),
     ...(input.format ? { format: input.format } : {}),
@@ -163,7 +163,7 @@ export function buildAssistantMessage(input: {
   id: string
   sessionID: string
   parentID: string
-  agent: string
+  agent?: string
   model?: { providerID: string; modelID: string }
   directory: string
   created?: number
@@ -183,7 +183,7 @@ export function buildAssistantMessage(input: {
     parentID: input.parentID,
     ...(input.model ? { modelID: input.model.modelID, providerID: input.model.providerID } : {}),
     mode: "auto",
-    agent: input.agent,
+    ...(input.agent ? { agent: input.agent } : {}),
     path: { cwd: input.directory, root: input.directory },
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },

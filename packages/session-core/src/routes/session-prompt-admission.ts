@@ -118,6 +118,7 @@ export async function acquireManagedPromptLease(input: {
     },
     turnId: input.turnId,
     onLost: input.onLost,
+    ...(input.opts.heldTurnLeases ? { held: input.opts.heldTurnLeases } : {}),
   })
   if (!acquired.acquired) return { rejected: sessionAccessDenied(acquired.decision) }
   return { lease: acquired.lease }
