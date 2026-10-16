@@ -1054,6 +1054,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   icon={claxedo() ? "claxedo" : undefined}
                   tool={part().tool}
                   error={error()}
+                  input={input()}
                   title={
                     claxedo()
                       ? claxedoToolTitle(claxedo()!, i18n)

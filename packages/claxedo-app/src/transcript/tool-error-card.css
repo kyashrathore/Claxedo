@@ -43,6 +43,17 @@
     padding-right: 40px;
   }
 
+  [data-slot="tool-error-card-input"] {
+    margin: 4px 0 0;
+    max-height: 240px;
+    overflow: auto;
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--v2-text-text-muted);
+  }
+
   .ui-tool-error-card-copy {
     position: absolute;
     top: 0;
