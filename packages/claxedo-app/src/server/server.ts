@@ -92,7 +92,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     cloud,
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient, telemetry),
-    tasks: createTasksApi(transport, queryClient),
+    tasks: createTasksApi(transport, queryClient, workspaces),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
     agentConnections: createAgentConnectionsApi(transport, queryClient),

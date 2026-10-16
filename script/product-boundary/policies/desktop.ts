@@ -683,8 +683,12 @@ export const desktopRenderer: Policy = {
   // The words for workspaces found gone, which tell a gone routed workspace
   // apart from closed tabs of other ones (owner: the app's shell domain,
   // `shell/gone-placements-notice.ts`). It adds no package edge.
-  // 1391/36, no headroom.
-  ceilings: { modules: 1391, packages: 36 },
+  // A task start's run and the progress it reports while the preview and the
+  // start are in flight, split from the start offers' wiring so it runs
+  // without the UI kit (owner: the app's tasks domain,
+  // `tasks/data/start-run.ts`). It adds no package edge.
+  // 1392/36, no headroom.
+  ceilings: { modules: 1392, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
