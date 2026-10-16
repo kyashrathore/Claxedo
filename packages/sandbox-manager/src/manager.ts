@@ -682,7 +682,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         const target = await this.target(workspaceId)
         const stopHost = input.hostStopsItself ? undefined : options.driver.suspend ?? options.driver.stop
         // A host the provider no longer has cannot be stopped and is not held: the lease ends destroyed, and the next start places anew.
-        const ended = async (resource: SandboxResource & { epoch: number; checkpoint?: string }, status: "stopped" | "destroyed") => {
+        const ended = async (resource: SandboxResource & { epoch: number; checkpoint?: string }, status: "stopped" | "destroyed", unsaved = false) => {
           if (!lease) return undefined
           const endedAt = status === "destroyed" ? hostLastProvenAliveAt(lease) : undefined
           const updated = await options.leaseStore.update(workspaceId, resource.epoch, {
@@ -692,8 +692,8 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           })
           if (!updated) return undefined
           if (status === "destroyed") lifecycle.hostGone(lease, endedAt)
-          else lifecycle.stopped(lease, input.idleBefore !== undefined)
-          return { ok: true as const, status }
+          else lifecycle.stopped(lease, input.idleBefore !== undefined, unsaved)
+          return { ok: true as const, status, ...(unsaved ? { unsaved: true as const } : {}) }
         }
         if (target.status !== "ready") {
           // A lease still booting on a host it holds has nothing serving to drain, and the host costs all the same.
@@ -702,17 +702,30 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           return (await ended(held, await hostStopped(stopHost, held))) ?? { ok: false, reason: "runtime_lease_changed" }
         }
         const persistence = lease?.persistence
+        let unsaved = false
         if (input.runtime && persistence && persistence.capture !== "none") {
-          // The commit stops the lease before the host stops, so a send from here on wakes a restore of this capture.
-          const captured = await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, true)
-          const checkpoint = captured.checkpoint.providerReference
-          if (persistence.captureSource === "preserved") await stopHost?.({ ...target, checkpoint })
-          if (lease) lifecycle.stopped(lease, input.idleBefore !== undefined)
-          return stopped
+          try {
+            // The commit stops the lease before the host stops, so a send from here on wakes a restore of this capture.
+            const captured = await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, true)
+            const checkpoint = captured.checkpoint.providerReference
+            if (persistence.captureSource === "preserved") await stopHost?.({ ...target, checkpoint })
+            if (lease) lifecycle.stopped(lease, input.idleBefore !== undefined)
+            return stopped
+          } catch (error) {
+            // An idle stop is the runtime's to refuse; any other stop ends the machine, which bills for as long as it runs.
+            if (input.idleBefore !== undefined) throw error
+            console.warn("A stopping sandbox was not captured; it stops on its last checkpoint", {
+              workspaceId, epoch: target.epoch, error: error instanceof Error ? error.message : String(error),
+            })
+            const current = await options.leaseStore.get(workspaceId)
+            if (current?.status === "stopped") return stopped
+            if (current?.epoch !== target.epoch || current.status !== "ready") return { ok: false, reason: "runtime_lease_changed" }
+            unsaved = true
+          }
         }
         const checkpoint = lease?.checkpoint?.providerReference
         const resource = { ...target, ...(checkpoint ? { checkpoint } : {}) }
-        return (await ended(resource, await hostStopped(stopHost, resource))) ?? { ok: false, reason: "runtime_lease_changed" }
+        return (await ended(resource, await hostStopped(stopHost, resource), unsaved)) ?? { ok: false, reason: "runtime_lease_changed" }
       })
     },
     async endIfHostDown(workspaceId, epoch) {

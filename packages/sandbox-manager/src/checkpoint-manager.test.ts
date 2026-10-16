@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { createSandboxManager, type SandboxCheckpointRuntime, type SandboxDriver } from "."
+import { createSandboxManager, type SandboxCheckpointRuntime, type SandboxDriver, type SandboxLifecycleEvent } from "."
 import { createMemoryLeaseStore } from "./stores/memory"
 
 function runtime(order: string[] = []): SandboxCheckpointRuntime {
@@ -233,6 +233,37 @@ describe("checkpoint lifecycle", () => {
     expect(next.stop).not.toHaveBeenCalled()
     expect(control.resume).toHaveBeenCalledOnce()
     expect((await store.get("ws_1"))?.status).toBe("ready")
+  })
+
+  test("a person's stop whose runtime cannot be captured still stops the host on the last good checkpoint, and says the latest changes were not saved", async () => {
+    const store = createMemoryLeaseStore()
+    const events: SandboxLifecycleEvent[] = []
+    const next = driver({ stop: vi.fn(async () => {}) })
+    const manager = createSandboxManager({ leaseStore: store, driver: next, onLifecycle: (event) => events.push(event) })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    await manager.checkpoint("ws_1", { runtime: runtime() })
+    const unreachable = runtime()
+    unreachable.freeze = vi.fn(async () => { throw new Error("the runtime is unreachable") })
+    unreachable.resume = vi.fn(async () => { throw new Error("the runtime is unreachable") })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    expect(await manager.stop("ws_1", { runtime: unreachable })).toEqual({ ok: true, status: "stopped", unsaved: true })
+    warn.mockRestore()
+    expect(next.stop).toHaveBeenCalledWith(expect.objectContaining({ epoch: 1, checkpoint: "snapshot-1" }))
+    expect(next.snapshot).toHaveBeenCalledOnce()
+    expect(await store.get("ws_1")).toMatchObject({ status: "stopped", checkpoint: { providerReference: "snapshot-1" } })
+    expect(events.filter((event) => event.kind === "stopped")).toEqual([expect.objectContaining({ kind: "stopped", cause: "explicit", unsaved: true })])
+  })
+
+  test("a failed capture whose thaw fails too answers the capture's own failure", async () => {
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: driver() })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    const control = runtime()
+    control.freeze = vi.fn(async () => { throw new Error("freeze refused") })
+    control.resume = vi.fn(async () => { throw new Error("resume refused") })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await expect(manager.checkpoint("ws_1", { runtime: control })).rejects.toThrow("freeze refused")
+    warn.mockRestore()
   })
 
   test("a stop for a lease generation that was replaced touches nothing", async () => {

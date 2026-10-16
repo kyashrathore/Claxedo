@@ -291,6 +291,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
         await touch(running.target)
         return response(res, 200, { ok: true, ready: true })
       }
+      if (parts[2] === "inspect") return response(res, 200, { running: sandboxes.has(id) })
       if (parts[2] === "snapshot") {
         if (!sandboxes.has(id)) return response(res, 500, { error: "The workspace container is not running" })
         return response(res, 200, { snapshotId: await snapshotSandbox(input.root, id), sizeBytes: 0 })

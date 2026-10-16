@@ -140,19 +140,24 @@ Column meanings:
   `stop(workspaceId, { runtime })` first captures the workspace: the capture
   commits the checkpoint and the stopped lease in one update, the runtime stays
   frozen, and only then does the host stop, for that lease generation only.
-  With `hostStopsItself` the caller is the host and stops itself; the answer's
-  `checkpoint` names the snapshot the stopped lease references, for it to keep.
+  With `hostStopsItself` the caller is the host and stops itself. An idle stop
+  (`idleBefore`) whose capture fails is refused and the host keeps running;
+  any other stop whose capture fails stops the host anyway on the lease's last
+  checkpoint and answers `unsaved: true`, since a host bills while it runs.
 - **`hostResumeBehavior`** — whether a stopped/stale lease can resume the
   *same* driver-owned resource (`"same-host"`) or must always get a
   replacement (`"replacement-host"`, e.g. Modal/Vercel sandboxes are
   ephemeral compute, not resumable containers).
 - **`hostWatchesIdle`** — set when the host itself reads its runtime's
   idleness and stops once the idle window has passed (the Cloudflare sandbox
-  Worker does, from inside the host). Absent, the control plane's provisioner
-  reads `idleSince` from the runtime's `/api/wr/health` over the relay every
-  30 s and stops the lease as idle through `SandboxManager.stop()` after ten
-  idle minutes, or after ten minutes of reads that reached no runtime. One
-  idle policy, one watcher per sandbox.
+  Worker does, from inside the host). The control plane's provisioner reads
+  every serving runtime's `/api/wr/health` over the relay every 30 s: an
+  answer is recorded as the lease's heartbeat; a read that reaches no runtime
+  asks the driver's `inspect`, and a host the provider stopped or no longer
+  has ends the lease at once (`endIfHostDown`); ten minutes of reads that
+  reached no runtime stop the lease. Absent this flag, the provisioner also
+  stops the lease as idle through `SandboxManager.stop()` after ten idle
+  minutes. One idle policy, one idle watcher per sandbox.
 - **`targetAccess`** — how the control plane reaches the resolved
   `SandboxTarget.url`: `"relay"` (all hosted providers) or `"loopback"`
   (Docker, since it runs on the same machine as the manager).

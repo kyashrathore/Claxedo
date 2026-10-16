@@ -13,6 +13,7 @@ const en = {
   "cloud.status.failed": "Failed",
   "cloud.command.start.failed": "Couldn't start: {{reason}}",
   "cloud.command.stop.failed": "Couldn't stop: {{reason}}",
+  "cloud.command.stop.unsaved": "Stopped without saving the latest changes.",
   "cloud.command.remove.failed": "Couldn't delete: {{reason}}",
   "cloud.command.startFresh.failed": "Couldn't start fresh: {{reason}}",
   "cloud.startFresh": "Start fresh",

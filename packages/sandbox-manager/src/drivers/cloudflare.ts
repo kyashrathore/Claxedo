@@ -398,6 +398,15 @@ export function createCloudflareSandboxDriver(
       }
     },
 
+    // The sandbox's object outlives its container and keeps the snapshots it took, so a container that is not running is a stopped host, never a gone one.
+    async inspect(target) {
+      const { status, data } = await call(target.sandboxId, "inspect", {})
+      if (status < 200 || status >= 300 || typeof data.running !== "boolean") {
+        throw new Error(`Cloudflare inspect failed (${status}) for ${target.sandboxId}: ${text(data.error) ?? "no container state"}`)
+      }
+      return data.running ? "serving" : "stopped"
+    },
+
     async destroy(target: SandboxResource) {
       const { status } = await call(target.sandboxId, "", {}, "DELETE")
       if (status >= 400 && status !== 404) {

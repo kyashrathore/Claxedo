@@ -1,5 +1,6 @@
 import { placementId, projectId } from "../ids"
 import type {
+  CloudStopOutcome,
   CloudWorkspace,
   CloudWorkspaceStatus,
   CodeHostAppInstallation,
@@ -91,6 +92,10 @@ function repositoryAccessFromWire(value: unknown): CodeHostRepositoryAccess | un
   }
   if (value.kind !== "app" || !Array.isArray(value.installations)) return undefined
   return { kind: "app", installations: value.installations.flatMap((row) => installationFromWire(row) ?? []) }
+}
+
+export function cloudStopOutcomeFromBody(body: unknown): CloudStopOutcome {
+  return { unsaved: isRecord(body) && body.unsaved === true }
 }
 
 export function codeHostRepositoryListingFromBody(body: unknown): CodeHostRepositoryListing {

@@ -235,10 +235,7 @@ export function createHostedRuntimeDelivery(input: {
         log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
       }),
     ])
-    return {
-      ...(renewAt === undefined ? {} : { renewAt }),
-      ...(hostWatchesIdle((await supervisor).target) ? {} : { watchAt: Date.now() + IDLE_CHECK_MS }),
-    }
+    return { ...(renewAt === undefined ? {} : { renewAt }), watchAt: Date.now() + IDLE_CHECK_MS }
   }
   // A push outside a start run (a Task root's first settings) hands the
   // follow-ups a ready start would schedule to the workspace's provisioner,
@@ -281,12 +278,13 @@ export function createHostedRuntimeDelivery(input: {
     }
   }
   /**
-   * One read of a serving runtime's idleness over the relay. A runtime that
-   * does not answer on a host the provider stopped or no longer has ends its
-   * lease at once, so the workspace stops reading as running; one that
-   * answered nothing for the whole failure budget is stopped too: its host is
-   * metered while nobody reaches what it serves. Either way the turns its
-   * sessions were running end with it.
+   * One read of a serving runtime over the relay. An answer is the host's
+   * proof of life, recorded on the lease, and is read for idleness unless the
+   * host reads its own. A runtime that does not answer on a host the provider
+   * stopped or no longer has ends its lease at once, so the workspace stops
+   * reading as running; one that answered nothing for the whole failure
+   * budget is stopped too: its host is metered while nobody reaches what it
+   * serves. Either way the turns its sessions were running end with it.
    */
   const watch = async (workspaceId: string, failures: number): Promise<number | undefined> => {
     const target = await input.sandboxManager.target(workspaceId)
@@ -299,7 +297,10 @@ export function createHostedRuntimeDelivery(input: {
       report = asRecord(await response.json())
       if (report?.workspaceId !== workspaceId) throw new Error("the runtime answered for another workspace")
     } catch (error) {
-      const down = await input.sandboxManager.endIfHostDown(workspaceId, target.epoch)
+      const down = await input.sandboxManager.endIfHostDown(workspaceId, target.epoch).catch((inspectError: unknown) => {
+        log.warn("the provider did not say whether an unanswering runtime's host runs", { workspaceId, epoch: target.epoch, error: String(inspectError) })
+        return undefined
+      })
       if (down) {
         log.warn(`sandbox lease ended: its runtime answered no idle check and the provider ${down === "gone" ? "no longer has" : "stopped"} its host`, { workspaceId, epoch: target.epoch, error: String(error) })
         await runtimeLost(workspaceId)
@@ -311,7 +312,8 @@ export function createHostedRuntimeDelivery(input: {
       await runtimeLost(workspaceId)
       return undefined
     }
-    const idleBefore = workspaceIdleStopDue(report ?? {}, Date.now())
+    await input.sandboxManager.heartbeat(workspaceId, { epoch: target.epoch, ok: true })
+    const idleBefore = hostWatchesIdle(target) ? undefined : workspaceIdleStopDue(report ?? {}, Date.now())
     if (idleBefore === undefined) return Date.now() + IDLE_CHECK_MS
     const stopped = await input.idleStop(workspaceId, target.epoch, { idleBefore })
     return stopped.ok ? undefined : Date.now() + IDLE_CHECK_MS

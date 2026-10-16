@@ -92,8 +92,10 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  *
  * The same alarm follows a ready sandbox up for as long as it keeps serving: a
  * settling that names `renewAt` is re-delivered then, through `renew`, and
- * one that names `watchAt` has its idleness read then, through `watch`, which
- * stops a sandbox whose host reads none itself. The run owns the alarm while
+ * one that names `watchAt` has its runtime read then, through `watch`, which
+ * ends the lease of a host found stopped or gone, and stops a sandbox
+ * unreachable for too long, or idle where its host reads no idleness itself.
+ * The run owns the alarm while
  * one is in flight; the follow-ups take it back when the run settles. A Task
  * root is created outside any run, so `follow` hands its follow-ups here
  * instead, with the root's capability set, which every later step of that

@@ -11,6 +11,8 @@ import {
   type PlacementId,
   type ProjectId,
 } from "@/server"
+import { showToast } from "@/ui"
+import { useCloudText } from "./i18n"
 import { cloudWorkspaceTransition, isRunning, type CloudCommand, type CloudCommandFailure, type CloudWorkspaceEvent } from "./model"
 
 export type CloudWorkspaceRow = CloudWorkspace & { readonly state: CloudWorkspaceStatus; readonly commandFailure?: CloudCommandFailure }
@@ -59,6 +61,7 @@ function useCommandRunner(statusKind: (id: PlacementId) => CloudWorkspaceStatus[
 
 function useCloudCommands(enabled: Accessor<boolean>, include: (workspace: CloudWorkspace) => boolean) {
   const server = useServer()
+  const t = useCloudText()
   const query = useQuery(() => ({ ...server.queries.cloud.list(), enabled: enabled() }))
   const commands = useCommandRunner((id) => query.data?.find((workspace) => workspace.id === id)?.status.kind ?? "stopped")
   const list = createMemo((): CloudList => {
@@ -71,7 +74,10 @@ function useCloudCommands(enabled: Accessor<boolean>, include: (workspace: Cloud
     refresh: () => void query.refetch(),
     start: (id: PlacementId) => commands.run(id, "start", { type: "startRequested" }, () => server.cloud.start(id)),
     startFresh: (id: PlacementId) => commands.run(id, "startFresh", { type: "startFreshRequested" }, () => server.cloud.startFresh(id)),
-    stop: (id: PlacementId) => commands.run(id, "stop", { type: "stopRequested" }, () => server.cloud.stop(id)),
+    stop: (id: PlacementId) => commands.run(id, "stop", { type: "stopRequested" }, async () => {
+      const outcome = await server.cloud.stop(id)
+      if (outcome.unsaved) showToast({ title: t("cloud.command.stop.unsaved") })
+    }),
     remove: (id: PlacementId) => commands.run(id, "remove", undefined, () => server.cloud.remove(id)),
   }
 }

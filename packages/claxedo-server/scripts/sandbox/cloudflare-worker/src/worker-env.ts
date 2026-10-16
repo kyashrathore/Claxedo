@@ -10,6 +10,7 @@ type WorkspaceSandboxStub = { fetch(request: Request): Promise<Response> } & Pic
   | "setCredentialHosts"
   | "configureWorkspaceIdle"
   | "ensureWorkspace"
+  | "workspaceRunning"
   | "workspaceRuntimeReady"
   | "watchWorkspaceIdle"
   | "stopWorkspace"

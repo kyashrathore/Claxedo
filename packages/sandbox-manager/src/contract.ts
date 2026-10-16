@@ -83,9 +83,9 @@ export type SandboxDriverMetadata = {
   hostResumeBehavior: "same-host" | "replacement-host"
   /**
    * The host itself reads its runtime's idleness and stops once the idle
-   * window has passed (the Cloudflare sandbox Worker). Absent, nothing on the
-   * host does: the control plane's provisioner watches the runtime over the
-   * relay and stops the host through the driver.
+   * window has passed (the Cloudflare sandbox Worker). The control plane's
+   * provisioner reads every serving runtime over the relay for liveness, and
+   * stops an idle one through the driver only where this is absent.
    */
   hostWatchesIdle?: true
   /** How the control plane reaches the sandbox target returned by the driver. */
@@ -651,7 +651,8 @@ export type SandboxTargetResult =
     }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }
-export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus } | { ok: false; reason: string }
+/** `unsaved` is a stop that ended the machine without capturing it: the workspace's latest changes are lost, its last checkpoint kept. */
+export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus; unsaved?: true } | { ok: false; reason: string }
 export type SandboxSnapshotManagerResult =
   | ({ ok: true } & SandboxSnapshotResult)
   | { ok: false; reason: string }
