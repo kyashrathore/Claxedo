@@ -2,8 +2,11 @@
 import { afterEach, expect, test } from "bun:test"
 import { QueryClient, type InfiniteData } from "@tanstack/solid-query"
 import type { Page, Task, TaskSummary, TasksCommand } from "@claxedo/tasks"
+import { createRoot } from "solid-js"
+import { placementId, projectId, sessionId } from "./ids"
 import { createTasksApi } from "./tasks"
-import { createTransport } from "./transport"
+import { createTransport, type Transport } from "./transport"
+import { createWorkspaces } from "./workspaces"
 
 const running: Array<{ stop: (force: boolean) => unknown }> = []
 
@@ -51,7 +54,7 @@ const createChild = (parentTaskId: string): TasksCommand => ({
 
 test("a created subtask is in its parent's children from the create's own answer, before any read", async () => {
   const queryClient = new QueryClient()
-  const api = createTasksApi(serving(task("tsk_child", "tsk_parent")), queryClient)
+  const api = createTasksApi(serving(task("tsk_child", "tsk_parent")), queryClient, workspacesOf(queryClient))
   queryClient.setQueryData<Children>(api.keys.children("tsk_parent"), { pages: [{ items: [], nextCursor: null }], pageParams: [undefined] })
 
   const created = await api.command({ clientRequestId: "req_1", command: createChild("tsk_parent") })
@@ -65,7 +68,7 @@ test("a created subtask is in its parent's children from the create's own answer
 
 test("a replayed create does not list its subtask twice, and a parent nobody has read stays unread", async () => {
   const queryClient = new QueryClient()
-  const api = createTasksApi(serving(task("tsk_child", "tsk_parent")), queryClient)
+  const api = createTasksApi(serving(task("tsk_child", "tsk_parent")), queryClient, workspacesOf(queryClient))
   const listed = { ...(({ description: _description, ...rest }) => rest)(task("tsk_child", "tsk_parent")), hasDescription: false, links: { count: 0 }, children: { total: 0, done: 0 } }
   queryClient.setQueryData<Children>(api.keys.children("tsk_parent"), { pages: [{ items: [listed], nextCursor: null }], pageParams: [undefined] })
 
@@ -73,7 +76,47 @@ test("a replayed create does not list its subtask twice, and a parent nobody has
   expect(queryClient.getQueryData<Children>(api.keys.children("tsk_parent"))?.pages[0]?.items).toHaveLength(1)
 
   const fresh = new QueryClient()
-  const unread = createTasksApi(serving(task("tsk_other", "tsk_unread")), fresh)
+  const unread = createTasksApi(serving(task("tsk_other", "tsk_unread")), fresh, workspacesOf(fresh))
   await unread.command({ clientRequestId: "req_2", command: createChild("tsk_unread") })
   expect(fresh.getQueryData(unread.keys.children("tsk_unread"))).toBeUndefined()
+})
+
+function cloudCatalog(workspaceIds: () => readonly string[], reads: string[]): Transport {
+  return {
+    serverUrl: "http://127.0.0.1:1",
+    loopback: false,
+    json: async (path: string) => {
+      reads.push(path)
+      const rows = Object.fromEntries(workspaceIds().map((id) => [id, { id, backing: "cloud-vm", workspace_name: id, directory: `workspace:${id}`, status: "ready", reachable: true }]))
+      return { deployment: { serverKind: "daemon", issuesSessions: true }, project: [{ id: "prj", worktree: "prj", workspaces: rows }] }
+    },
+    onSessionHost: () => () => undefined,
+  } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
+}
+
+function workspacesOf(queryClient: QueryClient) {
+  return createWorkspaces(cloudCatalog(() => [], []), queryClient)
+}
+
+test("a task session in a workspace the catalog has not read yet is located only once the catalog has read it, so its route can open", async () => {
+  await createRoot(async (dispose) => {
+    const created = ["ws_known"]
+    const reads: string[] = []
+    const catalog = cloudCatalog(() => created, reads)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const workspaces = createWorkspaces(catalog, queryClient)
+    await workspaces.load()
+    const api = createTasksApi(catalog, queryClient, workspaces)
+    created.push("ws_task_root")
+
+    const located = await api.locateSession({ workspaceId: "ws_task_root", sessionId: "ses_tasks_1" })
+
+    expect(located).toEqual({ placementId: placementId("ws_task_root"), sessionId: sessionId("ses_tasks_1") })
+    expect(workspaces.byId(placementId("ws_task_root"))?.projectId).toBe(projectId("prj"))
+    const rereads = reads.length
+    await api.locateSession({ workspaceId: "ws_known", sessionId: "ses_other" })
+    expect(reads.length).toBe(rereads)
+    workspaces.dispose()
+    dispose()
+  })
 })

@@ -2,6 +2,7 @@ import { Show, createMemo, type JSX } from "solid-js"
 import { CONFIGURATION_SLOTS, type ConfigurationSlot, type Task } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { followRetry, useTaskChildren, useTaskDetail, useTasksApi } from "../data/queries"
+import { refusalOf } from "../data/refusal"
 import { useTaskStartOffers } from "../data/start"
 import { tasksDictionary } from "../i18n"
 import { useOpenTaskSession, useTaskProjects } from "../links"
@@ -99,7 +100,7 @@ function LoadedTask(props: Loaded): JSX.Element {
         onSave={() => props.commands.save(task())}
         onDiscard={() => store().discardEdit(task().id)}
         onStatusChange={props.commands.setStatus}
-        onOpenSession={openSession}
+        onOpenSession={(ref) => void openSession(ref).catch((error: unknown) => store().refuseStart(task().id, refusalOf(error).message))}
         startOffer={props.data.startOffer(task())}
         onSendTask={(link) => void props.sending.send(task(), link)}
         onBack={props.page.onBack}

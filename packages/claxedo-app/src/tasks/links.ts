@@ -1,7 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { SessionRef } from "@claxedo/tasks"
-import { placementId, sessionId, useServer } from "@/server"
+import { useServer } from "@/server"
 import { sessionPath, settingsPath, useShellRoute } from "@/shell"
 
 export type TaskProject = { readonly id: string; readonly label: string }
@@ -26,10 +26,9 @@ export function useActiveProjectId(): Accessor<string | undefined> {
 
 export function useOpenTaskSession() {
   const route = useShellRoute()
-  return (session: SessionRef) => {
-    const workspace = session.workspaceId
-    const id = sessionId(session.sessionId)
-    route.navigate(sessionPath({ placementId: placementId(workspace), sessionId: id }))
+  const server = useServer()
+  return async (session: SessionRef) => {
+    route.navigate(sessionPath(await server.tasks.locateSession(session)))
   }
 }
 

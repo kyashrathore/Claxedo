@@ -676,8 +676,12 @@ export const desktopRenderer: Policy = {
   // Projects share for a workspace whose checkpoint cannot be restored (owner:
   // the app's cloud domain, `cloud/view/start-fresh.ts`). It adds no package
   // edge.
-  // 1389/36, no headroom.
-  ceilings: { modules: 1389, packages: 36 },
+  // A task start's run and the progress it reports while the preview and the
+  // start are in flight, split from the start offers' wiring so it runs
+  // without the UI kit (owner: the app's tasks domain,
+  // `tasks/data/start-run.ts`). It adds no package edge.
+  // 1390/36, no headroom.
+  ceilings: { modules: 1390, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
