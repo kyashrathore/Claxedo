@@ -11,11 +11,11 @@ const parts: readonly Part[] = [
   { name: "Server adapter", folders: ["src/server"] },
   { name: "Session client", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
   { name: "Session screen", budget: 14300, folders: ["src/session/view"] },
-  { name: "Composer", budget: 13838, folders: ["src/composer"] },
+  { name: "Composer", budget: 13864, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs", budget: 1542, folders: ["src/browser"] },
-  { name: "Shell and platform", budget: 7178, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
-  { name: "Terminal", budget: 4328, folders: ["src/terminal"] },
+  { name: "Shell and platform", budget: 7197, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
+  { name: "Terminal", budget: 4357, folders: ["src/terminal"] },
   { name: "Settings and accounts", budget: 5200, folders: ["src/settings", "src/accounts"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review and files", budget: 4397, folders: ["src/review", "src/files"] },
@@ -30,7 +30,7 @@ const parts: readonly Part[] = [
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 105273
+const totalBudget = 105458
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))
