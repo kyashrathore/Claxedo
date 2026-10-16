@@ -3,7 +3,7 @@ import type { HarnessEventAdapter } from "../../../translate/adapter"
 import { piRetryMessage } from "../errors"
 import { piMessageEnd, piMessageStart, piMessageUpdate, piReconcile } from "./messages"
 import { ignoredKind, initialPiDurableState, piStep, type PiDurableTranslatorState, type PiStep } from "./state"
-import { piToolEnd, piToolStart, piToolUpdate } from "./tools"
+import { piToolCallsAnnounced, piToolEnd, piToolStart, piToolUpdate } from "./tools"
 import { piUsageChanged, piUsageTotals } from "./usage"
 
 type Frame = Record<string, unknown>
@@ -19,7 +19,8 @@ function snapshot(state: PiDurableTranslatorState, frame: Frame): PiStep {
 
 const HANDLERS: Record<string, Handler> = {
   snapshot,
-  message_start: piMessageStart, message_update: piMessageUpdate, message_end: piMessageEnd,
+  message_start: piMessageStart, message_update: piMessageUpdate,
+  message_end: (state, frame) => piToolCallsAnnounced(piMessageEnd(state, frame), frame),
   tool_execution_start: piToolStart, tool_execution_update: piToolUpdate, tool_execution_end: piToolEnd,
   usage_changed: piUsageChanged,
   auto_retry_start: (state, frame) => piStep(state, [{ type: "session-retry", message: piRetryMessage(asString(frame.errorMessage)),

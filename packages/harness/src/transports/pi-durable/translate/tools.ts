@@ -28,12 +28,34 @@ function piToolDisplay(toolName: string, args: unknown) {
   return filePath ? { ...display, filePath } : display
 }
 
+function frameToolName(frame: Frame, what: string): string {
+  if (typeof frame.toolName !== "string") throw new Error(`Pi tool ${what} lacks a name`)
+  return frame.toolName
+}
+
+function piToolStarted(id: string, name: string, args: unknown): AgentRuntimeEvent[] {
+  const display = piToolDisplay(name, args)
+  return [{ type: "tool-start", toolCallId: id, toolName: name, kind: display.kind, display },
+    { type: "tool-input", toolCallId: id, input: args, display }]
+}
+
+function forgetAnnounced(state: PiDurableTranslatorState, id: string): PiDurableTranslatorState {
+  const { [id]: _settled, ...announced } = state.announced
+  return { ...state, announced }
+}
+
+export function piToolCallsAnnounced(step: PiStep, frame: Frame): PiStep {
+  const message = row(asArray(row(frame.entry).model)[0])
+  if (message.role !== "assistant") return step
+  const calls = asArray(message.content).map(row).filter((block) => block.type === "toolCall" && typeof block.id === "string")
+  if (calls.length === 0) return step
+  const announced = { ...step.state.announced, ...Object.fromEntries(calls.map((block) => [block.id, block.arguments ?? {}])) }
+  return piStep({ ...step.state, announced }, step.events)
+}
+
 export function piToolStart(state: PiDurableTranslatorState, frame: Frame): PiStep {
   const id = toolCallId(frame, "start")
-  if (typeof frame.toolName !== "string") throw new Error("Pi tool start lacks a name")
-  const display = piToolDisplay(frame.toolName, frame.args)
-  return piStep(state, [{ type: "tool-start", toolCallId: id, toolName: frame.toolName, kind: display.kind, display },
-    { type: "tool-input", toolCallId: id, input: frame.args, display }])
+  return piStep(forgetAnnounced(state, id), piToolStarted(id, frameToolName(frame, "start"), frame.args))
 }
 
 export function piToolUpdate(state: PiDurableTranslatorState, frame: Frame): PiStep {
@@ -58,6 +80,12 @@ function diagnosticMessages(data: unknown, severity?: string): string[] {
 
 export function piToolEnd(state: PiDurableTranslatorState, frame: Frame): PiStep {
   const id = toolCallId(frame, "completion")
+  const unstarted = Object.hasOwn(state.announced, id) ? piToolStarted(id, frameToolName(frame, "completion"), state.announced[id]) : []
+  const ended = piToolResult(forgetAnnounced(state, id), frame, id)
+  return piStep(ended.state, [...unstarted, ...ended.events])
+}
+
+function piToolResult(state: PiDurableTranslatorState, frame: Frame, id: string): PiStep {
   const entry = row(frame.entry)
   const result = row(asArray(entry.model)[0])
   if (result.role !== "toolResult") {
