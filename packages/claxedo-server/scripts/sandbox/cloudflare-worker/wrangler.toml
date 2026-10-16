@@ -1,65 +1,46 @@
 name = "claxedo-sandbox-proxy"
 main = "src/index.ts"
-# Container PID namespace semantics change at 2026-04-01. Advancing this date
-# requires a deployed runtime lifecycle check, independent of the SDK pin.
-#
-# Wrangler is pinned independently at 4.127.1. Its bundled Miniflare owns local
-# Container supervision; 4.50.0 repeatedly lost a healthy local container and
-# made `wrangler dev` unusable as the pre-deploy acceptance loop. Keep the
-# package pin and the workflow's explicit secret-sync pin aligned.
-compatibility_date = "2025-04-01"
-compatibility_flags = ["nodejs_compat", "enable_ctx_exports"]
+compatibility_date = "2026-09-29"
 
-# The runtime is reached through the worker's own /sandbox/:id/proxy route
-# (containerFetch), NOT exposePort preview subdomains — so NO wildcard route or
-# wildcard ACM cert is required. Served at the workers.dev URL below; for a
-# branded host add `routes = [{ pattern = "sandbox.claxedo.com/*", zone_name =
-# "claxedo.com" }]` on an account that owns the zone.
+# The runtime is reached through this Worker's own /sandbox/:id/proxy route,
+# so the workers.dev URL is enough: no wildcard route or certificate.
 workers_dev = true
 
 [observability]
 enabled = true
 
+# Container snapshots exist only under the `durable_object` scheduling policy
+# (Wrangler 4.131.0 and later), which is fixed when the container application
+# is created, so this class is a new application beside the retired `Sandbox`
+# one. The policy refuses `instance_type`, `max_instances` and
+# `constraints.regions`: the instance is chosen at `start()`, and a container
+# is placed near its Durable Object, which the Worker hints into ENAM.
 [[containers]]
-class_name = "Sandbox"
-image = "./Dockerfile"
-# The runnable image includes the workspace runtime plus every supported agent
-# harness and currently needs about 5.3GB. standard-1 provides an 8GB disk.
-instance_type = "standard-1"
-max_instances = 3
+class_name = "WorkspaceSandbox"
+scheduling_policy = "durable_object"
 
-[containers.constraints]
-regions = ["APAC"]
+[containers.images.runtime]
+dockerfile = "./Dockerfile"
 
 [[durable_objects.bindings]]
-class_name = "Sandbox"
-name = "Sandbox"
+class_name = "WorkspaceSandbox"
+name = "WORKSPACE_SANDBOX"
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Sandbox"]
 
-# Workspace checkpoints use the Sandbox SDK backup API. Provision this bucket
-# before deploy (`wrangler r2 bucket create claxedo-sandbox-backups`) and set
-# CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY as Worker
-# secrets so production containers can use presigned R2 URLs.
-#
-# BACKUP_BUCKET is ALSO the sandbox registry (W1.2, 2026-07-30), under the
-# `sandbox-registry/` key prefix: one object per live sandbox, labels in
-# customMetadata, written on ensure-runtime and deleted on destroy. This is what
-# makes `GET /sandboxes` — and therefore the control plane's sandbox GC — work at
-# all, because a Durable Object namespace cannot be enumerated (`idFromName` is
-# one-way, so the account-level REST API returns only opaque hex ids).
-#
-# REQUIRED for GC visibility. Without this binding the Worker answers
-# `GET /sandboxes` with 501 `supported: false`, the driver raises a listing-
-# unsupported signal, and `garbageCollect()` reports `listingUnsupported` rather
-# than a false clean sweep — loud and safe, but blind to orphans.
-[vars]
-BACKUP_BUCKET_NAME = "claxedo-sandbox-backups"
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["WorkspaceSandbox"]
+deleted_classes = ["Sandbox"]
 
+# The sandbox registry, one object per live sandbox under `sandbox-registry/`:
+# a Durable Object namespace cannot be enumerated, so without this binding
+# `GET /sandboxes` answers 501 and the control plane's GC reports
+# `listingUnsupported` instead of a clean sweep it cannot see.
 [[r2_buckets]]
-binding = "BACKUP_BUCKET"
+binding = "SANDBOX_REGISTRY"
 bucket_name = "claxedo-sandbox-backups"
 
 # Native outbound handlers read credentials from KV outside the container.

@@ -1,4 +1,7 @@
-FROM docker.io/cloudflare/sandbox:0.12.9
+# better-sqlite3 13 needs Node 22 or later and glibc 2.38 or later; Trixie
+# carries both. The Worker starts this image with `sleep infinity` as its
+# main process and runs the runtime beside it, so no base entrypoint is used.
+FROM node:24.21.0-trixie-slim
 
 LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 
@@ -16,42 +19,28 @@ ARG CLAXEDO_CURL_AGENTS="1"
 
 # Install build tools for native deps (better-sqlite3, node-pty). `git` is named
 # explicitly because the runtime configures a github.com clone header at boot
-# and agents clone from inside the sandbox, and `procps` because the runtime
-# asks `ps` whether any git still runs before it removes a stale shallow.lock;
-# whether the base image happens to carry either is not something this image
-# should depend on.
+# and agents clone from inside the sandbox, `procps` because the runtime asks
+# `ps` whether any git still runs before it removes a stale shallow.lock, and
+# `util-linux` because the Worker launches the runtime under `setsid` and
+# `ca-certificates` because it rebuilds the system bundle with the credential
+# interception CA on every container start.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates git gzip make g++ procps python3 xz-utils && \
+    apt-get install -y --no-install-recommends bash curl ca-certificates git gzip make g++ procps python3 util-linux xz-utils && \
     rm -rf /var/lib/apt/lists/* && \
-    command -v git && command -v ps
+    command -v git && command -v ps && command -v setsid && test -s /etc/ssl/certs/ca-certificates.crt
 
-# The cloudflare/sandbox base ships Node 20, under which better-sqlite3 13.x
-# SEGFAULTS on load (verified in-image: node20 `new Database(':memory:')`
-# crashes, the same install under node22 works) — workspace-runtime died
-# silently at boot and the image smoke burned its whole readiness ceiling.
-# The public SDK also uses syntax unavailable on Node 22. Install Node 24
-# (the same major as Electron 43 and the ghcr image) ahead of the base's node
-# on PATH; the sandbox's own container
-# server is a self-contained binary and does not resolve node from PATH.
-RUN curl -fsSL https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz -o /tmp/node24.tar.xz && \
-    printf '%s  %s\n' fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6 /tmp/node24.tar.xz | sha256sum -c - && \
-    mkdir -p /opt/node-24 && \
-    tar -xJf /tmp/node24.tar.xz -C /opt/node-24 --strip-components=1 && \
-    rm /tmp/node24.tar.xz && \
-    /opt/node-24/bin/node --version
-ENV PATH=/opt/node-24/bin:$PATH
-
-# The driver boots the runtime (as root) with HOME=/home/claxedo, a directory
-# the SDK can back up, unlike /root. Nothing at runtime creates it, and git
-# refuses to write its global config into a HOME that does not exist.
+# The driver boots the runtime (as root) with HOME=/home/claxedo, because a
+# process the Worker starts inherits no image environment but PATH. Nothing at
+# runtime creates it, and git refuses to write its global config into a HOME
+# that does not exist.
 RUN install -d -m 0700 -o root -g root /home/claxedo
 
 # Harness SDKs and CLIs skip npm's release-age gate: their releases carry the
 # protocol changes Claxedo tracks the day they ship (owner exemption,
 # 2026-09-30). npm honors these exclusions from 11.17 (Node 24.19); every other
 # package, the harness packages' own dependencies included, stays gated. The
-# exclusions go to npm's global config: the runtime runs with HOME=/home/claxedo
-# (its captured directory), where root's ~/.npmrc is not read.
+# exclusions go to npm's global config: the runtime runs with HOME=/home/claxedo,
+# where root's ~/.npmrc is not read.
 RUN npmrc="$(npm config get globalconfig)" && mkdir -p "$(dirname "$npmrc")" && printf '%s\n' \
       'min-release-age-exclude[]=@agentclientprotocol/sdk' \
       'min-release-age-exclude[]=@anthropic-ai/claude-*' \
@@ -95,3 +84,5 @@ RUN cd /opt/workspace-runtime && \
 # Exercise the canonical session lifecycle and one embedded OpenCode turn
 # against a loopback stand-in provider, the turn path a cloud VM serves.
 RUN node /opt/workspace-runtime/workspace-runtime-image-smoke.mjs
+
+WORKDIR /workspace

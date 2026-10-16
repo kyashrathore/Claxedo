@@ -9,7 +9,7 @@ export const WORKSPACE_IDLE_MS = 600_000
 export const IDLE_CHECK_MS = 30_000
 /** Ten minutes of checks that all failed: a sandbox no check reaches is stopped rather than metered for a runtime that may be gone. */
 export const IDLE_CHECK_FAILURE_LIMIT = 20
-/** Longer than any checkpoint holds a runtime frozen: a drain plus the Cloudflare driver's 180 s backup deadline. */
+/** Longer than any checkpoint holds a runtime frozen: a drain plus the Cloudflare driver's 180 s snapshot deadline. */
 const FROZEN_DEADLINE_MS = 15 * 60_000
 
 /** The runtime's own answer on `GET /api/wr/health`, read as data. */

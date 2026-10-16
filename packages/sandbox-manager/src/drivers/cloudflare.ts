@@ -6,16 +6,17 @@
 // Worker with no separate Node bridge service.
 //
 // Credential channel: the workspace-runtime boot env is sent to the sandbox via
-// the Worker's `ensure-runtime` action (`setEnvVars`). Brokered secrets
+// the Worker's `ensure-runtime` action. Brokered secrets
 // (`SandboxBrokeredSecret`) travel separately in the same request as `egress`
 // registrations — the Worker stores the values out of the container and runs
 // native outbound header injection, so the raw value never enters
 // the sandbox.
 //
 // Reachability: `ensure-runtime` returns the Worker's own data-plane proxy URL
-// (`<worker>/sandbox/:id/proxy`), which `containerFetch`es to the runtime port
-// inside the container. No exposePort preview subdomain → no custom domain or
-// wildcard cert required; a plain workers.dev origin is enough. The relay's
+// (`<worker>/sandbox/:id/proxy`), which the sandbox's Durable Object forwards
+// to the runtime port inside the container. No exposePort preview subdomain →
+// no custom domain or wildcard cert required; a plain workers.dev origin is
+// enough. The relay's
 // Relay Host Token (carried on `Authorization`) is forwarded untouched to the
 // runtime, which enforces it — the proxy route is intentionally not behind the
 // Worker's admin API_TOKEN gate (that gate still protects control actions).
@@ -85,14 +86,13 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 // self-configures from the injected WORKSPACE_RUNTIME_* env.
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_TIMEOUT_MS = 45_000
-// ensure-runtime includes Cloudflare's lazy container allocation (up to 60s),
-// port readiness (up to 180s), and the workspace-runtime health check. A 45s
-// caller deadline cancels the Durable Object RPC before its supported cold-
-// start budget can finish, causing every retry to restart the same boot.
+// ensure-runtime includes the container's start from its image or snapshot
+// (the Worker waits up to 240s for it to accept commands) and the runtime's
+// health check (30s). A shorter caller deadline cancels the Durable Object RPC
+// before that budget can finish, so every retry would restart the same boot.
 const DEFAULT_ENSURE_TIMEOUT_MS = 300_000
-// A backup archives and uploads the whole workspace and HOME, one directory after the other.
-const DEFAULT_BACKUP_TIMEOUT_MS = 180_000
-const WORKSPACE_DIRECTORY_LABEL = "claxedo.workspaceDirectory"
+// A snapshot captures the container's whole writable root filesystem.
+const DEFAULT_SNAPSHOT_TIMEOUT_MS = 180_000
 
 function deadlineSignal(timeoutMs: number) {
   const controller = new AbortController()
@@ -108,17 +108,10 @@ function deadlineSignal(timeoutMs: number) {
   }
 }
 
-// Everything the runtime and the native harnesses keep outside the workspace
-// tree lives under HOME: the runtime store, harness homes, terminal history.
-// Cloudflare captures named directories, and the SDK backs up only paths under
-// /workspace, /home, /tmp, /var/tmp or /app, so HOME is pinned to a captured
-// directory rather than the image user's own. CLAXEDO_DATA_DIR is pinned too,
-// because the runtime resolves it without reading HOME.
+// A process the sandbox Worker starts inherits no image environment but PATH,
+// so HOME is named; the image creates this directory. CLAXEDO_DATA_DIR is
+// pinned too, because the runtime resolves it without reading HOME.
 const RUNTIME_HOME = "/home/claxedo"
-
-function captureDirectories(workspaceDirectory: string) {
-  return [workspaceDirectory, RUNTIME_HOME]
-}
 
 /** Deterministic driver-scoped sandbox id + hostId for a workspace. */
 function sandboxIdFor(workspaceId: string) {
@@ -157,7 +150,7 @@ export function createCloudflareSandboxDriver(
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const ensureTimeoutMs = options.timeoutMs ?? DEFAULT_ENSURE_TIMEOUT_MS
-  const backupTimeoutMs = options.timeoutMs ?? DEFAULT_BACKUP_TIMEOUT_MS
+  const snapshotTimeoutMs = options.timeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS
 
   const base = cloudflareWorkerBaseUrl(options.workerUrl)
   const headers = {
@@ -172,7 +165,7 @@ export function createCloudflareSandboxDriver(
     method: "POST" | "DELETE" = "POST",
   ): Promise<{ status: number; data: Record<string, unknown> }> {
     const url = `${base}/sandbox/${encodeURIComponent(sandboxId)}${action ? `/${action}` : ""}`
-    const deadline = deadlineSignal(action === "ensure-runtime" ? ensureTimeoutMs : action === "backup" ? backupTimeoutMs : timeoutMs)
+    const deadline = deadlineSignal(action === "ensure-runtime" ? ensureTimeoutMs : action === "snapshot" ? snapshotTimeoutMs : timeoutMs)
     try {
       const res = await doFetch(url, {
         method,
@@ -191,8 +184,7 @@ export function createCloudflareSandboxDriver(
     return input.workspaceRoot ?? workspaceDir
   }
 
-  // The workspace-runtime boot env — the credentials sent to the sandbox via
-  // Cloudflare's built-in setEnvVars. hostId MUST equal the value stored on the
+  // The workspace-runtime boot env. hostId MUST equal the value stored on the
   // lease so the relay routes (`target.hostId === args.hostId`).
   async function bootEnv(input: SandboxDriverEnsureInput, hostId: string): Promise<Record<string, string>> {
     return workspaceRuntimeBootEnv({
@@ -263,9 +255,7 @@ export function createCloudflareSandboxDriver(
         // what makes this driver's `list()` (and therefore GC) possible at all.
         // Not container env — labels are control-plane metadata.
         labels: input.labels,
-        ...(input.bootSource?.kind === "driver-snapshot"
-          ? { restore: { backupId: input.bootSource.snapshotId, directories: captureDirectories(workspaceDirectory(input)) } }
-          : {}),
+        ...(input.bootSource?.kind === "driver-snapshot" ? { restore: { snapshotId: input.bootSource.snapshotId } } : {}),
         ...(egress ? { egress } : {}),
       },
     ).catch((error) => {
@@ -283,6 +273,8 @@ export function createCloudflareSandboxDriver(
       return { provisioning: true as const, retryAfterMs: 2_000 }
     }
     if (data.exited === true) throw new SandboxRuntimeBootError(text(data.error) ?? "The workspace runtime exited before it was ready")
+    // An expired snapshot refuses every start until the person starts the workspace fresh, so polling it again cannot heal it.
+    if (status === 410 && data.snapshotMissing === true) throw new SandboxRuntimeBootError(text(data.error) ?? "This workspace's saved files expired after 30 days unused; start it fresh.")
     if (status >= 400 || !runtimeUrl) {
       const reason = `Cloudflare ensure-runtime failed (${status}): ${text(data.error) ?? "no runtime url"}`
       // The sandbox Worker answers 401 and 403 to the bearer token, which is the organization's key.
@@ -298,10 +290,7 @@ export function createCloudflareSandboxDriver(
         id: "cloudflare",
         resourceId: sandboxId,
       },
-      labels: {
-        ...input.labels,
-        [WORKSPACE_DIRECTORY_LABEL]: workspaceDirectory(input),
-      },
+      labels: input.labels,
     }
     return targetOut
   }
@@ -312,12 +301,10 @@ export function createCloudflareSandboxDriver(
     // Provider-state enumeration, served by the sandbox Worker's registry
     // (`GET /sandboxes`) rather than by Cloudflare's own APIs.
     //
-    // Why a registry is REQUIRED here, checked against the installed SDK
-    // (@cloudflare/sandbox 0.8.9) rather than assumed:
+    // Why a registry is REQUIRED here:
     //
-    //  1. The SDK has no enumeration surface. `getSandbox(ns, id)` is
-    //     get-or-create against a Durable Object; nothing in its exports lists
-    //     a namespace. `listDurableObjectIds` is `cloudflare:test`-only.
+    //  1. A Durable Object namespace has no enumeration surface: `getByName`
+    //     is get-or-create, and `listDurableObjectIds` is `cloudflare:test`-only.
     //  2. The account-level REST list-objects endpoint returns
     //     `{ id: <hex>, hasStoredData }` and nothing else. `idFromName` is
     //     one-way, so a hex id cannot be mapped back to `claxedo-<workspaceId>`
@@ -340,7 +327,7 @@ export function createCloudflareSandboxDriver(
           signal: deadline.signal,
         })
         if (res.status === 404 || res.status === 501) {
-          throw new CloudflareSandboxListingUnsupportedError(`Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}); requires the /sandboxes registry route and BACKUP_BUCKET binding`)
+          throw new CloudflareSandboxListingUnsupportedError(`Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}); requires the /sandboxes registry route and SANDBOX_REGISTRY binding`)
         }
         const data = record(await res.json())
         if (!data) throw new Error("Invalid Cloudflare sandbox listing envelope")
@@ -348,7 +335,7 @@ export function createCloudflareSandboxDriver(
           throw new CloudflareSandboxListingUnsupportedError(
             text(data.error)
               ?? `Cloudflare sandbox Worker cannot enumerate sandboxes (${res.status}) — `
-                + "deploy a Worker with the /sandboxes registry route and an R2 BACKUP_BUCKET binding",
+                + "deploy a Worker with the /sandboxes registry route and an R2 SANDBOX_REGISTRY binding",
           )
         }
         if (!res.ok) {
@@ -400,7 +387,7 @@ export function createCloudflareSandboxDriver(
     },
 
     async stop(target) {
-      const { status, data } = await call(target.sandboxId, "stop", { epoch: target.epoch, ...(target.checkpoint ? { committed: target.checkpoint } : {}) })
+      const { status, data } = await call(target.sandboxId, "stop", { epoch: target.epoch })
       if (status >= 400 || data.ok !== true) {
         throw new Error(`Cloudflare stop failed (${status}) for ${target.sandboxId}: ${text(data.error) ?? "not stopped"}`)
       }
@@ -413,23 +400,13 @@ export function createCloudflareSandboxDriver(
       }
     },
 
-    async snapshot(target, committed) {
-      const directory = target.labels?.[WORKSPACE_DIRECTORY_LABEL] ?? workspaceDir
-      const { status, data } = await call(
-        target.sandboxId,
-        "backup",
-        { directories: captureDirectories(directory), ...(committed ? { committed } : {}) },
-      )
-      const backupId = text(data.backupId)
-      if (status >= 400 || !backupId) {
-        throw new Error(`Cloudflare backup failed (${status}): ${text(data.error) ?? "no backup id"}`)
+    async snapshot(target) {
+      const { status, data } = await call(target.sandboxId, "snapshot", {})
+      const snapshotId = text(data.snapshotId)
+      if (status >= 400 || !snapshotId) {
+        throw new Error(`Cloudflare snapshot failed (${status}): ${text(data.error) ?? "no snapshot id"}`)
       }
-      return { snapshotId: backupId }
-    },
-
-    async deleteSnapshot(target, snapshotId) {
-      const { status, data } = await call(target.sandboxId, "delete-backup", { backupId: snapshotId })
-      if (status >= 400) throw new Error(`Cloudflare backup deletion failed (${status}): ${text(data.error) ?? snapshotId}`)
+      return { snapshotId }
     },
   }
 }

@@ -8,7 +8,7 @@ const stopped = () => Response.json({ ok: true, status: "stopped", checkpoint: "
 test("a runtime idle for the whole window asks the control plane, with the idle-stop token, to stop this lease generation", async () => {
   const send = vi.fn(async (_url: string, _init: RequestInit) => stopped())
   const health = Response.json({ workspaceId: "ws_1", idleSince: 1_000 })
-  expect(await requestIdleStop(idle, health, env, 601_000, send)).toEqual({ checkpoint: "a,b" })
+  expect(await requestIdleStop(idle, health, env, 601_000, send)).toBe(true)
   expect(send).toHaveBeenCalledWith("https://control.test/internal/sandbox/idle-stop", expect.objectContaining({
     headers: expect.objectContaining({ authorization: "Bearer idle-token" }),
     body: JSON.stringify({ workspaceId: "ws_1", epoch: 7, idleBefore: 1_000 }),
@@ -17,15 +17,15 @@ test("a runtime idle for the whole window asks the control plane, with the idle-
 
 test("a runtime frozen past any checkpoint's deadline is handed to the control plane too, and a fresh freeze is not", async () => {
   const send = vi.fn(async (_url: string, _init: RequestInit) => stopped())
-  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1", frozenSince: 601_000 - 15 * 60_000 }), env, 601_000, send)).toEqual({ checkpoint: "a,b" })
-  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1", frozenSince: 600_000 }), env, 601_000, send)).toBeUndefined()
+  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1", frozenSince: 601_000 - 15 * 60_000 }), env, 601_000, send)).toBe(true)
+  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1", frozenSince: 600_000 }), env, 601_000, send)).toBe(false)
   expect(send).toHaveBeenCalledOnce()
 })
 
 test("work inside the window, work in progress, or another workspace's answer never asks for a stop", async () => {
   const send = vi.fn(async (_url: string, _init: RequestInit) => stopped())
-  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1", idleSince: 1_001 }), env, 601_000, send)).toBeUndefined()
-  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1" }), env, 601_000, send)).toBeUndefined()
+  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1", idleSince: 1_001 }), env, 601_000, send)).toBe(false)
+  expect(await requestIdleStop(idle, Response.json({ workspaceId: "ws_1" }), env, 601_000, send)).toBe(false)
   await expect(requestIdleStop(idle, Response.json({ workspaceId: "ws_2", idleSince: 0 }), env, 601_000, send)).rejects.toThrow("another workspace")
   await expect(requestIdleStop(idle, new Response("", { status: 401 }), env, 601_000, send)).rejects.toThrow("401")
   expect(send).not.toHaveBeenCalled()

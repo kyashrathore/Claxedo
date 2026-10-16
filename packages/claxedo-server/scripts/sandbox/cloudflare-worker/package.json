@@ -6,10 +6,7 @@
     "deploy": "wrangler deploy",
     "test": "node ../../../node_modules/vitest/vitest.mjs run src"
   },
-  "dependencies": {
-    "@cloudflare/sandbox": "0.12.9"
-  },
   "devDependencies": {
-    "wrangler": "4.127.1"
+    "wrangler": "4.151.0"
   }
 }

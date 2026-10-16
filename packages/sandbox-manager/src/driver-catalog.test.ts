@@ -23,11 +23,11 @@ describe("sandbox driver catalog", () => {
   test("declares persistence semantics for every driver", () => {
     expect(sandboxDriverCatalog.cloudflare.metadata.persistence).toEqual({
       resume: "replacement-restore",
-      capture: "directories",
+      capture: "filesystem",
       clone: false,
       captureSource: "preserved",
-      retention: "explicit",
-      restoreMount: "copy-on-write",
+      retention: "provider-managed",
+      restoreMount: "new-resource",
     })
     expect(sandboxDriverCatalog.boat.metadata.persistence.capture).toBe("none")
     expect(sandboxDriverCatalog.docker.metadata.persistence.restoreMount).toBe("same-resource")

@@ -124,13 +124,14 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       secretBrokering: "native",
       // Credential handlers do not restrict unrelated destinations.
       egressControl: "none",
+      // A container snapshot holds the whole root filesystem; the platform keeps it 30 days past its last restore and offers no deletion.
       persistence: {
         resume: "replacement-restore",
-        capture: "directories",
+        capture: "filesystem",
         clone: false,
         captureSource: "preserved",
-        retention: "explicit",
-        restoreMount: "copy-on-write",
+        retention: "provider-managed",
+        restoreMount: "new-resource",
       },
     },
   },

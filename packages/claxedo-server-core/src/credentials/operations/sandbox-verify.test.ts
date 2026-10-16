@@ -179,16 +179,15 @@ describe("cloudflare", () => {
   })
 
   /**
-   * The Worker answers 501 when no R2 bucket is bound. That reply is produced
-   * AFTER the admin gate (cloudflare-worker/src/index.ts:335 gates, :349
-   * handles), so reaching it proves the token passed. Calling it broken would
+   * The Worker answers 501 when no registry bucket is bound, after its admin
+   * gate, so reaching it proves the token passed. Calling it broken would
    * reject a working pair over an unrelated, optional binding.
    */
   test("a Worker with no registry bucket still proves the token", async () => {
     const transports = transport({
       ok: false,
       status: 501,
-      body: JSON.stringify({ supported: false, error: "sandbox registry not configured (bind BACKUP_BUCKET)" }),
+      body: JSON.stringify({ supported: false, error: "sandbox registry not configured (bind SANDBOX_REGISTRY)" }),
     })
 
     await expect(

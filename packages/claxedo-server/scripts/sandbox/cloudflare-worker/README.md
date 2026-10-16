@@ -1,14 +1,10 @@
 # Claxedo Cloudflare Sandbox Worker
 
-Cloudflare Worker that wraps `@cloudflare/sandbox` behind the `cloudflare`
-`SandboxDriver`. The driver starts `@claxedo/workspace-runtime` inside the
-sandbox and returns the Worker proxy URL used by the relay.
-
-## Status
-
-This Worker does not require `exposePort` or wildcard preview subdomains. Its
-data-plane route proxies relay traffic to the workspace runtime port inside the
-sandbox.
+Cloudflare Worker behind the `cloudflare` `SandboxDriver`. Each workspace's
+sandbox is one `WorkspaceSandbox` Durable Object, which starts, snapshots,
+restores and stops its container through the platform's `ctx.container` API
+and runs `@claxedo/workspace-runtime` inside it. The driver gets back the
+Worker's own proxy URL, which the relay uses.
 
 ## Setup
 
@@ -23,28 +19,113 @@ wrangler secret put API_TOKEN
 wrangler secret put IDLE_STOP_TOKEN
 ```
 
-The container image `COPY`s the in-repo workspace-runtime host bundle from
-`.build/` (produced by `build-sandbox-image.ts --bundle-only`, which the
-`deploy-cloudflare-sandbox-worker` workflow runs before `npm run deploy`). Native
+`wrangler deploy` builds `Dockerfile` (the `runtime` image of the container
+application) with Docker, pushes it to Cloudflare's registry and deploys the
+Worker; the `deploy-cloudflare-sandbox-worker` workflow does this in CI. The
+image `COPY`s the in-repo workspace-runtime host bundle from `.build/`. Native
 modules and ACP bins are npm-installed inside the image from the generated
 `.build/package.json`, pinned to the versions in
-`packages/workspace-runtime/package.json`. Publishing
-`@claxedo/workspace-runtime` to npm is a separate release concern and no longer
-gates image builds.
+`packages/workspace-runtime/package.json`.
 
-### Deploying over existing sandboxes
+## Platform API and Sandbox SDK 1.x
 
-A sandbox created by a Worker that used the SDK's runtime outbound overrides
-(`setOutboundByHosts` or `setOutboundHandler`) persisted that configuration in
-its Durable Object storage. On its next container start `@cloudflare/containers`
-re-applies it through the SDK `ContainerProxy` export, which this Worker no
-longer has, and the start throws. `DELETE /sandbox/:id` is not enough: the SDK's
-destroy keeps that key (`OUTBOUND_CONFIGURATION`), and the control plane names a
-sandbox by its workspace, so a recreated one reads it back. Before rolling this
-Worker out, reset the `Sandbox` namespace's storage: `wrangler delete` the
-Worker (which deletes its Durable Object namespaces and their storage), then
-deploy, and let the control plane recreate workspaces' sandboxes. No migration
-is provided; only sandboxes created by this Worker start.
+Container snapshots need the container application's `durable_object`
+scheduling policy (Wrangler 4.131.0 or later), and Sandbox SDK 1.x moved
+container ownership onto that platform API: a Durable Object starts and drives
+`this.ctx.container` itself, and `@cloudflare/sandbox` 1.x keeps only `Files`,
+`S3Mount` and `DirectoryBackup`. This Worker uses none of the three, so it has
+no Sandbox SDK dependency. What each capability maps to:
+
+| Capability | 0.12 `Sandbox` | Now |
+| --- | --- | --- |
+| Start | `getSandbox()`, lazy start on first call | `ensureWorkspace` calls `container.start({ image \| containerSnapshot, entrypoint: ["sleep", "infinity"], enableInternet: true, instance: "standard-1" })`, then waits for the first `exec(["true"])`, racing `monitor()` |
+| Runtime process | `startProcess`, `listProcesses`, `getProcess` | `runtime-process.ts`: `exec` of a `setsid` launcher that records the pid and exit code under `/run/claxedo-runtime/<launch>`; a status script reads them; the launch id, time and readiness live in Durable Object storage |
+| Readiness | `waitForPort(port, { path: "/global/health" })` | `getTcpPort(port).fetch("/global/health")` every 500 ms for 30 s, ending early once the process has exited |
+| Proxy HTTP and WebSocket | `containerFetch`, `wsConnect` | the Worker forwards to the object's `fetch()`, which forwards to `getTcpPort(port).fetch(request)`; an upgrade answer passes through unchanged |
+| Exec | SDK `exec` | `container.exec(argv, { env, cwd })`; it inherits only `PATH`, so the launcher passes the image's environment (read from `/proc/1/environ`), the interception trust variables and the boot env |
+| Egress brokering | `interceptHttps = true`, start overrides | `interceptOutboundHttps(host, CredentialEgress)` on every container start, on a running container when hosts change, and from the constructor of a restarted object; the CA is trusted by rebuilding the system bundle (below) |
+| Idle stop | `setKeepAlive(true)`, `schedule()` | a Durable Object alarm every 30 seconds, which is activity and keeps the container running; `setInactivityTimeout(10 min)` bounds a container once the alarm chain ends |
+| Stop, destroy | `stop()`, `destroy()` | `container.destroy()`; `DELETE` also clears the object's storage |
+| Registry for GC | R2 objects under `sandbox-registry/` | unchanged, bound as `SANDBOX_REGISTRY` |
+| Labels | `setLabels` | the registry's `customMetadata` (`app`, `workspaceId`, `epoch`, `homeRegion`); nothing reads container labels, so none are set |
+| Persistence | `createBackup` and `restoreBackup` of `/workspace` and HOME to R2 | `snapshotContainer()` of the whole writable root filesystem, restored by `start({ containerSnapshot })` |
+
+The `durable_object` policy is fixed when a container application is created,
+so `WorkspaceSandbox` is a new class and application (migration `v2`), and the
+retired `Sandbox` class is deleted with its storage.
+
+### Placement
+
+The policy refuses `instance_type`, `max_instances` and `constraints.regions`,
+so the former APAC pin is gone, and a container is placed near its Durable
+Object. The Worker reaches every object with `locationHint: "enam"`, the
+convention of `workspace-relay/src/session-host-forwarding.ts`: an object is
+placed near whoever first reaches it and never moves, and from HKG Anthropic and
+OpenAI refuse every request. The hint applies only when an object is created.
+
+## Workspace persistence
+
+A checkpoint is one container snapshot. The control plane's capture freezes the
+runtime, flushes it and retires its transports, then calls `snapshot`; the
+object answers `{ snapshotId, sizeBytes }` from `snapshotContainer()`. When that
+capture ends the lease, the control plane commits it and calls `stop`, and the
+object destroys its container. The next wake's `ensure-runtime` carries
+`restore: { snapshotId }`, and the object starts the container from that
+snapshot, never from the image. The runtime's launch directory is in `/run`,
+which is memory, so a restored container has no launch of its source and boots
+a new runtime. A restore over a container running from anything but that
+snapshot replaces it; polls of the same restore keep it.
+
+A snapshot keeps every file of the root filesystem: the repository and its
+edits, the runtime store and harness homes under `/home/claxedo`, global npm
+installs and apt packages. It holds no process, no memory and nothing in
+`/run`.
+
+**What a snapshot carries that is sensitive.** On this Worker every credential
+the container sees is a `claxedo-broker:<name>` placeholder; the values stay in
+`EGRESS_SECRETS`. Read of the code (2026-10-16), the files under HOME hold:
+
+- `.gitconfig`: `http.<repo>.extraheader` with the clone placeholder, rewritten
+  or withdrawn by every boot (`hosts/workspace-runtime/git-auth.ts`).
+- Codex homes: `cli_auth_credentials_store = "ephemeral"`; a plan token travels
+  over JSON-RPC in memory, and `auth.json` is linked only for an own login,
+  which cloud placement turns off.
+- Claude Code, OpenCode, Cursor and Pi: placeholders or in-memory stores.
+- The runtime store: signed grant JWTs in `runtime_delivery.turn_grant` and
+  `session_subagent.wake_grant`, which deferred work redeems after a wake; the
+  control plane checks each against its row and expiry.
+- `pty-history`: what the person's terminals printed.
+- Raw secrets in the boot env (`WORKSPACE_RUNTIME_CONFIG_TOKEN`, the owner
+  grant, the tasks capability) are process environment, not files, and are
+  supplied again by every ensure.
+
+None of these is a value the snapshot should lose: the placeholders are
+rewritten at boot, the grants are the workspace's pending work, and the history
+is the person's own. So the Worker deletes nothing before it snapshots; the
+runtime's own checkpoint scrub (retiring transports) is the scrub step. A
+snapshot is restorable only through this Worker's `API_TOKEN`-gated
+`ensure-runtime`, into the sandbox the control plane names.
+
+**Expiry.** A snapshot lives 30 days after it was taken or last restored, and
+the platform offers no deletion and no listing, so the driver's persistence is
+`retention: "provider-managed"` and it has no `deleteSnapshot`. A start from a
+snapshot the platform no longer holds fails with `Snapshot "<id>" was not
+found`; the Worker answers 410 `{ snapshotMissing: true, error }` with the one
+line "This workspace's saved files expired after 30 days unused; start it
+fresh.", and the driver reports it as a boot failure, which the manager does not
+retry. Nothing falls back to the image: a silent fallback would hand the person
+an empty workspace in place of theirs.
+
+**New runtime builds.** A snapshot is bound to the image it was taken from and
+restores that image's files, the runtime bundle and harness CLIs included. A
+restored workspace therefore keeps the runtime build it was captured with; a new
+image reaches it when it starts fresh. This is the rule the Modal and Vercel
+drivers already follow for their filesystem snapshots. Reinstalling the bundle
+over a restored filesystem was rejected: the bundle's native modules are
+npm-installed in the image build and the image smoke tests that one
+combination, so a new bundle on an old image's Node, harness CLIs and native
+modules is a pairing nothing has run. The cost is that runtime fixes reach a
+long-lived workspace only through a fresh start.
 
 ## Pinning the control plane to a specific build
 
@@ -105,8 +186,8 @@ CLOUDFLARE_SANDBOX_WORKER_URL=https://sandbox.yourdomain.com
 
 The API-token-gated `ensure-runtime` action accepts named egress registrations.
 The Worker stores values in `EGRESS_SECRETS` KV and intercepts HTTPS to the
-registered hosts with its `CredentialEgress` entrypoint. Container environment variables contain only
-`claxedo-broker:<name>` placeholders. Clients use the original upstream URL.
+registered hosts with its `CredentialEgress` entrypoint. Container environment
+variables contain only `claxedo-broker:<name>` placeholders. Clients use the original upstream URL.
 Authorization clients may send the placeholder as the complete header or with
 one Bearer prefix; the handler replaces it with the complete registered value.
 
@@ -126,22 +207,25 @@ response bodies or restrict unrelated destinations.
 
 ### Only credential hosts are intercepted
 
-The SDK's runtime host overrides (`setOutboundByHosts`, `setOutboundHandler`)
-promote a container to intercepting every outbound request
-(`@cloudflare/containers` 0.3.7 `shouldInterceptAllOutbound()`), which would put
-this Worker in the path of all sandbox traffic. The Worker does not use them.
-`Sandbox.setCredentialHosts` records the hosts the registrations name and
-installs `ctx.container.interceptOutboundHttps(host, CredentialEgress)` for
-exactly those, on a running container at once and on every container start
-(the `start` and `startAndWaitForPorts` overrides run before the SDK starts it).
-Every other host keeps its direct route.
+`WorkspaceSandbox.setCredentialHosts` records the hosts the registrations name
+and installs `ctx.container.interceptOutboundHttps(host, CredentialEgress)` for
+exactly those: on a running container at once, on every container start, and
+from the constructor of an object that restarts while its container runs. Every
+other host keeps its direct route, so this Worker is never in the path of all
+sandbox traffic. A container holds at most 64 hostname intercepts.
 
-`interceptHttps = true` makes the container server trust the platform CA and
-refuse to start without it, and the platform mints that CA with the first HTTPS
-interception. Every container therefore also intercepts
-`claxedo-credential-trust.invalid`, a reserved name no request resolves, so a
-sandbox that starts before it holds any credential host still has the CA, and
-a host registered later is intercepted without restarting the container.
+The platform mints the container's interception CA, at
+`/etc/cloudflare/certs/cloudflare-containers-ca.crt`, with its first HTTPS
+intercept, so every container also intercepts
+`claxedo-credential-trust.invalid`, a reserved name no request resolves: a
+sandbox that starts before it holds any credential host still has the CA, and a
+host registered later is intercepted without restarting the container. Each
+start then rebuilds `/etc/ssl/certs/ca-certificates.crt` from the image's own
+bundle (kept beside it on first start) and the current CA, which curl and git
+read; the runtime gets `NODE_EXTRA_CA_CERTS` and `REQUESTS_CA_BUNDLE`. Rebuilding
+rather than appending matters after a restore, whose bundle carries its source
+container's CA. A container that cannot trust the CA within 10 seconds is
+destroyed and the ensure fails.
 
 The platform offers no way to remove an interception, so a withdrawn host stays
 routed through `CredentialEgress` until the container restarts; without a
@@ -149,14 +233,10 @@ registration it forwards requests without a placeholder unchanged and refuses
 ones that carry a placeholder.
 
 Node and Bun HTTPS clients passed the local probe. The CLIs baked into
-`Dockerfile` — `claude`, `codex`, `pi`, `cursor-agent`, `amp`, `droid` — were
-not probed against an intercepted connection, and an agent CLI that pins its
-own CA bundle or ships its own TLS stack fails against one in a way no local
-test here shows. Deployed acceptance is still required.
-
-The former `/egress` JWT route and signing secret are removed. Deploy the
-Worker and matching driver together, after destroying existing sandboxes (see
-"Deploying over existing sandboxes").
+`Dockerfile` (`claude`, `codex`, `pi`, `cursor-agent`, `amp`, `droid`) were not
+probed against an intercepted connection, and an agent CLI that pins its own CA
+bundle or ships its own TLS stack fails against one in a way no local test here
+shows. Deployed acceptance is still required.
 
 ## Repository preparation
 
@@ -187,71 +267,35 @@ every boot from the connection the workspace was created through.
 
 - A live runtime that has answered ready once is kept, however long it has run;
   a slow health check answers 503 (still starting) and never replaces it. The
-  Worker records the start time the container reports for it (read back with
-  `getProcess` once it is ready, because `startProcess` answers with the
-  Worker's own clock), in Durable Object storage, and writes only when it
-  changes.
+  object records each launch (its id, its launch time and whether it has
+  answered ready) in Durable Object storage.
 - A live runtime that has never answered ready is still preparing its
   repository and is kept, until it is 35 minutes old (the preparation deadline
   plus 5 minutes), when it is wedged and replaced.
 - A runtime that exited before it was ever ready failed its boot. The answer is
   502 `{ ready: false, exited: true, error }` with the reason the runtime
   printed (a revoked token, a branch that does not exist), credentials blanked
-  by `src/runtime-log.ts`, and the exited
-  process is cleared so the next ensure boots afresh. The driver reports it as a
-  failed ensure, never as provisioning, and the connect answers
-  `cloud_runtime_boot_failed` with the reason.
+  by `src/runtime-log.ts`, and the exited launch is cleared so the next ensure
+  boots afresh. The driver reports it as a failed ensure, never as
+  provisioning, and the connect answers `cloud_runtime_boot_failed` with the
+  reason.
 - A runtime that exited after it had served, or any runtime when the set of
-  credential names changed, is replaced.
-
-## Workspace checkpoint storage
-
-The `backup` control action and replacement restore use Cloudflare Sandbox
-directory backups. Before deploying the Worker:
-
-```bash
-wrangler r2 bucket create claxedo-sandbox-backups
-wrangler secret put CLOUDFLARE_ACCOUNT_ID
-wrangler secret put R2_ACCESS_KEY_ID
-wrangler secret put R2_SECRET_ACCESS_KEY
-```
-
-The R2 token needs Object Read & Write access to the checkpoint bucket. The
-committed `wrangler.toml` binds that bucket as `BACKUP_BUCKET`; local
-`wrangler dev` uses the binding without production presigned-URL credentials.
-
-A checkpoint captures the directories the driver names (the workspace and
-`/home/claxedo`, the runtime's HOME), one SDK backup each, sequentially, inside
-the Durable Object; HOME's rebuildable caches (`.cache`, `.npm/_cacache`,
-`.bun/install/cache`) are left out to shorten the freeze. Its provider reference
-is the backup ids joined with commas, in capture order, and a restore mounts
-each id over its directory inside the single runtime launch. The SDK writes
-`backups/<id>/data.sqsh` and `meta.json` and never deletes them, so every
-backup has a deletion rule:
-
-- The object records each backup id as soon as it exists. The next capture or
-  stop names the checkpoint the lease committed (`committed`) and deletes every
-  recorded id outside it, so a capture whose caller gave up, or whose commit
-  never happened, does not outlive the next one. A capture that fails partway
-  deletes what it made at once.
-- `delete-backup` deletes the checkpoint a newer one replaced and the last one
-  of a destroyed workspace.
-
-The backup TTL only bounds how long a sleeping workspace can still restore.
+  credential names changed, is replaced: SIGTERM to its process group, SIGKILL
+  5 seconds later.
 
 ## Idle stop
 
-The SDK's own sleep stops a container after an interval without requests, which
-loses everything outside the backups, while an open browser stream keeps a
-container awake indefinitely. The Worker therefore keeps a ready container alive
-(`setKeepAlive(true)`) and stops it only through a checkpoint:
+A container stops once its object has been inactive for its inactivity
+timeout, which loses everything since the last snapshot, while an open browser
+stream keeps an object active indefinitely. The object therefore keeps a ready
+container running with its own alarm and stops it only through a checkpoint:
 
 - `ensure-runtime` records the lease's `workspaceId` and `epoch` labels, gives the
   runtime a health token as `WORKSPACE_RUNTIME_CONFIG_TOKEN` (kept across boots
   in Durable Object storage), and refuses with 503 when `CONTROL_PLANE_URL` (a
   `--var` the deploy sets) or the `IDLE_STOP_TOKEN` secret is missing, because
   nothing would ever stop that container.
-- Every 30 seconds the Durable Object reads `idleSince` and `frozenSince` from
+- Every 30 seconds the object's alarm reads `idleSince` and `frozenSince` from
   the runtime's `GET /api/wr/health`. The runtime owns those answers: idle means
   no turn, admitted write or background work, no checkpoint in progress, and no
   terminal input or output since; an open but quiet shell is not work, nor are
@@ -262,14 +306,25 @@ container awake indefinitely. The Worker therefore keeps a ready container alive
   `/internal/sandbox/idle-stop` with `IDLE_STOP_TOKEN`, a secret the two share
   for this call alone (`CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN` on the control
   plane). The control plane freezes the runtime only if it is still idle since
-  `idleBefore`, captures it, and commits the checkpoint and the stopped lease
+  `idleBefore`, snapshots it, and commits the checkpoint and the stopped lease
   in one update; a lease it already stopped is answered the same way, and a
-  runtime a failed capture left frozen is thawed and refused. The answer names
-  the committed checkpoint, and the object then stops its own container. From
-  the commit on, a send wakes a restore of this checkpoint.
+  runtime a failed capture left frozen is thawed and refused. The object then
+  destroys its own container. From the commit on, a send wakes a restore of
+  this checkpoint.
 - `stop` (the control plane's own stop) is fenced: a sandbox a newer lease
   generation already took over keeps running.
 
 A failed idle check is logged as `workspace idle stop failed` and retried at the
-next check. After 20 failures in a row the object stops keeping the container
-alive, so the SDK's own sleep bounds what a dead runtime or a refused stop costs.
+next check. After 20 failures in a row the alarm is not set again, so the
+10-minute inactivity timeout bounds what a dead runtime or a refused stop costs.
+
+## Moving a deployment onto this Worker
+
+The `v2` migration creates the `WorkspaceSandbox` container application and
+deletes the `Sandbox` class with its Durable Object storage. Checkpoints taken
+by the retired Worker name directory backups, not snapshots, so their restores
+are refused as missing, and the workspaces start fresh. No migration of them is
+provided. After the new Worker serves, delete the retired container application
+(`wrangler containers list`, then `wrangler containers delete <id>` for the
+`Sandbox` one) and the `backups/` prefix of the `claxedo-sandbox-backups`
+bucket, which still holds the registry.

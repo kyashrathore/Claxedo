@@ -312,18 +312,22 @@ describe("CloudflareSandboxDriver", () => {
   test("stop names the lease generation it stops, and an unconfirmed stop is a failure", async () => {
     const { calls, fetch } = harness((call) => ({ status: 200, json: call.body.epoch === 7 ? { ok: true } : { ok: false } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
-    await driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 7, checkpoint: "a,b" })
-    expect(calls[0]).toMatchObject({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/stop", body: { epoch: 7, committed: "a,b" } })
+    await driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 7, checkpoint: "snap-1" })
+    expect(calls[0]).toEqual({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/stop", method: "POST", body: { epoch: 7 } })
     await expect(driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 6 })).rejects.toThrow(/stop failed/)
   })
 
-  test("a deleted snapshot names its backups to the Worker, and a refused deletion throws", async () => {
-    const { calls, fetch } = harness((call) => ({ status: call.body.backupId === "a,b" ? 200 : 500, json: {} }))
-    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
-    const target = { sandboxId: "claxedo-ws_1", hostId: "claxedo-ws_1" }
-    await driver.deleteSnapshot!(target, "a,b")
-    expect(calls[0]).toMatchObject({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/delete-backup", body: { backupId: "a,b" } })
-    await expect(driver.deleteSnapshot!(target, "c")).rejects.toThrow(/deletion failed/)
+  test("a snapshot outlives its sandbox until the platform expires it, so the driver deletes none", () => {
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: harness(() => ({ status: 200, json: {} })).fetch })
+    expect(driver.deleteSnapshot).toBeUndefined()
+    expect(driver.metadata.persistence).toEqual({
+      resume: "replacement-restore",
+      capture: "filesystem",
+      clone: false,
+      captureSource: "preserved",
+      retention: "provider-managed",
+      restoreMount: "new-resource",
+    })
   })
 
   test("touch propagates transport failures", async () => {
@@ -352,48 +356,39 @@ describe("CloudflareSandboxDriver", () => {
     expect(calls[0].body).toEqual({ port: 2593 })
   })
 
-  test("captures declared directories and remounts a backup during replacement restore", async () => {
+  test("snapshots the whole container and starts a replacement restore from that snapshot", async () => {
     const { calls, fetch } = harness((call) => {
-      if (call.url.endsWith("/backup")) return { status: 200, json: { backupId: "backup-1" } }
+      if (call.url.endsWith("/snapshot")) return { status: 200, json: { snapshotId: "snap-1", sizeBytes: 1_024 } }
       return { status: 200, json: { ready: true, url: "https://r/" } }
     })
-    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch, workspaceDir: "/workspace" })
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
 
     await expect(driver.snapshot!({
       workspaceId: "ws_1",
       sandboxId: "claxedo-ws_1",
       url: "https://r/",
       hostId: "claxedo-ws_1",
-    })).resolves.toEqual({ snapshotId: "backup-1" })
-    await driver.ensureHost({
-      ...createInput,
-      bootSource: { kind: "driver-snapshot", snapshotId: "backup-1" },
-    })
+    }, "snap-0")).resolves.toEqual({ snapshotId: "snap-1" })
+    await driver.ensureHost({ ...createInput, bootSource: { kind: "driver-snapshot", snapshotId: "snap-1" } })
 
-    expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
-      directories: ["/workspace", "/home/claxedo"],
-    })
-    expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.restore).toEqual({
-      backupId: "backup-1",
-      directories: ["/workspace", "/home/claxedo"],
-    })
+    expect(calls.find((call) => call.url.endsWith("/snapshot"))).toEqual({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/snapshot", method: "POST", body: {} })
+    expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.restore).toEqual({ snapshotId: "snap-1" })
   })
 
-  test("captures the workspace root recorded by ensure instead of the driver default", async () => {
-    const { calls, fetch } = harness((call) => {
-      if (call.url.endsWith("/backup")) return { status: 200, json: { backupId: "backup-repo" } }
-      return { status: 200, json: { ready: true, url: "https://r/" } }
-    })
-    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch, workspaceDir: "/workspace" })
-    const target = await driver.ensureHost({ ...createInput, workspaceRoot: "/repo" })
-    if ("provisioning" in target) throw new Error("unexpected provisioning")
+  test("a snapshot the Worker could not take throws instead of naming a checkpoint", async () => {
+    const { fetch } = harness(() => ({ status: 500, json: { error: "The workspace container is not running" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.snapshot!({ workspaceId: "ws_1", sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1" }))
+      .rejects.toThrow("Cloudflare snapshot failed (500): The workspace container is not running")
+  })
 
-    await driver.snapshot!(target, "a,b")
-
-    expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
-      directories: ["/repo", "/home/claxedo"],
-      committed: "a,b",
-    })
+  test("a snapshot the platform no longer holds refuses the restore in one line, and is never polled as provisioning", async () => {
+    const refusal = "This workspace's saved files expired after 30 days unused; start it fresh."
+    const { calls, fetch } = harness(() => ({ status: 410, json: { ready: false, snapshotMissing: true, error: refusal } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.ensureHost({ ...createInput, bootSource: { kind: "driver-snapshot", snapshotId: "snap-gone" } }))
+      .rejects.toMatchObject({ runtimeBootFailed: true, message: refusal })
+    expect(calls).toHaveLength(1)
   })
 })
 
@@ -470,11 +465,11 @@ describe("CloudflareSandboxDriver.list — Worker registry (W1.2)", () => {
   test("a Worker with no R2 binding reports supported:false, not an empty list", async () => {
     const { fetch } = harness(() => ({
       status: 501,
-      json: { supported: false, error: "sandbox registry not configured (bind BACKUP_BUCKET)" },
+      json: { supported: false, error: "sandbox registry not configured (bind SANDBOX_REGISTRY)" },
     }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
 
-    await expect(driver.list?.()).rejects.toThrow(/BACKUP_BUCKET/)
+    await expect(driver.list?.()).rejects.toThrow(/SANDBOX_REGISTRY/)
   })
 
   test("a transient listing failure propagates as a real sweep failure", async () => {

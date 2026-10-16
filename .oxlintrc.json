@@ -184,7 +184,7 @@
       "files": [
         "packages/claxedo-server/src/plugin-backends/entrypoints.cf.ts",
         "packages/claxedo-server/src/plugin-backends/supervisor.cf.ts",
-        "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/index.ts"
+        "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/runtime-request.ts"
       ],
       "rules": {
         "typescript/no-unsafe-type-assertion": "off"

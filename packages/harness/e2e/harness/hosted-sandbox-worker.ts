@@ -104,11 +104,11 @@ function source(env: Record<string, string>) {
 }
 
 /**
- * What this emulator captures in place of the Cloudflare driver's workspace
- * and runtime HOME. The local driver gives the runtime a throwaway HOME, so
+ * What this emulator's snapshot holds in place of a Cloudflare container's
+ * root filesystem. The local driver gives the runtime a throwaway HOME, so
  * the runtime's HOME-relative stores are pointed into `runtime-data`.
  */
-const BACKED_UP = ["sandbox-workspaces", "runtime-data"] as const
+const SNAPSHOTTED = ["sandbox-workspaces", "runtime-data"] as const
 
 async function exists(file: string) {
   return stat(file).then(() => true, (error: NodeJS.ErrnoException) => {
@@ -117,22 +117,22 @@ async function exists(file: string) {
   })
 }
 
-async function backUpSandbox(root: string, sandboxId: string) {
-  const backupId = `backup-${randomUUID()}`
-  for (const tree of BACKED_UP) {
+async function snapshotSandbox(root: string, sandboxId: string) {
+  const snapshotId = `snap-${randomUUID()}`
+  for (const tree of SNAPSHOTTED) {
     const live = path.join(root, tree, sandboxId)
-    if (await exists(live)) await cp(live, path.join(root, "sandbox-backups", backupId, tree), { recursive: true })
+    if (await exists(live)) await cp(live, path.join(root, "sandbox-snapshots", snapshotId, tree), { recursive: true })
   }
-  return backupId
+  return snapshotId
 }
 
-async function restoreSandbox(root: string, sandboxId: string, backupId: string) {
-  const backup = path.join(root, "sandbox-backups", backupId)
-  if (!(await exists(backup))) return false
-  for (const tree of BACKED_UP) {
+async function restoreSandbox(root: string, sandboxId: string, snapshotId: string) {
+  const snapshot = path.join(root, "sandbox-snapshots", snapshotId)
+  if (!(await exists(snapshot))) return false
+  for (const tree of SNAPSHOTTED) {
     const live = path.join(root, tree, sandboxId)
     await rm(live, { recursive: true, force: true })
-    if (await exists(path.join(backup, tree))) await cp(path.join(backup, tree), live, { recursive: true })
+    if (await exists(path.join(snapshot, tree))) await cp(path.join(snapshot, tree), live, { recursive: true })
   }
   return true
 }
@@ -281,7 +281,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
         const running = sandboxes.get(id)
         if (running) await destroy(running.target)
         sandboxes.delete(id)
-        for (const tree of BACKED_UP) await rm(path.join(input.root, tree, id), { recursive: true, force: true })
+        for (const tree of SNAPSHOTTED) await rm(path.join(input.root, tree, id), { recursive: true, force: true })
         return response(res, 200, { ok: true })
       }
       if (request.method !== "POST") return response(res, 405, { error: "method not allowed" })
@@ -291,15 +291,9 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
         await touch(running.target)
         return response(res, 200, { ok: true, ready: true })
       }
-      if (parts[2] === "backup") {
-        if (!sandboxes.has(id)) return response(res, 404, { error: "sandbox not found" })
-        return response(res, 200, { backupId: await backUpSandbox(input.root, id) })
-      }
-      if (parts[2] === "delete-backup") {
-        const backupId = (await body(request)).backupId
-        if (typeof backupId !== "string" || !backupId.startsWith("backup-")) return response(res, 400, { error: "unknown backup" })
-        await rm(path.join(input.root, "sandbox-backups", backupId), { recursive: true, force: true })
-        return response(res, 200, { ok: true })
+      if (parts[2] === "snapshot") {
+        if (!sandboxes.has(id)) return response(res, 500, { error: "The workspace container is not running" })
+        return response(res, 200, { snapshotId: await snapshotSandbox(input.root, id), sizeBytes: 0 })
       }
       if (parts[2] === "stop") {
         const running = sandboxes.get(id)
@@ -323,8 +317,11 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
         return response(res, 400, { error: "unknown runtime command or port" })
       }
       if (payload.restore !== undefined) {
-        const backupId = record(payload.restore).backupId
-        if (typeof backupId !== "string" || !(await restoreSandbox(input.root, id, backupId))) return response(res, 404, { error: "backup not found" })
+        const snapshotId = record(payload.restore).snapshotId
+        if (typeof snapshotId !== "string") return response(res, 400, { error: "ensure-runtime restore requires the checkpoint's snapshot id" })
+        if (!(await restoreSandbox(input.root, id, snapshotId))) {
+          return response(res, 410, { ready: false, snapshotMissing: true, error: "This workspace's saved files expired after 30 days unused; start it fresh." })
+        }
       }
       const previous = sandboxes.get(id)
       const registrations = payload.egress === undefined ? previous?.registrations ?? [] : parseRegistrations(payload.egress)
