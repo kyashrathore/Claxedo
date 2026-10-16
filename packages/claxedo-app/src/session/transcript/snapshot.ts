@@ -1,5 +1,5 @@
-import { batch } from "solid-js"
-import { isSessionMissing, toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads, type TranscriptPage } from "@/server"
+import { batch, createEffect, on } from "solid-js"
+import { isSessionMissing, isStoppedCloud, toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
 import { replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
@@ -83,4 +83,11 @@ async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Pr
     const error = toAppError(cause)
     context.phase.send(error.class === "not_found" ? { type: "readMissing" } : { type: "readFailed", error })
   }
+}
+
+export function rereadWhenAsleep(context: TranscriptContext): void {
+  const asleep = () => isStoppedCloud(context.server.placements.byId(context.ref.placementId))
+  createEffect(on(asleep, (now, before) => {
+    if (now && before === false) void readSnapshot(context)
+  }))
 }
