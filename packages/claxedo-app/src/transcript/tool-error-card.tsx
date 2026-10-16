@@ -5,7 +5,7 @@ import { copyText } from "@/lib/clipboard"
 import { useTranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { ToolExitCode } from "./basic-tool"
 import { safeLinkHref } from "./safe-link"
-import { toolErrorInputText } from "./tool-error-input"
+import { toolErrorInputText } from "./message-part-text"
 
 interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   icon?: IconProps["name"]

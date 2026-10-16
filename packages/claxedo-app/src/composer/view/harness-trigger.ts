@@ -63,9 +63,7 @@ export type ModelLabelInput = {
   readonly hasModelOptions: boolean
 }
 
-export type ConnectionBadge = "polling" | "configured" | "connecting" | "ready"
-
-export function connectionBadge(input: { polling: boolean; asleep: boolean; state?: HarnessConnectionState["state"] }): ConnectionBadge | undefined {
+export function connectionBadge(input: { polling: boolean; asleep: boolean; state?: HarnessConnectionState["state"] }): "polling" | "configured" | "connecting" | "ready" | undefined {
   if (input.asleep) return undefined
   if (input.polling) return "polling"
   return input.state === "configured" || input.state === "connecting" || input.state === "ready" ? input.state : undefined

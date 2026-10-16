@@ -34,7 +34,7 @@ import { useFileComponent, useDialog, Accordion, StickyAccordionHeader, Collapsi
 import { getDirectory as _getDirectory, getFilename, checksum } from "@/ui/utils"
 import { copyText } from "@/lib/clipboard"
 import { type TranscriptI18n, useTranscriptI18n } from "./i18n"
-import { BasicTool, GenericTool, shellExitCode } from "./basic-tool"
+import { BasicTool, GenericTool, shellExitCode, webSearchProviderLabel } from "./basic-tool"
 import { ScrollableOutput } from "./scrollable-output"
 import { isHiddenTool, isPendingQuestion, isSubagentToolPart } from "@claxedo/agent-runtime-contract/turn-fold"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
@@ -253,12 +253,6 @@ export type ToolInfo = {
 function agentTitle(i18n: TranscriptI18n, type?: string) {
   if (!type) return i18n.t("transcript.tool.agent.default")
   return i18n.t("transcript.tool.agent", { type })
-}
-
-function webSearchProviderLabel(provider: unknown) {
-  if (provider === "parallel") return "Parallel Web Search"
-  if (provider === "exa") return "Exa Web Search"
-  return "Web Search"
 }
 
 export function getToolInfo(

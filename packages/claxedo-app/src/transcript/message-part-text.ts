@@ -12,3 +12,7 @@ export function clampLabel(value: string, max = 72) {
   const flat = value.replace(/\s+/g, " ").trim()
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
+
+export function toolErrorInputText(input: Record<string, unknown>) {
+  return Object.keys(input).length ? JSON.stringify(input, null, 2) : undefined
+}

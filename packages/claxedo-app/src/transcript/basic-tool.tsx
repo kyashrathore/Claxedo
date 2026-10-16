@@ -502,6 +502,12 @@ export function toolActionPhrase(tool: string, i18n: TranscriptI18n): string | u
   return actionPhrase(mcp?.name ?? tool, mcp !== undefined, i18n)
 }
 
+export function webSearchProviderLabel(provider: unknown) {
+  if (provider === "parallel") return "Parallel Web Search"
+  if (provider === "exa") return "Exa Web Search"
+  return "Web Search"
+}
+
 export type GenericToolTitle = {
   title: string
   subtitle?: string

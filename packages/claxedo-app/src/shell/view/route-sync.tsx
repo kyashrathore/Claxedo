@@ -39,6 +39,16 @@ function paneRouteOf(route: ShellRoute, pathname: string, projectId: ProjectId |
     : { kind: "session", projectId, placementId: route.placementId, sessionId: route.sessionId }
 }
 
+function useRouteProjectId() {
+  const routing = useShellRoute()
+  const server = useServer()
+  return createMemo(() => {
+    const route = routing.route()
+    if (route.kind === "session") return server.sharedSessions.find(route)?.ref.projectId ?? server.placements.byId(route.placementId)?.projectId
+    return route.kind === "draft" ? server.placements.byId(route.placementId)?.projectId : undefined
+  })
+}
+
 export function RouteSync(): JSX.Element {
   const routing = useShellRoute()
   const server = useServer()
@@ -49,11 +59,7 @@ export function RouteSync(): JSX.Element {
 
   createEffect(on([routing.route, routing.chosen, workbench.selectors.focusedContent], () => layout.send({ type: "navigated" }), { defer: true }))
 
-  const routeProjectId = createMemo(() => {
-    const route = routing.route()
-    if (route.kind === "session") return server.sharedSessions.find(route)?.ref.projectId ?? server.placements.byId(route.placementId)?.projectId
-    return route.kind === "draft" ? server.placements.byId(route.placementId)?.projectId : undefined
-  })
+  const routeProjectId = useRouteProjectId()
 
   createEffect(() => {
     const target = paneRouteOf(routing.route(), routing.pathname(), routeProjectId())
