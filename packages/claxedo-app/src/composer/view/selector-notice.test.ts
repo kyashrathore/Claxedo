@@ -68,6 +68,7 @@ function harnessNotice(
       availability,
       polling: () => false,
       asleep: () => situation.asleep === true,
+      rereadAfterWake: async () => undefined,
       account: () => situation.account ?? (harness.kind === "connection" ? "accountless" : "missing"),
       harnessLabel: () => "Scripted",
       openProviders: () => undefined,
@@ -151,57 +152,55 @@ test("selector notice: on an asleep workspace no harness claims anything, so the
   }
 })
 
-function wakingNotice(harness: HarnessType, catalogError?: string) {
+function wakingNotice(harness: HarnessType) {
   return createRoot((dispose) => {
     const [asleep, setAsleep] = createSignal(true)
-    const reprobes: string[] = []
-    let refreshes = 0
-    const failed = { ...snapshot(harness, true), configError: "The cloud workspace is not running" }
+    const rereads: Array<() => void> = []
+    const read = snapshot(harness, true)
     const catalog = {
       unread: () => false,
-      providers: { resolved: () => true, loading: () => false, error: () => catalogError, refresh: async () => { refreshes++ } },
+      providers: { resolved: () => true, loading: () => false, error: () => undefined, refresh: async () => undefined },
       rows: () => ({ rows: [] }),
     } as unknown as SelectorCatalog
-    const availability = createModelAvailability({ harness: () => harness, selection: () => failed, connectionDeclaration: () => undefined, catalog, rows: () => [], switching: () => false })
-    const controller = { reprobe: (scope: string) => { reprobes.push(scope) } } as unknown as HarnessSelectionController
-    createSelectorNotice({
+    const availability = createModelAvailability({ harness: () => harness, selection: () => read, connectionDeclaration: () => undefined, catalog, rows: () => [], switching: () => false })
+    const { notice } = createSelectorNotice({
       active: () => true,
-      controller: () => controller,
+      controller: () => ({}) as HarnessSelectionController,
       scope: () => "draft:wake",
       scopeInput: () => ({ placementId: placementId("placement") }),
-      selection: () => failed,
+      selection: () => read,
       harness: () => harness,
       picked: () => undefined,
       catalog,
       availability,
       polling: () => false,
       asleep,
-      account: () => "present",
-      harnessLabel: () => "Claude Code",
+      rereadAfterWake: () => new Promise<void>((resolve) => rereads.push(resolve)),
+      account: () => "accountless",
+      harnessLabel: () => "OpenCode",
       openProviders: () => undefined,
       unavailableHere: () => undefined,
     })
-    return { setAsleep, reprobes, refreshes: () => refreshes, dispose }
+    return { setAsleep, rereads, kind: () => notice()?.kind, dispose }
   })
 }
 
-test("selector notice: a workspace that wakes reloads the models its sleep left unread, with no Retry", () => {
-  const view = wakingNotice(nativeHarness("claude"))
-  expect(view.reprobes).toEqual([])
+test("selector notice: a workspace that wakes re-reads its harness as a re-pick does, catalog harness included, and claims no setup from what it read while asleep until that read lands", async () => {
+  const view = wakingNotice(nativeHarness("opencode"))
+  expect(view.kind(), "asleep").toBeUndefined()
   view.setAsleep(false)
-  expect(view.reprobes).toEqual(["draft:wake"])
-  view.setAsleep(true)
-  expect(view.reprobes).toEqual(["draft:wake"])
+  expect(view.rereads.length, "the wake re-reads a catalog harness whose sleeping read answered").toBe(1)
+  expect(view.kind(), "the empty catalog was read while the workspace slept").toBeUndefined()
+  view.rereads[0]?.()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(view.kind(), "the reread after the wake answered with no model").toBe("setup-required")
   view.dispose()
 })
 
-test("selector notice: a catalog harness on a waking workspace reads its catalog again only when the read failed", () => {
-  const failed = wakingNotice(nativeHarness("opencode"), "The cloud workspace is not running")
-  failed.setAsleep(false)
-  expect([failed.refreshes(), failed.reprobes.length]).toEqual([1, 0])
-  failed.dispose()
-  const read = wakingNotice(nativeHarness("opencode"))
-  read.setAsleep(false)
-  expect([read.refreshes(), read.reprobes.length]).toEqual([0, 0])
-  read.dispose()
+test("selector notice: a sandbox harness re-reads once per wake", () => {
+  const view = wakingNotice(nativeHarness("claude"))
+  view.setAsleep(false)
+  view.setAsleep(true)
+  expect(view.rereads.length).toBe(1)
+  view.dispose()
 })

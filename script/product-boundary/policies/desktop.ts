@@ -676,8 +676,12 @@ export const desktopRenderer: Policy = {
   // Projects share for a workspace whose checkpoint cannot be restored (owner:
   // the app's cloud domain, `cloud/view/start-fresh.ts`). It adds no package
   // edge.
-  // 1389/36, no headroom.
-  ceilings: { modules: 1389, packages: 36 },
+  // The model picker's reread of its harness once its workspace wakes, which
+  // keeps what it read while the workspace slept unshown until the reread
+  // lands (owner: the app's composer domain, `composer/view/wake-reread.ts`).
+  // It adds no package edge.
+  // 1390/36, no headroom.
+  ceilings: { modules: 1390, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

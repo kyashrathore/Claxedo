@@ -1,4 +1,4 @@
-import { createEffect, createMemo, on, type Accessor } from "solid-js"
+import { createMemo, type Accessor } from "solid-js"
 import type { HarnessScopeInput, HarnessSelectionController, HarnessSelectionSnapshot } from "../harness/controller"
 import { harnessDisplayLabel, harnessSelectionId, isCatalogHarness, type HarnessType } from "../harness/profile"
 import type { ComposerNotice } from "./notice-slot"
@@ -8,6 +8,7 @@ import type { PickerItem } from "./model-list"
 import type { HarnessAccountState } from "./harness-account-state"
 import type { SelectorCatalog } from "./selector-catalog"
 import type { ModelLoadFailure } from "./harness-picker-model-section"
+import { createWakeReread } from "./wake-reread"
 
 type SelectorNoticeInput = {
   active: Accessor<boolean | undefined>
@@ -21,6 +22,7 @@ type SelectorNoticeInput = {
   availability: ModelAvailability
   polling: Accessor<boolean>
   asleep: Accessor<boolean>
+  rereadAfterWake: () => Promise<unknown>
   account: Accessor<HarnessAccountState>
   harnessLabel: (harness: HarnessType) => string
   openProviders: () => void
@@ -39,11 +41,11 @@ function createUnservedAccount(input: SelectorNoticeInput) {
   return createMemo((): HarnessAccountState | undefined => (liveSourceOffersNoModel(input) ? input.account() : undefined))
 }
 
-function harnessNoticeInput(input: SelectorNoticeInput, unserved: HarnessAccountState | undefined): HarnessNoticeInput {
+function harnessNoticeInput(input: SelectorNoticeInput, unserved: HarnessAccountState | undefined, readAsleep: boolean): HarnessNoticeInput {
   const { selection, harness, catalog, availability } = input
   return {
     harnessLabel: harness() ? input.harnessLabel(harness()!) : "Agent",
-    asleep: input.asleep(),
+    asleep: readAsleep,
     runtimeUnavailable: availability.isError(),
     connectionState: selection().connectionState,
     optionsFailed: availability.modelOptionsFailed(),
@@ -79,20 +81,12 @@ function retryAction(input: SelectorNoticeInput): NonNullable<ComposerNotice["ac
   }
 }
 
-function reloadModelsOnWake(input: SelectorNoticeInput) {
-  createEffect(on(input.asleep, (asleep, wasAsleep) => {
-    if (asleep || !wasAsleep || input.active() === false) return
-    if (input.harness() && isCatalogHarness(input.harness()) && !input.catalog.providers.error()) return
-    reloadModels(input)
-  }))
-}
-
 export function createSelectorNotice(input: SelectorNoticeInput) {
-  reloadModelsOnWake(input)
+  const readAsleep = createWakeReread({ asleep: input.asleep, active: input.active, reread: input.rereadAfterWake })
   const unservedAccount = createUnservedAccount(input)
   const notice = createMemo<ComposerNotice | undefined>(() => {
     if (input.active() === false || !input.selection().isHarnessMode || input.selection().readiness === "unresolved") return undefined
-    const resolved = resolveHarnessNotice(harnessNoticeInput(input, unservedAccount()))
+    const resolved = resolveHarnessNotice(harnessNoticeInput(input, unservedAccount(), input.asleep() || readAsleep()))
     if (!resolved) return undefined
     const { retry, action, ...rest } = resolved
     if (action) return { ...rest, action }
