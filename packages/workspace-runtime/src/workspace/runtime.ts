@@ -46,7 +46,7 @@ import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { firstPartyMcpServerFor } from "../first-party-mcp/index"
 import { createHarnessServices } from "../harness-services"
 import { createSpawnService } from "../spawn-service"
-import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
+import { defaultHarnessStateRoot, harnessCompositionOptions, harnessesToPrepare, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
 import { Log } from "../log"
 import {
@@ -121,6 +121,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   const env = options.env ?? process.env
   const harnessStateRoot = options.harnessStateRoot ?? defaultHarnessStateRoot(env)
   const storeRoot = options.storeRoot ?? workspaceRuntimeStoreDir(env)
+  const opencodeRoot = path.join(storeRoot, "opencode")
   // Only a native selection is runnable on its own. A connection's provider,
   // command and revision live in a descriptor that arrives with a snapshot, so
   // a connection default stays a selection until `applySnapshot` resolves it.
@@ -221,7 +222,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     })
     void sweepIdleHarnessHomes(harnessStateRoot).catch((error: unknown) => log.warn("Idle harness home sweep failed", { error: String(error) }))
     const composer = createHarnessComposer(services, harnessCompositionOptions({
-      env, placement: options.placement, harnessStateRoot, opencodeRoot: `${storeRoot}/opencode`,
+      env, placement: options.placement, harnessStateRoot, opencodeRoot,
     }), options.connectionProviders ?? [])
     const transports = createWorkspaceTransports({
       composer,
@@ -265,6 +266,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     })
     engine = { services, transports, ports, runtime, configuration }
     return engine
+  }
+
+  async function prepareHarnesses() {
+    for (const harnessId of harnessesToPrepare({ opencodeRoot })) {
+      try {
+        await options.beforeHarnessAcquire?.()
+        await harnessEngine().transports.prepare(runnerForSelection({ kind: "native", harnessId }), options.target.directory)
+      } catch (error) {
+        log.warn("Preparing a harness engine failed", { harness: harnessId, error: errorMessage(error) })
+      }
+    }
   }
 
   async function runtimeForSession() {
@@ -686,6 +698,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         return checkpoint.restoreReconcile(input.epoch)
       },
     },
+    prepare: prepareHarnesses,
     dispose() {
       if (disposal) return disposal
       closing = true

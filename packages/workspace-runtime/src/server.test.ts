@@ -6,15 +6,12 @@ import path from "path"
 import { serve } from "@hono/node-server"
 import type { RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth } from "./management-auth"
+import { createWorkspaceRuntimeShutdownHandler, drainWorkspaceRuntime, startServer, waitForWorkspaceRuntimeServerPort } from "./serve"
 import {
   assertWorkspaceRuntimeListenPolicy,
   createWorkspaceRuntimeApp,
-  createWorkspaceRuntimeShutdownHandler,
   DEFAULT_WORKSPACE_RUNTIME_HOSTNAME,
-  drainWorkspaceRuntime,
   isLoopbackHostname,
-  startServer,
-  waitForWorkspaceRuntimeServerPort,
   workspaceRuntimeCorsOrigin,
   workspaceRuntimeRouteAuthBoundary,
   workspaceRuntimeListenHostname,
@@ -1276,7 +1273,7 @@ describe("startServer ephemeral bind (characterization)", () => {
     const listenersOf = (sig: (typeof signals)[number]) => process.listeners(sig as NodeJS.Signals).slice()
     const before = new Map(signals.map((sig) => [sig, listenersOf(sig)]))
 
-    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement, exposure: loopbackWorkspaceRuntimeExposure() })
+    const server = await startServer(0, { sessionIdWorkspace: () => undefined, placement, exposure: loopbackWorkspaceRuntimeExposure() })
     try {
       const port = await waitForWorkspaceRuntimeServerPort(server, 0)
       expect(port).toBeGreaterThan(0)
@@ -1357,7 +1354,7 @@ describe("cors + signal registration (characterization)", () => {
     const preRej = process.listeners("unhandledRejection")
     const preExc = process.listeners("uncaughtException")
     // Default: no lifecycle argument → the library must not claim the process.
-    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
+    const server = await startServer(0, { sessionIdWorkspace: () => undefined, placement,
       target: { workspaceId: "ws-signals-default", directory: path.join(os.tmpdir(), "server-signals-root") },
       exposure: loopbackWorkspaceRuntimeExposure(),
     })
@@ -1387,7 +1384,7 @@ describe("cors + signal registration (characterization)", () => {
     const preInt = process.listeners("SIGINT")
     const preRej = process.listeners("unhandledRejection")
     const preExc = process.listeners("uncaughtException")
-    const server = startServer(0, { sessionIdWorkspace: () => undefined, placement,
+    const server = await startServer(0, { sessionIdWorkspace: () => undefined, placement,
       target: { workspaceId: "ws-signals", directory: path.join(os.tmpdir(), "server-signals-root") },
       exposure: loopbackWorkspaceRuntimeExposure(),
     }, { signals: true })

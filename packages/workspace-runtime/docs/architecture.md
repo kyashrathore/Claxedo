@@ -11,7 +11,7 @@ authoritative detail — this doc is the overview, not a duplicate.
 in every shape. What changes is the trust boundary: how the socket is
 exposed and who is responsible for authenticating requests before they reach
 the host. All five shapes are constructed from [`src/exposure.ts`](../src/exposure.ts)
-and consumed by [`startServer`](../src/server.ts) or
+and consumed by [`startServer`](../src/serve.ts) or
 `createWorkspaceRuntimeApp`.
 
 | Shape | Constructor | Trust boundary |

@@ -93,6 +93,12 @@ export type WorkspaceCheckpointControl = {
 
 export type WorkspaceHost = {
   sessionCore: SessionCore
+  /**
+   * Boots the embedded engines this workspace has run before, so the first
+   * read after the runtime listens does not wait on that boot. An engine whose
+   * boot fails is logged and boots again on first use.
+   */
+  prepare: () => Promise<void>
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
   /**
    * Every turn this runtime has admitted, by the identity its owner minted.

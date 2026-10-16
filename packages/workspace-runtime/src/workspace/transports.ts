@@ -149,6 +149,11 @@ export function createWorkspaceTransports(input: WorkspaceTransportsInput) {
 
   return {
     ...resolver,
+    async prepare(runner: SessionHarness, directory: string) {
+      if (closing) throw new Error("Workspace transports are disposed")
+      const handle = held.get(`native:${runner.id}`) ?? buildNative(runner)
+      await handle.transport.prepare?.(directory)
+    },
     /** Retires every transport of a connection the snapshot disabled or removed. */
     retireConnection(connectionId: string) {
       for (const [key, handle] of held) {

@@ -132,6 +132,7 @@ export interface HealthOperations {
 export interface HarnessTransport {
   readonly kind: TransportKind
   capabilities(context: CapabilityContext): Promise<TransportCapabilities>
+  prepare?(directory: string): Promise<void>
   start(input: StartInput, session: SessionBroker): Promise<HarnessSession>
   attach(input: AttachInput, session: SessionBroker): Promise<HarnessSession>
   restore?(session: HarnessSession): Promise<HarnessSession>

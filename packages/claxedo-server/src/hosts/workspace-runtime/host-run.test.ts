@@ -2,11 +2,12 @@ import { describe, expect, test, vi } from "vitest"
 
 const startServer = vi.fn(() => ({ server: "listening" }))
 const waitForWorkspaceRuntimeServerPort = vi.fn(async () => 2593)
+const startEventLoopStallMonitor = vi.fn(() => () => undefined)
 
 // The listener itself belongs to @claxedo/workspace-runtime and is proven
 // there; what is under test is the entry around it — which line is written, in
 // which order, and what a boot that never reaches the listener does instead.
-vi.mock("@claxedo/workspace-runtime", () => ({ startServer, waitForWorkspaceRuntimeServerPort }))
+vi.mock("@claxedo/workspace-runtime", () => ({ startEventLoopStallMonitor, startServer, waitForWorkspaceRuntimeServerPort }))
 
 const { runWorkspaceRuntimeHost } = await import("./host-run")
 
@@ -33,6 +34,16 @@ describe("workspace-runtime host entry", () => {
     expect(startServer).not.toHaveBeenCalled()
   })
 
+  test("a booted host watches its event loop before it prepares engines and listens", async () => {
+    startEventLoopStallMonitor.mockClear()
+    startServer.mockClear()
+
+    await runWorkspaceRuntimeHost(async () => ({ port: 0, hostname: "0.0.0.0", options: {} } as never), io())
+
+    expect(startEventLoopStallMonitor).toHaveBeenCalledWith({ warn: expect.any(Function) })
+    expect(startEventLoopStallMonitor.mock.invocationCallOrder[0]).toBeLessThan(startServer.mock.invocationCallOrder[0] ?? 0)
+  })
+
   test("a booted host starts the listener and names the port it actually bound", async () => {
     const out = io()
     const options = { target: { workspaceId: "ws_1", directory: "/workspace" } }
@@ -50,7 +61,7 @@ describe("workspace-runtime host entry", () => {
 
   test("the boot's background work starts only once the server is listening", async () => {
     const order: string[] = []
-    let listening!: () => void
+    let listening: (() => void) | undefined
     waitForWorkspaceRuntimeServerPort.mockImplementationOnce(() => new Promise((resolve) => {
       listening = () => { order.push("listening"); resolve(2593) }
     }))
@@ -60,9 +71,9 @@ describe("workspace-runtime host entry", () => {
       options: { target: { workspaceId: "ws_1", directory: "/workspace" } },
       onListening: () => order.push("background"),
     } as never), io())
-    await vi.waitFor(() => expect(startServer).toHaveBeenCalled())
+    await vi.waitFor(() => expect(listening).toBeTypeOf("function"))
     expect(order).toEqual([])
-    listening()
+    listening?.()
     await host
     expect(order).toEqual(["listening", "background"])
   })

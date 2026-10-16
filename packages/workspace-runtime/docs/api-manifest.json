@@ -45,6 +45,7 @@
     "relayWorkspaceRuntimeExposure",
     "runtimeCredentialWorkspaceId",
     "runtimeEnvText",
+    "startEventLoopStallMonitor",
     "startServer",
     "startWorkspaceRuntime",
     "waitForWorkspaceRuntimeServerPort",

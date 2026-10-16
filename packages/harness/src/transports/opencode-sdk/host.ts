@@ -2,6 +2,7 @@ import type * as OpenCodeSdk from "@opencode-ai/sdk"
 import { isAbsolute } from "node:path"
 import { canTransition, isTerminal, type OpenCodeEventHealth, type OpenCodeLifecycle, type OpenCodeStatus } from "./lifecycle.js"
 import { errorMessage, singleFlightUntil } from "@claxedo/helpers"
+import { duringEventLoopActivity } from "@claxedo/helpers/event-loop-activity"
 
 export type OpenCodeClient = Awaited<ReturnType<typeof OpenCodeSdk.OpenCode.create>>
 
@@ -31,7 +32,7 @@ export type OpenCodeHost = Readonly<{
 
 export async function openCodeLocationClient(host: OpenCodeHost, directory: string): Promise<OpenCodeClient> {
   const client = await host.client()
-  await client.plugin.awaitActivation({ location: { directory } })
+  await duringEventLoopActivity("opencode location activation", () => client.plugin.awaitActivation({ location: { directory } }))
   return client
 }
 
@@ -86,7 +87,7 @@ class EmbeddedOpenCodeHost implements OpenCodeHost {
     }
     if (this.current) return Promise.resolve(this.current)
     if (this.lifecycle === "unavailable") this.moveTo("cold")
-    this.booting ??= this.boot()
+    this.booting ??= duringEventLoopActivity("opencode engine boot", () => this.boot())
     return this.booting
   }
 
