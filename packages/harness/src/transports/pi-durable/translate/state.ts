@@ -7,13 +7,14 @@ export type PiDurableTranslatorState = {
   blocks: Record<number, string>
   usage: PiUsageTotals
   noted: string[]
+  announced: Record<string, unknown>
 }
 
 export type PiStep = { state: PiDurableTranslatorState; events: AgentRuntimeEvent[] }
 
 export const EMPTY_USAGE: PiUsageTotals = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }
 
-export const initialPiDurableState = (): PiDurableTranslatorState => ({ blocks: {}, usage: EMPTY_USAGE, noted: [] })
+export const initialPiDurableState = (): PiDurableTranslatorState => ({ blocks: {}, usage: EMPTY_USAGE, noted: [], announced: {} })
 
 export const piStep = (state: PiDurableTranslatorState, events: AgentRuntimeEvent[] = []): PiStep => ({ state, events })
 

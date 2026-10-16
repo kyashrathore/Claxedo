@@ -9,7 +9,8 @@
       "cacheRead": 0,
       "cacheWrite": 0
     },
-    "noted": []
+    "noted": [],
+    "announced": {}
   },
   "calls": [
     {
@@ -22,7 +23,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -61,7 +63,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -76,7 +79,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -105,7 +109,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -120,7 +125,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -156,7 +162,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -171,7 +178,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -202,7 +210,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -217,7 +226,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -244,7 +254,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -259,7 +270,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -283,7 +295,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -298,7 +311,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -432,7 +446,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -447,7 +462,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -589,7 +605,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -604,7 +621,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -634,11 +652,11 @@
               "reasoning": 0,
               "totalTokens": 2,
               "cost": {
-                "input": 2e-06,
-                "output": 8e-06,
+                "input": 0.000002,
+                "output": 0.000008,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 9.999999999999999e-06
+                "total": 0.000009999999999999999
               }
             },
             "stopReason": "toolUse",
@@ -663,7 +681,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -678,7 +697,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -710,11 +730,11 @@
                   "reasoning": 0,
                   "totalTokens": 2,
                   "cost": {
-                    "input": 2e-06,
-                    "output": 8e-06,
+                    "input": 0.000002,
+                    "output": 0.000008,
                     "cacheRead": 0,
                     "cacheWrite": 0,
-                    "total": 9.999999999999999e-06
+                    "total": 0.000009999999999999999
                   }
                 },
                 "stopReason": "toolUse",
@@ -745,7 +765,12 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {
+            "call_2|fc_2": {
+              "command": "printf 'one\\ntwo\\n'"
+            }
+          }
         },
         "events": []
       }
@@ -760,7 +785,12 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {
+          "call_2|fc_2": {
+            "command": "printf 'one\\ntwo\\n'"
+          }
+        }
       },
       "event": {
         "source": "pi.durable",
@@ -777,11 +807,11 @@
                 "reasoning": 0,
                 "totalTokens": 2,
                 "cost": {
-                  "input": 2e-06,
-                  "output": 8e-06,
+                  "input": 0.000002,
+                  "output": 0.000008,
                   "cacheRead": 0,
                   "cacheWrite": 0,
-                  "total": 9.999999999999999e-06
+                  "total": 0.000009999999999999999
                 }
               }
             },
@@ -804,7 +834,12 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {
+            "call_2|fc_2": {
+              "command": "printf 'one\\ntwo\\n'"
+            }
+          }
         },
         "events": [
           {
@@ -837,7 +872,12 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {
+          "call_2|fc_2": {
+            "command": "printf 'one\\ntwo\\n'"
+          }
+        }
       },
       "event": {
         "source": "pi.durable",
@@ -866,7 +906,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -911,7 +952,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -940,7 +982,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -967,7 +1010,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1027,7 +1071,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -1068,7 +1113,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1105,7 +1151,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1120,7 +1167,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1168,7 +1216,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1183,7 +1232,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1207,7 +1257,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1222,7 +1273,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1246,7 +1298,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1261,7 +1314,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1288,11 +1342,11 @@
               "reasoning": 0,
               "totalTokens": 2,
               "cost": {
-                "input": 2e-06,
-                "output": 8e-06,
+                "input": 0.000002,
+                "output": 0.000008,
                 "cacheRead": 0,
                 "cacheWrite": 0,
-                "total": 9.999999999999999e-06
+                "total": 0.000009999999999999999
               }
             },
             "stopReason": "stop",
@@ -1319,7 +1373,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -1341,7 +1396,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1370,11 +1426,11 @@
                   "reasoning": 0,
                   "totalTokens": 2,
                   "cost": {
-                    "input": 2e-06,
-                    "output": 8e-06,
+                    "input": 0.000002,
+                    "output": 0.000008,
                     "cacheRead": 0,
                     "cacheWrite": 0,
-                    "total": 9.999999999999999e-06
+                    "total": 0.000009999999999999999
                   }
                 },
                 "stopReason": "stop",
@@ -1405,7 +1461,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1420,7 +1477,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1444,7 +1502,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1459,7 +1518,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1486,7 +1546,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1501,7 +1562,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1533,7 +1595,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1548,7 +1611,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1565,11 +1629,11 @@
                 "reasoning": 0,
                 "totalTokens": 4,
                 "cost": {
-                  "input": 4e-06,
-                  "output": 1.6e-05,
+                  "input": 0.000004,
+                  "output": 0.000016,
                   "cacheRead": 0,
                   "cacheWrite": 0,
-                  "total": 1.9999999999999998e-05
+                  "total": 0.000019999999999999998
                 }
               }
             },
@@ -1592,7 +1656,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {

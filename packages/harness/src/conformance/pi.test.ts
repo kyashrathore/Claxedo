@@ -94,10 +94,35 @@ test("ask mode routes a Pi write through the broker, and a denial blocks the too
     const pending = await pollUntil(() => context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission"), Date.now() + 10_000)
     expect(pending?.request.requestId).toStartWith("pi-tool:")
     expect((await context.owner.broker.answer(pending!.request.requestId, { kind: "permission", decision: "deny" }, { sessionId: "s1" })).ok).toBe(true)
-    const events = await running
-    expect(events.some(({ event }) => event.type === "tool-error")).toBe(true)
-    expect(events.at(-1)?.event.type).toBe("finish")
+    const events = (await running).map(({ event }) => event)
+    expect(events.filter((event) => event.type.startsWith("tool-"))).toMatchObject([
+      { type: "tool-start", toolName: "write", kind: "file_change", display: { filePath: "denied.txt" } },
+      { type: "tool-input", input: { path: "denied.txt", content: "no" } },
+      { type: "tool-error", error: "Tool call blocked: The person denied this tool call" },
+    ])
+    expect(events.at(-1)?.type).toBe("finish")
     await expect(fs.access(path.join(backend.directory, "denied.txt"))).rejects.toThrow()
+  } finally { await context.close() }
+}, 60_000)
+
+test("stopping a Pi turn while its tool waits for permission ends that tool named with its input, and the turn cancelled", async () => {
+  const context = await piContext("pi-ask-stop")
+  const backend = context.backend as PiBackend
+  try {
+    await context.transport.config!.setPermissionMode(context.session, "ask")
+    backend.server.scriptTool({ name: "bash", input: { command: "echo never" }, whenPromptIncludes: "PIASKSTOP" })
+    const controller = new AbortController()
+    const running = collect(context.transport.send(context.session, context.turn("Run it PIASKSTOP"), context.turnBroker(controller.signal)))
+    await pollUntil(() => context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission"), Date.now() + 10_000)
+    expect((await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" },
+      { at: Date.now() + 10_000, signal: controller.signal })).execution).toBe("terminal")
+    const events = (await running).map(({ event }) => event)
+    expect(events.filter((event) => event.type.startsWith("tool-"))).toMatchObject([
+      { type: "tool-start", toolName: "bash", kind: "command_execution", display: { command: "echo never" } },
+      { type: "tool-input", input: { command: "echo never" } },
+      { type: "tool-error", error: "Tool bash was aborted" },
+    ])
+    expect(events.at(-1)?.type).toBe("cancelled")
   } finally { await context.close() }
 }, 60_000)
 

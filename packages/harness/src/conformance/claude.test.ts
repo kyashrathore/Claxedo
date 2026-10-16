@@ -268,6 +268,8 @@ test.each(["allow_once", "allow_always", "deny", "reject_always"])("Claude permi
     expect(answer.ok).toBe(true)
     await running
     if (decision === "reject_always") expect(events.some(({ event }) => event.type === "cancelled" || event.type === "error")).toBe(true)
+    if (decision === "deny") expect(events.map(({ event }) => event).filter((event) => event.type === "tool-start" || event.type === "tool-error"))
+      .toMatchObject([{ type: "tool-start", toolName: "Bash" }, { type: "tool-error" }])
     expect(ports.saved.some((row) => row.pending.request.requestId === pending.request.requestId)).toBe(true)
     expect(await fs.stat(target).then(() => true, () => false)).toBe(decision.startsWith("allow"))
     expect(await fs.readFile(path.join(state.userConfigRoot, "settings.json"))).toEqual(originalSettings)

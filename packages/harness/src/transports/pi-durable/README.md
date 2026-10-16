@@ -19,7 +19,7 @@
 |---|---|
 | `message_start` / `message_update` / `message_end` of an assistant message | `text-delta`, `thinking-delta`; final content is reconciled against what streamed and a contradiction is refused |
 | `message_end` with stop reason `length` | `harness-notice` `pi.output_limit` |
-| `tool_execution_start` / `_update` / `_end` | `tool-start` + `tool-input`, `tool-content` for appended output, `tool-output` or `tool-error` |
+| `tool_execution_start` / `_update` / `_end` | `tool-start` + `tool-input`, `tool-content` for appended output, `tool-output` or `tool-error`; an end with no start first starts the call with the arguments its assistant message gave it |
 | `usage_changed` | `usage`, the difference from the previous totals, reasoning taken out of output |
 | `auto_retry_start` | `session-retry` |
 | `compaction_start` / `compaction_end` | `session-compaction` |
@@ -36,7 +36,7 @@ A model error Pi retries is `session-retry` and its failed attempt shows nothing
 
 ## Requests
 
-The `beforeTool` hook asks before `write`, `edit`, `bash` and every `mcp__` tool when the session's mode is `ask` (`PI_PERMISSION_MODES`; `full`, the default, never asks). It asks the active run's broker, or the session broker during a continuation, with request id `pi-tool:<toolCallId>` and the tool name as grant key, so a re-ask of the same call after a crash replays the saved answer. Allow runs the tool; anything else blocks it with a reason the model reads. The `question` tool asks the person through the broker and returns their answer as text; it is not replay-safe, so a crash mid-question gives the model an interrupted result.
+The `beforeTool` hook asks before `write`, `edit`, `bash` and every `mcp__` tool when the session's mode is `ask` (`PI_PERMISSION_MODES`; `full`, the default, never asks). It asks the active run's broker, or the session broker during a continuation, with request id `pi-tool:<toolCallId>` and the tool name as grant key, so a re-ask of the same call after a crash replays the saved answer. Allow runs the tool; anything else blocks it with a reason the model reads. A blocked call, like one stopped while it waits for an answer, ends without ever starting: Pi's end names the tool but carries no arguments, so the translator keeps each tool call of an assistant message until it starts or ends, and the row shows that tool and its input, failed with Pi's reason (`Tool call blocked: The person denied this tool call`, `Tool bash was aborted`), never the call id. The `question` tool asks the person through the broker and returns their answer as text; it is not replay-safe, so a crash mid-question gives the model an interrupted result.
 
 ## MCP and skills
 

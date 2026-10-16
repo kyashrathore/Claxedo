@@ -9,7 +9,8 @@
       "cacheRead": 0,
       "cacheWrite": 0
     },
-    "noted": []
+    "noted": [],
+    "announced": {}
   },
   "calls": [
     {
@@ -22,7 +23,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -51,7 +53,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -66,7 +69,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -102,7 +106,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -117,7 +122,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -148,7 +154,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -163,7 +170,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -190,7 +198,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -205,7 +214,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -229,7 +239,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -244,7 +255,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -292,7 +304,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -307,7 +320,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -363,7 +377,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -378,7 +393,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -405,7 +421,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -426,7 +443,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -460,7 +478,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -475,7 +494,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -521,7 +541,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -536,7 +557,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -562,7 +584,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -583,7 +606,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -627,7 +651,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -660,7 +685,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -795,7 +821,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -810,7 +837,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -953,7 +981,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -968,7 +997,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1026,7 +1056,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
@@ -1048,7 +1079,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1112,7 +1144,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1127,7 +1160,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1151,7 +1185,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1166,7 +1201,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1193,7 +1229,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1208,7 +1245,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1240,7 +1278,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": []
       }
@@ -1255,7 +1294,8 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "noted": []
+        "noted": [],
+        "announced": {}
       },
       "event": {
         "source": "pi.durable",
@@ -1299,7 +1339,8 @@
             "cacheRead": 0,
             "cacheWrite": 0
           },
-          "noted": []
+          "noted": [],
+          "announced": {}
         },
         "events": [
           {
