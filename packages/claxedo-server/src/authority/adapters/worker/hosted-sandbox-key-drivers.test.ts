@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest"
+import { formatBoatRuntimeTemplate } from "@claxedo/sandbox-manager/drivers/boat"
+import { describe, expect, test, vi } from "vitest"
 import { hostedSandboxKeyDriverIds, hostedSandboxKeyDrivers, sandboxRuntimeControlEnv } from "./hosted-sandbox-key-drivers"
 
 const plane = {
@@ -30,6 +31,27 @@ describe("the drivers an organization key builds on a Worker", () => {
     const { CLAXEDO_SANDBOX_IMAGE: _image, ...withoutImage } = plane
     expect(() => hostedSandboxKeyDrivers(withoutImage)).toThrow(/CLAXEDO_SANDBOX_IMAGE/)
     expect(() => hostedSandboxKeyDrivers({ ...plane, CLAXEDO_SANDBOX_IMAGE: "  " })).toThrow(/CLAXEDO_SANDBOX_IMAGE/)
+  })
+
+  test("a Boat key's driver creates a sandbox of the deployment's image from the release's runtime template", async () => {
+    const creates: unknown[] = []
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith("/sandboxes") && typeof init?.body === "string") creates.push(JSON.parse(init.body))
+      return Response.json({ ok: false, code: "unauthorized" }, { status: 401 })
+    })
+    try {
+      const template = formatBoatRuntimeTemplate({ image: plane.CLAXEDO_SANDBOX_IMAGE, shareCode: "bsh_release" })
+      const driver = hostedSandboxKeyDrivers({ ...plane, CLAXEDO_BOAT_RUNTIME_TEMPLATE: template }).create("boat", { api_key: "boat-key" })
+      await expect(driver?.ensureHost({ workspaceId: "ws1", homeRegion: "auto", epoch: 1, labels: {} })).rejects.toThrow("(unauthorized)")
+      expect(creates).toEqual([{ noEnv: true, ttlSeconds: 1800, from: "bsh_release" }])
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  test("a runtime template setting the Worker cannot read refuses composition", () => {
+    expect(() => hostedSandboxKeyDrivers({ ...plane, CLAXEDO_BOAT_RUNTIME_TEMPLATE: "bsh_release" })).toThrow(/CLAXEDO_BOAT_RUNTIME_TEMPLATE/)
   })
 
   test("the control env derives every verification endpoint from what the plane already carries", () => {

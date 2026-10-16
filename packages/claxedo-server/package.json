@@ -41,6 +41,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ../../script/test-home/run.mjs node scripts/test/unit.mjs",
     "sandbox:image": "bun run scripts/sandbox/build-sandbox-image.ts",
+    "sandbox:boat-template": "bun run scripts/sandbox/boat-runtime-template.ts",
     "rebuild:native": "npm rebuild better-sqlite3",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },

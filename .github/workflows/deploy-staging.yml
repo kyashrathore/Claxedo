@@ -126,6 +126,15 @@ jobs:
           bun run --cwd packages/claxedo-server sandbox:image --agent-plugins --push-if-missing
           echo "image=$(jq -r .imageTag packages/claxedo-server/scripts/sandbox/.build/build-info.json)" >> "$GITHUB_OUTPUT"
 
+      - name: Build the image's Boat runtime template
+        env:
+          BOAT_API_KEY: ${{ secrets.CLAXEDO_BOAT_TEMPLATE_API_KEY }}
+          IMAGE: ${{ steps.publish.outputs.image }}
+        run: |
+          set -euo pipefail
+          [ -n "$BOAT_API_KEY" ] || { echo "::error::CLAXEDO_BOAT_TEMPLATE_API_KEY is not configured"; exit 1; }
+          bun run --cwd packages/claxedo-server sandbox:boat-template --image="$IMAGE"
+
   control-plane:
     name: control plane (Better Auth + D1)
     needs: [plan, gate, unit, boat-image]
@@ -198,6 +207,14 @@ jobs:
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
 
+      - name: Share the image's Boat runtime template with the Worker
+        env:
+          BOAT_API_KEY: ${{ secrets.CLAXEDO_BOAT_TEMPLATE_API_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$BOAT_API_KEY" ] || { echo "::error::CLAXEDO_BOAT_TEMPLATE_API_KEY is not configured"; exit 1; }
+          bun run --cwd packages/claxedo-server sandbox:boat-template --image="$CLAXEDO_SANDBOX_IMAGE" --share-to="$GITHUB_ENV"
+
       - name: Print the deploy plan and bundle the Worker offline
         working-directory: packages/claxedo-server
         run: bun run deploy:user-cloudflare -- --agent-plugins --dry-run
@@ -205,6 +222,13 @@ jobs:
       - name: Deploy the control plane and the app
         working-directory: packages/claxedo-server
         run: bun run deploy:user-cloudflare -- --agent-plugins
+
+      # Only once the Worker carries the new code: a failed deploy leaves the
+      # live Worker's code and template in place.
+      - name: Revoke the template's other share codes and prune older templates
+        env:
+          BOAT_API_KEY: ${{ secrets.CLAXEDO_BOAT_TEMPLATE_API_KEY }}
+        run: bun run --cwd packages/claxedo-server sandbox:boat-template --image="$CLAXEDO_SANDBOX_IMAGE" --deployed-share="$CLAXEDO_BOAT_RUNTIME_TEMPLATE_SHARE_ID"
 
   # The relay is the Durable Object Worker (packages/workspace-relay/src/worker.ts)
   # that the control plane's CLAXEDO_WORKSPACE_RELAY_URL names.

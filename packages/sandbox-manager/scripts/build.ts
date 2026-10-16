@@ -14,6 +14,7 @@ const entries = [
   "src/driver-catalog.ts",
   "src/hosted-network-policy.ts",
   "src/drivers/boat.ts",
+  "src/drivers/boat-template.ts",
   "src/drivers/cloudflare.ts",
   "src/drivers/docker.ts",
   "src/drivers/local-brokering.ts",

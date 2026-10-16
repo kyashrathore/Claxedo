@@ -101,7 +101,11 @@ state on the VM's disk and mounts it into the container:
 | the container's hostname | `--hostname <workspace id>` | kept | kept |
 | everything else (`/tmp`, `/run`, processes) | none | gone, as on any reboot | gone |
 
-The seed runs once per image, at the start that first names it: it pulls the
+A new sandbox gets the image's trees one of two ways. A sandbox of the
+deployment's image is created from the release's runtime template (below), a
+named snapshot that already holds them, so its first start pulls and seeds
+nothing. Without a template, or when the organization's key cannot read it, or
+for any other image, the first start seeds them. The seed runs once per image, at the start that first names it: it pulls the
 image, streams the trees out of a created container of it with `docker cp` and
 unpacks them as root, leaving out `~/.cache` (which Boat's own snapshots leave
 out too) and npm's cache. The persistent root is created as root too: Docker
@@ -127,13 +131,18 @@ from the image itself, as an earlier driver's did.
 
 Every start then runs the container from the stub, loading `stub.tar` when
 Docker does not hold this image's stub, with every path above mounted. A wake
-therefore pulls nothing: on Boat, 2026-10-15, a cold start took 55–96 s (the
-pull and seed nearly all of it, as fast as ghcr served the image) and a wake
-8–20 s from the resume call to a healthy runtime: `machine_ready` (the resume)
-4–5 s, then `image_ready` (the stub and the container start) 1–3 s, or 7 s when
-Boat's own create of the container raced the start's; the rest is the runtime
-reading its files while Boat still downloads them. A wake that pulled took
-57–77 s, and failed when ghcr reset the connection. An image update re-seeds:
+therefore pulls nothing. On Boat, 2026-10-15, from the create or resume call to
+a healthy runtime, with a public repository checked out:
+
+| Start | Time | Where it goes |
+| --- | --- | --- |
+| cold, from the runtime template | 20.7, 26.8, 29.5 s | create to `machine_ready` 5–8 s, `image_ready` (stub and container start) 2 s later, the rest the runtime reading its files while Boat still downloads them |
+| cold, seeding (no template, or an unreadable one) | 55–96 s (81.5 s for the fallback) | the pull and seed, as fast as ghcr serves the image |
+| wake of a sandbox created from the template | 14.7, 17.2, 12.3 s | `machine_ready` 5 s, `image_ready` 1–3 s, then the runtime |
+| wake of a seeded sandbox | 8–20 s | the same phases, with no record of what the runtime reads first |
+
+A wake that pulled (before the stub) took 57–77 s, and failed when ghcr reset
+the connection. An image update re-seeds:
 the new image is pulled and seeded as above, its stub replaces the old one, and
 the old image's trees are removed.
 
@@ -147,8 +156,11 @@ this driver's, or the one the stop kept) and starts it rather than replacing
 it. Boat's restore creates a resumed sandbox's containers again about 2 s after
 Docker answers; when that create takes the runtime's name after the start looked
 for it, Docker answers that the name is in use, and the start waits a second
-(Docker holds the name from the start of Boat's create), removes it and creates
-again, up to five creates. Docker named volumes were measured and rejected: Boat
+(Docker holds the name from the start of Boat's create) and looks again, up to
+five times: this image's container (the one the stop kept, created again by
+Boat) is started, and another image's is removed and the runtime created again.
+Removing Boat's container instead lost the race at all five creates on a
+machine's first wake, as Boat created it again each time (2026-10-15). Docker named volumes were measured and rejected: Boat
 saves them through a path of its own, and a stop with 3.7 GB of them had not
 finished after ten minutes, while the same bytes under the work directory
 archived in 27 s.
@@ -178,6 +190,67 @@ the command's limit less 60 s fails the boot with that reason. Staged files
 older than the 30-minute boot deadline belong to no running boot and are removed.
 A resume Boat refuses with `sandbox_resuming`, because the other boot resumed the
 sandbox first, waits for that resume instead of failing.
+
+### Boat runtime template
+
+Boat has no custom image: a named snapshot is its template
+([named snapshots](https://docs.boat.dev/snapshots/templates)). The release
+saves one per runtime image in its own Boat account, and every organization's
+key creates its sandboxes from it with a share code.
+
+What a template holds: a machine on which the driver already booted the image,
+then reset. It keeps `claxedo-persistent/image-<image>/` (the trees, `stub.tar`,
+`image.env`, marked complete) and Boat's `~/.ascii/playbook.json`, the record of
+the files the runtime opened first, which Boat downloads first at every start
+from the template. It holds no image and no Boat archive of one (the start
+removed them once the runtime ran from the stub), no container, no workspace,
+no runtime state and no boot env (`boatTemplateResetCommand`). On Boat,
+2026-10-15, the template of the staging image was 4.46 GB.
+
+Lifecycle, in `drivers/boat-template.ts`, run by
+`bun run --cwd packages/claxedo-server sandbox:boat-template --image=<image>`:
+
+1. **Name.** `claxedo-rt-` and the first 12 hex digits of the SHA-256 of the
+   image reference. The reference is content-addressed (its tag names the
+   build) and names the trees directory, so it is the template's key.
+2. **Build, once per image.** A ready template is reused and one still saving
+   is waited for; a missing or failed one is built on a builder sandbox: the
+   Boat driver boots the image there (pull, seed, stub, runtime healthy), the
+   builder is stopped and woken (Boat records what a sandbox opens first only
+   while it starts from a snapshot), the build waits for `hydrated` (Boat writes
+   the record once the download ends), resets the machine, stops it, and saves
+   it under the name. The builder is deleted whatever the outcome. On Boat,
+   2026-10-15, a build took 144 s: boot 56 s, stop 25 s, wake 31 s, hydration
+   7 s, reset and stop 14 s, save 8 s.
+3. **Share, at every deploy.** A share code (`bsh_…`) is a secret: whoever holds
+   it deploys the template, and Boat shows it once. Before the Worker deploy,
+   `--share-to` mints a new code, revoking none, and the deploy uploads
+   `CLAXEDO_BOAT_RUNTIME_TEMPLATE` (`{"image", "shareCode"}`) as a Worker secret.
+   Only after that deploy succeeded does `--deployed-share=<share id>` revoke
+   every other code of the template, so a failed deploy leaves the live
+   Worker's code working.
+4. **Use.** `ensureHost` creates a sandbox whose image is the template's
+   `from` the share code, under a create key of its own
+   (`claxedo:<workspace>:<epoch>:template`: Boat refuses a key sent again with
+   another body for 24 h). Its first start finds the trees seeded and loads the
+   stub. A template of another image is never used. When the organization's key
+   cannot read the template (`snapshot_not_found` for a wrong, revoked or
+   removed code; `api_key_action_forbidden` or `api_key_sandbox_forbidden` for a
+   key without `snapshot.read`), the driver logs it and creates the sandbox that
+   pulls and seeds; any other refusal fails the start as before. A wake resumes
+   the sandbox it has and never touches the template.
+5. **Prune.** After a successful deploy, the newest three templates of the
+   prefix are kept, the deployed image's among them, and the rest removed; Boat
+   removes their share codes with them. Pruning never runs before a deploy
+   succeeded, so it never removes the template the live Worker creates from.
+
+Cost: an account keeps 10 named snapshots free, then pays $1.70 a month for
+each, so three templates fit in the free ten unless the account saves others.
+A sandbox created from a share code is billed to the account that creates it.
+A deploy from a share code does not get the source's per-sandbox env, and Boat
+strips the source's logins, keys and SSH keys from it; the builder is created
+with `noEnv` and its reset removes everything a boot wrote outside the image's
+trees.
 
 ## Credentials & secrets
 

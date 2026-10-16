@@ -1,4 +1,4 @@
-import { createBoatSandboxDriver } from "@claxedo/sandbox-manager/drivers/boat"
+import { createBoatSandboxDriver, parseBoatRuntimeTemplate } from "@claxedo/sandbox-manager/drivers/boat"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import { sandboxDriverIds, type SandboxDriverID } from "@claxedo/sandbox-contract"
@@ -63,6 +63,16 @@ function sandboxRuntimeOptions(env: HostedWorkerEnv) {
   }
 }
 
+function boatRuntimeTemplate(env: HostedWorkerEnv) {
+  const setting = trimToUndefined(env.CLAXEDO_BOAT_RUNTIME_TEMPLATE)
+  if (!setting) return undefined
+  try {
+    return parseBoatRuntimeTemplate(setting)
+  } catch (error) {
+    throw new HostedWorkerCompositionError("hosted_dependency_invalid", `CLAXEDO_BOAT_RUNTIME_TEMPLATE is unreadable: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 /** The catalog's drivers that run inside a Worker: every one an organization key can start a cloud workspace on here. */
 export const hostedSandboxKeyDriverIds: readonly SandboxDriverID[] =
   sandboxDriverIds.filter((id) => sandboxDriverCatalog[id].metadata.driverRunsIn.some((runtime) => runtime === "worker"))
@@ -73,13 +83,16 @@ export const hostedSandboxKeyDriverIds: readonly SandboxDriverID[] =
  * The deployment has no provider account of its own: a Boat sandbox boots the
  * runtime image `CLAXEDO_SANDBOX_IMAGE` names, and since every Boat key is
  * offered on every full-hosted deployment, a deployment without the image is
- * refused at composition rather than at the first Boat workspace.
+ * refused at composition rather than at the first Boat workspace. The
+ * release's runtime template (`CLAXEDO_BOAT_RUNTIME_TEMPLATE`, the share code
+ * the deploy publishes) is what a new Boat sandbox of that image starts from.
  */
 export function hostedSandboxKeyDrivers(env: HostedWorkerEnv): Omit<HostedSandboxKeys, "chosenDriver"> {
   const image = trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
   if (!image) {
     throw new HostedWorkerCompositionError("hosted_dependency_missing", "The full-hosted Worker requires CLAXEDO_SANDBOX_IMAGE, the runtime image a Boat sandbox boots")
   }
+  const runtimeTemplate = boatRuntimeTemplate(env)
   return {
     drivers: hostedSandboxKeyDriverIds,
     create: (id: SandboxDriverID, fields: Record<string, string>) => {
@@ -90,7 +103,7 @@ export function hostedSandboxKeyDrivers(env: HostedWorkerEnv): Omit<HostedSandbo
       }
       if (id === "boat") {
         const apiKey = trimToUndefined(fields.api_key)
-        return apiKey ? createBoatSandboxDriver({ apiKey, image, ...sandboxRuntimeOptions(env) }) : undefined
+        return apiKey ? createBoatSandboxDriver({ apiKey, image, ...(runtimeTemplate ? { runtimeTemplate } : {}), ...sandboxRuntimeOptions(env) }) : undefined
       }
       return undefined
     },
