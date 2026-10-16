@@ -110,13 +110,17 @@ test("snapshot: a session its runtime no longer had reads again once its workspa
   const runtimeReads: Promise<undefined>[] = [Promise.reject(missing)]
   const [reachable, setReachable] = createSignal(true)
   let reads = 0
+  let queueReads = 0
   const server = {
     ...base,
     attachPlacement: () => () => undefined,
     placements: { byId: () => ({ kind: "cloud", reachable: reachable() }) },
     sessions: {
       ...base.sessions,
-      queue: async () => [],
+      queue: async () => {
+        queueReads += 1
+        return []
+      },
       read: () => {
         reads += 1
         return { ...base.sessions.read(transcriptRef, deps.pageShape()), runtime: runtimeReads.shift() ?? Promise.resolve(undefined) }
@@ -129,11 +133,11 @@ test("snapshot: a session its runtime no longer had reads again once its workspa
     expect(view.runtimeMissing()).toBe(true)
     setReachable(false)
     await idle()
-    expect(reads).toBe(2)
+    expect([reads, queueReads]).toEqual([2, 2])
     expect(view.runtimeMissing()).toBe(false)
     setReachable(true)
     await idle()
-    expect(reads, "waking reads nothing here: the stream that reconnects raises its own gap").toBe(2)
+    expect([reads, queueReads], "waking reads nothing here: the stream that reconnects raises its own gap").toEqual([2, 2])
     dispose()
   })
 })

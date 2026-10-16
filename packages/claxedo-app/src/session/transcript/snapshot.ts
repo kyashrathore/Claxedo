@@ -88,6 +88,9 @@ async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Pr
 export function rereadWhenAsleep(context: TranscriptContext): void {
   const asleep = () => isStoppedCloud(context.server.placements.byId(context.ref.placementId))
   createEffect(on(asleep, (now, before) => {
-    if (now && before === false) void readSnapshot(context)
+    if (now && before === false) {
+      void readSnapshot(context)
+      void context.queue.reread()
+    }
   }))
 }

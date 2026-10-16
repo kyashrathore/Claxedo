@@ -49,7 +49,9 @@ async function read(context: QueueContext): Promise<void> {
   const pushedBefore = context.pushed.count
   try {
     const next = await context.server.sessions.queue(context.ref)
-    if (next && context.pushed.count === pushedBefore) showQueue(context, next)
+    if (context.pushed.count !== pushedBefore) return
+    if (next) showQueue(context, next)
+    else context.readError.set(undefined)
   } catch (cause) {
     if (context.pushed.count === pushedBefore) context.readError.set(toAppError(cause))
   }
