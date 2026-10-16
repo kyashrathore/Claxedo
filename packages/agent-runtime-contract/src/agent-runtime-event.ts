@@ -154,6 +154,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
       contextUsed: number
       observation?: RuntimeUsageObservation
       cost?: { amount: number; currency: string }
+      /** The account the turn was launched on, which these tokens were spent on. */
+      account?: TurnAccount
     }
   | { type: "diagnostic"; diagnostic: RuntimeDiagnostic }
 )

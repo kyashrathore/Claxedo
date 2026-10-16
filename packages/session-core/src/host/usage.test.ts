@@ -33,3 +33,23 @@ test.each([false, true])("unbound child usage reaches the hub once, whether or n
     } else await consumer.return?.()
   } finally { release(); await f.dispose() }
 })
+
+test("the turn's usage reaches the hub naming the account its harness spent it on", async () => {
+  const account = { kind: "stored", harnessId: "pi", credentialId: "cred_team", providerId: "anthropic" } as const
+  const transport = new FakeTransport()
+  transport.send = async function* () {
+    yield { event: { type: "usage", contextSize: 100, contextUsed: 10, account,
+      observation: { kind: "delta", tokens: { input: 7, output: 2, reasoning: null, cache: { read: null, write: null } } } } }
+    yield { event: { type: "finish", sessionId: "s" } }
+  }
+  const f = createHostFixture({ transports: { pi: transport } })
+  const metered: unknown[] = []
+  f.eventHub.subscribeGlobal(({ payload }) => { if (payload.type === "session.usage") metered.push(payload) })
+  try {
+    await f.runtime.sessions.create(sessionCreate({ id: "s" }))
+    await f.runtime.turns.start({ sessionId: "s", text: "work", origin: LOOPBACK_ORIGIN })
+    await tick()
+    await f.runtime.dispose()
+    expect(metered).toEqual([expect.objectContaining({ properties: expect.objectContaining({ sessionID: "s", account }) })])
+  } finally { await f.dispose() }
+})

@@ -3,6 +3,7 @@ import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib
 import { storedSessionRef } from "../session/meta/shape"
 import {
   assertTurnUsageRevision,
+  readTurnUsageCredential,
   readTurnUsageQuality,
   readTurnUsageTokens,
   TURN_USAGE_SETTLEMENTS,
@@ -136,6 +137,7 @@ const REPORT_REVISION_KEYS: ReadonlySet<string> = new Set([
   "nativeSessionId",
   "tokens",
   "quality",
+  "credential",
 ])
 
 /**
@@ -168,6 +170,7 @@ export function usageReportRevision(fact: UsageReportRevision): UsageReportRevis
     ...(fact.nativeSessionId ? { nativeSessionId: fact.nativeSessionId } : {}),
     tokens: fact.tokens,
     quality: fact.quality,
+    ...(fact.credential ? { credential: fact.credential } : {}),
   }
 }
 
@@ -197,7 +200,8 @@ export function cloudWorkspaceUsageRevision(
  * admitted and no later than {@link USAGE_REPORT_CLOCK_SKEW_MS} past `now`.
  */
 export function usageReportFactInBounds(fact: UsageReportFact, window: { admittedAt: number; now: number }) {
-  const ids = [fact.messageId, fact.turnId, fact.harness, fact.providerId, fact.modelId, fact.nativeSessionId ?? ""]
+  const credentialId = fact.credential?.kind === "stored" ? fact.credential.credentialId : ""
+  const ids = [fact.messageId, fact.turnId, fact.harness, fact.providerId, fact.modelId, fact.nativeSessionId ?? "", credentialId]
   const observationIds = [fact.quality.providerObservationId ?? "", fact.quality.providerObservationKey ?? ""]
   const { tokens } = fact
   const counts = [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write, tokens.cache.write1h ?? null]
@@ -217,9 +221,11 @@ export function usageReportFactInBounds(fact: UsageReportFact, window: { admitte
 export function readUsageReportRevision(value: unknown): UsageReportRevision | undefined {
   if (!isJsonRecord(value) || Object.keys(value).some((key) => !REPORT_REVISION_KEYS.has(key))) return undefined
   const tokens = readTurnUsageTokens(value.tokens)
+  const credential = readTurnUsageCredential(value.credential)
   const { messageId, revision, observedAt, completedAt, firstOutputAt, errorClass, settlement, status, harness, providerId, modelId, nativeSessionId } = value
   if (
     !tokens
+    || credential === null
     || !isNonEmptyString(messageId)
     || typeof revision !== "number"
     || typeof observedAt !== "number"
@@ -249,6 +255,7 @@ export function readUsageReportRevision(value: unknown): UsageReportRevision | u
     ...(nativeSessionId === undefined ? {} : { nativeSessionId }),
     tokens,
     quality: readTurnUsageQuality(value.quality),
+    ...(credential ? { credential } : {}),
   }
 }
 

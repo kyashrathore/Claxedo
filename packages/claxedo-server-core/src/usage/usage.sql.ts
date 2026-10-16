@@ -25,6 +25,8 @@ const usageColumns = () => ({
   cache_write_tokens: integer(),
   cache_write_1h_tokens: integer(),
   quality_json: text().notNull(),
+  credential: text({ enum: ["stored", "machine"] }),
+  credential_id: text(),
 })
 
 export const ClaxedoUsageTurnRevisionTable = sqliteTable("claxedo_usage_turn_revision", usageColumns(), (table) => [

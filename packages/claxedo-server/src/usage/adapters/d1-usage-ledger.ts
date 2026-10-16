@@ -6,10 +6,11 @@ import {
   TURN_USAGE_SETTLEMENTS,
   TURN_USAGE_STATUSES,
   usageRevisionHash,
+  type TurnUsageCredential,
   type TurnUsageRevision,
   type UsageRevisionWriteResult,
 } from "@claxedo/server-core/usage/contracts"
-import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
+import type { CredentialSpendRow, CredentialSpendScope, UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import {
   USAGE_BREAKDOWN_DIMENSIONS,
   usageDateFormatter,
@@ -21,6 +22,7 @@ import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter } from "@cla
 import { isOneOf, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { readMachineTime } from "../../sandbox/stores/d1-boots"
 import { priceMachineTime } from "../machine-time-pricing"
+import { may } from "../../authority/adapters/d1/authorization"
 
 type FactRow = {
   host_id: string
@@ -45,6 +47,8 @@ type FactRow = {
   cache_write_tokens: number | null
   cache_write_1h_tokens: number | null
   quality_json: string
+  credential_source: string
+  credential_id: string | null
 }
 
 type CurrentRow = { revision: number; payload_hash: string; settlement: string }
@@ -83,8 +87,35 @@ function usageFactFromRow(row: FactRow): TurnUsageRevision | undefined {
       },
     },
     quality: readTurnUsageQuality(parseJsonRecord(row.quality_json)),
+    ...filedCredential(row),
   }
 }
+
+function filedCredential(row: Pick<FactRow, "credential_source" | "credential_id">): { credential?: TurnUsageCredential } {
+  if (row.credential_source === "machine") return { credential: { kind: "machine" } }
+  return row.credential_id ? { credential: { kind: "stored", credentialId: row.credential_id } } : {}
+}
+
+/**
+ * The stored row a reported credential names, when the turn could have spent
+ * it: the organization's team key, or a personal account of the turn's
+ * producer, the session's creator or the workspace's owner, whichever of them
+ * the session spends. A sandbox driver's key is never a model credential.
+ */
+const SPENT_CREDENTIAL_SQL = `
+  spent (source, id, kind, owner) as (
+    select case when owner is null then 'org' else 'personal' end, id, kind, owner
+    from hosted_provider_credentials
+    where ?29 = 'stored' and org_id = ?7 and id = ?30 and kind <> 'sandbox_driver' and (
+      owner is null or owner = ?8
+      or owner = (select owner_user_id from workspaces where workspace_id = ?10)
+      or owner = (
+        select creator.user_id from sessions session join actors creator on creator.actor_id = session.creator_actor_id
+        where session.session_id = ?3
+      )
+    )
+  )
+`
 
 /** Where `item` stands against the stored revision, or nothing when it is newer and should be written. */
 function against(item: TurnUsageRevision, hash: string, current: CurrentRow | null): Exclude<UsageRevisionWriteResult, { status: "accepted" }> | undefined {
@@ -230,15 +261,55 @@ function rollUp(rows: readonly GroupRow[], identity: (row: GroupRow) => Record<s
     .map(([, row]) => ({ ...row.fields, ...row.metrics }))
 }
 
+const OTHER_MEMBER_SQL = "credential_source = 'personal' and credential_owner <> ?2"
+
+const SCOPE_SQL: Record<CredentialSpendScope, string> = {
+  mine: "(user_id = ?2 or credential_owner = ?2)",
+  org: "credential_source = 'org'",
+}
+
+/**
+ * Grouped in SQL by credential and model, so a model's tokens can be priced,
+ * with the label the credential carries now; a credential since deleted has
+ * none.
+ */
+async function readCredentialSpend(
+  database: D1Database,
+  query: { org_id: string; user_id: string; scope: CredentialSpendScope; since: number; until: number },
+): Promise<CredentialSpendRow[] | undefined> {
+  if (query.scope === "org" && !(await may(database, { userId: query.user_id }, "administer", { kind: "org", orgId: query.org_id }))) {
+    return undefined
+  }
+  const rows = await database.prepare(`
+    with spent as (
+      select
+        case when ${OTHER_MEMBER_SQL} then 'other_member' else credential_source end as source,
+        case when ${OTHER_MEMBER_SQL} then null else credential_id end as credential_id,
+        case when ${OTHER_MEMBER_SQL} then null else credential_kind end as credential_kind,
+        ${MODEL_SQL} as model,
+        ${METRICS_SQL}
+      from usage_turn_facts
+      where org_id = ?1 and observed_at >= ?3 and observed_at <= ?4 and ${SCOPE_SQL[query.scope]}
+      group by 1, 2, 3, 4
+    )
+    select spent.*, credential.label as label, credential.provider_id as credential_provider_id
+    from spent
+    left join hosted_provider_credentials credential on credential.org_id = ?1 and credential.id = spent.credential_id
+    order by spent.source, spent.credential_id, spent.model
+  `).bind(query.org_id, query.user_id, query.since, query.until).all<CredentialSpendRow>()
+  return rows.results
+}
+
 export type D1UsageLedger = UsageReportWriter
-  & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts" | "latestHarnessModel" | "machineTime">>
+  & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts" | "latestHarnessModel" | "credentialSpend" | "machineTime">>
 
 /**
  * The hosted plane's usage store: the latest revision of every reported turn,
- * owned by the account that produced it, and the machine time of its cloud
- * workspaces' boots. It answers the signed account's
- * cross-machine view and nothing wider — every read is keyed by one
- * organization and one user.
+ * owned by the account that produced it and naming the credential it spent,
+ * and the machine time of its cloud workspaces' boots. Every read is keyed by
+ * one organization and one reader: their own turns, plus, for spend per
+ * credential, other members' turns on the reader's own accounts, or on the
+ * team's keys for an administrator.
  */
 export function createD1UsageLedger(input: { database: D1Database; now?: () => number }): D1UsageLedger {
   const { database } = input
@@ -261,13 +332,16 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
       // slot cannot both take it. A later revision never refiles a message:
       // the sandbox names the turn, and could name another member's.
       const written = await database.prepare(`
+        with ${SPENT_CREDENTIAL_SQL}
         insert into usage_turn_facts (
           host_id, session_ref, session_id, message_id, revision, payload_hash, org_id, user_id, turn_id, workspace_id,
           observed_at, completed_at, settlement, status, location, harness, provider_id, model_id, native_session_id,
           input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens,
-          quality_json, recorded_at
+          quality_json, recorded_at, credential_source, credential_id, credential_kind, credential_owner
         )
-        select ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27
+        select ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27,
+          case ?29 when 'machine' then 'machine' when 'stored' then coalesce((select source from spent), 'unresolved') else 'unreported' end,
+          (select id from spent), (select kind from spent), (select owner from spent)
         where exists (select 1 from usage_turn_facts where host_id = ?1 and session_ref = ?2 and message_id = ?4)
           or (select count(*) from usage_turn_facts where host_id = ?1 and session_ref = ?2 and turn_id = ?9) < ?28
         on conflict (host_id, session_ref, message_id) do update set
@@ -279,7 +353,9 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
           input_tokens = excluded.input_tokens, output_tokens = excluded.output_tokens,
           reasoning_tokens = excluded.reasoning_tokens, cache_read_tokens = excluded.cache_read_tokens,
           cache_write_tokens = excluded.cache_write_tokens, cache_write_1h_tokens = excluded.cache_write_1h_tokens,
-          quality_json = excluded.quality_json, recorded_at = excluded.recorded_at
+          quality_json = excluded.quality_json, recorded_at = excluded.recorded_at,
+          credential_source = excluded.credential_source, credential_id = excluded.credential_id,
+          credential_kind = excluded.credential_kind, credential_owner = excluded.credential_owner
         where excluded.revision > usage_turn_facts.revision
       `).bind(
         item.hostId,
@@ -310,6 +386,8 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
         JSON.stringify(item.quality),
         now(),
         USAGE_REPORT_MAX_MESSAGES_PER_TURN,
+        item.credential?.kind ?? null,
+        item.credential?.kind === "stored" ? item.credential.credentialId : null,
       ).run()
       if (written.meta.changes > 0) {
         return { status: "accepted", firstSettled: item.settlement !== "provisional" && (!before || before.settlement === "provisional") }
@@ -397,6 +475,8 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
       `).bind(query.org_id, query.user_id, query.since, query.harness).first<{ model_id: string }>()
       return row?.model_id
     },
+
+    credentialSpend: (query) => readCredentialSpend(database, query),
 
     machineTime: async (query) => priceMachineTime(await readMachineTime(database, query)),
   }

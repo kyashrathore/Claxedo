@@ -171,6 +171,42 @@ export type UnifiedUsageResponse = {
   chart?: UsageChartSeries
 }
 
+/**
+ * What paid for a turn: `personal`, an account of the reader's own; `org`, the
+ * organization's team key; `other_member`, another person's own account the
+ * reader's turns spent on a session shared with them, named by nothing of
+ * theirs; `machine`, a harness's own login, which is no credential Claxedo
+ * holds; `unresolved`, a stored account the turn could not have spent or that
+ * no longer exists; `unreported`, nothing the runtime named.
+ */
+export type CredentialSpendSource = "personal" | "org" | "other_member" | "machine" | "unresolved" | "unreported"
+
+export type CredentialSpend = UsageTotals & {
+  source: CredentialSpendSource
+  /** Present for `personal` and `org`, with `kind`. */
+  credentialId?: string
+  kind?: "api_key" | "oauth_token" | "subscription_session"
+  /** The name and provider the stored row carries now; absent once the row is deleted. */
+  label?: string
+  providerId?: string
+  estimatedUsd: number
+  pricedTokens: number
+  unpricedTokens: number
+}
+
+/**
+ * Cloud turns' spend per credential in [since, until]. `mine`: every turn on
+ * the reader's own accounts, whoever sent it, and the reader's own turns on
+ * anything else. `org`: every member's turns on the organization's team keys,
+ * answered to its owners and admins alone.
+ */
+export type CredentialSpendResponse = {
+  since: number
+  until: number
+  scope: "mine" | "org"
+  credentials: CredentialSpend[]
+}
+
 /** The provider's rate for the machine a workspace ran on, from its published pricing. */
 export type MachineTimeRate = {
   /** The provider's own name for the size. */

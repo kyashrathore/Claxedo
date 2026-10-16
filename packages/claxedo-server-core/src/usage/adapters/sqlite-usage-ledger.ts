@@ -4,6 +4,7 @@ import {
   assertTurnUsageRevision,
   readTurnUsageQuality,
   usageRevisionHash,
+  type TurnUsageCredential,
   type TurnUsageQuality,
   type TurnUsageRevision,
   type UsageOwnedTurnReader,
@@ -46,7 +47,14 @@ function values(fact: TurnUsageRevision, hash: string): typeof ClaxedoUsageTurnR
     cache_write_tokens: fact.tokens.cache.write,
     cache_write_1h_tokens: fact.tokens.cache.write1h ?? null,
     quality_json: JSON.stringify(fact.quality),
+    credential: fact.credential?.kind ?? null,
+    credential_id: fact.credential?.kind === "stored" ? fact.credential.credentialId : null,
   }
+}
+
+function rowCredential(row: Pick<UsageRow, "credential" | "credential_id">): { credential?: TurnUsageCredential } {
+  if (row.credential === "machine") return { credential: { kind: "machine" } }
+  return row.credential === "stored" && row.credential_id ? { credential: { kind: "stored", credentialId: row.credential_id } } : {}
 }
 
 function quality(input: string): TurnUsageQuality {
@@ -81,6 +89,7 @@ function fact(row: UsageRow): TurnUsageRevision {
       },
     },
     quality: quality(row.quality_json),
+    ...rowCredential(row),
   }
 }
 

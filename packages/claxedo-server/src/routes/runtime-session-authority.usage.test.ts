@@ -194,6 +194,9 @@ describe("usage reports over the runtime session authority", () => {
     for (const field of [{ workspaceId: "ws_other" }, { hostId: "host_attacker" }, { owner: { org_id: "org_attacker", user_id: "attacker" } }]) {
       expect((await report(target, lease, [reported()], field)).status, JSON.stringify(field)).toBe(400)
     }
+    for (const credential of [{ kind: "stored" }, { kind: "stored", credentialId: "" }, { kind: "machine", credentialId: "cred" }, { kind: "team", credentialId: "cred" }, "cred"]) {
+      expect((await report(target, lease, [{ ...reported(), credential }])).status, JSON.stringify(credential)).toBe(400)
+    }
     expect((await report(target, lease, [reported({ revision: 0 })])).status).toBe(400)
     expect((await report(target, lease, [REVISION])).status).toBe(400)
     expect((await report(target, lease, [reported({ turnId: "" })])).status).toBe(400)
@@ -217,6 +220,7 @@ describe("usage reports over the runtime session authority", () => {
       reported({ messageId: "msg_long_model", modelId: long(USAGE_REPORT_MAX_ID_LENGTH + 1) }),
       reported({ messageId: "msg_long_native", nativeSessionId: long(USAGE_REPORT_MAX_ID_LENGTH + 1) }),
       reported({ messageId: "msg_long_key", quality: quality(long(USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH + 1)) }),
+      reported({ messageId: "msg_long_credential", credential: { kind: "stored", credentialId: long(USAGE_REPORT_MAX_ID_LENGTH + 1) } }),
       reported({ messageId: "msg_ancient", observedAt: now - USAGE_REPORT_MAX_FACT_AGE_MS - 3_600_000, completedAt: undefined }),
       reported({ messageId: "msg_future", observedAt: now + USAGE_REPORT_CLOCK_SKEW_MS + 3_600_000, completedAt: undefined }),
       reported({ messageId: "msg_completes_later", completedAt: now + USAGE_REPORT_CLOCK_SKEW_MS + 3_600_000 }),
@@ -228,7 +232,7 @@ describe("usage reports over the runtime session authority", () => {
       reported({ messageId: "msg_huge_input", tokens: { ...REVISION.tokens, input: ceiling + 1 } }),
       reported({ messageId: "msg_huge_cache_read", tokens: { ...REVISION.tokens, cache: { ...REVISION.tokens.cache, read: ceiling + 1 } } }),
       reported({ messageId: "msg_huge_revision", revision: USAGE_REPORT_MAX_REVISION + 1 }),
-      reported({ messageId: "msg_in_bounds" }),
+      reported({ messageId: "msg_in_bounds", credential: { kind: "stored", credentialId: long(USAGE_REPORT_MAX_ID_LENGTH) } }),
     ])
     expect(answer.status).toBe(200)
     const results = (await answer.json() as { results: Array<{ messageId: string; status: string; code?: string }> }).results
@@ -238,6 +242,7 @@ describe("usage reports over the runtime session authority", () => {
       ["msg_long_model", "refused", "usage_fact_out_of_bounds"],
       ["msg_long_native", "refused", "usage_fact_out_of_bounds"],
       ["msg_long_key", "refused", "usage_fact_out_of_bounds"],
+      ["msg_long_credential", "refused", "usage_fact_out_of_bounds"],
       ["msg_ancient", "refused", "usage_fact_out_of_bounds"],
       ["msg_future", "refused", "usage_fact_out_of_bounds"],
       ["msg_completes_later", "refused", "usage_fact_out_of_bounds"],

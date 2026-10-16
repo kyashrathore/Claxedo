@@ -11,6 +11,7 @@ import type { AgentRuntimeStatus } from "./availability"
 import type { BackgroundWork } from "./background-work"
 import type { AgentRuntimeHealth, ConnectionRuntimeStatus } from "./connections"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
+import type { TurnAccount } from "./turn-account"
 
 /**
  * Provider-reported token categories for one turn observation.
@@ -94,7 +95,7 @@ export type AgentPresentationEvent =
   | { type: "session.agent"; properties: { sessionID: string; agentId: string } }
   | { type: "session.config"; properties: { sessionID: string; options: AgentConfigOption[] } }
   | { type: "session.commands"; properties: { sessionID: string; commands: import("./sessions").AgentSessionCommand[] } }
-  | { type: "session.usage"; properties: { sessionID: string; messageID?: string; contextSize: number; contextUsed: number; observation?: RuntimeUsageObservation; cost?: { amount: number; currency: string } } }
+  | { type: "session.usage"; properties: { sessionID: string; messageID?: string; contextSize: number; contextUsed: number; observation?: RuntimeUsageObservation; cost?: { amount: number; currency: string }; account?: TurnAccount } }
   | { id?: string; type: "subagent.updated"; properties: { sessionID: string; update: AgentSubagentUpdate } }
   | { id?: string; type: "goal.updated"; properties: { sessionID: string; goal: RuntimeGoalSnapshot } }
   | { id?: string; type: "goal.cleared"; properties: { sessionID: string } }

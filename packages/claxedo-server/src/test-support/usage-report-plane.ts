@@ -6,12 +6,14 @@ import { d1Authority } from "./d1-authority"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
+import { createD1UsageLedger } from "../usage/adapters/d1-usage-ledger"
 
 export const USAGE_REPORT_URL = "https://plane.test/api/runtime-authority/session-authorize"
 
 type Workspace = "ws_real" | "ws_machine"
 
-export async function usageReportPlane(input: { usageWriter?: boolean | UsageReportWriter } = {}) {
+/** `usageWriter: "d1"` files reports in the plane's own D1, beside the credentials a fact names. */
+export async function usageReportPlane(input: { usageWriter?: boolean | UsageReportWriter | "d1" } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
@@ -31,6 +33,8 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
   await fixture.addMember(owner, member, orgId)
 
   const ledger = createSqliteUsageLedger()
+  const d1 = createD1UsageLedger({ database: fixture.database })
+  const writer = input.usageWriter === "d1" ? d1 : typeof input.usageWriter === "object" ? input.usageWriter : ledger.reports
   let runtimeAccessTokenActive = true
   const target = new Hono().route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
     authority: {
@@ -41,7 +45,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
     },
     turnAuthority: store,
     env,
-    ...(input.usageWriter === false ? {} : { usageWriter: typeof input.usageWriter === "object" ? input.usageWriter : ledger.reports }),
+    ...(input.usageWriter === false ? {} : { usageWriter: writer }),
   }))
 
   const relayToken = (who: SignedControlPlaneAuth, workspaceId: Workspace = "ws_real") => mintRelayHostToken({
@@ -93,6 +97,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
     store,
     database: fixture.database,
     ledger,
+    d1,
     target,
     post,
     relayToken,

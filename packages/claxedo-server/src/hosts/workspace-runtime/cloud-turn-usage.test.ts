@@ -667,3 +667,39 @@ describe("cloud workspace usage delivery", () => {
     }
   })
 })
+
+describe("the credential a cloud turn spent", () => {
+  test("is the account the harness named, filed in D1 under the turn's producer and counted for the account's owner", async () => {
+    const plane = await usageReportPlane({ usageWriter: "d1" })
+    cleanups.push(() => plane.close())
+    const ownerId = plane.owner.principal!.userId
+    await plane.database.prepare(`
+      insert into hosted_provider_credentials (id, owner, org_id, provider_id, kind, source, label, status, secret_envelope, revision, created_at, updated_at)
+      values ('cred_owner_plan', ?, ?, 'codex-app-server', 'oauth_token', 'managed', 'Owner plan', 'available', 'cenc1:x', 1, 1, 1)
+    `).bind(ownerId, plane.orgId).run()
+    await plane.session("ses_credential")
+    const ledger = openLedger(ledgerPath())
+    const usage = sandbox(ledger, plane.fetch)
+    const account = { kind: "stored", harnessId: "codex", credentialId: "cred_owner_plan", providerId: "codex-app-server", revision: 1 } as const
+    const spent = (messageId: string) => turnEvents("ses_credential", messageId, { completed: true }).map((event) =>
+      event.payload.type === "session.usage" ? envelope({ ...event.payload, properties: { ...event.payload.properties, account } }) : event)
+
+    await runTurn(plane, usage, { by: plane.owner, sessionId: "ses_credential", turnId: "msg_user_owner", events: spent("msg_by_owner") })
+    await runTurn(plane, usage, { by: plane.member, sessionId: "ses_credential", turnId: "msg_user_member", events: spent("msg_by_member") })
+
+    const filed = await plane.database.prepare(
+      "select message_id, user_id, credential_source, credential_id, credential_kind, credential_owner from usage_turn_facts order by message_id",
+    ).all()
+    expect(filed.results).toEqual([
+      { message_id: "msg_by_member", user_id: plane.member.principal!.userId, credential_source: "personal", credential_id: "cred_owner_plan", credential_kind: "oauth_token", credential_owner: ownerId },
+      { message_id: "msg_by_owner", user_id: ownerId, credential_source: "personal", credential_id: "cred_owner_plan", credential_kind: "oauth_token", credential_owner: ownerId },
+    ])
+    const range = { org_id: plane.orgId, since: 0, until: Date.now() + 60_000, scope: "mine" as const }
+    expect(await plane.d1.credentialSpend({ ...range, user_id: ownerId })).toEqual([
+      expect.objectContaining({ source: "personal", credential_id: "cred_owner_plan", label: "Owner plan", turn_count: 2 }),
+    ])
+    expect(await plane.d1.credentialSpend({ ...range, user_id: plane.member.principal!.userId })).toEqual([
+      expect.objectContaining({ source: "other_member", credential_id: null, credential_kind: null, label: null, turn_count: 1 }),
+    ])
+  })
+})
