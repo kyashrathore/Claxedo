@@ -136,11 +136,12 @@ export type CloudCreateAdmission = {
     options?: { existing?: boolean },
   ): Promise<CloudCreateAdmissionDenial | { orgId: string }>
   /**
-   * The concurrent-lease cap alone, for the start that opens a cloud
-   * workspace's first lease: a route-created workspace opens none until its
-   * first explicit start.
+   * The concurrent-lease cap alone, for a start that puts a cloud workspace's
+   * machine up: its first lease, or a wake of one that stopped or failed.
+   * `orgId` is the workspace's own organization, which the count is keyed on
+   * when it is known.
    */
-  capLease(caller: CloudCreateCaller): Promise<CloudCreateAdmissionDenial | undefined>
+  capLease(caller: CloudCreateCaller, orgId?: string): Promise<CloudCreateAdmissionDenial | undefined>
 }
 
 /**
@@ -182,9 +183,9 @@ export function createCloudCreateAdmission(
     })
   const countActiveLeases = input.countActiveLeases ?? unavailableActiveLeaseCounter
   const leaseCap = input.leaseCap ?? DEFAULT_SANDBOX_LEASE_CAP
-  const capLease = (caller: CloudCreateCaller) =>
+  const capLease = (caller: CloudCreateCaller, orgId?: string) =>
     sandboxLeaseCapDenial(input.services, {
-      tenant: callerTenant(caller),
+      tenant: { ...callerTenant(caller), ...(orgId ? { orgId } : {}) },
       ...(callerAudit(caller) ? { audit: callerAudit(caller) } : {}),
       cap: leaseCap,
       action: "workspace.create.denied",

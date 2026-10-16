@@ -77,3 +77,17 @@ export async function readMachineTime(database: D1Database, query: MachineTimeQu
   `).bind(query.org_id, query.user_id, query.since, query.until).all<MachineTimeRow>()
   return rows.results
 }
+
+/**
+ * The cloud leases a tenant holds a machine up with, by the rule a boot is billed by: the concurrent-lease cap's
+ * count. Both scopes together are a union, so a lease of the organization's that the person owns counts once.
+ */
+export async function countRunningCloudLeases(database: D1Database, scope: { orgId?: string; ownerSubject?: string }) {
+  if (!scope.orgId && !scope.ownerSubject) throw new Error("A running-lease count names an organization or an owner")
+  const row = await database.prepare(`
+    select count(*) as running
+    from sandbox_leases l join workspaces w on w.workspace_id = l.workspace_id
+    where ${HOSTED} and ((?1 is not null and w.org_id = ?1) or (?2 is not null and w.owner_user_id = ?2))
+  `).bind(scope.orgId ?? null, scope.ownerSubject ?? null).first<{ running: number }>()
+  return row?.running ?? 0
+}

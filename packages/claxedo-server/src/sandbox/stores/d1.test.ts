@@ -9,6 +9,7 @@ import type {
 } from "@claxedo/sandbox-manager"
 
 import { createD1SandboxLeaseStore } from "./d1"
+import { countRunningCloudLeases } from "./d1-boots"
 
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 
@@ -663,4 +664,25 @@ test("a delayed same-address record cannot resurrect an identity replaced at the
     leaseStore.recordTarget("ws_1", 1, { ...old, url: "https://new.test" })) })
   expect(await delayed.recordTarget("ws_1", 1, old)).toBeUndefined()
   expect((await leaseStore.get("ws_1"))?.url).toBe("https://new.test")
+})
+
+describe("running cloud leases", () => {
+  test("a tenant's count is the leases holding a machine up: serving, or booting on a host the driver reported", async () => {
+    const target = await database()
+    for (const workspaceId of ["ws_ready", "ws_booting", "ws_requested", "ws_stopped", "ws_failed"]) await ownedWorkspace(target, workspaceId)
+    const lease = (workspaceId: string, status: string, sandboxId: string | null) =>
+      target.prepare("insert into sandbox_leases (workspace_id, lease_id, status, driver, sandbox_id, created_at, updated_at) values (?, ?, ?, 'cloudflare', ?, 1, 1)")
+        .bind(workspaceId, `lease_${workspaceId}`, status, sandboxId)
+    await target.batch([
+      lease("ws_ready", "ready", "sbx_1"),
+      lease("ws_booting", "acquiring", "sbx_2"),
+      lease("ws_requested", "acquiring", null),
+      lease("ws_stopped", "stopped", "sbx_4"),
+      lease("ws_failed", "unavailable", "sbx_5"),
+    ])
+    expect(await countRunningCloudLeases(target, { orgId: "org_acme" })).toBe(2)
+    expect(await countRunningCloudLeases(target, { ownerSubject: "usr_alice" })).toBe(2)
+    expect(await countRunningCloudLeases(target, { orgId: "org_acme", ownerSubject: "usr_alice" })).toBe(2)
+    expect(await countRunningCloudLeases(target, { orgId: "org_other" })).toBe(0)
+  })
 })

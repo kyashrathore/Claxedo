@@ -887,7 +887,7 @@ describe("hosted tasks cloud create admission", () => {
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
     expect(previewed.preview.blockers).toEqual([
-      { code: "source_unavailable", detail: expect.stringContaining("maximum number of running cloud workspaces") },
+      { code: "source_unavailable", detail: expect.stringContaining("stop one to start another") },
     ])
     // The signed caller is counted by their token subject — the same column a
     // lease's tenant stamp carries.

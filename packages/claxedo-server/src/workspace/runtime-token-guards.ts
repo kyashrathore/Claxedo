@@ -240,8 +240,8 @@ export async function sandboxLeaseCapDenial(
       error: apiError(
         "sandbox_lease_limit_reached",
         orgId
-          ? "This organization already holds the maximum number of running cloud workspaces"
-          : "You already hold the maximum number of running cloud workspaces",
+          ? `This organization already runs its limit of ${input.cap} cloud workspaces; stop one to start another.`
+          : `You already run your limit of ${input.cap} cloud workspaces; stop one to start another.`,
         {
           activeLeases: active,
           limit: input.cap,

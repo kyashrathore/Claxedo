@@ -56,6 +56,7 @@ import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/o
 import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
 import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
 import { provisionedRunner } from "@claxedo/server-core/agent-config/connections"
+import { countRunningCloudLeases } from "../../../sandbox/stores/d1-boots"
 
 type BetterAuthD1AuthorityEnv = {
   CLAXEDO_ADAPTER_PROFILE: "better-auth-d1"
@@ -323,6 +324,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
           }),
         },
         productWorkspace: {
+          countActiveOrgSandboxLeases: (scope) => countRunningCloudLeases(input.controlPlaneDatabase, scope),
           sandboxStart: sandbox.start,
           sandboxInFlight: sandbox.inFlight,
           prepareRuntime: delivery.prepareRuntime,

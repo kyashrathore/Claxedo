@@ -12,7 +12,6 @@ export type CloudStartDenial = {
   status: ContentfulStatusCode
 }
 
-/** What the start that opens a cloud workspace's first lease answers to: the lease cap, then the usage seams. */
 /** A start's answer, or the admission that refused it before anything started. */
 export type CloudStartOutcome = { denied: CloudStartDenial } | SandboxStartAnswer
 
@@ -21,21 +20,30 @@ export type FirstLease = {
   readonly usage: CloudCreateUsage | undefined
 }
 
+/** A lease in one of these holds no running machine, so a start of it puts one up. */
+const HOST_DOWN: ReadonlySet<string> = new Set(["stopped", "unavailable", "destroyed"])
+
 /**
- * The cap a start that may open the workspace's first lease answers to, and
- * the meter it runs if its own acquire creates that lease: two first starts
- * racing both pass the cap, and only the one that wins the acquire meters.
+ * The cap a start that puts the workspace's machine up answers to (its first
+ * lease, or a wake of one that holds none), and the meter it runs if its own
+ * acquire creates the first lease: two first starts racing both pass the cap,
+ * and only the one that wins the acquire meters. A start joining one in
+ * flight, or of a machine already up, is counted already.
  */
-async function firstLeaseMeter(
+async function leaseAdmission(
   services: ControlPlaneServices | undefined,
   lease: FirstLease,
   caller: CloudCreateCaller,
-  input: { workspaceId: string; current: SandboxTargetResult },
+  input: { workspaceId: string; orgId: string | undefined; current: SandboxTargetResult },
 ): Promise<{ denied: CloudStartDenial } | (() => void) | undefined> {
   const { current } = input
-  if (current.status !== "unavailable" || current.reason !== "runtime_lease_missing") return undefined
-  const denied = await lease.admission.capLease(caller)
+  if (current.status !== "unavailable") return undefined
+  const opens = current.reason === "runtime_lease_missing"
+  const wakes = current.reason === "runtime_lease_not_ready" && current.leaseStatus !== undefined && HOST_DOWN.has(current.leaseStatus)
+  if (!opens && !wakes) return undefined
+  const denied = await lease.admission.capLease(caller, input.orgId)
   if (denied) return { denied: { error: denied.body.error, status: denied.status } }
+  if (!opens) return undefined
   const placed = await services?.sandbox.workspaceDriver?.(input.workspaceId)
   return () => lease.usage?.leaseOpened({
     caller,
@@ -47,8 +55,8 @@ async function firstLeaseMeter(
 }
 
 /**
- * The one way a cloud workspace's machine is started: the first lease's cap
- * and meter, then the workspace's sandbox start, which begins a run or joins
+ * The one way a cloud workspace's machine is started: the lease cap and the
+ * first lease's meter, then the workspace's sandbox start, which begins a run or joins
  * the one in flight and answers at once. A person's explicit connect starts
  * it as the signed caller; a tool call of a session served by its own host
  * starts it as the workspace's owner. Every start that decided something is
@@ -62,7 +70,7 @@ export async function startCloudWorkspace(
   input: { workspaceId: string; orgId: string | undefined; homeRegion?: ClaxedoRegion; current: SandboxTargetResult; request?: SandboxStartRequest },
 ): Promise<CloudStartOutcome> {
   const { workspaceId } = input
-  const meter = await firstLeaseMeter(services, lease, caller, input)
+  const meter = await leaseAdmission(services, lease, caller, input)
   if (meter && typeof meter !== "function") return meter
   const started = await start(workspaceId, input.request)
   if (started.status === "provisioning" && started.opened) {

@@ -1804,6 +1804,29 @@ describe("the start that opens a cloud workspace's first lease", () => {
     expect((await leased.app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
     expect(sandboxStart).toHaveBeenCalledTimes(1)
   })
+
+  test("the cap refuses waking a stopped or failed workspace while its organization runs the maximum, counted by the workspace's own organization", async () => {
+    const sandboxStart = vi.fn(async () => provisioning)
+    const countActiveOrgSandboxLeases = vi.fn(async () => 2)
+    for (const leaseStatus of ["stopped", "unavailable", "destroyed"] as const) {
+      const { app } = buildApp({
+        authority: fakeAuthority({
+          openWorkspace: vi.fn(async () => ({
+            allowed: true,
+            role: "owner",
+            workspace: { workspace_id: "ws_1", project_id: "proj_1", org_id: "org_workspace", backing: "cloud-vm", home_region: "us-east" },
+          })),
+        }),
+        sandboxManager: { target: vi.fn(async () => ({ status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus })) } as unknown as SandboxManager,
+        options: { sandboxLeaseCap: 2, countActiveOrgSandboxLeases, sandboxStart },
+      })
+      const refused = await app.fetch(post("/ws_1/connection", {}))
+      expect(refused.status).toBe(429)
+      expect(await refused.json()).toMatchObject({ error: { code: "sandbox_lease_limit_reached", message: "This organization already runs its limit of 2 cloud workspaces; stop one to start another." } })
+    }
+    expect(sandboxStart).not.toHaveBeenCalled()
+    expect(countActiveOrgSandboxLeases).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_workspace" }))
+  })
 })
 
 describe("bearer verification", () => {
