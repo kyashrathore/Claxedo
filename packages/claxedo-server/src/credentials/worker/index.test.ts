@@ -10,6 +10,7 @@ import {
 import { hostedPiCredentials } from "./pi"
 import { hostedOpenCodeCredentials } from "./opencode"
 import { piCredentialProviderIDs } from "@claxedo/server-core/credentials/pi-provider-projection"
+import { openCodeBundledModels } from "@claxedo/harness/opencode-models"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
@@ -154,20 +155,44 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect((await pi.piProviderCatalog(as("B"))).connected).not.toContain("anthropic")
   })
 
-  test("hosted OpenCode catalogs use selected accounts and never invent models without a runtime", async () => {
+  test("hosted OpenCode catalogs use selected accounts, and a workspace whose runtime is asleep lists no models", async () => {
     const orgId = freshOrg("opencode-org")
     const credentials = store(orgId)
     await credentials.putCredential({ ...write, owner: null, provider_id: "anthropic" })
     await credentials.putCredential({ ...write, owner: "A", provider_id: "openai" })
     const catalog = hostedOpenCodeCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials, runtimeProviders: async () => undefined })
     const as = (subject: string) => ({ mode: "signed" as const, user: { subject, tokenIdentifier: subject, issuer: "test" } })
-    expect((await catalog.opencodeProviderCatalog(as("A"))).connected).toEqual(["openai"])
-    expect((await catalog.opencodeProviderCatalog(as("B"))).connected).toEqual([])
+    expect((await catalog.opencodeProviderCatalog(as("A"), "ws_asleep")).connected).toEqual(["openai"])
+    expect((await catalog.opencodeProviderCatalog(as("B"), "ws_asleep")).connected).toEqual([])
     await credentials.setAccountSources(["anthropic"], "org", undefined, "A")
-    const chosen = await catalog.opencodeProviderCatalog(as("A"))
+    const chosen = await catalog.opencodeProviderCatalog(as("A"), "ws_asleep")
     expect(chosen.connected).toEqual(expect.arrayContaining(["openai", "anthropic"]))
     expect(chosen.all.every((provider) => Object.keys(provider.models).length === 0)).toBe(true)
     expect(JSON.stringify(chosen)).not.toContain("secret")
+  })
+
+  test("with no workspace named, the hosted OpenCode catalog lists the engine's bundled models of each vendor the person holds a key for, and none for a ChatGPT plan", async () => {
+    const orgId = freshOrg("opencode-bundled")
+    const credentials = store(orgId)
+    await credentials.putCredential({ ...write, owner: "A", provider_id: "anthropic" })
+    await credentials.putCredential({ ...write, owner: "A", provider_id: "codex-app-server", kind: "oauth_token" })
+    const asked: string[] = []
+    const catalog = hostedOpenCodeCredentials({
+      resolveOrgId: async () => orgId,
+      credentials: () => credentials,
+      runtimeProviders: async (_auth, workspaceId) => {
+        asked.push(workspaceId)
+        return undefined
+      },
+    })
+    const bundled = await catalog.opencodeProviderCatalog({ mode: "signed", user: { subject: "A", tokenIdentifier: "A", issuer: "test" } })
+    expect(asked).toEqual([])
+    expect([...bundled.connected].sort()).toEqual(["anthropic", "openai"])
+    const provider = (id: string) => bundled.all.find((entry) => entry.id === id)
+    expect(Object.keys(provider("anthropic")?.models ?? {})).toEqual(openCodeBundledModels(["anthropic"]).map((model) => model.id))
+    expect(Object.values(provider("anthropic")?.models ?? {}).every((model) => model.connected)).toBe(true)
+    expect(provider("openai")).toMatchObject({ source: "harness", harness: "codex", models: {} })
+    expect(provider("groq")?.models).toEqual({})
   })
 
   test("Pi's Anthropic connected by a Claude Code login says so and is not Pi's own key; Pi's own key is", async () => {

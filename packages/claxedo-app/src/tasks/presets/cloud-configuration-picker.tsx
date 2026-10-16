@@ -2,9 +2,10 @@ import { Show, onMount, type JSX } from "solid-js"
 import type { ConfigurationSlot, HarnessReference } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
-import { NATIVE_HARNESS_IDS } from "@/lib/harness-selection"
+import { NATIVE_HARNESS_IDS, isCatalogHarnessId } from "@/lib/harness-selection"
 import { Select } from "@/ui"
 import { tasksDictionary } from "../i18n"
+import { CloudCatalogModelPicker } from "./cloud-catalog-model-picker"
 import { cloudConfiguration, cloudPresetModel, isCloudPresetModel } from "./cloud-model"
 import type { ConfigurationDraft } from "./draft"
 
@@ -37,6 +38,10 @@ export function CloudConfigurationPicker(props: {
     CLOUD_HARNESSES.find(
       (harness) => harness.id === props.configuration.harness?.id && harness.access === props.configuration.harness.access,
     )
+  const catalogHarness = () => {
+    const harness = props.configuration.harness
+    return harness?.access === "native" && isCatalogHarnessId(harness.id) ? harness : undefined
+  }
   onMount(() => {
     const harness = props.configuration.harness
     if (harness && !props.configuration.model && cloudPresetModel(harness)) props.onChange(cloudConfiguration(harness))
@@ -55,7 +60,17 @@ export function CloudConfigurationPicker(props: {
           if (harness && harness.id !== props.configuration.harness?.id) props.onChange(cloudConfiguration(harness))
         }}
       />
-      <CloudModelNote configuration={props.configuration} slot={props.slot} />
+      <Show when={catalogHarness()} fallback={<CloudModelNote configuration={props.configuration} slot={props.slot} />}>
+        {(harness) => (
+          <CloudCatalogModelPicker
+            slot={props.slot}
+            harness={harness()}
+            model={props.configuration.model}
+            disabled={props.disabled}
+            onModel={(model) => props.onChange({ harness: harness(), model, effort: null })}
+          />
+        )}
+      </Show>
     </div>
   )
 }

@@ -11,7 +11,7 @@
  *   GET    /api/claxedo/bootstrap               public posture, plus the project
  *                                               catalog for a signed caller
  *   GET    /path                                synthetic path derived from ?directory
- *   GET    /api/claxedo/agent-config/providers  Pi provider catalog
+ *   GET    /api/claxedo/agent-config/providers  Pi's or OpenCode's provider catalog
  *   GET    /api/claxedo/agent-config/providers/auth  a harness's sign-in methods
  *   GET    /api/claxedo/agent-config/harness/options  a cloud draft's options: a Pi draft's models from the
  *                                               account's connected providers; for another native harness,
@@ -335,8 +335,7 @@ export function hostedHarnessRuntimeStatus(
 }
 
 export function hostedRuntimeProviderCatalog(services: ControlPlaneServices) {
-  return async (auth: SignedControlPlaneAuth, workspaceId: string | undefined) => {
-    if (!workspaceId) return undefined
+  return async (auth: SignedControlPlaneAuth, workspaceId: string) => {
     const target = await openHarnessTarget(services, auth, workspaceId)
     if (!target || target.authorityRole !== "owner") throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace owner required")
     try {

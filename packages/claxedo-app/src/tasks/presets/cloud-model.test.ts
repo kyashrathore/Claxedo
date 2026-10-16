@@ -1,5 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
+import type { CatalogProvider } from "@/server"
+import { cloudModelOffer } from "./cloud-catalog-models"
 import { cloudConfiguration, cloudPresetModel } from "./cloud-model"
 import { cloudHarnessProblem, emptyPresetEditorDraft, parsePresetEditorDraft, type ConfigurationDraft } from "./draft"
 
@@ -28,13 +30,41 @@ test("choosing Claude Code or Codex for a cloud preset saves it on that default,
   }
 })
 
-test("a cloud OpenCode configuration has no default to save, and says why instead of asking for a model", () => {
-  const draft = cloudDraft(cloudConfiguration({ id: "opencode", access: "native" }))
-  const unlisted = { key: "tasks.preset.cloudModelUnlisted", params: { harness: "OpenCode" } } as const
-  expect(cloudHarnessProblem(draft, "primary")).toEqual(unlisted)
-  const parsed = parsePresetEditorDraft(draft)
-  expect(parsed).toMatchObject({ ok: false, fields: { "configurations.primary.cloud": unlisted } })
-  expect(parsed.ok ? undefined : parsed.fields["configurations.primary.model"]).toBeUndefined()
+test("a cloud OpenCode configuration asks for a model and saves the one chosen", () => {
+  const opencode = { id: "opencode", access: "native" } as const
+  const unchosen = cloudDraft(cloudConfiguration(opencode))
+  expect(cloudHarnessProblem(unchosen, "primary")).toBeUndefined()
+  expect(parsePresetEditorDraft(unchosen)).toMatchObject({ ok: false, fields: { "configurations.primary.model": { key: "tasks.preset.chooseModel" } } })
+  const chosen: ConfigurationDraft = { harness: opencode, model: { providerID: "anthropic", modelID: "claude-opus-4-8" }, effort: null }
+  expect(parsePresetEditorDraft(cloudDraft(chosen))).toMatchObject({ ok: true, draft: { configurations: { primary: chosen } } })
+})
+
+const catalog = (connected: readonly string[], openai: Partial<CatalogProvider> = {}): { all: CatalogProvider[]; connected: readonly string[] } => ({
+  all: [
+    { id: "anthropic", name: "Anthropic", source: "api", models: { "claude-opus-4-8": { id: "claude-opus-4-8", name: "Claude Opus 4.8", connected: true } } },
+    { id: "openai", name: "OpenAI", source: "api", models: { "gpt-5.6-sol": { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", connected: true } }, ...openai },
+    { id: "groq", name: "Groq", models: {} },
+  ],
+  connected,
+})
+
+test("a cloud OpenCode preset offers the models of the providers the person holds an account for, in OpenCode's provider/model ids", () => {
+  expect(cloudModelOffer(catalog(["anthropic", "openai"]))).toEqual({ planUnlisted: false, choices: [
+    { model: { providerID: "anthropic", modelID: "claude-opus-4-8" }, provider: "Anthropic", name: "Claude Opus 4.8" },
+    { model: { providerID: "openai", modelID: "gpt-5.6-sol" }, provider: "OpenAI", name: "GPT-5.6 Sol" },
+  ] })
+  expect(cloudModelOffer(catalog(["anthropic"])).choices.map((choice) => choice.model.providerID)).toEqual(["anthropic"])
+})
+
+test("with no account OpenCode can use, a cloud preset has no model to offer", () => {
+  expect(cloudModelOffer(catalog([]))).toEqual({ choices: [], planUnlisted: false })
+})
+
+test("OpenAI reached only through a ChatGPT plan offers no model in a cloud preset and says so", () => {
+  const plan = catalog(["anthropic", "openai"], { source: "harness", harness: "codex", models: {} })
+  expect(cloudModelOffer(plan).choices.map((choice) => choice.model.providerID)).toEqual(["anthropic"])
+  expect(cloudModelOffer(plan).planUnlisted).toBe(true)
+  expect(cloudModelOffer(catalog(["openai"], { source: "harness", harness: "codex", models: {} }))).toEqual({ choices: [], planUnlisted: true })
 })
 
 test("a cloud configuration keeps a model it was saved with", () => {

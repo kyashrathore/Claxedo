@@ -11,6 +11,6 @@
   "transports/cursor-sdk": 1872,
   "transports/acp": 3149,
   "transports/pi-durable": 1841,
-  "transports/opencode-sdk": 3196,
+  "transports/opencode-sdk": 3205,
   "compose.ts": 62
 }

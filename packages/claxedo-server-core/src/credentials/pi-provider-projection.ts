@@ -4,11 +4,11 @@ import {
   PI_LAUNCH_PROVIDERS,
   piCredentialProviderIDs,
   type PiLaunchProvider,
+  VENDOR_PROVIDER_NAMES,
 } from "@claxedo/agent-runtime-contract"
 import { piLaunchCatalog } from "@claxedo/harness/pi-catalog"
 import { credentialUnavailableReason } from "./health"
 import type { CredentialKind, CredentialMetadata } from "./types"
-import { VENDOR_PROVIDER_NAMES } from "./vendor-providers"
 
 export { isPiLaunchProvider, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PiLaunchProvider }
 

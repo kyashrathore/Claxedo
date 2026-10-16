@@ -67,6 +67,7 @@ class EmbeddedOpenCodeHost implements OpenCodeHost {
         instances: this.options.instances,
         database: { path: this.options.databasePath },
         events: { persist: this.options.persistEvents ?? true },
+        models: { fetch: false },
         fs: { fff: false },
         ...(this.options.configContent ? { config: { content: this.options.configContent } } : {}),
       })

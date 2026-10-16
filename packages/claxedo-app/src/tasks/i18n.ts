@@ -152,8 +152,11 @@ const en = {
   "tasks.preset.nameTooLong": "Name is longer than {{max}} characters.",
   "tasks.preset.cloudHarnessElsewhere":
     "{{harness}} runs in its own session host on a cloud workspace, and a cloud task starts its session in the workspace's runtime. Choose another harness for a cloud preset.",
-  "tasks.preset.cloudModelUnlisted":
-    "{{harness}} lists its models only from a running workspace and has no default a cloud preset can name. Choose another harness for a cloud preset.",
+  "tasks.preset.cloudModelsLoading": "Loading {{harness}}'s models…",
+  "tasks.preset.cloudNoAccount": "{{harness}} has no account to run a model on. Add one in Settings → Models.",
+  "tasks.preset.cloudPlanUnlisted": "A cloud preset can't run {{harness}} on a ChatGPT plan. Add an OpenAI API key in Settings → Models.",
+  "tasks.preset.model": "Model",
+  "tasks.preset.modelPlaceholder": "Choose a model",
   "tasks.preset.cloudDefaultModel":
     "Runs on {{harness}}'s default model. A harness lists its models only from a running workspace, and a cloud task starts in a new one.",
   "tasks.preset.cloudSavedModel": "Runs on {{model}}.",

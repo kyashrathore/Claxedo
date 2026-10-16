@@ -95,6 +95,12 @@
       "types": "./dist/transports/opencode-sdk/index.d.ts",
       "import": "./dist/transports/opencode-sdk/index.js"
     },
+    "./opencode-models": {
+      "development": "./src/transports/opencode-sdk/bundled-models.ts",
+      "bun": "./src/transports/opencode-sdk/bundled-models.ts",
+      "types": "./dist/transports/opencode-sdk/bundled-models.d.ts",
+      "import": "./dist/transports/opencode-sdk/bundled-models.js"
+    },
     "./cursor-worker": {
       "development": "./src/transports/cursor-sdk/host.ts",
       "bun": "./src/transports/cursor-sdk/host.ts",
@@ -106,7 +112,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run generate:codex-protocol && bun scripts/build.ts",
+    "build": "bun run generate:codex-protocol && bun run generate:opencode-models && bun scripts/build.ts",
     "typecheck": "bun run generate:codex-protocol && tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
     "test": "node scripts/unit.mjs",
@@ -115,6 +121,7 @@
     "flows:versions": "bun e2e/flows/version-matrix.ts",
     "corpus": "bun e2e/harness/corpus.ts",
     "generate:codex-protocol": "bun scripts/generate-codex-protocol.ts",
+    "generate:opencode-models": "node ../../script/test-home/run.mjs bun scripts/generate-opencode-models.ts",
     "test:node": "bun run build && node --test scripts/package.node.mjs"
   },
   "dependencies": {

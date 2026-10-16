@@ -1,6 +1,5 @@
-import { HARNESS_TABLE, isHarnessId, PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
+import { HARNESS_TABLE, isHarnessId, PI_LAUNCH_PROVIDERS, VENDOR_PROVIDER_NAMES } from "@claxedo/agent-runtime-contract"
 import { credentialReach } from "../reach"
-import { VENDOR_PROVIDER_NAMES } from "../vendor-providers"
 
 export type ProviderAuthPrompt =
   | {
