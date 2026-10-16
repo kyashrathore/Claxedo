@@ -136,6 +136,24 @@ test("relay: a kept link near its expiry is minted again on the next reload and 
   expect(server.calls, "the renewed link serves the next reload").toHaveLength(1)
 })
 
+test("relay: a hop's error page instead of the runtime's answer is a machine that didn't answer, and none of the page reaches the message", async () => {
+  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const page = "<!DOCTYPE html><html><title>Worker threw exception | claxedo-sandbox-proxy</title><body>Error 1101</body></html>"
+  runtimeFetch.mockResolvedValue(new Response(page, { status: 500, headers: { "content-type": "text/html; charset=UTF-8" } }))
+
+  const failure = await createRelay(server.read).fetch("ws_1", "/session/ses_1/outline").catch((error: unknown) => error)
+
+  expect(failure).toMatchObject({ class: "runtime_unreachable", retryable: true, status: 500 })
+  expect(String((failure as Error).message)).not.toContain("<")
+})
+
+test("relay: the runtime's own JSON failure passes back to its caller unchanged", async () => {
+  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValue(Response.json({ error: { code: "session_not_found", message: "Session not found" } }, { status: 500 }))
+
+  expect((await createRelay(server.read).fetch("ws_1", "/session/ses_1")).status).toBe(500)
+})
+
 test("relay: a runtime the control plane couldn't reach for its settings fails the runtime call as runtime_unreachable", async () => {
   const request = async () => Response.json({ error: { code: "runtime_provision_failed", message: "error code: 1101" } }, { status: 409 })
 

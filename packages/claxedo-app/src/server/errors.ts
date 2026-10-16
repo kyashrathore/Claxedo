@@ -66,16 +66,15 @@ type ErrorBody = { readonly code?: string; readonly message?: string; readonly r
 const SETTLED_CODES: ReadonlySet<string> = new Set(["harness_config_options_unavailable"])
 
 function readErrorBody(text: string): ErrorBody {
-  if (!text.trim()) return {}
+  if (!/^\s*[[{]/.test(text)) return {}
   let parsed: unknown
-  if (!/^\s*[[{]/.test(text)) return { message: text }
   try {
     parsed = JSON.parse(text)
   } catch (error) {
-    console.warn("An error body that looks like JSON could not be parsed; its text is the message", { error })
-    return { message: text }
+    console.warn("An error body that looks like JSON could not be parsed", { error })
+    return {}
   }
-  if (!parsed || typeof parsed !== "object") return { message: text }
+  if (!parsed || typeof parsed !== "object") return {}
   const body = parsed as { error?: unknown; code?: unknown; message?: unknown; retryable?: unknown }
   const envelope = body.error && typeof body.error === "object" ? (body.error as { code?: unknown; message?: unknown; retryable?: unknown; details?: unknown }) : undefined
   const code = envelope?.code ?? body.code
@@ -107,6 +106,14 @@ export function errorFromBody(status: number, body: ErrorBody, label = "Request"
 
 export async function responseError(response: Response, label = "Request"): Promise<ServerError> {
   return statusError(response.status, await response.text(), label)
+}
+
+export function isHopErrorPage(response: Response): boolean {
+  return response.status >= 500 && !/\bjson\b/i.test(response.headers.get("content-type") ?? "")
+}
+
+export function unansweredRuntime(response: Response): ServerError {
+  return new ServerError({ class: "runtime_unreachable", status: response.status, message: `The workspace runtime was not reached: a hop answered ${response.status} with no runtime answer` })
 }
 
 export async function responseErrorCode(response: Response): Promise<string | undefined> {

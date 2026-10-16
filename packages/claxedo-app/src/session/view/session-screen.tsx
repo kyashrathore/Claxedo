@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from 
 import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
 import { useElapsed } from "@/lib/delay"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
+import { useErrorCopy } from "@/i18n"
 import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
 import { useAccess, type SessionControls } from "@/access"
@@ -200,6 +201,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   })
   const unshared = () => standing().shared && controls().owner
   const t = useSessionScreenText()
+  const errorCopy = useErrorCopy("session")
   const placeholderDue = useElapsed()
   const stores = useSessionStores()
   const panel = usePanel()
@@ -238,7 +240,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
             {(state) => (
               <FailureNotice
                 title={t("sessionScreen.failed")}
-                message={state().error.message}
+                message={errorCopy(state().error).message}
                 retryLabel={t("sessionScreen.action.retry")}
                 onRetry={() => void view().reload()}
               />
