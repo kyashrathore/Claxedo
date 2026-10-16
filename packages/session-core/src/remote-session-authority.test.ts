@@ -1,5 +1,5 @@
-import { describe, expect, spyOn, test } from "bun:test"
-import { remoteWorkspaceSessionAccessPolicy } from "./remote-session-authority"
+import { describe, expect, test } from "bun:test"
+import { remoteWorkspaceSessionAccessPolicy, remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
 import { asRecord } from "@claxedo/helpers/guards"
 
 function sentJson(init: RequestInit | undefined): unknown {
@@ -192,33 +192,32 @@ describe("remote workspace session authority", () => {
   })
 })
 
-describe("an unavailable authority leaves one line an operator can read", () => {
-  async function warnings(run: () => unknown) {
-    const warn = spyOn(console, "warn").mockImplementation(() => undefined)
-    try {
-      await run()
-      return warn.mock.calls.map((call) => call.map(String).join(" "))
-    } finally {
-      warn.mockRestore()
-    }
+describe("an unavailable authority leaves one line in the host's log", () => {
+  function recorder() {
+    const lines: Array<[string, Record<string, unknown> | undefined]> = []
+    return { lines, log: { warn: (message: string, extra?: Record<string, unknown>) => void lines.push([message, extra]) } }
   }
+  const withoutMs = (lines: Array<[string, Record<string, unknown> | undefined]>) =>
+    lines.map(([message, { ms: _ms, ...extra } = {}]) => [message, extra])
 
   test("a call past its deadline names its action, session and duration, never its proof", async () => {
+    const { lines, log } = recorder()
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
       timeoutMs: 20,
+      log,
       fetch: async (_url, init) => await new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
       }),
     })
-    const [line, ...rest] = await warnings(() => policy.authorize({ ...input, operation: "question_response" }))
-    expect(rest).toEqual([])
-    expect(line).toMatch(/^Session authority unavailable: action=write session=ses_private ms=\d+ cause=timeout$/)
-    expect(Number(line?.match(/ms=(\d+)/)?.[1])).toBeGreaterThanOrEqual(20)
-    expect(line).not.toContain("signed-rht")
+    await policy.authorize({ ...input, operation: "question_response" })
+    expect(withoutMs(lines)).toEqual([["Session authority unavailable", { action: "write", sessionId: "ses_private", cause: "timeout" }]])
+    expect(lines[0]?.[1]?.ms).toBeGreaterThanOrEqual(20)
+    expect(JSON.stringify(lines)).not.toContain("signed-rht")
   })
 
   test("a fault, a throttle and an unreachable plane are each recorded; the authority's own refusals are not", async () => {
+    const { lines, log } = recorder()
     const answers: Array<() => Response> = [
       () => Response.json({ error: { code: "workspace_authority_unavailable" } }, { status: 503 }),
       () => new Response("", { status: 429 }),
@@ -229,37 +228,48 @@ describe("an unavailable authority leaves one line an operator can read", () => 
     ]
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
+      log,
       fetch: async () => (answers.shift() ?? (() => new Response("", { status: 200 })))(),
     })
-    const lines = await warnings(async () => {
-      for (let call = 0; call < 6; call++) await policy.authorize({ ...input, operation: "message_read" })
-    })
-    expect(lines.map((line) => line.replace(/ ms=\d+/, ""))).toEqual([
-      "Session authority unavailable: action=read session=ses_private status=503 code=workspace_authority_unavailable",
-      "Session authority unavailable: action=read session=ses_private status=429",
-      "Session authority unavailable: action=read session=ses_private cause=fetch failed",
+    for (let call = 0; call < 6; call++) await policy.authorize({ ...input, operation: "message_read" })
+    expect(withoutMs(lines)).toEqual([
+      ["Session authority unavailable", { action: "read", sessionId: "ses_private", status: 503, code: "workspace_authority_unavailable" }],
+      ["Session authority unavailable", { action: "read", sessionId: "ses_private", status: 429 }],
+      ["Session authority unavailable", { action: "read", sessionId: "ses_private", cause: "fetch failed" }],
     ])
   })
 
   test("the host arm records its failures the same way", async () => {
+    const { lines, log } = recorder()
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
+      log,
       fetch: async () => new Response("", { status: 502 }),
     })
-    const lines = await warnings(() => policy.authorizeHost!({ ...input, operation: "agent_setup_read", hostAccess: "read" }))
-    expect(lines.map((line) => line.replace(/ ms=\d+/, ""))).toEqual(["Session authority unavailable: action=host_read status=502"])
+    await policy.authorizeHost!({ ...input, operation: "agent_setup_read", hostAccess: "read" })
+    expect(withoutMs(lines)).toEqual([["Session authority unavailable", { action: "host_read", status: 502 }]])
   })
 
   test("a caller that gave up is not the authority failing", async () => {
+    const { lines, log } = recorder()
     const caller = new AbortController()
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/api/runtime-authority/session-authorize",
+      log,
       fetch: async (_url, init) => await new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
         caller.abort()
       }),
     })
-    expect(await warnings(() => policy.authorize({ ...input, operation: "message_read", signal: caller.signal }))).toEqual([])
+    await policy.authorize({ ...input, operation: "message_read", signal: caller.signal })
+    expect(lines).toEqual([])
+  })
+
+  test("a runtime composed from its env records through the log it is given", async () => {
+    const { lines, log } = recorder()
+    const policy = remoteWorkspaceSessionAccessPolicyFromEnv({ WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "http://127.0.0.1:9/authorize" }, log)
+    expect((await policy.authorize({ ...input, operation: "message_read" })).allowed).toBe(false)
+    expect(lines.map(([message, extra]) => [message, extra?.action])).toEqual([["Session authority unavailable", "read"]])
   })
 })
 

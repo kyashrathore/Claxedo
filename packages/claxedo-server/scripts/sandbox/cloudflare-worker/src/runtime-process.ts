@@ -1,4 +1,4 @@
-import { RUNTIME_PREPARATION_DEADLINE_MS, WORKSPACE_RUNTIME_BOOT_FAILED } from "../../../../src/hosts/workspace-runtime/boot-contract"
+import { RUNTIME_PREPARATION_DEADLINE_MS, WORKSPACE_RUNTIME_BOOT_FAILED, WORKSPACE_RUNTIME_OPERATOR_LOG } from "../../../../src/hosts/workspace-runtime/boot-contract"
 import { bounded, run, type WorkspaceContainer } from "./container-api"
 import { INTERCEPT_TRUST_ENV } from "./container-trust"
 import { safeRuntimeLog } from "./runtime-log"
@@ -86,7 +86,7 @@ function launchDir(launch: RuntimeLaunch) {
   return `${RUNTIME_ROOT}/${launch.id}`
 }
 
-export function runtimeLogPath(launch: RuntimeLaunch, stream: "stdout" | "stderr") {
+export function runtimeLogPath(launch: RuntimeLaunch, stream: "stdout" | "stderr" | "operator") {
   return `${launchDir(launch)}/${stream}.log`
 }
 
@@ -127,7 +127,7 @@ async function launchRuntime(host: RuntimeHost, command: string, env: Record<str
   const dir = launchDir(launch)
   const created = await bounded(run(host.container, ["mkdir", "-p", dir]), "workspace-runtime launch directory")
   if (created.exitCode !== 0) throw new Error(`The workspace-runtime launch directory could not be created: ${created.stderr.trim().slice(0, 200)}`)
-  const processEnv = { ...host.imageEnv, ...INTERCEPT_TRUST_ENV, ...env }
+  const processEnv = { ...host.imageEnv, ...INTERCEPT_TRUST_ENV, ...env, [WORKSPACE_RUNTIME_OPERATOR_LOG]: runtimeLogPath(launch, "operator") }
   await bounded(host.container.exec(["sh", "-c", LAUNCH_RUNTIME, "launch", dir, command], {
     env: processEnv,
     cwd: RUNTIME_CWD,

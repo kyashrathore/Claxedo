@@ -323,35 +323,39 @@ describe("workspace runtime log", () => {
     return launch
   }
 
-  test("each idle check forwards the runtime's new warnings to the Worker's log once, under its workspace and lease generation", async () => {
+  test("each idle check forwards the runtime's own new warnings to the Worker's log once, and never what a harness wrote to stderr", async () => {
     const s = sandbox()
     await ensure(s.object)
     vi.spyOn(s.container, "getTcpPort").mockReturnValue({ fetch: async () => Response.json({ workspaceId: "ws_1" }) })
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
     try {
-      runningLaunch(s).stderr = "2026-10-16T12:18:26 INFO  woke\nSession authority unavailable: action=write session=ses_1 ms=5003 cause=timeout\n"
+      const launch = runningLaunch(s)
+      expect(launch.env.WORKSPACE_RUNTIME_OPERATOR_LOG).toBe(`${launch.dir}/operator.log`)
+      launch.stderr = "2026-10-16T12:18:25 WARN  claude: user prompt was: rotate the prod keys\n"
+      launch.operator = "2026-10-16T12:18:31 WARN  Session authority unavailable service=session-authority action=write sessionId=ses_1 ms=5003 cause=timeout\n"
       await s.object.alarm()
       await s.object.alarm()
-      runningLaunch(s).stderr += "2026-10-16T12:19:02 WARN  CLAXEDO_API_TOKEN=secret-value\n"
+      launch.operator += "2026-10-16T12:19:02 ERROR CLAXEDO_API_TOKEN=secret-value\n"
       await s.object.alarm()
       expect(warn.mock.calls.map(([message, record]) => [message, record])).toEqual([
-        ["workspace-runtime stderr", { workspaceId: "ws_1", epoch: 3, launchId: expect.any(String), lines: ["Session authority unavailable: action=write session=ses_1 ms=5003 cause=timeout"], dropped: 0, skippedBytes: 0 }],
-        ["workspace-runtime stderr", expect.objectContaining({ lines: ["2026-10-16T12:19:02 WARN  CLAXEDO_API_TOKEN=[REDACTED]"] })],
+        ["workspace-runtime log", { workspaceId: "ws_1", epoch: 3, launchId: expect.any(String), lines: ["2026-10-16T12:18:31 WARN  Session authority unavailable service=session-authority action=write sessionId=ses_1 ms=5003 cause=timeout"], dropped: 0, skippedBytes: 0 }],
+        ["workspace-runtime log", expect.objectContaining({ lines: ["2026-10-16T12:19:02 ERROR CLAXEDO_API_TOKEN=[REDACTED]"] })],
       ])
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("prompt")
     } finally {
       warn.mockRestore()
     }
   })
 
-  test("a stop forwards what the runtime wrote since the last check before the container and its memory-backed log are gone", async () => {
+  test("a stop forwards what the runtime logged since the last check before the container and its memory-backed log are gone", async () => {
     const s = sandbox()
     await ensure(s.object)
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
     try {
-      runningLaunch(s).stderr = "ERROR last words\n"
+      runningLaunch(s).operator = "2026-10-16T12:19:02 ERROR last words\n"
       expect(await s.object.stopWorkspace(3)).toBe(true)
       expect(s.container.running).toBe(false)
-      expect(warn).toHaveBeenCalledWith("workspace-runtime stderr", expect.objectContaining({ lines: ["ERROR last words"] }))
+      expect(warn).toHaveBeenCalledWith("workspace-runtime log", expect.objectContaining({ lines: ["2026-10-16T12:19:02 ERROR last words"] }))
       expect([...s.storage.values.keys()].filter((key) => key.includes("runtime-log"))).toEqual([])
     } finally {
       warn.mockRestore()

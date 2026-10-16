@@ -36,6 +36,7 @@ import {
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
+import { Log } from "./log"
 import {
   type WorkspaceEventParents,
   managedWorkspaceSessionAccessPolicy,
@@ -446,7 +447,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   const sessionAccessPolicy = options.sessionAccessPolicy
     ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
       ? managedWorkspaceSessionAccessPolicy()
-      : remoteWorkspaceSessionAccessPolicyFromEnv(process.env))
+      : remoteWorkspaceSessionAccessPolicyFromEnv(process.env, Log.create({ service: "session-authority" })))
   const idle = createWorkspaceIdle({
     busy: () => {
       const activity = host.activity()

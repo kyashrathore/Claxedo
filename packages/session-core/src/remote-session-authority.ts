@@ -72,8 +72,10 @@ export function remoteWorkspaceSessionAccessPolicy(
      */
     requireActor?: boolean
     adoptRefusedSession?: AdoptRefusedSession
+    log?: AuthorityLog
   } = {},
 ) {
+  const log = options.log ?? consoleAuthorityLog
   const authorityUrl = () => (typeof options.url === "function" ? options.url() : options.url)?.trim()
   /**
    * POST one authority action and let `decode` name its SUCCESS shape.
@@ -120,11 +122,11 @@ export function remoteWorkspaceSessionAccessPolicy(
         if (response.ok) return decode(await jsonBody(response))
         const body = await jsonBody(response)
         const denial = deniedFromResponse(response, body)
-        if (denial.status === 503) reportUnavailable({ action, sessionId: input.sessionId, askedAt, status: response.status, code: asString(asRecord(body?.error)?.code) })
+        if (denial.status === 503) reportUnavailable(log, { action, sessionId: input.sessionId, askedAt, status: response.status, code: asString(asRecord(body?.error)?.code) })
         return denial
       }, input.signal)
     } catch (error) {
-      if (!input.signal?.aborted) reportUnavailable({ action, sessionId: input.sessionId, askedAt, error })
+      if (!input.signal?.aborted) reportUnavailable(log, { action, sessionId: input.sessionId, askedAt, error })
       return denied(503, "session_authority_unavailable")
     }
   }
@@ -203,11 +205,11 @@ export function remoteWorkspaceSessionAccessPolicy(
           return denied(response.status, asString(error?.code) ?? "host_authority_denied", asString(error?.message))
         }
         const code = asString(error?.code)
-        reportUnavailable({ action, askedAt, status: response.status, code })
+        reportUnavailable(log, { action, askedAt, status: response.status, code })
         return denied(503, code ?? "session_authority_unavailable", asString(error?.message))
       }, input.signal)
     } catch (error) {
-      if (!input.signal?.aborted) reportUnavailable({ action, askedAt, error })
+      if (!input.signal?.aborted) reportUnavailable(log, { action, askedAt, error })
       return denied(503, "session_authority_unavailable")
     }
   }
@@ -374,25 +376,33 @@ function authorityRequestBody(
   }
 }
 
-export function remoteWorkspaceSessionAccessPolicyFromEnv(env: Record<string, string | undefined>) {
-  return remoteWorkspaceSessionAccessPolicy({ url: env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] })
+/** A runtime passes its own logger, whose warnings are the lines its sandbox forwards to operators. */
+export function remoteWorkspaceSessionAccessPolicyFromEnv(env: Record<string, string | undefined>, log: AuthorityLog) {
+  return remoteWorkspaceSessionAccessPolicy({ url: env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL], log })
 }
+
+type AuthorityLog = { warn(message: string, extra?: Record<string, unknown>): void }
+
+const consoleAuthorityLog: AuthorityLog = { warn: (message, extra) => console.warn(message, extra) }
 
 /**
  * One line per authority call that failed for any reason but the authority's
  * own verdict: every such call answers the same 503, so this line is what
  * tells a deadline from a fault or an unreachable plane, and how long it took.
- * It is a single string because the sandbox Worker forwards the runtime's
- * stderr line by line.
  */
 function reportUnavailable(
+  log: AuthorityLog,
   call: { action: string; sessionId?: string; askedAt: number } & ({ status: number; code?: string } | { error: unknown }),
 ) {
   const outcome = "error" in call
-    ? `cause=${call.error instanceof Error && call.error.name === "TimeoutError" ? "timeout" : (call.error instanceof Error ? call.error.message : String(call.error)).slice(0, 200)}`
-    : `status=${call.status}${call.code ? ` code=${call.code}` : ""}`
-  const session = call.sessionId ? ` session=${call.sessionId}` : ""
-  console.warn(`Session authority unavailable: action=${call.action}${session} ms=${Date.now() - call.askedAt} ${outcome}`)
+    ? { cause: call.error instanceof Error && call.error.name === "TimeoutError" ? "timeout" : (call.error instanceof Error ? call.error.message : String(call.error)).slice(0, 200) }
+    : { status: call.status, ...(call.code ? { code: call.code } : {}) }
+  log.warn("Session authority unavailable", {
+    action: call.action,
+    ...(call.sessionId ? { sessionId: call.sessionId } : {}),
+    ms: Date.now() - call.askedAt,
+    ...outcome,
+  })
 }
 
 function isRegistrationAction(action: string) {

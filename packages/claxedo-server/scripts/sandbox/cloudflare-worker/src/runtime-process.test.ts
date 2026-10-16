@@ -54,6 +54,7 @@ describe("workspace-runtime process", () => {
         NODE_EXTRA_CA_CERTS: "/etc/cloudflare/certs/cloudflare-containers-ca.crt",
         REQUESTS_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt",
         WORKSPACE_RUNTIME_PORT: "2593",
+        WORKSPACE_RUNTIME_OPERATOR_LOG: "/run/claxedo-runtime/launch-1/operator.log",
         PATH: "/custom",
       },
     })

@@ -235,7 +235,7 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     await this.ctx.storage.delete([RUNTIME_LAUNCH_KEY, CONTAINER_SOURCE_KEY, RUNTIME_LOG_CURSOR_KEY])
   }
 
-  /** The runtime's stderr since the last forward, into this Worker's log; a failed read costs those lines, never the caller's stop or check. */
+  /** What the runtime logged for operators since the last forward, into this Worker's log; a failed read costs those lines, never the caller's stop or check. */
   private async forwardRuntimeLog(container: WorkspaceContainer) {
     const launch = await this.ctx.storage.get<RuntimeLaunch>(RUNTIME_LAUNCH_KEY)
     if (!launch) return
@@ -243,7 +243,7 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     const context = idle ? { workspaceId: idle.workspaceId, epoch: idle.epoch } : {}
     try {
       const cursor = await this.ctx.storage.get<RuntimeLogCursor>(RUNTIME_LOG_CURSOR_KEY)
-      await this.ctx.storage.put(RUNTIME_LOG_CURSOR_KEY, await forwardRuntimeLog(container, runtimeLogPath(launch, "stderr"), launch, cursor, context))
+      await this.ctx.storage.put(RUNTIME_LOG_CURSOR_KEY, await forwardRuntimeLog(container, runtimeLogPath(launch, "operator"), launch, cursor, context))
     } catch (error) {
       console.error("workspace-runtime log forward failed", { ...context, error: String(error) })
     }

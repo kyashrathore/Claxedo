@@ -17,6 +17,7 @@ export type FakeLaunch = {
   exitCode?: number
   stdout: string
   stderr: string
+  operator: string
 }
 
 export type LaunchOutcome = { state: "running" } | { state: "starting" } | { state: "exited"; exitCode: number; stderr?: string }
@@ -117,7 +118,7 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
         const [, , , , file = "", offset = "0", max = "0"] = argv
         const launch = state.launches.get(file.slice(0, file.lastIndexOf("/")))
         if (!launch) return output()
-        const bytes = encoder.encode(launch.stderr)
+        const bytes = encoder.encode(file.endsWith("/operator.log") ? launch.operator : launch.stderr)
         const from = Math.max(Number(offset), bytes.length - Number(max))
         return output(`${bytes.length} ${from}\n${decoder.decode(bytes.slice(from))}`)
       }
@@ -127,7 +128,7 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
         return output()
       }
       if (script === LAUNCH_RUNTIME) {
-        const launch: FakeLaunch = { dir, command, env: execOptions.env ?? {}, cwd: execOptions.cwd, state: "starting", stdout: "", stderr: "" }
+        const launch: FakeLaunch = { dir, command, env: execOptions.env ?? {}, cwd: execOptions.cwd, state: "starting", stdout: "", stderr: "", operator: "" }
         const outcome = state.onLaunch(launch)
         launch.state = outcome.state
         if (outcome.state === "exited") {

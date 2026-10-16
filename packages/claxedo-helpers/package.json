@@ -39,6 +39,13 @@
       "import": "./dist/deadline.mjs",
       "default": "./dist/deadline.mjs"
     },
+    "./operator-log": {
+      "development": "./src/operator-log.ts",
+      "bun": "./src/operator-log.ts",
+      "types": "./dist/operator-log.d.ts",
+      "import": "./dist/operator-log.mjs",
+      "default": "./dist/operator-log.mjs"
+    },
     "./guards": {
       "development": "./src/guards.ts",
       "bun": "./src/guards.ts",

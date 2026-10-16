@@ -1,3 +1,5 @@
+import { writeOperatorLine } from "@claxedo/helpers/operator-log"
+
 type LogExtra = Record<string, unknown>
 
 /**
@@ -42,10 +44,10 @@ function makeLogger(tags: Record<string, unknown>) {
       process.stderr.write(formatMsg("INFO ", tags, message, extra))
     },
     error(message?: unknown, extra?: LogExtra) {
-      process.stderr.write(formatMsg("ERROR", tags, message, extra))
+      writeOperatorLine(formatMsg("ERROR", tags, message, extra))
     },
     warn(message?: unknown, extra?: LogExtra) {
-      process.stderr.write(formatMsg("WARN ", tags, message, extra))
+      writeOperatorLine(formatMsg("WARN ", tags, message, extra))
     },
     tag(key: string, value: string) {
       tags[key] = value

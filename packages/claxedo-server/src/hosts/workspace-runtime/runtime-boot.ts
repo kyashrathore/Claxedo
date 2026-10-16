@@ -31,6 +31,7 @@ import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { claimOperatorLog } from "./operator-log"
 import { openSandboxUsageLedger } from "./sandbox-usage-ledger"
 import { cloudSessionRows } from "./cloud-session-rows"
 import {
@@ -149,6 +150,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   input: { routeContributions?: readonly WorkspaceRuntimeRouteContribution[] } = {},
 ): Promise<ClaxedoWorkspaceRuntimeBoot> {
+  claimOperatorLog(env)
   const rawPort = text(env, "WORKSPACE_RUNTIME_PORT") ?? "3002"
   if (!/^\d+$/.test(rawPort)) throw new Error(`WORKSPACE_RUNTIME_PORT must be an integer: ${rawPort}`)
   const port = Number(rawPort)
@@ -205,7 +207,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         workspaceId: workspaceId(env),
         authorityUrl,
         ledger: usageLedger,
-        policy: remoteWorkspaceSessionAccessPolicyFromEnv(env),
+        policy: remoteWorkspaceSessionAccessPolicyFromEnv(env, Log.create({ service: "session-authority" })),
         log: Log.create({ service: "claxedo-cloud-usage" }),
       })
     : undefined

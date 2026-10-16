@@ -17,20 +17,17 @@ const LINES = 40
 const LINE_CHARS = 500
 const CHARS = 8_000
 const NEWLINE = 10
-const INFO_LINE = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d INFO /
 
-/** How far into one launch's stderr the Worker's log has been brought. */
+/** How far into one launch's operator log the Worker's log has been brought. */
 export type RuntimeLogCursor = { launchId: string; offset: number }
 
 /**
- * What of a stretch of runtime stderr reaches the Worker's log: everything but
- * the runtime logger's info lines, redacted as a whole so a private key's
- * lines are blanked together, then at most `LINES` lines of `LINE_CHARS`
- * characters and `CHARS` in all; the rest is only counted.
+ * What of a stretch of the operator log reaches the Worker's log: redacted as
+ * a whole so a private key's lines are blanked together, then at most `LINES`
+ * lines of `LINE_CHARS` characters and `CHARS` in all; the rest is only counted.
  */
 export function runtimeLogExcerpt(text: string) {
-  const kept = text.split("\n").filter((line) => line.trim() && !INFO_LINE.test(line))
-  const redacted = kept.length ? redactRuntimeLog(kept.join("\n")).split("\n") : []
+  const redacted = redactRuntimeLog(text).split("\n").filter((line) => line.trim())
   const lines: string[] = []
   let chars = 0
   for (const line of redacted) {
@@ -43,10 +40,13 @@ export function runtimeLogExcerpt(text: string) {
 }
 
 /**
- * Brings the runtime's stderr written since `cursor` into the Worker's log,
- * where Workers Logs keeps it: the launch writes it to a memory-backed file
- * that no snapshot carries and that ends with the container. Only complete
- * lines are read, so a line still being written waits for the next call.
+ * Brings the warning and error lines the runtime's own logger wrote since
+ * `cursor` into the Worker's log, where Workers Logs keeps them. The runtime's
+ * stderr is never read here: harness children share it, and what they print
+ * can carry a person's prompt or transcript. The operator log is a
+ * memory-backed file that no snapshot carries and that ends with the
+ * container. Only complete lines are read, so a line still being written
+ * waits for the next call.
  */
 export async function forwardRuntimeLog(
   container: WorkspaceContainer,
@@ -71,6 +71,6 @@ export async function forwardRuntimeLog(
   const end = body.lastIndexOf(NEWLINE) + 1
   if (end <= start) return { launchId: launch.id, offset: from + (end === 0 && body.length === READ_BYTES ? body.length : start) }
   const { lines, dropped } = runtimeLogExcerpt(new TextDecoder().decode(body.subarray(start, end)))
-  if (lines.length || dropped) console.warn("workspace-runtime stderr", { ...context, launchId: launch.id, lines, dropped, skippedBytes: from + start - offset })
+  if (lines.length || dropped) console.warn("workspace-runtime log", { ...context, launchId: launch.id, lines, dropped, skippedBytes: from + start - offset })
   return { launchId: launch.id, offset: from + end }
 }
