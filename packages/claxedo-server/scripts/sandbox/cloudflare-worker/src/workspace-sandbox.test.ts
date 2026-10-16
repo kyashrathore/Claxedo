@@ -376,6 +376,23 @@ describe("workspace runtime log", () => {
     }
   })
 
+  test("an ensure retried after a launch whose answer was lost ends that launch, so the runtime that serves is the recorded one whose log is forwarded", async () => {
+    const s = sandbox()
+    s.state.launchAnswerLost = new Error("Network connection lost.")
+    await expect(ensure(s.object)).rejects.toThrow("Network connection lost.")
+    expect(await ensure(s.object)).toEqual({ state: "ready" })
+    expect(s.state.launches.size).toBe(1)
+    vi.spyOn(s.container, "getTcpPort").mockReturnValue({ fetch: async () => Response.json({ workspaceId: "ws_1" }) })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    try {
+      runningLaunch(s).operator = "2026-10-16T18:20:58 WARN  Event loop blocked service=workspace-runtime maxBlockedMs=6308\n"
+      await s.object.alarm()
+      expect(warn).toHaveBeenCalledWith("workspace-runtime log", expect.objectContaining({ lines: ["2026-10-16T18:20:58 WARN  Event loop blocked service=workspace-runtime maxBlockedMs=6308"] }))
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   test("a log read that fails never holds up the stop", async () => {
     const s = sandbox()
     await ensure(s.object)

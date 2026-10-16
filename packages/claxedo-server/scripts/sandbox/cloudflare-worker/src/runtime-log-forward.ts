@@ -18,8 +18,8 @@ const LINE_CHARS = 500
 const CHARS = 8_000
 const NEWLINE = 10
 
-/** How far into one launch's operator log the Worker's log has been brought. */
-export type RuntimeLogCursor = { launchId: string; offset: number }
+/** How far into one launch's operator log the Worker's log has been brought; `missing` once a ready launch's log was found absent and reported. */
+export type RuntimeLogCursor = { launchId: string; offset: number; missing?: true }
 
 /**
  * What of a stretch of the operator log reaches the Worker's log: redacted as
@@ -63,7 +63,11 @@ export async function forwardRuntimeLog(
   )
   const bytes = new Uint8Array(read.stdout)
   const header = bytes.indexOf(NEWLINE)
-  if (header < 0) return { launchId: launch.id, offset }
+  if (header < 0) {
+    if (!launch.ready) return { launchId: launch.id, offset }
+    if (cursor?.launchId !== launch.id || !cursor.missing) console.warn("workspace-runtime operator log missing", { ...context, launchId: launch.id, file })
+    return { launchId: launch.id, offset, missing: true }
+  }
   const [, fromText = ""] = new TextDecoder().decode(bytes.subarray(0, header)).split(" ")
   const from = Number(fromText)
   const body = bytes.subarray(header + 1)

@@ -2,7 +2,7 @@ import type { ContainerExecOptions, ContainerStart, WorkspaceContainer } from ".
 import { TRUST_INTERCEPT_CA } from "../container-trust"
 import { RUNTIME_DIGEST_SCRIPT } from "../runtime-integrity"
 import { READ_RUNTIME_LOG } from "../runtime-log-forward"
-import { LAUNCH_RUNTIME, MEMORY_RUNTIME_ROOT, RUNTIME_STATUS, STOP_RUNTIME } from "../runtime-process"
+import { LAUNCH_RUNTIME, MEMORY_RUNTIME_ROOT, RUNTIME_STATUS, STOP_RUNTIMES } from "../runtime-process"
 
 /** The digest of the runtime files the fake image carries, as the Worker's build identity names it. */
 export const IMAGE_RUNTIME_DIGEST = "d".repeat(64)
@@ -54,6 +54,8 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
     onLaunch: (_launch: FakeLaunch): LaunchOutcome => ({ state: "running" }),
     failure: undefined as Error | undefined,
     logReadFailure: undefined as Error | undefined,
+    /** Fails the next launch's exec after its process started, as a lost connection to the container does. */
+    launchAnswerLost: undefined as Error | undefined,
   }
   let fail: ((error: Error) => void) | undefined
 
@@ -122,9 +124,11 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
         const from = Math.max(Number(offset), bytes.length - Number(max))
         return output(`${bytes.length} ${from}\n${decoder.decode(bytes.slice(from))}`)
       }
-      if (script === STOP_RUNTIME) {
-        state.stops.push(dir)
-        state.launches.delete(dir)
+      if (script === STOP_RUNTIMES) {
+        for (const launch of [...state.launches.keys()].filter((path) => path.startsWith(`${dir}/`))) {
+          state.stops.push(launch)
+          state.launches.delete(launch)
+        }
         return output()
       }
       if (script === LAUNCH_RUNTIME) {
@@ -136,6 +140,9 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
           launch.stderr = outcome.stderr ?? ""
         }
         state.launches.set(dir, launch)
+        const lost = state.launchAnswerLost
+        state.launchAnswerLost = undefined
+        if (lost) throw lost
         return output()
       }
       throw new Error(`unexpected script ${script?.slice(0, 40)}`)

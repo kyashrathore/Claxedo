@@ -96,10 +96,19 @@ describe("runtime log forwarding", () => {
     expect(warn.mock.calls[0]?.[1]).toMatchObject({ skippedBytes: firstWholeLine, dropped: expect.any(Number) })
   })
 
-  test("a launch with no log yet forwards nothing and keeps its place", async () => {
+  test("a launch not yet ready, whose runtime has not opened its log, forwards nothing and keeps its place", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
     dir = mkdtempSync(join(tmpdir(), "runtime-log-forward-"))
-    expect(await forwardRuntimeLog(shellContainer(), join(dir, "operator.log"), LAUNCH, undefined, {})).toEqual({ launchId: "launch-1", offset: 0 })
+    expect(await forwardRuntimeLog(shellContainer(), join(dir, "operator.log"), { ...LAUNCH, ready: false }, undefined, {})).toEqual({ launchId: "launch-1", offset: 0 })
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  test("a ready launch with no log, which the runtime opens before it answers, is reported once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    dir = mkdtempSync(join(tmpdir(), "runtime-log-forward-"))
+    const file = join(dir, "operator.log")
+    const first = await forwardRuntimeLog(shellContainer(), file, LAUNCH, undefined, { workspaceId: "ws_1", epoch: 2 })
+    await forwardRuntimeLog(shellContainer(), file, LAUNCH, first, { workspaceId: "ws_1", epoch: 2 })
+    expect(warn.mock.calls).toEqual([["workspace-runtime operator log missing", { workspaceId: "ws_1", epoch: 2, launchId: "launch-1", file }]])
   })
 })

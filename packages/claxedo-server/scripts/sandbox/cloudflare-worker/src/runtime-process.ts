@@ -39,15 +39,18 @@ elif [ -e "$dir/exit-code" ]; then echo "exited $(cat "$dir/exit-code")"
 else echo lost
 fi`
 
-/** SIGTERM to the group, SIGKILL after 5 seconds, then the launch is forgotten. */
-export const STOP_RUNTIME = `dir=$1
-if [ ! -e "$dir/exit-code" ] && read -r pid 2>/dev/null <"$dir/pid" && kill -0 "$pid" 2>/dev/null; then
-  kill -s TERM -- "-$pid" 2>/dev/null
-  i=0
-  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-  kill -s KILL -- "-$pid" 2>/dev/null
-fi
-rm -rf "$dir"`
+/** Every launch under the root, recorded or not: SIGTERM to its group, SIGKILL after 5 seconds, then its directory is gone. */
+export const STOP_RUNTIMES = `root=$1
+for dir in "$root"/*; do
+  [ -d "$dir" ] || continue
+  if [ ! -e "$dir/exit-code" ] && read -r pid 2>/dev/null <"$dir/pid" && kill -0 "$pid" 2>/dev/null; then
+    kill -s TERM -- "-$pid" 2>/dev/null
+    i=0
+    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    kill -s KILL -- "-$pid" 2>/dev/null
+  fi
+  rm -rf "$dir"
+done`
 
 export type RuntimeLaunch = { id: string; launchedAt: number; ready: boolean }
 
@@ -116,8 +119,13 @@ async function currentRuntime(host: RuntimeHost): Promise<Existing | undefined> 
   return undefined
 }
 
-async function stopRuntime(host: RuntimeHost, launch: RuntimeLaunch) {
-  await bounded(run(host.container, ["sh", "-c", STOP_RUNTIME, "stop", launchDir(launch)]), "workspace-runtime stop")
+/**
+ * Ends every launch the container holds, not only the recorded one: a launch
+ * whose exec answer was lost started its process without being recorded, and
+ * left running it keeps the port while the next launch is recorded in its place.
+ */
+async function stopRuntimes(host: RuntimeHost) {
+  await bounded(run(host.container, ["sh", "-c", STOP_RUNTIMES, "stop", RUNTIME_ROOT]), "workspace-runtime stop")
   await host.launches.delete()
 }
 
@@ -185,7 +193,7 @@ async function exitReason(host: RuntimeHost, launch: RuntimeLaunch, status: Runt
     launchLog(host.container, launch, "stderr").catch(() => ""),
   ])
   console.error("workspace-runtime exited before it was ready", { status, stdout: safeRuntimeLog(stdout), stderr: safeRuntimeLog(stderr) })
-  await stopRuntime(host, launch)
+  await stopRuntimes(host)
   const ended = status.state === "exited" ? `exit code ${status.exitCode}` : status.state
   return bootFailure(stderr) ?? `The workspace runtime process ended (${ended}) before it was ready`
 }
@@ -227,11 +235,9 @@ export async function ensureRuntimeProcess(
   options: { reuseRunning: boolean },
 ): Promise<RuntimeEnsure> {
   const existing = await currentRuntime(host)
-  if (existing) {
-    const kept = options.reuseRunning ? await keptRuntime(host, existing, port) : undefined
-    if (kept) return kept
-    await stopRuntime(host, existing.launch)
-  }
+  const kept = existing && options.reuseRunning ? await keptRuntime(host, existing, port) : undefined
+  if (kept) return kept
+  await stopRuntimes(host)
   return await settledRuntime(host, await launchRuntime(host, command, env), port)
 }
 
