@@ -114,6 +114,7 @@ describe("native provider delivery", () => {
         placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
         authMode: "api-key",
         apiPath: "/v1",
+        account: { credentialId: credential.id, providerId: "claude-sdk", revision: 1 },
       },
     })
   })
@@ -232,7 +233,8 @@ describe("native provider delivery", () => {
       methods: ["POST"], pathPrefixes: ["/auth/exchange_user_api_key"],
     }])
     expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
-      "cursor-sdk": { baseUrl: "https://api2.cursor.sh", placeholderEnv: secret.name, authMode: "bearer" },
+      "cursor-sdk": { baseUrl: "https://api2.cursor.sh", placeholderEnv: secret.name, authMode: "bearer",
+        account: { credentialId: credential.id, providerId: "cursor-sdk", revision: 1 } },
     })
     expect(JSON.stringify(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }))).not.toContain("cursor-private-key")
     expect(credentialReach({ provider_id: "cursor-sdk", kind: "api_key" })).toEqual({ local: true, cloud: true })
@@ -474,6 +476,7 @@ describe("native provider delivery", () => {
         placeholderEnv: expect.stringMatching(/^CLAXEDO_PROVIDER_CLAUDE_SDK_[0-9A-F]{24}$/),
         authMode: "api-key",
         apiPath: "/v1",
+        account: { credentialId: credential.id, providerId: "claude-sdk", revision: 1 },
       },
     })
   })

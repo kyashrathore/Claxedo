@@ -227,7 +227,6 @@ export function createHostedEgressBroker(input: {
           baseUrl: bindingBaseUrl(input.origin, id),
           authMode: destinationAuthMode(destination),
           ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
-          account: { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}) },
         }
         if (!lease) return { ...route, placeholder: DRAFT_PLACEHOLDER }
         const { placeholder, expiresAt } = await mintBrokerPlaceholder({ identity: leaseIdentity({ userId, orgId, workspaceId }, lease), bindingId: id, credentialId: credential.id }, input.env, { now })

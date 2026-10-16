@@ -1,5 +1,5 @@
-import { expiryFromJwt, HARNESS_TABLE, type ProviderDirect } from "@claxedo/agent-runtime-contract"
-import type { Clock, StartInput } from "../../contract"
+import { expiryFromJwt, HARNESS_TABLE, turnAccountFor, type ProviderDirect, type TurnAccount } from "@claxedo/agent-runtime-contract"
+import type { Clock, ResolvedCredentials, StartInput } from "../../contract"
 import { codexPlanAccountId, selectedCodexAccount } from "../../profiles/codex"
 
 const RENEW_BEFORE_MS = 10 * 60 * 1000
@@ -13,6 +13,11 @@ export function codexAccountIdentity(input: Pick<StartInput, "credentials" | "se
   if (!account) return "own-login"
   const credential = account.kind === "brokered" ? account.binding.account : account.plan.account
   return credential ? `account:${credential.credentialId}` : `session:${input.sessionId}`
+}
+
+export function codexTurnAccount(credentials: ResolvedCredentials): TurnAccount | undefined {
+  const account = selectedCodexAccount(credentials)
+  return turnAccountFor("codex", account?.kind === "plan" ? account.plan : account?.binding)
 }
 
 function tokenExpiry(row: ProviderDirect): number | undefined {

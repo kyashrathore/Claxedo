@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { accountHolderOf, holderAccountSources, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
-import { HARNESS_NEEDS_BROKERING, ORG_ACCOUNT_UNAVAILABLE, type CredentialSnapshot, type ProviderBindingSource, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { HARNESS_NEEDS_BROKERING, ORG_ACCOUNT_UNAVAILABLE, type BindingAccount, type CredentialSnapshot, type ProviderBindingSource, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { destinationAuthMode, builtInProviderDestination, builtInProviderDestinationShape, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { isSubscriptionKind } from "./secret-material"
@@ -95,6 +95,10 @@ function undeliverable(credential: CredentialMetadata, reason: string): RefusedD
   }
 }
 
+function deliveredAccount(credential: CredentialMetadata): BindingAccount {
+  return { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}), revision: credential.revision }
+}
+
 function directFromDestination(credential: CredentialMetadata, destination: ProviderDestination): ProviderDirect {
   return {
     delivery: "direct",
@@ -103,7 +107,7 @@ function directFromDestination(credential: CredentialMetadata, destination: Prov
     secret: destination.value,
     authKind: isSubscriptionKind(credential.kind) ? "subscription" : "api-key",
     ...(credential.expires_at ? { expiresAt: credential.expires_at } : {}),
-    account: { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}), revision: credential.revision },
+    account: deliveredAccount(credential),
   }
 }
 
@@ -145,6 +149,7 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
       placeholderEnv: name,
       authMode: destinationAuthMode(destination),
       ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
+      account: deliveredAccount(credential),
     },
   }
 }
@@ -251,7 +256,7 @@ async function brokeredDelivery(credential: CredentialMetadata, destination: Pro
     credentialId: credential.id,
     userId: credential.owner ?? null,
     revision: credential.revision,
-    projection: await broker.bind(credential, destination),
+    projection: { ...await broker.bind(credential, destination), account: deliveredAccount(credential) },
   }
 }
 

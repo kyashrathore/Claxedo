@@ -55,7 +55,8 @@ const methods: Record<string, Shape> = {
   "thread/backgroundTerminals/terminate": { required: ["threadId", "processId"], fields: { threadId: text, processId: text } },
   "thread/archive": { required: ["threadId"], fields: { threadId: text } },
   "thread/unsubscribe": { required: ["threadId"], fields: { threadId: text } },
-  "account/login/start": { required: ["type", "apiKey"], fields: { type: oneOf("apiKey"), apiKey: text } },
+  "account/login/start": { required: ["type"], fields: { type: oneOf("apiKey", "chatgptAuthTokens"), apiKey: optional(text),
+    accessToken: optional(text), chatgptAccountId: optional(text) } },
   "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
     clientUserMessageId: optional(text), input: list(userInput) } },
 }
@@ -125,7 +126,7 @@ export class CodexPeer {
       return {}
     }
     if (frame.method === "thread/unsubscribe") return this.unsubscribe(String(params.threadId))
-    if (frame.method === "account/login/start") { this.logins.push(String(params.apiKey)); return { type: "apiKey" } }
+    if (frame.method === "account/login/start") { this.logins.push(String(params.apiKey ?? params.accessToken)); return { type: params.type } }
     if (frame.method === "turn/start") return this.start(params)
     if (frame.method === "turn/settings/update") {
       if (this.script.turnSettingsFailures) { this.script.turnSettingsFailures--; throw new CodexScriptedFailure("native live settings refused") }

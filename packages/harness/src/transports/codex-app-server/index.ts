@@ -1,10 +1,10 @@
 import { prefixedRandomId, settleAtRequestDeadline } from "@claxedo/helpers"
-import { HARNESS_TABLE, type SessionTitleRequest } from "@claxedo/agent-runtime-contract"
+import type { SessionTitleRequest } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, BackgroundTaskRef, ConfigApplied, Deadline, DraftLaunch, HarnessServices, HarnessSession, HarnessTransport,
   HealthOperations, RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { draftProbeKey, DraftProbeCache, ProcessLosses, selectedTurnAccount, sessionConnectionHealth } from "../../contract/node"
+import { draftProbeKey, DraftProbeCache, ProcessLosses, sessionConnectionHealth } from "../../contract/node"
 import { withTurnAccount } from "../../translate/turn-account"
 import { codexProbeInputs } from "../../profiles/codex"
 import { createCodexConfig } from "./config"
@@ -21,6 +21,7 @@ import { stopCodexChild } from "./native-children"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { CodexSessions } from "./sessions"
 import { codexSessionTitle } from "./titles"
+import { codexTurnAccount } from "./account"
 import { runCodexTurn } from "./turn"
 
 export type { CodexTransportOptions, Entry } from "./entry"
@@ -114,7 +115,7 @@ export class CodexAppServerTransport implements HarnessTransport {
     entry.usage.attach({ sessionId: session.binding.sessionId, directory: session.directory, assistantMessageId: turn.assistantMessageId })
     yield* withTurnAccount(runCodexTurn(entry, session, turn, broker, this.services, () => this.models(entry),
       () => this.cancel(session, { turnId: turn.turnId, assistantMessageId: turn.assistantMessageId }, codexRetirementDeadline(this.services))),
-    selectedTurnAccount("codex", entry.start.credentials, HARNESS_TABLE.codex.providerIds))
+    codexTurnAccount(entry.start.credentials))
   }
 
   async cancel(session: HarnessSession, _turn: TurnRef, deadline: Deadline) {

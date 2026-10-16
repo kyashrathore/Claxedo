@@ -121,7 +121,7 @@ test("an owner on the team account gets a binding for the organization's key in 
   await store.setAccountSources(["claude-sdk", "claude-acp", "anthropic"], "org", "org", "owner")
   const { snapshot, row } = await pushed()
   if (!row || isProviderUnavailable(row)) throw new Error(`the team account was not delivered: ${JSON.stringify(row)}`)
-  expect(row.account).toEqual({ credentialId: team.id, providerId: "anthropic", label: "Team" })
+  expect(row.account).toEqual({ credentialId: team.id, providerId: "anthropic", label: "Team", revision: team.revision })
   expect(await verifyBrokerPlaceholder(row.placeholder!, signing)).toMatchObject({ userId: "org:org", credentialId: team.id, workspaceId: "ws-a" })
   expect(snapshot.auth.accounts.owner?.["claude-sdk"]).toEqual({ unavailable: true, reason: "org_account_unavailable" })
   expect(JSON.stringify(snapshot)).not.toContain("sk-ant-api03")

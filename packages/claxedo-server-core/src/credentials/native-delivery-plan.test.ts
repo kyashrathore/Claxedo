@@ -118,11 +118,26 @@ describe("native provider delivery through the plane's broker", () => {
     expect(rows).toEqual([
       { providerId: "anthropic", credentialId: "key", userId: "user_owner", revision: 1, projection: {
         baseUrl: "https://api.claxedo.test/bindings/key", placeholder: "placeholder-key", authMode: "api-key", apiPath: "/v1", expiresAt: 10_000,
+        account: { credentialId: "key", providerId: "anthropic", revision: 1 },
       } },
       expect.objectContaining({ providerId: "codex-app-server", direct: expect.objectContaining({ authKind: "subscription" }) }),
     ])
     expect(rows[0]).not.toHaveProperty("secret")
     expect(bound).toEqual(["key"])
+  })
+
+  test("every form of delivery names the stored account it spends, so a turn on it is filed against that credential", async () => {
+    const rows = [
+      credential({ id: "subscription", provider_id: "claude-sdk", kind: "oauth_token", label: "Claude plan", revision: 3 }),
+      credential({ id: "plan", provider_id: "codex-app-server", kind: "oauth_token", label: "ChatGPT plan", revision: 2 }),
+    ]
+    const accounts = [
+      { credentialId: "plan", providerId: "codex-app-server", label: "ChatGPT plan", revision: 2 },
+      { credentialId: "subscription", providerId: "claude-sdk", label: "Claude plan", revision: 3 },
+    ]
+    const named = (delivered: Awaited<ReturnType<typeof walk>>) => delivered.map((row) => (row.direct ?? row.projection) as { account?: unknown })
+    expect(named(await walk(rows, { secretBrokering: "native" })).map((row) => row.account)).toEqual(accounts)
+    expect(named(await walk(rows, { secretBrokering: "none", broker: recordingBroker().broker })).map((row) => row.account)).toEqual(accounts)
   })
 
   test("a driver with its own edge never meets the broker", async () => {

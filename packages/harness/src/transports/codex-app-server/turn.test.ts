@@ -57,3 +57,12 @@ test("a failed Codex turn names the account it ran on: this computer's login, or
     baseUrl: "http://127.0.0.1:1/bindings/b1", apiPath: "/v1", placeholder: "placeholder", authMode: "bearer", account } } }))
     .toMatchObject({ type: "error", account: { kind: "stored", harnessId: "codex", ...account } })
 })
+
+test("a failed Codex turn on a ChatGPT plan handed over directly names the plan's stored credential, not this computer's login", async () => {
+  const account = { credentialId: "plan-1", providerId: "codex-app-server", label: "member@example.com", revision: 2 }
+  const claims = { exp: Math.floor(Date.now() / 1000) + 3600, "https://api.openai.com/auth": { chatgpt_account_id: "acct-member" } }
+  const secret = ["none", claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".sig"
+  expect(await failedTurnError({ machineLoginAllowed: false, direct: { "codex-app-server": {
+    delivery: "direct", baseUrl: "http://127.0.0.1:1", apiPath: "/backend-api/codex", secret, authKind: "subscription", account } } }))
+    .toMatchObject({ type: "error", account: { kind: "stored", harnessId: "codex", ...account } })
+})
