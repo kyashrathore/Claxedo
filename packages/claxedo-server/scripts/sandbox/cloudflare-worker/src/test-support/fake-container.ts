@@ -149,6 +149,7 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
             if (!launch || launch.state !== "running" || !state.healthy(launch)) throw new Error("connection refused")
             return new Response("ok")
           }
+          if (current()?.state !== "running") throw new Error(`The container is not listening in the TCP address 10.0.0.1:${port}`)
           state.proxied.push(`${port}${url.pathname}`)
           return new Response(`proxied ${url.pathname}`)
         },

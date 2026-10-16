@@ -253,7 +253,18 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
   override async fetch(request: WorkerRequest): Promise<WorkerResponse> {
     const container = this.container()
     const idle = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
-    if (!container.running || !idle) return workerResponse(Response.json({ error: "The workspace machine is not running" }, { status: 503 }))
-    return workerResponse(await container.getTcpPort(idle.port).fetch(domRequest(request)))
+    if (!container.running || !idle) return runtimeUnavailable("The workspace machine is not running")
+    try {
+      return workerResponse(await container.getTcpPort(idle.port).fetch(domRequest(request)))
+    } catch (error) {
+      // A port nothing listens on throws; uncaught, the platform answers the relay with its 1101 HTML page.
+      console.warn("workspace runtime did not answer", { workspaceId: idle.workspaceId, epoch: idle.epoch, error: String(error) })
+      return runtimeUnavailable("The workspace runtime is not answering")
+    }
   }
+}
+
+/** The relay's own envelope for a hop that never reached the runtime, which its clients read as a machine that didn't answer. */
+function runtimeUnavailable(message: string) {
+  return workerResponse(Response.json({ error: { code: "upstream_unavailable", message } }, { status: 503 }))
 }
