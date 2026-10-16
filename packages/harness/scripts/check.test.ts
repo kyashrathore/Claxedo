@@ -50,6 +50,12 @@ test("size counts files and function bodies with the compiler AST", () => {
   fails("size", "src/contract/long.ts", `const f = () => {\n${"  void 0\n".repeat(40)}}\n`, /Split the function body/)
 })
 
+test("a generated data module counts toward no size or budget", () => {
+  const data = `// @generated from the engine\nexport const ROWS = [\n${"  [\"id\"],\n".repeat(400)}]\n`
+  passes("size", "src/transports/opencode-sdk/bundled-models.generated.ts", data)
+  passes("budget", "src/transports/opencode-sdk/bundled-models.generated.ts", data, { budgets: { ...budgets, "transports/opencode-sdk": 10 } })
+})
+
 test("core-boundary enforces direction for relative imports and vendor SDKs", () => {
   passes("core-boundary", "src/broker/good.ts", 'import type { X } from "../contract/x"\n')
   fails("core-boundary", "src/broker/bad.ts", 'import type { X } from "../transports/acp/x"\n', /Move this dependency/)

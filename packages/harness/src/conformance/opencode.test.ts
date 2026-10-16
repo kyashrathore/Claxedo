@@ -8,6 +8,7 @@ import { startScriptedModelServer } from "../../e2e/harness/scripted-model-serve
 import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress, type EgressGuard } from "../../e2e/harness/egress-guard"
 import { OpenCodeSdkTransport } from "../transports/opencode-sdk"
+import { openCodeBundledModels } from "../transports/opencode-sdk/bundled-models"
 import { OpenCodeOwnerMismatchError } from "../transports/opencode-sdk/errors"
 import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
 import { WorkspaceScope } from "../transports/opencode-sdk/scope"
@@ -842,6 +843,30 @@ test("a draft's capabilities list the models of the accounts its owner holds, be
     const selection = (await transport.capabilities({ directory: state.directory, draft })).modelSelection
     const offered = selection.status === "required" ? selection.models.map((row) => `${row.providerId}/${row.modelId}`) : []
     expect(offered).toContain("carried/carried")
+  } finally {
+    await transport.dispose()
+    await state.close()
+  }
+}, 60_000)
+
+test("a draft bound to vendor accounts lists exactly the engine's bundled models of those vendors, and the engine never refreshes them", async () => {
+  const state = await backend()
+  const transport = new OpenCodeSdkTransport(createTestServices(), { databasePath: path.join(state.root, "opencode.db") })
+  try {
+    const bundled = openCodeBundledModels(["anthropic", "openai"])
+    const first = bundled[0]
+    if (!first) throw new Error("the bundled list has no Anthropic or OpenAI model")
+    const vendor = { baseUrl: state.server.v1Url, placeholder: "vendor-placeholder", authMode: "api-key" as const }
+    const model = { providerID: first.providerID, modelID: first.id }
+    const draft = { workspaceId: "w1", directory: state.directory, locality: "remote" as const, owner: { kind: "person" as const, userId: "owner" },
+      config: { harness: state.harness, model }, model, projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] },
+      credentials: { ...state.credentials, providers: { anthropic: vendor, openai: vendor } } }
+    const capabilities = await transport.capabilities({ directory: state.directory, draft })
+    const selection = capabilities.modelSelection
+    const offered = selection.status === "required" ? selection.models.map((row) => `${row.providerId}/${row.modelId} ${row.name}`) : []
+    expect(offered.sort()).toEqual(bundled.map((row) => `${row.providerID}/${row.id} ${row.name}`).sort())
+    const levels = capabilities.effortLevels.models.map((row) => `${row.modelID} ${row.levels.join(",")}`)
+    for (const row of bundled.filter((entry) => entry.variants?.length)) expect(levels).toContain(`${row.id} ${row.variants?.join(",")}`)
   } finally {
     await transport.dispose()
     await state.close()

@@ -81,8 +81,8 @@ function isTestCode(path: string): boolean {
   return /\.test\.[cm]?[jt]sx?$/.test(path) || /\/test-(?:support|utils)\//.test(path)
 }
 
-function isGeneratedProtocol(path: string): boolean {
-  return /^src\/transports\/codex-app-server\/(?:.*\/)?(?:generated|generated-protocol|protocol)\//.test(path)
+function isGenerated(path: string): boolean {
+  return /^src\/transports\/codex-app-server\/(?:.*\/)?(?:generated|generated-protocol|protocol)\//.test(path) || path.endsWith(".generated.ts")
 }
 
 function isTypeContext(node: ts.Node): boolean {
@@ -160,7 +160,7 @@ export function check(sources: Source[], agentsText: string, budgets: Record<str
   const add = (path: string, line: number, rule: Rule, fix: string) => violations.push({ path, line, rule, fix })
 
   for (const { path, text } of sources) {
-    if (!path.startsWith("src/") || isGeneratedProtocol(path)) continue
+    if (!path.startsWith("src/") || isGenerated(path)) continue
     const parts = path.split("/")
     const part = parts[1] === "transports" ? `transports/${parts[2]}` : parts[1]
     const production = !isTestCode(path)
