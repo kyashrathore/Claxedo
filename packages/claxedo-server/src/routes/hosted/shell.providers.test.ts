@@ -33,10 +33,8 @@ test("hosted provider discovery verifies workspace identity and sends the caller
   expect(w.mint).toHaveBeenCalledWith(expect.objectContaining({ principalKind: "user", actorId: "actor_a", userId: "user_a", orgId: "org_a", workspaceId: "ws_a", role: "owner" }))
 })
 
-test("a stopped or unnamed workspace has no engine catalog and does not mint or wake compute", async () => {
+test("a stopped workspace has no engine catalog and does not mint or wake compute", async () => {
   const w = world()
-  expect(await w.read(auth, undefined)).toBeUndefined()
-  expect(w.open).not.toHaveBeenCalled()
   w.target.mockResolvedValue({ status: "unavailable", reason: "runtime_stopped", leaseStatus: "stopped" })
   expect(await w.read(auth, "ws_a")).toBeUndefined()
   expect(w.mint).not.toHaveBeenCalled()

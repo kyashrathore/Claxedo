@@ -1,10 +1,10 @@
-import { HARNESS_TABLE, harnessForProviderId, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_TABLE, harnessForProviderId, VENDOR_PROVIDER_NAMES, type HarnessId } from "@claxedo/agent-runtime-contract"
 import type { ProviderCatalogEntry, ProviderModel } from "@claxedo/harness/contract"
+import { openCodeBundledModels } from "@claxedo/harness/opencode-models"
 import type { CustomProviderConfig } from "./custom-provider"
 import { PROVIDER_AUTH_KINDS } from "./account-kinds"
 import { deliveredDirect } from "./reach"
 import type { CredentialMetadata } from "./types"
-import { VENDOR_PROVIDER_NAMES } from "./vendor-providers"
 
 export type OpenCodeCatalogModel = {
   id: string
@@ -53,25 +53,39 @@ function providerModels(provider: CustomProviderConfig): ProviderModel[] {
   return Object.entries(provider.models).map(([id, model]) => ({ providerID: provider.providerID, id, name: model.name, cost: [] }))
 }
 
+type VendorModels = (vendor: string, accounts: readonly CredentialMetadata[]) => ProviderModel[]
+
 /**
- * With no workspace engine to ask — none is named yet, as in onboarding, or
- * its cloud sandbox is not running — the credential registry answers: the
- * vendors it brokers to, connected where the caller or the org holds an available account,
- * and the org's declared providers, connected unless every account stored
- * for them is refused. No models are listed for a vendor, because only an
- * engine knows which it can run.
+ * With no workspace engine to ask, the credential registry answers: the
+ * vendors it brokers to, connected where the caller or the org holds an
+ * available account, with the models `vendorModels` names, and the org's
+ * declared providers, connected unless every account stored for them is
+ * refused.
  */
-function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, credentials: readonly CredentialMetadata[]): ProviderCatalogEntry[] {
+function accountEntries(declared: ReadonlyMap<string, CustomProviderConfig>, credentials: readonly CredentialMetadata[], vendorModels: VendorModels): ProviderCatalogEntry[] {
   const accounts = credentials.filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))
   const available = (ids: readonly string[]) => accounts.some((credential) => ids.includes(credential.provider_id) && credential.status === "available")
   const vendors = Object.entries(VENDOR_PROVIDER_NAMES).map(([id, name]): ProviderCatalogEntry => ({
-    id, name, env: [], connected: accounts.some((credential) => openCodeSpends(id, credential) && credential.status === "available"), models: [],
+    id, name, env: [], connected: accounts.some((credential) => openCodeSpends(id, credential) && credential.status === "available"),
+    models: vendorModels(id, accounts),
   }))
   const custom = [...declared.values()].map((provider): ProviderCatalogEntry => ({
     id: provider.providerID, name: provider.name, env: provider.env, models: providerModels(provider),
     connected: available([provider.providerID]) || !accounts.some((credential) => credential.provider_id === provider.providerID),
   }))
   return [...vendors.filter((vendor) => !declared.has(vendor.id)), ...custom]
+}
+
+/**
+ * The engine entries of a cloud workspace that does not exist yet, such as the
+ * one a cloud Task starts in. Its engine runs the models.dev snapshot it was
+ * built with and never refreshes it, so a vendor reached through its own
+ * account lists that snapshot's models. A ChatGPT plan lists none: the engine
+ * reads a plan's models from the plan once it runs.
+ */
+export function openCodeLaunchEntries(credentials: readonly CredentialMetadata[]): ProviderCatalogEntry[] {
+  return accountEntries(new Map(), credentials, (vendor, accounts) =>
+    vendorAccountSource(vendor, accounts).source === "api" ? openCodeBundledModels([vendor]) : [])
 }
 
 /**
@@ -109,7 +123,7 @@ export function projectOpenCodeProviderCatalog(options: {
 }): OpenCodeCatalog {
   const declared = new Map(options.declared.map((provider) => [provider.providerID, provider]))
   const credentials = options.credentials
-  const entries = new Map((options.engine ?? accountEntries(declared, credentials)).map((entry) => [entry.id, entry]))
+  const entries = new Map((options.engine ?? accountEntries(declared, credentials, () => [])).map((entry) => [entry.id, entry]))
   const accounts = credentials.filter((credential) => (PROVIDER_AUTH_KINDS as readonly string[]).includes(credential.kind))
   for (const provider of declared.values()) {
     if (entries.has(provider.providerID)) continue

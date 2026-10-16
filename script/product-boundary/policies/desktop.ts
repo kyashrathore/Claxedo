@@ -687,8 +687,12 @@ export const desktopRenderer: Policy = {
   // start are in flight, split from the start offers' wiring so it runs
   // without the UI kit (owner: the app's tasks domain,
   // `tasks/data/start-run.ts`). It adds no package edge.
-  // 1392/36, no headroom.
-  ceilings: { modules: 1392, packages: 36 },
+  // A cloud OpenCode preset's model picker and the models it offers from
+  // OpenCode's provider catalog read with no workspace (owner: the app's tasks
+  // domain, `tasks/presets/cloud-catalog-model-picker.tsx`,
+  // `tasks/presets/cloud-catalog-models.ts`). They add no package edge.
+  // 1394/36, no headroom.
+  ceilings: { modules: 1394, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
