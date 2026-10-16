@@ -89,7 +89,7 @@ export function leaseLabels(input: unknown): Record<string, string> | null {
 
 type CheckpointMetadata = SandboxCheckpointReference["metadata"]
 
-const CAPTURE_SCOPES: readonly CheckpointMetadata["scope"][] = ["same-resource", "filesystem", "directories"]
+const CAPTURE_SCOPES: readonly CheckpointMetadata["scope"][] = ["same-resource", "filesystem"]
 const CAPTURE_SOURCE_BEHAVIORS: readonly CheckpointMetadata["sourceBehavior"][] = [
   "preserved",
   "stopped",
@@ -97,7 +97,6 @@ const CAPTURE_SOURCE_BEHAVIORS: readonly CheckpointMetadata["sourceBehavior"][] 
 ]
 const RESTORE_MOUNTS: readonly CheckpointMetadata["restoreMount"][] = [
   "same-resource",
-  "copy-on-write",
   "new-resource",
 ]
 

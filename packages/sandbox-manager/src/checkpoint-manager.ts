@@ -212,6 +212,6 @@ function requireCaptureSource(value: string) {
 }
 
 function requireRestoreMount(value: string) {
-  if (value === "same-resource" || value === "copy-on-write" || value === "new-resource") return value
+  if (value === "same-resource" || value === "new-resource") return value
   throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_capabilities_invalid")
 }

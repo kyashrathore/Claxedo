@@ -16,9 +16,9 @@ export { DEFAULT_WORKSPACE_RUNTIME_PORT }
 
 export type SandboxRegion = string
 
-export type SandboxCaptureScope = "none" | "same-resource" | "filesystem" | "directories"
+export type SandboxCaptureScope = "none" | "same-resource" | "filesystem"
 export type SandboxCaptureSourceBehavior = "not-applicable" | "preserved" | "stopped" | "deleted"
-export type SandboxRestoreMountBehavior = "not-applicable" | "same-resource" | "copy-on-write" | "new-resource"
+export type SandboxRestoreMountBehavior = "not-applicable" | "same-resource" | "new-resource"
 
 export type SandboxPersistenceCapabilities = {
   resume: "same-sandbox" | "replacement-restore"
@@ -41,9 +41,6 @@ export function validateSandboxPersistenceCapabilities(input: SandboxPersistence
   }
   if (input.capture === "same-resource" && input.restoreMount !== "same-resource") {
     return { valid: false as const, reason: "same-resource capture requires same-resource restore" }
-  }
-  if (input.restoreMount === "copy-on-write" && input.capture !== "directories") {
-    return { valid: false as const, reason: "copy-on-write restore requires directory capture" }
   }
   return { valid: true as const }
 }

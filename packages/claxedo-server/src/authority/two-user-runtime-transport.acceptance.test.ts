@@ -56,7 +56,7 @@ const sandboxManager = {
       workspaceId: "ws_runtime_private",
       status: "ready",
       labels: {},
-      persistence: { capture: "filesystem", restore: "copy-on-write" },
+      persistence: { capture: "filesystem", restore: "new-resource" },
     },
   ]),
 } as unknown as SandboxManager
