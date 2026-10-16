@@ -1,4 +1,5 @@
-import { startServer, waitForWorkspaceRuntimeServerPort } from "@claxedo/workspace-runtime"
+import { startEventLoopStallMonitor, startServer, waitForWorkspaceRuntimeServerPort } from "@claxedo/workspace-runtime"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { WORKSPACE_RUNTIME_BOOT_FAILED } from "./boot-contract"
 import type { ClaxedoWorkspaceRuntimeBoot } from "./runtime-boot"
 
@@ -40,7 +41,9 @@ export async function runWorkspaceRuntimeHost(
     io.exit(BOOT_FAILURE_EXIT_CODE)
     return
   }
-  const server = startServer(started.port, started.options, { signals: true })
+  const log = Log.create({ service: "workspace-runtime" })
+  startEventLoopStallMonitor({ warn: (message, extra) => log.warn(message, extra) })
+  const server = await startServer(started.port, started.options, { signals: true })
   const port = await waitForWorkspaceRuntimeServerPort(server, started.port)
   io.log(
     `[claxedo-workspace-runtime] listening on http://${started.hostname}:${port}`

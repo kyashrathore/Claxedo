@@ -1,5 +1,5 @@
 {
-  "contract": 1289,
+  "contract": 1290,
   "rpc": 300,
   "translate": 555,
   "broker": 2300,
@@ -11,6 +11,6 @@
   "transports/cursor-sdk": 1872,
   "transports/acp": 3149,
   "transports/pi-durable": 1811,
-  "transports/opencode-sdk": 3187,
+  "transports/opencode-sdk": 3196,
   "compose.ts": 62
 }

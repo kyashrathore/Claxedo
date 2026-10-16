@@ -50,6 +50,10 @@ export class WorkspaceScope {
   }
 }
 
+export function catalogScope(directory: string): WorkspaceScope {
+  return WorkspaceScope.authorize({ workspaceID: "opencode-catalog", directory })
+}
+
 export function sameScope(a: WorkspaceScope, b: WorkspaceScope): boolean {
   return a.workspaceID === b.workspaceID && a.directory === b.directory
 }

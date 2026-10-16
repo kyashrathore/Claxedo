@@ -9,7 +9,7 @@ import { createRelayHostAuthMiddleware } from "@claxedo/session-core/relay-host"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import { ExecutionEnvRoutes } from "../routes/execution-env"
 import { WorkspaceRuntimeRoutes } from "../routes/manifest"
-import { waitForWorkspaceRuntimeServerPort } from "../server"
+import { waitForWorkspaceRuntimeServerPort } from "../serve"
 import { createSpawnService } from "../spawn-service"
 
 export type ExecutionEnvClaims = {

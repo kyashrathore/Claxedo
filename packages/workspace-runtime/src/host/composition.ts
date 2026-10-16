@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import path from "node:path"
 import { sweepHarnessHomeRoot } from "./home-use"
 import { userHomeDir } from "@claxedo/helpers/path"
@@ -49,9 +49,23 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
     }),
     opencode: () => {
       mkdirSync(input.opencodeRoot, { recursive: true })
-      return { databasePath: path.join(input.opencodeRoot, "opencode.db"), persistEvents: true }
+      return { databasePath: openCodeDatabasePath(input.opencodeRoot), persistEvents: true }
     },
   }
+}
+
+function openCodeDatabasePath(opencodeRoot: string) {
+  return path.join(opencodeRoot, "opencode.db")
+}
+
+/**
+ * The embedded engines this host prepares before it listens. OpenCode's boot
+ * holds the event loop for seconds on a small sandbox, so it is prepared only
+ * where its database shows the workspace has run it; the opencode-sdk README
+ * has the measurements.
+ */
+export function harnessesToPrepare(input: Pick<HarnessCompositionInput, "opencodeRoot">): readonly "opencode"[] {
+  return existsSync(openCodeDatabasePath(input.opencodeRoot)) ? ["opencode"] : []
 }
 
 export async function sweepIdleHarnessHomes(harnessStateRoot: string, now = Date.now()): Promise<string[]> {

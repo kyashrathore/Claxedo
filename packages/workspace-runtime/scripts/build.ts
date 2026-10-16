@@ -35,6 +35,9 @@ const LIBRARY_EXTERNALS = [
   "@claxedo/agent-runtime-contract/*",
   "@claxedo/process-ownership",
   "@claxedo/process-ownership/*",
+  // The harness names its engine boots in this registry and the stall monitor
+  // reads it, so both must share the installed copy.
+  "@claxedo/helpers/event-loop-activity",
   "@claxedo/session-core",
   "@claxedo/harness",
   "@claxedo/harness/*",

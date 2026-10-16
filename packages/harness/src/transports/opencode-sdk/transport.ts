@@ -18,7 +18,7 @@ import { cancelOpenCodeTurn } from "./cancel.js"
 import { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime.js"
 
 export type OpenCodeSdkTransportOptions = OpenCodeRuntimeOptions
-import { WorkspaceScope } from "./scope.js"
+import { catalogScope, WorkspaceScope } from "./scope.js"
 import { promptRequest, runOpenCodeTurn } from "./turn.js"
 import { createKeyedSerializer, errorMessage, singleFlightUntil } from "@claxedo/helpers"
 import { attachedSessionEntry, mergeStartInput, sessionConnectionHealth, sessionMcpServers } from "../../contract"
@@ -149,7 +149,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     const entry = context.sessionId ? this.entries.get(context.sessionId) : undefined
     if (entry) return openCodeCapabilities(await this.runtime.catalog.models(entry.scope))
     if (context.draft) return openCodeCapabilities(await this.readAsDraft(context.draft, (scope) => this.runtime.catalog.models(scope)))
-    return openCodeCapabilities(await this.runtime.catalog.models(WorkspaceScope.authorize({ workspaceID: "opencode-catalog", directory: context.directory })))
+    return openCodeCapabilities(await this.runtime.catalog.models(catalogScope(context.directory)))
+  }
+
+  async prepare(directory: string) {
+    await openCodeLocationClient(this.runtime.host, catalogScope(directory).directory)
   }
 
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker) {

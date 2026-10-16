@@ -3,12 +3,8 @@
 import { storeBackedSessionPlacement } from "./store-file"
 
 import { readFileSync } from "node:fs"
-import {
-  isLoopbackHostname,
-  startServer,
-  waitForWorkspaceRuntimeServerPort,
-  workspaceRuntimeListenHostname,
-} from "./server"
+import { isLoopbackHostname, workspaceRuntimeListenHostname } from "./server"
+import { startServer, waitForWorkspaceRuntimeServerPort } from "./serve"
 import { workspaceDir, workspaceId } from "./target"
 import { workspaceRelayRuntimeOptionsFromEnv } from "./workspace-relay-env"
 import {
@@ -45,7 +41,7 @@ if (nativeHarnessInput && !nativeHarness) {
   throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarnessInput}`)
 }
 const directory = workspaceDir(process.env)
-const server = startServer(port, {
+const server = await startServer(port, {
   ...storeBackedSessionPlacement(),
   target: { workspaceId: workspaceId(process.env), directory },
   placement: workspaceRuntimePlacementFromEnv(process.env, { relay: Boolean(relay.relayHostAuth) }),

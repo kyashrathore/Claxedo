@@ -6,6 +6,7 @@ import { createOpenCodeHost, OpenCodeUnavailableError, type OpenCodeHost } from 
 import { WorkspaceScope, WorkspaceScopeError } from "./scope"
 import { createSessionPort } from "./session-port"
 import { removeTempRoot } from "../../test-support/temp-root"
+import { takeEventLoopActivity } from "@claxedo/helpers/event-loop-activity"
 
 const hosts: OpenCodeHost[] = []
 const roots: string[] = []
@@ -45,6 +46,16 @@ test("concurrent first use shares one host and one database opener", async () =>
   expect(a).toBe(b)
   expect(b).toBe(c)
   expect(host.status().lifecycle).toBe("ready")
+})
+
+test("the engine's boot is named as the work holding the event loop until it is ready", async () => {
+  const host = hostAt(tempRoot())
+  takeEventLoopActivity()
+  const ready = host.client()
+  expect(takeEventLoopActivity()).toEqual(["opencode engine boot"])
+  await ready
+  expect(takeEventLoopActivity()).toEqual(["opencode engine boot"])
+  expect(takeEventLoopActivity()).toEqual([])
 })
 
 test("event health is orthogonal to lifecycle", async () => {

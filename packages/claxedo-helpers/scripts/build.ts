@@ -22,6 +22,7 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "crypto", target: "browser" },
   { entry: "deadline", target: "browser" },
   { entry: "guards", target: "browser" },
+  { entry: "event-loop-activity", target: "browser" },
   { entry: "operator-log", target: "node" },
   { entry: "readers", target: "browser" },
   { entry: "string", target: "browser" },

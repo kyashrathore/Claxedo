@@ -1,19 +1,23 @@
 export {
   createWorkspaceRuntimeApp,
-  startServer,
-  startServer as startWorkspaceRuntime,
   isLoopbackHostname,
-  waitForWorkspaceRuntimeServerPort,
   workspaceRuntimeListenHostname,
 }
   from "./server"
 export type {
   WorkspaceRuntimeApp,
   WorkspaceRuntimeCorsOrigin,
-  WorkspaceRuntimeLifecycleOptions,
   WorkspaceRuntimeServerOptions,
 }
   from "./server"
+export {
+  startServer,
+  startServer as startWorkspaceRuntime,
+  waitForWorkspaceRuntimeServerPort,
+}
+  from "./serve"
+export type { WorkspaceRuntimeLifecycleOptions } from "./serve"
+export { startEventLoopStallMonitor, type EventLoopStallMonitorOptions } from "./event-loop-stall"
 export {
   WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER,
   createWorkspaceRuntimeJwtManagementAuth,

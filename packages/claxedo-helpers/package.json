@@ -39,6 +39,13 @@
       "import": "./dist/deadline.mjs",
       "default": "./dist/deadline.mjs"
     },
+    "./event-loop-activity": {
+      "development": "./src/event-loop-activity.ts",
+      "bun": "./src/event-loop-activity.ts",
+      "types": "./dist/event-loop-activity.d.ts",
+      "import": "./dist/event-loop-activity.mjs",
+      "default": "./dist/event-loop-activity.mjs"
+    },
     "./operator-log": {
       "development": "./src/operator-log.ts",
       "bun": "./src/operator-log.ts",

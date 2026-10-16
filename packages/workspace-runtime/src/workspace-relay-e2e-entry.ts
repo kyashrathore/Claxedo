@@ -7,7 +7,8 @@
  * exactly what the e2e scenarios need from the public parsers: relay-host
  * auth from env with a loopback fallback.
  */
-import { isLoopbackHostname, startServer, waitForWorkspaceRuntimeServerPort, workspaceRuntimeListenHostname } from "./server"
+import { isLoopbackHostname, workspaceRuntimeListenHostname } from "./server"
+import { startServer, waitForWorkspaceRuntimeServerPort } from "./serve"
 import { workspaceDir, workspaceId } from "./target"
 import { workspaceRelayRuntimeOptionsFromEnv } from "./workspace-relay-env"
 import { workspaceRuntimePlacementFromEnv } from "./env"
@@ -21,7 +22,7 @@ const port = parseInt(process.env.WORKSPACE_RUNTIME_PORT?.trim() || "3002", 10)
 const hostname = workspaceRuntimeListenHostname()
 const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(process.env, port)
 
-const server = startServer(port, {
+const server = await startServer(port, {
   sessionIdWorkspace: () => undefined,
   target: { workspaceId: workspaceId(), directory: workspaceDir() },
   placement: workspaceRuntimePlacementFromEnv(process.env, { relay: Boolean(relayOptions.relayHostAuth) }),
