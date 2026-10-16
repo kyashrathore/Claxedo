@@ -1,76 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { createRoot } from "solid-js"
 import { ServerError } from "./errors"
-import { placementId } from "./ids"
-import type { Placement } from "./types"
-import type { ServerEvent } from "./events"
-import type { RuntimeRoute, Transport } from "./transport"
-import type { WorkspaceStartProgress } from "./cloud-types"
-import type { StartOptions } from "./workspace-start"
-import { createWorkspaceWakes } from "./workspace-wakes"
-import type { Workspaces } from "./workspaces"
-
-const cloud = placementId("ws_cloud")
-const folder = placementId("ws_folder")
-
-type Start = { resolve: () => void; reject: (error: unknown) => void }
-
-type Lifecycle = Extract<Placement, { kind: "cloud" }>["lifecycle"]
-
-function eventFeed() {
-  const listeners = new Set<(event: ServerEvent) => void>()
-  return {
-    emit: (event: ServerEvent) => listeners.forEach((listener) => listener(event)),
-    events: (listener: (event: ServerEvent) => void) => {
-      listeners.add(listener)
-      return () => void listeners.delete(listener)
-    },
-  }
-}
-
-const NOW = 1_000_000
-
-function fixture(running: { value: boolean }, server: { lifecycle?: Lifecycle; failure?: string; startProgress?: readonly WorkspaceStartProgress[] } = {}) {
-  const starts: Start[] = []
-  const follows: Start[] = []
-  const settles: NonNullable<StartOptions["settled"]>[] = []
-  const { emit, events } = eventFeed()
-  const placements: Record<string, Placement> = {
-    ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", lifecycle: "asleep", reachable: false, onThisMachine: false },
-    ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false, onThisMachine: false },
-  }
-  const images: ((workspaceId: string, outdated: boolean) => void)[] = []
-  const transport = {
-    onRuntimeImage: (listener: (workspaceId: string, outdated: boolean) => void) => {
-      images.push(listener)
-      return () => undefined
-    },
-    startRuntime: (_workspaceId: string, options?: StartOptions) => {
-      if (options?.settled) settles.push(options.settled)
-      for (const progress of server.startProgress ?? [{ kind: "provisioning", bootMode: "resume" }]) options?.onProgress?.(progress)
-      return new Promise<void>((resolve, reject) => starts.push({ resolve, reject }))
-    },
-    followRuntime: (_workspaceId: string, options?: StartOptions) => {
-      options?.onProgress?.({ kind: "provisioning", bootMode: "cold-start" })
-      return new Promise<void>((resolve, reject) => follows.push({ resolve, reject }))
-    },
-  } as Pick<Transport, "startRuntime" | "followRuntime" | "onRuntimeImage"> as Transport
-  const lifecycle = (): Lifecycle => (running.value ? "live" : server.lifecycle ?? "asleep")
-  const workspaces = {
-    load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
-    byId: (id: string) => ({ ...placements[id], ...(id === "ws_cloud" ? { lifecycle: lifecycle(), ...(server.failure ? { failure: server.failure } : {}) } : {}), reachable: id === "ws_cloud" && running.value }),
-    locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
-    refresh: async () => undefined,
-  } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
-  const waits: number[] = []
-  const wait = async (ms: number) => { waits.push(ms) }
-  return { starts, follows, waits, images, settles, emit, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, events, wait, () => NOW)) }
-}
-
-async function settle() {
-  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
-}
+import { cloud, folder, NOW, settle, wakesFixture as fixture, type ServerScript } from "./test-support/workspace-wakes"
 
 test("wakes: a send to an asleep cloud workspace starts it once, however many sends wait on it, and the workspace reads waking, then live", async () => {
   const running = { value: false }
@@ -125,7 +56,7 @@ test("wakes: a refused start leaves the workspace asleep with the server's reaso
 
 test("wakes: a workspace the server is starting reads waking before anything here follows it, and a send joins that start instead of reading it asleep", async () => {
   const running = { value: false }
-  const server: { lifecycle?: Lifecycle } = { lifecycle: "starting" }
+  const server: { lifecycle?: ServerScript["lifecycle"] } = { lifecycle: "starting" }
   const { starts, wakes } = fixture(running, server)
   expect(wakes.runtime(cloud)).toEqual({ kind: "waking", followed: true })
 
@@ -140,7 +71,7 @@ test("wakes: a workspace the server is starting reads waking before anything her
 
 test("wakes: following a start the server is driving reads the connection until the server is done, once however many views ask, and the workspace then reads as the catalog says", async () => {
   const running = { value: false }
-  const server: { lifecycle?: Lifecycle } = { lifecycle: "starting" }
+  const server: { lifecycle?: ServerScript["lifecycle"] } = { lifecycle: "starting" }
   const { starts, follows, wakes } = fixture(running, server)
 
   const first = wakes.follow(cloud)
@@ -167,7 +98,7 @@ test("wakes: following a start the server is driving reads the connection until 
 
 test("wakes: a follow that cannot read the server leaves the reason and Try again, and following a workspace nobody is starting does nothing", async () => {
   const running = { value: false }
-  const server: { lifecycle?: Lifecycle } = { lifecycle: "starting" }
+  const server: { lifecycle?: ServerScript["lifecycle"] } = { lifecycle: "starting" }
   const { follows, wakes } = fixture(running, server)
   const lost = new ServerError({ class: "network", message: "The connection read failed" })
 

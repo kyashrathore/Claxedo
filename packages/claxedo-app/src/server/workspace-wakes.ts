@@ -6,15 +6,16 @@ import { ServerError, toAppError } from "./errors"
 import type { ServerEvent } from "./events"
 import { placementId, type PlacementId } from "./ids"
 import { isStartingCloud, isStoppedCloud } from "./placement-runtime"
-import type { Transport } from "./transport"
+import { jsonInit, type Transport } from "./transport"
 import type { Placement } from "./types"
 import { WAKE_IDLE, wakeTransition, type WakeEvent, type WakeState } from "./wake-machine"
 import type { Workspaces } from "./workspaces"
-import { startRetryAfterMs } from "./wire/connection"
+import { isCheckpointUnusable, startRetryAfterMs, WORKSPACE_CHECKPOINT_UNUSABLE } from "./wire/connection"
 
 export type WorkspaceWakes = {
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
   readonly start: (id: PlacementId) => Promise<void>
+  readonly startFresh: (id: PlacementId) => Promise<void>
   readonly follow: (id: PlacementId) => Promise<void>
   readonly wakeIfStopped: (id: PlacementId) => Promise<boolean>
   readonly settle: (id: PlacementId) => Promise<boolean>
@@ -29,9 +30,14 @@ function runtimeOf(wake: WakeState, placement: Placement | undefined): Workspace
     return waking
   }
   if (wake.kind === "outdated" && !asleep) return { kind: "outdated" }
-  if (wake.kind === "failed" && (asleep || wake.restart)) return { kind: "wakeFailed", error: wake.error, ...(wake.retryAt !== undefined ? { retryAt: wake.retryAt } : {}) }
+  if (wake.kind === "failed" && (asleep || wake.restart)) {
+    return { kind: "wakeFailed", error: wake.error, ...(wake.retryAt !== undefined ? { retryAt: wake.retryAt } : {}), ...(isCheckpointUnusable(wake.error) ? { checkpointUnusable: true } : {}) }
+  }
   if (isStartingCloud(placement)) return { kind: "waking", followed: true }
-  if (placement?.kind === "cloud" && placement.lifecycle === "failed") return { kind: "wakeFailed", error: new ServerError({ class: "conflict", message: placement.failure ?? START_FAILED }) }
+  if (placement?.kind === "cloud" && placement.lifecycle === "failed") {
+    const error = new ServerError({ class: "conflict", message: placement.failure ?? START_FAILED, ...(placement.checkpointUnusable ? { code: WORKSPACE_CHECKPOINT_UNUSABLE } : {}) })
+    return { kind: "wakeFailed", error, ...(placement.checkpointUnusable ? { checkpointUnusable: true } : {}) }
+  }
   return asleep ? { kind: "asleep" } : { kind: "live" }
 }
 
@@ -78,6 +84,11 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
     return next
   }
   const start = (id: PlacementId) => drive(id, transport.startRuntime, false)
+  const startFresh = (id: PlacementId) => drive(id, async (workspaceId, options) => {
+    await transport.json(`/api/workspace/${encodeURIComponent(workspaceId)}/lifecycle/start-fresh`, jsonInit("POST", { approved: true }))
+    await workspaces.refresh()
+    await transport.startRuntime(workspaceId, options)
+  }, false)
   const wakeIfStopped = async (id: PlacementId) => {
     await workspaces.load()
     if (!isStoppedCloud(workspaces.byId(id))) return false
@@ -87,6 +98,7 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
   return {
     runtime: (id) => runtimeOf(wakes[id] ?? WAKE_IDLE, workspaces.byId(id)),
     start,
+    startFresh,
     follow: async (id) => {
       if (!isStartingCloud(workspaces.byId(id))) return
       await drive(id, transport.followRuntime, true).catch((error: unknown) => console.warn("A start the server is driving could not be followed", { placementId: id, error: toAppError(error) }))

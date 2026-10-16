@@ -1,3 +1,4 @@
+import type { StartFreshAction } from "@/cloud"
 import type { WorkspaceRuntime } from "@/server"
 import type { ComposerText } from "../text"
 import type { HarnessAccountState } from "./harness-account-state"
@@ -11,6 +12,7 @@ export type ModelsEmptyFacts = {
   readonly account: HarnessAccountState
   readonly unavailableHere: ModelLoadFailure | undefined
   readonly wake: () => void
+  readonly startFresh: StartFreshAction
   readonly openProviders: () => void
 }
 
@@ -18,7 +20,10 @@ function machineNotice(t: ComposerText, facts: ModelsEmptyFacts): ModelLoadFailu
   const name = facts.workspaceName
   const runtime = facts.runtime
   if (runtime.kind === "waking") return { message: t("composer.models.waking", { name }), detail: facts.wakeProgress ?? t("composer.models.waking.detail") }
-  if (runtime.kind === "wakeFailed") return { message: t("composer.models.wakeFailed", { name }), detail: runtime.error.message, action: { label: t("composer.models.retryWake"), run: facts.wake } }
+  if (runtime.kind === "wakeFailed") {
+    const action = runtime.checkpointUnusable ? facts.startFresh : { label: t("composer.models.retryWake"), run: facts.wake }
+    return { message: t("composer.models.wakeFailed", { name }), detail: runtime.error.message, action }
+  }
   if (runtime.kind === "asleep") return { message: t("composer.models.asleep", { name }), detail: t("composer.models.asleep.detail"), action: { label: t("composer.models.wakeNow"), run: facts.wake } }
   return undefined
 }

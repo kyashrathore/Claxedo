@@ -16,7 +16,7 @@ export type ConnectionAnswer =
   | { readonly kind: "ready"; readonly link: RelayConnection; readonly sessionHostRoot?: string }
   | { readonly kind: "provisioning"; readonly retryAfterMs?: number; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly progress?: StartElapsed }
   | { readonly kind: "stopped" }
-  | { readonly kind: "failed"; readonly reason: string }
+  | { readonly kind: "failed"; readonly reason: string; readonly checkpointUnusable?: true }
 
 export type StartRequest = { readonly retry?: true }
 
@@ -40,6 +40,16 @@ const CLOUD_RUNTIME_IMAGE_OUTDATED = "cloud_runtime_image_outdated"
 
 export function isImageOutdated(error: unknown): boolean {
   return error instanceof ServerError && error.code === CLOUD_RUNTIME_IMAGE_OUTDATED
+}
+
+export const WORKSPACE_CHECKPOINT_UNUSABLE = "workspace_checkpoint_unusable"
+
+export function isCheckpointUnusable(error: unknown): boolean {
+  return error instanceof ServerError && error.code === WORKSPACE_CHECKPOINT_UNUSABLE
+}
+
+export function isCheckpointUnusableRow(row: Record<string, unknown>): boolean {
+  return nonEmptyString(row.checkpointUnusable) !== undefined
 }
 
 export function isCheckpointFrozen(error: unknown): boolean {
@@ -86,7 +96,10 @@ function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnect
 export function connectionAnswerFromWire(body: unknown, workspaceId: string, sessionId?: string): ConnectionAnswer {
   const row = isRecord(body) ? body : {}
   if (row.status === "stopped") return { kind: "stopped" }
-  if (row.status === "failed") return { kind: "failed", reason: typeof row.error === "string" && row.error ? row.error : "The cloud workspace could not start" }
+  if (row.status === "failed") {
+    const reason = typeof row.error === "string" && row.error ? row.error : "The cloud workspace could not start"
+    return { kind: "failed", reason, ...(isCheckpointUnusableRow(row) ? { checkpointUnusable: true } : {}) }
+  }
   if (row.status === "provisioning") {
     const retryAfterMs = durationOf(row.retryAfterMs)
     const bootMode = bootModeOf(row.bootMode)

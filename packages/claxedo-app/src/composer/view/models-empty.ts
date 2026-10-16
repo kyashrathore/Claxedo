@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import { useWakeProgress, useWakeWorkspace, useWorkspaceName } from "@/cloud"
+import { useStartFresh, useWakeProgress, useWakeWorkspace, useWorkspaceName, type StartFreshAction } from "@/cloud"
 import { useServer, type PlacementId, type WorkspaceRuntime } from "@/server"
 import type { HarnessType } from "../harness/profile"
 import { useComposerText } from "../text"
@@ -22,6 +22,7 @@ export function createModelsEmpty(input: ModelsEmptyInput): Accessor<ModelLoadFa
   const server = useServer()
   const named = useWorkspaceName()
   const wakeWorkspace = useWakeWorkspace()
+  const startFresh = useStartFresh()
   const wakeProgress = useWakeProgress(input.runtime)
   const workspaceName = () => {
     const id = input.placementId()
@@ -31,6 +32,13 @@ export function createModelsEmpty(input: ModelsEmptyInput): Accessor<ModelLoadFa
   const wake = () => {
     const id = input.placementId()
     if (id) wakeWorkspace(id)
+  }
+  const startFreshAction: StartFreshAction = {
+    label: startFresh.label,
+    run: () => {
+      const id = input.placementId()
+      if (id) startFresh.run(id, workspaceName())
+    },
   }
   return () => {
     const harness = input.harness()
@@ -43,6 +51,7 @@ export function createModelsEmpty(input: ModelsEmptyInput): Accessor<ModelLoadFa
       account: input.account(),
       unavailableHere: input.unavailableHere(),
       wake,
+      startFresh: startFreshAction,
       openProviders: input.openProviders,
     })
   }

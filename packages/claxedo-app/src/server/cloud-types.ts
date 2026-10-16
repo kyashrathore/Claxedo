@@ -7,7 +7,7 @@ export type CloudWorkspaceStatus =
   | { readonly kind: "ready" }
   | { readonly kind: "stopping" }
   | { readonly kind: "stopped" }
-  | { readonly kind: "failed"; readonly reason: string }
+  | { readonly kind: "failed"; readonly reason: string; readonly checkpointUnusable?: true }
 
 export type CloudWorkspace = {
   readonly id: PlacementId
@@ -29,7 +29,7 @@ export type WorkspaceRuntime =
   | { readonly kind: "live" }
   | { readonly kind: "asleep" }
   | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode; readonly failure?: string; readonly retryAt?: number; readonly steps?: WorkspaceStartSteps; readonly followed?: true }
-  | { readonly kind: "wakeFailed"; readonly error: AppError; readonly retryAt?: number }
+  | { readonly kind: "wakeFailed"; readonly error: AppError; readonly retryAt?: number; readonly checkpointUnusable?: true }
   | { readonly kind: "outdated" }
 
 export type MachineClass = "small" | "default" | "large"

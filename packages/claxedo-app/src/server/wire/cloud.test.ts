@@ -20,6 +20,7 @@ test("cloud rows: every lifecycle status the hosted inventory sends maps to its 
     [{ status: "provisioning", reachable: false }, { kind: "provisioning", step: "provisioning" }],
     [{ status: "stopped", reachable: false }, { kind: "stopped" }],
     [{ status: "failed", error: "provider_rejected", reachable: false }, { kind: "failed", reason: "provider_rejected" }],
+    [{ status: "failed", error: "saved files expired", checkpointUnusable: "expired", reachable: false }, { kind: "failed", reason: "saved files expired", checkpointUnusable: true }],
   ] as const
   for (const [lifecycle, status] of cases) expect(cloudWorkspaceFromRow({ ...row, ...lifecycle })?.status).toEqual(status)
 })

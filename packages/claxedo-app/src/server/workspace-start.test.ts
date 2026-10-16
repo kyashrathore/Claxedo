@@ -69,6 +69,12 @@ test("workspace start: a refusal with no retry hint fails at once with the serve
   expect(server.calls).toHaveLength(1)
 })
 
+test("workspace start: a read that says the checkpoint cannot be restored ends the start under the code Start fresh is offered for", async () => {
+  const line = "This workspace's saved files expired after 30 days unused; choose Start fresh."
+  const server = answers(json({ status: "failed", workspaceId: "ws_1", error: line, checkpointUnusable: "expired" }))
+  await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ class: "conflict", code: "workspace_checkpoint_unusable", message: line })
+})
+
 test("workspace start: a read that says the boot failed ends the start with that reason, under the boot-failure code", async () => {
   const server = answers(json({ status: "failed", workspaceId: "ws_1", error: 'The branch "missing" does not exist in https://github.com/acme/widgets.git' }))
 

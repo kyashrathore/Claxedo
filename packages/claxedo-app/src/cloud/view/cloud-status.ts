@@ -36,6 +36,7 @@ export function useCloudStatusText(): (state: CloudWorkspaceStatus) => string {
 
 const COMMAND_FAILED: Readonly<Record<CloudCommand, CloudKey>> = {
   start: "cloud.command.start.failed",
+  startFresh: "cloud.command.startFresh.failed",
   stop: "cloud.command.stop.failed",
   remove: "cloud.command.remove.failed",
 }

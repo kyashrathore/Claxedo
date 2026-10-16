@@ -8,7 +8,7 @@ import type { SessionScreenText } from "./text"
 const t = ((key: string, params?: Record<string, unknown>) => [key, ...Object.values(params ?? {})].join(" ")) as SessionScreenText
 
 const facts = (runtime: WorkspaceRuntime, overrides: Partial<PlacementFacts> = {}): PlacementFacts =>
-  ({ placement: undefined, name: "main", runtime, wakeProgress: undefined, offline: false, harnessRunsInSessionHost: false, wake: () => undefined, ...overrides })
+  ({ placement: undefined, name: "main", runtime, wakeProgress: undefined, offline: false, harnessRunsInSessionHost: false, wake: () => undefined, startFresh: { label: "Start fresh", run: () => undefined }, ...overrides })
 
 const noticeFor = (runtime: WorkspaceRuntime) => placementNotice(t, facts(runtime))?.message
 
@@ -41,6 +41,15 @@ test("a harness that answers from its own session host says nothing about the wo
   const error = { class: "conflict" as const, message: "the start limit is used up", retryable: false }
   const states: readonly WorkspaceRuntime[] = [{ kind: "asleep" }, { kind: "waking" }, { kind: "waking", bootMode: "cold-start" }, { kind: "wakeFailed", error }, { kind: "outdated" }]
   for (const runtime of states) expect(placementNotice(t, facts(runtime, { harnessRunsInSessionHost: true })), runtime.kind).toBeUndefined()
+})
+
+test("a start refused for an unusable checkpoint offers Start fresh in place of Try again", () => {
+  const started: string[] = []
+  const error = { class: "conflict" as const, code: "workspace_checkpoint_unusable", message: "This workspace's saved files expired after 30 days unused; choose Start fresh.", retryable: false }
+  const notice = placementNotice(t, facts({ kind: "wakeFailed", error, checkpointUnusable: true }, { startFresh: { label: "Start fresh", run: () => void started.push("fresh") } }))
+  expect(notice).toMatchObject({ tone: "critical", message: "sessionScreen.workspace.wakeFailed main", detail: error.message, action: { label: "Start fresh" } })
+  notice?.action?.run()
+  expect(started).toEqual(["fresh"])
 })
 
 test("a sandbox harness keeps a failed start's own notice", () => {

@@ -25,6 +25,7 @@ export type CloudWorkspaces = {
   readonly refresh: () => void
   readonly create: (input: Omit<CloudProjectCreateInput, "projectId">) => Promise<CloudWorkspace>
   readonly start: (id: PlacementId) => Promise<void>
+  readonly startFresh: (id: PlacementId) => Promise<void>
   readonly stop: (id: PlacementId) => Promise<void>
   readonly remove: (id: PlacementId) => Promise<void>
 }
@@ -69,6 +70,7 @@ function useCloudCommands(enabled: Accessor<boolean>, include: (workspace: Cloud
     list,
     refresh: () => void query.refetch(),
     start: (id: PlacementId) => commands.run(id, "start", { type: "startRequested" }, () => server.cloud.start(id)),
+    startFresh: (id: PlacementId) => commands.run(id, "startFresh", { type: "startFreshRequested" }, () => server.cloud.startFresh(id)),
     stop: (id: PlacementId) => commands.run(id, "stop", { type: "stopRequested" }, () => server.cloud.stop(id)),
     remove: (id: PlacementId) => commands.run(id, "remove", undefined, () => server.cloud.remove(id)),
   }

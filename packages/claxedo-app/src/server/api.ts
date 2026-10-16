@@ -146,6 +146,7 @@ export type GitApi = {
 export type CloudApi = {
   readonly create: (input: CloudCreateInput) => Promise<CloudWorkspace>
   readonly start: (id: PlacementId) => Promise<void>
+  readonly startFresh: (id: PlacementId) => Promise<void>
   readonly follow: (id: PlacementId) => Promise<void>
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
   readonly stop: (id: PlacementId) => Promise<void>
