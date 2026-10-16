@@ -5,6 +5,7 @@ export default {
   forbidden: ["Non autorisé", "Votre compte n'a pas accès à ceci. Demandez l'accès à son propriétaire."],
   rate_limit: ["Trop de requêtes", "Le serveur limite les requêtes. Patientez un instant, puis réessayez."],
   network: ["Serveur injoignable", "Le serveur est injoignable. Vérifiez la connexion, puis réessayez."],
+  runtime_unreachable: ["La machine de l'espace de travail ne répond pas", "La machine de l'espace de travail n'a pas répondu. Réessayez."],
   not_found: ["Introuvable", "Cet élément n'existe plus. Il a peut-être été supprimé."],
   conflict: ["Modifié ailleurs", "Cet élément a d'abord été modifié ailleurs. Rechargez, puis réessayez."],
   invalid: ["Requête refusée", "Le serveur a refusé cette requête car elle n'est pas valide."],

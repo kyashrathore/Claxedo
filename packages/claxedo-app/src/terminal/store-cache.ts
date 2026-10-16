@@ -22,6 +22,7 @@ function evictOver(entries: Map<PlacementId, Entry>, cap: number, keep: Placemen
 export function createTerminalStoreCache(
   cap: number,
   create: (placementId: PlacementId) => TerminalStore,
+  watch: (placementId: PlacementId) => () => void,
 ): TerminalStoreCache {
   const entries = new Map<PlacementId, Entry>()
   const evict = (keep: PlacementId) => evictOver(entries, cap, keep)
@@ -44,7 +45,9 @@ export function createTerminalStoreCache(
     retain: (placementId) => {
       const entry = entryFor(placementId)
       entry.retained += 1
+      const unwatch = watch(placementId)
       return () => {
+        unwatch()
         entry.retained -= 1
         evict(placementId)
       }

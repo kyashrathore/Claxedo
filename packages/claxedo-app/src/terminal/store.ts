@@ -145,7 +145,6 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
   const api = terminalsApi(server)
   const rows = createTerminalRows()
   const load = machine<TerminalLoad, TerminalLoadEvent>({ kind: "idle" }, transitionLoad)
-  onCleanup(server.watchPlacement(placementId))
   onCleanup(
     server.subscribe((event) => {
       const gap = event.type === "streamGap" && event.ref === undefined && (event.placementId === undefined || event.placementId === placementId)

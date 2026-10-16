@@ -37,6 +37,8 @@ function errorTranslations(messages: ErrorMessages): Record<ErrorKey, string> {
     "i18n.error.rate_limit.message": messages.rate_limit[1],
     "i18n.error.network.title": messages.network[0],
     "i18n.error.network.message": messages.network[1],
+    "i18n.error.runtime_unreachable.title": messages.runtime_unreachable[0],
+    "i18n.error.runtime_unreachable.message": messages.runtime_unreachable[1],
     "i18n.error.not_found.title": messages.not_found[0],
     "i18n.error.not_found.message": messages.not_found[1],
     "i18n.error.conflict.title": messages.conflict[0],

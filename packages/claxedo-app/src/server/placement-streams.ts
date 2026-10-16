@@ -9,11 +9,13 @@ import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 
 const RUNTIME_EVENTS_PATH = "/api/wr/events"
+const RUNTIME_STREAM_RECONNECTS = 8
 
 export type PlacementStreams = {
   readonly attach: (ref: SessionLocation) => () => void
   readonly watch: (id: PlacementId) => () => void
   readonly streams: (ref: SessionLocation) => boolean
+  readonly retry: () => void
   readonly close: () => void
 }
 
@@ -25,7 +27,10 @@ type StreamsInput = {
   readonly onGap: (ref?: SessionLocation) => void
 }
 
-type Refusal = { readonly kind: "outdated"; readonly current: boolean } | { readonly kind: "unavailable"; readonly row: string }
+type Refusal =
+  | { readonly kind: "outdated"; readonly current: boolean }
+  | { readonly kind: "unavailable"; readonly row: string }
+  | { readonly kind: "unanswered"; readonly row: string; readonly retried: boolean }
 
 type OpenStream = { readonly stream: Stream; readonly route: string; readonly workspaceId: string; readonly placement: PlacementId; refused?: Refusal }
 
@@ -71,8 +76,10 @@ function placementRow(input: StreamsInput, placement: PlacementId) {
 }
 
 function reopens(input: StreamsInput, open: OpenStream) {
-  if (open.refused?.kind === "outdated") return open.refused.current
-  return open.refused?.kind === "unavailable" && open.refused.row !== placementRow(input, open.placement)
+  const refused = open.refused
+  if (refused?.kind === "outdated") return refused.current
+  if (refused?.kind === "unanswered" && refused.retried) return true
+  return refused !== undefined && refused.row !== placementRow(input, open.placement)
 }
 
 function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: RuntimeRoute, path: string, rerouted: boolean, session?: SessionLocation): OpenStream {
@@ -95,6 +102,13 @@ function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: R
         refreshCatalog(input)
       } else if (route.sharedSession) void input.workspaces.shared.refresh().then(() => input.onGap(session), (error) => console.error("Shared sessions could not be refreshed", error))
       else refreshCatalog(input)
+    },
+    reconnects: {
+      limit: RUNTIME_STREAM_RECONNECTS,
+      onExhausted: (error) => {
+        open.refused = { kind: "unanswered", row: placementRow(input, placement), retried: false }
+        console.warn("A workspace's live stream stopped asking its machine; it reopens on focus, a reconnect or a change to the workspace", { workspaceId: route.workspaceId, error })
+      },
     },
   }) }
   return open
@@ -140,6 +154,13 @@ function markImageCurrent(state: StreamsState, workspaceId: string): boolean {
   const outdated = [...state.sessions.values(), ...state.workspaces.values()].filter((open) => open.workspaceId === workspaceId && open.refused?.kind === "outdated")
   for (const open of outdated) open.refused = { kind: "outdated", current: true }
   return outdated.length > 0
+}
+
+function retryUnanswered(state: StreamsState) {
+  for (const open of [...state.sessions.values(), ...state.workspaces.values()]) {
+    if (open.refused?.kind === "unanswered") open.refused = { ...open.refused, retried: true }
+  }
+  reconcileStreams(state)
 }
 
 function followCatalog(state: StreamsState): () => void {
@@ -195,6 +216,7 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
       const open = state.sessions.get(sessionKey(String(ref.placementId), String(ref.sessionId)))
       return open !== undefined && open.refused === undefined
     },
+    retry: () => retryUnanswered(state),
     close: () => {
       unfollow()
       state.attached.clear()

@@ -9,7 +9,7 @@ export function watchHarnessReprobe(input: {
   active: () => boolean
   reprobe: () => void
   onExhausted: () => void
-  intervalMs?: number
+  firstWaitMs?: number
   maxAttempts?: number
   schedule?: ReprobeScheduler
 }) {
@@ -18,7 +18,7 @@ export function watchHarnessReprobe(input: {
     const loop = startHarnessReprobeLoop({
       onReprobe: () => input.reprobe(),
       onExhausted: () => input.onExhausted(),
-      intervalMs: input.intervalMs,
+      firstWaitMs: input.firstWaitMs,
       maxAttempts: input.maxAttempts,
       schedule: input.schedule,
     })

@@ -5,6 +5,7 @@ export default {
   forbidden: ["Ikke tilladt", "Din konto har ikke adgang til dette. Bed ejeren om adgang."],
   rate_limit: ["For mange forespørgsler", "Serveren begrænser forespørgsler. Vent et øjeblik, og prøv igen."],
   network: ["Kan ikke nå serveren", "Serveren kunne ikke nås. Tjek forbindelsen, og prøv igen."],
+  runtime_unreachable: ["Arbejdsområdets maskine svarede ikke", "Arbejdsområdets maskine svarede ikke. Prøv igen."],
   not_found: ["Ikke fundet", "Dette findes ikke længere. Det er muligvis blevet slettet."],
   conflict: ["Ændret et andet sted", "Dette blev først ændret et andet sted. Genindlæs, og prøv igen."],
   invalid: ["Forespørgsel afvist", "Serveren afviste denne forespørgsel som ugyldig."],

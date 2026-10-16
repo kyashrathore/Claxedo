@@ -12,6 +12,7 @@ const RETRYABLE: Readonly<Record<ErrorClass, boolean>> = {
   forbidden: false,
   rate_limit: true,
   network: true,
+  runtime_unreachable: true,
   not_found: false,
   conflict: false,
   invalid: false,
@@ -46,7 +47,10 @@ export class ServerError extends Error implements AppError {
 
 const SIGN_IN_REFUSAL = /(^|_)(token|proof|credential)(_|$)/
 
+const UNANSWERED_RUNTIME_CODES: ReadonlySet<string> = new Set(["runtime_provision_failed", "upstream_unavailable", "host_tunnel_offline", "session_host_unavailable"])
+
 function errorClassForStatus(status: number, code?: string): ErrorClass {
+  if (code !== undefined && UNANSWERED_RUNTIME_CODES.has(code)) return "runtime_unreachable"
   if (status === 401) return "auth"
   if (status === 403) return code !== undefined && SIGN_IN_REFUSAL.test(code) ? "auth" : "forbidden"
   if (status === 404) return "not_found"
@@ -180,7 +184,7 @@ export function isRetryableServerError(error: unknown): boolean {
   return error instanceof ServerError ? error.retryable : false
 }
 
-const ERROR_CLASSES: ReadonlySet<string> = new Set<ErrorClass>(["auth", "forbidden", "rate_limit", "network", "not_found", "conflict", "invalid", "internal"])
+const ERROR_CLASSES: ReadonlySet<string> = new Set<ErrorClass>(["auth", "forbidden", "rate_limit", "network", "runtime_unreachable", "not_found", "conflict", "invalid", "internal"])
 
 export function isAppError(value: unknown): value is AppError {
   if (value instanceof ServerError) return true

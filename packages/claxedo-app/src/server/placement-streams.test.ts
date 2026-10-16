@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { expect, test } from "bun:test"
+import { afterEach, expect, jest, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { placementId } from "./ids"
 import { createPlacementStreams } from "./placement-streams"
@@ -252,4 +252,47 @@ test("a stream to a runtime that is not running stays closed across catalog read
     expect(opened).toBe(2)
     expect(streams.streams(ref("ses_asleep"))).toBe(true)
   } finally { detach(); streams.close(); queryClient.clear() }
+})
+
+afterEach(() => {
+  jest.useRealTimers()
+})
+
+function unansweredRuntime(answering: () => boolean) {
+  const opens: string[] = []
+  const transport = streamTransport({ serverUrl: "https://account.test", runtime: async (_route: unknown, path: string) => {
+    opens.push(path)
+    return answering() ? openBody() : Response.json({ error: { code: "runtime_provision_failed", message: "error code: 1101" } }, { status: 409 })
+  } })
+  return { transport, opens }
+}
+
+async function runFor(ms: number) {
+  for (let elapsed = 0; elapsed < ms; elapsed += 1_000) {
+    await settle()
+    jest.advanceTimersByTime(1_000)
+  }
+  await settle()
+}
+
+test("a runtime that doesn't answer is asked a bounded number of times, then its stream waits for a retry signal instead of reconnecting forever", async () => {
+  jest.useFakeTimers()
+  const warn = console.warn
+  console.warn = () => undefined
+  let answering = false
+  const runtime = unansweredRuntime(() => answering)
+  const watching = { ...workspaces, byId: () => record.placement, workspaceStreamRoute: () => record.route } as unknown as Workspaces
+  const streams = createPlacementStreams({ transport: runtime.transport, workspaces: watching, queryClient: new QueryClient(), onFrame: () => undefined, onGap: () => undefined })
+  const unwatch = streams.watch(placement)
+  try {
+    await runFor(10 * 60_000)
+    const bounded = runtime.opens.length
+    expect(bounded).toBeLessThanOrEqual(10)
+    await runFor(10 * 60_000)
+    expect(runtime.opens).toHaveLength(bounded)
+    answering = true
+    streams.retry()
+    await runFor(1_000)
+    expect(runtime.opens).toHaveLength(bounded + 1)
+  } finally { console.warn = warn; unwatch(); streams.close() }
 })

@@ -5,6 +5,7 @@ export default {
   forbidden: ["No permitido", "Tu cuenta no tiene acceso a esto. Pide acceso a su propietario."],
   rate_limit: ["Demasiadas solicitudes", "El servidor está limitando las solicitudes. Espera un momento y vuelve a intentarlo."],
   network: ["No se puede conectar con el servidor", "No se pudo conectar con el servidor. Comprueba la conexión y vuelve a intentarlo."],
+  runtime_unreachable: ["La máquina del espacio de trabajo no respondió", "La máquina del espacio de trabajo no respondió. Vuelve a intentarlo."],
   not_found: ["No encontrado", "Esto ya no existe. Es posible que se haya eliminado."],
   conflict: ["Cambiado en otro lugar", "Esto se cambió antes en otro lugar. Recarga y vuelve a intentarlo."],
   invalid: ["Solicitud rechazada", "El servidor rechazó esta solicitud por no ser válida."],

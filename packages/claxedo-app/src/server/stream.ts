@@ -13,6 +13,7 @@ export type StreamOptions = {
   readonly onGap: () => void
   readonly onState?: (state: ConnectionState) => void
   readonly onRefused?: (error: ServerError) => void
+  readonly reconnects?: { readonly limit: number; readonly onExhausted: (error: ServerError) => void }
 }
 
 export type Stream = {
@@ -99,11 +100,20 @@ async function readBody(run: StreamRun, body: ReadableStream<Uint8Array>) {
   }
 }
 
-function scheduleReconnect(run: StreamRun) {
+function exhausted(run: StreamRun, reason: ServerError | undefined) {
+  const limit = run.options.reconnects
+  const state = run.connection.state()
+  if (!limit || !reason || state.kind !== "reconnecting" || state.attempt <= limit.limit) return false
+  send(run, { type: "refused", reason: reason.message })
+  limit.onExhausted(reason)
+  return true
+}
+
+function scheduleReconnect(run: StreamRun, reason?: ServerError) {
   if (run.closed) return
   send(run, { type: "dropped" })
   const state = run.connection.state()
-  if (state.kind !== "reconnecting") return
+  if (state.kind !== "reconnecting" || exhausted(run, reason)) return
   run.reconnectTimer = setTimeout(() => {
     run.reconnectTimer = undefined
     void openStreamAttempt(run)
@@ -134,7 +144,7 @@ async function openStreamAttempt(run: StreamRun) {
     const reason = toAppError(error)
     if (refusedFor(reason)) return endRefusedStream(run, reason)
     if (run.connection.state().kind !== "reconnecting") console.error("The event stream dropped; it reconnects with backoff", reason)
-    scheduleReconnect(run)
+    scheduleReconnect(run, reason)
   } finally {
     if (run.watchdog) clearTimeout(run.watchdog)
     run.watchdog = undefined
