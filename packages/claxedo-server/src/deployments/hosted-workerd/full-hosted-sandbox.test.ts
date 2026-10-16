@@ -46,6 +46,8 @@ test("the composed plane's ready sandbox is handed a pass for its lease epoch ov
   await composed.extra.sandbox.deliverSessionRowsPass!("ws_cloud")
   await composed.extra.sandbox.runtimeLost!("ws_cloud", Date.now())
   expect(nudged).toEqual([])
+  await composed.extra.sandbox.announce?.("ws_cloud", "stopped")
+  expect(nudged).toEqual(["org:org_1"])
 
   expect(composed.extra.sandbox.keys.drivers).toBe(keyDrivers.drivers)
   expect(relayed.map((call) => `${call.method} ${call.url}`)).toEqual([

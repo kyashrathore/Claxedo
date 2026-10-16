@@ -165,10 +165,10 @@ const ENTRIES = [
   // this entry has cloud runtimes to publish rows. It alone hosts the Durable
   // Object a sandbox start runs under (`sandbox/provisioner.cf.ts`) and the
   // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
-  // has a sandbox to start, and the notice that start sends the workspace
-  // owner's live-sync room when it begins and settles
-  // (`workspace/start-notice.ts`). When the idle watch finds a cloud runtime
-  // gone, it ends that runtime's sessions' turns in the registry and tells
+  // has a sandbox to start, and the notice its machine sends the workspace
+  // owner's live-sync room when a start begins and settles and when the
+  // machine goes asleep (`workspace/machine-notice.ts`). When the idle watch
+  // finds a cloud runtime gone, it ends that runtime's sessions' turns in the registry and tells
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.

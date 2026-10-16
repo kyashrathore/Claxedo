@@ -288,6 +288,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         provisionedRunner: provisionedRunner(input.env),
         ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
         ...(sandbox.runtimeLost ? { runtimeLost: sandbox.runtimeLost } : {}),
+        ...(sandbox.announce ? { announce: sandbox.announce } : {}),
         sandboxRefresh: sandbox.refresh,
         sandboxRedeliver: sandbox.redeliver,
         sandboxFollow: sandbox.follow,

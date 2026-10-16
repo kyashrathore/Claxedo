@@ -324,7 +324,7 @@ export class LiveSyncRoom {
    *
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
    * admits doorbells, held in the terminal reserve, and status, reader and
-   * machine-start notices, held in the main ring only, so none evicts a
+   * machine notices, held in the main ring only, so none evicts a
    * doorbell; a replay sends a session's latest status and reader notice. One
    * reader's notices fill its own ring at a few per turn plus one seen write
    * per open or shown turn end, far fewer than 256 across the worst client gap

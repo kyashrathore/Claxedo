@@ -39,7 +39,7 @@ import type { RelayTargetLookup } from "../deployments/shared-routes/internal-re
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
-import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
+import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore, type SandboxManager } from "@claxedo/sandbox-manager"
 import { HostedWorkerCompositionError } from "./composition-error"
 import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
@@ -48,6 +48,7 @@ import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { sandboxEgressUnenforcedSink, sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
 import type { SandboxFollowUps, SandboxInFlight, SandboxStart } from "../workspace/sandbox-start"
 import type { WorkspaceRuntimeContext } from "../workspace/route-support"
+import type { MachineNotice } from "../workspace/machine-notice"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -121,6 +122,8 @@ export type HostedSandboxBinding = {
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** Ends the turns a workspace's runtime was running when the plane found that runtime gone. */
   runtimeLost?: (workspaceId: string, at: number) => Promise<void>
+  /** Tells the workspace owner's open clients that its machine started, settled or went asleep. */
+  announce?: MachineNotice
   /** The organization keys every cloud workspace of this deployment starts on. */
   keys: HostedSandboxKeys
 }
@@ -154,12 +157,49 @@ function sandboxManager(
     onStartPhase: sandboxStartPhaseSink(telemetry),
     onLifecycle: sandboxLifecycleSink(telemetry),
   })
-  return createOrgSandboxManager({
+  const composed = createOrgSandboxManager({
     leaseStore: sandbox.leaseStore,
     drivers: orgSandboxDrivers({ keys: sandbox.keys, credentials: bindings.orgCredentials }),
     workspaceOrg: async (workspaceId) => (await bindings.authority.resolveWorkspaceOwner?.(workspaceId))?.orgId,
     manager,
   })
+  return sandbox.announce ? { ...composed, manager: announcingAsleep(composed.manager, sandbox.announce) } : composed
+}
+
+/**
+ * Every lease end the plane makes is told to the workspace owner's open
+ * clients (a person's or an idle stop, a host the provider stopped or lost,
+ * Start fresh dropping a checkpoint), so an open tab turns asleep instead of
+ * waiting on its stream's next retry. The notice is awaited inside the call:
+ * a Worker cancels the I/O an invocation started once that invocation ends,
+ * and these calls run in requests and provisioner alarms alike. A notice that
+ * fails costs those clients a live update until their next read, never the
+ * stop.
+ */
+function announcingAsleep(manager: SandboxManager, announce: MachineNotice): SandboxManager {
+  const asleep = async (workspaceId: string) => {
+    await announce(workspaceId, "stopped").catch((cause: unknown) => {
+      console.warn("[sandbox] the asleep notice was not delivered", { workspaceId, error: cause instanceof Error ? cause.message : String(cause) })
+    })
+  }
+  return {
+    ...manager,
+    stop: async (workspaceId, request) => {
+      const stopped = await manager.stop(workspaceId, request)
+      if (stopped.ok) await asleep(workspaceId)
+      return stopped
+    },
+    endIfHostDown: async (workspaceId, epoch) => {
+      const down = await manager.endIfHostDown(workspaceId, epoch)
+      if (down) await asleep(workspaceId)
+      return down
+    },
+    startFresh: async (workspaceId) => {
+      const fresh = await manager.startFresh(workspaceId)
+      if (fresh.ok) await asleep(workspaceId)
+      return fresh
+    },
+  }
 }
 
 /**
