@@ -103,6 +103,7 @@ export function remoteWorkspaceSessionAccessPolicy(
       (!requestOptions?.leaseId || !positiveInteger(requestOptions.fencingToken))
     )
       return denied(503, "session_turn_lease_required")
+    const askedAt = Date.now()
     try {
       return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
         const response = await (options.fetch ?? globalThis.fetch)(url, {
@@ -116,10 +117,14 @@ export function remoteWorkspaceSessionAccessPolicy(
           body: JSON.stringify(authorityRequestBody(input, action, requestOptions)),
           signal,
         })
-        if (!response.ok) return deniedFromResponse(response, await jsonBody(response))
-        return decode(await jsonBody(response))
+        if (response.ok) return decode(await jsonBody(response))
+        const body = await jsonBody(response)
+        const denial = deniedFromResponse(response, body)
+        if (denial.status === 503) reportUnavailable({ action, sessionId: input.sessionId, askedAt, status: response.status, code: asString(asRecord(body?.error)?.code) })
+        return denial
       }, input.signal)
-    } catch {
+    } catch (error) {
+      if (!input.signal?.aborted) reportUnavailable({ action, sessionId: input.sessionId, askedAt, error })
       return denied(503, "session_authority_unavailable")
     }
   }
@@ -172,6 +177,7 @@ export function remoteWorkspaceSessionAccessPolicy(
     const url = authorityUrl()
     if (!url || (!input.credential && !input.lease)) return denied(503, "session_authority_unavailable")
     const action: HostAuthorityAction = input.hostAccess === "admin" ? "host_admin" : "host_read"
+    const askedAt = Date.now()
     try {
       return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
         const response = await (options.fetch ?? globalThis.fetch)(url, {
@@ -196,9 +202,12 @@ export function remoteWorkspaceSessionAccessPolicy(
         if (response.status === 401 || response.status === 403) {
           return denied(response.status, asString(error?.code) ?? "host_authority_denied", asString(error?.message))
         }
-        return denied(503, asString(error?.code) ?? "session_authority_unavailable", asString(error?.message))
+        const code = asString(error?.code)
+        reportUnavailable({ action, askedAt, status: response.status, code })
+        return denied(503, code ?? "session_authority_unavailable", asString(error?.message))
       }, input.signal)
-    } catch {
+    } catch (error) {
+      if (!input.signal?.aborted) reportUnavailable({ action, askedAt, error })
       return denied(503, "session_authority_unavailable")
     }
   }
@@ -367,6 +376,23 @@ function authorityRequestBody(
 
 export function remoteWorkspaceSessionAccessPolicyFromEnv(env: Record<string, string | undefined>) {
   return remoteWorkspaceSessionAccessPolicy({ url: env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] })
+}
+
+/**
+ * One line per authority call that failed for any reason but the authority's
+ * own verdict: every such call answers the same 503, so this line is what
+ * tells a deadline from a fault or an unreachable plane, and how long it took.
+ * It is a single string because the sandbox Worker forwards the runtime's
+ * stderr line by line.
+ */
+function reportUnavailable(
+  call: { action: string; sessionId?: string; askedAt: number } & ({ status: number; code?: string } | { error: unknown }),
+) {
+  const outcome = "error" in call
+    ? `cause=${call.error instanceof Error && call.error.name === "TimeoutError" ? "timeout" : (call.error instanceof Error ? call.error.message : String(call.error)).slice(0, 200)}`
+    : `status=${call.status}${call.code ? ` code=${call.code}` : ""}`
+  const session = call.sessionId ? ` session=${call.sessionId}` : ""
+  console.warn(`Session authority unavailable: action=${call.action}${session} ms=${Date.now() - call.askedAt} ${outcome}`)
 }
 
 function isRegistrationAction(action: string) {
