@@ -8,7 +8,7 @@ import { modelsEmptyNotice, type ModelsEmptyFacts } from "./models-empty-notice"
 const t = ((key: string, params?: Record<string, unknown>) => [key, ...Object.values(params ?? {})].join(" ")) as ComposerText
 
 function facts(runtime: WorkspaceRuntime, wakes: string[] = []): ModelsEmptyFacts {
-  return { harnessName: "Claude Code", workspaceName: "Claxedo", runtime, wakeProgress: undefined, account: "present", unavailableHere: undefined, wake: () => void wakes.push("wake"), openProviders: () => undefined }
+  return { harnessName: "Claude Code", workspaceName: "Claxedo", runtime, wakeProgress: undefined, account: "present", unavailableHere: undefined, wake: () => void wakes.push("wake"), startFresh: { label: "Start fresh", run: () => undefined }, openProviders: () => undefined }
 }
 
 test("models empty: an asleep workspace offers Wake now in the picker, and never claims a message wakes it", () => {
@@ -34,6 +34,15 @@ test("models empty: a start that failed or hit the provider's limit shows the st
   expect(notice).toMatchObject({ message: "composer.models.wakeFailed Claxedo", detail: error.message, action: { label: "composer.models.retryWake" } })
   notice?.action?.run()
   expect(wakes).toEqual(["wake"])
+})
+
+test("models empty: a start refused for an unusable checkpoint offers Start fresh in place of Try again", () => {
+  const started: string[] = []
+  const error = { class: "conflict" as const, code: "workspace_checkpoint_unusable", message: "This workspace's saved files expired after 30 days unused; choose Start fresh.", retryable: false }
+  const notice = modelsEmptyNotice(t, { ...facts({ kind: "wakeFailed", error, checkpointUnusable: true }), startFresh: { label: "Start fresh", run: () => void started.push("fresh") } })
+  expect(notice).toMatchObject({ message: "composer.models.wakeFailed Claxedo", detail: error.message, action: { label: "Start fresh" } })
+  notice?.action?.run()
+  expect(started).toEqual(["fresh"])
 })
 
 test("models empty: a running workspace speaks of the harness's accounts, not the machine", () => {

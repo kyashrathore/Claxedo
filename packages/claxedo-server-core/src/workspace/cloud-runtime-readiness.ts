@@ -1,4 +1,5 @@
 import { asRecord, asString } from "@claxedo/helpers/guards"
+import type { SandboxCheckpointUnusableCause } from "@claxedo/sandbox-contract"
 import type { SandboxManagerPort, SandboxTargetResult } from "../sandbox/manager-port"
 
 export type AuthorityRowBacking = "local-worktree" | "cloud-vm"
@@ -23,7 +24,7 @@ function cloudWorkspaceIds(rows: readonly unknown[]) {
 export type CloudRuntimeLifecycle =
   | { status: "ready" | "stopped" }
   | { status: "provisioning"; failure?: string }
-  | { status: "failed"; error: string }
+  | { status: "failed"; error: string; checkpointUnusable?: SandboxCheckpointUnusableCause }
 
 /**
  * A failed start's reason for a reader with no headline of its own, a Pi
@@ -45,6 +46,7 @@ export function cloudRuntimeLifecycle(target: SandboxTargetResult | undefined): 
   }
   const failure = target.failure
   if (!failure) return { status: "failed", error: "The cloud workspace is not running" }
+  if (failure.kind === "checkpoint_unusable") return { status: "failed", error: failure.message, checkpointUnusable: failure.cause }
   if (failure.retrying) return { status: "provisioning", failure: failure.message }
   return { status: "failed", error: failure.message }
 }

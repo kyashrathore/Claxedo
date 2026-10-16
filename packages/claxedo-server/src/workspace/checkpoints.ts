@@ -110,6 +110,9 @@ export function createWorkspaceCheckpointService(input: {
         runtime: runtime(workspaceId, input.inspectRuntimeRequest ?? input.runtimeRequest),
       })
     },
+    startFresh(workspaceId: string) {
+      return input.sandboxManager.startFresh(workspaceId)
+    },
     async replace(workspaceId: string, request: Omit<SandboxCheckpointRestoreInput, "runtime"> = {}) {
       return publicResult(await input.sandboxManager.restore(workspaceId, {
         ...request,

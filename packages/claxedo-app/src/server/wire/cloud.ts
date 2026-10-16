@@ -8,9 +8,10 @@ import type {
   CodeHostRepositoryListing,
 } from "../cloud-types"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
+import { isCheckpointUnusableRow } from "./connection"
 import { cloudWorkspaceName } from "./workspace-name"
 
-function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown): CloudWorkspaceStatus {
+function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown, checkpointUnusable = false): CloudWorkspaceStatus {
   switch (status) {
     case "provisioning":
     case "acquiring_sandbox":
@@ -30,7 +31,7 @@ function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown)
       return { kind: "stopped" }
     case "error":
     case "failed":
-      return { kind: "failed", reason: nonEmptyString(message) ?? "The cloud workspace failed" }
+      return { kind: "failed", reason: nonEmptyString(message) ?? "The cloud workspace failed", ...(checkpointUnusable ? { checkpointUnusable: true } : {}) }
     default:
       return { kind: "failed", reason: `The cloud workspace reports an unknown status: ${String(status)}` }
   }
@@ -56,7 +57,7 @@ export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined 
     projectId: projectId(owner),
     ...(name ? { name } : {}),
     ...(branch ? { branch } : {}),
-    status: cloudStatusFromWire(row.status, row.step, row.error),
+    status: cloudStatusFromWire(row.status, row.step, row.error, isCheckpointUnusableRow(row)),
   }
 }
 

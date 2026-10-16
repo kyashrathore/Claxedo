@@ -30,7 +30,7 @@ import {
   type SandboxResource,
 } from "../contract"
 import { brokeredPlaceholderEnv } from "../egress-policy"
-import { SandboxProviderKeyRefusedError, SandboxRuntimeBootError } from "../lease-failure"
+import { isSandboxCheckpointUnusableCause, SandboxCheckpointUnusableError, SandboxProviderKeyRefusedError, SandboxRuntimeBootError } from "../lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { record, text } from "../json"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
@@ -276,8 +276,10 @@ export function createCloudflareSandboxDriver(
       return { provisioning: true as const, retryAfterMs: 2_000 }
     }
     if (data.exited === true) throw new SandboxRuntimeBootError(text(data.error) ?? "The workspace runtime exited before it was ready")
-    // An expired snapshot refuses every start until the person starts the workspace fresh, so polling it again cannot heal it.
-    if (status === 410 && data.snapshotMissing === true) throw new SandboxRuntimeBootError(text(data.error) ?? "This workspace's saved files expired after 30 days unused; start it fresh.")
+    // A checkpoint the Worker cannot restore refuses every start until the person starts the workspace fresh, so polling it again cannot heal it.
+    if (status === 410 && isSandboxCheckpointUnusableCause(data.checkpointUnusable)) {
+      throw new SandboxCheckpointUnusableError(data.checkpointUnusable, text(data.error) ?? "This workspace's saved files cannot be restored; choose Start fresh.")
+    }
     if (status >= 400 || !runtimeUrl) {
       const reason = `Cloudflare ensure-runtime failed (${status}): ${text(data.error) ?? "no runtime url"}`
       // The sandbox Worker answers 401 and 403 to the bearer token, which is the organization's key.

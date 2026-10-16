@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { canStart, canStop, cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useWorkspaceName, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
+import { canStart, canStartFresh, canStop, cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useStartFreshConfirm, useWorkspaceName, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
 import { useErrorCopy } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import { machineOfPlacement, useServer, type AppError, type Machine, type Placement, type Project } from "@/server"
@@ -48,6 +48,10 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
     })
     if (confirmed) await props.cloud.remove(props.row.id)
   }
+  const fresh = useStartFreshConfirm()
+  const startFresh = async () => {
+    if (await fresh.confirm(name())) await props.cloud.startFresh(props.row.id)
+  }
   return (
     <SettingsRow title={<span title={props.row.id}>{name()}</span>} description={detail()}>
       <Show when={props.row.state.kind === "ready"}>
@@ -55,6 +59,9 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
       </Show>
       <Show when={canStart(props.row.state)}>
         <Button variant="neutral" size="small" onClick={() => void props.cloud.start(props.row.id)}>{t("projects.where.start")}</Button>
+      </Show>
+      <Show when={canStartFresh(props.row.state)}>
+        <Button variant="neutral" size="small" onClick={() => void startFresh()}>{fresh.label}</Button>
       </Show>
       <Show when={canStop(props.row.state)}>
         <Button variant="neutral" size="small" onClick={() => void props.cloud.stop(props.row.id)}>{t("projects.where.stop")}</Button>

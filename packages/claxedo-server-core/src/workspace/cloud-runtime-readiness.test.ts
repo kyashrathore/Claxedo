@@ -42,6 +42,7 @@ describe("readyCloudWorkspaces", () => {
       ws_gave_up: unavailable({ kind: "provider", message: "quota exceeded", retrying: false }),
       ws_boot: unavailable({ kind: "boot", message: "fatal: couldn't find remote ref refs/heads/missing", retrying: false }),
       ws_silent: unavailable({ kind: "unhealthy", message: "The workspace machine stopped answering.", retrying: false }),
+      ws_expired: unavailable({ kind: "checkpoint_unusable", cause: "expired", message: "This workspace's saved files expired after 30 days unused; choose Start fresh.", retrying: false }),
       ws_unknown: unavailable(),
     }
     const lifecycles = await cloudWorkspaceLifecycles(
@@ -54,6 +55,7 @@ describe("readyCloudWorkspaces", () => {
       ws_gave_up: { status: "failed", error: "quota exceeded" },
       ws_boot: { status: "failed", error: "fatal: couldn't find remote ref refs/heads/missing" },
       ws_silent: { status: "failed", error: "The workspace machine stopped answering." },
+      ws_expired: { status: "failed", error: "This workspace's saved files expired after 30 days unused; choose Start fresh.", checkpointUnusable: "expired" },
       ws_unknown: { status: "failed", error: "The cloud workspace is not running" },
     })
   })

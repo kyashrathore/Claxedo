@@ -320,7 +320,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
         const snapshotId = record(payload.restore).snapshotId
         if (typeof snapshotId !== "string") return response(res, 400, { error: "ensure-runtime restore requires the checkpoint's snapshot id" })
         if (!(await restoreSandbox(input.root, id, snapshotId))) {
-          return response(res, 410, { ready: false, snapshotMissing: true, error: "This workspace's saved files expired after 30 days unused; start it fresh." })
+          return response(res, 410, { ready: false, checkpointUnusable: "expired", error: "This workspace's saved files expired after 30 days unused; choose Start fresh." })
         }
       }
       const previous = sandboxes.get(id)

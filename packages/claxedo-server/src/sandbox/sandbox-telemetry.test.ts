@@ -76,6 +76,19 @@ describe("workspace lifecycle events", () => {
     expect(captured.map((entry) => entry.properties?.host_left_running)).toEqual([true, undefined])
   })
 
+  test("a start refused for an unusable checkpoint is workspace_failed checkpoint_unusable with its cause, and Start fresh is workspace_started_fresh with the cause it fixed", () => {
+    const { captured, telemetry } = sink()
+    const emit = sandboxLifecycleSink(telemetry)
+    emit({ ...machine, kind: "failed", bootFailed: true, retrying: false, checkpointUnusable: "expired" })
+    emit({ ...machine, kind: "startedFresh", checkpointUnusable: "expired" })
+    emit({ ...machine, kind: "startedFresh" })
+    expect(captured.map((entry) => [entry.event, entry.properties?.code, entry.properties?.cause, entry.properties?.driver])).toEqual([
+      ["workspace_failed", "checkpoint_unusable", "expired", machine.driver],
+      ["workspace_started_fresh", undefined, "expired", machine.driver],
+      ["workspace_started_fresh", undefined, undefined, machine.driver],
+    ])
+  })
+
   test("a stop closes the metered interval with the boot's machine time", () => {
     const { captured, telemetry } = sink()
     const emit = sandboxLifecycleSink(telemetry)

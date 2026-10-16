@@ -19,7 +19,7 @@ import {
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeLifecycle } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxCheckpointUnusable, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
@@ -292,6 +292,10 @@ export async function hostedConnectionInfo(
     })
     // A boot that failed fails the same way until the person changes what it
     // boots from, so its reason is the answer rather than a wait.
+    const unusable = sandboxCheckpointUnusable(started.error)
+    if (unusable) {
+      return { error: apiError("workspace_checkpoint_unusable", unusable.message, { cause: unusable.cause }), status: 409 } as const
+    }
     if (started.error && sandboxRuntimeBootFailure(started.error) !== undefined) {
       return { error: apiError("cloud_runtime_boot_failed", sandboxStartFailureReason(started.error)), status: 409 } as const
     }
@@ -409,7 +413,7 @@ export async function hostedConnectionStatus(
         status: lifecycle.status,
         workspaceId,
         homeRegion,
-        ...(lifecycle.status === "failed" ? { error: lifecycle.error } : {}),
+        ...(lifecycle.status === "failed" ? { error: lifecycle.error, ...(lifecycle.checkpointUnusable ? { checkpointUnusable: lifecycle.checkpointUnusable } : {}) } : {}),
         ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
       },
     } as const

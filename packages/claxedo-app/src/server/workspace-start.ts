@@ -1,7 +1,7 @@
 import { sleep } from "@claxedo/helpers"
 import type { WorkspaceStartProgress } from "./cloud-types"
 import { ServerError } from "./errors"
-import { CLOUD_RUNTIME_BOOT_FAILED, type ConnectionAnswer, type RelayConnection, type StartRequest } from "./wire/connection"
+import { CLOUD_RUNTIME_BOOT_FAILED, WORKSPACE_CHECKPOINT_UNUSABLE, type ConnectionAnswer, type RelayConnection, type StartRequest } from "./wire/connection"
 
 export type StartOptions = {
   readonly onProgress?: (progress: WorkspaceStartProgress) => void
@@ -80,7 +80,7 @@ export async function startWorkspace(connect: Connect, workspaceId: string, opti
   const answer = await settledAnswer(connect, workspaceId, options, { retry: true })
   if (answer.kind === "ready") return answer.link
   if (answer.kind === "stopped") throw new ServerError({ class: "internal", message: "The workspace stopped while it was starting" })
-  throw new ServerError({ class: "conflict", code: CLOUD_RUNTIME_BOOT_FAILED, message: answer.reason })
+  throw new ServerError({ class: "conflict", code: answer.checkpointUnusable ? WORKSPACE_CHECKPOINT_UNUSABLE : CLOUD_RUNTIME_BOOT_FAILED, message: answer.reason })
 }
 
 export async function followWorkspaceStart(read: Connect, workspaceId: string, options: StartOptions = {}): Promise<RelayConnection | undefined> {

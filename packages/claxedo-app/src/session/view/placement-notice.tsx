@@ -1,7 +1,7 @@
 import { createEffect, createMemo, type Accessor, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, publishComposerNotice, useSelectedHarness, type ComposerKey, type ComposerNotice } from "@/composer"
-import { useWakeProgress, useWakeWorkspace, useWorkspaceName } from "@/cloud"
+import { useStartFresh, useWakeProgress, useWakeWorkspace, useWorkspaceName } from "@/cloud"
 import { runsInSessionHost } from "@/lib/harness-selection"
 import { isOfflineMachine, isStartingCloud, useServer, type PlacementId, type WorkspaceRuntime } from "@/server"
 import { placementNotice } from "./placement-notice-text"
@@ -12,6 +12,7 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
   const server = useServer()
   const named = useWorkspaceName()
   const wakeWorkspace = useWakeWorkspace()
+  const startFresh = useStartFresh()
   const harness = useSelectedHarness(composerKey)
   const runtime = (): WorkspaceRuntime => {
     const id = placementId()
@@ -39,6 +40,7 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
       offline: isOfflineMachine(placement),
       harnessRunsInSessionHost: runsInSessionHost(harness()),
       wake: () => wakeWorkspace(id),
+      startFresh: { label: startFresh.label, run: () => startFresh.run(id, name) },
     })
   }
 }

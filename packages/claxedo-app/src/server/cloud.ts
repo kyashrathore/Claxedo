@@ -90,6 +90,7 @@ export function createCloudApi(
   return {
     create: (options) => ("source" in options ? forSource(options) : forProject(options)),
     start: wakes.start,
+    startFresh: wakes.startFresh,
     follow: wakes.follow,
     runtime: wakes.runtime,
     stop: async (id) => {

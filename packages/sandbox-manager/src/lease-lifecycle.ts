@@ -1,5 +1,5 @@
 import type { SandboxLease } from "./contract"
-import type { SandboxStartWindow } from "./lease-failure"
+import type { SandboxCheckpointUnusableCause, SandboxStartWindow } from "./lease-failure"
 
 /** Who stopped the host: a person or the plane's explicit stop, the idle policy, or the provider on its own. */
 export type SandboxStopCause = "explicit" | "idle" | "provider"
@@ -14,7 +14,11 @@ export type SandboxStopCause = "explicit" | "idle" | "provider"
  * on in the next epoch is `retrying`; the start the person waits on has not
  * failed until an epoch fails without one. `startLimit` is the provider's
  * start-limit window an epoch was refused at. `hostLeftRunning` is a failed
- * start whose host the manager could not stop, so it may still bill.
+ * start whose host the manager could not stop, so it may still bill, and
+ * `checkpointUnusable` the cause of one refused because the checkpoint it
+ * restores cannot be used. `startedFresh` is the person dropping the lease's
+ * checkpoint so the next start boots the image; its `checkpointUnusable` is
+ * the cause the lease's last start was refused for, when it was.
  */
 export type SandboxLifecycleEvent = {
   workspaceId: string
@@ -24,8 +28,11 @@ export type SandboxLifecycleEvent = {
 } & (
   | { kind: "stopped"; cause: SandboxStopCause; activeMs?: number }
   | { kind: "destroyed"; hostGone: boolean; activeMs?: number }
-  | { kind: "failed"; bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow; hostLeftRunning?: true }
+  | { kind: "failed" } & SandboxStartFailureFacts
+  | { kind: "startedFresh"; checkpointUnusable?: SandboxCheckpointUnusableCause }
 )
+
+type SandboxStartFailureFacts = { bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow; hostLeftRunning?: true; checkpointUnusable?: SandboxCheckpointUnusableCause }
 
 export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) => void) | undefined, now: () => number) {
   const base = (lease: SandboxLease) => ({ workspaceId: lease.workspaceId, epoch: lease.epoch, driver: lease.driver, labels: lease.labels ?? {} })
@@ -45,6 +52,8 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
     destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", hostGone: false, ...active(lease) }),
     /** `endedAt` is when the host was last proven serving: the provider's loss is learned after the fact. */
     hostGone: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "destroyed", hostGone: true, ...active(lease, endedAt) }),
-    failed: (lease: SandboxLease, failure: { bootFailed: boolean; retrying: boolean; startLimit?: SandboxStartWindow; hostLeftRunning?: true }) => report({ ...base(lease), kind: "failed", ...failure }),
+    failed: (lease: SandboxLease, failure: SandboxStartFailureFacts) => report({ ...base(lease), kind: "failed", ...failure }),
+    startedFresh: (lease: SandboxLease, checkpointUnusable: SandboxCheckpointUnusableCause | undefined) =>
+      report({ ...base(lease), kind: "startedFresh", ...(checkpointUnusable ? { checkpointUnusable } : {}) }),
   }
 }

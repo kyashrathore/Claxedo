@@ -6,6 +6,8 @@
  * actually reads. That keeps provider SDKs out of the local package closure.
  */
 
+import type { SandboxCheckpointUnusableCause } from "@claxedo/sandbox-contract"
+
 export type SandboxReadyTarget = {
   status: "ready"
   workspaceId?: string
@@ -45,7 +47,9 @@ export type SandboxTargetResult =
       /** Delay until the lease's own next scheduled retry, when it carries one. */
       retryAfterMs?: number
       /** What the lease's last start or health report failed on; `retrying` while its scheduled retry is ahead. */
-      failure?: { kind: "boot" | "unhealthy" | "provider"; message: string; retrying: boolean }
+      failure?:
+        | { kind: "boot" | "unhealthy" | "provider"; message: string; retrying: boolean }
+        | { kind: "checkpoint_unusable"; cause: SandboxCheckpointUnusableCause; message: string; retrying: false }
     }
 
 export type SandboxManagerPort = {

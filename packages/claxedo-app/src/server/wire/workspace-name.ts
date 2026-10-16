@@ -1,5 +1,6 @@
 import { nonEmptyString } from "@claxedo/helpers/guards"
 import type { PlacementKind, PlacementName } from "../types"
+import { isCheckpointUnusableRow } from "./connection"
 import { cloudLifecycleOf } from "./placement-lifecycle"
 
 export function cloudWorkspaceName(row: Record<string, unknown>, id: string): string | undefined {
@@ -11,7 +12,8 @@ export function placementName(row: Record<string, unknown>, id: string, kind: Pl
   if (kind === "cloud") {
     const lifecycle = cloudLifecycleOf(row)
     const failure = lifecycle === "failed" ? nonEmptyString(row.error) : undefined
-    return { kind, lifecycle, ...(own ? { label: own } : {}), ...(failure ? { failure } : {}) }
+    const unusable = lifecycle === "failed" && isCheckpointUnusableRow(row)
+    return { kind, lifecycle, ...(own ? { label: own } : {}), ...(failure ? { failure } : {}), ...(unusable ? { checkpointUnusable: true } : {}) }
   }
   return { kind, label: own ?? path?.split("/").filter(Boolean).pop() ?? path ?? id }
 }

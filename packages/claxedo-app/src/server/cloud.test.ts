@@ -17,6 +17,7 @@ const created = { workspace_id: "ws_new", project_id: "prj_widgets", backing: "c
 const wakes: WorkspaceWakes = {
   runtime: () => ({ kind: "live" }),
   start: async () => undefined,
+  startFresh: async () => undefined,
   follow: async () => undefined,
   wakeIfStopped: async () => false,
   settle: async () => false,

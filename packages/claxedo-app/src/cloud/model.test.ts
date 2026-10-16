@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test"
-import { canStart, canStop, cloudWorkspaceTransition } from "./model"
+import { canStart, canStartFresh, canStop, cloudWorkspaceTransition } from "./model"
+
+test("a workspace whose checkpoint cannot be restored offers Start fresh in place of Start, which would be refused again", () => {
+  const unusable = { kind: "failed", reason: "This workspace's saved files expired after 30 days unused; choose Start fresh.", checkpointUnusable: true } as const
+  expect(canStartFresh(unusable)).toBe(true)
+  expect(canStart(unusable)).toBe(false)
+  expect(canStartFresh({ kind: "failed", reason: "boot failed" })).toBe(false)
+  expect(canStartFresh({ kind: "stopped" })).toBe(false)
+  expect(cloudWorkspaceTransition(unusable, { type: "startRequested" })).toBe(unusable)
+  expect(cloudWorkspaceTransition(unusable, { type: "startFreshRequested" })).toEqual({ kind: "starting" })
+})
 
 test("a provisioning workspace offers Stop only; Start is for an asleep or failed one", () => {
   const provisioning = { kind: "provisioning", step: "cloning" } as const
