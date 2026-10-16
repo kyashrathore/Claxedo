@@ -26,7 +26,7 @@ import { createProjectsApi } from "./projects"
 import { createProjectEnvironmentApi } from "./project-environment"
 import { queryKeys } from "./query-keys"
 import { createQueries } from "./queries"
-import { createPlacementStreams } from "./placement-streams"
+import { createPlacementStreams, type PlacementStreams } from "./placement-streams"
 import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { createSessionsApi } from "./sessions"
 import { createStatusOwner, type StatusOwner } from "./status"
@@ -106,6 +106,13 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   }
 }
 
+function retryConnections(startup: Pick<ReturnType<typeof createStartup>, "retry">, placementStreams: Pick<PlacementStreams, "retry">) {
+  return () => {
+    placementStreams.retry()
+    return startup.retry()
+  }
+}
+
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
@@ -134,7 +141,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     attachPlacement: placementStreams.attach,
     watchPlacement: placementStreams.watch,
     queries,
-    retryConnection: startup.retry,
+    retryConnection: retryConnections(startup, placementStreams),
     ready: startup.ready,
     dispose: () => {
       stopProjecting()

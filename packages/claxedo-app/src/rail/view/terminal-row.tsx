@@ -2,6 +2,7 @@ import { createEffect, createMemo, on, onCleanup, Show, type Accessor, type JSX 
 import { useWorkspaceName } from "@/cloud"
 import { useTranslator } from "@/i18n"
 import { useServer, type PlacementId } from "@/server"
+import { sidebarModeOf, useShellRoute } from "@/shell"
 import { useTerminals, type TerminalItem } from "@/terminal"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
@@ -77,8 +78,10 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
 export function useProjectTerminals(placementIds: () => readonly PlacementId[], expanded: () => boolean): Accessor<readonly TerminalItem[]> {
   const terminals = useTerminals()
   const server = useServer()
+  const routing = useShellRoute()
+  const shown = () => expanded() && sidebarModeOf(routing.route()) === "main"
   const reachable = createMemo(() =>
-    expanded() ? placementIds().filter((placementId) => server.placements.byId(placementId)?.reachable === true) : [])
+    shown() ? placementIds().filter((placementId) => server.placements.byId(placementId)?.reachable === true) : [])
   createEffect(
     on(
       () => reachable().join("\n"),

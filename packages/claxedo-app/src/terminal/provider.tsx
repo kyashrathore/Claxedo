@@ -21,8 +21,10 @@ export function TerminalProvider(props: ParentProps): JSX.Element {
   const panel = usePanel()
   const t = useTranslator(terminalDictionary)
   const route = useShellRoute()
-  const cache = createTerminalStoreCache(STORE_CAP, (placementId) =>
-    createTerminalStore({ server, placementId, defaultTitle: () => t("terminal.title") }),
+  const cache = createTerminalStoreCache(
+    STORE_CAP,
+    (placementId) => createTerminalStore({ server, placementId, defaultTitle: () => t("terminal.title") }),
+    server.watchPlacement,
   )
   onCleanup(cache.dispose)
   const terminals: Terminals = {
