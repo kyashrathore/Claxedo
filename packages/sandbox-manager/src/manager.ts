@@ -671,8 +671,8 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       return await mutationLifecycle(workspaceId, "stop", async (): Promise<SandboxMutationResult> => {
         const lease = await options.leaseStore.get(workspaceId)
         if (input.expectedEpoch !== undefined && lease?.epoch !== input.expectedEpoch) return { ok: false, reason: "runtime_lease_changed" }
-        const stopped = (checkpoint: string | undefined) => ({ ok: true as const, status: "stopped" as const, ...(checkpoint ? { checkpoint } : {}) })
-        if (lease?.status === "stopped") return stopped(lease.checkpoint?.providerReference)
+        const stopped = { ok: true as const, status: "stopped" as const }
+        if (lease?.status === "stopped") return stopped
         const target = await this.target(workspaceId)
         const stopHost = input.hostStopsItself ? undefined : options.driver.suspend ?? options.driver.stop
         // A host the provider no longer has cannot be stopped and is not held: the lease ends destroyed, and the next start places anew.
@@ -687,7 +687,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           if (!updated) return undefined
           if (status === "destroyed") lifecycle.hostGone(lease, endedAt)
           else lifecycle.stopped(lease, input.idleBefore !== undefined)
-          return { ok: true as const, status, ...(status === "stopped" && lease.checkpoint ? { checkpoint: lease.checkpoint.providerReference } : {}) }
+          return { ok: true as const, status }
         }
         if (target.status !== "ready") {
           // A lease still booting on a host it holds has nothing serving to drain, and the host costs all the same.
@@ -702,7 +702,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           const checkpoint = captured.checkpoint.providerReference
           if (persistence.captureSource === "preserved") await stopHost?.({ ...target, checkpoint })
           if (lease) lifecycle.stopped(lease, input.idleBefore !== undefined)
-          return stopped(checkpoint)
+          return stopped
         }
         const checkpoint = lease?.checkpoint?.providerReference
         const resource = { ...target, ...(checkpoint ? { checkpoint } : {}) }

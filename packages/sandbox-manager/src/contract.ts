@@ -643,8 +643,7 @@ export type SandboxTargetResult =
     }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }
-/** A stop's answer names the snapshot the stopped lease references (`checkpoint`), so a host that stops itself keeps it. */
-export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus; checkpoint?: string } | { ok: false; reason: string }
+export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus } | { ok: false; reason: string }
 export type SandboxSnapshotManagerResult =
   | ({ ok: true } & SandboxSnapshotResult)
   | { ok: false; reason: string }

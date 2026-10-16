@@ -106,6 +106,21 @@ describe("workspace checkpoint service", () => {
     ])
   })
 
+  test("a checkpoint's snapshot handle never leaves the control plane in any answer", async () => {
+    const sandboxManager = manager()
+    const checkpoint = { id: "cp_1", providerReference: "snap-secret", sourceEpoch: 1, capturedAt: 1, metadata: { scope: "filesystem", sourceBehavior: "preserved", restoreMount: "new-resource" } }
+    sandboxManager.checkpoint.mockImplementation(async () => ({ status: "ready", lease: { status: "ready", checkpoint }, checkpoint }))
+    sandboxManager.restore.mockImplementation(async () => ({ status: "ready", lease: { status: "ready", checkpoint }, checkpoint }))
+    const service = createWorkspaceCheckpointService({ sandboxManager, runtimeRequest: vi.fn(async () => Response.json({ ok: true })) })
+
+    const answers = [await service.inspect("ws_1"), await service.capture("ws_1"), await service.restore("ws_1"), await service.replace("ws_1")]
+    for (const answer of answers) {
+      expect(JSON.stringify(answer)).not.toContain("snap-secret")
+      expect(JSON.stringify(answer)).not.toContain("providerReference")
+    }
+    expect(answers[1]).toMatchObject({ checkpoint: { id: "cp_1", sourceEpoch: 1 }, lease: { checkpoint: { id: "cp_1" } } })
+  })
+
   test("forced cleanup destroys the provider resource before releasing its lease", async () => {
     const sandboxManager = manager()
     const service = createWorkspaceCheckpointService({

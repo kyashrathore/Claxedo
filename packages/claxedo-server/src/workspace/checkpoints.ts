@@ -1,12 +1,36 @@
 import { workspaceRuntimeRequestError } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import type {
   SandboxCheckpointCaptureInput,
+  SandboxCheckpointReference,
   SandboxCheckpointRestoreInput,
+  SandboxCheckpointResult,
   SandboxCheckpointRuntime,
+  SandboxLease,
   SandboxManager,
   SandboxStopInput,
 } from "@claxedo/sandbox-manager"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
+
+/**
+ * A checkpoint as its readers see it. The provider reference is the snapshot
+ * handle a driver restores from, which works as a bearer handle at the
+ * provider, so it stays between the lease store and the driver.
+ */
+function publicCheckpoint(checkpoint: SandboxCheckpointReference | undefined) {
+  if (!checkpoint) return undefined
+  const { providerReference: _handle, ...rest } = checkpoint
+  return rest
+}
+
+function publicLease(lease: SandboxLease | undefined) {
+  if (!lease) return undefined
+  const { checkpoint, ...rest } = lease
+  return { ...rest, ...(checkpoint ? { checkpoint: publicCheckpoint(checkpoint) } : {}) }
+}
+
+function publicResult(result: SandboxCheckpointResult) {
+  return { ...result, lease: publicLease(result.lease), checkpoint: publicCheckpoint(result.checkpoint) }
+}
 
 export type WorkspaceCheckpointService = ReturnType<typeof createWorkspaceCheckpointService>
 
@@ -56,8 +80,8 @@ export function createWorkspaceCheckpointService(input: {
           .catch(() => [])
         : []
       return {
-        lease,
-        checkpoint: lease?.checkpoint,
+        lease: publicLease(lease),
+        checkpoint: publicCheckpoint(lease?.checkpoint),
         restore: lease?.restore,
         capabilities: lease?.persistence,
         worktrees,
@@ -67,17 +91,17 @@ export function createWorkspaceCheckpointService(input: {
         },
       }
     },
-    capture(workspaceId: string, request: Omit<SandboxCheckpointCaptureInput, "runtime"> = {}) {
-      return input.sandboxManager.checkpoint(workspaceId, {
+    async capture(workspaceId: string, request: Omit<SandboxCheckpointCaptureInput, "runtime"> = {}) {
+      return publicResult(await input.sandboxManager.checkpoint(workspaceId, {
         ...request,
         runtime: runtime(workspaceId),
-      })
+      }))
     },
-    restore(workspaceId: string, request: Omit<SandboxCheckpointRestoreInput, "runtime"> = {}) {
-      return input.sandboxManager.restore(workspaceId, {
+    async restore(workspaceId: string, request: Omit<SandboxCheckpointRestoreInput, "runtime"> = {}) {
+      return publicResult(await input.sandboxManager.restore(workspaceId, {
         ...request,
         runtime: runtime(workspaceId),
-      })
+      }))
     },
     /** Captures and stops a running workspace; the runtime it controls must already run, so it is reached without waking it. */
     stop(workspaceId: string, request: Omit<SandboxStopInput, "runtime"> = {}) {
@@ -86,11 +110,11 @@ export function createWorkspaceCheckpointService(input: {
         runtime: runtime(workspaceId, input.inspectRuntimeRequest ?? input.runtimeRequest),
       })
     },
-    replace(workspaceId: string, request: Omit<SandboxCheckpointRestoreInput, "runtime"> = {}) {
-      return input.sandboxManager.restore(workspaceId, {
+    async replace(workspaceId: string, request: Omit<SandboxCheckpointRestoreInput, "runtime"> = {}) {
+      return publicResult(await input.sandboxManager.restore(workspaceId, {
         ...request,
         runtime: runtime(workspaceId),
-      })
+      }))
     },
     async cleanup(workspaceId: string) {
       const destroyed = await input.sandboxManager.destroy(workspaceId)

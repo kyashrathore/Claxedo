@@ -215,7 +215,7 @@ describe("checkpoint lifecycle", () => {
     const manager = createSandboxManager({ leaseStore: store, driver: next })
     await manager.ensure("ws_1", { homeRegion: "us-east" })
     const control = runtime(order)
-    expect(await manager.stop("ws_1", { runtime: control, idleBefore: 1_000, expectedEpoch: 1 })).toEqual({ ok: true, status: "stopped", checkpoint: "snapshot-1" })
+    expect(await manager.stop("ws_1", { runtime: control, idleBefore: 1_000, expectedEpoch: 1 })).toEqual({ ok: true, status: "stopped" })
     expect(control.freeze).toHaveBeenCalledWith("drain", { idleBefore: 1_000 })
     expect(order).toEqual(["freeze", "flush", "scrub", "stop:1:snapshot-1:stopped"])
     expect((await store.get("ws_1"))?.checkpoint?.providerReference).toBe("snapshot-1")
@@ -245,17 +245,17 @@ describe("checkpoint lifecycle", () => {
     expect(next.stop).not.toHaveBeenCalled()
   })
 
-  test("a host that stops itself is not stopped by the manager, and its retry after a failed self-stop names the committed snapshot", async () => {
+  test("a host that stops itself is not stopped by the manager, and its retry after a failed self-stop answers stopped again", async () => {
     const store = createMemoryLeaseStore()
     const next = driver({ stop: vi.fn(async () => {}) })
     const manager = createSandboxManager({ leaseStore: store, driver: next })
     await manager.ensure("ws_1", { homeRegion: "us-east" })
     const control = runtime()
     const request = { runtime: control, idleBefore: 1_000, expectedEpoch: 1, hostStopsItself: true }
-    expect(await manager.stop("ws_1", request)).toEqual({ ok: true, status: "stopped", checkpoint: "snapshot-1" })
+    expect(await manager.stop("ws_1", request)).toEqual({ ok: true, status: "stopped" })
     expect(next.stop).not.toHaveBeenCalled()
     expect(control.resume).not.toHaveBeenCalled()
-    expect(await manager.stop("ws_1", request)).toEqual({ ok: true, status: "stopped", checkpoint: "snapshot-1" })
+    expect(await manager.stop("ws_1", request)).toEqual({ ok: true, status: "stopped" })
     expect(next.snapshot).toHaveBeenCalledOnce()
   })
 
