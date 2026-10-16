@@ -5,6 +5,7 @@ export default {
   forbidden: ["Nije dozvoljeno", "Vaš račun nema pristup ovome. Zatražite pristup od vlasnika."],
   rate_limit: ["Previše zahtjeva", "Server ograničava zahtjeve. Sačekajte trenutak, pa pokušajte ponovo."],
   network: ["Server nije dostupan", "Nije moguće doći do servera. Provjerite vezu, pa pokušajte ponovo."],
+  runtime_unreachable: ["Mašina radnog prostora se nije javila", "Mašina radnog prostora se nije javila. Pokušajte ponovo."],
   not_found: ["Nije pronađeno", "Ovo više ne postoji. Možda je obrisano."],
   conflict: ["Promijenjeno na drugom mjestu", "Ovo je prvo promijenjeno na drugom mjestu. Ponovo učitajte, pa pokušajte ponovo."],
   invalid: ["Zahtjev odbijen", "Server je odbio ovaj zahtjev kao nevažeći."],

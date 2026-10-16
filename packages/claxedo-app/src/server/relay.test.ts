@@ -135,3 +135,10 @@ test("relay: a kept link near its expiry is minted again on the next reload and 
   await createRelay(server.read, { scope: "usr_ada", storage }).fetch("ws_1", "/api/wr/health")
   expect(server.calls, "the renewed link serves the next reload").toHaveLength(1)
 })
+
+test("relay: a runtime the control plane couldn't reach for its settings fails the runtime call as runtime_unreachable", async () => {
+  const request = async () => Response.json({ error: { code: "runtime_provision_failed", message: "error code: 1101" } }, { status: 409 })
+
+  await expect(createRelay(createWorkspaceConnections(request).read).fetch("ws_1", "/api/wr/pty")).rejects.toMatchObject({ class: "runtime_unreachable", retryable: true })
+  expect(runtimeFetch).not.toHaveBeenCalled()
+})

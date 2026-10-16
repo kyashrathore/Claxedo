@@ -40,3 +40,18 @@ test("a turn the provider's edge refused is a network failure, not a rate limit"
   const error = turnError({ name: "UnknownError", data: { message: "refused", firstTurnErrorClass: "egress" } })
   expect(error.class).toBe("network")
 })
+
+test("a workspace machine that didn't answer is runtime_unreachable and retried, never a conflict to reload", async () => {
+  const unanswered = await Promise.all([
+    responseError(reply(409, { code: "runtime_provision_failed", message: "error code: 1101" }), "Workspace connection"),
+    responseError(reply(503, { code: "upstream_unavailable", message: "Workspace upstream is unavailable" })),
+    responseError(reply(503, { code: "host_tunnel_offline", message: "The machine serving this workspace is offline" })),
+    responseError(reply(503, { code: "session_host_unavailable", message: "The session host is unavailable" })),
+  ])
+  expect(unanswered.map((error) => [error.class, error.retryable])).toEqual(Array(4).fill(["runtime_unreachable", true]))
+})
+
+test("a Cloudflare worker exception page is an internal failure, not a conflict", async () => {
+  const error = await responseError(new Response("error code: 1101", { status: 500 }), "GET /api/wr/pty")
+  expect(error.class).toBe("internal")
+})

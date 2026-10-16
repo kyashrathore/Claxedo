@@ -5,6 +5,7 @@ export default {
   forbidden: ["İzin verilmiyor", "Hesabınızın buna erişimi yok. Sahibinden erişim isteyin."],
   rate_limit: ["Çok fazla istek", "Sunucu istekleri sınırlıyor. Biraz bekleyip yeniden deneyin."],
   network: ["Sunucuya ulaşılamıyor", "Sunucuya ulaşılamadı. Bağlantıyı kontrol edip yeniden deneyin."],
+  runtime_unreachable: ["Çalışma alanı makinesi yanıt vermedi", "Çalışma alanı makinesi yanıt vermedi. Yeniden deneyin."],
   not_found: ["Bulunamadı", "Bu artık mevcut değil. Silinmiş olabilir."],
   conflict: ["Başka bir yerde değiştirildi", "Bu önce başka bir yerde değiştirildi. Yeniden yükleyip tekrar deneyin."],
   invalid: ["İstek reddedildi", "Sunucu bu isteği geçersiz olduğu için reddetti."],
