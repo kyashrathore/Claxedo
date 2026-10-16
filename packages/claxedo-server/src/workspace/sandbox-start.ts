@@ -1,8 +1,8 @@
 import type { SandboxEnsureResult, SandboxTargetResult } from "@claxedo/sandbox-manager"
-import type { ProvisionEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { timed } from "../platform/http/server-timing"
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import type { WorkspaceRuntimeContext } from "./route-support"
+import type { MachineNotice } from "./machine-notice"
 
 /**
  * What a cloud workspace's start answers. The sandbox manager's own answers
@@ -53,7 +53,7 @@ export type SandboxStartDrive = {
   /** Sends the telemetry a step queued, inside the Durable Object invocation that ran it; no request flushes a step for it. */
   flushTelemetry?(): Promise<void>
   /** Tells the workspace owner's open clients that a start began or settled, whoever asked for it. */
-  announce?(workspaceId: string, step: ProvisionEvent["step"]): Promise<void>
+  announce?: MachineNotice
 }
 
 export type SandboxProvisionerStub = {

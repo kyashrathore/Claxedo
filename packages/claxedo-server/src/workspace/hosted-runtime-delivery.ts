@@ -29,6 +29,7 @@ import { createHostedRuntimeFetch } from "./relay-runtime-client"
 import { withTimeout } from "../platform/runtime/timeout"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
 import type { ReadySandboxTarget, SandboxFollowUps, SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { MachineNotice } from "./machine-notice"
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { accountsRenewalDueAt, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { PLACEHOLDER_TTL_SECONDS, type BrokerLease, type HostedEgressBroker } from "../credentials/hosted-egress-broker"
@@ -131,6 +132,8 @@ export function createHostedRuntimeDelivery(input: {
   idleStop: WorkspaceIdleStop
   /** Ends the turns the workspace's runtime was running when the idle watch found that runtime gone at `at`. */
   runtimeLost?: (workspaceId: string, at: number) => Promise<void>
+  /** Tells the workspace owner's open clients that a start began or settled. */
+  announce?: MachineNotice
   /** A request to a ready sandbox's runtime over the relay; a test hands in its own runtime. */
   runtimeFetch?: (workspaceId: string, orgId: string, path: string, init: RequestInit) => Promise<Response>
 }) {
@@ -352,6 +355,7 @@ export function createHostedRuntimeDelivery(input: {
     flushTelemetry: async () => {
       await input.services.telemetry.flush?.()
     },
+    ...(input.announce ? { announce: input.announce } : {}),
   }
   const running = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
     const leases = await input.sandboxManager.list()
