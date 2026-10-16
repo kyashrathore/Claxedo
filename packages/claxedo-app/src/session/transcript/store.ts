@@ -12,7 +12,7 @@ import { loadOlder } from "./older"
 import { loadPart } from "./part"
 import { sendPrompt, showSent, stopTurn } from "./send"
 import { retainedSession, type RetainedSession } from "./retained"
-import { readSnapshot } from "./snapshot"
+import { readSnapshot, rereadWhenAsleep } from "./snapshot"
 
 export type { TranscriptDeps } from "./context"
 
@@ -97,6 +97,7 @@ function sessionRequests({ ref, deps }: TranscriptContext): Pick<SessionView, "r
 export function createSessionTranscript(server: Server, ref: SessionLocation, deps: TranscriptDeps, seed?: TranscriptSeed): SessionTranscript {
   const context = createTranscriptContext(server, ref, deps)
   onCleanup(server.attachPlacement(ref))
+  rereadWhenAsleep(context)
   void readSnapshot(context, seed)
   void context.queue.reread()
   return {

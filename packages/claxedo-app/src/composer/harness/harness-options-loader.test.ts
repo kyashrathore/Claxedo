@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, beforeEach, expect, jest, test } from "bun:test"
+import { afterEach, beforeEach, expect, jest, spyOn, test } from "bun:test"
 import { ServerError, type HarnessOptions } from "@/server"
 import { nativeHarness, type HarnessSelection } from "@/lib/harness-selection"
 import { createHarnessOptionsLoader } from "./harness-options-loader"
@@ -49,6 +49,19 @@ test("options loader: an answer for a harness the user switched away from only r
   expect(await pending).toBeUndefined()
   expect(run.patches).toEqual([])
   expect(run.loading).toEqual([true, false])
+})
+
+test("options loader: a read that failed with no server answer logs its cause with the scope and harness, since the person only reads a plain failure", async () => {
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined)
+  try {
+    const cause = new SyntaxError("Unexpected end of JSON input")
+    const run = harness([cause])
+    await run.loader.load("draft:a", codex)
+    expect(run.patches.at(-1)?.configError).toBe("Failed to load model options")
+    expect(warn).toHaveBeenCalledWith("A harness's model options read failed without a server answer", { scope: "draft:a", harness: codex, error: cause })
+  } finally {
+    warn.mockRestore()
+  }
 })
 
 test("options loader: a failed read names the server's reason, or a plain failure when unreachable", async () => {

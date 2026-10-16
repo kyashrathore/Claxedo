@@ -1,12 +1,13 @@
 /// <reference types="bun" />
 import { expect, spyOn, test } from "bun:test"
-import { createEffect, createRoot, on } from "solid-js"
+import { createEffect, createRoot, createSignal, on } from "solid-js"
 import { ServerError, type Server, type SessionFirstRead } from "@/server"
 import { createRequests } from "../requests"
 import { createTranscriptContext, type TranscriptDeps } from "./context"
 import { loadOlder } from "./older"
 import { loadPart } from "./part"
 import { readSnapshot } from "./snapshot"
+import { createSessionTranscript } from "./store"
 import { transcriptRef, shell, withShell, latest, firstReadOf, transcriptServer, idle } from "./test-support/transcript-server"
 
 test("snapshot: a first read lands its row, outline and page in one update, and nothing more is read until the reader pages", async () => {
@@ -99,6 +100,44 @@ test("snapshot: a missing runtime session keeps the stored transcript and is its
     await readSnapshot(context)
     await runtime
     expect(context.runtimeMissing()).toBe(false)
+    dispose()
+  })
+})
+
+test("snapshot: a session its runtime no longer had reads again once its workspace is asleep, so the page offers Wake instead of a new session", async () => {
+  const { server: base, deps } = transcriptServer()
+  const missing = new ServerError({ class: "not_found", status: 404, code: "session_not_found", message: "Session not found" })
+  const runtimeReads: Promise<undefined>[] = [Promise.reject(missing)]
+  const [reachable, setReachable] = createSignal(true)
+  let reads = 0
+  let queueReads = 0
+  const server = {
+    ...base,
+    attachPlacement: () => () => undefined,
+    placements: { byId: () => ({ kind: "cloud", reachable: reachable() }) },
+    sessions: {
+      ...base.sessions,
+      queue: async () => {
+        queueReads += 1
+        return []
+      },
+      read: () => {
+        reads += 1
+        return { ...base.sessions.read(transcriptRef, deps.pageShape()), runtime: runtimeReads.shift() ?? Promise.resolve(undefined) }
+      },
+    },
+  } as unknown as Server
+  await createRoot(async (dispose) => {
+    const view = createSessionTranscript(server, transcriptRef, deps)
+    await idle()
+    expect(view.runtimeMissing()).toBe(true)
+    setReachable(false)
+    await idle()
+    expect([reads, queueReads]).toEqual([2, 2])
+    expect(view.runtimeMissing()).toBe(false)
+    setReachable(true)
+    await idle()
+    expect([reads, queueReads], "waking reads nothing here: the stream that reconnects raises its own gap").toEqual([2, 2])
     dispose()
   })
 })

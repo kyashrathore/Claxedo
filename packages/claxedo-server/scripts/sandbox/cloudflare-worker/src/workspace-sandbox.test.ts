@@ -249,6 +249,20 @@ describe("workspace sandbox lifecycle", () => {
     expect(s.state.proxied).toEqual(["2593/global/event"])
   })
 
+  test("a running container whose runtime stopped listening answers the relay's unavailable envelope, never a platform exception page", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    for (const launch of s.state.launches.values()) launch.state = "exited"
+    const response = await s.object.fetch(new Request("https://sbx.test/session/ses_1/outline") as never)
+    expect([response.status, await response.json()]).toEqual([503, { error: { code: "upstream_unavailable", message: "The workspace runtime is not answering" } }])
+    expect(s.state.starts).toHaveLength(1)
+  })
+
+  test("a sandbox with no running container answers the same envelope", async () => {
+    const response = await sandbox().object.fetch(new Request("https://sbx.test/session/ses_1/outline") as never)
+    expect([response.status, await response.json()]).toEqual([503, { error: { code: "upstream_unavailable", message: "The workspace machine is not running" } }])
+  })
+
   test("the container runs from its ensure until its stop", async () => {
     const s = sandbox()
     expect(await s.object.workspaceRunning()).toBe(false)

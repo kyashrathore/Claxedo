@@ -1,4 +1,5 @@
 import { createMemo, createSignal, Match, Show, Switch, untrack } from "solid-js"
+import { useErrorCopy } from "@/i18n"
 import { persistedSignal, preferenceKey, tabStorage } from "@/lib/persisted"
 import type { SessionControls } from "@/access"
 import type { AgentRequest, AgentRequestReply, AppError } from "@/server"
@@ -35,6 +36,7 @@ function RequestDock(props: { readonly view: SessionView; readonly request: Agen
 
 function RequestReadError(props: { readonly view: SessionView; readonly error: AppError }) {
   const t = useSessionScreenText()
+  const errorCopy = useErrorCopy("session")
   const [retrying, setRetrying] = createSignal(false)
   const retry = async () => {
     if (retrying()) return
@@ -48,7 +50,7 @@ function RequestReadError(props: { readonly view: SessionView; readonly error: A
   return (
     <div role="alert" class="rounded-lg border border-border-weak-base bg-background-base p-3 text-text-base">
       <div>{t("sessionScreen.requests.loadFailed")}</div>
-      <pre class="whitespace-pre-wrap break-all text-12-regular">{props.error.message}</pre>
+      <div class="text-12-regular">{errorCopy(props.error).message}</div>
       <button type="button" disabled={retrying()} onClick={() => void retry()}>
         {t("sessionScreen.action.retry")}
       </button>

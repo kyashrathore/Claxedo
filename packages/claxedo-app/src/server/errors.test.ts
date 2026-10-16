@@ -51,6 +51,12 @@ test("a workspace machine that didn't answer is runtime_unreachable and retried,
   expect(unanswered.map((error) => [error.class, error.retryable])).toEqual(Array(4).fill(["runtime_unreachable", true]))
 })
 
+test("a body that is not JSON never becomes the message a person could read", async () => {
+  const page = "<!DOCTYPE html><html><body>Error 1101 Worker threw exception</body></html>"
+  const error = await responseError(new Response(page, { status: 500, headers: { "content-type": "text/html" } }), "First read")
+  expect(error.message).toBe("First read failed with status 500")
+})
+
 test("a Cloudflare worker exception page is an internal failure, not a conflict", async () => {
   const error = await responseError(new Response("error code: 1101", { status: 500 }), "GET /api/wr/pty")
   expect(error.class).toBe("internal")

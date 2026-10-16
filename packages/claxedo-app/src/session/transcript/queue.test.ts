@@ -1,13 +1,13 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { createRoot } from "solid-js"
-import { placementId, projectId, sessionId, type QueuedPrompt, type Server } from "@/server"
+import { placementId, projectId, ServerError, sessionId, type QueuedPrompt, type Server } from "@/server"
 import { createQueue } from "./queue"
 
 const REF = { projectId: projectId("p"), placementId: placementId("w"), sessionId: sessionId("s") }
 const DISPATCHING: QueuedPrompt = { seq: 1, messageId: "m", queuedAt: 1, held: false, parts: [{ type: "text", text: "Reply only QUEUED-52." }], steering: { mode: "start", operationId: "op", state: "dispatching" } }
 
-function queueOver(answer: () => Promise<readonly QueuedPrompt[]>) {
+function queueOver(answer: () => Promise<readonly QueuedPrompt[] | undefined>) {
   const read: (readonly QueuedPrompt[])[] = []
   const server = { sessions: { queue: answer } } as unknown as Server
   const queue = createRoot(() => createQueue(server, REF, (items) => read.push(items)))
@@ -21,6 +21,21 @@ test("a queue change the runtime pushes is shown at once, with no read of the qu
   expect(queue.items()).toEqual([])
   expect(read).toEqual([[]])
   expect(reads).toBe(0)
+})
+
+test("a read that finds the workspace asleep ends a failure read while its machine didn't answer, and keeps the rows it last read", async () => {
+  const answers: Array<() => Promise<readonly QueuedPrompt[] | undefined>> = [
+    async () => [DISPATCHING],
+    async () => { throw new ServerError({ class: "runtime_unreachable", message: "The workspace runtime was not reached" }) },
+    async () => undefined,
+  ]
+  const { queue } = queueOver(() => answers.shift()!())
+  await queue.reread()
+  await queue.reread()
+  expect(queue.loadFailed()).toBe(true)
+  await queue.reread()
+  expect(queue.loadFailed()).toBe(false)
+  expect(queue.items()).toEqual([DISPATCHING])
 })
 
 test("a queue read that was asked before a pushed change and answers after it does not bring the older rows back", async () => {

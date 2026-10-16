@@ -1,5 +1,5 @@
 import { asFiniteNumber, asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
-import { toAppError } from "./errors"
+import { isHopErrorPage, toAppError, unansweredRuntime } from "./errors"
 import { workspaceStopped, type RelayConnection, type WorkspaceConnections } from "./wire/connection"
 
 export type Relay = {
@@ -53,11 +53,15 @@ async function sendThroughRelay(link: RelayConnection, path: string, init?: Requ
   const headers = new Headers(init?.headers)
   headers.set("Authorization", `Bearer ${link.runtimeAccessToken}`)
   if (typeof init?.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  let response: Response
   try {
-    return await fetch(workspaceUrl(link, path), { ...init, headers, credentials: "omit", redirect: init?.redirect ?? "manual" })
+    response = await fetch(workspaceUrl(link, path), { ...init, headers, credentials: "omit", redirect: init?.redirect ?? "manual" })
   } catch (error) {
     throw toAppError(error)
   }
+  if (!isHopErrorPage(response)) return response
+  void response.body?.cancel()
+  throw unansweredRuntime(response)
 }
 
 function relayConnections(read: WorkspaceConnections["read"], links: RelayLinkStorage | undefined) {
