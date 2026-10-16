@@ -299,6 +299,7 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
         contextUsed: chunk.contextUsed,
         ...(chunk.observation ? { observation: chunk.observation } : {}),
         ...(chunk.cost ? { cost: chunk.cost } : {}),
+        ...(chunk.account ? { account: chunk.account } : {}),
       }))]
 
     case "subagent-updated": {

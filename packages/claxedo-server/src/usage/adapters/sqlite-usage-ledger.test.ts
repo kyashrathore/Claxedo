@@ -84,6 +84,22 @@ describe("sqlite usage ledger", () => {
     ])
   })
 
+  test("keeps the credential each turn spent, a stored one by id or the harness's own login, and reads it back as written", async () => {
+    const { sqlite, ledger } = harness()
+    const machine = revision({ messageId: "msg_machine", credential: { kind: "machine" } })
+    const stored = revision({ messageId: "msg_stored", credential: { kind: "stored", credentialId: "cred_plan" } })
+    const unnamed = revision({ messageId: "msg_unnamed" })
+    for (const fact of [machine, stored, unnamed]) await ledger.writeRevision(fact)
+
+    expect(sqlite.prepare("SELECT message_id, credential, credential_id FROM claxedo_usage_turn_current ORDER BY message_id").all()).toEqual([
+      { message_id: "msg_machine", credential: "machine", credential_id: null },
+      { message_id: "msg_stored", credential: "stored", credential_id: "cred_plan" },
+      { message_id: "msg_unnamed", credential: null, credential_id: null },
+    ])
+    expect((await ledger.current()).toSorted((a, b) => a.messageId.localeCompare(b.messageId))).toEqual([machine, stored, unnamed])
+    expect(await ledger.writeRevision(stored)).toEqual({ status: "duplicate" })
+  })
+
   test("makes identical replay idempotent and rejects stale or conflicting revisions", async () => {
     const { sqlite, ledger } = harness()
     const first = revision()

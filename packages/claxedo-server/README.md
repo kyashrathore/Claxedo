@@ -111,6 +111,16 @@ A deploy installs the baseline into an empty database and refuses any other
 (older history, an earlier baseline, untracked tables), since rows are never
 converted: delete that database with `wrangler d1 delete <name>` and deploy again.
 
+A migration that only adds columns (nullable, or with a default every stored
+row truly has) and indexes can instead reach a deployed database without
+losing it: before deploying, run that migration's statements on the database
+with `wrangler d1 execute <name> --remote --file <migration>` (the generator
+deletes the file once it folds it, so the change names its statements in its
+commit message). SQLite records an
+added column in the table's stored `CREATE TABLE` exactly as the generator
+does, so the deploy's admission check then reads the database as the current
+baseline and `wrangler d1 migrations apply` has nothing to apply.
+
 ## Local Env Files
 
 Local `.env` and `.env.local` files are ignored in this package. Keep real

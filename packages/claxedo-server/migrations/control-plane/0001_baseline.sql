@@ -776,7 +776,7 @@ CREATE TABLE usage_turn_facts (
   cache_write_tokens integer,
   cache_write_1h_tokens integer,
   quality_json text not null,
-  recorded_at integer not null,
+  recorded_at integer not null, credential_source text not null default 'unreported' check (credential_source in ('personal', 'org', 'machine', 'unresolved', 'unreported')), credential_id text, credential_kind text check ((credential_kind is null or credential_kind in ('api_key', 'oauth_token', 'subscription_session')) and (credential_kind is null) = (credential_id is null) and (credential_kind is null) = (credential_source not in ('personal', 'org'))), credential_owner text check ((credential_owner is null) = (credential_source <> 'personal')),
   primary key (host_id, session_ref, message_id)
 );
 
@@ -1022,6 +1022,12 @@ CREATE INDEX teams_by_org
 
 CREATE UNIQUE INDEX teams_one_default_per_org
   on teams (org_id) where is_default = 1 and deleted_at is null;
+
+CREATE INDEX usage_turn_facts_by_credential_owner
+  on usage_turn_facts (org_id, credential_owner, observed_at);
+
+CREATE INDEX usage_turn_facts_by_credential_source
+  on usage_turn_facts (org_id, credential_source, observed_at);
 
 CREATE INDEX usage_turn_facts_by_owner_observed
   on usage_turn_facts (org_id, user_id, observed_at);

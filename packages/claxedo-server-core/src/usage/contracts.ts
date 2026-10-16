@@ -1,4 +1,4 @@
-import { FIRST_TURN_ERROR_CLASSES, type FirstTurnErrorClass, type RuntimeTokenUsage } from "@claxedo/agent-runtime-contract"
+import { FIRST_TURN_ERROR_CLASSES, type FirstTurnErrorClass, type RuntimeTokenUsage, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib/json"
 
 // The runtime lists are the single source for these unions: the SQLite schema
@@ -63,6 +63,37 @@ export function readTurnUsageQuality(value: unknown): TurnUsageQuality {
 }
 
 /**
+ * What a turn's tokens were spent on, as the runtime that delivered it to the
+ * harness named it: a stored credential by its row id, or the harness's own
+ * login on its machine, which is no credential Claxedo holds.
+ */
+export type TurnUsageCredential = { kind: "stored"; credentialId: string } | { kind: "machine" }
+
+/**
+ * What the plane filed a turn's credential as, read against its stored rows:
+ * a personal account the session spends, the organization's team key, the
+ * harness's own login, a stored id that is no row the turn could spend, or
+ * nothing the runtime named.
+ */
+export const TURN_USAGE_CREDENTIAL_SOURCES = ["personal", "org", "machine", "unresolved", "unreported"] as const
+
+export type TurnUsageCredentialSource = (typeof TURN_USAGE_CREDENTIAL_SOURCES)[number]
+
+export function turnUsageCredential(account: TurnAccount | undefined): TurnUsageCredential | undefined {
+  if (!account) return undefined
+  return account.kind === "machine" ? { kind: "machine" } : { kind: "stored", credentialId: account.credentialId }
+}
+
+/** A credential read from JSON; `null` when the value is present but is not one. */
+export function readTurnUsageCredential(value: unknown): TurnUsageCredential | undefined | null {
+  if (value === undefined) return undefined
+  if (!isJsonRecord(value)) return null
+  if (value.kind === "machine" && Object.keys(value).length === 1) return { kind: "machine" }
+  if (value.kind !== "stored" || !isNonEmptyString(value.credentialId) || Object.keys(value).length !== 2) return null
+  return { kind: "stored", credentialId: value.credentialId }
+}
+
+/**
  * The minimal privacy-bounded fact shared by local persistence and central
  * ingest. `firstOutputAt` and `errorClass` describe the turn for the plane's
  * `turn_completed` event only: neither is part of the revision's identity
@@ -90,6 +121,8 @@ export type TurnUsageRevision = {
   hostId: string
   tokens: RuntimeTokenUsage
   quality: TurnUsageQuality
+  /** Absent when the runtime named no credential for the turn. */
+  credential?: TurnUsageCredential
 }
 
 function canonicalTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision["tokens"] {
@@ -105,6 +138,10 @@ function canonicalTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision
       ...(write1h === null || write1h === undefined ? {} : { write1h }),
     },
   }
+}
+
+function canonicalCredential(credential: TurnUsageCredential): TurnUsageCredential {
+  return credential.kind === "stored" ? { kind: "stored", credentialId: credential.credentialId } : { kind: "machine" }
 }
 
 function canonicalQuality(quality: TurnUsageQuality): TurnUsageQuality {
@@ -142,6 +179,8 @@ export async function usageRevisionHash(fact: TurnUsageRevision): Promise<string
     workspaceId: fact.workspaceId ?? null,
     tokens: canonicalTokens(fact.tokens),
     quality: canonicalQuality(fact.quality),
+    // Left out when absent: a stored row filed before it named credentials holds a hash without the key, and its replay is a duplicate.
+    ...(fact.credential ? { credential: canonicalCredential(fact.credential) } : {}),
   })
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
@@ -267,6 +306,7 @@ const REVISION_KEYS: ReadonlySet<string> = new Set<keyof TurnUsageRevision>([
   "hostId",
   "tokens",
   "quality",
+  "credential",
 ])
 
 /**
@@ -278,12 +318,14 @@ const REVISION_KEYS: ReadonlySet<string> = new Set<keyof TurnUsageRevision>([
 export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undefined {
   if (!isJsonRecord(value) || Object.keys(value).some((key) => !REVISION_KEYS.has(key))) return undefined
   const tokens = readTurnUsageTokens(value.tokens)
+  const credential = readTurnUsageCredential(value.credential)
   const {
     sessionRef, sessionId, messageId, revision, observedAt, completedAt, firstOutputAt, errorClass, settlement, status, location,
     harness, providerId, modelId, nativeSessionId, workspaceId, hostId,
   } = value
   if (
     !tokens
+    || credential === null
     || !isNonEmptyString(sessionRef)
     || !isNonEmptyString(sessionId)
     || !isNonEmptyString(messageId)
@@ -323,6 +365,7 @@ export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undef
     hostId,
     tokens,
     quality: readTurnUsageQuality(value.quality),
+    ...(credential ? { credential } : {}),
   }
   try {
     assertTurnUsageRevision(fact)

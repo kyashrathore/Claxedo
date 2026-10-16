@@ -22,3 +22,13 @@ test("the turn's own error names its account, and a child's error or any other e
   ])
   expect(await stamped(events, undefined)).toEqual(events)
 })
+
+test("every usage the turn reports, its children's included, names the account its tokens were spent on", async () => {
+  const account = { kind: "stored", harnessId: "claude", credentialId: "cred_team", providerId: "anthropic" } as const
+  const tokens = { input: 3, output: 1, reasoning: null, cache: { read: null, write: null } }
+  const events: RoutedEvent[] = [
+    { event: { type: "usage", contextSize: 0, contextUsed: 3, observation: { kind: "delta", tokens } } },
+    { event: { type: "usage", contextSize: 0, contextUsed: 3, observation: { kind: "delta", tokens } }, route: { kind: "child", correlationKey: "c1" } },
+  ]
+  expect(await stamped(events, account)).toEqual(events.map((routed) => ({ ...routed, event: { ...routed.event, account } })))
+})

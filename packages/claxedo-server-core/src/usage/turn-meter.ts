@@ -1,4 +1,4 @@
-import { vendorModel, type AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
+import { turnAccount, vendorModel, type AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import {
   FIRST_TURN_ERROR_CLASSES,
   isRepeatedUsageObservation,
@@ -11,6 +11,8 @@ import {
 import { jsonRecord } from "../platform/runtime/lib/json"
 import {
   knownTokenCategories,
+  turnUsageCredential,
+  type TurnUsageCredential,
   type TurnUsageLocation,
   type TurnUsageRevision,
   type TurnUsageStatus,
@@ -61,6 +63,7 @@ type State = {
   completedAt?: number
   firstOutputAt?: number
   errorClass?: TurnUsageRevision["errorClass"]
+  credential?: TurnUsageCredential
   settlement?: TurnUsageRevision["settlement"]
   status?: TurnUsageStatus
   quality: TurnUsageRevision["quality"]
@@ -79,6 +82,10 @@ function key(sessionId: string, messageId: string) {
 function firstTurnErrorClassOf(error: unknown): TurnUsageRevision["errorClass"] {
   const named = jsonRecord(jsonRecord(error)?.data)?.firstTurnErrorClass
   return FIRST_TURN_ERROR_CLASSES.find((errorClass) => errorClass === named)
+}
+
+function errorCredential(error: unknown): TurnUsageCredential | undefined {
+  return turnUsageCredential(turnAccount(jsonRecord(jsonRecord(error)?.data)?.account))
 }
 
 function numberOrNull(input: unknown) {
@@ -167,6 +174,7 @@ export function createTurnMeter(input: {
       ...(fact.completedAt === undefined ? {} : { completedAt: fact.completedAt }),
       ...(fact.firstOutputAt === undefined ? {} : { firstOutputAt: fact.firstOutputAt }),
       ...(fact.errorClass === undefined ? {} : { errorClass: fact.errorClass }),
+      ...(fact.credential ? { credential: fact.credential } : {}),
       context: {
         sessionRef: fact.sessionRef,
         ...(fact.workspaceId ? { workspaceId: fact.workspaceId } : {}),
@@ -288,6 +296,7 @@ export function createTurnMeter(input: {
           ...current.quality,
           knownCategories: current.hasUsage ? knownTokenCategories(current.tokens) : [],
         },
+        ...(current.credential ? { credential: current.credential } : {}),
       }
       let result = await input.writer.writeRevision(fact, { owner: context.owner })
       if (result.status === "stale") {
@@ -341,6 +350,7 @@ export function createTurnMeter(input: {
       // later observation must not rename the thread the fact belongs to.
       current.nativeSessionId ??= observation.nativeSessionId
       current.servedModelId ??= observation.model
+      current.credential = turnUsageCredential(event.payload.properties.account) ?? current.credential
       current.quality = {
         source: "provider",
         observationKind: observation.kind,
@@ -379,6 +389,7 @@ export function createTurnMeter(input: {
       current.providerId = info.providerID
       current.modelId = info.modelID
       current.errorClass ??= firstTurnErrorClassOf(info.error)
+      current.credential ??= errorCredential(info.error)
       activeBySession.set(sessionId, info.id)
       const tokens = messageTokens(info.tokens)
       // A connected runtime may publish its authoritative token snapshot on the final
@@ -436,6 +447,7 @@ export function createTurnMeter(input: {
       )
         return
       current.errorClass ??= firstTurnErrorClassOf(event.payload.properties.error)
+      current.credential ??= errorCredential(event.payload.properties.error)
       await persist(current, {
         settlement: current.hasUsage ? "final" : "unavailable",
         status: "error",

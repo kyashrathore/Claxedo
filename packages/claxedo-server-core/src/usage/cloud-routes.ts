@@ -1,7 +1,9 @@
 import { Hono, type Context } from "hono"
-import type { MachineTimeResponse } from "@claxedo/usage-contract"
+import type { CredentialSpendResponse, MachineTimeResponse } from "@claxedo/usage-contract"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../platform/auth/auth"
-import type { UsageProjectionLedger } from "./ledger"
+import type { UsagePricing } from "./adapters/token-tracker-pricing"
+import { credentialSpend } from "./credential-spend"
+import type { CredentialSpendScope, UsageProjectionLedger } from "./ledger"
 import { validUsageRange } from "./usage-range"
 
 /**
@@ -13,18 +15,22 @@ export const MAX_CLOUD_USAGE_FACTS = 10_000
 
 export type SignedUsageIdentity = { org_id: string; user_id: string }
 
-function cloudUsageError(c: Context, status: 400 | 401 | 422 | 503, code: string, message: string) {
+const SCOPES: readonly CredentialSpendScope[] = ["mine", "org"]
+
+function cloudUsageError(c: Context, status: 400 | 401 | 403 | 422 | 503, code: string, message: string) {
   return c.json({ error: { code, message } }, status)
 }
 
 /**
- * The signed account's own cloud reads: its cloud turns, which a signed desktop hands to its sidecar, and its cloud
- * workspaces' machine time. Each is keyed by the caller's organization and person, never by anything in the request.
+ * The signed account's own cloud reads: its cloud turns, which a signed desktop hands to its sidecar, its spend per
+ * credential, and its cloud workspaces' machine time. Each is keyed by the caller's organization and person, never by
+ * anything in the request; the organization's team-key spend answers its owners and admins alone.
  */
 export function CloudUsageRoutes(input: {
   ledger: UsageProjectionLedger
   identity: (request: Request) => Promise<SignedUsageIdentity | undefined>
   now: () => number
+  pricing: UsagePricing
 }) {
   const app = new Hono()
   const signed = (handler: (c: Context, identity: SignedUsageIdentity) => Promise<Response>) => async (c: Context) => {
@@ -47,6 +53,17 @@ export function CloudUsageRoutes(input: {
       return cloudUsageError(c, 422, "cloud_usage_range_too_large", `More than ${MAX_CLOUD_USAGE_FACTS} cloud turns fall in this range; choose a shorter one`)
     }
     return c.json({ facts })
+  }))
+  app.get("/credentials", signed(async (c, identity) => {
+    const since = Number(c.req.query("since"))
+    const until = Number(c.req.query("until"))
+    const scope = SCOPES.find((name) => name === (c.req.query("scope") ?? "mine"))
+    if (!validUsageRange(since, until)) return cloudUsageError(c, 400, "invalid_usage_range", "since and until must define a range of at most 90 days")
+    if (!scope) return cloudUsageError(c, 400, "invalid_usage_scope", "scope must be mine or org")
+    if (!input.ledger.credentialSpend) return cloudUsageError(c, 503, "usage_projection_unavailable", "Cloud usage is not stored here")
+    const rows = await input.ledger.credentialSpend({ ...identity, scope, since, until })
+    if (!rows) return cloudUsageError(c, 403, "usage_scope_forbidden", "Only an owner or admin of the organization can see its team accounts' spend.")
+    return c.json({ since, until, scope, credentials: await credentialSpend(input.pricing, rows) } satisfies CredentialSpendResponse)
   }))
   app.get("/machine-time", signed(async (c, identity) => {
     const since = Number(c.req.query("since"))
