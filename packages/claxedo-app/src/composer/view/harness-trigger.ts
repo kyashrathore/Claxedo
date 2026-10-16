@@ -1,4 +1,5 @@
 import { createEffect, createMemo, type Accessor, type JSX } from "solid-js"
+import type { HarnessConnectionState } from "@/server"
 import type { HarnessSelectionSnapshot } from "../harness/controller"
 import type { useModelNames } from "../harness/model-names"
 import { harnessDisplayLabel, harnessSelectionId, isCatalogHarness, isClientDefaultPlaceholder, type HarnessType } from "../harness/profile"
@@ -60,6 +61,14 @@ export type ModelLabelInput = {
   readonly modelLoading: boolean
   readonly catalogUnread: boolean
   readonly hasModelOptions: boolean
+}
+
+export type ConnectionBadge = "polling" | "configured" | "connecting" | "ready"
+
+export function connectionBadge(input: { polling: boolean; asleep: boolean; state?: HarnessConnectionState["state"] }): ConnectionBadge | undefined {
+  if (input.asleep) return undefined
+  if (input.polling) return "polling"
+  return input.state === "configured" || input.state === "connecting" || input.state === "ready" ? input.state : undefined
 }
 
 export function modelLabel(input: ModelLabelInput): string {
