@@ -39,7 +39,7 @@ no Sandbox SDK dependency. What each capability maps to:
 
 | Capability | 0.12 `Sandbox` | Now |
 | --- | --- | --- |
-| Start | `getSandbox()`, lazy start on first call | `ensureWorkspace` calls `container.start({ image \| containerSnapshot, entrypoint: ["sleep", "infinity"], enableInternet: true, instance: "standard-1" })`, then waits for the first `exec(["true"])`, racing `monitor()` |
+| Start | `getSandbox()`, lazy start on first call | `ensureWorkspace` calls `container.start({ image \| containerSnapshot, entrypoint: ["/usr/bin/tini", "--", "sleep", "infinity"], enableInternet: true, instance: "standard-1" })`, then waits for the first `exec(["true"])`, racing `monitor()`. tini as PID 1 reaps orphaned processes; a PID 1 that never waits leaves them as zombies in their launch's process group, which retirement then never reads as exited |
 | Runtime process | `startProcess`, `listProcesses`, `getProcess` | `runtime-process.ts`: `exec` of a `setsid` launcher that records the pid and exit code under `/run/claxedo-runtime/<launch>`; a status script reads them; the launch id, time and readiness live in Durable Object storage |
 | Readiness | `waitForPort(port, { path: "/global/health" })` | `getTcpPort(port).fetch("/global/health")` every 500 ms for 30 s, ending early once the process has exited |
 | Proxy HTTP and WebSocket | `containerFetch`, `wsConnect` | the Worker forwards to the object's `fetch()`, which forwards to `getTcpPort(port).fetch(request)`; an upgrade answer passes through unchanged |
@@ -79,7 +79,9 @@ capture ends the lease, the control plane commits it and calls `stop`, and the
 object destroys its container. The next wake's `ensure-runtime` carries
 `restore: { snapshotId }` and `minimumRuntimeVersion`, and the object starts the
 container from that snapshot, never from the image, passing the recorded image
-environment to the container's main process. A restore over a container running
+environment to the container's main process and running the main process
+the snapshot's container ran; a snapshot recorded without one is refused as
+`not_restorable`. A restore over a container running
 from anything but that snapshot replaces it; polls of the same restore keep it.
 
 A snapshot keeps every file of the root filesystem: the repository and its

@@ -31,6 +31,8 @@ const environment = [
   `case ":$PATH:" in *:/root/.local/bin:*) ;; *) ${fail("the runtime's PATH lost the image's /root/.local/bin")} ;; esac`,
   `tr '\\0' '\\n' < /proc/1/environ | grep -q '^PATH=.*/root/.local/bin' || ${fail("the container's main process lost the image PATH")}`,
   `[ "$(stat -f -c %T /run/claxedo-runtime)" = tmpfs ] || ${fail("the runtime launch directory is not in memory")}`,
+  `[ "$(cat /proc/1/comm)" = tini ] || ${fail("the container's main process is not its init")}`,
+  `( sh -c 'sleep 0.2 &'; sleep 1; ! ps -eo stat= | grep -q '^Z' ) || ${fail("an orphaned process stayed a zombie")}`,
 ].join(" && ")
 const verify = [
   `[ "$(cat /workspace/measure.txt)" = ${run} ] || ${fail("the workspace file is missing")}`,

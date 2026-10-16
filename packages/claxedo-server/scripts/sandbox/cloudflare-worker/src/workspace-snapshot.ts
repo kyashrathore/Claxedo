@@ -11,12 +11,13 @@ export const CHECKPOINT_UNUSABLE: Readonly<Record<CheckpointUnusableCause, strin
 }
 
 /**
- * What this sandbox's object knows about a snapshot it took: the runtime build
- * and image environment of the container it came from. A snapshot id is a
+ * What this sandbox's object knows about a snapshot it took: the runtime build,
+ * image environment and main process of the container it came from, which a
+ * restore runs again because the snapshot's filesystem is that container's. A snapshot id is a
  * bearer handle at the platform, so a restore is honored only for an id this
  * object recorded; destroying the sandbox forgets every record.
  */
-export type SnapshotBinding = { build: RuntimeBuild; imageEnv: Record<string, string>; takenAt: number }
+export type SnapshotBinding = { build: RuntimeBuild; imageEnv: Record<string, string>; entrypoint: string[]; takenAt: number }
 
 const SNAPSHOT_KEY_PREFIX = "claxedo.snapshot:"
 /** A lease names one checkpoint, the newest; older records outlive it only as long as a stop and wake race can need them. */

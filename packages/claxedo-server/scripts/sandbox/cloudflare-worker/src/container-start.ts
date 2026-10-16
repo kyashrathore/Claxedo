@@ -9,11 +9,18 @@ export const RUNTIME_IMAGE = "runtime"
 const INSTANCE = "standard-1"
 /** Bounds what a container costs once nothing checks its runtime any more; while the idle alarm runs, the container is never inactive. */
 export const INACTIVITY_TIMEOUT_MS = 10 * 60_000
+/**
+ * The container's main process. `sleep` alone never waits for children, so
+ * every process reparented to it (a git a harness left behind) stays a zombie
+ * in its launch's process group, which then never reads as exited; tini reaps
+ * them. The image's environment stays the main process's.
+ */
+export const CONTAINER_ENTRYPOINT = ["/usr/bin/tini", "--", "sleep", "infinity"]
 const CONTAINER_READY_TIMEOUT_MS = 240_000
 const CONTAINER_READY_POLL_MS = 250
 
-/** What the running container started from, and the runtime build and image environment it carries. */
-export type ContainerSource = { snapshotId?: string; build: RuntimeBuild; imageEnv: Record<string, string> }
+/** What the running container started from, and the runtime build, image environment and main process it carries. */
+export type ContainerSource = { snapshotId?: string; build: RuntimeBuild; imageEnv: Record<string, string>; entrypoint: string[] }
 
 export type ContainerOrigin = { image: RuntimeBuild } | { snapshotId: string; binding: SnapshotBinding }
 
@@ -73,8 +80,9 @@ export async function startContainer(container: WorkspaceContainer, origin: Cont
   const image = container.images[RUNTIME_IMAGE]
   if ("image" in origin && !image) throw new Error(`The container application has no "${RUNTIME_IMAGE}" image`)
   const start: ContainerStart = {
-    ...("snapshotId" in origin ? { containerSnapshot: { id: origin.snapshotId }, env: origin.binding.imageEnv } : { image }),
-    entrypoint: ["sleep", "infinity"],
+    ...("snapshotId" in origin
+      ? { containerSnapshot: { id: origin.snapshotId }, env: origin.binding.imageEnv, entrypoint: origin.binding.entrypoint }
+      : { image, entrypoint: CONTAINER_ENTRYPOINT }),
     enableInternet: true,
     instance: INSTANCE,
   }
@@ -82,8 +90,8 @@ export async function startContainer(container: WorkspaceContainer, origin: Cont
     container.start(start)
     await containerAccepting(container)
     const source: ContainerSource = "snapshotId" in origin
-      ? { snapshotId: origin.snapshotId, build: origin.binding.build, imageEnv: origin.binding.imageEnv }
-      : { build: origin.image, imageEnv: await pristineImageEnv(container) }
+      ? { snapshotId: origin.snapshotId, build: origin.binding.build, imageEnv: origin.binding.imageEnv, entrypoint: origin.binding.entrypoint }
+      : { build: origin.image, imageEnv: await pristineImageEnv(container), entrypoint: CONTAINER_ENTRYPOINT }
     await intercept()
     await trustInterceptCa(container)
     await memoryRuntimeRoot(container)

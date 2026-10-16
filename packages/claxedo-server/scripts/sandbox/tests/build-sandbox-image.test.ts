@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest"
 import { build as esbuildBuild } from "esbuild"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { workspaceRuntimeRoot } from "../../../src/hosts/workspace-runtime/startup"
+import { CONTAINER_ENTRYPOINT } from "../cloudflare-worker/src/container-start"
 import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
@@ -221,6 +222,14 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).not.toContain("/usr/local/bin/opencode")
       expect(dockerfile).toContain(`RUN node /opt/workspace-runtime/${IMAGE_SMOKE_FILENAME}`)
     }
+  })
+
+  test("the Cloudflare image ships the init its Worker starts every container under, so orphaned processes are reaped", () => {
+    const dockerfile = fs.readFileSync(path.resolve(import.meta.dirname, "../cloudflare-worker/Dockerfile"), "utf8")
+    const [init] = CONTAINER_ENTRYPOINT
+    expect(CONTAINER_ENTRYPOINT.slice(1)).toEqual(["--", "sleep", "infinity"])
+    expect(dockerfile).toMatch(/apt-get install[^\n]* tini /)
+    expect(dockerfile).toContain(`test -x ${init}`)
   })
 
   test("the Cloudflare image ships the HOME its driver boots the runtime with, as root's private directory", async () => {

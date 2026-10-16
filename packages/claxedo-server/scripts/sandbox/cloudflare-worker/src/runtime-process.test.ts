@@ -8,7 +8,7 @@ const MINUTE = 60_000
 
 function host() {
   const { container, state } = fakeContainer()
-  container.start({ image: container.images.runtime, entrypoint: ["sleep", "infinity"], enableInternet: true, instance: "standard-1" })
+  container.start({ image: container.images.runtime, entrypoint: ["/usr/bin/tini", "--", "sleep", "infinity"], enableInternet: true, instance: "standard-1" })
   let recorded: RuntimeLaunch | undefined
   let clock = 1_000_000
   let ids = 0

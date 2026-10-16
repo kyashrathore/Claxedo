@@ -21,13 +21,14 @@ ARG CLAXEDO_CURL_AGENTS="1"
 # explicitly because the runtime configures a github.com clone header at boot
 # and agents clone from inside the sandbox, `procps` because the runtime asks
 # `ps` whether any git still runs before it removes a stale shallow.lock, and
-# `util-linux` because the Worker launches the runtime under `setsid` and
+# `util-linux` because the Worker launches the runtime under `setsid`,
 # `ca-certificates` because it rebuilds the system bundle with the credential
-# interception CA on every container start.
+# interception CA on every container start, and `tini` because the Worker
+# starts every container under it as the init that reaps orphans.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends bash curl ca-certificates git gzip make g++ procps python3 util-linux xz-utils && \
+    apt-get install -y --no-install-recommends bash curl ca-certificates git gzip make g++ procps python3 tini util-linux xz-utils && \
     rm -rf /var/lib/apt/lists/* && \
-    command -v git && command -v ps && command -v setsid && test -s /etc/ssl/certs/ca-certificates.crt
+    command -v git && command -v ps && command -v setsid && test -x /usr/bin/tini && test -s /etc/ssl/certs/ca-certificates.crt
 
 # The driver boots the runtime (as root) with HOME=/home/claxedo, because a
 # process the Worker starts inherits no image environment but PATH. Nothing at

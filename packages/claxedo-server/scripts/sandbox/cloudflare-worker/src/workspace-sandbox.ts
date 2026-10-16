@@ -143,7 +143,7 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
       return { image }
     }
     const binding = await snapshotBinding(this.ctx.storage, input.restore)
-    if (!binding) throw new CheckpointUnusableError("not_restorable")
+    if (!binding?.entrypoint) throw new CheckpointUnusableError("not_restorable")
     if (input.minimumRuntimeVersion && versionBefore(binding.build.version, input.minimumRuntimeVersion)) throw new CheckpointUnusableError("runtime_outdated")
     return { snapshotId: input.restore, binding }
   }
@@ -209,7 +209,7 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     const source = await this.ctx.storage.get<ContainerSource>(CONTAINER_SOURCE_KEY)
     if (!container.running || !source) throw new Error("The workspace container is not running")
     const snapshot = await container.snapshotContainer({ name: "workspace" })
-    await recordSnapshot(this.ctx.storage, snapshot.id, { build: source.build, imageEnv: source.imageEnv, takenAt: Date.now() })
+    await recordSnapshot(this.ctx.storage, snapshot.id, { build: source.build, imageEnv: source.imageEnv, entrypoint: source.entrypoint, takenAt: Date.now() })
     return { snapshotId: snapshot.id, sizeBytes: snapshot.size, runtimeBuild: source.build.id }
   }
 

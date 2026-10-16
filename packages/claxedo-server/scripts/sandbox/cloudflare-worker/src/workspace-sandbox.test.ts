@@ -45,15 +45,16 @@ async function saved(s: ReturnType<typeof sandbox>) {
   return snapshotId
 }
 
-const RESTORED_START = { entrypoint: ["sleep", "infinity"], enableInternet: true, instance: "standard-1" }
+const INIT = ["/usr/bin/tini", "--", "sleep", "infinity"]
+const RESTORED_START = { entrypoint: INIT, enableInternet: true, instance: "standard-1" }
 
 describe("workspace sandbox container", () => {
-  test("a first ensure starts the runtime image with internet, a standard-1 instance and sleep as the main process, trusts the interception CA, and bounds inactivity", async () => {
+  test("a first ensure starts the runtime image with internet, a standard-1 instance and an init that reaps orphans as the main process, trusts the interception CA, and bounds inactivity", async () => {
     const s = sandbox()
     expect(await ensure(s.object)).toEqual({ state: "ready" })
     expect(s.state.starts).toEqual([{
       image: "registry.cloudflare.com/acct/claxedo-runtime@sha256:abc",
-      entrypoint: ["sleep", "infinity"],
+      entrypoint: INIT,
       enableInternet: true,
       instance: "standard-1",
     }])
@@ -101,6 +102,16 @@ describe("workspace sandbox container", () => {
     const s = sandbox()
     expect(await ensure(s.object, "snap-of-another-sandbox")).toEqual({ state: "checkpoint-unusable", cause: "not_restorable" })
     expect(s.state.starts).toEqual([])
+  })
+
+  test("a snapshot recorded without the init its container ran under is not restored, since its filesystem need not carry one", async () => {
+    const s = sandbox()
+    const snapshotId = await saved(s)
+    const key = `claxedo.snapshot:${snapshotId}`
+    const { entrypoint: _init, ...older } = s.storage.values.get(key) as Record<string, unknown>
+    s.storage.values.set(key, older)
+    expect(await ensure(s.object, snapshotId)).toEqual({ state: "checkpoint-unusable", cause: "not_restorable" })
+    expect(s.state.starts).toHaveLength(1)
   })
 
   test("destroying a sandbox revokes every snapshot it took", async () => {
