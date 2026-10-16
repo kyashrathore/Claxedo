@@ -42,6 +42,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
       return payload
     } catch (error) {
       if (superseded()) return abandonOptionsRequest(input, request)
+      if (!(error instanceof ServerError)) console.warn("A harness's model options read failed without a server answer", { scope, harness: type, error })
       input.applyPatch(scope, {
         dynamicModels: [],
         selectedModel: "",
