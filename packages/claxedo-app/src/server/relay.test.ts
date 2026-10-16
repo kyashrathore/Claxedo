@@ -141,10 +141,12 @@ test("relay: a hop's error page instead of the runtime's answer is a machine tha
   const page = "<!DOCTYPE html><html><title>Worker threw exception | claxedo-sandbox-proxy</title><body>Error 1101</body></html>"
   runtimeFetch.mockResolvedValue(new Response(page, { status: 500, headers: { "content-type": "text/html; charset=UTF-8" } }))
 
-  const failure = await createRelay(server.read).fetch("ws_1", "/session/ses_1/outline").catch((error: unknown) => error)
-
-  expect(failure).toMatchObject({ class: "runtime_unreachable", retryable: true, status: 500 })
-  expect(String((failure as Error).message)).not.toContain("<")
+  await expect(createRelay(server.read).fetch("ws_1", "/session/ses_1/outline")).rejects.toMatchObject({
+    class: "runtime_unreachable",
+    retryable: true,
+    status: 500,
+    message: expect.not.stringContaining("<"),
+  })
 })
 
 test("relay: the runtime's own JSON failure passes back to its caller unchanged", async () => {
