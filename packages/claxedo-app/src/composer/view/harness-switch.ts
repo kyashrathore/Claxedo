@@ -33,19 +33,48 @@ async function restoreCatalogModel(input: HarnessSwitchInput, harness: HarnessTy
   return input.controller().setModel(switchScope, result.model, switchInput, hit ? { provider: hit.provider.name, model: hit.name } : undefined)
 }
 
-export function createHarnessSwitch(input: HarnessSwitchInput) {
+function rereadCatalog(input: HarnessSwitchInput, harness: HarnessType, scope: string, scopeInput: HarnessScopeInput) {
+  if (!isCatalogHarness(harness)) return undefined
+  if (input.controller().read(scope).selectedModelKey) return input.catalog.providers.refresh()
+  return restoreCatalogModel(input, harness, scope, scopeInput)
+}
+
+type SwitchingHold = ReturnType<typeof createSwitchingHold>["hold"]
+
+async function rereadHarness(input: HarnessSwitchInput, hold: SwitchingHold) {
+  const current = input.harness()
+  if (!current) return
+  const scope = input.scope()
+  const scopeInput = input.scopeInput()
+  await hold(current, async () => {
+    await input.controller().reprobe(scope, scopeInput)
+    await rereadCatalog(input, current, scope, scopeInput)
+  })
+}
+
+function createSwitchingHold() {
   const [switchingHarness, setSwitchingHarness] = createSignal<HarnessType | undefined>()
-  const switching = () => !!switchingHarness()
+  const hold = async (harness: HarnessType, work: () => unknown) => {
+    setSwitchingHarness(harness)
+    try {
+      await work()
+    } finally {
+      setSwitchingHarness((current) => sameHarnessSelection(current, harness) ? undefined : current)
+    }
+  }
+  return { switching: () => !!switchingHarness(), hold }
+}
+
+export function createHarnessSwitch(input: HarnessSwitchInput) {
+  const { switching, hold } = createSwitchingHold()
   const harnessDisabled = createMemo(() => input.polling() || switching())
   let openedViaMenu = false
   const run = (next: HarnessType, model?: ModelChoice) => {
-    setSwitchingHarness(next)
     const switchScope = input.scope()
     const switchInput = input.scopeInput()
-    void Promise.resolve(
-      input.controller().setHarness(switchScope, next, switchInput, model),
-    ).then(() => model ? undefined : restoreCatalogModel(input, next, switchScope, switchInput)).finally(() => {
-      setSwitchingHarness((current) => sameHarnessSelection(current, next) ? undefined : current)
+    void hold(next, async () => {
+      await input.controller().setHarness(switchScope, next, switchInput, model)
+      if (!model) await restoreCatalogModel(input, next, switchScope, switchInput)
     })
   }
   const adopt = (alternative: HarnessAlternative) => {
@@ -65,5 +94,5 @@ export function createHarnessSwitch(input: HarnessSwitchInput) {
     if (!allowed || !next) return
     run(next)
   }
-  return { switching, harnessDisabled, apply, adopt }
+  return { switching, harnessDisabled, apply, adopt, reread: () => rereadHarness(input, hold) }
 }

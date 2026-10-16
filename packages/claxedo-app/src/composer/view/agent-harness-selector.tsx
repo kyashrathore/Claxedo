@@ -106,6 +106,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     availability,
     polling: isPolling,
     asleep,
+    rereadAfterWake: harnessSwitch.reread,
     account,
     harnessLabel: optionList.label,
     openProviders,
