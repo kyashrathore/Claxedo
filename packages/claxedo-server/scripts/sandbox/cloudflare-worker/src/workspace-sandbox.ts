@@ -1,25 +1,19 @@
 import { DurableObject } from "cloudflare:workers"
 import type { DurableObjectState, Request as WorkerRequest, Response as WorkerResponse } from "@cloudflare/workers-types"
-import { bounded, run, workspaceContainer, type ContainerStart, type WorkspaceContainer } from "./container-api"
-import { interceptCredentialHosts, trustInterceptCa } from "./container-trust"
+import { workspaceContainer, type WorkspaceContainer } from "./container-api"
+import { CheckpointUnusableError, INACTIVITY_TIMEOUT_MS, startContainer, type ContainerOrigin, type ContainerSource } from "./container-start"
+import { interceptCredentialHosts } from "./container-trust"
 import { domRequest, workerResponse } from "./runtime-request"
+import { runtimeMatches, versionBefore, workerRuntimeBuild } from "./runtime-integrity"
 import { ensureRuntimeProcess, runtimeServing, type RuntimeEnsure, type RuntimeHost, type RuntimeLaunch } from "./runtime-process"
 import type { WorkerEnv } from "./worker-env"
 import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, requestIdleStop, type WorkspaceIdle } from "./workspace-idle"
-import { snapshotMissing } from "./workspace-snapshot"
+import { recordSnapshot, snapshotBinding, type CheckpointUnusableCause } from "./workspace-snapshot"
 
 const CREDENTIAL_HOSTS_KEY = "claxedo.credential-hosts"
 const RUNTIME_LAUNCH_KEY = "claxedo.runtime-launch"
 const CONTAINER_SOURCE_KEY = "claxedo.container-source"
 const WORKSPACE_IDLE_KEY = "claxedo.workspace-idle"
-
-export const RUNTIME_IMAGE = "runtime"
-/** The runnable image carries the runtime and every agent harness, about 5.3 GB; standard-1 has an 8 GB disk. */
-const INSTANCE = "standard-1"
-/** Bounds what a container costs once nothing checks its runtime any more; while the idle alarm runs, the container is never inactive. */
-const INACTIVITY_TIMEOUT_MS = 10 * 60_000
-const CONTAINER_READY_TIMEOUT_MS = 240_000
-const CONTAINER_READY_POLL_MS = 250
 
 type CredentialHosts = { sandboxId: string; hosts: string[] }
 // `ctx.exports` holds this Worker's own entrypoints, which only its generated
@@ -30,8 +24,6 @@ type SandboxExports = { CredentialEgress(options: { props: { sandboxId: string }
 function sandboxExports(exports: object): exports is SandboxExports {
   return "CredentialEgress" in exports && typeof exports.CredentialEgress === "function"
 }
-/** What the running container started from: the image, or the snapshot of a checkpoint. */
-type ContainerSource = { snapshotId?: string }
 
 export type WorkspaceEnsureInput = {
   command: string
@@ -40,9 +32,11 @@ export type WorkspaceEnsureInput = {
   reuseRunning: boolean
   /** The snapshot a stopped workspace's checkpoint names; its container starts from it, never from the image. */
   restore?: string
+  /** The oldest runtime version the control plane lets a restore run. */
+  minimumRuntimeVersion?: string
 }
 
-export type WorkspaceEnsure = RuntimeEnsure | { state: "snapshot-missing" }
+export type WorkspaceEnsure = RuntimeEnsure | { state: "checkpoint-unusable"; cause: CheckpointUnusableCause }
 
 /**
  * One workspace's sandbox: this Durable Object starts, restores, snapshots and
@@ -67,10 +61,15 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     return workspaceContainer(this.ctx.container)
   }
 
-  private runtimeHost(container: WorkspaceContainer): RuntimeHost {
+  private runtimeHost(container: WorkspaceContainer, source: ContainerSource): RuntimeHost {
     const storage = this.ctx.storage
     return {
       container,
+      imageEnv: source.imageEnv,
+      // Every launch hands the runtime the boot env, and an agent runs as root beside it.
+      beforeLaunch: async () => {
+        if (!await runtimeMatches(container, source.build)) throw new CheckpointUnusableError("runtime_modified")
+      },
       launches: {
         get: () => storage.get<RuntimeLaunch>(RUNTIME_LAUNCH_KEY),
         put: (launch) => storage.put(RUNTIME_LAUNCH_KEY, launch),
@@ -116,47 +115,43 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
 
   private async bringUp(input: WorkspaceEnsureInput): Promise<WorkspaceEnsure> {
     const container = this.container()
-    const source = await this.ctx.storage.get<ContainerSource>(CONTAINER_SOURCE_KEY)
-    // A container running from anything but the checkpoint being restored holds files the lease no longer names.
-    const replace = container.running && input.restore !== undefined && source?.snapshotId !== input.restore
-    if (replace) await this.endContainer(container)
-    if (!container.running) {
-      try {
-        await this.startContainer(container, input.restore)
-      } catch (error) {
-        if (snapshotMissing(error)) return { state: "snapshot-missing" }
-        throw error
-      }
+    try {
+      const source = await this.readyContainer(container, input)
+      return await ensureRuntimeProcess(this.runtimeHost(container, source), input.command, input.env, input.port, { reuseRunning: input.reuseRunning })
+    } catch (error) {
+      if (!(error instanceof CheckpointUnusableError)) throw error
+      await this.endContainer(container)
+      return { state: "checkpoint-unusable", cause: error.unusable }
     }
-    return await ensureRuntimeProcess(this.runtimeHost(container), input.command, input.env, input.port, { reuseRunning: input.reuseRunning })
   }
 
-  private async startContainer(container: WorkspaceContainer, snapshotId: string | undefined) {
-    const image = container.images[RUNTIME_IMAGE]
-    if (!snapshotId && !image) throw new Error(`The container application has no "${RUNTIME_IMAGE}" image`)
-    const start: ContainerStart = {
-      ...(snapshotId ? { containerSnapshot: { id: snapshotId } } : { image }),
-      entrypoint: ["sleep", "infinity"],
-      enableInternet: true,
-      instance: INSTANCE,
+  /** The running container this ensure may launch into, started when there is none or when the one running is not the checkpoint to restore. */
+  private async readyContainer(container: WorkspaceContainer, input: WorkspaceEnsureInput) {
+    const running = await this.ctx.storage.get<ContainerSource>(CONTAINER_SOURCE_KEY)
+    if (container.running && running && (input.restore === undefined || running.snapshotId === input.restore)) return running
+    const origin = await this.origin(input)
+    await this.endContainer(container)
+    const source = await startContainer(container, origin, () => this.interceptRecordedHosts(container))
+    await this.ctx.storage.put(CONTAINER_SOURCE_KEY, source)
+    return source
+  }
+
+  private async origin(input: WorkspaceEnsureInput): Promise<ContainerOrigin> {
+    if (input.restore === undefined) {
+      const image = workerRuntimeBuild(this.env)
+      if (!image) throw new Error("The sandbox Worker was deployed without its runtime build identity")
+      return { image }
     }
-    await this.ctx.storage.delete(RUNTIME_LAUNCH_KEY)
-    await this.ctx.storage.put(CONTAINER_SOURCE_KEY, (snapshotId ? { snapshotId } : {}) satisfies ContainerSource)
-    try {
-      container.start(start)
-      await containerAccepting(container)
-      await this.interceptRecordedHosts(container)
-      await trustInterceptCa(container)
-      await container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS)
-    } catch (error) {
-      if (container.running) await container.destroy()
-      throw error
-    }
+    const binding = await snapshotBinding(this.ctx.storage, input.restore)
+    if (!binding) throw new CheckpointUnusableError("not_restorable")
+    if (input.minimumRuntimeVersion && versionBefore(binding.build.version, input.minimumRuntimeVersion)) throw new CheckpointUnusableError("runtime_outdated")
+    return { snapshotId: input.restore, binding }
   }
 
   async workspaceRuntimeReady(port: number) {
     const container = this.container()
-    return container.running && await runtimeServing(this.runtimeHost(container), port)
+    const source = await this.ctx.storage.get<ContainerSource>(CONTAINER_SOURCE_KEY)
+    return container.running && source !== undefined && await runtimeServing(this.runtimeHost(container, source), port)
   }
 
   async watchWorkspaceIdle() {
@@ -204,12 +199,18 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     return true
   }
 
-  /** The writable root filesystem of the running container, as a snapshot a later start restores; `/run` and processes are not in it. */
+  /**
+   * The writable root filesystem of the running container, as a snapshot a
+   * later start of this sandbox restores; mounts, `/run` and processes are not
+   * in it. The record of its runtime build and image environment stays here.
+   */
   async snapshotWorkspace() {
     const container = this.container()
-    if (!container.running) throw new Error("The workspace container is not running")
+    const source = await this.ctx.storage.get<ContainerSource>(CONTAINER_SOURCE_KEY)
+    if (!container.running || !source) throw new Error("The workspace container is not running")
     const snapshot = await container.snapshotContainer({ name: "workspace" })
-    return { snapshotId: snapshot.id, sizeBytes: snapshot.size }
+    await recordSnapshot(this.ctx.storage, snapshot.id, { build: source.build, imageEnv: source.imageEnv, takenAt: Date.now() })
+    return { snapshotId: snapshot.id, sizeBytes: snapshot.size, runtimeBuild: source.build.id }
   }
 
   async destroyWorkspace() {
@@ -230,23 +231,4 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     if (!container.running || !idle) return workerResponse(Response.json({ error: "The workspace machine is not running" }, { status: 503 }))
     return workerResponse(await container.getTcpPort(idle.port).fetch(domRequest(request)))
   }
-}
-
-/** `start()` returns before the container accepts work; the first `exec` that completes is readiness, and an exit while starting is the start's failure. */
-async function containerAccepting(container: WorkspaceContainer, pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))) {
-  const exited = container.monitor().then(
-    () => new Error("The workspace container exited while starting"),
-    (error: unknown) => error instanceof Error ? error : new Error(String(error)),
-  )
-  const deadline = Date.now() + CONTAINER_READY_TIMEOUT_MS
-  while (Date.now() < deadline) {
-    const accepted = await Promise.race([
-      bounded(run(container, ["true"]), "container readiness").then((output) => output.exitCode === 0, () => false),
-      exited,
-    ])
-    if (accepted instanceof Error) throw accepted
-    if (accepted) return
-    await pause(CONTAINER_READY_POLL_MS)
-  }
-  throw new Error(`The workspace container did not accept commands within ${CONTAINER_READY_TIMEOUT_MS / 1000} seconds`)
 }

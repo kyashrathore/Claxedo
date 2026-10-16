@@ -14,6 +14,7 @@ function host() {
   let ids = 0
   const runtime: RuntimeHost = {
     container,
+    imageEnv: { PATH: "/root/.local/bin:/usr/local/bin:/usr/bin", AMP_SKIP_UPDATE_CHECK: "1" },
     launches: {
       get: async () => recorded && { ...recorded },
       put: async (launch) => {
@@ -40,7 +41,7 @@ function host() {
 }
 
 describe("workspace-runtime process", () => {
-  test("a first ensure launches the runtime in /run with the image's environment, the interception trust and the boot env, and records it ready", async () => {
+  test("a first ensure launches the runtime in /run with the recorded image environment, the interception trust and the boot env, and records it ready", async () => {
     const h = host()
     expect(await ensureRuntimeProcess(h.runtime, COMMAND, { WORKSPACE_RUNTIME_PORT: "2593", PATH: "/custom" }, PORT, { reuseRunning: true })).toEqual({ state: "ready" })
     const [launch] = h.state.launches.values()
@@ -57,6 +58,16 @@ describe("workspace-runtime process", () => {
       },
     })
     expect(h.recorded()).toEqual({ id: "launch-1", launchedAt: 1_000_000, ready: true })
+  })
+
+  test("a launch the host refuses never starts, so no runtime gets the boot env", async () => {
+    const h = host()
+    h.runtime.beforeLaunch = async () => {
+      throw new Error("refused")
+    }
+    await expect(ensureRuntimeProcess(h.runtime, COMMAND, { SECRET: "s" }, PORT, { reuseRunning: true })).rejects.toThrow("refused")
+    expect(h.state.launches.size).toBe(0)
+    expect(h.recorded()).toBeUndefined()
   })
 
   test("a running runtime is left alone when the caller says its env is unchanged", async () => {

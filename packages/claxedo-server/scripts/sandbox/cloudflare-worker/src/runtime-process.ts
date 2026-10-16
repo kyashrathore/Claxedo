@@ -3,8 +3,17 @@ import { bounded, run, type WorkspaceContainer } from "./container-api"
 import { INTERCEPT_TRUST_ENV } from "./container-trust"
 import { safeRuntimeLog } from "./runtime-log"
 
-/** `/run` is in memory, so a snapshot never carries a runtime's logs, and a restored container finds no launch of its source. */
-const RUNTIME_ROOT = "/run/claxedo-runtime"
+/**
+ * Where each launch keeps its pid, exit code and unredacted output. It is
+ * memory, mounted over when `/run` is not, so a snapshot never carries a
+ * runtime's logs and a restored container finds no launch of its source.
+ */
+export const RUNTIME_ROOT = "/run/claxedo-runtime"
+
+export const MEMORY_RUNTIME_ROOT = `root=$1
+mkdir -p "$root" || exit 1
+[ "$(stat -f -c %T "$root")" = tmpfs ] || mount -t tmpfs -o mode=0700 tmpfs "$root" || exit 1
+[ "$(stat -f -c %T "$root")" = tmpfs ]`
 const RUNTIME_CWD = "/workspace"
 const RUNTIME_READY_TIMEOUT_MS = 30_000
 const RUNTIME_READY_POLL_MS = 500
@@ -62,6 +71,10 @@ export type RuntimeLaunches = {
 export type RuntimeHost = {
   container: WorkspaceContainer
   launches: RuntimeLaunches
+  /** The image's own environment, which `exec` does not pass on; recorded outside the container, never read back from it. */
+  imageEnv: Record<string, string>
+  /** Runs before every launch, which hands the runtime the boot env; it throws to refuse the launch. */
+  beforeLaunch?: () => Promise<void>
   now?: () => number
   newId?: () => string
   pause?: (ms: number) => Promise<void>
@@ -104,21 +117,13 @@ async function stopRuntime(host: RuntimeHost, launch: RuntimeLaunch) {
   await host.launches.delete()
 }
 
-/** The image's own environment, which the container's main process holds and `exec` does not pass on. */
-async function imageEnv(container: WorkspaceContainer): Promise<Record<string, string>> {
-  const environ = await bounded(run(container, ["cat", "/proc/1/environ"]), "container environment read")
-  return Object.fromEntries(environ.stdout.split("\0").flatMap((entry) => {
-    const at = entry.indexOf("=")
-    return at > 0 ? [[entry.slice(0, at), entry.slice(at + 1)]] : []
-  }))
-}
-
 async function launchRuntime(host: RuntimeHost, command: string, env: Record<string, string>) {
+  await host.beforeLaunch?.()
   const launch: RuntimeLaunch = { id: host.newId?.() ?? crypto.randomUUID(), launchedAt: (host.now ?? Date.now)(), ready: false }
   const dir = launchDir(launch)
   const created = await bounded(run(host.container, ["mkdir", "-p", dir]), "workspace-runtime launch directory")
   if (created.exitCode !== 0) throw new Error(`The workspace-runtime launch directory could not be created: ${created.stderr.trim().slice(0, 200)}`)
-  const processEnv = { ...await imageEnv(host.container), ...INTERCEPT_TRUST_ENV, ...env }
+  const processEnv = { ...host.imageEnv, ...INTERCEPT_TRUST_ENV, ...env }
   await bounded(host.container.exec(["sh", "-c", LAUNCH_RUNTIME, "launch", dir, command], {
     env: processEnv,
     cwd: RUNTIME_CWD,

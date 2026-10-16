@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { createCloudflareSandboxDriver } from "./cloudflare"
+import { MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
 import { createSandboxManager, isSandboxProviderKeyRefused } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
@@ -373,6 +374,8 @@ describe("CloudflareSandboxDriver", () => {
 
     expect(calls.find((call) => call.url.endsWith("/snapshot"))).toEqual({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/snapshot", method: "POST", body: {} })
     expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.restore).toEqual({ snapshotId: "snap-1" })
+    expect(MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.minimumRuntimeVersion).toBe(MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION)
   })
 
   test("a snapshot the Worker could not take throws instead of naming a checkpoint", async () => {

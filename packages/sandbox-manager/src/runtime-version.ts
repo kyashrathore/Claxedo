@@ -18,3 +18,13 @@ const DEFAULT_WORKSPACE_RUNTIME_VERSION = "0.5.2"
 export function workspaceRuntimeVersion() {
   return process.env.WORKSPACE_RUNTIME_VERSION || DEFAULT_WORKSPACE_RUNTIME_VERSION
 }
+
+/**
+ * The oldest workspace-runtime version a driver may restore a workspace's
+ * snapshot into running again. A filesystem snapshot carries the runtime it
+ * was taken with, so a fix to the runtime reaches a workspace that keeps
+ * waking only when this rises. Raise it, together with the runtime version,
+ * for a security-relevant runtime change alone: every snapshot below it is
+ * refused and its person must start the workspace fresh.
+ */
+export const MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION = "0.5.2"

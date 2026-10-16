@@ -105,6 +105,8 @@ jobs:
 
       # The idle stop calls the control plane at CONTROL_PLANE_URL; a Worker
       # without it refuses to start runtimes, so an empty value fails here.
+      # The runtime build identity comes from the bundle the image copies, so
+      # the Worker checks every container's runtime against its own image's.
       - name: Deploy (build image in CI -> push to Cloudflare registry -> deploy worker)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -113,7 +115,10 @@ jobs:
           WRANGLER_LOG: debug
         run: |
           [ -n "$CONTROL_PLANE_URL" ] || { echo "::error::CLAXEDO_STAGING_API_ORIGIN is not configured in the staging environment"; exit 1; }
-          npm run deploy -- --var "CONTROL_PLANE_URL:$CONTROL_PLANE_URL"
+          INFO=../.build/build-info.json
+          BUILD_ID="$(jq -er .buildId "$INFO")" && RUNTIME_VERSION="$(jq -er .coreVersion "$INFO")" && RUNTIME_DIGEST="$(jq -er .runtimeDigest "$INFO")" \
+            || { echo "::error::$INFO names no buildId, coreVersion and runtimeDigest"; exit 1; }
+          npm run deploy -- --var "CONTROL_PLANE_URL:$CONTROL_PLANE_URL" --var "RUNTIME_BUILD_ID:$BUILD_ID" --var "RUNTIME_VERSION:$RUNTIME_VERSION" --var "RUNTIME_DIGEST:$RUNTIME_DIGEST"
 
       # Wrangler reports a failed container push or rollout as a bare
       # "Generic Error" and writes the cause only to its log file.

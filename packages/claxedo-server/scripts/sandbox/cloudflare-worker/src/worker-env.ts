@@ -1,4 +1,5 @@
 import type { EgressKV } from "./egress-store"
+import type { RuntimeBuildEnv } from "./runtime-integrity"
 import type { RegistryR2 } from "./sandbox-registry"
 import type { IdleEnv } from "./workspace-idle"
 import type { WorkspaceSandbox } from "./workspace-sandbox"
@@ -15,7 +16,7 @@ type WorkspaceSandboxStub = { fetch(request: Request): Promise<Response> } & Pic
   | "snapshotWorkspace"
   | "destroyWorkspace">
 
-export interface WorkerEnv extends IdleEnv {
+export interface WorkerEnv extends IdleEnv, RuntimeBuildEnv {
   WORKSPACE_SANDBOX: { getByName(name: string, options?: { locationHint?: "enam" }): WorkspaceSandboxStub }
   API_TOKEN: string
   EGRESS_SECRETS?: EgressKV

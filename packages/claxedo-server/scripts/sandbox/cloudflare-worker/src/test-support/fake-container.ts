@@ -1,6 +1,11 @@
 import type { ContainerExecOptions, ContainerStart, WorkspaceContainer } from "../container-api"
 import { TRUST_INTERCEPT_CA } from "../container-trust"
-import { LAUNCH_RUNTIME, RUNTIME_STATUS, STOP_RUNTIME } from "../runtime-process"
+import { RUNTIME_DIGEST_SCRIPT } from "../runtime-integrity"
+import { LAUNCH_RUNTIME, MEMORY_RUNTIME_ROOT, RUNTIME_STATUS, STOP_RUNTIME } from "../runtime-process"
+
+/** The digest of the runtime files the fake image carries, as the Worker's build identity names it. */
+export const IMAGE_RUNTIME_DIGEST = "d".repeat(64)
+export const IMAGE_ENVIRON = "PATH=/root/.local/bin:/usr/local/bin:/usr/bin\0AMP_SKIP_UPDATE_CHECK=1\0CLOUDFLARE_PLACEMENT_ID=placement-1\0"
 
 export type FakeLaunch = {
   dir: string
@@ -27,10 +32,13 @@ function output(stdout = "", exitCode = 0, stderr = "") {
  * Worker drives it: the scripts it execs are answered by what they do, so the
  * tests read the container's state rather than the calls that changed it.
  */
-export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?: number } = {}) {
+export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?: number; memoryRootExit?: number } = {}) {
   const missing = new Set(options.missingSnapshots ?? [])
+  const snapshotDigests = new Map<string, string>()
   const state = {
     running: false,
+    /** What the runtime files hash to in the running container; a test changes it to stand for an agent editing them. */
+    runtimeDigest: IMAGE_RUNTIME_DIGEST,
     starts: [] as ContainerStart[],
     intercepted: [] as string[],
     inactivityTimeouts: [] as number[],
@@ -71,6 +79,7 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       }
       state.failure = undefined
       state.running = true
+      state.runtimeDigest = "containerSnapshot" in start ? snapshotDigests.get(start.containerSnapshot.id) ?? IMAGE_RUNTIME_DIGEST : IMAGE_RUNTIME_DIGEST
     },
     monitor() {
       if (state.failure) return Promise.reject(state.failure)
@@ -88,7 +97,7 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       if (!state.running) throw new Error("Container is not running")
       const [program, flag, script, , dir = "", command = ""] = argv
       if (program === "true") return output()
-      if (program === "cat" && flag === "/proc/1/environ") return output("PATH=/usr/local/bin:/usr/bin\0AMP_SKIP_UPDATE_CHECK=1\0")
+      if (program === "cat" && flag === "/proc/1/environ") return output(IMAGE_ENVIRON)
       if (program === "mkdir") return output()
       if (program === "tail") {
         const path = argv[3] ?? ""
@@ -97,6 +106,8 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       }
       if (program !== "sh" || flag !== "-c") throw new Error(`unexpected exec ${argv.join(" ")}`)
       if (script === TRUST_INTERCEPT_CA) return output("", options.trustExit ?? 0)
+      if (script === MEMORY_RUNTIME_ROOT) return output("", options.memoryRootExit ?? 0)
+      if (script === RUNTIME_DIGEST_SCRIPT) return output(`${state.runtimeDigest}\n`)
       if (script === RUNTIME_STATUS) return output(`${status(dir)}\n`)
       if (script === STOP_RUNTIME) {
         state.stops.push(dir)
@@ -140,6 +151,7 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       if (!state.running) throw new Error("Container is not running")
       const id = `snap-${state.snapshots.length + 1}`
       state.snapshots.push(id)
+      snapshotDigests.set(id, state.runtimeDigest)
       return { id, size: 4_096 }
     },
   }
@@ -165,6 +177,9 @@ export function fakeStorage() {
     },
     async deleteAll() {
       values.clear()
+    },
+    async list<T>({ prefix }: { prefix: string }) {
+      return new Map([...values].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => [key, structuredClone(value) as T]))
     },
     async setAlarm(at: number) {
       alarm = at

@@ -1,3 +1,4 @@
+import { apiTokenMatches } from "./api-token"
 import { placeholderAdded, readRegistrations } from "./egress-store"
 import { credentialPlaceholder, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
 import { listSandboxes, registerSandbox, unregisterSandbox } from "./sandbox-registry"
@@ -5,7 +6,8 @@ import type { WorkerEnv } from "./worker-env"
 import { asWorkerRecord, stringMap } from "./worker-json"
 import { workspaceIdlePlacement } from "./workspace-idle"
 import type { WorkspaceEnsure } from "./workspace-sandbox"
-import { WORKSPACE_SNAPSHOT_MISSING } from "./workspace-snapshot"
+import { workerRuntimeBuild } from "./runtime-integrity"
+import { CHECKPOINT_UNUSABLE } from "./workspace-snapshot"
 
 export { CredentialEgress } from "./credential-egress"
 export { WorkspaceSandbox } from "./workspace-sandbox"
@@ -39,10 +41,10 @@ function json(data: unknown, status = 200) {
   return Response.json(data, { status })
 }
 
-function auth(request: Request, env: WorkerEnv): Response | null {
+async function auth(request: Request, env: WorkerEnv): Promise<Response | null> {
   const header = request.headers.get("Authorization")
   if (!header?.startsWith("Bearer ")) return json({ error: "unauthorized" }, 401)
-  if (header.slice(7) !== env.API_TOKEN) return json({ error: "forbidden" }, 403)
+  if (!env.API_TOKEN || !await apiTokenMatches(header.slice(7), env.API_TOKEN)) return json({ error: "forbidden" }, 403)
   return null
 }
 
@@ -78,6 +80,8 @@ async function ensureRuntime(request: Request, env: WorkerEnv, sandboxId: string
   if (!command) return json({ error: "ensure-runtime requires `command`" }, 400)
   const restore = restoreSnapshot(body.restore)
   if (restore === null) return json({ error: "ensure-runtime restore requires the checkpoint's snapshot id" }, 400)
+  const minimumRuntimeVersion = typeof body.minimumRuntimeVersion === "string" && body.minimumRuntimeVersion ? body.minimumRuntimeVersion : undefined
+  if (!workerRuntimeBuild(env)) return json({ error: "the sandbox Worker was deployed without RUNTIME_BUILD_ID, RUNTIME_VERSION and RUNTIME_DIGEST" }, 503)
   const labels = stringMap(body.labels)
   const idle = workspaceIdlePlacement(labels, port, env)
   if (!idle) return json({ error: "ensure-runtime requires workspaceId and epoch labels, and CONTROL_PLANE_URL for the idle lifecycle" }, 503)
@@ -113,8 +117,9 @@ async function ensureRuntime(request: Request, env: WorkerEnv, sandboxId: string
     port,
     reuseRunning: !placeholdersAdded,
     ...(restore ? { restore } : {}),
+    ...(minimumRuntimeVersion ? { minimumRuntimeVersion } : {}),
   })
-  if (runtime.state === "snapshot-missing") return json({ ready: false, snapshotMissing: true, error: WORKSPACE_SNAPSHOT_MISSING }, 410)
+  if (runtime.state === "checkpoint-unusable") return json({ ready: false, checkpointUnusable: runtime.cause, error: CHECKPOINT_UNUSABLE[runtime.cause] }, 410)
   if (runtime.state === "exited") return json({ ready: false, exited: true, error: runtime.reason }, 502)
   if (runtime.state === "preparing") return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
   await registerSandbox(env.SANDBOX_REGISTRY, sandboxId, labels)
@@ -156,7 +161,7 @@ export default {
     const parts = new URL(request.url).pathname.split("/").filter(Boolean)
     if (parts[0] === "sandbox" && parts[1] && parts[2] === "proxy") return await proxy(request, env, parts)
 
-    const denied = auth(request, env)
+    const denied = await auth(request, env)
     if (denied) return denied
 
     // "No bucket" must never read as "no sandboxes", or a sweep reports a clean pass while seeing nothing.

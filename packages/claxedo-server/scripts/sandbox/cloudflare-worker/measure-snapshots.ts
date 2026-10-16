@@ -18,6 +18,7 @@ if (!base || !token || !Number.isSafeInteger(fillMb) || fillMb < 0) {
 const PORT = 2593
 const run = `measure-${Date.now().toString(36)}`
 const sandboxId = `claxedo-${run}`
+const otherSandboxId = `${sandboxId}-other`
 const serve = `exec node -e 'require("http").createServer((q, s) => s.end("ok")).listen(${PORT})'`
 const fail = (what: string) => `{ echo "workspace_runtime_boot_failed: ${what}" >&2; exit 1; }`
 const prepare = [
@@ -26,6 +27,11 @@ const prepare = [
   "npm install -g --no-audit --no-fund cowsay@1.6.0 >/dev/null",
   "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends sl >/dev/null",
 ].join(" && ")
+const environment = [
+  `case ":$PATH:" in *:/root/.local/bin:*) ;; *) ${fail("the runtime's PATH lost the image's /root/.local/bin")} ;; esac`,
+  `tr '\\0' '\\n' < /proc/1/environ | grep -q '^PATH=.*/root/.local/bin' || ${fail("the container's main process lost the image PATH")}`,
+  `[ "$(stat -f -c %T /run/claxedo-runtime)" = tmpfs ] || ${fail("the runtime launch directory is not in memory")}`,
+].join(" && ")
 const verify = [
   `[ "$(cat /workspace/measure.txt)" = ${run} ] || ${fail("the workspace file is missing")}`,
   `[ "$(sha256sum /workspace/measure.bin | cut -d' ' -f1)" = "$(cat /workspace/measure.sha256)" ] || ${fail("the workspace data changed")}`,
@@ -33,9 +39,9 @@ const verify = [
   `[ -x /usr/games/sl ] || ${fail("the apt package is missing")}`,
 ].join(" && ")
 
-async function call(action: string, body: Record<string, unknown>, method = "POST") {
+async function call(action: string, body: Record<string, unknown>, method = "POST", sandbox = sandboxId) {
   const startedAt = performance.now()
-  const response = await fetch(`${base}/sandbox/${sandboxId}${action ? `/${action}` : ""}`, {
+  const response = await fetch(`${base}/sandbox/${sandbox}${action ? `/${action}` : ""}`, {
     method,
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
@@ -48,7 +54,7 @@ const PREPARING = "workspace-runtime did not become ready"
 const ENSURE_DEADLINE_MS = 10 * 60_000
 
 /** Polls ensure-runtime through its one retryable answer until the runtime answers, and reports the whole wait. */
-async function ensure(command: string, restore?: string) {
+async function ensure(command: string, restore?: string, sandbox = sandboxId) {
   const startedAt = performance.now()
   for (;;) {
     const answer = await call("ensure-runtime", {
@@ -56,8 +62,8 @@ async function ensure(command: string, restore?: string) {
       env: {},
       port: PORT,
       labels: { app: "claxedo-measure", workspaceId: run, epoch: "1" },
-      ...(restore ? { restore: { snapshotId: restore } } : {}),
-    })
+      ...(restore ? { restore: { snapshotId: restore }, minimumRuntimeVersion: "0.0.0" } : {}),
+    }, "POST", sandbox)
     const ms = Math.round(performance.now() - startedAt)
     if (answer.status !== 503 || answer.data.error !== PREPARING || ms > ENSURE_DEADLINE_MS) return { ...answer, ms }
   }
@@ -65,7 +71,7 @@ async function ensure(command: string, restore?: string) {
 
 const timings: Record<string, unknown> = { sandboxId, fillMb }
 try {
-  const cold = await ensure(`${prepare} && ${serve}`)
+  const cold = await ensure(`${environment} && ${prepare} && ${serve}`)
   if (cold.status !== 200) throw new Error(`cold ensure answered ${cold.status}: ${String(cold.data.error)}`)
   timings.coldStartAndPrepareMs = cold.ms
   const snapshot = await call("snapshot", {})
@@ -73,15 +79,21 @@ try {
   Object.assign(timings, { snapshotMs: snapshot.ms, snapshotBytes: snapshot.data.sizeBytes })
   const snapshotId = String(snapshot.data.snapshotId)
   timings.stopMs = (await call("stop", { epoch: 1 })).ms
-  const restored = await ensure(`${verify} && ${serve}`, snapshotId)
+  const restored = await ensure(`${environment} && ${verify} && ${serve}`, snapshotId)
   timings.restore = { status: restored.status, ms: restored.ms, error: restored.data.error }
-  const missing = await ensure(serve, "00000000-0000-0000-0000-000000000000")
-  timings.missingSnapshot = { status: missing.status, snapshotMissing: missing.data.snapshotMissing, error: missing.data.error }
-  if (restored.status !== 200 || missing.status !== 410) process.exitCode = 1
+  const refusal = (answer: Awaited<ReturnType<typeof ensure>>) => ({ status: answer.status, checkpointUnusable: answer.data.checkpointUnusable, error: answer.data.error })
+  const unknown = refusal(await ensure(serve, "00000000-0000-0000-0000-000000000000"))
+  const otherSandbox = refusal(await ensure(serve, snapshotId, otherSandboxId))
+  await call("", {}, "DELETE")
+  const afterDestroy = refusal(await ensure(serve, snapshotId))
+  timings.refusals = { unknown, otherSandbox, afterDestroy }
+  const refusedAsNotRestorable = [unknown, otherSandbox, afterDestroy].every((answer) => answer.status === 410 && answer.checkpointUnusable === "not_restorable")
+  if (restored.status !== 200 || !refusedAsNotRestorable) process.exitCode = 1
 } catch (error) {
   timings.failure = error instanceof Error ? error.message : String(error)
   process.exitCode = 1
 } finally {
   timings.destroyStatus = (await call("", {}, "DELETE")).status
+  await call("", {}, "DELETE", otherSandboxId)
   console.log(JSON.stringify(timings, null, 2))
 }

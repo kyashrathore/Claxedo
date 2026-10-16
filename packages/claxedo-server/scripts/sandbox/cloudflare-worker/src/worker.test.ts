@@ -12,6 +12,10 @@ vi.mock("cloudflare:workers", () => ({
 
 const { default: worker, CredentialEgress } = await import("./index")
 
+// The Workers runtime's constant-time comparison, which Node's WebCrypto lacks.
+const timingSafeEqual = vi.fn((a: ArrayBuffer, b: ArrayBuffer) => Buffer.from(a).equals(Buffer.from(b)))
+Object.defineProperty(crypto.subtle, "timingSafeEqual", { value: timingSafeEqual, configurable: true })
+
 const stub = {
   fetch: vi.fn(async (_request: Request) => new Response("from runtime")),
   setCredentialHosts: vi.fn(async (_sandboxId: string, _hosts: readonly string[]) => {}),
@@ -65,6 +69,9 @@ function env(overrides: Record<string, unknown> = {}) {
   return {
     WORKSPACE_SANDBOX: { getByName },
     API_TOKEN: "tok",
+    RUNTIME_BUILD_ID: "build-1",
+    RUNTIME_VERSION: "0.5.2",
+    RUNTIME_DIGEST: "d".repeat(64),
     CONTROL_PLANE_URL: "https://control.test",
     IDLE_STOP_TOKEN: "idle-token",
     SANDBOX_REGISTRY: fakeR2(),
@@ -141,20 +148,31 @@ describe("ensure-runtime", () => {
     })
   })
 
-  test("a restore names the checkpoint's snapshot to the object, and a restore without one is refused", async () => {
-    await ensure("claxedo-ws_1", env(), { restore: { snapshotId: "snap-7" } })
-    expect(stub.ensureWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({ restore: "snap-7" }))
+  test("a restore names the checkpoint's snapshot and the control plane's minimum runtime to the object, and a restore without a snapshot is refused", async () => {
+    await ensure("claxedo-ws_1", env(), { restore: { snapshotId: "snap-7" }, minimumRuntimeVersion: "0.5.2" })
+    expect(stub.ensureWorkspace).toHaveBeenLastCalledWith(expect.objectContaining({ restore: "snap-7", minimumRuntimeVersion: "0.5.2" }))
     const refused = await ensure("claxedo-ws_1", env(), { restore: { backupId: "a,b" } })
     expect(refused.status).toBe(400)
     expect(stub.ensureWorkspace).toHaveBeenCalledOnce()
   })
 
-  test("a snapshot the platform no longer holds is a 410 carrying the one line a person reads", async () => {
-    stub.ensureWorkspace.mockResolvedValueOnce({ state: "snapshot-missing" })
-    const response = await ensure("claxedo-ws_1", env(), { restore: { snapshotId: "snap-gone" } })
+  test.each([
+    ["expired", "This workspace's saved files expired after 30 days unused; choose Start fresh."],
+    ["runtime_outdated", "This workspace was saved by a runtime that has since had a security fix; choose Start fresh."],
+    ["runtime_modified", "This workspace's saved runtime was changed inside the machine; choose Start fresh."],
+    ["not_restorable", "This workspace's saved files can't be restored here; choose Start fresh."],
+  ] as const)("an unusable checkpoint (%s) is a 410 carrying its cause and the one line a person reads", async (cause, line) => {
+    stub.ensureWorkspace.mockResolvedValueOnce({ state: "checkpoint-unusable", cause })
+    const response = await ensure("claxedo-ws_1", env(), { restore: { snapshotId: "snap-7" } })
     expect(response.status).toBe(410)
-    expect(await response.json()).toEqual({ ready: false, snapshotMissing: true, error: "This workspace's saved files expired after 30 days unused; start it fresh." })
+    expect(await response.json()).toEqual({ ready: false, checkpointUnusable: cause, error: line })
     expect(stub.watchWorkspaceIdle).not.toHaveBeenCalled()
+  })
+
+  test("a Worker deployed without its runtime build identity starts nothing", async () => {
+    const response = await ensure("claxedo-ws_1", env({ RUNTIME_DIGEST: undefined }))
+    expect(response.status).toBe(503)
+    expect(stub.ensureWorkspace).not.toHaveBeenCalled()
   })
 
   test("a runtime whose boot failed answers with that reason as an exit, and is not registered", async () => {
@@ -298,6 +316,13 @@ describe("sandbox registry", () => {
     const response = await call("/sandboxes", env({ SANDBOX_REGISTRY: undefined }))
     expect(response.status).toBe(501)
     expect(await response.json()).toMatchObject({ supported: false })
+  })
+
+  test("the admin token is compared in constant time over digests of equal length", async () => {
+    expect((await worker.fetch(new Request("https://sbx.test/sandboxes", { headers: { authorization: "Bearer a-much-longer-wrong-token" } }), env())).status).toBe(403)
+    const [presented, expected] = timingSafeEqual.mock.calls.at(-1) ?? []
+    expect(presented?.byteLength).toBe(32)
+    expect(expected?.byteLength).toBe(32)
   })
 
   test("the listing is behind the admin token and answers GET only", async () => {

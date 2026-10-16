@@ -34,6 +34,7 @@ import { SandboxProviderKeyRefusedError, SandboxRuntimeBootError } from "../leas
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { record, text } from "../json"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
+import { MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION } from "../runtime-version"
 
 function registryEntries(input: unknown): Record<string, string>[] {
   if (!Array.isArray(input)) throw new Error("Invalid Cloudflare sandbox listing: expected sandboxes array")
@@ -255,7 +256,9 @@ export function createCloudflareSandboxDriver(
         // what makes this driver's `list()` (and therefore GC) possible at all.
         // Not container env — labels are control-plane metadata.
         labels: input.labels,
-        ...(input.bootSource?.kind === "driver-snapshot" ? { restore: { snapshotId: input.bootSource.snapshotId } } : {}),
+        ...(input.bootSource?.kind === "driver-snapshot"
+          ? { restore: { snapshotId: input.bootSource.snapshotId }, minimumRuntimeVersion: MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION }
+          : {}),
         ...(egress ? { egress } : {}),
       },
     ).catch((error) => {

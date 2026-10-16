@@ -14,7 +14,8 @@ npx tsx build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build
 cd cloudflare-worker
 npm ci
 wrangler login
-wrangler deploy --var CONTROL_PLANE_URL:https://<control-plane-origin>
+wrangler deploy --var CONTROL_PLANE_URL:https://<control-plane-origin> \
+  --var RUNTIME_BUILD_ID:<buildId> --var RUNTIME_VERSION:<coreVersion> --var RUNTIME_DIGEST:<runtimeDigest>
 wrangler secret put API_TOKEN
 wrangler secret put IDLE_STOP_TOKEN
 ```
@@ -47,6 +48,7 @@ no Sandbox SDK dependency. What each capability maps to:
 | Idle stop | `setKeepAlive(true)`, `schedule()` | a Durable Object alarm every 30 seconds, which is activity and keeps the container running; `setInactivityTimeout(10 min)` bounds a container once the alarm chain ends |
 | Stop, destroy | `stop()`, `destroy()` | `container.destroy()`; `DELETE` also clears the object's storage |
 | Registry for GC | R2 objects under `sandbox-registry/` | unchanged, bound as `SANDBOX_REGISTRY` |
+| Control auth | string comparison of `API_TOKEN` | SHA-256 digests of both, compared with `crypto.subtle.timingSafeEqual` |
 | Labels | `setLabels` | the registry's `customMetadata` (`app`, `workspaceId`, `epoch`, `homeRegion`); nothing reads container labels, so none are set |
 | Persistence | `createBackup` and `restoreBackup` of `/workspace` and HOME to R2 | `snapshotContainer()` of the whole writable root filesystem, restored by `start({ containerSnapshot })` |
 
@@ -58,7 +60,10 @@ retired `Sandbox` class is deleted with its storage.
 
 The policy refuses `instance_type`, `max_instances` and `constraints.regions`,
 so the former APAC pin is gone, and a container is placed near its Durable
-Object. The Worker reaches every object with `locationHint: "enam"`, the
+Object. In place of `max_instances`, the control plane caps each organization's
+running cloud workspaces at every start that puts a machine up, a first lease or
+a wake (`workspace/cloud-workspace-start.ts`, 25 by default). The Worker
+reaches every object with `locationHint: "enam"`, the
 convention of `workspace-relay/src/session-host-forwarding.ts`: an object is
 placed near whoever first reaches it and never moves, and from HKG Anthropic and
 OpenAI refuse every request. The hint applies only when an object is created.
@@ -67,19 +72,22 @@ OpenAI refuse every request. The hint applies only when an object is created.
 
 A checkpoint is one container snapshot. The control plane's capture freezes the
 runtime, flushes it and retires its transports, then calls `snapshot`; the
-object answers `{ snapshotId, sizeBytes }` from `snapshotContainer()`. When that
+object answers `{ snapshotId, sizeBytes, runtimeBuild }` from
+`snapshotContainer()` and records the snapshot in its own storage with the
+runtime build and image environment of the container it came from. When that
 capture ends the lease, the control plane commits it and calls `stop`, and the
 object destroys its container. The next wake's `ensure-runtime` carries
-`restore: { snapshotId }`, and the object starts the container from that
-snapshot, never from the image. The runtime's launch directory is in `/run`,
-which is memory, so a restored container has no launch of its source and boots
-a new runtime. A restore over a container running from anything but that
-snapshot replaces it; polls of the same restore keep it.
+`restore: { snapshotId }` and `minimumRuntimeVersion`, and the object starts the
+container from that snapshot, never from the image, passing the recorded image
+environment to the container's main process. A restore over a container running
+from anything but that snapshot replaces it; polls of the same restore keep it.
 
 A snapshot keeps every file of the root filesystem: the repository and its
 edits, the runtime store and harness homes under `/home/claxedo`, global npm
-installs and apt packages. It holds no process, no memory and nothing in
-`/run`.
+installs and apt packages. It holds no process, no memory and no mount. Each
+launch's pid, exit code and unredacted output live in `/run/claxedo-runtime`,
+which every start checks is `tmpfs` and mounts one over when it is not, so no
+runtime output reaches a snapshot.
 
 **What a snapshot carries that is sensitive.** On this Worker every credential
 the container sees is a `claxedo-broker:<name>` placeholder; the values stay in
@@ -102,30 +110,57 @@ the container sees is a `claxedo-broker:<name>` placeholder; the values stay in
 None of these is a value the snapshot should lose: the placeholders are
 rewritten at boot, the grants are the workspace's pending work, and the history
 is the person's own. So the Worker deletes nothing before it snapshots; the
-runtime's own checkpoint scrub (retiring transports) is the scrub step. A
-snapshot is restorable only through this Worker's `API_TOKEN`-gated
-`ensure-runtime`, into the sandbox the control plane names.
+runtime's own checkpoint scrub (retiring transports) is the scrub step.
 
-**Expiry.** A snapshot lives 30 days after it was taken or last restored, and
-the platform offers no deletion and no listing, so the driver's persistence is
-`retention: "provider-managed"` and it has no `deleteSnapshot`. A start from a
-snapshot the platform no longer holds fails with `Snapshot "<id>" was not
-found`; the Worker answers 410 `{ snapshotMissing: true, error }` with the one
-line "This workspace's saved files expired after 30 days unused; start it
-fresh.", and the driver reports it as a boot failure, which the manager does not
-retry. Nothing falls back to the image: a silent fallback would hand the person
-an empty workspace in place of theirs.
+**A snapshot id restores only the sandbox that took it.** At the platform a
+snapshot id is a bearer handle any object of the class can start from. The
+object therefore restores only an id it recorded itself; any other id, and
+every id after `DELETE /sandbox/:id` (which clears the object's storage), is
+refused as `not_restorable` before anything starts. The object keeps its eight
+newest records. The control plane's checkpoint answers carry no
+`providerReference`, so the id does not leave the control plane either.
 
-**New runtime builds.** A snapshot is bound to the image it was taken from and
-restores that image's files, the runtime bundle and harness CLIs included. A
-restored workspace therefore keeps the runtime build it was captured with; a new
-image reaches it when it starts fresh. This is the rule the Modal and Vercel
-drivers already follow for their filesystem snapshots. Reinstalling the bundle
-over a restored filesystem was rejected: the bundle's native modules are
-npm-installed in the image build and the image smoke tests that one
-combination, so a new bundle on an old image's Node, harness CLIs and native
-modules is a pairing nothing has run. The cost is that runtime fixes reach a
-long-lived workspace only through a fresh start.
+**The runtime a restore runs.** Agents run as root, so a snapshot can carry a
+changed runtime, and the runtime receives the raw boot env at every launch.
+Every start, and every launch after it, recomputes a digest of
+`/opt/workspace-runtime` (every file but what `npm install` writes, and the
+`/usr/local/bin/workspace-runtime` link) with `RUNTIME_DIGEST_SCRIPT` and
+compares it with the build the container must carry: this Worker's own
+(`RUNTIME_BUILD_ID`, `RUNTIME_VERSION`, `RUNTIME_DIGEST`, set at deploy from the
+`build-info.json` of the bundle the image copies, computed by
+`scripts/sandbox/runtime-digest.ts`) for a container from the image, the
+recorded build for one from a snapshot. A mismatch destroys the container
+unlaunched. The check runs with the container's own `find` and `sha256sum`, so
+a root process that replaced those tools can still answer for a changed
+runtime; it catches a changed bundle or entry point, not a compromised system.
+A restore that must not trust the snapshot's executables at all would restore
+only `/workspace` and HOME into the current image (`snapshotDirectory` and
+`start({ image, directorySnapshots })`), giving up the system packages a
+snapshot keeps.
+
+A snapshot is bound to the image it was taken from, so a restored workspace
+keeps the runtime build it was captured with until it starts fresh, as the
+Modal and Vercel drivers' filesystem snapshots do. A restore whose recorded
+runtime version is below the control plane's
+`MINIMUM_RESTORABLE_WORKSPACE_RUNTIME_VERSION` (`sandbox-manager`
+`runtime-version.ts`) is refused as `runtime_outdated`. Raise that minimum,
+together with the runtime version, for a security-relevant runtime change
+alone: every workspace saved below it must start fresh.
+
+**Unusable checkpoints.** Each refusal is a 410
+`{ ready: false, checkpointUnusable, error }`, where `checkpointUnusable` is
+the cause the app's Start fresh control keys off and `error` the one line a
+person reads:
+
+| `checkpointUnusable` | When | Line |
+| --- | --- | --- |
+| `expired` | the platform no longer holds the snapshot (30 days after it was taken or last restored; there is no deletion or listing, so persistence is `retention: "provider-managed"`) | This workspace's saved files expired after 30 days unused; choose Start fresh. |
+| `runtime_outdated` | the recorded runtime version is below the minimum | This workspace was saved by a runtime that has since had a security fix; choose Start fresh. |
+| `runtime_modified` | the runtime files are not the build they must be | This workspace's saved runtime was changed inside the machine; choose Start fresh. |
+| `not_restorable` | the id is not one this sandbox recorded, or the sandbox was destroyed | This workspace's saved files can't be restored here; choose Start fresh. |
+
+Nothing falls back to the image: a silent fallback would hand the person an
+empty workspace in place of theirs.
 
 ## Pinning the control plane to a specific build
 
@@ -322,8 +357,9 @@ next check. After 20 failures in a row the alarm is not set again, so the
 
 The `v2` migration creates the `WorkspaceSandbox` container application and
 deletes the `Sandbox` class with its Durable Object storage. Checkpoints taken
-by the retired Worker name directory backups, not snapshots, so their restores
-are refused as missing, and the workspaces start fresh. No migration of them is
+by the retired Worker name directory backups, and snapshots taken before the
+object recorded them have no record, so their restores are refused as
+`not_restorable` and the workspaces start fresh. No migration of them is
 provided. After the new Worker serves, delete the retired container application
 (`wrangler containers list`, then `wrangler containers delete <id>` for the
 `Sandbox` one) and the `backups/` prefix of the `claxedo-sandbox-backups`

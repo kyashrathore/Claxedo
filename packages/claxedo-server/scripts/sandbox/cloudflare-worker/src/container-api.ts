@@ -18,6 +18,8 @@ export type ContainerStart = {
   enableInternet: boolean
   entrypoint: string[]
   instance: string
+  /** The main process's environment. A snapshot start passes the image environment recorded when its source started, since a snapshot names no image to take it from. */
+  env?: Record<string, string>
 } & ({ image: string } | { containerSnapshot: { id: string } })
 
 /**

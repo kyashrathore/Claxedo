@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { isBuiltin } from "node:module"
 import { build as esbuildBuild, type Metafile } from "esbuild"
 import { stageOpenCodePatches } from "../../../workspace-runtime/scripts/stage-opencode-patches"
+import { runtimeDigest } from "./runtime-digest"
 import { bundleCursorWorker } from "../../../harness/scripts/cursor-worker"
 import { isRecord } from "@claxedo/helpers/guards"
 import { defaultSandboxImage, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
@@ -463,7 +464,7 @@ async function main() {
   fs.mkdirSync(buildInfoDir, { recursive: true })
   fs.writeFileSync(
     path.join(buildInfoDir, "build-info.json"),
-    JSON.stringify({ imageTag, buildId: bundle.buildId, coreVersion: version, agentPlugins }, null, 2),
+    JSON.stringify({ imageTag, buildId: bundle.buildId, coreVersion: version, runtimeDigest: runtimeDigest(outDir), agentPlugins }, null, 2),
   )
 
   console.log("")

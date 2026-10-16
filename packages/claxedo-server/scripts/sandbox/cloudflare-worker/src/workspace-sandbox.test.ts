@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { fakeContainer, fakeStorage } from "./test-support/fake-container"
+import { fakeContainer, fakeStorage, IMAGE_RUNTIME_DIGEST } from "./test-support/fake-container"
 
 vi.mock("cloudflare:workers", () => ({
   DurableObject: class DurableObject {
@@ -11,6 +11,7 @@ const { WorkspaceSandbox } = await import("./workspace-sandbox")
 
 const COMMAND = "/usr/local/bin/workspace-runtime"
 const IDLE = { workspaceId: "ws_1", epoch: 3, port: 2593, idleMs: 600_000 }
+const BUILD = { RUNTIME_BUILD_ID: "build-1", RUNTIME_VERSION: "0.5.2", RUNTIME_DIGEST: IMAGE_RUNTIME_DIGEST }
 
 function sandbox(options: Parameters<typeof fakeContainer>[0] = {}, env: Record<string, unknown> = {}) {
   const { container, state } = fakeContainer(options)
@@ -27,14 +28,24 @@ function sandbox(options: Parameters<typeof fakeContainer>[0] = {}, env: Record<
       },
     },
   }
-  const object = new WorkspaceSandbox(ctx as never, { CONTROL_PLANE_URL: "https://control.test", IDLE_STOP_TOKEN: "idle", ...env } as never)
+  const object = new WorkspaceSandbox(ctx as never, { CONTROL_PLANE_URL: "https://control.test", IDLE_STOP_TOKEN: "idle", ...BUILD, ...env } as never)
   return { object, container, state, storage, egress }
 }
 
-async function ensure(object: InstanceType<typeof WorkspaceSandbox>, restore?: string) {
+async function ensure(object: InstanceType<typeof WorkspaceSandbox>, restore?: string, more: { minimumRuntimeVersion?: string; reuseRunning?: boolean } = {}) {
   await object.configureWorkspaceIdle(IDLE)
-  return await object.ensureWorkspace({ command: COMMAND, env: {}, port: 2593, reuseRunning: true, ...(restore ? { restore } : {}) })
+  return await object.ensureWorkspace({ command: COMMAND, env: {}, port: 2593, reuseRunning: more.reuseRunning ?? true, ...(restore ? { restore } : {}), ...more })
 }
+
+/** A workspace that ran, was captured and was stopped, as an idle stop leaves it. */
+async function saved(s: ReturnType<typeof sandbox>) {
+  await ensure(s.object)
+  const { snapshotId } = await s.object.snapshotWorkspace()
+  await s.object.stopWorkspace(IDLE.epoch)
+  return snapshotId
+}
+
+const RESTORED_START = { entrypoint: ["sleep", "infinity"], enableInternet: true, instance: "standard-1" }
 
 describe("workspace sandbox container", () => {
   test("a first ensure starts the runtime image with internet, a standard-1 instance and sleep as the main process, trusts the interception CA, and bounds inactivity", async () => {
@@ -50,32 +61,92 @@ describe("workspace sandbox container", () => {
     expect(s.state.inactivityTimeouts).toEqual([600_000])
   })
 
-  test("a stopped workspace's checkpoint starts its container from that snapshot, never from the image", async () => {
+  test("a stopped workspace's checkpoint starts from its snapshot with the image environment recorded when it was taken, never from the image", async () => {
     const s = sandbox()
-    expect(await ensure(s.object, "snap-7")).toEqual({ state: "ready" })
-    expect(s.state.starts).toEqual([{ containerSnapshot: { id: "snap-7" }, entrypoint: ["sleep", "infinity"], enableInternet: true, instance: "standard-1" }])
+    const snapshotId = await saved(s)
+    expect(await ensure(s.object, snapshotId)).toEqual({ state: "ready" })
+    expect(s.state.starts.at(-1)).toEqual({
+      ...RESTORED_START,
+      containerSnapshot: { id: snapshotId },
+      env: { PATH: "/root/.local/bin:/usr/local/bin:/usr/bin", AMP_SKIP_UPDATE_CHECK: "1" },
+    })
+    expect([...s.state.launches.values()].at(-1)?.env.PATH).toBe("/root/.local/bin:/usr/local/bin:/usr/bin")
   })
 
   test("polls of a restore keep the container that snapshot started", async () => {
     const s = sandbox()
-    await ensure(s.object, "snap-7")
-    await ensure(s.object, "snap-7")
-    expect(s.state.starts).toHaveLength(1)
-    expect(s.state.destroys).toBe(0)
+    const snapshotId = await saved(s)
+    await ensure(s.object, snapshotId)
+    await ensure(s.object, snapshotId)
+    expect(s.state.starts).toHaveLength(2)
   })
 
   test("a restore over a container running from anything else replaces it, so the files the lease names are the ones served", async () => {
     const s = sandbox()
+    const snapshotId = await saved(s)
     await ensure(s.object)
-    expect(await ensure(s.object, "snap-7")).toEqual({ state: "ready" })
-    expect(s.state.destroys).toBe(1)
-    expect(s.state.starts.map((start) => "containerSnapshot" in start ? start.containerSnapshot.id : "image")).toEqual(["image", "snap-7"])
+    expect(await ensure(s.object, snapshotId)).toEqual({ state: "ready" })
+    expect(s.state.starts.map((start) => "containerSnapshot" in start ? start.containerSnapshot.id : "image")).toEqual(["image", "image", snapshotId])
   })
 
-  test("a snapshot the platform no longer holds is refused as missing, with no container left and no start from the image", async () => {
-    const s = sandbox({ missingSnapshots: ["snap-gone"] })
-    expect(await ensure(s.object, "snap-gone")).toEqual({ state: "snapshot-missing" })
+  test("a snapshot the platform no longer holds is refused as expired, with no container left and no start from the image", async () => {
+    const s = sandbox({ missingSnapshots: ["snap-1"] })
+    const snapshotId = await saved(s)
+    expect(await ensure(s.object, snapshotId)).toEqual({ state: "checkpoint-unusable", cause: "expired" })
+    expect(s.state.starts.map((start) => "image" in start)).toEqual([true, false])
+    expect(s.container.running).toBe(false)
+  })
+
+  test("a snapshot id this sandbox never took is refused before anything starts, so a handle from another sandbox restores nothing", async () => {
+    const s = sandbox()
+    expect(await ensure(s.object, "snap-of-another-sandbox")).toEqual({ state: "checkpoint-unusable", cause: "not_restorable" })
+    expect(s.state.starts).toEqual([])
+  })
+
+  test("destroying a sandbox revokes every snapshot it took", async () => {
+    const s = sandbox()
+    const snapshotId = await saved(s)
+    await s.object.destroyWorkspace()
+    expect(await ensure(s.object, snapshotId)).toEqual({ state: "checkpoint-unusable", cause: "not_restorable" })
     expect(s.state.starts).toHaveLength(1)
+  })
+
+  test("a snapshot whose runtime is older than the control plane's minimum is refused before it starts", async () => {
+    const s = sandbox()
+    const snapshotId = await saved(s)
+    expect(await ensure(s.object, snapshotId, { minimumRuntimeVersion: "0.5.3" })).toEqual({ state: "checkpoint-unusable", cause: "runtime_outdated" })
+    expect(s.state.starts).toHaveLength(1)
+    expect(await ensure(s.object, snapshotId, { minimumRuntimeVersion: "0.5.2" })).toEqual({ state: "ready" })
+  })
+
+  test("a snapshot whose runtime files were changed inside the machine is destroyed unlaunched", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    s.state.runtimeDigest = "e".repeat(64)
+    const { snapshotId } = await s.object.snapshotWorkspace()
+    await s.object.stopWorkspace(IDLE.epoch)
+    expect(await ensure(s.object, snapshotId)).toEqual({ state: "checkpoint-unusable", cause: "runtime_modified" })
+    expect(s.container.running).toBe(false)
+    expect(s.state.launches.size).toBe(0)
+  })
+
+  test("a relaunch into a running container whose runtime files changed is refused, so the changed runtime never gets the boot env", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    s.state.runtimeDigest = "e".repeat(64)
+    expect(await ensure(s.object, undefined, { reuseRunning: false })).toEqual({ state: "checkpoint-unusable", cause: "runtime_modified" })
+    expect(s.container.running).toBe(false)
+  })
+
+  test("an image that does not carry this Worker's runtime build is an operator error, and nothing launches", async () => {
+    const s = sandbox({}, { RUNTIME_DIGEST: "f".repeat(64) })
+    await expect(ensure(s.object)).rejects.toThrow("does not carry this Worker's runtime build build-1")
+    expect(s.container.running).toBe(false)
+  })
+
+  test("a container whose launch directory cannot be memory-backed is destroyed, so no runtime output reaches a snapshot", async () => {
+    const s = sandbox({ memoryRootExit: 1 })
+    await expect(ensure(s.object)).rejects.toThrow("no memory-backed runtime directory")
     expect(s.container.running).toBe(false)
   })
 
@@ -114,11 +185,19 @@ describe("workspace sandbox container", () => {
 })
 
 describe("workspace sandbox lifecycle", () => {
-  test("a snapshot captures the running container and names it; a stopped one has nothing to capture", async () => {
+  test("a snapshot captures the running container and names it with its runtime build; a stopped one has nothing to capture", async () => {
     const s = sandbox()
     await expect(s.object.snapshotWorkspace()).rejects.toThrow("not running")
     await ensure(s.object)
-    expect(await s.object.snapshotWorkspace()).toEqual({ snapshotId: "snap-1", sizeBytes: 4_096 })
+    expect(await s.object.snapshotWorkspace()).toEqual({ snapshotId: "snap-1", sizeBytes: 4_096, runtimeBuild: "build-1" })
+  })
+
+  test("only the newest eight snapshot records are kept", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    for (let taken = 0; taken < 10; taken++) await s.object.snapshotWorkspace()
+    const recorded = [...s.storage.values.keys()].filter((key) => key.startsWith("claxedo.snapshot:"))
+    expect(recorded).toHaveLength(8)
   })
 
   test("a stop for this lease generation ends the container and its idle watch; an older generation's leaves it running", async () => {
