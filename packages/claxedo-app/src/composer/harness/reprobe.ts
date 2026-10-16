@@ -1,6 +1,6 @@
-export const HARNESS_REPROBE_INTERVAL_MS = 1500
+export const HARNESS_REPROBE_FIRST_WAIT_MS = 1500
 
-export const HARNESS_REPROBE_MAX_ATTEMPTS = 40
+export const HARNESS_REPROBE_MAX_ATTEMPTS = 5
 
 export type ReprobeScheduler = (handler: () => void, ms: number) => () => void
 
@@ -16,11 +16,11 @@ export type HarnessReprobeLoop = {
 export function startHarnessReprobeLoop(input: {
   onReprobe: (attempt: number) => void
   onExhausted: () => void
-  intervalMs?: number
+  firstWaitMs?: number
   maxAttempts?: number
   schedule?: ReprobeScheduler
 }): HarnessReprobeLoop {
-  const intervalMs = input.intervalMs ?? HARNESS_REPROBE_INTERVAL_MS
+  const firstWaitMs = input.firstWaitMs ?? HARNESS_REPROBE_FIRST_WAIT_MS
   const maxAttempts = input.maxAttempts ?? HARNESS_REPROBE_MAX_ATTEMPTS
   const schedule = input.schedule ?? defaultScheduler
 
@@ -29,7 +29,7 @@ export function startHarnessReprobeLoop(input: {
   let cancelTimer: (() => void) | undefined
 
   const arm = () => {
-    cancelTimer = schedule(tick, intervalMs)
+    cancelTimer = schedule(tick, firstWaitMs * 2 ** attempts)
   }
 
   function tick() {
