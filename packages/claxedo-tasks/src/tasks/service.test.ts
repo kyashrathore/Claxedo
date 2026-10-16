@@ -635,6 +635,26 @@ describe("tasks service", () => {
       expect(bridge.starts).toHaveLength(1)
     })
 
+    test("a Start sent again after the first one linked its session is answered with that session, though the revision it read has moved", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      const request = start(task)
+      const first = await tasks.start(ACTOR, task.id, request)
+      const again = await tasks.start(ACTOR, task.id, request)
+      expect(again.link.sessionRef).toEqual(first.link.sessionRef)
+      expect(again.created).toBe(false)
+      expect(bridge.starts).toHaveLength(1)
+      expect(bridge.delivered).toHaveLength(1)
+      expect((await tasks.detail(ACTOR, task.id)).links).toHaveLength(1)
+    })
+
+    test("a stale revision still refuses a Start that would create a session", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      await tasks.edit(ACTOR, { taskId: task.id, revision: task.revision, title: "Renamed", description: "", workspaceId: null })
+      const stale = await refusalOf(() => tasks.start(ACTOR, task.id, start(task)))
+      expect(stale.code).toBe("stale_revision")
+      expect(bridge.starts).toHaveLength(0)
+    })
+
     test("the link insertion advances the task, so an edit that missed the link cannot commit", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       await tasks.start(ACTOR, task.id, start(task))

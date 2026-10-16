@@ -102,6 +102,7 @@ import { cancelAdmittedTurn, recoveryCaller } from "./session-turn-containment"
 import { toolImageResponse } from "./tool-image"
 import { sessionUpdated, withDir } from "../projection/presentation-events"
 import { sessionDeleteRoute } from "./session-delete"
+import { sessionIdentityChanges } from "./session-identity-changes"
 import { sessionMessageRoute } from "./session-message-route"
 import { compensateRegistration, registerCreatedSession, registrationOperationId } from "./session-registration"
 
@@ -522,18 +523,8 @@ export function createSessionRoutes(opts: Opts) {
     if (!isRequestBodyTooLarge(err) && !(err instanceof HTTPException) && !isAgentRuntimeTurnConflictError(err)) console.error(err)
     return requestErrorResponse(err, c)
   })
-  // Creation and deletion share the identity until every provider/projection
-  // effect has settled. A late deletion must never remove a recreated session.
-  const activeSessionChanges = new Set<string>()
-  async function withSessionChange<T>(sessionId: string, change: () => Promise<T>): Promise<T> {
-    if (activeSessionChanges.has(sessionId)) throw new HTTPException(409, { message: "Session creation or deletion is still in progress" })
-    activeSessionChanges.add(sessionId)
-    try {
-      return await change()
-    } finally {
-      activeSessionChanges.delete(sessionId)
-    }
-  }
+  const identityChanges = sessionIdentityChanges()
+  const withSessionChange = identityChanges.run
   const admitPrompt = createPromptAdmission(opts, requestErrorResponse)
   const admitFirstInput = async (
     c: Ctx,
@@ -609,7 +600,7 @@ export function createSessionRoutes(opts: Opts) {
       if (!start) return c.json(errorBody("session_start_not_found", "Session creation not found"), 404)
       const denied = await sessionStartGuard(opts, c, start.binding, "session_meta_read", start.status === "created")
       if (denied) return denied
-      if (start.status === "starting" && !activeSessionChanges.has(start.binding.sessionId)) {
+      if (start.status === "starting" && !identityChanges.has(start.binding.sessionId)) {
         const existing = await opts.getSession?.(c, start.binding.directory, start.binding.sessionId)
         if (existing) return c.json(errorBody("session_registration_unresolved", "The agent session exists but its creation outcome requires registration reconciliation"), 409)
         start = opts.sessionStarts!.finish(start.binding, { status: "failed", error: "Session creation was interrupted; its agent request cannot be resumed" })
@@ -720,7 +711,7 @@ export function createSessionRoutes(opts: Opts) {
         const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
         const creator = sessionAccessContext(c).actor?.actorId
         let start: AgentSessionStartBinding | undefined
-        let claimed: string | undefined
+        let claimed: (() => void) | undefined
         const publishFailed = (message: string) => opts.publishSessionLifecycle?.({
           type: "session.lifecycle",
           phase: "failed",
@@ -733,14 +724,13 @@ export function createSessionRoutes(opts: Opts) {
           ts: Date.now(),
         })
         try {
-          // Checking the id and claiming it in two steps lets two creates for
-          // one id both pass and both drive the harness. The pair is one
-          // synchronous step, so the loser is refused before it touches
-          // anything and the winner holds the id until this request settles.
+          // The id is claimed before anything reads it: a second create of it
+          // waits for this one and then reads the session it made, and one
+          // that finds the id being deleted is refused before it touches
+          // anything.
           if (body.id) {
-            if (activeSessionChanges.has(body.id)) return c.json(errorBody("session_creation_in_progress", "Session creation or deletion is still in progress"), 409)
-            activeSessionChanges.add(body.id)
-            claimed = body.id
+            claimed = await identityChanges.claimCreation(body.id)
+            if (!claimed) return c.json(errorBody("session_creation_in_progress", "Session creation or deletion is still in progress"), 409)
           }
           let reserved = false
           if (body.id && operationId) {
@@ -826,8 +816,7 @@ export function createSessionRoutes(opts: Opts) {
           if (!existing && opts.sessionStarts) {
             if (!body.id) {
               body.id = `ses_${crypto.randomUUID()}`
-              activeSessionChanges.add(body.id)
-              claimed = body.id
+              claimed = await identityChanges.claimCreation(body.id)
             }
             const owner: AgentSessionStartBinding = {
               sessionId: body.id, directory: directory ?? "", workspaceId: workspaceId ?? "",
@@ -1016,7 +1005,7 @@ export function createSessionRoutes(opts: Opts) {
           if (error instanceof HTTPException) throw error
           return harnessUnavailableResponse(c, error) ?? c.json(errorBody("session_create_failed", errorMessage(error)), 500)
         } finally {
-          if (claimed) activeSessionChanges.delete(claimed)
+          claimed?.()
         }
       }
       return body.parentID && children

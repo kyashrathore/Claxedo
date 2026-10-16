@@ -2609,7 +2609,7 @@ describe("public startup question lifecycle", () => {
     expect((await second.response).status).toBe(201)
   })
 
-  test("retry cannot finalize or release a creation while post-bind configuration is running", async () => {
+  test("a retry waits out a creation whose post-bind configuration is running, without finalizing, releasing or repeating it", async () => {
     let entered!: () => void, release!: () => void
     const configuring = new Promise<void>(resolve => { entered = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
@@ -2621,13 +2621,15 @@ describe("public startup question lifecycle", () => {
     await first.started
     await f.app.request("/question/question-retry/reply", answer())
     await configuring
-    const duplicate = await post(f.app, "/session", { id: "retry" }, { "x-claxedo-session-registration-operation": "op-retry" })
-    expect(duplicate.status).toBe(409)
+    const duplicate = post(f.app, "/session", { id: "retry" }, { "x-claxedo-session-registration-operation": "op-retry" })
+    await new Promise((resolve) => setTimeout(resolve, 10))
     expect(f.lifecycle.some(event => event.phase === "failed")).toBe(false)
     expect(await (await f.app.request("/session-start/retry")).json()).toMatchObject({ status: "starting" })
     release()
     expect((await first.response).status).toBe(201)
+    await duplicate
     expect(f.store.sessionStarts.get("retry")?.status).toBe("created")
+    expect(f.replies).toEqual(["retry"])
   })
 
   test("failure is durable and stale replies cannot reach the harness", async () => {
@@ -3027,19 +3029,41 @@ describe("create against an id that already exists", () => {
     expect(f.store.getSession("ses_second")).toBeNull()
   })
 
-  test("two creates racing for one reserved id produce one session and one refusal", async () => {
+  for (const starts of [false, true]) {
+    test(`a create replayed under its own operation while the first is still creating is answered with that one session (${starts ? "durable" : "no"} creation owner)`, async () => {
+      const f = privateSessionFixture({ starts })
+      f.reserve("alice", "op_alice", "ses_alice")
+      const release = f.holdCreates()
+
+      const first = f.create("alice", { id: "ses_alice", title: "First", agent: "build" }, "op_alice")
+      const replay = f.create("alice", { id: "ses_alice", title: "First", agent: "build" }, "op_alice")
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      release()
+      const [created, replayed] = await Promise.all([first, replay])
+
+      expect(created.status).toBe(201)
+      expect(replayed.status).toBe(200)
+      expect(await replayed.json()).toMatchObject({ id: "ses_alice", title: "First" })
+      expect(f.created).toEqual(["ses_alice"])
+      expect(f.store.listSessions(WORKSPACE).map((session) => session.id)).toEqual(["ses_alice"])
+      expect(f.compensated).toEqual([])
+    })
+  }
+
+  test("a create racing another operation's create for one id is still refused once the first settles", async () => {
     const f = privateSessionFixture({ starts: false })
     f.reserve("alice", "op_alice", "ses_alice")
     const release = f.holdCreates()
 
     const first = f.create("alice", { id: "ses_alice", agent: "build" }, "op_alice")
-    const second = f.create("alice", { id: "ses_alice", agent: "plan" }, "op_alice")
+    const foreign = f.create("alice", { id: "ses_alice", agent: "plan" }, "op_unreserved")
     await new Promise((resolve) => setTimeout(resolve, 10))
     release()
-    const statuses = (await Promise.all([first, second])).map((response) => response.status).sort((a, b) => a - b)
+    const [created, refused] = await Promise.all([first, foreign])
 
-    expect(statuses).toEqual([201, 409])
+    expect(created.status).toBe(201)
+    expect(refused.status).toBe(403)
     expect(f.created).toEqual(["ses_alice"])
-    expect(f.store.listSessions(WORKSPACE).map((session) => session.id)).toEqual(["ses_alice"])
+    expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "build" })
   })
 })
