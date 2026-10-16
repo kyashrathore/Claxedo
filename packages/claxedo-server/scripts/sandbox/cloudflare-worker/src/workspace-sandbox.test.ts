@@ -315,3 +315,60 @@ describe("workspace idle watch", () => {
     }
   })
 })
+
+describe("workspace runtime log", () => {
+  function runningLaunch(s: ReturnType<typeof sandbox>) {
+    const [launch] = s.state.launches.values()
+    if (!launch) throw new Error("no runtime launched")
+    return launch
+  }
+
+  test("each idle check forwards the runtime's new warnings to the Worker's log once, under its workspace and lease generation", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    vi.spyOn(s.container, "getTcpPort").mockReturnValue({ fetch: async () => Response.json({ workspaceId: "ws_1" }) })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    try {
+      runningLaunch(s).stderr = "2026-10-16T12:18:26 INFO  woke\nSession authority unavailable: action=write session=ses_1 ms=5003 cause=timeout\n"
+      await s.object.alarm()
+      await s.object.alarm()
+      runningLaunch(s).stderr += "2026-10-16T12:19:02 WARN  CLAXEDO_API_TOKEN=secret-value\n"
+      await s.object.alarm()
+      expect(warn.mock.calls.map(([message, record]) => [message, record])).toEqual([
+        ["workspace-runtime stderr", { workspaceId: "ws_1", epoch: 3, launchId: expect.any(String), lines: ["Session authority unavailable: action=write session=ses_1 ms=5003 cause=timeout"], dropped: 0, skippedBytes: 0 }],
+        ["workspace-runtime stderr", expect.objectContaining({ lines: ["2026-10-16T12:19:02 WARN  CLAXEDO_API_TOKEN=[REDACTED]"] })],
+      ])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test("a stop forwards what the runtime wrote since the last check before the container and its memory-backed log are gone", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    try {
+      runningLaunch(s).stderr = "ERROR last words\n"
+      expect(await s.object.stopWorkspace(3)).toBe(true)
+      expect(s.container.running).toBe(false)
+      expect(warn).toHaveBeenCalledWith("workspace-runtime stderr", expect.objectContaining({ lines: ["ERROR last words"] }))
+      expect([...s.storage.values.keys()].filter((key) => key.includes("runtime-log"))).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test("a log read that fails never holds up the stop", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    s.state.logReadFailure = new Error("exec refused")
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    try {
+      expect(await s.object.stopWorkspace(3)).toBe(true)
+      expect(s.container.running).toBe(false)
+      expect(quiet).toHaveBeenCalledWith("workspace-runtime log forward failed", expect.objectContaining({ error: "Error: exec refused" }))
+    } finally {
+      quiet.mockRestore()
+    }
+  })
+})

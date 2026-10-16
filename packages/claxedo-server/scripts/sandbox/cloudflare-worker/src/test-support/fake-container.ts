@@ -1,6 +1,7 @@
 import type { ContainerExecOptions, ContainerStart, WorkspaceContainer } from "../container-api"
 import { TRUST_INTERCEPT_CA } from "../container-trust"
 import { RUNTIME_DIGEST_SCRIPT } from "../runtime-integrity"
+import { READ_RUNTIME_LOG } from "../runtime-log-forward"
 import { LAUNCH_RUNTIME, MEMORY_RUNTIME_ROOT, RUNTIME_STATUS, STOP_RUNTIME } from "../runtime-process"
 
 /** The digest of the runtime files the fake image carries, as the Worker's build identity names it. */
@@ -21,6 +22,7 @@ export type FakeLaunch = {
 export type LaunchOutcome = { state: "running" } | { state: "starting" } | { state: "exited"; exitCode: number; stderr?: string }
 
 const encoder = new TextEncoder()
+const decoder = new TextDecoder()
 
 function output(stdout = "", exitCode = 0, stderr = "") {
   const answer = { stdout: encoder.encode(stdout).buffer, stderr: encoder.encode(stderr).buffer, exitCode }
@@ -50,6 +52,7 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
     healthy: (_launch: FakeLaunch | undefined) => true,
     onLaunch: (_launch: FakeLaunch): LaunchOutcome => ({ state: "running" }),
     failure: undefined as Error | undefined,
+    logReadFailure: undefined as Error | undefined,
   }
   let fail: ((error: Error) => void) | undefined
 
@@ -109,6 +112,15 @@ export function fakeContainer(options: { missingSnapshots?: string[]; trustExit?
       if (script === MEMORY_RUNTIME_ROOT) return output("", options.memoryRootExit ?? 0)
       if (script === RUNTIME_DIGEST_SCRIPT) return output(`${state.runtimeDigest}\n`)
       if (script === RUNTIME_STATUS) return output(`${status(dir)}\n`)
+      if (script === READ_RUNTIME_LOG) {
+        if (state.logReadFailure) throw state.logReadFailure
+        const [, , , , file = "", offset = "0", max = "0"] = argv
+        const launch = state.launches.get(file.slice(0, file.lastIndexOf("/")))
+        if (!launch) return output()
+        const bytes = encoder.encode(launch.stderr)
+        const from = Math.max(Number(offset), bytes.length - Number(max))
+        return output(`${bytes.length} ${from}\n${decoder.decode(bytes.slice(from))}`)
+      }
       if (script === STOP_RUNTIME) {
         state.stops.push(dir)
         state.launches.delete(dir)

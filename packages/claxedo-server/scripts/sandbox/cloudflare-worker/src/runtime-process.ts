@@ -86,6 +86,10 @@ function launchDir(launch: RuntimeLaunch) {
   return `${RUNTIME_ROOT}/${launch.id}`
 }
 
+export function runtimeLogPath(launch: RuntimeLaunch, stream: "stdout" | "stderr") {
+  return `${launchDir(launch)}/${stream}.log`
+}
+
 function live(status: RuntimeStatus) {
   return status.state === "starting" || status.state === "running"
 }
@@ -170,7 +174,7 @@ function bootFailure(stderr: string) {
 }
 
 async function launchLog(container: WorkspaceContainer, launch: RuntimeLaunch, stream: "stdout" | "stderr") {
-  const tail = await bounded(run(container, ["tail", "-c", LOG_TAIL_BYTES, `${launchDir(launch)}/${stream}.log`]), "workspace-runtime log read")
+  const tail = await bounded(run(container, ["tail", "-c", LOG_TAIL_BYTES, runtimeLogPath(launch, stream)]), "workspace-runtime log read")
   return tail.stdout
 }
 

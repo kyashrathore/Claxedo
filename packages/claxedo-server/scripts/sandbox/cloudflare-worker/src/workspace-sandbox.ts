@@ -5,7 +5,8 @@ import { CheckpointUnusableError, INACTIVITY_TIMEOUT_MS, startContainer, type Co
 import { interceptCredentialHosts } from "./container-trust"
 import { domRequest, workerResponse } from "./runtime-request"
 import { runtimeMatches, versionBefore, workerRuntimeBuild } from "./runtime-integrity"
-import { ensureRuntimeProcess, runtimeServing, type RuntimeEnsure, type RuntimeHost, type RuntimeLaunch } from "./runtime-process"
+import { forwardRuntimeLog, type RuntimeLogCursor } from "./runtime-log-forward"
+import { ensureRuntimeProcess, runtimeLogPath, runtimeServing, type RuntimeEnsure, type RuntimeHost, type RuntimeLaunch } from "./runtime-process"
 import type { WorkerEnv } from "./worker-env"
 import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, requestIdleStop, type WorkspaceIdle } from "./workspace-idle"
 import { recordSnapshot, snapshotBinding, type CheckpointUnusableCause } from "./workspace-snapshot"
@@ -14,6 +15,7 @@ const CREDENTIAL_HOSTS_KEY = "claxedo.credential-hosts"
 const RUNTIME_LAUNCH_KEY = "claxedo.runtime-launch"
 const CONTAINER_SOURCE_KEY = "claxedo.container-source"
 const WORKSPACE_IDLE_KEY = "claxedo.workspace-idle"
+const RUNTIME_LOG_CURSOR_KEY = "claxedo.runtime-log-cursor"
 
 type CredentialHosts = { sandboxId: string; hosts: string[] }
 // `ctx.exports` holds this Worker's own entrypoints, which only its generated
@@ -176,6 +178,7 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     const idle = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
     const container = this.container()
     if (!idle || !container.running) return
+    await this.forwardRuntimeLog(container)
     try {
       const health = await container.getTcpPort(idle.port).fetch("http://runtime/api/wr/health", {
         headers: { authorization: `Bearer ${idle.healthToken}` },
@@ -225,8 +228,25 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
   }
 
   private async endContainer(container: WorkspaceContainer) {
-    if (container.running) await container.destroy()
-    await this.ctx.storage.delete([RUNTIME_LAUNCH_KEY, CONTAINER_SOURCE_KEY])
+    if (container.running) {
+      await this.forwardRuntimeLog(container)
+      await container.destroy()
+    }
+    await this.ctx.storage.delete([RUNTIME_LAUNCH_KEY, CONTAINER_SOURCE_KEY, RUNTIME_LOG_CURSOR_KEY])
+  }
+
+  /** The runtime's stderr since the last forward, into this Worker's log; a failed read costs those lines, never the caller's stop or check. */
+  private async forwardRuntimeLog(container: WorkspaceContainer) {
+    const launch = await this.ctx.storage.get<RuntimeLaunch>(RUNTIME_LAUNCH_KEY)
+    if (!launch) return
+    const idle = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
+    const context = idle ? { workspaceId: idle.workspaceId, epoch: idle.epoch } : {}
+    try {
+      const cursor = await this.ctx.storage.get<RuntimeLogCursor>(RUNTIME_LOG_CURSOR_KEY)
+      await this.ctx.storage.put(RUNTIME_LOG_CURSOR_KEY, await forwardRuntimeLog(container, runtimeLogPath(launch, "stderr"), launch, cursor, context))
+    } catch (error) {
+      console.error("workspace-runtime log forward failed", { ...context, error: String(error) })
+    }
   }
 
   /** The runtime proxy: never starts a container, because only `ensureWorkspace` knows whether to start from the image or a snapshot. */
