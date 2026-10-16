@@ -117,6 +117,7 @@ describe("sandbox placement and the runtime proxy", () => {
     expect(response.headers.get("server-timing")).toMatch(/^sandbox-container;dur=/)
     const [request] = stub.fetch.mock.calls[0]
     expect(new URL(request.url).pathname + new URL(request.url).search).toBe("/api/wr/pty/pty_1/connect?cursor=42")
+    expect(new URL(request.url).protocol).toBe("http:")
     expect(request.headers.get("authorization")).toBe("Bearer relay-host-token")
   })
 

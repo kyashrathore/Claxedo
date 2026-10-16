@@ -67,6 +67,8 @@ function restoreSnapshot(input: unknown): string | undefined | null {
 async function proxy(request: Request, env: WorkerEnv, parts: string[]) {
   const startedAt = performance.now()
   const target = new URL(request.url)
+  // A container's TCP port answers HTTP only; an https URL is refused with a 1101.
+  target.protocol = "http:"
   target.pathname = "/" + parts.slice(3).join("/")
   const response = await sandboxStub(env, parts[1]).fetch(new Request(target.toString(), request))
   return withServerTiming(response, "sandbox-container", startedAt, request.headers.get(TRACE_ID_HEADER))
