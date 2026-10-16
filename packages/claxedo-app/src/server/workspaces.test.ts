@@ -7,6 +7,8 @@ import type { Transport } from "./transport"
 import { createWorkspaces } from "./workspaces"
 import { queryKeys } from "./query-keys"
 import { invalidateFor } from "./queries"
+import { frameFromWire, serverEventFromFrame } from "./wire/frames"
+import type { ServerEvent } from "./events"
 
 const bootstrap = {
   deployment: { serverKind: "daemon", issuesSessions: false },
@@ -42,32 +44,57 @@ test("the placement catalog stays readable once the query cache's collection tim
   })
 })
 
+async function cloudCatalog(status: { current: string }) {
+  const reads: string[] = []
+  const server = {
+    serverUrl: "http://127.0.0.1:1",
+    loopback: false,
+    json: async (path: string) => {
+      reads.push(path)
+      const row = { id: "ws_cloud", backing: "cloud-vm", workspace_name: "main", directory: "workspace:ws_cloud", status: status.current, reachable: status.current === "ready" }
+      return { deployment: { serverKind: "daemon", issuesSessions: true }, project: [{ id: "proj_one", worktree: "ws_cloud", workspaces: { ws_cloud: row } }] }
+    },
+    onSessionHost: () => () => undefined,
+  } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const workspaces = createWorkspaces(server, queryClient)
+  await workspaces.load()
+  const rereadsAfter = async (event: ServerEvent) => {
+    const before = reads.length
+    invalidateFor(queryClient, server.serverUrl, event, false)
+    for (let tick = 0; tick < 50 && reads.length === before; tick += 1) await Bun.sleep(1)
+    await Bun.sleep(1)
+    return reads.length - before
+  }
+  return { workspaces, cloud: () => workspaces.byId(placementId("ws_cloud")), rereadsAfter }
+}
+
 test("a machine start the server tells of re-reads the catalog, so a start this app did not ask for reads starting", async () => {
   await createRoot(async (dispose) => {
-    let status = "stopped"
-    const reads: string[] = []
-    const cloudRow = () => ({ id: "ws_cloud", backing: "cloud-vm", workspace_name: "main", directory: "workspace:ws_cloud", status, reachable: status === "ready" })
-    const server = {
-      serverUrl: "http://127.0.0.1:1",
-      loopback: false,
-      json: async (path: string) => {
-        reads.push(path)
-        return { deployment: { serverKind: "daemon", issuesSessions: true }, project: [{ id: "proj_one", worktree: "ws_cloud", workspaces: { ws_cloud: cloudRow() } }] }
-      },
-      onSessionHost: () => () => undefined,
-    } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const workspaces = createWorkspaces(server, queryClient)
-    await workspaces.load()
-    const cloud = () => workspaces.byId(placementId("ws_cloud"))
+    const status = { current: "stopped" }
+    const { workspaces, cloud, rereadsAfter } = await cloudCatalog(status)
     expect(cloud()).toMatchObject({ kind: "cloud", lifecycle: "asleep" })
 
-    status = "provisioning"
-    invalidateFor(queryClient, server.serverUrl, { type: "cloudWorkspaceChanged", workspaceId: placementId("ws_cloud"), status: { kind: "provisioning", step: "starting" } }, false)
-    for (let tick = 0; tick < 50 && reads.length < 2; tick += 1) await Bun.sleep(1)
-    await Bun.sleep(1)
-    expect(reads.length).toBe(2)
+    status.current = "provisioning"
+    expect(await rereadsAfter({ type: "cloudWorkspaceChanged", workspaceId: placementId("ws_cloud"), status: { kind: "provisioning", step: "starting" } })).toBe(1)
     expect(cloud()).toMatchObject({ kind: "cloud", lifecycle: "starting" })
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("a machine stop the server tells of re-reads the catalog, so an open cloud workspace reads asleep without its stream retrying", async () => {
+  await createRoot(async (dispose) => {
+    const status = { current: "ready" }
+    const { workspaces, cloud, rereadsAfter } = await cloudCatalog(status)
+    expect(cloud()).toMatchObject({ kind: "cloud", lifecycle: "live" })
+
+    status.current = "stopped"
+    const frame = frameFromWire({ type: "provision", workspaceId: "ws_cloud", ownerUserId: "usr_owner", orgId: "org_1", step: "stopped", ts: 9 })
+    const event = frame && serverEventFromFrame(frame, { placementFor: () => undefined })
+    if (!event) throw new Error("the stop notice decoded to no event")
+    expect(await rereadsAfter(event)).toBe(1)
+    expect(cloud()).toMatchObject({ kind: "cloud", lifecycle: "asleep" })
     workspaces.dispose()
     dispose()
   })
