@@ -19,6 +19,7 @@ type RuntimeSession = { id: string; title?: string; instructions: string; time: 
 let miniflare: Miniflare
 const sessions = new Map<string, RuntimeSession>()
 const runtimeRequests: string[] = []
+let heldCreate: { arrived: () => void; released: Promise<void> } | undefined
 
 const bearerOf = (request: Request) => (request.headers.get("authorization") ?? "").replace(/^Bearer /, "")
 
@@ -46,6 +47,10 @@ async function runtime(request: Request): Promise<Response> {
     })
   }
   if (path === "/session" && request.method === "POST") {
+    const held = heldCreate
+    heldCreate = undefined
+    held?.arrived()
+    await held?.released
     const body = (await request.json()) as { id: string; title?: string; instructions?: string }
     const session = { id: body.id, ...(body.title ? { title: body.title } : {}), instructions: body.instructions ?? "", time: { created: 10, updated: 10 }, messages: [] }
     const operationId = request.headers.get("x-claxedo-session-registration-operation")
@@ -314,6 +319,41 @@ describe("a hosted cloud task start on workerd", () => {
     const { preview, started } = await start("dana", await task("dana", projectId, "Dana local task"), local.preset.id)
     expect(preview).toMatchObject({ available: true, blockers: [], placement: "local" })
     expect(started?.body.link.sessionRef.workspaceId).toBe("ws_dana_main")
+  })
+
+  test("a Start the browser sends again while the first is still creating answers both with one link, one session and one root", async () => {
+    await person("frank")
+    const { projectId } = await project("frank", "ws_frank_main")
+    const presetId = await cloudPreset("frank", "Frank review")
+    const taskId = await task("frank", projectId, "Frank's task")
+    const preview = (await post(`${TASKS}/tasks/${taskId}/start-preview`, "frank", startBody(presetId)) as { status: number; body: Preview })
+    expect(preview.body.preview).toMatchObject({ available: true })
+    const request = { ...startBody(presetId), clientRequestId: "start-frank-once", previewDigest: preview.body.preview.digest, handoffText: null }
+    const creates = () => runtimeRequests.filter((entry) => entry === "POST /session").length
+    const before = creates()
+    let release!: () => void
+    const arrived = new Promise<void>((resolve) => {
+      heldCreate = { arrived: resolve, released: new Promise<void>((done) => { release = done }) }
+    })
+
+    const first = post(`${TASKS}/tasks/${taskId}/sessions`, "frank", request)
+    await arrived
+    const resent = post(`${TASKS}/tasks/${taskId}/sessions`, "frank", request)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    release()
+    const [created, replayed] = (await Promise.all([first, resent])) as [{ status: number; body: Started }, { status: number; body: Started }]
+
+    expect([created.status, replayed.status]).toEqual([200, 200])
+    const link = created.body.link.sessionRef
+    expect(replayed.body.link.sessionRef).toEqual(link)
+    expect(creates()).toBe(before + 1)
+    const stored = await rows()
+    expect(stored.links.filter((row) => row.task_id === taskId)).toEqual([
+      { task_id: taskId, slot: "primary", attempt: 1, session_id: link.sessionId, session_workspace_id: link.workspaceId, placement: "cloud" },
+    ])
+    expect(stored.sessions.filter((row) => row.workspace_id === link.workspaceId)).toHaveLength(1)
+    expect(stored.workspaces.filter((row) => row.display_name === "Frank's task (primary, attempt 1)")).toHaveLength(1)
+    expect(new Set(sessions.get(link.sessionId)?.messages)).toHaveProperty("size", 1)
   })
 
   test("a root whose sandbox failed to provision is started again by the same attempt", async () => {
