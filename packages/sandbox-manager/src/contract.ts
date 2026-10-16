@@ -499,7 +499,10 @@ export type SandboxManager = {
    * Ends the serving lease at `epoch` when the provider says its host is not
    * running: `stopped` (held, not running) ends it stopped, so the next start
    * resumes that host; `gone` ends it destroyed. Nothing while the host
-   * serves, the epoch moved on, or the driver cannot inspect its hosts.
+   * serves, the epoch moved on, or the driver cannot inspect its hosts. A
+   * host the provider says serves is the lease's heartbeat at that moment,
+   * whether or not its runtime answers: the host is billed until it stops,
+   * and its boot closes at the last such proof.
    */
   endIfHostDown: (workspaceId: string, epoch: number) => Promise<Exclude<SandboxHostState, "serving"> | undefined>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>

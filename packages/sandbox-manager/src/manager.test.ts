@@ -2249,6 +2249,23 @@ describe("a host the provider no longer has", () => {
     await expect(manager.endIfHostDown("ws_1", 3)).resolves.toBeUndefined()
   })
 
+  test("a host the provider reports running is proven alive then, so a later stop it reports ends the boot at that report, not at the runtime's last answer", async () => {
+    const store = createMemoryLeaseStore([serving()])
+    const patches = recording(store)
+    const events: SandboxLifecycleEvent[] = []
+    const states: Array<"serving" | "stopped"> = ["serving", "serving", "stopped"]
+    const clock = [30_000, 60_000, 90_000]
+    const driver = fakeDriver({ inspect: vi.fn(async () => states.shift() ?? "stopped") })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => clock.shift() ?? 120_000, onLifecycle: (event) => events.push(event) })
+
+    await expect(manager.endIfHostDown("ws_1", 3)).resolves.toBeUndefined()
+    await expect(manager.endIfHostDown("ws_1", 3)).resolves.toBeUndefined()
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "ready", lastHeartbeatAt: 60_000 })
+    await expect(manager.endIfHostDown("ws_1", 3)).resolves.toBe("stopped")
+    expect(patches.at(-1)).toEqual({ epoch: 3, status: "stopped", endedAt: 60_000 })
+    expect(events).toEqual([expect.objectContaining({ kind: "stopped", cause: "provider", activeMs: 59_000 })])
+  })
+
   test("a serving lease whose host the provider reports gone ends destroyed; one it reports serving, or a lease of another epoch, is left as it is", async () => {
     const gone = createMemoryLeaseStore([serving()])
     const goneManager = createSandboxManager({ leaseStore: gone, driver: fakeDriver({ inspect: vi.fn(async () => "gone" as const) }) })

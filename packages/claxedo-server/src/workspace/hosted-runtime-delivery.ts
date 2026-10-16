@@ -283,9 +283,10 @@ export function createHostedRuntimeDelivery(input: {
   /**
    * One read of a serving runtime over the relay. An answer is the host's
    * proof of life, recorded on the lease, and is read for idleness unless the
-   * host reads its own. A runtime that does not answer on a host the provider
-   * stopped or no longer has ends its lease at once, so the workspace stops
-   * reading as running; one that answered nothing for the whole failure
+   * host reads its own. For a runtime that does not answer the provider is
+   * asked: a host it says runs is proof of life all the same, and one it
+   * stopped or no longer has ends the lease at once, so the workspace stops
+   * reading as running; a runtime that answered nothing for the whole failure
    * budget is stopped too: its host is metered while nobody reaches what it
    * serves. Either way the turns its sessions were running end with it.
    */

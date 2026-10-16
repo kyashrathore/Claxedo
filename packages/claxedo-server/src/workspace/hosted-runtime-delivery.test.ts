@@ -302,13 +302,16 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(stops).toHaveLength(1)
   })
 
-  test("a runtime that answers nothing is read again, counted, and stopped only once the failure budget is spent", async () => {
-    const { delivery, create, stops, lost } = await composition()
+  test("a runtime that answers nothing is read again, counted, and stopped only once the failure budget is spent; a host its provider says runs is proven alive at each read", async () => {
+    const { delivery, create, stops, lost, sandboxManager } = await composition()
     const workspaceId = await create({})
     await delivery.start.acquire(workspaceId)
     await delivery.start.provision(workspaceId, 1)
+    const provisioned = (await sandboxManager.list())[0]?.lastHeartbeatAt ?? 0
+    await new Promise((resolve) => setTimeout(resolve, 5))
 
     await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("unreachable")
+    expect((await sandboxManager.list())[0]?.lastHeartbeatAt).toBeGreaterThan(provisioned)
     await expect(delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 2)).rejects.toThrow("unreachable")
     expect(stops).toEqual([])
     expect(lost).toEqual([])

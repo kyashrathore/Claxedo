@@ -734,7 +734,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       const target = await leaseTarget(lease)
       if (target.status !== "ready") return undefined
       const state = await options.driver.inspect(target)
-      if (state === "serving") return undefined
+      if (state === "serving") {
+        await options.leaseStore.update(workspaceId, epoch, { lastHeartbeatAt: now() }, "ready")
+        return undefined
+      }
       const ended = state === "gone"
         ? await endGoneHostLease(workspaceId, lease, `${target.sandboxId} is gone`)
         : await endStoppedHostLease(workspaceId, lease)

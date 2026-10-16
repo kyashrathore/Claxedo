@@ -153,8 +153,11 @@ Column meanings:
   Worker does, from inside the host). The control plane's provisioner reads
   every serving runtime's `/api/wr/health` over the relay every 30 s: an
   answer is recorded as the lease's heartbeat; a read that reaches no runtime
-  asks the driver's `inspect`, and a host the provider stopped or no longer
-  has ends the lease at once (`endIfHostDown`); ten minutes of reads that
+  asks the driver's `inspect`, which records a host the provider says is
+  running as the heartbeat too (the host bills whether or not its runtime
+  answers), and ends the lease at once for a host the provider stopped or no
+  longer has (`endIfHostDown`), so its boot closes within one read of the
+  host's end; ten minutes of reads that
   reached no runtime stop the lease. Absent this flag, the provisioner also
   stops the lease as idle through `SandboxManager.stop()` after ten idle
   minutes. One idle policy, one idle watcher per sandbox.
