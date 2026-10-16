@@ -64,7 +64,7 @@ export async function captureSandboxCheckpoint(input: {
   if (target.status !== "ready") throw publicApiFailure("workspace_checkpoint_unavailable", target.reason)
   const discard = persistence.capture === "same-resource" ? undefined : input.deleteSnapshot
   let capturedSource = false
-  let committed = false
+  let result: SandboxCheckpointResult
   try {
     await input.request.runtime.freeze(input.request.policy ?? "drain", { idleBefore: input.request.idleBefore })
     await input.request.runtime.flush()
@@ -98,19 +98,25 @@ export async function captureSandboxCheckpoint(input: {
       await discardSnapshot(discard, target, captured.snapshotId)
       throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_epoch_fenced")
     }
-    committed = true
     // A lease references one checkpoint, so the one it replaced is no longer restorable from anywhere.
     if (replaced && replaced.providerReference !== captured.snapshotId) {
       await discardSnapshot(discard, target, replaced.providerReference)
     }
-    return { status: "ready", lease: updated, checkpoint }
-  } finally {
-    // A provider can stop/delete the source only after a successful capture.
-    // Any earlier failure must thaw the still-live runtime.
-    if (!(committed && input.endsLease) && (!capturedSource || persistence.captureSource === "preserved")) {
-      await input.request.runtime.resume()
-    }
+    result = { status: "ready", lease: updated, checkpoint }
+  } catch (error) {
+    // A provider can stop/delete the source only after a successful capture, so any earlier failure thaws the still-live runtime.
+    if (!capturedSource || persistence.captureSource === "preserved") await thawAfterFailure(input.request.runtime, input.workspaceId)
+    throw error
   }
+  if (!input.endsLease && persistence.captureSource === "preserved") await input.request.runtime.resume()
+  return result
+}
+
+/** The capture's own failure is the answer; a runtime that cannot be thawed either is the operator's to see. */
+async function thawAfterFailure(runtime: SandboxCheckpointRuntime, workspaceId: string) {
+  await runtime.resume().catch((error: unknown) => {
+    console.warn("A runtime was not thawed after its capture failed", { workspaceId, error: String(error) })
+  })
 }
 
 /** Deletes a provider snapshot no lease references; a failure leaks storage, never the checkpoint just taken. */

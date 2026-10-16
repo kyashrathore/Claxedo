@@ -132,7 +132,7 @@ test("54 shell: panes kept for a workspace the account does not have are dropped
   await page.context().clearCookies()
   await page.context().addCookies([sessionCookie(signed.url, fresh)])
   await page.goto(`${signed.url}/`)
-  await expect(page.getByText("That workspace no longer exists.")).toBeVisible()
+  await expect(page.getByText("Closed tabs of workspaces that no longer exist.")).toBeVisible()
   await expect(page.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
   await expect(page.getByTestId("session-unavailable")).toHaveCount(0)
   expect(await page.evaluate((key) => localStorage.getItem(key), `claxedo:workbench:user:${fresh.person.id}`)).not.toContain(workspace.id)

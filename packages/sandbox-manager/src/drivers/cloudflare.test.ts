@@ -318,6 +318,26 @@ describe("CloudflareSandboxDriver", () => {
     await expect(driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 6 })).rejects.toThrow(/stop failed/)
   })
 
+  test("inspect asks the Worker whether the sandbox's container runs: a running one serves, any other is a stopped host its object still holds", async () => {
+    let running: unknown = true
+    const { calls, fetch } = harness(() => ({ status: 200, json: { running } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    const target = { sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1" }
+    expect(await driver.inspect!(target)).toBe("serving")
+    expect(calls[0]).toEqual({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/inspect", method: "POST", body: {} })
+    running = false
+    expect(await driver.inspect!(target)).toBe("stopped")
+  })
+
+  test.each([
+    { status: 404, json: { error: "unknown action: inspect" } },
+    { status: 500, json: { error: "storage unavailable" } },
+    { status: 200, json: {} },
+  ])("an inspect the Worker does not answer with the container's state is a failure, never a stopped host: %j", async (answer) => {
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: harness(() => answer).fetch })
+    await expect(driver.inspect!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1" })).rejects.toThrow(/inspect failed/)
+  })
+
   test("a snapshot outlives its sandbox until the platform expires it, so the driver deletes none", () => {
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: harness(() => ({ status: 200, json: {} })).fetch })
     expect(driver.deleteSnapshot).toBeUndefined()

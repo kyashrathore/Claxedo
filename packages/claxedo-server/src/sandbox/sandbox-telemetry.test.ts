@@ -101,6 +101,14 @@ describe("workspace lifecycle events", () => {
       { distinctId: "system", event: "workspace_stopped", properties: { ...properties, cause: "host_stopped", active_ms: 61_000 } },
     ])
   })
+
+  test("a stop that ended the machine without capturing it says the changes were not saved", () => {
+    const { captured, telemetry } = sink()
+    const emit = sandboxLifecycleSink(telemetry)
+    emit({ ...machine, kind: "stopped", cause: "explicit", activeMs: 9_000, unsaved: true })
+    emit({ ...machine, kind: "stopped", cause: "explicit", activeMs: 9_000 })
+    expect(captured.map((entry) => [entry.properties?.cause, entry.properties?.unsaved])).toEqual([["explicit", true], ["explicit", undefined]])
+  })
 })
 
 describe("sandbox egress events", () => {

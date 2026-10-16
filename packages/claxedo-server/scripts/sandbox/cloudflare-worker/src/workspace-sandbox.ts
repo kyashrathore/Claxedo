@@ -148,6 +148,11 @@ export class WorkspaceSandbox extends DurableObject<WorkerEnv> {
     return { snapshotId: input.restore, binding }
   }
 
+  /** Whether the container runs, and so bills; the control plane asks this of a lease it holds serving whose runtime stopped answering. */
+  async workspaceRunning() {
+    return this.container().running
+  }
+
   async workspaceRuntimeReady(port: number) {
     const container = this.container()
     const source = await this.ctx.storage.get<ContainerSource>(CONTAINER_SOURCE_KEY)

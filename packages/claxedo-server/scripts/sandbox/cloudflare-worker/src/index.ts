@@ -147,6 +147,8 @@ async function control(request: Request, env: WorkerEnv, sandboxId: string, acti
       const port = typeof body.port === "number" ? body.port : WORKSPACE_RUNTIME_PORT
       return json({ ok: true, ready: await sandbox.workspaceRuntimeReady(port) })
     }
+    case "inspect":
+      return json({ running: await sandbox.workspaceRunning() })
     case "stop": {
       if (typeof body.epoch !== "number" || !Number.isSafeInteger(body.epoch)) return json({ error: "stop requires the lease epoch" }, 400)
       return await sandbox.stopWorkspace(body.epoch) ? json({ ok: true }) : json({ ok: false, error: "a newer lease generation runs this sandbox" }, 409)

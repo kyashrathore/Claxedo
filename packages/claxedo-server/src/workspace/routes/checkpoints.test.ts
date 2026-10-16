@@ -275,6 +275,33 @@ describe("workspace checkpoint routes", () => {
     expect(driver.ensureHost).toHaveBeenLastCalledWith(expect.objectContaining({ bootSource: { kind: "default" } }))
   })
 
+  test("Stop ends a running machine whose runtime cannot be reached, keeps its last checkpoint and answers that the latest changes were not saved", async () => {
+    const leaseStore = createMemoryLeaseStore()
+    const driver: SandboxDriver = {
+      id: "cloudflare",
+      metadata: sandboxDriverCatalog.cloudflare.metadata,
+      ensureHost: vi.fn(async (input) => ({ sandboxId: "claxedo-ws_1", url: "https://runtime.test", hostId: "claxedo-ws_1", labels: input.labels })),
+      snapshot: vi.fn(async () => ({ snapshotId: "snap_new" })),
+      stop: vi.fn(async () => {}),
+    }
+    const sandboxManager = createSandboxManager({ leaseStore, driver })
+    const services = { auth: { config: { enabled: false } }, sandbox: { sandboxManager }, relay: {} } as unknown as ControlPlaneServices
+    const routes = new Hono().route("/api/workspace", WorkspaceCheckpointRoutes(services, { allowUnsignedLocal: true }))
+    await sandboxManager.ensure("ws_1", { homeRegion: "us-east" })
+    await leaseStore.update("ws_1", 1, {
+      checkpoint: { id: "chk_1", providerReference: "snap_last", sourceEpoch: 1, capturedAt: 1, metadata: { scope: "filesystem", sourceBehavior: "preserved", restoreMount: "new-resource" } },
+    })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const stopped = await routes.request("/api/workspace/ws_1/lifecycle/stop", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+    warn.mockRestore()
+    expect(stopped.status).toBe(200)
+    expect(await stopped.json()).toEqual({ ok: true, status: "stopped", unsaved: true })
+    expect(driver.snapshot).not.toHaveBeenCalled()
+    expect(driver.stop).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "claxedo-ws_1", epoch: 1, checkpoint: "snap_last" }))
+    expect(await leaseStore.get("ws_1")).toMatchObject({ status: "stopped", checkpoint: { id: "chk_1" } })
+  })
+
   test("Start fresh needs write authority on the workspace, as Stop does", async () => {
     const startFresh = vi.fn()
     const services = {

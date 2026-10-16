@@ -9,7 +9,7 @@ import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { CloudProjectCreateInput, CloudSourceCreateInput, CloudWorkspace, CodeHostRepositoryListing } from "./cloud-types"
 import type { FetchQuery, Project, ProjectSource } from "./types"
-import { cloudWorkspaceFromRow, codeHostRepositoryListingFromBody } from "./wire/cloud"
+import { cloudStopOutcomeFromBody, cloudWorkspaceFromRow, codeHostRepositoryListingFromBody } from "./wire/cloud"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 
@@ -94,8 +94,9 @@ export function createCloudApi(
     follow: wakes.follow,
     runtime: wakes.runtime,
     stop: async (id) => {
-      await transport.json(at(id, "/lifecycle/stop"), jsonInit("POST", {}))
+      const answer = await transport.json(at(id, "/lifecycle/stop"), jsonInit("POST", {}))
       await workspaces.refresh()
+      return cloudStopOutcomeFromBody(answer)
     },
     remove: async (id) => {
       await transport.json(at(id), { method: "DELETE" })

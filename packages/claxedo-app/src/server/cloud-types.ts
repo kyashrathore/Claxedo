@@ -17,7 +17,9 @@ export type CloudWorkspace = {
   readonly status: CloudWorkspaceStatus
 }
 
-export type WorkspaceBootMode = "restore" | "resume" | "cold-start"
+export type CloudStopOutcome = { readonly unsaved: boolean }
+
+export type WorkspaceBootMode ="restore" | "resume" | "cold-start"
 
 export type WorkspaceStartStep = "machine" | "image" | "runtime"
 

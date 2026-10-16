@@ -49,12 +49,13 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
 })
 
 /** A provider that loses or stops hosts: an ensure for a host it no longer holds creates a new one. */
-function recreatingDriver() {
+function recreatingDriver(id: string) {
   const hosts = new Set<string>()
   const stopped = new Set<string>()
+  const inspection = { failure: undefined as Error | undefined }
   const created: SandboxDriverEnsureInput[] = []
   const driver = {
-    id: "test",
+    id,
     ensureHost: async (input: SandboxDriverEnsureInput) => {
       const hostId = input.hostId ?? input.workspaceId
       if (!hosts.has(hostId)) {
@@ -63,7 +64,10 @@ function recreatingDriver() {
       }
       return { sandboxId: `sb_${input.workspaceId}`, url: "https://runtime.test", hostId, labels: input.labels }
     },
-    inspect: async (target: SandboxTarget) => (!hosts.has(target.hostId) ? "gone" : stopped.has(target.hostId) ? "stopped" : "serving"),
+    inspect: async (target: SandboxTarget) => {
+      if (inspection.failure) throw inspection.failure
+      return !hosts.has(target.hostId) ? "gone" : stopped.has(target.hostId) ? "stopped" : "serving"
+    },
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "suspends-host",
@@ -82,13 +86,14 @@ function recreatingDriver() {
       machineClasses: ["small", "default", "large"],
     },
   } satisfies SandboxDriver
-  return { driver, created, lose: () => hosts.clear(), stopOnItsOwn: () => { for (const host of hosts) stopped.add(host) } }
+  return { driver, created, inspection, lose: () => hosts.clear(), stopOnItsOwn: () => { for (const host of hosts) stopped.add(host) } }
 }
 
-async function composition() {
+/** `driverId` names the catalog driver whose metadata the plane reads, "cloudflare" being one whose host reads its own idleness. */
+async function composition(driverId = "test") {
   const instance = await workspaceBackingDatabase([])
   active.push(instance)
-  const { driver, created, lose, stopOnItsOwn } = recreatingDriver()
+  const { driver, created, inspection, lose, stopOnItsOwn } = recreatingDriver(driverId)
   const stops: Array<{ workspaceId: string; epoch: number; idleBefore?: number }> = []
   const lost: Array<{ workspaceId: string; at: number }> = []
   const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
@@ -185,7 +190,7 @@ async function composition() {
     expect(res.status).toBe(200)
     return (await res.json() as { workspaceId: string }).workspaceId
   }
-  return { app, delivery, created, lose, stopOnItsOwn, create, secrets, env, stops, lost, sandboxManager }
+  return { app, delivery, created, inspection, lose, stopOnItsOwn, create, secrets, env, stops, lost, sandboxManager }
 }
 
 describe("the steps of a hosted sandbox start", () => {
@@ -342,6 +347,42 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(lost[0].at).toBeGreaterThanOrEqual(before)
     expect(await delivery.start.watch(workspaceId, 0)).toBeUndefined()
     expect(lost).toHaveLength(1)
+  })
+
+  test("a sandbox whose host reads its own idleness is watched for liveness alone: an answered read is proof of life and stops nothing, and a host its provider stopped ends the lease stopped at the first unanswered read", async () => {
+    const { delivery, create, stops, lost, stopOnItsOwn, sandboxManager } = await composition("cloudflare")
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    const before = Date.now()
+    const ready = await delivery.start.provision(workspaceId, 1)
+    expect(ready.status === "ready" ? ready.watchAt : undefined).toBeGreaterThanOrEqual(before + IDLE_CHECK_MS)
+
+    runtimeIdle.report = { idleSince: Date.now() - WORKSPACE_IDLE_MS }
+    expect(await delivery.start.watch(workspaceId, 0)).toBeGreaterThanOrEqual(Date.now() + IDLE_CHECK_MS - 1_000)
+    expect(stops).toEqual([])
+    const answered = (await sandboxManager.list())[0]
+    expect(answered).toMatchObject({ status: "ready", epoch: 1 })
+    expect(answered?.lastHeartbeatAt).toBeGreaterThanOrEqual(before)
+
+    runtimeIdle.report = undefined
+    stopOnItsOwn()
+    expect(await delivery.start.watch(workspaceId, 0)).toBeUndefined()
+    expect(stops).toEqual([])
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "unavailable", leaseStatus: "stopped" })
+    expect(lost).toEqual([{ workspaceId, at: expect.any(Number) }])
+  })
+
+  test("a provider that cannot say whether the host runs leaves the read counted against the failure budget, which still stops the sandbox", async () => {
+    const { delivery, create, stops, inspection } = await composition("cloudflare")
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    inspection.failure = new Error("the provider is unreachable")
+
+    await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("the runtime is unreachable")
+    expect(stops).toEqual([])
+    expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
+    expect(stops).toEqual([{ workspaceId, epoch: 1 }])
   })
 
   test("a runtime that answers nothing on a host the provider still serves is read again, and nothing is ended", async () => {

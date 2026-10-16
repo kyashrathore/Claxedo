@@ -676,8 +676,11 @@ export const desktopRenderer: Policy = {
   // Projects share for a workspace whose checkpoint cannot be restored (owner:
   // the app's cloud domain, `cloud/view/start-fresh.ts`). It adds no package
   // edge.
-  // 1389/36, no headroom.
-  ceilings: { modules: 1389, packages: 36 },
+  // The words for workspaces found gone, which tell a gone routed workspace
+  // apart from closed tabs of other ones (owner: the app's shell domain,
+  // `shell/gone-placements-notice.ts`). It adds no package edge.
+  // 1390/36, no headroom.
+  ceilings: { modules: 1390, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

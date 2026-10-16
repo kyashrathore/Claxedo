@@ -5,7 +5,7 @@ import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { Account, AccountsApi, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
-import type { CloudCreateInput, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime } from "./cloud-types"
+import type { CloudCreateInput, CloudStopOutcome, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
@@ -149,7 +149,7 @@ export type CloudApi = {
   readonly startFresh: (id: PlacementId) => Promise<void>
   readonly follow: (id: PlacementId) => Promise<void>
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
-  readonly stop: (id: PlacementId) => Promise<void>
+  readonly stop: (id: PlacementId) => Promise<CloudStopOutcome>
   readonly remove: (id: PlacementId) => Promise<void>
 }
 

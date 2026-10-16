@@ -18,7 +18,9 @@ export type SandboxStopCause = "explicit" | "idle" | "provider"
  * `checkpointUnusable` the cause of one refused because the checkpoint it
  * restores cannot be used. `startedFresh` is the person dropping the lease's
  * checkpoint so the next start boots the image; its `checkpointUnusable` is
- * the cause the lease's last start was refused for, when it was.
+ * the cause the lease's last start was refused for, when it was. A stop is
+ * `unsaved` when it ended the machine without capturing it, so the lease
+ * keeps the checkpoint it had before.
  */
 export type SandboxLifecycleEvent = {
   workspaceId: string
@@ -26,7 +28,7 @@ export type SandboxLifecycleEvent = {
   driver: string
   labels: Record<string, string>
 } & (
-  | { kind: "stopped"; cause: SandboxStopCause; activeMs?: number }
+  | { kind: "stopped"; cause: SandboxStopCause; activeMs?: number; unsaved?: true }
   | { kind: "destroyed"; hostGone: boolean; activeMs?: number }
   | { kind: "failed" } & SandboxStartFailureFacts
   | { kind: "startedFresh"; checkpointUnusable?: SandboxCheckpointUnusableCause }
@@ -46,7 +48,8 @@ export function createLifecycleReporter(sink: ((event: SandboxLifecycleEvent) =>
     }
   }
   return {
-    stopped: (lease: SandboxLease, idle: boolean) => report({ ...base(lease), kind: "stopped", cause: idle ? "idle" : "explicit", ...active(lease) }),
+    stopped: (lease: SandboxLease, idle: boolean, unsaved = false) =>
+      report({ ...base(lease), kind: "stopped", cause: idle ? "idle" : "explicit", ...active(lease), ...(unsaved ? { unsaved: true as const } : {}) }),
     /** `endedAt` is when the host was last proven serving: a stop the provider made on its own is learned after the fact. */
     hostStopped: (lease: SandboxLease, endedAt?: number) => report({ ...base(lease), kind: "stopped", cause: "provider", ...active(lease, endedAt) }),
     destroyed: (lease: SandboxLease) => report({ ...base(lease), kind: "destroyed", hostGone: false, ...active(lease) }),

@@ -25,7 +25,7 @@ const wakes: WorkspaceWakes = {
 
 type Posted = { readonly path: string; readonly body: unknown }
 
-function transport(posted: Posted[]): Transport {
+function transport(posted: Posted[], stopAnswer: Record<string, unknown> = {}): Transport {
   let provisioned = false
   let status = "ready"
   const json = async (path: string, init?: RequestInit) => {
@@ -33,7 +33,7 @@ function transport(posted: Posted[]): Transport {
     if (path === "/api/workspace?host=provisioner") return { workspaces: provisioned ? [{ ...created, status }] : [] }
     if (path === "/api/workspace/ws_new/lifecycle/stop" && init?.method === "POST") {
       status = "stopped"
-      return { ok: true, status }
+      return { ok: true, status, ...stopAnswer }
     }
     if (path === "/api/workspace/ws_new" && init?.method === "DELETE") {
       provisioned = false
@@ -51,7 +51,7 @@ type ProjectRead = (id: ProjectId) => Promise<Project>
 
 const publicProject: ProjectRead = async (id) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
 
-function world(signed: boolean, catalog: () => void = () => {}, project: ProjectRead = publicProject) {
+function world(signed: boolean, catalog: () => void = () => {}, project: ProjectRead = publicProject, stopAnswer: Record<string, unknown> = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const posted: Posted[] = []
   const operations: Array<{ readonly operation: string; readonly input: unknown }> = []
@@ -65,7 +65,7 @@ function world(signed: boolean, catalog: () => void = () => {}, project: Project
     if (operation === "workspace.list.provisioner") catalog()
     return { workspaces: operation === "workspace.list.provisioner" && made ? [created] : [] }
   })
-  const wire = transport(posted)
+  const wire = transport(posted, stopAnswer)
   const workspaces = createWorkspaces(wire, queryClient, signed ? account : undefined)
   const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined)
   const inventory = () => queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })
@@ -81,9 +81,20 @@ test("a completed stop refreshes the cached authoritative cloud lifecycle withou
     expect(await statuses()).toEqual(["ready"])
     const machineTime = queryKeys.machineTime("http://127.0.0.1:1", 0)
     queryClient.setQueryData(machineTime, { since: 0, until: 1, activeMs: 1, running: 1, workspaces: [], providers: [] })
-    await cloud.stop(placementId("ws_new"))
+    expect(await cloud.stop(placementId("ws_new"))).toEqual({ unsaved: false })
     expect(await statuses()).toEqual(["stopped"])
     expect(queryClient.getQueryState(machineTime)?.isInvalidated).toBe(true)
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("a stop the server could not capture says the latest changes were not saved", async () => {
+  await createRoot(async (dispose) => {
+    const { cloud, workspaces, statuses } = world(false, () => {}, publicProject, { unsaved: true })
+    await cloud.create({ projectId: projectId("prj_widgets"), name: "Payments" })
+    expect(await cloud.stop(placementId("ws_new"))).toEqual({ unsaved: true })
+    expect(await statuses()).toEqual(["stopped"])
     workspaces.dispose()
     dispose()
   })

@@ -238,6 +238,15 @@ describe("workspace sandbox lifecycle", () => {
     expect(s.state.proxied).toEqual(["2593/global/event"])
   })
 
+  test("the container runs from its ensure until its stop", async () => {
+    const s = sandbox()
+    expect(await s.object.workspaceRunning()).toBe(false)
+    await ensure(s.object)
+    expect(await s.object.workspaceRunning()).toBe(true)
+    await s.object.stopWorkspace(3)
+    expect(await s.object.workspaceRunning()).toBe(false)
+  })
+
   test("a touch is ready only while the launched runtime answers", async () => {
     const s = sandbox()
     expect(await s.object.workspaceRuntimeReady(2593)).toBe(false)

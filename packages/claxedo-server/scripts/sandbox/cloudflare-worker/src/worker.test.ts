@@ -22,6 +22,7 @@ const stub = {
   configureWorkspaceIdle: vi.fn(async () => "health-token"),
   ensureWorkspace: vi.fn(async (_input: WorkspaceEnsureInput): Promise<WorkspaceEnsure> => ({ state: "ready" })),
   workspaceRuntimeReady: vi.fn(async () => true),
+  workspaceRunning: vi.fn(async () => false),
   watchWorkspaceIdle: vi.fn(async () => {}),
   stopWorkspace: vi.fn(async (epoch: number) => epoch === 3),
   snapshotWorkspace: vi.fn(async () => ({ snapshotId: "snap-1", sizeBytes: 4_096 })),
@@ -264,6 +265,12 @@ describe("lifecycle routes", () => {
     expect((await call("/sandbox/claxedo-ws_1/stop", env(), { method: "POST", body: JSON.stringify({ epoch: 3 }) })).status).toBe(200)
     expect((await call("/sandbox/claxedo-ws_1/stop", env(), { method: "POST", body: JSON.stringify({ epoch: 2 }) })).status).toBe(409)
     expect((await call("/sandbox/claxedo-ws_1/stop", env(), { method: "POST", body: "{}" })).status).toBe(400)
+  })
+
+  test("inspect answers whether the sandbox's container runs, and starts nothing", async () => {
+    const response = await call("/sandbox/claxedo-ws_1/inspect", env(), { method: "POST", body: "{}" })
+    expect(await response.json()).toEqual({ running: false })
+    expect(stub.ensureWorkspace).not.toHaveBeenCalled()
   })
 
   test("the retired directory-backup actions are unknown", async () => {
