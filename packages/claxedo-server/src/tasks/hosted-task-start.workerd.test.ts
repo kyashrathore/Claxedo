@@ -356,6 +356,26 @@ describe("a hosted cloud task start on workerd", () => {
     expect(new Set(sessions.get(link.sessionId)?.messages)).toHaveProperty("size", 1)
   })
 
+  test("a Start the browser sends again after the first one answered is answered with that session, not refused as stale", async () => {
+    await person("hana")
+    const { projectId } = await project("hana", "ws_hana_main")
+    const presetId = await cloudPreset("hana", "Hana review")
+    const taskId = await task("hana", projectId, "Hana's task")
+    const preview = (await post(`${TASKS}/tasks/${taskId}/start-preview`, "hana", startBody(presetId)) as { status: number; body: Preview })
+    const request = { ...startBody(presetId), clientRequestId: "start-hana-once", previewDigest: preview.body.preview.digest, handoffText: null }
+    const creates = () => runtimeRequests.filter((entry) => entry === "POST /session").length
+    const before = creates()
+
+    const created = (await post(`${TASKS}/tasks/${taskId}/sessions`, "hana", request)) as { status: number; body: Started }
+    const replayed = (await post(`${TASKS}/tasks/${taskId}/sessions`, "hana", request)) as { status: number; body: Started }
+
+    expect(created).toMatchObject({ status: 200, body: { created: true } })
+    expect(replayed).toMatchObject({ status: 200, body: { created: false, link: { sessionRef: created.body.link.sessionRef } } })
+    expect(creates()).toBe(before + 1)
+    expect((await rows()).links.filter((row) => row.task_id === taskId)).toHaveLength(1)
+    expect(sessions.get(created.body.link.sessionRef.sessionId)?.messages).toHaveLength(1)
+  })
+
   test("a root whose sandbox failed to provision is started again by the same attempt", async () => {
     await person("bob")
     const { projectId, orgId } = await project("bob", "ws_bob_main")

@@ -273,12 +273,25 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     }
   }
 
+  const runsAttempt = (current: CurrentSlot, attempt: number, configurationDigest: string): boolean =>
+    current.link !== null
+    && current.state === "live"
+    && current.link.attempt === attempt
+    && current.link.configurationDigest === configurationDigest
+
+  /**
+   * The task is pinned to the revision the request read, except for a request
+   * naming the attempt the slot is already running under this configuration:
+   * that one reads the running session and writes nothing, and it is how a
+   * Start sent twice (a browser resends a POST whose connection died) gets the
+   * first one's session, though the first one's link moved the revision.
+   */
   const startSubject = async (
     actor: TasksActor,
     taskId: string,
     request: { taskRevision: number; presetId: string; presetRevision: number; slot: ConfigurationSlot; attempt: number },
   ): Promise<{ task: Task; preset: Preset; current: CurrentSlot; configurationDigest: string }> => {
-    const task = open(atRevision(await load(actor, taskId, "write"), request.taskRevision))
+    const loaded = await load(actor, taskId, "write")
     const preset = await deps.store.presets.get(actor.scopeId, request.presetId)
     if (!preset || preset.ownerId !== actor.ownerId) refuse("not_found", `Preset ${request.presetId} was not found`)
     if (preset.revision !== request.presetRevision) {
@@ -289,8 +302,10 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       refuseInvalid(`Preset ${preset.id} has no ${request.slot} configuration`, [{ path: "slot", reason: "unknown_value" }])
     }
     const current = await currentSlotState(actor, taskId, request.slot)
+    const configurationDigest = await startConfigurationDigest({ preset, slot: request.slot })
+    const task = open(runsAttempt(current, request.attempt, configurationDigest) ? loaded : atRevision(loaded, request.taskRevision))
     checkAttempt(request.attempt, current)
-    return { task, preset, current, configurationDigest: await startConfigurationDigest({ preset, slot: request.slot }) }
+    return { task, preset, current, configurationDigest }
   }
 
   /**
