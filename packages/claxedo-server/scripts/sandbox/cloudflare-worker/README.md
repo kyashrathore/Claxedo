@@ -62,11 +62,18 @@ The policy refuses `instance_type`, `max_instances` and `constraints.regions`,
 so the former APAC pin is gone, and a container is placed near its Durable
 Object. In place of `max_instances`, the control plane caps each organization's
 running cloud workspaces at every start that puts a machine up, a first lease or
-a wake (`workspace/cloud-workspace-start.ts`, 25 by default). The Worker
-reaches every object with `locationHint: "enam"`, the
-convention of `workspace-relay/src/session-host-forwarding.ts`: an object is
-placed near whoever first reaches it and never moves, and from HKG Anthropic and
-OpenAI refuse every request. The hint applies only when an object is created.
+a wake (`workspace/cloud-workspace-start.ts`, 25 by default).
+
+The Worker reaches every object by its name alone, so Cloudflare places it by
+default: near the Worker invocation that first reaches it, and it never moves.
+That invocation is the first `ensure-runtime`, which the control plane's
+`SandboxProvisioner` object sends from its alarm, so a sandbox lands near that
+object, which in turn was created near the control-plane Worker that first
+reached it. A sandbox placed in a region a model vendor refuses stays there:
+from HKG, Anthropic answers every request 403
+`{"type":"forbidden","message":"Request not allowed"}` with no request id, before
+reading any credential, and OpenAI refuses Hong Kong as well. Only a new
+sandbox name gets a new placement.
 
 ## Workspace persistence
 

@@ -12,14 +12,6 @@ import { CHECKPOINT_UNUSABLE } from "./workspace-snapshot"
 export { CredentialEgress } from "./credential-egress"
 export { WorkspaceSandbox } from "./workspace-sandbox"
 
-/**
- * A Durable Object is placed near whoever first reaches it and never moves,
- * and its container is placed near it. Unhinted, a workspace opened from
- * India lands in HKG, where Anthropic and OpenAI refuse every request, so
- * every sandbox lives in ENAM beside the control plane.
- */
-const SANDBOX_PLACEMENT = { locationHint: "enam" } as const
-
 /** Keep aligned with @claxedo/sandbox-manager's DEFAULT_WORKSPACE_RUNTIME_PORT: the driver's ensure names it and the proxy forwards to it. */
 const WORKSPACE_RUNTIME_PORT = 2593
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
@@ -49,7 +41,7 @@ async function auth(request: Request, env: WorkerEnv): Promise<Response | null> 
 }
 
 function sandboxStub(env: WorkerEnv, sandboxId: string) {
-  return env.WORKSPACE_SANDBOX.getByName(sandboxId, SANDBOX_PLACEMENT)
+  return env.WORKSPACE_SANDBOX.getByName(sandboxId)
 }
 
 function restoreSnapshot(input: unknown): string | undefined | null {

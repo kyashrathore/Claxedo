@@ -18,7 +18,7 @@ type WorkspaceSandboxStub = { fetch(request: Request): Promise<Response> } & Pic
   | "destroyWorkspace">
 
 export interface WorkerEnv extends IdleEnv, RuntimeBuildEnv {
-  WORKSPACE_SANDBOX: { getByName(name: string, options?: { locationHint?: "enam" }): WorkspaceSandboxStub }
+  WORKSPACE_SANDBOX: { getByName(name: string): WorkspaceSandboxStub }
   API_TOKEN: string
   EGRESS_SECRETS?: EgressKV
   /** The sandbox registry, which `GET /sandboxes` and therefore the control plane's GC read. */

@@ -28,7 +28,7 @@ const stub = {
   snapshotWorkspace: vi.fn(async () => ({ snapshotId: "snap-1", sizeBytes: 4_096 })),
   destroyWorkspace: vi.fn(async () => {}),
 }
-const getByName = vi.fn((_name: string, _options?: { locationHint?: "enam" }) => stub)
+const getByName = vi.fn((_name: string, ..._options: unknown[]) => stub)
 
 type Metadata = Record<string, string>
 
@@ -102,11 +102,11 @@ beforeEach(() => {
 })
 
 describe("sandbox placement and the runtime proxy", () => {
-  test("every sandbox object is placed in ENAM, beside the control plane and away from vendor-blocked regions", async () => {
+  test("every sandbox object is reached by its name alone, so Cloudflare places it by default", async () => {
     await ensure("claxedo-ws_1", env())
     await worker.fetch(new Request("https://sbx.test/sandbox/claxedo-ws_1/proxy/global/health"), env())
-    expect(getByName.mock.calls.every(([, options]) => options?.locationHint === "enam")).toBe(true)
-    expect(getByName.mock.calls.map(([name]) => name)).toContain("claxedo-ws_1")
+    expect(getByName).toHaveBeenCalled()
+    for (const args of getByName.mock.calls) expect(args).toEqual(["claxedo-ws_1"])
   })
 
   test("relay traffic reaches the sandbox's object with the runtime path, query and Relay Host Token, outside the admin token", async () => {
