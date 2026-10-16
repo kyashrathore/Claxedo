@@ -116,6 +116,7 @@ export function createOrgSandboxManager(input: {
     endIfHostDown: (workspaceId, epoch) => lifecycle(workspaceId, (manager) => manager.endIfHostDown(workspaceId, epoch), () => undefined),
     // A keyless lease never made a machine, so there is nothing on any provider to destroy; the caller releases it.
     destroy: (workspaceId) => lifecycle(workspaceId, (manager) => manager.destroy(workspaceId), (lease) => ({ ok: false, reason: lease ? "runtime_lease_resource_missing" : "runtime_lease_missing" })),
+    startFresh: (workspaceId) => lifecycle(workspaceId, (manager) => manager.startFresh(workspaceId), (lease) => lease ? refuse() : { ok: false, reason: "runtime_lease_missing" }),
     recordStartPhases: (workspaceId, phases) => lifecycle(workspaceId, (manager) => manager.recordStartPhases(workspaceId, phases), () => undefined),
     markStartPhase: (workspaceId, phase) => lifecycle(workspaceId, (manager) => manager.markStartPhase(workspaceId, phase), () => undefined),
     garbageCollect: async () => {

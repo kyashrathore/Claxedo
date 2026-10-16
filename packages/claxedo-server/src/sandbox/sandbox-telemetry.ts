@@ -53,16 +53,23 @@ const STOP_CAUSES: Record<SandboxStopCause, string> = { explicit: "explicit", id
  * destroyed while serving, or stopped or lost by its provider. Destroying a machine that was already stopped
  * closes nothing. An epoch that failed while its start goes on in the next
  * one is not a failure the person saw; `workspace_failed` is the start's end.
+ * A person's Start fresh is `workspace_started_fresh`, with the cause of the
+ * unusable checkpoint it dropped when the last start was refused for one.
  */
 export function sandboxLifecycleSink(telemetry: ControlPlaneTelemetry) {
   return (event: SandboxLifecycleEvent) => {
     const machine = machineProperties(event)
+    if (event.kind === "startedFresh") {
+      telemetry.capture("system", "workspace_started_fresh", { ...machine, ...(event.checkpointUnusable ? { cause: event.checkpointUnusable } : {}) })
+      return
+    }
     if (event.kind === "failed") {
       if (event.retrying) return
-      const code = event.bootFailed ? "boot_failed" : event.startLimit ? "provider_rate_limited" : "provision_failed"
+      const code = event.checkpointUnusable ? "checkpoint_unusable" : event.bootFailed ? "boot_failed" : event.startLimit ? "provider_rate_limited" : "provision_failed"
       telemetry.capture("system", "workspace_failed", {
         ...machine,
         code,
+        ...(event.checkpointUnusable ? { cause: event.checkpointUnusable } : {}),
         ...(event.startLimit ? { window: event.startLimit } : {}),
         ...(event.hostLeftRunning ? { host_left_running: true } : {}),
       })

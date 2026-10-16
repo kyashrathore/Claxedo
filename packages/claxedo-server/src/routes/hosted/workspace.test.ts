@@ -8,7 +8,7 @@ import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./works
 import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority-error"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { SandboxProviderKeyMissingError } from "../../sandbox/org-sandbox-drivers"
-import { sandboxRuntimeBootFailedError, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxCheckpointUnusableError, sandboxRuntimeBootFailedError, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
 
 /**
  * Hosted workspace routes under machine-wide enrollment. These prove the
@@ -867,6 +867,41 @@ describe("hosted connection", () => {
       message: "fatal: couldn't find remote ref refs/heads/missing",
     })
     expect(body.error).not.toHaveProperty("retryAfterMs")
+  })
+
+  test("a start refused for an unusable checkpoint answers its one line with a code and cause the app offers Start fresh for, and the read answers the same", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "eu-west" },
+      })),
+    })
+    const line = "This workspace's saved files expired after 30 days unused; choose Start fresh."
+    const sandboxManager = {
+      target: vi.fn(async () => ({
+        status: "unavailable" as const,
+        reason: "runtime_lease_not_ready",
+        leaseStatus: "unavailable" as const,
+        failure: { kind: "checkpoint_unusable" as const, cause: "expired" as const, message: line, retrying: false as const },
+      })),
+    } as unknown as SandboxManager
+    const sandboxStart = async () => ({
+      status: "unavailable" as const,
+      retryAfterMs: 5_000,
+      error: sandboxCheckpointUnusableError("expired", line),
+      epoch: 9,
+      homeRegion: "eu-west",
+    })
+    const { app } = buildApp({ authority: authority, sandboxManager, options: { sandboxStart } })
+    const started = await app.fetch(post("/ws_1/connection", {}))
+    expect(started.status).toBe(409)
+    const body = await started.json() as { error: Record<string, unknown> }
+    expect(body.error).toMatchObject({ code: "workspace_checkpoint_unusable", message: line, cause: "expired" })
+    expect(body.error).not.toHaveProperty("retryAfterMs")
+
+    const read = await app.fetch(get("/ws_1/connection"))
+    expect(await read.json()).toMatchObject({ status: "failed", error: line, checkpointUnusable: "expired" })
   })
 
   test("fails closed when a cloud workspace has no sandbox", async () => {

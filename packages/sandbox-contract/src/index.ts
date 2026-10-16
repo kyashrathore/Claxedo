@@ -312,3 +312,4 @@ export function effectiveSandboxDriver(input: { chosen?: string; keyed: readonly
   return input.keyed.find((id) => id === input.chosen) ?? input.keyed[0]
 }
 export * from "./start-phases"
+export * from "./checkpoint-unusable"

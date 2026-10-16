@@ -1,4 +1,10 @@
-import { isSandboxDriverID, sandboxDriverLabels } from "@claxedo/sandbox-contract"
+import {
+  isSandboxCheckpointUnusableCause,
+  isSandboxDriverID,
+  sandboxCheckpointUnusableCauses,
+  sandboxDriverLabels,
+  type SandboxCheckpointUnusableCause,
+} from "@claxedo/sandbox-contract"
 import type { SandboxLease } from "./contract"
 
 /**
@@ -18,6 +24,27 @@ export class SandboxRuntimeBootError extends Error implements SandboxRuntimeBoot
   constructor(reason: string) {
     super(reason)
     this.name = "SandboxRuntimeBootError"
+  }
+}
+
+export { isSandboxCheckpointUnusableCause, sandboxCheckpointUnusableCauses, type SandboxCheckpointUnusableCause }
+
+/**
+ * A driver throws this shape when the checkpoint a start restores cannot be
+ * used. Every start from it is refused the same way, and the image is never
+ * booted in its place: only the person's Start fresh, which drops the
+ * checkpoint, lets the next start boot the image.
+ */
+export type SandboxCheckpointUnusable = { checkpointUnusable: SandboxCheckpointUnusableCause; message: string }
+
+export function isSandboxCheckpointUnusable(err: unknown): err is SandboxCheckpointUnusable {
+  return !!err && typeof err === "object" && isSandboxCheckpointUnusableCause((err as { checkpointUnusable?: unknown }).checkpointUnusable)
+}
+
+export class SandboxCheckpointUnusableError extends Error implements SandboxCheckpointUnusable {
+  constructor(readonly checkpointUnusable: SandboxCheckpointUnusableCause, reason: string) {
+    super(reason)
+    this.name = "SandboxCheckpointUnusableError"
   }
 }
 
@@ -168,11 +195,27 @@ function providerRateLimitedReason(error: string) {
 /** Leads the error an ensure reports, and a lease keeps, for a runtime whose boot failed. */
 const RUNTIME_BOOT_FAILED = "runtime_boot_failed: "
 
+/** Leads the error an ensure reports, and a lease keeps, for a start refused because the checkpoint it restores cannot be used, before its cause. */
+const CHECKPOINT_UNUSABLE = "checkpoint_unusable:"
+
 /** Leads the error a destroyed lease keeps when its host was found gone at the provider. */
 const RUNTIME_HOST_GONE = "runtime_host_gone: "
 
 export function sandboxRuntimeBootFailedError(reason: string) {
   return `${RUNTIME_BOOT_FAILED}${reason}`
+}
+
+export function sandboxCheckpointUnusableError(cause: SandboxCheckpointUnusableCause, reason: string) {
+  return `${CHECKPOINT_UNUSABLE}${cause}: ${reason}`
+}
+
+/** The cause and the driver's one line when an ensure error says the checkpoint a start restores cannot be used. */
+export function sandboxCheckpointUnusable(error: string | undefined): { cause: SandboxCheckpointUnusableCause; message: string } | undefined {
+  if (!error?.startsWith(CHECKPOINT_UNUSABLE)) return undefined
+  const rest = error.slice(CHECKPOINT_UNUSABLE.length)
+  const end = rest.indexOf(": ")
+  const cause = end < 0 ? undefined : rest.slice(0, end)
+  return isSandboxCheckpointUnusableCause(cause) ? { cause, message: rest.slice(end + 2) } : undefined
 }
 
 export function sandboxHostGoneError(reason: string) {
@@ -208,8 +251,14 @@ export function runtimeBootDiagnostic(log: string, maxChars: number): string {
   return `${WORKSPACE_RUNTIME_BOOT_FAILED_LINE}${reason}`.slice(0, maxChars)
 }
 
-/** The boot's own reason when an ensure error says a runtime's boot failed. */
+/**
+ * The boot's own reason when an ensure error says a start cannot boot until
+ * what it boots from changes: a runtime whose boot failed, or a checkpoint
+ * that cannot be used.
+ */
 export function sandboxRuntimeBootFailure(error: string | undefined) {
+  const unusable = sandboxCheckpointUnusable(error)
+  if (unusable) return unusable.message
   if (!error?.startsWith(RUNTIME_BOOT_FAILED)) return undefined
   const diagnostic = error.slice(RUNTIME_BOOT_FAILED.length)
   return workspaceRuntimeBootReason(diagnostic) ?? diagnostic
@@ -263,8 +312,10 @@ export function sandboxLeaseFailure(
   input: { now: number; maxRetryCount: number },
 ): SandboxLeaseFailure | undefined {
   if (lease.status !== "unavailable" || !lease.lastError) return undefined
-  const boot = sandboxRuntimeBootFailure(lease.lastError)
-  const kind = boot !== undefined ? "boot" : lease.lastError === SANDBOX_RUNTIME_UNHEALTHY ? "unhealthy" : "provider"
+  const unusable = sandboxCheckpointUnusable(lease.lastError)
+  if (unusable) return { kind: "checkpoint_unusable", cause: unusable.cause, message: firstLine(unusable.message), retrying: false }
+  const kind = sandboxRuntimeBootFailure(lease.lastError) !== undefined ? "boot"
+    : lease.lastError === SANDBOX_RUNTIME_UNHEALTHY ? "unhealthy" : "provider"
   const retrying = kind !== "boot" && lease.retryCount < input.maxRetryCount
     && lease.nextRetryAt !== undefined && lease.nextRetryAt > input.now
   return { kind, message: sandboxStartFailureReason(lease.lastError), retrying }
@@ -272,9 +323,13 @@ export function sandboxLeaseFailure(
 
 /**
  * `boot` carries the runtime's own reason, which repeats until what it boots
- * from changes; `unhealthy` is a serving runtime that stopped answering; and
+ * from changes; `checkpoint_unusable` a start whose checkpoint cannot be
+ * restored for its `cause`, refused until the person starts the workspace
+ * fresh; `unhealthy` is a serving runtime that stopped answering; and
  * `provider` the driver's error. `retrying` holds while the lease's scheduled
  * retry is still ahead and its retry budget is not spent: a start in progress
  * is waiting it out, and the next ensure runs it.
  */
-export type SandboxLeaseFailure = { kind: "boot" | "unhealthy" | "provider"; message: string; retrying: boolean }
+export type SandboxLeaseFailure =
+  | { kind: "boot" | "unhealthy" | "provider"; message: string; retrying: boolean }
+  | { kind: "checkpoint_unusable"; cause: SandboxCheckpointUnusableCause; message: string; retrying: false }

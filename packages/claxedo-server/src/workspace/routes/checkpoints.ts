@@ -89,7 +89,7 @@ export function WorkspaceCheckpointRoutes(
       if ("response" in access) return access.response
       const operation = c.req.param("operation")
       const body = (await readJsonRecord(c.req.raw)) ?? {}
-      if (!["stop", "replace", "cleanup", "destroy"].includes(operation)) {
+      if (!["stop", "start-fresh", "replace", "cleanup", "destroy"].includes(operation)) {
         return c.json({ error: { code: "workspace_lifecycle_operation_invalid", message: "Unknown lifecycle operation" } }, 404)
       }
       if (operation !== "stop" && body.approved !== true) {
@@ -103,6 +103,10 @@ export function WorkspaceCheckpointRoutes(
       try {
         const lifecycle = workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options)
         if (operation === "stop") return c.json(await lifecycle.stop(c.req.param("id")))
+        if (operation === "start-fresh") {
+          const fresh = await lifecycle.startFresh(c.req.param("id"))
+          return fresh.ok ? c.json(fresh) : c.json(startFreshRefusal(fresh.reason), 409)
+        }
         if (operation === "replace") {
           return c.json(await lifecycle.replace(c.req.param("id"), (typeof body.checkpointId === "string" ? { checkpointId: body.checkpointId } : {})))
         }
@@ -259,7 +263,17 @@ export function workspaceCheckpointService(
   })
 }
 
-function lifecycleError(c: { json: (body: unknown, status: 409 | 503) => Response }, error: unknown) {
+const START_FRESH_REFUSALS: Readonly<Record<string, { code: string; message: string }>> = {
+  workspace_running: { code: "workspace_running", message: "Stop this workspace before starting it fresh." },
+  start_fresh_unsupported: { code: "workspace_start_fresh_unsupported", message: "This workspace's sandbox provider keeps no saved files to drop." },
+  runtime_lease_missing: { code: "workspace_never_started", message: "This workspace has not started yet, so it is already fresh." },
+}
+
+function startFreshRefusal(reason: string) {
+  return { error: START_FRESH_REFUSALS[reason] ?? { code: "workspace_lease_changed", message: "This workspace changed while starting fresh; try again." } }
+}
+
+function lifecycleError(c:{ json: (body: unknown, status: 409 | 503) => Response }, error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   const unavailable = statusOf(error) === 503
   return c.json(encodeApiError({ ...asRecord(error), code: unavailable ? "workspace_checkpoint_unavailable" : "workspace_checkpoint_conflict", message }), unavailable ? 503 : 409)

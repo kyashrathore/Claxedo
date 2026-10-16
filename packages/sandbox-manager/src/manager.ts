@@ -19,12 +19,14 @@ import { sandboxEgressDisposition, sandboxNetworkPolicyWithBrokeredHosts } from 
 import { createEgressWarnings } from "./egress-warnings"
 import { sweepSandboxes } from "./garbage-collect"
 import {
+  isSandboxCheckpointUnusable,
   isSandboxHostGone,
   isSandboxProviderKeyRefused,
   isSandboxProviderRateLimited,
   isSandboxRuntimeBootFailure,
   isSandboxStartRefusal,
   SANDBOX_RETRY_CAP_EXCEEDED,
+  sandboxCheckpointUnusableError,
   sandboxHostGoneError,
   sandboxLeaseEndedUnderStart,
   sandboxLeaseFailure,
@@ -47,6 +49,7 @@ import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
 import { createSandboxStartRecorder } from "./start-telemetry"
 import { createLifecycleReporter } from "./lease-lifecycle"
 import { continuedStart, leaseBootMode } from "./lease-start"
+import { startSandboxFresh } from "./start-fresh"
 import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
 
 /**
@@ -56,7 +59,7 @@ import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
  */
 type LifecycleOperation =
   | { kind: "checkpoint" | "restore"; promise: Promise<SandboxCheckpointResult> }
-  | { kind: "stop" | "destroy"; promise: Promise<SandboxMutationResult> }
+  | { kind: "stop" | "destroy" | "startFresh"; promise: Promise<SandboxMutationResult> }
 
 const DEFAULT_APP_LABEL = "claxedo"
 
@@ -191,7 +194,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   function mutationLifecycle(
     workspaceId: string,
-    kind: "stop" | "destroy",
+    kind: "stop" | "destroy" | "startFresh",
     run: () => Promise<SandboxMutationResult>,
   ): Promise<SandboxMutationResult> {
     const current = lifecycleOperations.get(workspaceId)
@@ -347,9 +350,11 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       if (isSandboxHostGone(err) && lease.sandboxId) {
         return hostGone(workspaceId, lease, managerInput, message, enteredAt)
       }
-      const bootFailed = isSandboxRuntimeBootFailure(err)
+      const checkpointUnusable = isSandboxCheckpointUnusable(err) ? err.checkpointUnusable : undefined
+      const bootFailed = checkpointUnusable !== undefined || isSandboxRuntimeBootFailure(err)
       const startLimit = !bootFailed && isSandboxProviderRateLimited(err) ? err.providerRateLimited : undefined
-      const error = bootFailed
+      const error = checkpointUnusable ? sandboxCheckpointUnusableError(checkpointUnusable, message)
+        : bootFailed
         ? sandboxRuntimeBootFailedError(message)
         : startLimit ? sandboxProviderRateLimitedError(options.driver.id, startLimit)
         : isSandboxProviderKeyRefused(err) ? sandboxProviderKeyRefusedError(options.driver.id, message)
@@ -383,6 +388,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         retrying: !bootFailed && !retryCapped,
         ...(startLimit ? { startLimit: startLimit.window } : {}),
         ...(hostLeftRunning ? { hostLeftRunning: true as const } : {}),
+        ...(checkpointUnusable ? { checkpointUnusable } : {}),
       })
       const backoffMs = retryCapped ? retryCapCooldownMs : retryDelayMs(nextRetryCount)
       const retryInMs = dayLimited ? undefined : Math.max(backoffMs, startLimitRetryMs ?? 0)
@@ -737,6 +743,17 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         }
         return { ok: true as const, status: "destroyed" as const }
       })
+    },
+    startFresh(workspaceId) {
+      return mutationLifecycle(workspaceId, "startFresh", () => startSandboxFresh({
+        workspaceId,
+        driver: options.driver,
+        leaseStore: options.leaseStore,
+        lifecycle,
+        resource: leaseResource,
+        now: now(),
+        maxRetryCount,
+      }))
     },
     async release(workspaceId) {
       const lease = await options.leaseStore.get(workspaceId)

@@ -382,13 +382,21 @@ describe("CloudflareSandboxDriver", () => {
       .rejects.toThrow("Cloudflare snapshot failed (500): The workspace container is not running")
   })
 
-  test("a snapshot the platform no longer holds refuses the restore in one line, and is never polled as provisioning", async () => {
-    const refusal = "This workspace's saved files expired after 30 days unused; start it fresh."
-    const { calls, fetch } = harness(() => ({ status: 410, json: { ready: false, snapshotMissing: true, error: refusal } }))
+  test.each(["expired", "runtime_outdated", "runtime_modified", "not_restorable"] as const)("a checkpoint the Worker cannot restore (%s) refuses the start in its one line with its cause, and is never polled as provisioning", async (cause) => {
+    const refusal = "This workspace's saved files cannot be restored; choose Start fresh."
+    const { calls, fetch } = harness(() => ({ status: 410, json: { ready: false, checkpointUnusable: cause, error: refusal } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     await expect(driver.ensureHost({ ...createInput, bootSource: { kind: "driver-snapshot", snapshotId: "snap-gone" } }))
-      .rejects.toMatchObject({ runtimeBootFailed: true, message: refusal })
+      .rejects.toMatchObject({ checkpointUnusable: cause, message: refusal })
     expect(calls).toHaveLength(1)
+  })
+
+  test("a 410 naming no cause this driver knows is the provider's failure, not a checkpoint Start fresh fixes", async () => {
+    const { fetch } = harness(() => ({ status: 410, json: { ready: false, checkpointUnusable: "melted", error: "gone" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    const refused = driver.ensureHost({ ...createInput, bootSource: { kind: "driver-snapshot", snapshotId: "snap-gone" } })
+    await expect(refused).rejects.toThrow("Cloudflare ensure-runtime failed (410): gone")
+    await expect(refused).rejects.not.toHaveProperty("checkpointUnusable")
   })
 })
 

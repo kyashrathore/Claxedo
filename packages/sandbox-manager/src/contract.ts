@@ -503,6 +503,14 @@ export type SandboxManager = {
    */
   endIfHostDown: (workspaceId: string, epoch: number) => Promise<Exclude<SandboxHostState, "serving"> | undefined>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>
+  /**
+   * A person's Start fresh: drops the stopped workspace's checkpoint so its
+   * next start boots the image and clones the repository. Refused while the
+   * workspace runs or a start is in flight (`workspace_running`), and for a
+   * driver whose checkpoint is the host itself or that keeps none
+   * (`start_fresh_unsupported`).
+   */
+  startFresh: (workspaceId: string) => Promise<SandboxMutationResult>
   release: (workspaceId: string) => Promise<{ released: boolean }>
   garbageCollect: () => Promise<SandboxGarbageCollectResult>
   list: () => Promise<SandboxLease[]>

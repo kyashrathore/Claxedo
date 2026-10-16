@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { createSandboxManager, SandboxCheckpointUnusableError, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
+import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   filterCheckpointSessions,
@@ -229,6 +231,67 @@ describe("workspace checkpoint routes", () => {
     } as RequestInit)
 
     expect(response.status).toBe(413)
+  })
+
+  test("Start fresh drops an unusable checkpoint so the next start boots the image, is refused while the workspace runs, and needs explicit approval", async () => {
+    const leaseStore = createMemoryLeaseStore()
+    const driver: SandboxDriver = {
+      id: "cloudflare",
+      metadata: sandboxDriverCatalog.cloudflare.metadata,
+      ensureHost: vi.fn(async (input) => {
+        if (input.bootSource?.kind === "driver-snapshot") throw new SandboxCheckpointUnusableError("expired", "This workspace's saved files expired after 30 days unused; choose Start fresh.")
+        return { sandboxId: "claxedo-ws_1", url: "https://runtime.test", hostId: "claxedo-ws_1", labels: input.labels }
+      }),
+      stop: vi.fn(async () => {}),
+    }
+    const sandboxManager = createSandboxManager({ leaseStore, driver })
+    const services = { auth: { config: { enabled: false } }, sandbox: { sandboxManager }, relay: {} } as unknown as ControlPlaneServices
+    const routes = new Hono().route("/api/workspace", WorkspaceCheckpointRoutes(services, { allowUnsignedLocal: true }))
+    const startFresh = (body: unknown) => routes.request("/api/workspace/ws_1/lifecycle/start-fresh", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    })
+    await sandboxManager.ensure("ws_1", { homeRegion: "us-east" })
+
+    const running = await startFresh({ approved: true })
+    expect(running.status).toBe(409)
+    expect(await running.json()).toMatchObject({ error: { code: "workspace_running", message: "Stop this workspace before starting it fresh." } })
+
+    await leaseStore.update("ws_1", 1, {
+      status: "stopped",
+      checkpoint: { id: "chk_1", providerReference: "snap_gone", sourceEpoch: 1, capturedAt: 1, metadata: { scope: "filesystem", sourceBehavior: "preserved", restoreMount: "new-resource" } },
+    })
+    await expect(sandboxManager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: expect.stringContaining("checkpoint_unusable:expired") })
+
+    const unapproved = await startFresh({})
+    expect(unapproved.status).toBe(409)
+    expect(await unapproved.json()).toMatchObject({ error: { code: "workspace_lifecycle_approval_required" } })
+    expect((await leaseStore.get("ws_1"))?.checkpoint).toBeDefined()
+
+    const fresh = await startFresh({ approved: true })
+    expect(fresh.status).toBe(200)
+    expect(await fresh.json()).toEqual({ ok: true, status: "stopped" })
+    expect((await leaseStore.get("ws_1"))?.checkpoint).toBeUndefined()
+    await expect(sandboxManager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready" })
+    expect(driver.ensureHost).toHaveBeenLastCalledWith(expect.objectContaining({ bootSource: { kind: "default" } }))
+  })
+
+  test("Start fresh needs write authority on the workspace, as Stop does", async () => {
+    const startFresh = vi.fn()
+    const services = {
+      auth: {
+        config: { enabled: true, issuer: "https://identity.example.test", jwksUrl: "https://identity.example.test/.well-known/jwks.json", audience: "claxedo-server" },
+        verifier: vi.fn(async () => ({ mode: "signed" as const, user: { subject: "bob", tokenIdentifier: "issuer|bob", issuer: "https://identity.example.test" } })),
+      },
+      authority: { openWorkspace: vi.fn(async () => ({ allowed: true, role: "viewer", workspace: { workspace_id: "ws_1", org_id: "org_team" } })) },
+      sandbox: { sandboxManager: { startFresh } },
+      relay: {},
+      telemetry: { capture: vi.fn() },
+    } as unknown as ControlPlaneServices
+    const response = await new Hono().route("/api/workspace", WorkspaceCheckpointRoutes(services)).request("http://localhost/api/workspace/ws_1/lifecycle/start-fresh", {
+      method: "POST", headers: { authorization: "Bearer signed-token", "content-type": "application/json" }, body: JSON.stringify({ approved: true }),
+    })
+    expect(response.status).toBe(403)
+    expect(startFresh).not.toHaveBeenCalled()
   })
 
   test("restore, replacement, cleanup, and destruction require explicit approval", async () => {
