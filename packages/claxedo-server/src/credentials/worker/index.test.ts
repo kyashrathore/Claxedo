@@ -195,6 +195,17 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(provider("groq")?.models).toEqual({})
   })
 
+  test("with no workspace named, the hosted OpenCode catalog offers no vendor whose key a sandbox would not be delivered, as one saved beside the Claude plan that holds the vendor's host", async () => {
+    const orgId = freshOrg("opencode-unmarked")
+    const credentials = store(orgId)
+    await credentials.putCredential({ ...write, owner: "A", provider_id: "claude-sdk", kind: "oauth_token" })
+    const key = await credentials.putCredential({ ...write, owner: "A", provider_id: "anthropic" })
+    expect(key.is_active).toBe(false)
+    const catalog = hostedOpenCodeCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials, runtimeProviders: async () => undefined })
+    const offered = await catalog.opencodeProviderCatalog({ mode: "signed", user: { subject: "A", tokenIdentifier: "A", issuer: "test" } })
+    expect(offered.connected).toEqual([])
+  })
+
   test("Pi's Anthropic connected by a Claude Code login says so and is not Pi's own key; Pi's own key is", async () => {
     const orgId = freshOrg("pi-via")
     const credentials = store(orgId)

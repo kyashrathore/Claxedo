@@ -149,7 +149,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         triggerLabel={trigger.hint() ? `Select harness and model — ${trigger.hint()}` : "Select harness and model"}
         triggerState={() => triggerStateOf(selection())}
       />
-      <HarnessConnectionBadge selection={selection} polling={isPolling} />
+      <HarnessConnectionBadge selection={selection} polling={isPolling} asleep={asleep} />
     </>
   )
 }

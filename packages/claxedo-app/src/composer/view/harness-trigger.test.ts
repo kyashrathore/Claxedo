@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { nativeHarness } from "@/lib/harness-selection"
-import { modelLabel, type ModelLabelInput } from "./harness-trigger"
+import { connectionBadge, modelLabel, type ModelLabelInput } from "./harness-trigger"
 
 const codex = nativeHarness("codex")
 const opencode = nativeHarness("opencode")
@@ -28,4 +28,12 @@ test("model label: a session whose harness only its asleep runtime can name read
   const polling: ModelLabelInput = { polling: true, harnessLabel: () => "Harness", selectedModel: "", managedDefault: false, modelLoading: false, catalogUnread: false, hasModelOptions: false }
   expect(modelLabel({ ...polling, asleep: true })).toBe("Asleep")
   expect(modelLabel(polling)).toBe("Connecting")
+})
+
+test("connection badge: an asleep workspace's composer says only Asleep, with no Connecting beside it, whatever its last connection was", () => {
+  expect(connectionBadge({ polling: true, asleep: true })).toBeUndefined()
+  expect(connectionBadge({ polling: false, asleep: true, state: "connecting" })).toBeUndefined()
+  expect(connectionBadge({ polling: true, asleep: false })).toBe("polling")
+  expect(connectionBadge({ polling: false, asleep: false, state: "ready" })).toBe("ready")
+  expect(connectionBadge({ polling: false, asleep: false, state: "failed" })).toBeUndefined()
 })

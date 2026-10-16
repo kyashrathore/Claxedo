@@ -5,11 +5,13 @@ import { copyText } from "@/lib/clipboard"
 import { useTranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { ToolExitCode } from "./basic-tool"
 import { safeLinkHref } from "./safe-link"
+import { toolErrorInputText } from "./message-part-text"
 
 interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   icon?: IconProps["name"]
   tool: string
   error: string
+  input: Record<string, unknown>
   title?: string
   defaultOpen?: boolean
   open?: boolean
@@ -31,6 +33,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     "tool",
     "icon",
     "error",
+    "input",
     "title",
     "defaultOpen",
     "open",
@@ -153,6 +156,9 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
               </div>
             </Show>
             <Show when={body()}>{(value) => <CardDescription>{value()}</CardDescription>}</Show>
+            <Show when={open() && toolErrorInputText(split.input)}>
+              {(text) => <pre data-slot="tool-error-card-input">{text()}</pre>}
+            </Show>
           </div>
         </Collapsible.Content>
       </Collapsible>
