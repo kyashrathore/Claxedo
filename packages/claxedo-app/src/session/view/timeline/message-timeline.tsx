@@ -507,7 +507,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
   onCleanup(prepend.clear)
   const initialRowCount = timelineRows().length
-  const [renderOverscan, setRenderOverscan] = createSignal(1)
+  const [renderOverscan, setRenderOverscan] = createSignal(0)
   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const messageNavMountReady = createMemo<boolean>((mounted) => mounted || (props.active() && initialRevealReady() && messageNavGutterVisible()), false)
