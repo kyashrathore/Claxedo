@@ -22,7 +22,7 @@ function isStoredAccount(kind: SpendRowKind): boolean {
   return kind === "plan" || kind === "apiKey" || kind === "teamKey"
 }
 
-function useRowWords() {
+function useSpendRowWords() {
   const t = useTranslator(usageDictionary)
   const format = useUsageFormats()
   const name = (row: SpendRow) => {
@@ -40,7 +40,7 @@ function useRowWords() {
 export function AccountSpendTable(props: { readonly rows: readonly SpendRow[]; readonly scope: AccountSpendScope }): JSX.Element {
   const t = useTranslator(usageDictionary)
   const format = useUsageFormats()
-  const words = useRowWords()
+  const words = useSpendRowWords()
   return (
     <table class="usage-table" aria-label={t(TABLE_NAMES[props.scope])}>
       <thead>

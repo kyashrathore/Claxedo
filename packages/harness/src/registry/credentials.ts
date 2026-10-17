@@ -1,5 +1,5 @@
-import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, harnessForProviderId, isHarnessId, isProviderUnavailable, ORG_ACCOUNT_UNAVAILABLE,
-  PI_LAUNCH_PROVIDERS, PI_PROVIDER_LABELS, piCredentialProviderIDs, piProviderSpending, vendorModel, type CredentialSnapshot,
+import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, isHarnessId, isProviderUnavailable, ORG_ACCOUNT_UNAVAILABLE,
+  PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, piProviderSpending, vendorModel, vendorName, type CredentialSnapshot,
   type PiLaunchProvider, type PromptModel, type ProviderProjection, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
 import type { TurnActor } from "../contract/session"
@@ -30,13 +30,6 @@ export function accountUnusable(reason: string, providerId?: string) {
 
 export function noAccountChosen() {
   return new CredentialSelectionError("account_unavailable", "No account is chosen for this harness. Add one in Settings → Models.")
-}
-
-function vendorName(providerId: string): string {
-  const harness = harnessForProviderId(providerId)
-  if (harness) return HARNESS_TABLE[harness].vendor
-  const piProvider = piProviderSpending(providerId)
-  return piProvider ? PI_PROVIDER_LABELS[piProvider] : providerId
 }
 
 function orgAccountMissing(providerId: string | undefined) {

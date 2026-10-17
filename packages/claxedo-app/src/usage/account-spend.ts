@@ -1,4 +1,4 @@
-import { vendorName } from "@/lib/vendor-names"
+import { vendorName } from "@claxedo/agent-runtime-contract"
 import type { AccountSpend, AccountSpendRequest, AccountSpendScope } from "@/server"
 import { inclusiveLocalRange, totalTokens, type UsageDays } from "./model"
 

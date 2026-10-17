@@ -1,6 +1,5 @@
-import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, vendorName, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { isRefusal } from "@/lib/account-health"
-import { vendorName } from "@/lib/vendor-names"
 import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin } from "@/server"
 
 export { isRefusal, isUnavailable } from "@/lib/account-health"

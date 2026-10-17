@@ -694,8 +694,12 @@ export const desktopRenderer: Policy = {
   // The signed-out notice Organization, Team accounts and Sandbox providers
   // share, with its Sign in action (owner: the app's access domain,
   // `access/view/signed-out.tsx`). It adds no package edge.
-  // 1395/36, no headroom.
-  ceilings: { modules: 1395, packages: 36 },
+  // AI usage's By account breakdown, its rows and the read behind it (owner:
+  // the app's usage domain, `usage/account-spend.ts`,
+  // `usage/view/account-spend-section.tsx`,
+  // `usage/view/account-spend-table.tsx`). They add no package edge.
+  // 1398/36, no headroom.
+  ceilings: { modules: 1398, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

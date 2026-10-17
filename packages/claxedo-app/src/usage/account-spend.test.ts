@@ -33,6 +33,7 @@ describe("spend per account rows", () => {
     expect(spendRow(spend({ kind: "own", accountId: "cred_plan", access: "plan", label: "Work Claude", providerId: "anthropic" }))).toMatchObject({ id: "cred_plan", kind: "plan", label: "Work Claude", vendor: "Anthropic" })
     expect(spendRow(spend({ kind: "own", accountId: "cred_key", access: "apiKey", providerId: "openai" }))).toMatchObject({ id: "cred_key", kind: "apiKey", vendor: "OpenAI" })
     expect(spendRow(spend({ kind: "team", accountId: "cred_team", access: "apiKey", label: "Team key", providerId: "cursor" }))).toMatchObject({ id: "cred_team", kind: "teamKey", label: "Team key", vendor: "Cursor" })
+    expect(spendRow(spend({ kind: "own", accountId: "cred_claude", access: "plan", providerId: "claude-sdk" }))).toMatchObject({ kind: "plan", vendor: "Anthropic" })
   })
 
   test("a deleted account keeps its kind with no name or vendor, so the row is still told apart by its id", () => {
