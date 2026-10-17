@@ -27,6 +27,8 @@ export { pageTransport } from "./page-transport"
 export { listLivePlugins, registerLivePlugin, writeLivePlugin, type LivePluginFolder, type LivePluginRow } from "./live-plugins"
 export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } from "./app-plugins"
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
+export { SURFACE_FIXTURE_NAME, SURFACE_FIXTURE_PATH, writeSurfaceFixturePlugin } from "./fixture-plugin-surface"
+export { MCP_APP_FIXTURE_FORECAST, mcpAppFrameTitle, startMcpAppFixture } from "./mcp-app-fixture"
 export { sessionCookie, type Account, type SignedStack } from "./signed-stack"
 export { ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
 export {

@@ -3,7 +3,7 @@ import { encodePluginTreeBase64 } from "../../../claxedo-server-core/src/agent-p
 import { agentPluginTree } from "../../../claxedo-server-core/src/agent-plugins/artifacts/tree"
 import { directTransport, sendJson, type HttpTransport } from "./transport"
 
-export type ScriptedPluginHarness = "claude" | "codex" | "acp"
+export type ScriptedPluginHarness = "claude" | "codex" | "acp" | "pi"
 
 export type ScriptedPluginServer =
   | { type: "streamable-http"; url: string; headers?: Record<string, string> }
