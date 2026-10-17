@@ -21,6 +21,7 @@ function restoringBinding() {
     user,
     loading,
     unavailable: () => null,
+    ended: () => false,
     identityResolving: () => false,
     offered: () => true,
     signIn: async () => { setUser({ id: "user-1", email: "ada@example.test" }) },

@@ -1,13 +1,13 @@
 import { useLocation } from "@solidjs/router"
 import { createMemo, createSignal, Show, type JSX } from "solid-js"
-import { appUrl, useAuth } from "@/auth"
-import { useTranslator } from "@/i18n"
+import { appUrl, useAuth, type AuthState } from "@/auth"
+import { useTranslator, type DomainTranslate } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import { useServer } from "@/server"
 import { settingsPath, useShellRoute } from "@/shell"
 import { showToast, ClaxedoIcon as Icon, Avatar, DropdownMenu, Spinner } from "@/ui"
 import { USAGE_LIMITS_SECTION } from "@/usage"
-import { railDictionary } from "../i18n"
+import { railDictionary, type RailKey } from "../i18n"
 import { openExternal } from "@/lib/external-link"
 
 const HELP_URL = "https://github.com/kyashrathore/Claxedo"
@@ -23,6 +23,12 @@ type AccountView = {
   readonly action: "signin" | "logout" | undefined
 }
 
+function accountNotice(kind: AuthState["kind"], t: DomainTranslate<RailKey>): string | undefined {
+  if (kind === "signInUnfinished") return t("rail.account.signInUnfinished")
+  if (kind === "expired") return t("rail.account.signedOutByServer")
+  return undefined
+}
+
 function useAccountView() {
   const t = useTranslator(railDictionary)
   const auth = useAuth()
@@ -32,7 +38,7 @@ function useAccountView() {
     const offered = auth.offered(server.capabilities()?.signedIn === true)
     const waiting = state.kind === "awaitingBrowser"
     const busy = waiting || state.kind === "signingIn"
-    const notice = state.kind === "signInUnfinished" ? t("rail.account.signInUnfinished") : undefined
+    const notice = accountNotice(state.kind, t)
     const base = { waiting, notice, resolving: busy || (state.kind === "signedIn" && auth.identityResolving()), local: !busy && state.kind !== "signedIn" && !offered }
     if (state.kind === "signedIn") {
       const label = state.user.fullName ?? state.user.email ?? t("rail.account.signedIn")

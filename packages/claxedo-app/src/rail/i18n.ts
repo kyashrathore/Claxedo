@@ -62,6 +62,7 @@ const en = {
   "rail.account.signingIn": "Signing in…",
   "rail.account.waitingForBrowser": "Waiting for your browser…",
   "rail.account.signInUnfinished": "Sign-in wasn't finished in the browser. Try again.",
+  "rail.account.signedOutByServer": "You were signed out. Sign in again.",
   "rail.account.signIn": "Sign in",
   "rail.account.notSignedIn": "Not signed in",
   "rail.account.usage": "Usage",

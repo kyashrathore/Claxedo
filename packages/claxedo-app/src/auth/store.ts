@@ -3,7 +3,7 @@ import type { AccountBinding, AccountSession } from "./binding"
 import { authMachine, type AuthEvent, type AuthState } from "./model"
 import { lastAuthIdentity } from "./persistence"
 
-export type Auth = Omit<AccountSession, "loading" | "browserSignIn"> & {
+export type Auth = Omit<AccountSession, "loading" | "browserSignIn" | "ended"> & {
   readonly state: Accessor<AuthState>
   readonly restoringUserId: Accessor<string | undefined>
   readonly cancelSignIn: () => Promise<void>
@@ -16,7 +16,7 @@ function sessionEvent(session: AccountSession, confirming: boolean): AuthEvent {
   const browser = session.browserSignIn?.state()
   if (browser === "waiting") return { type: "browserSignInStarted" }
   const user = session.user()
-  if (confirming && !user) return { type: "expired" }
+  if (!user && (confirming || session.ended())) return { type: "expired" }
   if (browser === "unfinished") return { type: "browserSignInUnfinished" }
   const reason = session.unavailable()
   return { type: "settled", user, ...(reason ? { reason } : {}) }

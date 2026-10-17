@@ -53,6 +53,7 @@ function readers(state: Accessor<DesktopAccountState>) {
       const now = state()
       return now.kind === "unavailable" ? now.reason : null
     },
+    ended: () => state().kind === "revoked",
     identityResolving: () => {
       const now = state()
       return now.kind === "signed" && now.identity === "resolving"

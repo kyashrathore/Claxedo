@@ -177,3 +177,31 @@ test("desktop account: an operation crosses by name, and a rejected one re-reads
     dispose()
   })
 })
+
+test("desktop account: a session the server rejected ends the signed-in reader as expired, with no unavailability, until the next sign-in starts", async () => {
+  const fake = fakeBridge()
+  await createRoot(async (dispose) => {
+    const auth = createAuth(desktopAccountBinding(fake.bridge, { signInEnabled: true }))
+    fake.answers[0]?.resolve(signed)
+    await settle()
+    fake.push({ status: "unavailable", reason: "revoked", detail: "the server rejected this session" })
+    expect(auth.state()).toEqual({ kind: "expired" })
+    expect(auth.unavailable()).toBeNull()
+    expect(auth.offered(false)).toBe(true)
+    void auth.signIn()
+    fake.push({ status: "pending" })
+    expect(auth.state()).toEqual({ kind: "awaitingBrowser" })
+    dispose()
+  })
+})
+
+test("desktop account: a stored credential the server rejects at launch is expired too, so the reader learns they were signed out", async () => {
+  const fake = fakeBridge()
+  await createRoot(async (dispose) => {
+    const auth = createAuth(desktopAccountBinding(fake.bridge, { signInEnabled: true }))
+    fake.answers[0]?.resolve({ status: "unavailable", reason: "revoked", detail: "the server rejected this session" })
+    await settle()
+    expect(auth.state()).toEqual({ kind: "expired" })
+    dispose()
+  })
+})
