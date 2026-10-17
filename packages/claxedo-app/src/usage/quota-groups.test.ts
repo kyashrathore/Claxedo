@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test"
 import type { QuotaAccount } from "./model"
-import { groupQuotaAccounts, windowRisk } from "./quota-groups"
+import { groupQuotaAccounts, quotaAccountBody, windowRisk } from "./quota-groups"
 
 const account = (harness: string, patch: Partial<QuotaAccount> = {}): QuotaAccount => ({ harness, inUse: false, windows: [], ...patch })
 const weekly = { window: "weekly", usedPercent: 40, resetsAt: null }
@@ -50,5 +50,19 @@ describe("windowRisk", () => {
       "reached",
       "reached",
     ])
+  })
+})
+
+describe("quotaAccountBody", () => {
+  test("an account with no window says it reported none only once the check has settled", () => {
+    const pending = account("claude", { inUse: true })
+    expect(quotaAccountBody(pending, true)).toBe("checking")
+    expect(quotaAccountBody(pending, false)).toBe("no-windows")
+  })
+
+  test("windows and the server's reason show whether or not a check is running", () => {
+    expect(quotaAccountBody(account("claude", { windows: [weekly] }), true)).toBe("windows")
+    expect(quotaAccountBody(account("claude", { usageError: "The vendor did not answer" }), true)).toBe("reason")
+    expect(quotaAccountBody(account("claude", { usageError: "The vendor did not answer" }), false)).toBe("reason")
   })
 })

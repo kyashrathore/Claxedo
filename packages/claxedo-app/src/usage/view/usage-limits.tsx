@@ -8,13 +8,13 @@ import { groupQuotaAccounts } from "../quota-groups"
 import { NotConnectedAgents } from "./not-connected"
 import { QuotaAccountCard } from "./quota-windows"
 
-function AccountGroup(props: { readonly title: string; readonly accounts: readonly QuotaAccount[] }): JSX.Element {
+function AccountGroup(props: { readonly title: string; readonly accounts: readonly QuotaAccount[]; readonly checking: boolean }): JSX.Element {
   const titleId = createUniqueId()
   return (
     <Show when={props.accounts.length > 0}>
       <section class="usage-account-group" aria-labelledby={titleId}>
         <h3 id={titleId} class="usage-group-title">{props.title}</h3>
-        <For each={props.accounts}>{(account) => <QuotaAccountCard account={account} />}</For>
+        <For each={props.accounts}>{(account) => <QuotaAccountCard account={account} checking={props.checking} />}</For>
       </section>
     </Show>
   )
@@ -24,10 +24,11 @@ export function UsageLimits(props: { readonly summary: UsageSummary; readonly on
   const t = useTranslator(usageDictionary)
   const quota = () => props.summary.quota
   const groups = createMemo(() => groupQuotaAccounts(quota().snapshot?.accounts ?? []))
-  const empty = () => quota().snapshot?.accounts.length === 0
+  const checking = () => quota().refreshing === true
+  const empty = () => !checking() && quota().snapshot?.accounts.length === 0
   return (
     <section class="usage-limits" aria-label={t("usage.quota.title")}>
-      <Show when={quota().refreshing}>
+      <Show when={checking()}>
         <p class="usage-status" role="status">{t("usage.quota.checking")}</p>
       </Show>
       <Show when={quota().throttledUntil}>
@@ -36,14 +37,14 @@ export function UsageLimits(props: { readonly summary: UsageSummary; readonly on
       <Show when={quota().error}>
         {(error) => <FailureNotice title={t("usage.quota.unavailable")} message={error()} retryLabel={t("usage.refresh")} onRetry={props.onRefresh} />}
       </Show>
-      <Show when={!quota().snapshot && !quota().error}>
+      <Show when={!checking() && !quota().snapshot && !quota().error}>
         <p class="usage-empty">{t("usage.quota.unavailable")}</p>
       </Show>
       <Show when={empty()}>
         <p class="usage-empty">{t("usage.quota.empty")}</p>
       </Show>
-      <AccountGroup title={t("usage.quota.inUse")} accounts={groups().inUse} />
-      <AccountGroup title={t("usage.quota.signedIn")} accounts={groups().signedIn} />
+      <AccountGroup title={t("usage.quota.inUse")} accounts={groups().inUse} checking={checking()} />
+      <AccountGroup title={t("usage.quota.signedIn")} accounts={groups().signedIn} checking={checking()} />
       <Show when={groups().notConnected.length > 0}>
         <NotConnectedAgents accounts={groups().notConnected} />
       </Show>
