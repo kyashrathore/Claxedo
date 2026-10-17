@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 import { apiRequests, expect, sessionRoute, test, type Stack } from "../harness"
-import { openSection, openSettings } from "./15-settings.navigation"
+import { harnessSection, openSection, openSettings } from "./15-settings.navigation"
 
 type Credential = { readonly id: string; readonly provider_id: string; readonly label?: string; readonly is_active?: boolean }
 
@@ -47,7 +47,7 @@ test("15 settings: accounts can be connected before any workspace exists", async
   await expect(cursor.getByRole("radio", { name: /^Before workspace/ })).toBeVisible()
   expect(await credentialNamed(stack.url, "Before workspace")).toBeDefined()
   await cursor.getByRole("tab", { name: "Models" }).click()
-  await expect(cursor.getByText("Open a workspace to discover this harness's models. Your connected accounts are available in the Accounts tab.")).toBeVisible()
+  await expect(cursor.getByText("Models appear here once you have a project. Your accounts are in the Accounts tab.", { exact: true })).toBeVisible()
   await cursor.getByRole("tab", { name: "Accounts" }).click()
   await expect(cursor.getByRole("radio", { name: /^Before workspace/ })).toBeVisible()
 })
@@ -199,10 +199,6 @@ test("15 settings: the operator adds an organization account from a harness's Ad
   await expect(org.getByRole("radio")).toBeDisabled()
   expect((await accountSources(stack.url)).org.some((row) => row.id === saved?.id)).toBe(false)
 })
-
-function harnessSection(app: Page, name: string) {
-  return app.locator("section").filter({ has: app.getByRole("heading", { level: 2, name, exact: true }) }).last()
-}
 
 async function claudeModels(app: Page) {
   const trigger = app.getByRole("button", { name: /^Select harness and model/ })

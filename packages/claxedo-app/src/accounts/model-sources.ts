@@ -2,9 +2,9 @@ import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { createProviderCatalog, harnessModelPickerProvider, modelGroupKey } from "@/composer"
 import { isCatalogHarnessId, type HarnessSelection } from "@/lib/harness-selection"
-import { inCatalogOrder, primaryPlacement, useProjects } from "@/projects"
-import { toAppError, useServer, type HarnessOptionChoice, type ModelChoice, type PlacementId } from "@/server"
+import { toAppError, useServer, type HarnessOptionChoice, type ModelChoice } from "@/server"
 import { catalogProviders } from "./catalog-rules"
+import type { ReadyPlacement } from "./settings-placement"
 
 export type ModelItem = { readonly id: string; readonly name: string; readonly provider: { readonly id: string; readonly name: string }; readonly connected?: boolean }
 
@@ -18,28 +18,19 @@ export type SourceGroup = {
   readonly defaults: Readonly<Record<string, string>>
 }
 
-export type ModelSource = { readonly loading: boolean; readonly error?: string; readonly empty: boolean; readonly groups: readonly SourceGroup[] }
+export type ModelSource =
+  | { readonly kind: "loading" }
+  | { readonly kind: "failed"; readonly reason: string }
+  | { readonly kind: "ready"; readonly groups: readonly SourceGroup[] }
+
+export function sourceGroups(source: ModelSource): readonly SourceGroup[] {
+  return source.kind === "ready" ? source.groups : []
+}
 
 export const modelKeyOf = (item: ModelItem): ModelChoice => ({ providerId: item.provider.id, modelId: item.id })
 
 export function groupContext(group: SourceGroup, item: ModelItem) {
   return { defaults: group.defaults, group: group.groupKey, ...(item.connected === undefined ? {} : { connected: item.connected }) }
-}
-
-export type SettingsPlacement = { readonly placementId: PlacementId; readonly label: string }
-
-export function useSettingsPlacement(): Accessor<SettingsPlacement | undefined> {
-  const server = useServer()
-  const projects = useProjects()
-  return createMemo(() => {
-    const state = projects()
-    if (state.kind !== "ready") return undefined
-    for (const project of inCatalogOrder(state.data.filter((item) => item.available))) {
-      const placement = primaryPlacement(server.placements.list(), project.id)
-      if (placement) return { placementId: placement.id, label: project.name }
-    }
-    return undefined
-  })
 }
 
 export function harnessGroups(selection: HarnessSelection, models: readonly HarnessOptionChoice[]): SourceGroup[] {
@@ -62,19 +53,18 @@ export function harnessGroups(selection: HarnessSelection, models: readonly Harn
   }))
 }
 
-function useHarnessModels(selection: HarnessSelection, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
+function useHarnessModels(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
   const server = useServer()
   const harness = selection.kind === "native" ? selection.harnessId : selection.connectionId
   const query = useQuery(() => server.queries.harnesses.options(placement().placementId, harness))
   return createMemo((): ModelSource => {
-    const loading = query.isPending && query.fetchStatus !== "idle"
-    const error = query.error ? toAppError(query.error).message : undefined
-    const groups = harnessGroups(selection, query.data?.models?.choices ?? [])
-    return { loading, ...(error ? { error } : {}), empty: !loading && !error && groups.length === 0, groups }
+    if (query.error) return { kind: "failed", reason: toAppError(query.error).message }
+    if (query.isPending) return { kind: "loading" }
+    return { kind: "ready", groups: harnessGroups(selection, query.data?.models?.choices ?? []) }
   })
 }
 
-function useCatalogModels(harness: string, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
+function useCatalogModels(harness: string, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
   const server = useServer()
   const catalog = createProviderCatalog({ server, harness: () => harness, placementId: () => placement().placementId, eager: true })
   const [hydrating, setHydrating] = createSignal(true)
@@ -105,13 +95,13 @@ function useCatalogModels(harness: string, placement: Accessor<SettingsPlacement
         defaults: catalog.default(),
         items: Object.values(provider.models).map((model) => ({ id: model.id, name: model.name.replace("(latest)", "").trim(), provider: { id: provider.id, name: provider.name } })),
       }))
-    const loading = catalog.loading() || hydrating()
-    const error = catalog.error()
-    return { loading, ...(error ? { error } : {}), empty: !loading && !error && groups.length === 0, groups }
+    const reason = catalog.error()
+    if (reason) return { kind: "failed", reason }
+    return !catalog.resolved() || (hydrating() && groups.length === 0) ? { kind: "loading" } : { kind: "ready", groups }
   })
 }
 
-export function useModelSource(selection: HarnessSelection, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
+export function useModelSource(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
   if (selection.kind === "native" && isCatalogHarnessId(selection.harnessId)) return useCatalogModels(selection.harnessId, placement)
   return useHarnessModels(selection, placement)
 }
