@@ -142,7 +142,7 @@ test("accounts: a rate-capped account says when its soonest window resets, is ma
 })
 
 test("accounts: a key whose provider Claxedo cannot check says so on one line, and a stored verdict or a refusal reads as before", () => {
-  const groq = account("team-groq", "groq", { owner: null })
+  const groq = account("team-groq", "groq")
   expect(keyCheckWords(t, groq, { at: 1, uncheckable: true })).toEqual(["Claxedo can't check this provider's keys; it's used as saved."])
   expect(keyCheckWords(t, groq, undefined)).toEqual(["Not checked yet"])
   expect(keyCheckWords(t, { ...groq, health: "auth_failed" }, undefined)).toEqual(["Rejected by the provider"])
