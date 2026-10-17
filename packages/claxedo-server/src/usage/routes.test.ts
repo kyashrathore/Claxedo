@@ -82,6 +82,20 @@ describe("usage routes", () => {
     ).toBe(400)
   })
 
+  test("a usage read that names no range is told the range is required, and one too long is told its limit", async () => {
+    const app = UsageRoutes({ identity, ledger: { usageDashboard: async () => ({}), cloudUsageFacts: async () => [], credentialSpend: async () => [] }, pricing })
+    const headers = { authorization: "Bearer valid" }
+    const message = async (path: string) => {
+      const body = await (await app.request(path, { headers })).json() as { message?: string; error?: { message?: string } }
+      return body.error?.message ?? body.message
+    }
+    for (const path of ["/?until=2", "/cloud-facts?since=1", "/credentials?scope=mine"]) {
+      expect(await message(path), path).toBe("since and until are required")
+    }
+    expect(await message("/machine-time")).toBe("since is required")
+    expect(await message(`/credentials?since=0&until=${91 * 86_400_000}`)).toBe("since and until must define a range of at most 90 days")
+  })
+
   test("refuses a bearer the verifier rejects, on both the read and the cloud facts", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: {}, daily: [] }))
     const app = UsageRoutes({

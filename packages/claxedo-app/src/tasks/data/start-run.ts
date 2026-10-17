@@ -93,8 +93,8 @@ export async function startNow(
   report: (event: TaskStartProgressEvent) => void,
 ): Promise<StartOutcome> {
   try {
+    report({ type: "startBegan", taskId: task.id, slot: choice.slot, placement: choice.placement })
     const request = await startRequest(calls, task, choice)
-    report({ type: "previewSent", taskId: task.id, slot: choice.slot, placement: choice.placement })
     const resolved = await calls.preview(request)
     if (!resolved.available) return { ok: false, message: blockedMessage(copy, resolved.blockers[0]) }
     if (request.continueFromPrevious && !resolved.previousTranscriptReadable)
@@ -118,7 +118,7 @@ export type TaskStartProgress =
   | { readonly kind: "machine"; readonly taskId: string; readonly slot: ConfigurationSlot; readonly placementId: PlacementId }
 
 export type TaskStartProgressEvent =
-  | { readonly type: "previewSent"; readonly taskId: string; readonly slot: ConfigurationSlot; readonly placement: PresetPlacement }
+  | { readonly type: "startBegan"; readonly taskId: string; readonly slot: ConfigurationSlot; readonly placement: PresetPlacement }
   | { readonly type: "previewAnswered" }
   | { readonly type: "rootFollowed"; readonly placementId: PlacementId }
   | { readonly type: "rootRunning" }
@@ -128,7 +128,7 @@ export const START_IDLE: TaskStartProgress = { kind: "idle" }
 
 export function startProgressTransition(state: TaskStartProgress, event: TaskStartProgressEvent): TaskStartProgress {
   switch (event.type) {
-    case "previewSent":
+    case "startBegan":
       return { kind: "preparing", taskId: event.taskId, slot: event.slot, placement: event.placement }
     case "previewAnswered":
       return state.kind === "preparing" && state.placement === "local" ? { kind: "starting", taskId: state.taskId, slot: state.slot } : state

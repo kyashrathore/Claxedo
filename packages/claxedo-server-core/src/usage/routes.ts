@@ -39,7 +39,7 @@ import {
 import { publicUsageHref } from "./public-href"
 import { quotaAnswers } from "./quota-answers"
 import { CloudUsageRoutes, MAX_CLOUD_USAGE_FACTS, type SignedUsageIdentity } from "./cloud-routes"
-import { validUsageRange } from "./usage-range"
+import { usageRangeRefusal } from "./usage-range"
 
 type UsageTelemetry = {
   capture(distinctId: string, event: string, properties: Record<string, string | number | boolean>): void
@@ -63,10 +63,11 @@ function validTimeZone(timeZone: string) {
 }
 
 function parseUsageQuery(query: (name: string) => string | undefined) {
+  const rangeRefused = usageRangeRefusal(query("since"), query("until"))
+  if (rangeRefused) return { error: "invalid_usage_range", message: rangeRefused } as const
   const since = Number(query("since"))
   const until = Number(query("until"))
   const timeZone = query("timezone") || "UTC"
-  if (!validUsageRange(since, until)) return { error: "invalid_usage_range" } as const
   if (!validTimeZone(timeZone)) return { error: "invalid_timezone" } as const
   const requestedGroup = query("group")
   const group = requestedGroup && isUsageFilterDimension(requestedGroup) ? requestedGroup : undefined
@@ -454,11 +455,10 @@ export function UsageRoutes(input: {
       const parsed = parseUsageQuery((name) => c.req.query(name))
       if (parsed.error) {
         const messages: Partial<Record<typeof parsed.error, string>> = {
-          invalid_usage_range: "since and until must define a range of at most 90 days",
           invalid_usage_group: "group is invalid",
           invalid_usage_limit: "limit must be between 1 and 100",
         }
-        const message = messages[parsed.error]
+        const message = "message" in parsed ? parsed.message : messages[parsed.error]
         return c.json({ error: parsed.error, ...(message ? { message } : {}) }, 400)
       }
       const { since, until, timeZone, group, metric, requestedLimit, view } = parsed.value

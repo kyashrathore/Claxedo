@@ -4,7 +4,7 @@ import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../platform/au
 import type { UsagePricing } from "./adapters/token-tracker-pricing"
 import { credentialSpend } from "./credential-spend"
 import type { CredentialSpendScope, UsageProjectionLedger } from "./ledger"
-import { validUsageRange } from "./usage-range"
+import { usageRangeRefusal, usageSinceRefusal } from "./usage-range"
 
 /**
  * The most cloud revisions one usage answer carries. A revision serializes to
@@ -44,9 +44,10 @@ export function CloudUsageRoutes(input: {
     }
   }
   app.get("/cloud-facts", signed(async (c, identity) => {
+    const refused = usageRangeRefusal(c.req.query("since"), c.req.query("until"))
+    if (refused) return cloudUsageError(c, 400, "invalid_usage_range", refused)
     const since = Number(c.req.query("since"))
     const until = Number(c.req.query("until"))
-    if (!validUsageRange(since, until)) return cloudUsageError(c, 400, "invalid_usage_range", "since and until must define a range of at most 90 days")
     if (!input.ledger.cloudUsageFacts) return cloudUsageError(c, 503, "usage_projection_unavailable", "Cloud usage is not stored here")
     const facts = await input.ledger.cloudUsageFacts({ ...identity, since, until, limit: MAX_CLOUD_USAGE_FACTS + 1 })
     if (facts.length > MAX_CLOUD_USAGE_FACTS) {
@@ -55,10 +56,11 @@ export function CloudUsageRoutes(input: {
     return c.json({ facts })
   }))
   app.get("/credentials", signed(async (c, identity) => {
+    const refused = usageRangeRefusal(c.req.query("since"), c.req.query("until"))
+    if (refused) return cloudUsageError(c, 400, "invalid_usage_range", refused)
     const since = Number(c.req.query("since"))
     const until = Number(c.req.query("until"))
     const scope = SCOPES.find((name) => name === (c.req.query("scope") ?? "mine"))
-    if (!validUsageRange(since, until)) return cloudUsageError(c, 400, "invalid_usage_range", "since and until must define a range of at most 90 days")
     if (!scope) return cloudUsageError(c, 400, "invalid_usage_scope", "scope must be mine or org")
     if (!input.ledger.credentialSpend) return cloudUsageError(c, 503, "usage_projection_unavailable", "Cloud usage is not stored here")
     const rows = await input.ledger.credentialSpend({ ...identity, scope, since, until })
@@ -66,9 +68,10 @@ export function CloudUsageRoutes(input: {
     return c.json({ since, until, scope, credentials: await credentialSpend(input.pricing, rows) } satisfies CredentialSpendResponse)
   }))
   app.get("/machine-time", signed(async (c, identity) => {
-    const since = Number(c.req.query("since"))
     const until = input.now()
-    if (!validUsageRange(since, until)) return cloudUsageError(c, 400, "invalid_usage_range", "since must be at most 90 days ago")
+    const refused = usageSinceRefusal(c.req.query("since"), until)
+    if (refused) return cloudUsageError(c, 400, "invalid_usage_range", refused)
+    const since = Number(c.req.query("since"))
     if (!input.ledger.machineTime) return cloudUsageError(c, 503, "usage_projection_unavailable", "Cloud machine time is not stored here")
     const time = await input.ledger.machineTime({ ...identity, since, until })
     return c.json({ since, until, ...time } satisfies MachineTimeResponse)

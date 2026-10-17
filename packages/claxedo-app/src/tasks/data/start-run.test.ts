@@ -47,6 +47,17 @@ function progressOf() {
 
 const CLOUD = { presetId: "tpr_1", presetRevision: 1, placement: "cloud", slot: "primary" } as const
 
+test("a start says it is under way from the click, while the task it starts is still being read", async () => {
+  const read = deferred<{ task: Task; links: []; attachments: [] }>()
+  const { calls } = recording({ api: { client: { getTask: () => read.promise } as unknown as StartCalls["api"]["client"] } })
+  const progress = progressOf()
+  const started = startNow(calls, copy, task, CLOUD, progress.report)
+
+  expect(progress.line()).toEqual({ kind: "key", key: "tasks.start.progress.cloud" })
+  read.resolve({ task, links: [], attachments: [] })
+  expect(await started).toEqual({ ok: true })
+})
+
 test("a cloud start says it is starting a workspace while the preview and the Start run, then nothing once it settles", async () => {
   const preview = deferred<StartPreview>()
   const sent = deferred<void>()
