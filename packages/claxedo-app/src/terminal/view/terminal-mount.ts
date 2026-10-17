@@ -67,7 +67,6 @@ function attachBackend(input: TerminalMountInput, backend: TerminalBackend, like
     onPublishFailed: (error) =>
       console.error("Terminal size could not be published", { terminalId: input.terminalId, error }),
   })
-  backend.focus()
   return { attachment, stopTheme }
 }
 

@@ -79,6 +79,12 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
     ),
   )
 
+  createEffect(
+    on(overlay, (hidden) => {
+      if (!hidden && props.active) backend()?.focus()
+    }),
+  )
+
   createEffect(() => {
     const current = row()
     const busy = current?.agentStatus === "working" || current?.agentStatus === "waitingOnUser"

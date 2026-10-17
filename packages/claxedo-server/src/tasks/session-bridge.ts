@@ -199,7 +199,7 @@ function createTasksCloudTarget(
         await admission.preflight(creator.caller) ??
         await admission.admit(creator.caller, { projectId: origin.task.projectId }, { existing })
       if ("status" in admitted) {
-        return { blocker: { code: "source_unavailable", detail: admitted.body.error.message } }
+        return { blocker: { code: admitted.body.error.code === "control_plane_rate_limited" ? "rate_limited" : "source_unavailable", detail: admitted.body.error.message } }
       }
     }
     let projected: (() => Promise<void>) | undefined

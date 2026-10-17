@@ -1,11 +1,11 @@
-import { createUniqueId, For, Show, type JSX } from "solid-js"
+import { createUniqueId, For, Match, Show, Switch, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import { harnessDisplayLabel, harnessIcon } from "@/lib/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { ClaxedoIcon, ProviderIcon } from "@/ui"
 import { usageDictionary, type UsageKey } from "../i18n"
 import { usedPercent, type QuotaAccount, type QuotaWindow } from "../model"
-import { windowRisk } from "../quota-groups"
+import { quotaAccountBody, windowRisk } from "../quota-groups"
 import "./limits.css"
 
 const WINDOW_KEY: Readonly<Record<string, UsageKey>> = {
@@ -59,11 +59,12 @@ function QuotaWindowMeter(props: { readonly account: string; readonly window: Qu
   )
 }
 
-export function QuotaAccountCard(props: { readonly account: QuotaAccount }): JSX.Element {
+export function QuotaAccountCard(props: { readonly account: QuotaAccount; readonly checking: boolean }): JSX.Element {
   const t = useTranslator(usageDictionary)
   const i18n = useI18n()
   const titleId = createUniqueId()
   const spoken = () => [quotaAccountTitle(props.account), accountDetail(props.account)].filter(Boolean).join(" ")
+  const body = () => quotaAccountBody(props.account, props.checking)
   return (
     <article class="usage-account" aria-labelledby={titleId}>
       <header class="usage-account-head">
@@ -87,11 +88,19 @@ export function QuotaAccountCard(props: { readonly account: QuotaAccount }): JSX
           </p>
         )}
       </Show>
-      <Show when={props.account.windows.length > 0} fallback={<Show when={!props.account.usageError}><p class="usage-account-note">{t("usage.quota.noWindows")}</p></Show>}>
-        <div class="usage-windows">
-          <For each={props.account.windows}>{(window) => <QuotaWindowMeter account={spoken()} window={window} />}</For>
-        </div>
-      </Show>
+      <Switch>
+        <Match when={body() === "windows"}>
+          <div class="usage-windows">
+            <For each={props.account.windows}>{(window) => <QuotaWindowMeter account={spoken()} window={window} />}</For>
+          </div>
+        </Match>
+        <Match when={body() === "checking"}>
+          <p class="usage-account-note">{t("usage.quota.checking")}</p>
+        </Match>
+        <Match when={body() === "no-windows"}>
+          <p class="usage-account-note">{t("usage.quota.noWindows")}</p>
+        </Match>
+      </Switch>
     </article>
   )
 }

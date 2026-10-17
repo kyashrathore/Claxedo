@@ -193,7 +193,7 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
         const blocker = resolved.preview.blockers[0]
         return {
           ok: false,
-          error: tasksErrorDetail("unsupported", blocker ? blocker.detail : "This configuration cannot be started here"),
+          error: tasksErrorDetail(blocker?.code === "rate_limited" ? "rate_limited" : "unsupported", blocker ? blocker.detail : "This configuration cannot be started here"),
         }
       }
       if (command.previewDigest !== resolved.preview.digest) {

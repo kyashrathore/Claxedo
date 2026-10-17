@@ -45,13 +45,14 @@ export type TasksRoutesOptions = {
   ids: TasksIdsPort
 }
 
-const STATUS_BY_CODE: Record<TasksErrorCode, 400 | 403 | 404 | 409 | 422> = {
+const STATUS_BY_CODE: Record<TasksErrorCode, 400 | 403 | 404 | 409 | 422 | 429> = {
   invalid_input: 400,
   forbidden: 403,
   not_found: 404,
   stale_revision: 409,
   conflict: 409,
   unsupported: 422,
+  rate_limited: 429,
 }
 
 function refusalResponse(c: Context, detail: TasksErrorDetail) {

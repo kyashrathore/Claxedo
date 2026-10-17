@@ -22,6 +22,14 @@ export function groupQuotaAccounts(accounts: readonly QuotaAccount[]): QuotaGrou
   }
 }
 
+export type QuotaAccountBody = "windows" | "reason" | "checking" | "no-windows"
+
+export function quotaAccountBody(account: QuotaAccount, checking: boolean): QuotaAccountBody {
+  if (account.windows.length > 0) return "windows"
+  if (account.usageError) return "reason"
+  return checking ? "checking" : "no-windows"
+}
+
 export function windowRisk(window: QuotaWindow): WindowRisk {
   const used = usedPercent(window)
   if (used >= 100) return "reached"
