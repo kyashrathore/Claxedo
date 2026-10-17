@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createOrgInvitationFlow } from "./login-continuation"
+import { createOrgInvitationFlow, loginDestination, loginOAuthContinuation } from "./login-continuation"
 import type { Auth } from "./store"
 import type { AuthState } from "./model"
 
@@ -45,4 +45,21 @@ test("accepting signed out never sends an API request", async () => {
   const { auth, operations, calls } = setup()
   expect(await createOrgInvitationFlow(auth, (token) => operations.run("org.invitations.accept", { token }), "token").accept()).toBeUndefined()
   expect(calls).toEqual([])
+})
+
+test("a sign-in that continues an authorization request loads the authorize route even when the API shares the app's origin", () => {
+  const origin = "https://claxedo.example"
+  const continuation = loginOAuthContinuation({
+    appOrigin: origin,
+    apiOrigin: origin,
+    pathname: "/login",
+    search: "?response_type=code&client_id=claxedo-desktop&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s",
+  })
+  expect(loginDestination(continuation)).toEqual({
+    assign: `${origin}/api/auth/oauth2/authorize?response_type=code&client_id=claxedo-desktop&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s`,
+  })
+})
+
+test("a plain sign-in stays in the app at its home", () => {
+  expect(loginDestination(loginOAuthContinuation({ appOrigin: "https://claxedo.example", apiOrigin: "https://api.example", pathname: "/login", search: "" }))).toEqual({ navigate: "/" })
 })

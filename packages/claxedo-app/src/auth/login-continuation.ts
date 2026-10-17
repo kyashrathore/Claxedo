@@ -28,6 +28,15 @@ export function loginOAuthContinuation(input: {
   }
 }
 
+/**
+ * The authorize route is served by the Worker, so the browser must load it;
+ * on a deployment whose API and app share an origin the client router would
+ * otherwise render the app shell at that path and the consent never appears.
+ */
+export function loginDestination(continuation: { authorizationUrl: string } | undefined): { assign: string } | { navigate: string } {
+  return continuation ? { assign: continuation.authorizationUrl } : { navigate: "/" }
+}
+
 function invitationAcceptance(
   auth: Pick<Auth, "state">,
   acceptInvitation: Server["acceptOrgInvitation"],

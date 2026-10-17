@@ -2,7 +2,7 @@ import { createEffect, createSignal, For, on, Show, type Accessor } from "solid-
 import { useLocation, useNavigate } from "@solidjs/router"
 import { toAppError, useServer, type AppError } from "@/server"
 import type { BrowserAuthMethod, BrowserAuthSignInOptions } from "../browser-auth"
-import { createOrgInvitationFlow, loginOAuthContinuation } from "../login-continuation"
+import { createOrgInvitationFlow, loginDestination, loginOAuthContinuation } from "../login-continuation"
 import { apiOrigin, appOrigin } from "../origins"
 import { useAuth } from "../provider"
 import { ClaxedoIcon as Icon } from "@/ui"
@@ -47,9 +47,9 @@ function loginRedirect() {
   return {
     target: () => continuation()?.signInRedirect ?? "/",
     finish() {
-      const destination = new URL(continuation()?.authorizationUrl ?? "/", appOrigin())
-      if (destination.origin !== appOrigin()) window.location.assign(destination.toString())
-      else navigate(`${destination.pathname}${destination.search}${destination.hash}`, { replace: true })
+      const destination = loginDestination(continuation())
+      if ("assign" in destination) window.location.assign(destination.assign)
+      else navigate(destination.navigate, { replace: true })
     },
   }
 }
