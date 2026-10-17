@@ -1,4 +1,5 @@
 import { deviceApprovalTransaction } from "./device-approval-transaction"
+import { oauthClientRegistrationPolicy } from "./oauth-client-registration-policy"
 import { oauthConsentRevocation } from "./oauth-consent-revocation"
 import type { BetterAuthOptions } from "better-auth"
 import { APIError } from "better-auth/api"
@@ -174,6 +175,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
     databaseHooks: input.databaseHooks,
     plugins: [
       oauthConsentRevocation(),
+      oauthClientRegistrationPolicy(),
       oauthProvider({
         loginPage: `${input.configuration.public.appOrigin}/login`,
         consentPage: `${input.configuration.public.appOrigin}/oauth/consent`,
@@ -212,15 +214,19 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
         allowPublicClientPrelogin: true,
         /**
          * Every MCP host registers per server at RFC 7591 `/oauth2/register`
-         * with an unauthenticated request and a loopback redirect URI on an
-         * ephemeral port, so there is nothing to pre-register and no
+         * with an unauthenticated request and a redirect URI on an ephemeral
+         * loopback port or its own hosted callback, so there is nothing to
+         * pre-register and no
          * credential to register with; refusing it makes MCP OAuth
          * unreachable from Claude, Cursor, Codex and VS Code alike.
          *
          * What contains it: Better Auth requires PKCE from every public
-         * client, a registered client's only resource is the MCP one above,
-         * and `resolveOAuthMcpCredential` refuses `claxedo:admin` to any
-         * client this deployment did not register itself.
+         * client, `oauthClientRegistrationPolicy` refuses an https redirect
+         * outside the hosted MCP clients and a name that imitates this
+         * deployment's own apps, a registered client's only resource is the
+         * MCP one above, and `resolveOAuthMcpCredential` refuses
+         * `claxedo:admin` to any client this deployment did not register
+         * itself.
          */
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,

@@ -334,4 +334,24 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     expect((await enrollments(access_token)).status).toBe(401)
     expect((await enrollments("not-a-token")).status).toBe(401)
   })
+
+  test("an unauthenticated client may not send codes to an arbitrary https host or borrow this deployment's name", async () => {
+    const register = (metadata: Record<string, unknown>) => request("/api/auth/oauth2/register", json({
+      grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none", ...metadata,
+    }))
+    const phishing = await register({ client_name: "Fixture MCP host", redirect_uris: ["https://evil.example/cb"] })
+    expect(phishing.status).toBe(400)
+    expect(await phishing.json()).toMatchObject({ error: "invalid_redirect_uri" })
+    const smuggled = await register({
+      client_name: "Fixture MCP host", redirect_uris: ["https://claude.ai/api/mcp/auth_callback", "https://evil.example/cb"],
+    })
+    expect(smuggled.status).toBe(400)
+    const impostor = await register({
+      client_name: "Claxedo Desktop", redirect_uris: ["http://127.0.0.1:51790/callback"], application_type: "native",
+    })
+    expect(impostor.status).toBe(400)
+    expect(await impostor.json()).toMatchObject({ error: "invalid_client_metadata" })
+    const hosted = await register({ client_name: "Claude", redirect_uris: ["https://claude.ai/api/mcp/auth_callback"] })
+    expect(hosted.status, await hosted.clone().text()).toBe(201)
+  })
 })
