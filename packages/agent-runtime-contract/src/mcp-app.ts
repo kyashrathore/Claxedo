@@ -24,7 +24,7 @@ export type ToolMcpFacts = {
 }
 
 function domainOrigin(value: string): string | undefined {
-  if (value.length > MCP_APP_DOMAIN_MAX_LENGTH) return undefined
+  if (value.length > MCP_APP_DOMAIN_MAX_LENGTH || value.includes("*")) return undefined
   try {
     const url = new URL(value)
     return (url.protocol === "https:" || url.protocol === "http:" || url.protocol === "wss:" || url.protocol === "ws:") && url.origin === value.replace(/\/$/, "") ? url.origin : undefined

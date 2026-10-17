@@ -14,8 +14,8 @@ type McpRouteInput = { c: Ctx; runtime: AgentRuntime; sessionId: string; server:
 
 const REFUSAL_STATUS = { not_found: 404, refused: 403, unavailable: 502 } as const
 
-function mcpRoute<T>(opts: Opts, operation: SessionAccessOperation,
-  run: (input: McpRouteInput) => Promise<Response | { ok: true; body: T } | McpOperationRefusal | SessionMcpUnsupported>) {
+function mcpRoute(opts: Opts, operation: SessionAccessOperation,
+  run: (input: McpRouteInput) => Promise<Response | { ok: true; body: unknown } | McpOperationRefusal | SessionMcpUnsupported>) {
   return async (c: Ctx): Promise<Response> => {
     const sessionId = routeParam(c, "id")
     const guarded = await sessionOperationGuard(opts, c, sessionId, operation)

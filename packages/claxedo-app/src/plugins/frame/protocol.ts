@@ -9,6 +9,8 @@ import type {
   ProjectSummary,
   SessionRef,
   SessionStatus,
+  SurfaceActionEvent,
+  SurfaceMessage,
   ThemeDefinition,
   Toast,
   WorkbenchTab,
@@ -51,7 +53,7 @@ export type FrameBoot = {
 
 export type Registration =
   | { readonly kind: "sidebar"; readonly id: string; readonly label: string; readonly pageId: string; readonly icon?: string; readonly order?: number }
-  | { readonly kind: "page"; readonly id: string; readonly path: string; readonly title: string }
+  | { readonly kind: "page"; readonly id: string; readonly path: string; readonly title: string; readonly surface?: true }
   | { readonly kind: "settings"; readonly id: string; readonly title: string; readonly icon?: string; readonly order?: number }
   | { readonly kind: "overlay"; readonly id: string; readonly keybinding: string }
   | { readonly kind: "command"; readonly id: string; readonly title: string; readonly keybinding?: string; readonly category?: string }
@@ -86,9 +88,17 @@ export type FrameResponse = {
   readonly body: string
 }
 
+export type SurfaceInvoke =
+  | { readonly method: "surface.open"; readonly pageId: string; readonly surfaceId: string; readonly path: string; readonly params: Readonly<Record<string, string>> }
+  | { readonly method: "surface.action"; readonly surfaceId: string; readonly action: SurfaceActionEvent }
+  | { readonly method: "surface.close"; readonly surfaceId: string }
+
 export type FrameInvoke =
   | { readonly method: "command.run"; readonly commandId: string; readonly context: CommandContext }
   | { readonly method: "mention.search"; readonly mentionId: string; readonly query: string; readonly context: CommandContext }
+  | SurfaceInvoke
+
+export type SurfaceDelivery = { readonly type: "surface"; readonly surfaceId: string; readonly messages: readonly SurfaceMessage[] }
 
 export type HostToFrame =
   | { readonly type: "mirror"; readonly mirror: FrameMirror }
@@ -102,6 +112,7 @@ export type FrameToHost =
   | { readonly type: "call"; readonly id: number; readonly call: HostCall }
   | { readonly type: "result"; readonly id: number; readonly ok: true; readonly value: unknown }
   | { readonly type: "result"; readonly id: number; readonly ok: false; readonly reason: string }
+  | SurfaceDelivery
   | { readonly type: "activated" }
   | { readonly type: "failed"; readonly reason: string }
 

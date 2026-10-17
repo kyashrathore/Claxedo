@@ -1,0 +1,20 @@
+# Surface
+
+The native renderer for declarative UI: A2UI v0.9 messages over the Claxedo catalog (`@claxedo/plugin-api/surface`), drawn with the app's own kit components. One renderer serves both producers: an agent's `ui_show` reply in the transcript (`src/transcript/surface-reply.tsx`) and app plugins.
+
+## Owned concepts
+
+- **Surface** (`store.ts` `createSurface`): one surface id, its lifecycle, its component registry and its data model, all plain Solid state, so it can be created outside a component. `apply(message)` takes one A2UI message: it parses it against `surfaceMessageSchema` and throws `SurfaceMessageError` for a malformed message, a message addressed to another surface, an update before `createSurface`, or a second `createSurface`. The public type carries only `surfaceId` and `apply`; the view reads the state through the module's `surfaceState` symbol.
+- **Lifecycle** (`model.ts` `surfaceLifecycle`): `waiting` → `live` on `createSurface`; `live` → `deleted` on `deleteSurface`, which also empties the registry and the data model; `deleted` → `live` on a new `createSurface`.
+- **Component registry** (`component-registry.ts`): one store keyed by component id. `updateComponents` upserts each definition with `reconcile(..., { merge: true })`, so a definition keeps its proxy, an untouched component re-runs nothing, a changed prop re-runs only its readers, and a prop the new definition leaves out is dropped.
+- **Data model** (`data-model.ts`): one store per surface. A write at a JSON Pointer (`data-path.ts`) sets exactly that path: `/` (or no path) replaces the whole model, which must be an object; a missing intermediate is created as an object; a write with no value deletes the key, or removes the list element and closes the gap. Objects and lists are written with `reconcile` so only the leaves that changed notify. `snapshot` returns a detached plain copy.
+- **Bindings** (`binding.ts`): a prop is a literal or `{ path }`. Each binding reads exactly one path with property access, so a patch to `/items/3/title` re-runs only the readers of that path. An absolute path starts at the root; a relative path resolves inside the template item's scope. Input fields bound to a path write back into the data model locally, with no message per keystroke; a literal value is the field's initial value, kept in the field.
+- **Templates** (`view/surface-children.tsx`): `children: { componentId, path }` iterates the list at `path` with `<Index>`, one stable child per index, whose scope is that item's path.
+- **Actions** (`action.ts`): a Button's `action.event` resolves its `context` when it fires (a literal, or a path's current value, copied) and reaches `SurfaceView`'s `onAction` as a `SurfaceActionEvent`. Without `onAction`, or with `actionsDisabled`, buttons are disabled.
+- **Catalog views** (`view/component-views.ts`): one view per catalog component, each a kit component through `@/ui`: Text, Markdown and Code (the transcript's `Markdown`), Icon (`icon-names.ts` maps the A2UI icon names onto kit icons), Badge (`Tag`), Link (http and https only, opened like a transcript link), Row, Column, List, Card, Tabs, Collapsible, Divider, Button, TextField and Textarea, CheckBox, Switch, ChoicePicker (radio group, select, segmented control, checkboxes or chips), Slider and DateTimeInput (native inputs), Progress, Spinner, Table, DiffStat (`DiffChanges`) and EmptyState. `weight` on a direct child of Row or Column is its flex-grow. A TextField's `validationRegexp` must match the whole value; a pattern that does not compile validates nothing and is logged.
+
+## Invariants
+
+- Nothing draws until the surface is live and a component with id `root` exists. A child id with no component draws nothing until it arrives.
+- Every surface draws inside `[data-component="surface"]`, which carries its source (`data-source`, agent or plugin) and shows the source's label in every theme. No catalog component draws an overlay, a dialog or a toast, and none looks like a permission or question request.
+- Markdown and Code use the transcript's markdown pipeline, so a surface needs `TranscriptKitProviders` above it.

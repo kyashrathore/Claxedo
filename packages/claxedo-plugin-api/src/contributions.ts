@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js"
+import type { SurfaceActionEvent, SurfaceMessage } from "./surface"
 
 export type Disposer = () => void
 
@@ -24,12 +25,31 @@ export interface PageProps {
   params: Readonly<Record<string, string>>
 }
 
-export interface PageDefinition {
+export interface RenderedPageDefinition {
   id: string
   path: string
   title: string
   render(props: PageProps): JSX.Element
 }
+
+export interface SurfaceChannel {
+  readonly surfaceId: string
+  send(...messages: readonly SurfaceMessage[]): void
+}
+
+export interface SurfaceProgram {
+  action?(action: SurfaceActionEvent): void | Promise<void>
+  dispose?(): void
+}
+
+export interface SurfacePageDefinition {
+  id: string
+  path: string
+  title: string
+  surface(channel: SurfaceChannel, props: PageProps): SurfaceProgram | void
+}
+
+export type PageDefinition = RenderedPageDefinition | SurfacePageDefinition
 
 export interface PagesApi {
   register(page: PageDefinition): Disposer

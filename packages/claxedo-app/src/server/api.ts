@@ -15,6 +15,7 @@ import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-cat
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { ProjectEnvironmentApi } from "./project-environment"
 import type { HarnessConfigApi } from "./harness-config"
+import type { McpAppsApi } from "./mcp-app-types"
 import type {
   DiffFile,
   DiffScope,
@@ -88,7 +89,7 @@ import type { BackgroundTaskStop } from "./status-types"
 import type { AccountSpendReport, AccountSpendRequest, MachineTime, UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
-export type SessionsApi = {
+export type SessionsApi = McpAppsApi & {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
   readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
   readonly settle: (ref: SessionLocation, write: { readonly settled: true; readonly through: number } | { readonly settled: false }) => Promise<SessionReader>

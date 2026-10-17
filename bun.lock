@@ -278,6 +278,7 @@
       "dependencies": {
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
         "@claxedo/session-core": "workspace:*",
         "@claxedo/tasks": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",

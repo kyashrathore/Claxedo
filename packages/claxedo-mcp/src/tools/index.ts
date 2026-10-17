@@ -5,6 +5,7 @@ import type { ToolRegistrar } from "./registry"
 import { registerReviewTools } from "./review"
 import { registerSessionTools } from "./sessions"
 import { registerSubagentTools } from "./subagents"
+import { registerSurfaceTools } from "./surfaces"
 import { registerTaskTools } from "./tasks"
 import { registerWorkspaceTools } from "./workspaces"
 
@@ -46,6 +47,7 @@ export const CLAXEDO_MCP_TOOL_GROUPS = [
   { id: "review", reach: "runtime", register: registerReviewTools },
   { id: "sessions", reach: "runtime", register: registerSessionTools },
   { id: "subagents", reach: "runtime", register: registerSubagentTools },
+  { id: "surfaces", reach: "runtime", register: registerSurfaceTools },
   { id: "tasks", reach: "account", register: registerTaskTools },
   { id: "workspaces", reach: "runtime", register: registerWorkspaceTools },
 ] as const satisfies readonly McpToolGroup[]

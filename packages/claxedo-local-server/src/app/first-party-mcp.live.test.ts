@@ -89,9 +89,10 @@ describe("the first-party MCP a local session is launched with", () => {
     // The runtime audience a machine that has decided nothing serves to a
     // session only its owner has driven: a model inside it drives sessions,
     // subagents and documents, deletes the workspace's idle sessions once the
-    // person confirms, makes app plugins for this machine's owner, answers
-    // only its own children's questions, and never approves a permission,
-    // rejects a question or touches workspace compute. No `task_*`:
+    // person confirms, makes app plugins for this machine's owner, shows UI in
+    // its own transcript, answers only its own children's questions, and
+    // never approves a permission, rejects a question or touches workspace
+    // compute. No `task_*`:
     // the Tasks group starts off, so the tools are unregistered and the grant
     // they would act with is never issued.
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
@@ -114,6 +115,7 @@ describe("the first-party MCP a local session is launched with", () => {
       "subagent_capabilities",
       "subagent_list",
       "subagent_status",
+      "ui_show",
     ])
   })
 

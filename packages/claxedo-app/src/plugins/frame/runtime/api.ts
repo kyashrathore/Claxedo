@@ -72,7 +72,7 @@ function regionApi(scope: FrameScope): Pick<PluginApi, "sidebar" | "pages" | "pa
   return {
     sidebar: { item: (item) => register({ kind: "sidebar", id: item.id, label: item.label, pageId: item.pageId, icon: item.icon, order: item.order }) },
     pages: {
-      register: (page) => keep(scope, entries.pages, page.id, page, { kind: "page", id: page.id, path: page.path, title: page.title }),
+      register: (page) => keep(scope, entries.pages, page.id, page, { kind: "page", id: page.id, path: page.path, title: page.title, ...("surface" in page ? { surface: true } : {}) }),
       open: (pageId, params) => fireAndReport(scope, { method: "pages.open", pageId, params }),
     },
     panes: {

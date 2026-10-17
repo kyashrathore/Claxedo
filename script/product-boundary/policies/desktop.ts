@@ -706,8 +706,16 @@ export const desktopRenderer: Policy = {
   // terminal runs, each with its tooltip (owner: the app's rail domain,
   // `rail/view/settle-button.tsx`, `rail/view/session-marker-icon.tsx`). They
   // add no package edge.
-  // 1401/36, no headroom.
-  ceilings: { modules: 1401, packages: 36 },
+  // Native UI surfaces and MCP Apps in the transcript and in app plugin pages:
+  // the A2UI renderer over the kit (owner: the app's surface domain,
+  // `surface/`), its catalog and message schemas (`@claxedo/plugin-api/surface`),
+  // an agent's `ui_show` reply row (`transcript/surface-reply.tsx`), a plugin's
+  // surface page on both platforms (`plugins/surface-page/`,
+  // `plugins/frame/host-surfaces.ts`), and the MCP App frame host with its
+  // bridge and the session calls behind it (`mcp-apps/`,
+  // `server/mcp-apps.ts`, `ui/theme-tokens.ts`). They add no package edge.
+  // 1463/36, no headroom.
+  ceilings: { modules: 1463, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

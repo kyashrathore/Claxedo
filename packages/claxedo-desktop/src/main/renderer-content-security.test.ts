@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { contentSecurityPolicy, ContentSecurityPolicyError } from "@claxedo/app/content-security-policy"
+import { contentSecurityPolicy, ContentSecurityPolicyError, MCP_APP_BOOTSTRAP_SOURCE } from "@claxedo/app/content-security-policy"
 import { rendererContentSecurityListener, rendererContentSecurityPolicy, type HeadersReceivedResponse } from "./renderer-content-security"
 
 const DOCUMENT = "file:///Applications/Claxedo.app/Contents/Resources/app.asar/out/renderer/index.local.html"
@@ -27,7 +27,7 @@ describe("the renderer policy", () => {
     expect(directive(policy, "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2593 ws://127.0.0.1:2593")
     expect(directive(policy, "img-src")).toBe("img-src 'self' data: blob: https: http://127.0.0.1:2593")
     expect(directive(policy, "default-src")).toBe("default-src 'self'")
-    expect(directive(policy, "script-src")).toBe("script-src 'self' 'wasm-unsafe-eval' blob:")
+    expect(directive(policy, "script-src")).toBe(`script-src 'self' 'wasm-unsafe-eval' blob: ${MCP_APP_BOOTSTRAP_SOURCE}`)
     expect(directive(policy, "frame-src")).toBe("frame-src 'none'")
     expect(directive(policy, "form-action")).toBe("form-action 'none'")
     expect(directive(policy, "object-src")).toBe("object-src 'none'")
@@ -88,6 +88,6 @@ describe("stamping the renderer document", () => {
     const listener = listen({ origin: Promise.resolve("http://127.0.0.1:2593"), devServerUrl: "http://localhost:5173/" })
     const policy = (await respond(listener, { url: DOCUMENT, resourceType: "mainFrame" })).responseHeaders?.["Content-Security-Policy"]?.[0] ?? ""
     expect(directive(policy, "connect-src")).toBe("connect-src 'self' http://127.0.0.1:2593 http://localhost:5173 ws://127.0.0.1:2593 ws://localhost:5173")
-    expect(directive(policy, "script-src")).toBe("script-src 'self' 'wasm-unsafe-eval' blob: 'unsafe-inline' 'unsafe-eval'")
+    expect(directive(policy, "script-src")).toBe(`script-src 'self' 'wasm-unsafe-eval' blob: ${MCP_APP_BOOTSTRAP_SOURCE} 'unsafe-inline' 'unsafe-eval'`)
   })
 })

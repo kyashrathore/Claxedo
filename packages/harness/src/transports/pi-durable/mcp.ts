@@ -32,15 +32,15 @@ export type PiMcpHost = {
   record(key: string, lists: McpToolLists): Promise<void>
 }
 
-function jsonRecord(value: unknown): JsonObject | undefined {
+function mcpJsonObject(value: unknown): JsonObject | undefined {
   const record = asRecord(value)
   return record && isJsonValue(record) ? record : undefined
 }
 
 function listedTool({ name, description, inputSchema, annotations, _meta }: Tool): McpListedTool[] {
-  const schema = jsonRecord(inputSchema)
+  const schema = mcpJsonObject(inputSchema)
   if (!schema) return []
-  const kept = { annotations: jsonRecord(annotations), _meta: jsonRecord(_meta) }
+  const kept = { annotations: mcpJsonObject(annotations), _meta: mcpJsonObject(_meta) }
   return [{
     name, ...(description ? { description } : {}), inputSchema: schema,
     ...(kept.annotations ? { annotations: kept.annotations } : {}),
@@ -63,7 +63,7 @@ function resultDetails(server: string, tool: string, result: CallToolResult, sna
   return copyJson({ mcp: facts, ...(snapshot ? { appDocument: snapshot.document } : {}) }, { omitUndefinedProperties: true })
 }
 
-const notFound = (message: string): McpOperationRefusal => ({ ok: false, status: "not_found", message })
+const mcpNotFound = (message: string): McpOperationRefusal => ({ ok: false, status: "not_found", message })
 
 export class PiMcpTools {
   private readonly clients = new Map<string, Promise<McpClient>>()
@@ -101,7 +101,7 @@ export class PiMcpTools {
   callTool(call: McpToolCall): Promise<{ ok: true; result: McpCallToolResult } | McpOperationRefusal> {
     return this.operate(call.server, async (projected) => {
       const tool = (await this.request(projected, (client) => client.listTools())).value.find((listed) => listed.name === call.tool)
-      if (!tool) return notFound(`MCP server ${call.server} has no tool ${call.tool}`)
+      if (!tool) return mcpNotFound(`MCP server ${call.server} has no tool ${call.tool}`)
       if (!mcpToolVisibleTo(tool._meta, "app")) return { ok: false, status: "refused", message: `MCP tool ${call.tool} is not offered to apps` }
       return { ok: true, result: (await this.request(projected, (client) => client.callTool(call.tool, { ...call.arguments }))).value }
     })
@@ -113,7 +113,7 @@ export class PiMcpTools {
 
   private async operate<T>(server: string, run: (projected: ProjectedMcpServer) => Promise<T | McpOperationRefusal>): Promise<T | McpOperationRefusal> {
     const projected = this.servers.get(server)
-    if (!projected) return notFound(`The session has no MCP server ${server}`)
+    if (!projected) return mcpNotFound(`The session has no MCP server ${server}`)
     try {
       return await run(projected)
     } catch (error) {

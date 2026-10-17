@@ -18,6 +18,7 @@ export type {
   OverlaysApi,
   PageDefinition,
   PageProps,
+  RenderedPageDefinition,
   PagesApi,
   PaneDefinition,
   PaneProps,
@@ -27,6 +28,9 @@ export type {
   SettingsSection,
   SidebarApi,
   SidebarItem,
+  SurfaceChannel,
+  SurfacePageDefinition,
+  SurfaceProgram,
   ThemeAppearance,
   ThemeDefinition,
   ThemesApi,
@@ -34,6 +38,16 @@ export type {
   WorkbenchTab,
   WorkbenchTabStatus,
 } from "./contributions"
+export type {
+  SurfaceActionDefinition,
+  SurfaceActionEvent,
+  SurfaceChildList,
+  SurfaceComponent,
+  SurfaceComponentName,
+  SurfaceDataBinding,
+  SurfaceDynamicValue,
+  SurfaceMessage,
+} from "./surface"
 export { definePlugin } from "./define"
 export type { PluginActivation, PluginDefinition } from "./define"
 export type {

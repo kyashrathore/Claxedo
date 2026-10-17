@@ -31,7 +31,7 @@ describe("mcpAppCsp", () => {
   })
 
   test("is absent when nothing usable is declared", () => {
-    expect(mcpAppCsp({ resourceDomains: ["*"] })).toBeUndefined()
+    expect(mcpAppCsp({ resourceDomains: ["*", "https://*.cdn.test"] })).toBeUndefined()
   })
 })
 

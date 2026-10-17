@@ -46,8 +46,7 @@ export function componentReferences(component: SurfaceComponent): readonly { rea
 function cycleFrom(start: string, byId: ReadonlyMap<string, SurfaceComponent>): boolean {
   const seen = new Set<string>()
   const pending = [start]
-  while (pending.length > 0) {
-    const id = pending.pop() as string
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
     const component = byId.get(id)
     if (!component) continue
     for (const reference of componentReferences(component)) {

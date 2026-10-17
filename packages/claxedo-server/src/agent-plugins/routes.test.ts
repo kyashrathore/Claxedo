@@ -663,6 +663,7 @@ describe("hosted Agent Plugins routes", () => {
         review: true,
         sessions: true,
         subagents: true,
+        surfaces: true,
         tasks: false,
         workspaces: true,
       })

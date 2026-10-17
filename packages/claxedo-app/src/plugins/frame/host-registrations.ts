@@ -1,11 +1,18 @@
 import type { JSX } from "solid-js"
 import type { Disposer, MentionInsert, PluginApi } from "@claxedo/plugin-api"
 import { unreachable } from "@/lib/machine"
+import { frameSurfacePage, type SurfaceRoutes } from "./host-surfaces"
 import { foundMentionsFromFrame, type FrameInvoke, type Registration, type RenderTarget } from "./protocol"
 
 export type FrameSlots = (target: RenderTarget, title: string) => JSX.Element
 
 export type Invoke = (invoke: FrameInvoke) => Promise<unknown>
+
+export type FrameEndpoints = {
+  readonly slots: FrameSlots
+  readonly invoke: Invoke
+  readonly surfaces: SurfaceRoutes
+}
 
 function registerMention(api: PluginApi, registration: Extract<Registration, { kind: "mention" }>, invoke: Invoke): Disposer {
   const inserts = new Map<string, MentionInsert>()
@@ -25,12 +32,19 @@ function registerMention(api: PluginApi, registration: Extract<Registration, { k
   })
 }
 
-export function registerOnHost(api: PluginApi, registration: Registration, slots: FrameSlots, invoke: Invoke): Disposer {
+function registerFramePage(api: PluginApi, registration: Extract<Registration, { kind: "page" }>, endpoints: FrameEndpoints): Disposer {
+  if (registration.surface) return api.pages.register(frameSurfacePage(registration, endpoints.surfaces, endpoints.invoke))
+  const { id, path, title } = registration
+  return api.pages.register({ id, path, title, render: (props) => endpoints.slots({ kind: "page", id, path: props.path, params: props.params }, title) })
+}
+
+export function registerOnHost(api: PluginApi, registration: Registration, endpoints: FrameEndpoints): Disposer {
+  const { slots, invoke } = endpoints
   switch (registration.kind) {
     case "sidebar":
       return api.sidebar.item(registration)
     case "page":
-      return api.pages.register({ ...registration, render: (props) => slots({ kind: "page", id: registration.id, path: props.path, params: props.params }, registration.title) })
+      return registerFramePage(api, registration, endpoints)
     case "settings":
       return api.settings.section({ ...registration, render: () => slots({ kind: "settings", id: registration.id }, registration.title) })
     case "overlay":

@@ -38,7 +38,7 @@ const common = {
   weight: z.number().nonnegative().optional(),
 }
 
-function component<Name extends string, Shape extends z.ZodRawShape>(name: Name, shape: Shape) {
+function catalogComponent<Name extends string, Shape extends z.ZodRawShape>(name: Name, shape: Shape) {
   return z.object({ ...common, component: z.literal(name), ...shape }).strict()
 }
 
@@ -46,37 +46,37 @@ const justify = z.enum(["start", "center", "end", "spaceBetween", "spaceAround",
 const align = z.enum(["start", "center", "end", "stretch"]).meta({ id: "Align" })
 
 export const surfaceComponentSchema = z.discriminatedUnion("component", [
-  component("Text", { text: dynamicString, variant: z.enum(["h1", "h2", "h3", "h4", "h5", "caption", "body"]).optional() }),
-  component("Markdown", { text: dynamicString }),
-  component("Code", { text: dynamicString, language: z.string().max(64).optional() }),
-  component("Icon", { name: z.union([z.enum(SURFACE_ICON_NAMES), dataBindingSchema]) }),
-  component("Badge", { text: dynamicString, variant: z.enum(["neutral", "accent"]).optional() }),
-  component("Link", { text: dynamicString, url: dynamicString }),
-  component("Row", { children: childList, justify: justify.optional(), align: align.optional() }),
-  component("Column", { children: childList, justify: justify.optional(), align: align.optional() }),
-  component("List", { children: childList, direction: z.enum(["vertical", "horizontal"]).optional(), align: align.optional() }),
-  component("Card", { child: componentId }),
-  component("Tabs", { tabs: z.array(z.object({ title: dynamicString, child: componentId }).strict()).min(1) }),
-  component("Collapsible", { title: dynamicString, child: componentId, open: z.boolean().optional() }),
-  component("Divider", { axis: z.enum(["horizontal", "vertical"]).optional() }),
-  component("Button", { child: componentId, variant: z.enum(["default", "primary", "borderless"]).optional(), action: surfaceActionSchema }),
-  component("TextField", {
+  catalogComponent("Text", { text: dynamicString, variant: z.enum(["h1", "h2", "h3", "h4", "h5", "caption", "body"]).optional() }),
+  catalogComponent("Markdown", { text: dynamicString }),
+  catalogComponent("Code", { text: dynamicString, language: z.string().max(64).optional() }),
+  catalogComponent("Icon", { name: z.union([z.enum(SURFACE_ICON_NAMES), dataBindingSchema]) }),
+  catalogComponent("Badge", { text: dynamicString, variant: z.enum(["neutral", "accent"]).optional() }),
+  catalogComponent("Link", { text: dynamicString, url: dynamicString }),
+  catalogComponent("Row", { children: childList, justify: justify.optional(), align: align.optional() }),
+  catalogComponent("Column", { children: childList, justify: justify.optional(), align: align.optional() }),
+  catalogComponent("List", { children: childList, direction: z.enum(["vertical", "horizontal"]).optional(), align: align.optional() }),
+  catalogComponent("Card", { child: componentId }),
+  catalogComponent("Tabs", { tabs: z.array(z.object({ title: dynamicString, child: componentId }).strict()).min(1) }),
+  catalogComponent("Collapsible", { title: dynamicString, child: componentId, open: z.boolean().optional() }),
+  catalogComponent("Divider", { axis: z.enum(["horizontal", "vertical"]).optional() }),
+  catalogComponent("Button", { child: componentId, variant: z.enum(["default", "primary", "borderless"]).optional(), action: surfaceActionSchema }),
+  catalogComponent("TextField", {
     label: dynamicString,
     value: dynamicString.optional(),
     variant: z.enum(["longText", "number", "shortText", "obscured"]).optional(),
     validationRegexp: z.string().max(1024).optional(),
   }),
-  component("CheckBox", { label: dynamicString, value: dynamicBoolean }),
-  component("Switch", { label: dynamicString, value: dynamicBoolean }),
-  component("ChoicePicker", {
+  catalogComponent("CheckBox", { label: dynamicString, value: dynamicBoolean }),
+  catalogComponent("Switch", { label: dynamicString, value: dynamicBoolean }),
+  catalogComponent("ChoicePicker", {
     label: dynamicString.optional(),
     variant: z.enum(["multipleSelection", "mutuallyExclusive"]).optional(),
     options: z.array(z.object({ label: dynamicString, value: z.string() }).strict()).min(1),
     value: dynamicStringList,
     displayStyle: z.enum(["checkbox", "chips", "dropdown"]).optional(),
   }),
-  component("Slider", { label: dynamicString.optional(), min: z.number().optional(), max: z.number(), step: z.number().positive().optional(), value: dynamicNumber }),
-  component("DateTimeInput", {
+  catalogComponent("Slider", { label: dynamicString.optional(), min: z.number().optional(), max: z.number(), step: z.number().positive().optional(), value: dynamicNumber }),
+  catalogComponent("DateTimeInput", {
     value: dynamicString,
     enableDate: z.boolean().optional(),
     enableTime: z.boolean().optional(),
@@ -84,14 +84,14 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     max: dynamicString.optional(),
     label: dynamicString.optional(),
   }),
-  component("Progress", { value: dynamicNumber, max: z.number().positive().optional(), label: dynamicString.optional() }),
-  component("Spinner", { label: dynamicString.optional() }),
-  component("Table", {
+  catalogComponent("Progress", { value: dynamicNumber, max: z.number().positive().optional(), label: dynamicString.optional() }),
+  catalogComponent("Spinner", { label: dynamicString.optional() }),
+  catalogComponent("Table", {
     columns: z.array(z.object({ key: z.string().min(1), title: dynamicString }).strict()).min(1),
     rows: z.union([z.array(z.record(z.string(), z.json())), dataBindingSchema]),
   }),
-  component("DiffStat", { additions: dynamicNumber, deletions: dynamicNumber }),
-  component("EmptyState", { title: dynamicString, description: dynamicString.optional() }),
+  catalogComponent("DiffStat", { additions: dynamicNumber, deletions: dynamicNumber }),
+  catalogComponent("EmptyState", { title: dynamicString, description: dynamicString.optional() }),
 ])
 
 export type SurfaceComponent = z.infer<typeof surfaceComponentSchema>

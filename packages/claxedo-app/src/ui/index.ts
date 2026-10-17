@@ -41,6 +41,8 @@ export { ToastV2 as Toast, showToastV2 as showToast, toasterV2 as toaster, type 
 export type ToastVariant = NonNullable<import("@opencode-ai/ui/v2/toast-v2").ToastV2Options["variant"]>
 export { TooltipV2 as Tooltip, type TooltipV2Props as TooltipProps } from "@opencode-ai/ui/v2/tooltip-v2"
 export { Tag, type TagProps } from "@opencode-ai/ui/v2/badge-v2"
+export { TabsV2 as Tabs, type TabsV2Props as TabsProps } from "@opencode-ai/ui/v2/tabs-v2"
+export { Progress, type ProgressProps } from "@opencode-ai/ui/progress"
 export { Avatar, type AvatarProps } from "@opencode-ai/ui/v2/avatar-v2"
 export { Switch, type SwitchProps } from "@opencode-ai/ui/v2/switch-v2"
 export { MenuV2 as DropdownMenu } from "@opencode-ai/ui/v2/menu-v2"

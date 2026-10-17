@@ -15,6 +15,22 @@ The plugin host. It runs the machine's live plugins from the daemon, and it is t
 - **Host** (`host.ts`, `lifecycle.ts`): one lifecycle per plugin, wanted when switched on, its requirements are met, it is approved and safe mode is off. A new build activates beside the running one and replaces it only once it activated. A build that is still starting is not started again when a preference or capability signal changes (two activations of one build shared one dictionary, and the first one's disposal removed it).
 - **Settings → App plugins** (`view/`, section `app-plugins`): under the shell's one heading, what app plugins are and the same warning the approval dialog shows (`PluginWarning`, one copy per platform), as a quiet line, then every plugin with its version, state and why it is not running, or "No app plugins yet." when the machine has none; on and off; its manifest in readable form (name, id, version, folder with a copy action, routes, operations, requires, build hash, last build); and remove, after a confirmation. The approval dialog shows the same warning and manifest, and what changed when the access did.
 
+## Surface pages (`surface-page/`)
+
+A page is either rendered (the plugin's `render` returns JSX) or a **surface page** (`surface(channel, props)`): the plugin sends A2UI v0.9 messages (`@claxedo/plugin-api/surface`) and the app draws them with its native renderer (`@/surface`), inside a container that names the plugin. The person's actions go back to the plugin's program. Only data crosses; no plugin component renders.
+
+- **Opening** (`bindings/regions.ts` → `surface-page/view.tsx`): each mount of a surface page creates a `Surface` with a fresh `surfaceId` and calls `openSurfacePage` (`surface-page/controller.ts`), which calls `definition.surface(channel, props)` under `catchError` in the page's owner, so the plugin's own Solid code is owned by the page. `props.params` are read when the page opens.
+- **Messages**: every message `channel.send` receives is untrusted and is applied in send order through `Surface.apply`, which parses it with `surfaceMessageSchema` before it changes anything (the renderer is the one owner of that check). A message outside the protocol, or one the renderer refuses (another surface, not yet created), throws `SurfaceMessageError` and fails the page; that message and every later one is dropped.
+- **Actions**: `SurfaceView`'s `onAction` goes to `program.action`; a throw or a rejection fails the page.
+- **Failure**: the page's failure is a state of `SurfacePageState` (`surface-page/model.ts`); the view throws it into the page's `PluginBoundary`, which shows the reason and a retry. Retry mounts the page again: a new surface, a new `surfaceId`, a new program. A failure that arrives asynchronously from the plugin's code (or the web frame's `surface.open`) reaches the page by throwing under the owner the program was opened in (`runWithOwner`).
+- **Closing**: unmounting the page closes it: `program.dispose` runs once, and anything the program sends afterwards is ignored.
+
+| From | Event | To |
+| --- | --- | --- |
+| open | failed(error) | failed(error) |
+| open, failed | closed | closed |
+| failed, closed | failed | unchanged |
+
 ## State machine
 
 `PluginState` and `pluginTransition` in `model.ts`:
@@ -46,9 +62,10 @@ A failed build is not retried until a new build arrives or the plugin is switche
 ## The web frame (`frame/`)
 
 - One hidden control frame per live plugin runs `activate` and forwards its registrations as plain descriptors over a `MessagePort` (`protocol.ts`). The host registers them through the same `PluginApi` a desktop plugin gets, so manifest limits and error boundaries apply unchanged.
-- A page, settings section or overlay renders in its own slot frame, which activates the plugin again and renders only that target.
+- A rendered page, settings section or overlay renders in its own slot frame, which activates the plugin again and renders only that target.
+- A surface page has no slot frame. The control frame registers it with `surface: true`, and the host registers it as a surface page (`frameSurfacePage`, `host-surfaces.ts`) drawn by the same `surface-page/` host component. Opening it invokes `surface.open {pageId, surfaceId, path, params}` over the port; the control frame (`runtime/surfaces.ts`) calls the plugin's `surface(channel, props)` in a Solid root of its own, and `channel.send` posts `{type: "surface", surfaceId, messages}`. The host routes them by `surfaceId` (`createSurfaceRoutes`) into the page's channel, where they are validated like any plugin's; a delivery for no open surface, or without a message list, is a `FrameProtocolError` reported through the frame's failure path. Actions invoke `surface.action {surfaceId, action}`; closing the page invokes `surface.close {surfaceId}`, which disposes the program and its root, and the frame stops forwarding that surface's messages.
 - Plugin functions stay in the frame: commands and mention searches are invoked over the port. Host calls (`server.fetch`, `sessions.create`, `ui.confirm`, …) are answered by the host. Synchronous accessors (projects, tabs, statuses, locale, current session) read a mirror the host pushes on change.
-- The frame runtime is `frame/runtime/index.ts`, bundled on its own through Vite's worker build so it has no imports, fetched same-origin by the host, and imported from a Blob URL by the frame's bootstrap. The frame gets the app's stylesheets and theme attributes, so the kit looks native. Panes and icon skins are not available in the frame; the kit's sprite icons cannot load there.
+- The frame runtime is `frame/runtime/index.ts`, bundled on its own through Vite's worker build so it has no imports, and never validates surface messages itself (the host does), fetched same-origin by the host, and imported from a Blob URL by the frame's bootstrap. The frame gets the app's stylesheets and theme attributes, so the kit looks native. Panes and icon skins are not available in the frame; the kit's sprite icons cannot load there.
 - The Vite dev server serves the frame runtime unbundled, so web live plugins need a built app.
 
 ## Trust and warnings

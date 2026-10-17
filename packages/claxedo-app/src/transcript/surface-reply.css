@@ -1,0 +1,19 @@
+[data-component="surface-reply"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+[data-slot="surface-reply-title"] {
+  color: var(--text-strong);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+[data-slot="surface-reply-failure"] {
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+}

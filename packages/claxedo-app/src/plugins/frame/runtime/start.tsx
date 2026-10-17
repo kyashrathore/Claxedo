@@ -5,9 +5,11 @@ import type { Translations } from "@/i18n"
 import { bundleDefinition, importBundle, NOT_A_PLUGIN } from "../../bundle"
 import { moduleDictionary } from "../../dictionary"
 import { failureReason } from "../../failure"
-import type { FoundMention, FrameBoot, FrameInvoke, RenderTarget } from "../protocol"
+import type { FrameBoot, RenderTarget } from "../protocol"
 import { createFrameApi, type FrameEntries } from "./api"
+import { answerInvoke } from "./invokes"
 import { createFrameLink, type FrameLink } from "./link"
+import { createFrameSurfaces } from "./surfaces"
 
 function applyDocument(boot: FrameBoot): void {
   const style = document.createElement("style")
@@ -31,23 +33,11 @@ function emptyEntries(): FrameEntries {
   return { pages: new Map(), settings: new Map(), overlays: new Map(), commands: new Map(), mentions: new Map() }
 }
 
-async function answer(entries: FrameEntries, invoke: FrameInvoke): Promise<unknown> {
-  if (invoke.method === "command.run") {
-    const command = entries.commands.get(invoke.commandId)
-    if (!command) throw new Error(`No command ${invoke.commandId} is registered`)
-    return command.run(invoke.context)
-  }
-  const provider = entries.mentions.get(invoke.mentionId)
-  if (!provider) throw new Error(`No mention provider ${invoke.mentionId} is registered`)
-  const items = await provider.search(invoke.query, invoke.context)
-  return items.map((item): FoundMention => ({ item, insert: provider.insert(item) }))
-}
-
 function targetView(target: RenderTarget, entries: FrameEntries, link: FrameLink): () => JSX.Element {
   const missing = () => new Error(`No ${target.kind} ${target.id} is registered`)
   if (target.kind === "page") {
     const page = entries.pages.get(target.id)
-    if (!page) throw missing()
+    if (!page || "surface" in page) throw missing()
     return () => page.render({ path: target.path, params: target.params })
   }
   if (target.kind === "settings") {
@@ -79,7 +69,8 @@ export async function startFrame(port: MessagePort, boot: FrameBoot): Promise<vo
     const api = createFrameApi({ link, context: boot.context, entries, dictionary, forward: !boot.target, signal: new AbortController().signal })
     await definition.activate(api)
     if (!boot.target) {
-      link.onInvoke((invoke) => answer(entries, invoke))
+      const surfaces = createFrameSurfaces(entries.pages, link.send)
+      link.onInvoke((invoke) => answerInvoke(entries, surfaces, invoke))
       link.send({ type: "activated" })
       return
     }

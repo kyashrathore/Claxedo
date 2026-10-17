@@ -2,14 +2,20 @@ import type { Component } from "solid-js"
 import type { PageDefinition, PluginApi } from "@claxedo/plugin-api"
 import { fillPattern, type PageEntry, type PageProps } from "@/shell"
 import { boundedView } from "../boundary"
+import { PluginSurfacePage } from "../surface-page/view"
 import { entryId, PluginEntryError, type BindingScope } from "./services"
 
 export const PLUGIN_ICON = "grid-plus"
 
 type Regions = Pick<PluginApi, "sidebar" | "pages" | "settings" | "overlays">
 
+function pageView(scope: BindingScope, page: PageDefinition): Component<PageProps> {
+  if (!("surface" in page)) return (props) => page.render({ path: page.path, params: props.params })
+  return (props) => PluginSurfacePage({ pluginName: scope.manifest.name, page, pageProps: { path: page.path, params: props.params } })
+}
+
 function pageEntry(scope: BindingScope, page: PageDefinition): PageEntry {
-  const view: Component<PageProps> = (props) => page.render({ path: page.path, params: props.params })
+  const view = pageView(scope, page)
   return {
     id: entryId(scope.manifest.id, page.id),
     path: page.path,

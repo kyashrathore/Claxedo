@@ -25,6 +25,8 @@ export type SubagentView = {
 
 export type SubagentStopAnswer = { ok: true } | { ok: false; message: string }
 
+export type PromptSendAnswer = { ok: true } | { ok: false; message: string }
+
 export type DataProviderProps = {
   directory: string
   harnessLabel?: string
@@ -37,6 +39,7 @@ export type DataProviderProps = {
   readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
   loadToolBody?: (part: AgentToolPart) => void
   stopBackgroundTask?: (parentSessionId: string, toolCallId: string) => Promise<SubagentStopAnswer>
+  sendPrompt?: (text: string) => Promise<PromptSendAnswer>
 }
 
 function transcriptData(props: DataProviderProps) {
@@ -56,6 +59,9 @@ function transcriptData(props: DataProviderProps) {
     readToolImage: props.readToolImage,
     loadToolBody: props.loadToolBody,
     stopBackgroundTask: props.stopBackgroundTask,
+    get sendPrompt() {
+      return props.sendPrompt
+    },
   }
 }
 

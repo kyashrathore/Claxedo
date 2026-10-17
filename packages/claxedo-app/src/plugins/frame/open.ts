@@ -1,6 +1,7 @@
 import type { PluginApi } from "@claxedo/plugin-api"
 import type { HostServices } from "../bindings"
-import { createHostLink, frameMirror, type FrameControl, type HostLink } from "./host-link"
+import { createHostLink, frameMirror, type HostLink } from "./host-link"
+import type { FrameControl } from "./host-port"
 import { FRAME_BOOT, type FrameBoot, type RenderTarget } from "./protocol"
 import { appStylesheetText, appTheme } from "./styles"
 
