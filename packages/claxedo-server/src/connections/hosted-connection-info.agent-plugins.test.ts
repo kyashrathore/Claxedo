@@ -5,7 +5,6 @@ import type { ControlPlaneServices } from "../authority/services"
 import { hostedConnectionInfo } from "./hosted-connection-info"
 import type { FirstLease } from "../workspace/cloud-workspace-start"
 import type { SandboxStart } from "../workspace/sandbox-start"
-import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
 
 const auth = {
   mode: "signed",
@@ -117,117 +116,5 @@ describe("Agent Plugins cloud readiness gate", () => {
     const joined = await hostedConnectionInfo(services, options(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 2, homeRegion: "us-east", joined: true, failure: "provider hiccup" })), auth, "ws_1", LEASED)
     expect(joined).toEqual({ connection: { status: "provisioning", workspaceId: "ws_1", homeRegion: "us-east", retryAfterMs: 2_000, failure: "provider hiccup" } })
     expect(signer).not.toHaveBeenCalled()
-  })
-})
-
-function machinePlacedSubject(order: string[]) {
-  const signer = vi.fn(async () => {
-    order.push("token")
-    return { runtimeAccessToken: "runtime-token", tokenExpiresAt: Date.now() + 60_000, jti: "jti_1" }
-  })
-  const services = {
-    authority: {
-      // The host declares its runtime's session authority on the heartbeat;
-      // the machine-placement mint asks for it before the plugin gate runs.
-      activeWorkspaceHost: vi.fn(async () => ({
-        active: true,
-        host_id: "host_1",
-        workspace_id: "ws_local",
-        expires_at: Date.now() + 60_000,
-        last_seen_at: Date.now(),
-      })),
-      usersMe: vi.fn(async () => ({
-        subject: "user_1",
-        // `resolveRuntimeActor` refuses to mint without a full actor identity.
-        actor_id: "user_1",
-        actor_kind: "human",
-        actor_public_id: "user_1",
-        actor_name: "Signed User",
-      })),
-      openWorkspace: vi.fn(async () => ({
-        allowed: true,
-        role: "owner",
-        workspace: {
-          workspace_id: "ws_local",
-          org_id: "org_1",
-          backing: "local-worktree",
-          home_region: "us-east",
-        },
-      })),
-      activeLocalHostLink: vi.fn(async () => ({
-        active: true,
-        host_id: "host_local",
-        expires_at: Date.now() + 60_000,
-      })),
-      recordRuntimeAccessToken: vi.fn(async () => undefined),
-      auditAllow: vi.fn(async () => undefined),
-      auditDeny: vi.fn(async () => undefined),
-    },
-    sandbox: {},
-    telemetry: { capture: vi.fn() },
-  } as unknown as ControlPlaneServices
-  return { services, signer }
-}
-
-describe("Agent Plugins machine-placement readiness gate", () => {
-  test("applies the same signed snapshot before minting a local-session token", async () => {
-    const order: string[] = []
-    const { services, signer } = machinePlacedSubject(order)
-    const preparation = { state: { kind: "test-plan" } }
-    const prepareRuntime = vi.fn(async () => { order.push("prepare"); return preparation })
-    const provisionRuntime = vi.fn(async () => { order.push("plugins") })
-    const result = await hostTunnelConnectionInfo(services, {
-      defaultHomeRegion: "us-east",
-      relayUrl: "wss://relay.test",
-      sandboxControlPlaneOrigin: "https://control.test",
-      runtimeAccessTokenSigner: signer,
-      prepareRuntime,
-      provisionRuntime,
-    }, auth, "ws_local")
-
-    expect(order).toEqual(["prepare", "plugins", "token"])
-    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" })
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" }, preparation)
-    expect(result).toMatchObject({
-      connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" },
-    })
-  })
-
-  test("a preparation that throws denies the local session before any plugin apply", async () => {
-    const order: string[] = []
-    const { services, signer } = machinePlacedSubject(order)
-
-    const result = await hostTunnelConnectionInfo(services, {
-      defaultHomeRegion: "us-east",
-      relayUrl: "wss://relay.test",
-      sandboxControlPlaneOrigin: "https://control.test",
-      runtimeAccessTokenSigner: signer,
-      prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
-      provisionRuntime: async () => { order.push("plugins") },
-    }, auth, "ws_local")
-
-    expect(order).toEqual([])
-    expect(signer).not.toHaveBeenCalled()
-    expect(result).toMatchObject({
-      status: 409,
-      error: { code: "runtime_prepare_failed", message: "gateway signing key unavailable" },
-    })
-  })
-
-  test("a failed plugin apply denies the local session and never mints a runtime token", async () => {
-    const order: string[] = []
-    const { services, signer } = machinePlacedSubject(order)
-    const result = await hostTunnelConnectionInfo(services, {
-      defaultHomeRegion: "us-east",
-      relayUrl: "wss://relay.test",
-      sandboxControlPlaneOrigin: "https://control.test",
-      runtimeAccessTokenSigner: signer,
-      prepareRuntime: async () => { order.push("prepare"); return {} },
-      provisionRuntime: async () => { throw new Error("artifact corrupt") },
-    }, auth, "ws_local")
-
-    expect(order).toEqual(["prepare"])
-    expect(signer).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ status: 409, error: { code: "runtime_provision_failed", message: "artifact corrupt" } })
   })
 })

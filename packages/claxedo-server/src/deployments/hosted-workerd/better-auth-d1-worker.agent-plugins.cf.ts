@@ -85,7 +85,7 @@ export function composeBetterAuthD1AgentPlugins(
   })
   const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
     const [basePreparation, featurePreparation] = await Promise.all([
-      base.options.productWorkspace?.prepareRuntime?.(context),
+      base.runtimeDelivery?.prepareRuntime(context),
       feature.prepareRuntime(context),
     ])
     return {
@@ -140,7 +140,6 @@ export function composeBetterAuthD1AgentPlugins(
       productWorkspace: {
         ...base.options.productWorkspace,
         connections: { repositoryForAuth: feature.repositoryForAuth },
-        prepareRuntime,
         releaseRuntime: feature.releaseRuntime,
       },
     },

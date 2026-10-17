@@ -1286,8 +1286,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
   test("creates the workspace and starts nothing: no ensure, and no work held past the response", async () => {
     const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
     const ensure = vi.fn()
-    const prepareRuntime = vi.fn()
-    const { app, capture } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { prepareRuntime } })
+    const { app, capture } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager })
     const waitUntil = vi.fn()
     const res = await app.fetch(
       post("/create", { workspaceName: "Cold", repoUrl: "https://github.com/a/b" }),
@@ -1297,7 +1296,6 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(res.status).toBe(200)
     expect(waitUntil).not.toHaveBeenCalled()
     expect(ensure).not.toHaveBeenCalled()
-    expect(prepareRuntime).not.toHaveBeenCalled()
     const { workspaceId } = await res.json() as { workspaceId: string }
     expect(capture).toHaveBeenCalledWith("user_1", "workspace_created", { workspace_id: workspaceId, kind: "cloud", private_repository: false, org_id: "org_1", $groups: { org: "org_1" } })
   })

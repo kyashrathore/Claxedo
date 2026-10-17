@@ -61,25 +61,6 @@ export async function hostTunnelConnectionInfo(
     )
   }
 
-  const runtimeContext = { workspaceId }
-  let preparation
-  try {
-    preparation = await options.prepareRuntime?.(runtimeContext)
-  } catch (cause) {
-    return {
-      error: apiError("runtime_prepare_failed", cause instanceof Error ? cause.message : "Runtime preparation failed"),
-      status: 409,
-    } as const
-  }
-  try {
-    await options.provisionRuntime?.(runtimeContext, preparation)
-  } catch (cause) {
-    return {
-      error: apiError("runtime_provision_failed", cause instanceof Error ? cause.message : "Runtime provisioning failed"),
-      status: 409,
-    } as const
-  }
-
   captureWorkspaceTelemetry({
     services,
     auth,

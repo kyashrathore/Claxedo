@@ -109,8 +109,6 @@ export type HostedCoreProductWorkspaceOptions = Pick<
   | "sandboxUsage"
   | "sandboxStart"
   | "sandboxInFlight"
-  | "prepareRuntime"
-  | "provisionRuntime"
   | "runtimeProvisioned"
   | "releaseRuntime"
   | "createWorkspaceRateLimiter"

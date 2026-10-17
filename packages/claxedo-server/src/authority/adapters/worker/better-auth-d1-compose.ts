@@ -327,7 +327,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
           countActiveOrgSandboxLeases: (scope) => countRunningCloudLeases(input.controlPlaneDatabase, scope),
           sandboxStart: sandbox.start,
           sandboxInFlight: sandbox.inFlight,
-          prepareRuntime: delivery.prepareRuntime,
           runtimeProvisioned: delivery.runtimeProvisioned,
         },
       } : {}),

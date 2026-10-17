@@ -25,7 +25,6 @@ import type { ControlPlaneServices } from "../authority/services"
 import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { hostedConnectionInfo } from "../connections/hosted-connection-info"
-import { hostTunnelConnectionInfo } from "../connections/host-tunnel-connection"
 import type { D1Database } from "@cloudflare/workers-types"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
 import { D1ApplicationIdentityAuthority } from "../authority/adapters/d1/application-identity"
@@ -387,7 +386,7 @@ describe("signed Composio Gmail on Miniflare", () => {
     ])
   })
 
-  test("signed connection mint applies the retained plugin before handing out a local or cloud token", async () => {
+  test("signed cloud connection mint applies the retained plugin before handing out the token", async () => {
     const { prepareRuntime, provisionForMint, resolveConnection, receipts } = await subject(true)
     const auth = {
       mode: "signed",
@@ -400,71 +399,9 @@ describe("signed Composio Gmail on Miniflare", () => {
       jti: "jti_1",
     }))
 
-    const local = await hostTunnelConnectionInfo({
-      authority: {
-          // The host declares its runtime's session authority on the heartbeat;
-        // the machine-placement mint asks for it before the plugin gate runs.
-        activeWorkspaceHost: vi.fn(async () => ({
-          active: true,
-          host_id: "host_1",
-          workspace_id: "ws_local",
-          expires_at: Date.now() + 60_000,
-          last_seen_at: Date.now(),
-        })),
-      usersMe: vi.fn(async () => ({
-          subject: USER.userId,
-          // `resolveRuntimeActor` requires a full actor identity before it will
-          // hand out a runtime token.
-          actor_id: USER.userId,
-          actor_kind: "human",
-          actor_public_id: USER.userId,
-          actor_name: "Signed User",
-        })),
-        openWorkspace: vi.fn(async () => ({
-          allowed: true,
-          role: "owner",
-          workspace: {
-            workspace_id: "ws_local_mint",
-            org_id: USER.organizationId,
-            backing: "local-worktree",
-            home_region: "us-east",
-          },
-        })),
-        activeLocalHostLink: vi.fn(async () => ({
-          active: true,
-          host_id: "host_local",
-          expires_at: Date.now() + 60_000,
-        })),
-        recordRuntimeAccessToken: vi.fn(async () => undefined),
-        auditAllow: vi.fn(async () => undefined),
-        auditDeny: vi.fn(async () => undefined),
-      },
-      sandbox: {},
-      telemetry: { capture: vi.fn() },
-    } as unknown as ControlPlaneServices, {
-      defaultHomeRegion: "us-east",
-      relayUrl: "wss://relay.test",
-      runtimeAccessTokenSigner: signer,
-      prepareRuntime: ({ workspaceId }) => prepareRuntime(workspaceId),
-      // `provisionRuntime` is declared to resolve void; the receipt this test
-      // asserts on is read from `receipts` instead.
-      provisionRuntime: async ({ workspaceId }, preparation?: WorkspaceRuntimePreparation) => {
-        await provisionForMint(workspaceId, preparation)
-      },
-    }, auth, "ws_local_mint")
-
     const cloud = await hostedConnectionInfo({
       authority: {
-          // The host declares its runtime's session authority on the heartbeat;
-        // the machine-placement mint asks for it before the plugin gate runs.
-        activeWorkspaceHost: vi.fn(async () => ({
-          active: true,
-          host_id: "host_1",
-          workspace_id: "ws_local",
-          expires_at: Date.now() + 60_000,
-          last_seen_at: Date.now(),
-        })),
-      usersMe: vi.fn(async () => ({
+        usersMe: vi.fn(async () => ({
           subject: USER.userId,
           // `resolveRuntimeActor` requires a full actor identity before it will
           // hand out a runtime token.
@@ -507,26 +444,17 @@ describe("signed Composio Gmail on Miniflare", () => {
       },
     }, auth, "ws_cloud_mint", { admission: { capLease: async () => undefined }, usage: undefined })
 
-    expect(local).toMatchObject({ connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" } })
     expect(cloud).toMatchObject({ connection: { backing: "cloud-vm", runtimeAccessToken: "runtime-token" } })
-    expect("error" in local).toBe(false)
-    expect("error" in cloud).toBe(false)
     expect(resolveConnection.mock.calls.every((call) => call[0].ownerUserId === USER.userId)).toBe(true)
-    expect(signer).toHaveBeenCalledTimes(2)
+    expect(signer).toHaveBeenCalledTimes(1)
 
-    const localClaude = (receipts.get("ws_local_mint")?.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
     const cloudClaude = (receipts.get("ws_cloud_mint")?.harnessLaunch.claude?.pluginRoots as Array<{ root: string }> | undefined)?.[0]?.root
-    expect(localClaude).toBeTruthy()
-    expect(cloudClaude).toBeTruthy()
-    const localMcp = JSON.parse(await fs.readFile(path.join(localClaude!, ".mcp.json"), "utf8")) as {
+    if (!cloudClaude) throw new Error("the cloud mint applied no Claude plugin root")
+    const cloudMcp = JSON.parse(await fs.readFile(path.join(cloudClaude, ".mcp.json"), "utf8")) as {
       mcpServers: { gmail: { url: string } }
     }
-    const cloudMcp = JSON.parse(await fs.readFile(path.join(cloudClaude!, ".mcp.json"), "utf8")) as {
-      mcpServers: { gmail: { url: string } }
-    }
-    expect(localMcp.mcpServers.gmail.url).toContain("mcp-gateway.claxedo.test")
     expect(cloudMcp.mcpServers.gmail.url).toContain("mcp-gateway.claxedo.test")
-    expect(JSON.stringify(localMcp)).not.toContain("composio-gmail-access-token")
+    expect(JSON.stringify(cloudMcp)).not.toContain("composio-gmail-access-token")
     expect(JSON.stringify(cloudMcp)).not.toContain(COMPOSIO_MCP)
   })
 })

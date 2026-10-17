@@ -96,12 +96,8 @@ export type WorkspaceRouteOptions = {
   sandboxStart?: SandboxStart
   /** The sandbox start's run in flight, which a read reports before it asks a runtime that run is replacing. */
   sandboxInFlight?: SandboxInFlight
-  /** Resolve feature state before ensure, including brokered secrets needed by the driver. */
-  prepareRuntime?: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
-  /** Build-composed feature provisioning that must settle before a signed runtime is handed to the caller. */
-  provisionRuntime?: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
   runtimeProvisioned?: (context: WorkspaceRuntimeContext) => Promise<boolean>
-  /** Build-composed withdrawal of what `prepareRuntime` issued a cloud root, once its workspace is deleted. */
+  /** Build-composed withdrawal of the passes a cloud root's runtime preparation issued, once its workspace is deleted. */
   releaseRuntime?: (context: WorkspaceRuntimeContext) => Promise<void>
   /**
    * Cloud-workspace admission, asked at BOTH create AND wake/resume, so a
