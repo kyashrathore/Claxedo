@@ -4,6 +4,7 @@ import { useTranslator } from "@/i18n"
 import { SidePanelToggle } from "@/ui"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
+import { workspaceTabIcon } from "../tab-presentation"
 
 function PanelToggleButton(): JSX.Element {
   const t = useTranslator(panelDictionary)
@@ -31,7 +32,7 @@ function SessionDetailsToggle(): JSX.Element {
   return (
     <SidePanelToggle
       testId="session-details-toggle"
-      icon="details"
+      icon={workspaceTabIcon("context")}
       label={t("panel.details.show")}
       open={false}
       onToggle={() => panel.show({ kind: "context" })}

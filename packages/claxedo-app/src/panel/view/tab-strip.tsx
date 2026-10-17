@@ -6,7 +6,7 @@ import { ClaxedoIcon as Icon, DropdownMenu, useDialog } from "@/ui"
 import { filePathFromTab } from "../focus"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
-import { createReviewWorkspaceTabPresentation } from "../tab-presentation"
+import { createReviewWorkspaceTabPresentation, workspaceTabIcon } from "../tab-presentation"
 import { ReviewWorkspaceTabButton } from "./tab-button"
 
 function AddTabMenu(): JSX.Element {
@@ -41,7 +41,7 @@ function AddTabMenu(): JSX.Element {
               disabled={!session()}
               onSelect={() => panel.show({ kind: "context" })}
             >
-              <Icon name="circle-half" size="small" />
+              <Icon name={workspaceTabIcon("context")} size="small" />
               {t("panel.tab.context")}
             </DropdownMenu.Item>
           </Show>
