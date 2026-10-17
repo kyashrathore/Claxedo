@@ -125,7 +125,7 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
   }
 }
 
-export function orgAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean, removable: boolean): AccountWords | undefined {
+export function orgAccountWords(words: Words, harness: Harness, snapshot: AccountsSnapshot, chosen: boolean, manages: boolean, live: Readonly<Record<string, LiveCheck>>): AccountWords | undefined {
   const { t } = words
   const row = orgAccountOf(harness, snapshot)
   if (row === undefined) {
@@ -142,12 +142,12 @@ export function orgAccountWords(words: Words, harness: Harness, snapshot: Accoun
       disabled: true,
     }
   }
-  const check = storedCheck(row, undefined)
+  const check = storedCheck(row, live[row.id])
   const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(words, check).join(" · ") : undefined
   const reach = accountReach(row.delivery)
   return {
     key: ORG_ACCOUNT_KEY,
-    ids: removable ? row.ids : [],
+    ids: manages ? row.ids : [],
     label: accountLabel(row),
     detail: [t("settings.providers.accountSource.org"), ...verdictWords(words, check), ...windowWords(words, check?.usage)].join(" · "),
     ...(alert === undefined ? {} : { alert }),
@@ -195,4 +195,8 @@ export function machineLoginWords(words: Words, login: MachineLogin, harness: Ha
     machine: true,
     disabled: login.state === "absent" || stranded,
   }
+}
+
+export function offersCloudChoice(cloudOnly: boolean, rows: readonly AccountWords[]): boolean {
+  return cloudOnly && rows.filter((row) => !row.disabled).length >= 2
 }

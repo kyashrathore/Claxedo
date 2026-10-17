@@ -1,5 +1,6 @@
-import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, vendorName, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, piProviderSpending, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { isRefusal } from "@/lib/account-health"
+import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, ProviderSource } from "@/server"
 
 export { isRefusal, isUnavailable } from "@/lib/account-health"
@@ -33,6 +34,7 @@ export type Harness = {
   readonly vendor: string
   readonly providerIds: readonly string[]
   readonly connectProvider: string
+  readonly vendorProvider: string
   readonly signIn: string
 }
 
@@ -44,16 +46,23 @@ export const harnesses: readonly Harness[] = HARNESS_IDS.map((id) => ({
   vendor: HARNESS_TABLE[id].vendor,
   providerIds: HARNESS_TABLE[id].providerIds,
   connectProvider: HARNESS_TABLE[id].connectProvider,
+  vendorProvider: HARNESS_TABLE[id].vendorProvider,
   signIn: SIGN_IN[id],
 }))
-
-export type TeamVendor = { readonly id: string; readonly label: string }
-
-export const TEAM_VENDORS: readonly TeamVendor[] = ["anthropic", "openai", HARNESS_TABLE.cursor.vendorProvider, "openrouter", "google", "groq", "xai"].map((id) => ({ id, label: vendorName(id) }))
 
 export const MACHINE_LOGIN_KEY = "machine"
 
 export const ORG_ACCOUNT_KEY = "org"
+
+export function machineCheckKey(harness: Harness): string {
+  return `${MACHINE_LOGIN_KEY}:${harness.id}`
+}
+
+export function harnessesServedBy(providerIds: readonly string[]): readonly string[] {
+  const cli = harnesses.filter((harness) => providerIds.some((id) => harness.providerIds.includes(id))).map((harness) => harness.label)
+  const engines = providerIds.some((id) => piProviderSpending(id) !== undefined) ? [harnessDisplayLabel("pi")] : []
+  return [...cli, ...engines]
+}
 
 export function accountReach(delivery: AccountDelivery | undefined): AccountReach | undefined {
   if (delivery === undefined) return "local-only"
@@ -89,6 +98,14 @@ export function replacedAccountLabel(providerId: string, snapshot: AccountsSnaps
   const rows = snapshot.stored.filter((row) => row.providerId === providerId)
   const replaced = snapshot.cloudOnly ? rows[0] : methodType === "token" ? rows.find((row) => row.kind === "oauth_token") : undefined
   return replaced ? accountLabel(replaced) : undefined
+}
+
+export type OrganizationTarget = { readonly vendorProvider: string; readonly replaces: string | undefined }
+
+export function organizationTarget(harness: Harness, snapshot: AccountsSnapshot, manages: boolean): OrganizationTarget | undefined {
+  if (!manages) return undefined
+  const replaced = snapshot.sources.org.find((row) => row.providerId === harness.vendorProvider)
+  return { vendorProvider: harness.vendorProvider, replaces: replaced ? accountLabel(replaced) : undefined }
 }
 
 function mergeGroup(ordered: readonly Account[]): HarnessAccount | undefined {

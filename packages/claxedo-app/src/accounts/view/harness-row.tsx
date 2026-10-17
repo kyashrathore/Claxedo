@@ -1,16 +1,18 @@
-import { createMemo, createSignal, For, onMount, Show } from "solid-js"
+import { createSignal, For, onMount, Show } from "solid-js"
 import { useAccess } from "@/access"
 import { harnessConnectContext, harnessIcon } from "@/lib/harness-catalog"
 import { useI18n } from "@/i18n"
-import { ClaxedoIcon, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Switch } from "@/ui"
-import { useWindowName } from "@/usage"
-import { machineLoginWords, orgAccountWords, storedAccountWords, type AccountWords, type CloudConsent } from "../account-words"
+import { ClaxedoIcon, requestConfirm, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Switch } from "@/ui"
+import type { AccountWords, CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
-import { harnessAccounts, machineLoginOf, ORG_ACCOUNT_KEY, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
+import type { OrganizationConnect } from "../connect-form"
+import { harnessesServedBy, machineCheckKey, ORG_ACCOUNT_KEY, organizationTarget, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AccountActions, LabelHint, Reach } from "./account-actions"
+import { useAccountRows } from "./account-rows"
 import { CheckedAge } from "./account-status"
-import { DialogProviderConnect } from "./connect-dialog"
+import { CloudChoiceHint } from "./cloud-choice-hint"
+import { DrawerProviderConnect } from "./connect-drawer"
 
 export type HarnessRowProps = {
   readonly harness: Harness
@@ -18,20 +20,6 @@ export type HarnessRowProps = {
   readonly accounts: Accounts
   readonly headerless?: boolean
   readonly onAddAccountRef?: (open: () => void) => void
-}
-
-function useAccountRows(props: HarnessRowProps) {
-  const access = useAccess()
-  const t = useAccountsText()
-  const i18n = useI18n()
-  const windowName = useWindowName()
-  return createMemo((): AccountWords[] => {
-    const words = { t, windowName, machineName: props.accounts.machineName(), locale: i18n.intlTag() }
-    const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
-    const login = machineLoginOf(props.harness, props.snapshot)
-    const org = orgAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === ORG_ACCOUNT_KEY, access.can("accounts.manageOrg", props.snapshot.sources))
-    return [...stored, ...(login ? [machineLoginWords(words, login, props.harness, props.snapshot)] : []), ...(org ? [org] : [])]
-  })
 }
 
 function AccountLabel(props: { readonly account: AccountWords; readonly onMachine: boolean; readonly machineName?: string }) {
@@ -90,13 +78,36 @@ function CloudConsentSwitch(props: { readonly account: AccountWords; readonly co
   )
 }
 
+function useServedBy(): (providerIds: readonly string[]) => string {
+  const i18n = useI18n()
+  return (providerIds) => new Intl.ListFormat(i18n.intlTag(), { style: "long", type: "conjunction" }).format(harnessesServedBy(providerIds))
+}
+
+function useRemoveAccount(props: { readonly account: AccountWords; readonly row: HarnessRowProps }) {
+  const t = useAccountsText()
+  const dialog = useDialog()
+  const listServedBy = useServedBy()
+  const servedBy = () => listServedBy(props.row.snapshot.sources.org.filter((row) => props.account.ids.includes(row.id)).map((row) => row.providerId))
+  return async () => {
+    const org = props.account.key === ORG_ACCOUNT_KEY
+    const confirmed = await requestConfirm(dialog, {
+      title: t("settings.providers.agents.removeAccountTitle", { label: props.account.label }),
+      ...(org ? { body: t("settings.providers.agents.removeOrgAccountBody", { harnesses: servedBy() }) } : {}),
+      confirmLabel: t("settings.providers.agents.removeAccount"),
+      cancelLabel: t("common.cancel"),
+      destructive: true,
+    })
+    if (confirmed) await props.row.accounts.remove(props.account.ids)
+  }
+}
+
 function AccountItem(props: { readonly account: AccountWords; readonly row: HarnessRowProps; readonly selected: boolean; readonly openConnect: (credentialId?: string) => void }) {
   const t = useAccountsText()
   const i18n = useI18n()
-  const [confirming, setConfirming] = createSignal(false)
   const accounts = () => props.row.accounts
-  const activity = () => accounts().activity()
   const account = () => props.account
+  const remove = useRemoveAccount(props)
+  const checkKey = () => (account().machine ? machineCheckKey(props.row.harness) : (account().ids[0] ?? account().key))
   return (
     <div class="flex flex-col">
       <div class="group flex flex-wrap items-start gap-2 py-1" data-slot="account-row" data-account={account().key} data-selected={props.selected ? "true" : "false"}>
@@ -109,26 +120,17 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           label={<AccountLabel account={account()} onMachine={accounts().onMachine()} machineName={accounts().machineName()} />}
           description={account().detail === undefined && account().cloudNote === undefined ? undefined : <AccountDescription account={account()} />}
         />
-        <span class="ml-auto flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
-          <Show when={!confirming() && account().checkedAt}>
-            {(at) => (
-              <CheckedAge
-                at={at()}
-                t={t}
-                locale={i18n.intlTag()}
-                class="whitespace-nowrap text-13-regular text-text-weak"
-              />
-            )}
+        <span class="ml-auto flex shrink-0 items-center justify-end gap-2">
+          <Show when={account().checkedAt}>
+            {(at) => <CheckedAge at={at()} t={t} locale={i18n.intlTag()} class="whitespace-nowrap text-13-regular text-text-weak" />}
           </Show>
           <AccountActions
             account={account()}
-            confirming={confirming()}
-            checking={activity()?.kind === "checking"}
-            removing={activity()?.kind === "removing" ? activity()?.key : undefined}
+            checking={accounts().checking(checkKey())}
+            removing={accounts().activity()?.kind === "removing"}
             onReconnect={(credentialId) => props.openConnect(credentialId)}
-            onCheck={() => (account().machine ? accounts().checkMachine(props.row.harness) : accounts().check(account().ids[0] ?? account().key))}
-            onConfirm={setConfirming}
-            onRemove={() => void accounts().remove(account().ids).finally(() => setConfirming(false))}
+            onCheck={() => (account().machine ? accounts().checkMachine(props.row.harness) : accounts().check(checkKey()))}
+            onRemove={() => void remove()}
           />
         </span>
       </div>
@@ -137,13 +139,14 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
   )
 }
 
-function HarnessHeader(props: { readonly harness: Harness; readonly connecting: boolean; readonly onAdd: () => void }) {
+function HarnessHeader(props: { readonly harness: Harness; readonly accounts: Accounts; readonly connecting: boolean; readonly onAdd: () => void }) {
   const t = useAccountsText()
   return (
     <div class="flex w-full flex-wrap items-center justify-between gap-4 py-3">
       <div class="flex min-w-0 flex-1 items-center gap-3">
         <ProviderIcon id={harnessIcon(props.harness.id)} class="size-5 shrink-0 icon-strong-base" />
         <span class="text-14-medium text-text-strong">{props.harness.label}</span>
+        <CloudChoiceHint harness={props.harness} accounts={props.accounts} />
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <Show when={props.connecting} fallback={<Button size="large" variant="ghost" data-action="agent-add-account" onClick={() => props.onAdd()}>{t("settings.providers.agents.addAccount")}</Button>}>
@@ -164,18 +167,38 @@ function NoAccount(props: { readonly harness: Harness; readonly onAdd: () => voi
   )
 }
 
+function useOrganizationConnect(props: HarnessRowProps): () => OrganizationConnect | undefined {
+  const access = useAccess()
+  const servedBy = useServedBy()
+  return () => {
+    const target = organizationTarget(props.harness, props.snapshot, access.can("accounts.manageOrg", props.snapshot.sources))
+    return target ? { ...target, servedBy: servedBy([target.vendorProvider]) } : undefined
+  }
+}
+
 export function AgentHarnessRow(props: HarnessRowProps) {
-  const t = useAccountsText()
   const dialog = useDialog()
   const [connecting, setConnecting] = createSignal(false)
-  const rows = useAccountRows(props)
+  const rows = useAccountRows(() => props.harness, () => props.snapshot, () => props.accounts)
+  const organization = useOrganizationConnect(props)
   const selected = () => selectedAccountKey(props.harness, props.snapshot)
   const openConnect = (credentialId?: string) => {
     setConnecting(true)
     const context = harnessConnectContext(props.harness.id, props.harness.label)
     const replaces = (methodType: string) => replacedAccountLabel(props.harness.connectProvider, props.snapshot, methodType)
+    const org = credentialId ? undefined : organization()
     void dialog.show(
-      () => <DialogProviderConnect provider={props.harness.connectProvider} context={context} harness={props.harness.id} {...(credentialId ? { credentialId } : {})} replaces={replaces} onConnected={() => props.accounts.rescan()} />,
+      () => (
+        <DrawerProviderConnect
+          provider={props.harness.connectProvider}
+          context={context}
+          harness={props.harness.id}
+          {...(credentialId ? { credentialId } : {})}
+          {...(org ? { organization: org } : {})}
+          replaces={replaces}
+          onConnected={() => props.accounts.rescan()}
+        />
+      ),
       () => setConnecting(false),
     )
   }
@@ -183,7 +206,7 @@ export function AgentHarnessRow(props: HarnessRowProps) {
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={harnessIcon(props.harness.id)}>
       <Show when={!props.headerless}>
-        <HarnessHeader harness={props.harness} connecting={connecting()} onAdd={() => openConnect()} />
+        <HarnessHeader harness={props.harness} accounts={props.accounts} connecting={connecting()} onAdd={() => openConnect()} />
       </Show>
       <div class="mb-3 flex flex-col" classList={{ "ml-8": !props.headerless }}>
         <Show when={rows().length > 0} fallback={<NoAccount harness={props.harness} onAdd={() => openConnect()} />}>
@@ -199,9 +222,6 @@ export function AgentHarnessRow(props: HarnessRowProps) {
           >
             <For each={rows()}>{(account) => <AccountItem account={account} row={props} selected={selected() === account.key} openConnect={openConnect} />}</For>
           </RadioGroup>
-          <Show when={props.snapshot.cloudOnly}>
-            <p class="mt-2 text-12-regular text-text-weak">{t("settings.providers.agents.cloudChoiceShared", { vendor: props.harness.vendor })}</p>
-          </Show>
         </Show>
       </div>
     </div>
