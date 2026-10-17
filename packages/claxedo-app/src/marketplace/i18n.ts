@@ -124,8 +124,6 @@ const en = {
   "marketplace.toast.updateFailed": "Could not update plugin",
   "marketplace.toast.removeSourceFailed": "Could not remove source",
   "marketplace.install.title": "Add {{name}}",
-  "marketplace.install.stepWhere": "1 Where it goes",
-  "marketplace.install.stepCount": "Step 1 of 1",
   "marketplace.install.environments": "Environments",
   "marketplace.install.bothAlways": "both, always",
   "marketplace.install.environmentsNote": "Plugins reach every environment you sign into.",

@@ -14,7 +14,7 @@ import { MarketplaceDetailsPanel } from "./details-panel"
 import { CategoryChips, SourceChips } from "./directory-chips"
 import { DirectoryHeader } from "./directory-header"
 import { CatalogSkeleton, DirectoryAlerts, PluginSectionList } from "./directory-sections"
-import { useInstallSheet } from "./install-sheet"
+import { useInstallDrawer } from "./install-drawer"
 
 function moveCardFocus(grid: HTMLElement | undefined, step: number) {
   if (!grid) return
@@ -82,7 +82,7 @@ export function MarketplacePage(): JSX.Element {
     onAdded: () => dialog.close(),
   })
   const addSource = () => dialog.show(() => <AddSourceDrawer onAdd={sources.add} onCancel={() => dialog.close()} />)
-  const openInstall = useInstallSheet()
+  const openInstall = useInstallDrawer()
   const add = async (plugin: PluginCandidate) => {
     const catalog = directory.catalog.data
     if (catalog) await openInstall(plugin, catalog.revision, catalog.supportedHarnesses)
