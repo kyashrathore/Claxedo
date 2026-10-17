@@ -1,14 +1,14 @@
 import { batch, createEffect, on } from "solid-js"
 import { isSessionMissing, isStoppedCloud, toAppError, type HeldSessionReads, type SessionFirstRead, type SessionReads, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
-import { replaceLatest } from "./conversation"
+import { pageMessages, replaceLatest } from "./conversation"
 import { applyTranscriptEvent } from "./events"
-import { isOptimisticMessage } from "./merge"
+import { isOptimisticMessage, messageOrder } from "./merge"
 import { isReading, outlineOf } from "./model"
 
 function hasOlderLoaded(context: TranscriptContext, page: TranscriptPage): boolean {
-  const first = page.entries[0]?.info.id
-  return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && message.id < first)
+  const [first] = pageMessages(page).toSorted(messageOrder)
+  return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && messageOrder(message, first) < 0)
 }
 
 function landFirst(context: TranscriptContext, first: SessionFirstRead): void {

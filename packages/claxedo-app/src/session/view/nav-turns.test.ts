@@ -9,7 +9,7 @@ const turn = (id: string, title?: string): OutlineTurn => ({ id, createdAt: 1, p
 const user = (id: string): TranscriptUserMessage => ({ origin: "optimistic", id, sessionID: "ses_1", role: "user", agent: "build", time: { created: 1 } })
 const ready = (turns: OutlineTurn[]): OutlineState => ({ kind: "ready", outline: { turns, complete: true } })
 
-test("nav turns: the outline's turns list ahead of the loaded ones, in id order, and a loaded turn replaces its outline entry", () => {
+test("nav turns: the outline's turns list ahead of the loaded ones still being sent, and a loaded turn replaces its outline entry", () => {
   const loaded = [user("msg_3"), user("msg_4")]
   const listed = navTurns(ready([turn("msg_1", "First"), turn("msg_2"), turn("msg_3")]), loaded)
   expect(listed.map((item) => item.id)).toEqual(["msg_1", "msg_2", "msg_3", "msg_4"])
@@ -17,6 +17,12 @@ test("nav turns: the outline's turns list ahead of the loaded ones, in id order,
   expect(listed[1]).toEqual({ id: "msg_2", preview: { user: "prompt msg_2" } })
   expect(listed[2], "the loaded message, with its own parts for the preview").toBe(loaded[0])
   expect("preview" in listed[2]).toBe(false)
+})
+
+test("nav turns: the rail lists turns in the order they were made, whatever their ids sort as", () => {
+  const first: OutlineTurn = { id: "msg_tasks_9f3a", createdAt: 1_000, preview: { user: "the task's prompt" } }
+  const later: TranscriptUserMessage = { id: "msg_019a00000001", sessionID: "ses_1", role: "user", time: { created: 5_000 } }
+  expect(navTurns(ready([first]), [later]).map((item) => item.id)).toEqual(["msg_tasks_9f3a", "msg_019a00000001"])
 })
 
 test("nav turns: without an outline the rail lists the loaded turns alone", () => {

@@ -2,7 +2,7 @@ import { batch } from "solid-js"
 import { produce, unwrap, type SetStoreFunction } from "solid-js/store"
 import type { PartAddress, QueuedPrompt, TranscriptPage, TranscriptPart } from "@/server"
 import type { ConversationMessage } from "@/transcript"
-import { isOptimisticMessage, isPresentationMessage, mergeSortedById, mergedMessage, mergedPart, searchById } from "./merge"
+import { indexOfMessage, insertionIndex, isOptimisticMessage, isPresentationMessage, mergeInOrder, mergedMessage, mergedPart, messageOrder } from "./merge"
 import type { TranscriptData } from "./model"
 import { partHasText, textIsPresent } from "@claxedo/agent-runtime-contract/turn-fold"
 
@@ -25,26 +25,24 @@ function pageParts(page: TranscriptPage): TranscriptPart[] {
   return page.entries.flatMap((entry) => entry.parts)
 }
 
-function pageMessages(page: TranscriptPage): ConversationMessage[] {
+export function pageMessages(page: TranscriptPage): ConversationMessage[] {
   return page.entries.map((entry) => entry.info).filter(isPresentationMessage)
 }
 
 export function upsertMessage(set: SetTranscript, message: ConversationMessage): void {
   set("messages", (messages) => {
-    const { found, index } = searchById(messages, message.id)
-    const next = messages.slice()
-    next.splice(index, found ? 1 : 0, mergedMessage(found ? messages[index] : undefined, message))
+    const index = indexOfMessage(messages, message.id)
+    const merged = mergedMessage(index < 0 ? undefined : messages[index], message)
+    const next = index < 0 ? messages.slice() : messages.toSpliced(index, 1)
+    next.splice(insertionIndex(next, merged), 0, merged)
     return next
   })
 }
 
 export function removeMessage(set: SetTranscript, messageId: string): void {
   set("messages", (messages) => {
-    const { found, index } = searchById(messages, messageId)
-    if (!found) return messages
-    const next = messages.slice()
-    next.splice(index, 1)
-    return next
+    const index = indexOfMessage(messages, messageId)
+    return index < 0 ? messages : messages.toSpliced(index, 1)
   })
   set(
     "parts",
@@ -56,11 +54,8 @@ export function removeMessage(set: SetTranscript, messageId: string): void {
 
 export function removeOptimisticMessage(set: SetTranscript, messageId: string): void {
   set("messages", (messages) => {
-    const { found, index } = searchById(messages, messageId)
-    if (!found || !isOptimisticMessage(messages[index])) return messages
-    const next = messages.slice()
-    next.splice(index, 1)
-    return next
+    const index = indexOfMessage(messages, messageId)
+    return index < 0 || !isOptimisticMessage(messages[index]) ? messages : messages.toSpliced(index, 1)
   })
 }
 
@@ -114,7 +109,7 @@ function landedParts(current: readonly TranscriptPart[] | undefined, read: reado
 export function mergePage(set: SetTranscript, page: TranscriptPage): void {
   const read = pageMessages(page)
   batch(() => {
-    set("messages", (messages) => mergeSortedById(messages, read))
+    set("messages", (messages) => mergeInOrder(messages, read))
     set(
       "parts",
       produce((parts) => {
@@ -127,14 +122,14 @@ export function mergePage(set: SetTranscript, page: TranscriptPage): void {
 
 export function replaceLatest(set: SetTranscript, page: TranscriptPage): void {
   const fresh = pageMessages(page)
-  const fromId = fresh[0]?.id
+  const [from] = fresh.toSorted(messageOrder)
   const freshIds = new Set(fresh.map((message) => message.id))
   const kept = new Set<string>()
   batch(() => {
     set("messages", (messages) => {
-      const older = messages.filter((message) => isOptimisticMessage(message) || (fromId !== undefined && message.id < fromId))
+      const older = messages.filter((message) => isOptimisticMessage(message) || (from !== undefined && messageOrder(message, from) < 0))
       for (const message of older) kept.add(message.id)
-      return mergeSortedById(older, fresh)
+      return mergeInOrder(older, fresh)
     })
     set(
       "parts",

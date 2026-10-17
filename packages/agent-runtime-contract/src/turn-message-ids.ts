@@ -53,9 +53,9 @@ function randomBase62(length: number) {
 }
 
 /**
- * Mints message ids that sort by creation time. Clients keep a session's
- * messages ordered by id, so an id minted any other way lands out of place in
- * every transcript that shows it.
+ * Mints message ids that sort by creation time on the minting clock. Other
+ * minters (a task's first prompt, a subagent, a server-side `msg_<uuid>`) do
+ * not, so a reader orders a session's messages by `time.created`, not by id.
  */
 export function createMessageIds(clock: () => number = Date.now): () => string {
   let lastTimestamp = 0

@@ -10,36 +10,41 @@ export const isOptimisticMessage = (message: ConversationMessage): message is Op
 
 export const isRuntimeMessage = (message: ConversationMessage): message is AgentPresentationMessage => !isOptimisticMessage(message)
 
-export type Found = { readonly found: boolean; readonly index: number }
+export type TurnOrderKey = { readonly id: string; readonly created: number; readonly pending: boolean }
 
-export function searchById(list: readonly { readonly id: string }[], id: string): Found {
+export function compareTurnOrder(left: TurnOrderKey, right: TurnOrderKey): number {
+  if (left.pending !== right.pending) return left.pending ? 1 : -1
+  if (left.created !== right.created) return left.created - right.created
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+}
+
+export const messageOrderKey = (message: ConversationMessage): TurnOrderKey => ({
+  id: message.id,
+  created: message.time.created,
+  pending: isOptimisticMessage(message),
+})
+
+export const messageOrder = (left: ConversationMessage, right: ConversationMessage): number =>
+  compareTurnOrder(messageOrderKey(left), messageOrderKey(right))
+
+export function indexOfMessage(list: readonly { readonly id: string }[], id: string): number {
+  return list.findIndex((message) => message.id === id)
+}
+
+export function insertionIndex(list: readonly ConversationMessage[], message: ConversationMessage): number {
   let low = 0
   let high = list.length
   while (low < high) {
     const mid = (low + high) >>> 1
-    if (list[mid].id < id) low = mid + 1
+    if (messageOrder(list[mid], message) < 0) low = mid + 1
     else high = mid
   }
-  return { found: low < list.length && list[low].id === id, index: low }
+  return low
 }
 
-export function mergeSortedById<T extends { readonly id: string }>(current: readonly T[], incoming: readonly T[]): T[] {
-  const merged: T[] = []
-  let a = 0
-  let b = 0
-  while (a < current.length || b < incoming.length) {
-    const left = current[a]
-    const right = incoming[b]
-    if (right === undefined || (left !== undefined && left.id < right.id)) {
-      merged.push(left)
-      a += 1
-    } else {
-      merged.push(right)
-      b += 1
-      if (left !== undefined && left.id === right.id) a += 1
-    }
-  }
-  return merged
+export function mergeInOrder(current: readonly ConversationMessage[], incoming: readonly ConversationMessage[]): ConversationMessage[] {
+  const replaced = new Set(incoming.map((message) => message.id))
+  return [...current.filter((message) => !replaced.has(message.id)), ...incoming].sort(messageOrder)
 }
 
 function settledPart(part: TranscriptPart): boolean {

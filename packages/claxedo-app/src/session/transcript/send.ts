@@ -3,7 +3,7 @@ import type { SentPrompt } from "@/session"
 import type { OptimisticUserMessage } from "@/transcript"
 import type { TranscriptContext } from "./context"
 import { removeOptimisticMessage, upsertMessage } from "./conversation"
-import { isRuntimeMessage, searchById } from "./merge"
+import { indexOfMessage, isRuntimeMessage } from "./merge"
 
 export function pendingMessage(sessionId: string, prompt: SentPrompt): OptimisticUserMessage | undefined {
   if (prompt.goal) return undefined
@@ -18,8 +18,8 @@ export function showSent(context: TranscriptContext, prompt: SentPrompt): void {
 }
 
 function runtimeHolds(context: TranscriptContext, messageId: string): boolean {
-  const { found, index } = searchById(context.data.messages, messageId)
-  if (found && isRuntimeMessage(context.data.messages[index])) return true
+  const index = indexOfMessage(context.data.messages, messageId)
+  if (index >= 0 && isRuntimeMessage(context.data.messages[index])) return true
   return context.queue.items().some((item) => item.messageId === messageId)
 }
 
