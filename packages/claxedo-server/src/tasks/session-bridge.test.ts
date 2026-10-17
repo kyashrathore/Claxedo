@@ -15,6 +15,7 @@ import {
   tasksSessionBridgeConformance,
   type TasksSessionBridgeFixture,
 } from "@claxedo/server-core/tasks-host/session-bridge-conformance"
+import { startedSession } from "@claxedo/tasks/test-support"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
 import type { RegisteredSession } from "@claxedo/server-core/tasks-host/registered-sessions"
@@ -278,7 +279,6 @@ function bridge(
     runtimeClient: {},
     reads: input.reads,
     auth: signedStarter,
-    sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
     ...(principal ? { principal } : {}),
   })
 }
@@ -340,7 +340,7 @@ describe("hosted tasks session bridge", () => {
     const started = await kit.start(await startCommand(previewed.preview.digest))
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
-    const sessionId = started.session.sessionRef.sessionId
+    const sessionId = startedSession(started).sessionRef.sessionId
 
     // No resolver: an unsigned host with no canonical human actor still reserves.
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(
@@ -363,7 +363,7 @@ describe("hosted tasks session bridge", () => {
     // The create hands the task to nobody: the kit commits the link first and
     // asks for the handoff afterwards.
     expect(host.calls.some((call) => call.path.endsWith("/prompt_async"))).toBe(false)
-    expect(await kit.handoff(handoffCommand(started.session.sessionRef))).toMatchObject({ ok: true, sent: true })
+    expect(await kit.handoff(handoffCommand(startedSession(started).sessionRef))).toMatchObject({ ok: true, sent: true })
 
     const prompt = host.calls.find((call) => call.path.endsWith("/prompt_async"))
     const promptBody: unknown = JSON.parse(prompt?.init?.body ?? "{}")
@@ -382,7 +382,6 @@ describe("hosted tasks session bridge", () => {
       services: composition.value,
       reads: composition.reads,
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
-      sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
       principal: async () => ({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human" }),
       auth: signedStarter,
     })
@@ -404,7 +403,6 @@ describe("hosted tasks session bridge", () => {
       services: composition.value,
       reads: composition.reads,
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
-      sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
       principal: async () => ({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human" }),
       owner: () => ({ userId: STARTER.userId, actorId: STARTER.actorId, orgId: "org", projectId: "prj_1" }),
     })
@@ -449,7 +447,7 @@ describe("hosted tasks session bridge", () => {
     const started = await kit.start(await startCommand(previewed.preview.digest))
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
-    expect(await kit.handoff(handoffCommand(started.session.sessionRef))).toMatchObject({ ok: true, sent: true })
+    expect(await kit.handoff(handoffCommand(startedSession(started).sessionRef))).toMatchObject({ ok: true, sent: true })
 
     const readable = mock.request.getMockImplementation()!
     mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) =>
@@ -457,7 +455,7 @@ describe("hosted tasks session bridge", () => {
         ? Response.json({ error: { message: "the runtime is restarting" } }, { status: 503 })
         : readable(path, init))
 
-    const refused = await kit.handoff(handoffCommand(started.session.sessionRef))
+    const refused = await kit.handoff(handoffCommand(startedSession(started).sessionRef))
     expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
     expect(host.calls.filter((call) => call.path.endsWith("/prompt_async"))).toHaveLength(1)
   })
@@ -500,7 +498,7 @@ describe("hosted tasks session bridge", () => {
     const started = await kit.start(await startCommand(previewed.preview.digest))
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
-    const session = started.session.sessionRef
+    const session = startedSession(started).sessionRef
 
     const origin = { scopeId: "org", taskId: "tsk_1", slot, attempt: 1, sessionRef: session }
     composition.metas.delete(session.sessionId)
@@ -574,7 +572,6 @@ describe("hosted tasks session bridge", () => {
       services: composition.value,
       reads: composition.reads,
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
-      sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
       principal: async () => ({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human" }),
       auth: signedStarter,
     })
@@ -591,7 +588,7 @@ describe("hosted tasks session bridge", () => {
       slot,
       attempt: 1,
       configurationDigest: await startConfigurationDigest({ preset: preset(), slot }),
-      sessionRef: started.session.sessionRef,
+      sessionRef: startedSession(started).sessionRef,
     })
     expect(abandoned).toMatchObject({ ok: true, removed: true })
     const removal = host.calls.slice(callsBefore)
@@ -612,7 +609,6 @@ describe("hosted tasks session bridge", () => {
       services: composition.value,
       reads: { ...composition.reads, workspace: async (id) => (id === previous.id ? previous : composition.reads.workspace(id)) },
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
-      sandboxEgress: { controlPlaneOrigin: "https://cp.claxedo.test" },
       auth: signedStarter,
     })
     mock.clients.length = 0
@@ -638,7 +634,7 @@ describe("hosted tasks session bridge", () => {
     if (!previewed.ok) throw new Error("preview refused")
     const started = await kit.start(await startCommand(previewed.preview.digest))
     if (!started.ok) throw new Error("start refused")
-    const session = started.session.sessionRef
+    const session = startedSession(started).sessionRef
 
     const abandoned = await kit.abandon({
       actor,
@@ -676,7 +672,7 @@ describe("hosted tasks session bridge", () => {
     if (!previewed.ok) throw new Error("preview refused")
     const started = await kit.start(await startCommand(previewed.preview.digest))
     if (!started.ok) throw new Error("start refused")
-    const session = started.session.sessionRef
+    const session = startedSession(started).sessionRef
     const command = {
       actor,
       task: task(),

@@ -1,6 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
-import { createSandboxManager, type SandboxDriver } from "@claxedo/sandbox-manager"
+import { createSandboxManager, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
 import type { ControlPlanePrincipal, RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { AuthenticationError } from "@claxedo/server-core/platform/auth/authentication"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -13,6 +13,8 @@ import { hostedTasksRouteContributions } from "../deployments/hosted-workerd/tas
 import { orgSandboxDrivers } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { createD1SandboxLeaseStore } from "../sandbox/stores/d1"
+import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
+import type { SandboxStart } from "../workspace/sandbox-start"
 import { testRequestAuthenticationAdapter } from "./request-authentication"
 
 type Env = {
@@ -32,7 +34,7 @@ function tokenPrincipal(token: FixtureRuntimeToken) {
     : { principalKind: "service" as const, actorId: token.actorId, actorKind: "agent" as const }
 }
 
-function readyDriver(provisionFailures: Set<string>, ensures: { count: number }): SandboxDriver {
+function readyDriver(ensures: { count: number }): SandboxDriver {
   return {
     id: "modal",
     metadata: {
@@ -53,7 +55,6 @@ function readyDriver(provisionFailures: Set<string>, ensures: { count: number })
     },
     ensureHost: async (input) => {
       ensures.count++
-      if (provisionFailures.delete(input.workspaceId)) throw new Error("the provider is out of capacity")
       return {
         sandboxId: `sandbox_${input.workspaceId}`,
         url: `https://sandbox.test/${input.workspaceId}`,
@@ -65,18 +66,58 @@ function readyDriver(provisionFailures: Set<string>, ensures: { count: number })
 }
 
 /**
+ * The workspace's sandbox start the way its provisioner answers it: a serving
+ * sandbox answers ready, any other start takes the lease, and the driver steps
+ * the provisioner's alarm would run follow inside the start unless the test
+ * holds that root's boot, when they run at `settle`. A start the test failed
+ * answers the provider's refusal once.
+ */
+function rootStarts(database: D1Database, manager: SandboxManager) {
+  const held = new Set<string>()
+  const failing = new Set<string>()
+  const input = async (workspaceId: string) => {
+    const row = await database
+      .prepare("select workspace_id, project_id, repo_url, git_branch, remote_directory from workspaces where workspace_id = ?")
+      .bind(workspaceId)
+      .first()
+    if (!row) throw new Error(`no root ${workspaceId} was filed before its start`)
+    return hostedSandboxInput(row, { egress: { defaultHomeRegion: "us-east" }, preparation: undefined })
+  }
+  const boot = async (workspaceId: string, epoch: number) => {
+    for (;;) {
+      const answer = await manager.provision(workspaceId, epoch, await input(workspaceId))
+      if (answer.status !== "provisioning") return answer
+    }
+  }
+  const start: SandboxStart = async (workspaceId) => {
+    if (failing.delete(workspaceId)) return { status: "unavailable", error: "the provider is out of capacity", homeRegion: "us-east" }
+    const current = await manager.target(workspaceId)
+    if (current.status === "ready") return current
+    const acquired = await manager.acquire(workspaceId, await input(workspaceId))
+    if (acquired.status !== "provisioning" || held.has(workspaceId)) return acquired
+    return boot(workspaceId, acquired.epoch)
+  }
+  const settle = async (workspaceId: string) => {
+    held.delete(workspaceId)
+    const lease = (await manager.list()).find((row) => row.workspaceId === workspaceId)
+    return lease ? boot(workspaceId, lease.epoch) : manager.target(workspaceId)
+  }
+  return { start, settle, held, failing }
+}
+
+/**
  * The hosted Tasks routes the Worker entry mounts, over the real D1 control
  * plane, the real hosted bridge and a sandbox manager on the D1 lease store.
- * Faked: the sandbox provider, the person's sign-in, and the workspace
- * runtime behind the relay (answered by the test's outbound service).
+ * Faked: the sandbox provider, the provisioner's alarm, the person's sign-in,
+ * and the workspace runtime behind the relay (answered by the test's outbound
+ * service).
  */
 function compose(env: Env) {
   const database = env.CONTROL_PLANE_DB
   const authority = createD1CoreAuthority(database, { deploymentId: "test", product: { kind: "claxedo-hosted" } })
   const principals = new Map<string, ControlPlanePrincipal>()
-  const provisionFailures = new Set<string>()
   const ensures = { count: 0 }
-  const driver = readyDriver(provisionFailures, ensures)
+  const driver = readyDriver(ensures)
   const leaseStore = createD1SandboxLeaseStore({ database })
   const drivers = orgSandboxDrivers({
     keys: { drivers: ["modal"], create: () => driver, chosenDriver: async () => undefined },
@@ -139,13 +180,13 @@ function compose(env: Env) {
       principal,
     }
   }
+  const starts = rootStarts(database, sandbox.manager)
   const app = new Hono()
   for (const contribution of hostedTasksRouteContributions({
     services,
     database,
     authentication,
-    selectedCapabilities: { prepare: async () => ({}), apply: async () => undefined },
-    sandboxEgress: { controlPlaneOrigin: "https://core.test" },
+    sandboxStart: starts.start,
     signingEnv: {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
@@ -202,10 +243,17 @@ function compose(env: Env) {
     return c.json({ projectId: row?.project_id, orgId: row?.org_id })
   })
 
-  app.post("/__fail-provision", async (c) => {
-    provisionFailures.add((await c.req.json<{ workspaceId: string }>()).workspaceId)
+  app.post("/__fail-start", async (c) => {
+    starts.failing.add((await c.req.json<{ workspaceId: string }>()).workspaceId)
     return c.json({ ok: true })
   })
+
+  app.post("/__hold-boot", async (c) => {
+    starts.held.add((await c.req.json<{ workspaceId: string }>()).workspaceId)
+    return c.json({ ok: true })
+  })
+
+  app.post("/__settle", async (c) => c.json(await starts.settle((await c.req.json<{ workspaceId: string }>()).workspaceId)))
 
   app.post("/__authorize", async (c) => {
     const body = await c.req.json<{ token: string; sessionId: string; action: "read" | "write" }>()

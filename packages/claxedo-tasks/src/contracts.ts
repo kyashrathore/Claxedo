@@ -567,11 +567,20 @@ export type StartRequest = {
   startedFrom?: SessionRef
 }
 
-export type StartResponse = {
-  link: TaskSessionLinkView
-  /** False when an existing live session or an already-stored link was returned. */
-  created: boolean
-}
+/**
+ * A Start whose cloud root is still starting. The Start acquired the root's
+ * workspace and began its start, then answered without a session: the caller
+ * follows that workspace's start and sends the same Start again once it runs.
+ */
+export type StartPreparing = { workspaceId: string }
+
+export type StartResponse =
+  | {
+      link: TaskSessionLinkView
+      /** False when an existing live session or an already-stored link was returned. */
+      created: boolean
+    }
+  | { preparing: StartPreparing }
 
 export type TaskDetailResponse = {
   task: Task

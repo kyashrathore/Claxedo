@@ -97,9 +97,8 @@ function stepThrew(run: Run, cause: unknown): SandboxStartAnswer {
  * unreachable for too long, or idle where its host reads no idleness itself.
  * The run owns the alarm while
  * one is in flight; the follow-ups take it back when the run settles. A Task
- * root is created outside any run, so `follow` hands its follow-ups here
- * instead, with the root's capability set, which every later step of that
- * workspace is prepared with.
+ * root's start names the root's capability set, which this run and every later
+ * step of that workspace is prepared with.
  */
 export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDrive, timing: SandboxProvisionerTiming = {}) {
   const outcomeHeldMs = timing.outcomeHeldMs ?? OUTCOME_HELD_MS
@@ -109,6 +108,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
 
     start(workspaceId: string, request: SandboxStartRequest = {}): Promise<SandboxStartAnswer> {
       return this.#flushed(async () => {
+        if (request.capabilities) await this.ctx.storage.put("capabilities", request.capabilities)
         const joined = await this.#inFlight()
         if (joined) return joined
         const failed = await this.#heldFailure(request)

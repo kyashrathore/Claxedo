@@ -241,7 +241,8 @@ export function createTasksRoutes(options: TasksRoutesOptions): Hono {
     if (!body.ok) return body.response
     const request = parseStartRequest(body.value)
     if (!request.ok) return invalidResponse(c, "The start request is not valid", request.fields)
-    return c.json(await tasks.start(authenticated.actor, c.req.param("taskId"), request.value))
+    const started = await tasks.start(authenticated.actor, c.req.param("taskId"), request.value)
+    return c.json(started, "preparing" in started ? 202 : 200)
   })
 
   return app

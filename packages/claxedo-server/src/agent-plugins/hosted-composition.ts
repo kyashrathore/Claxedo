@@ -1,4 +1,3 @@
-import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import { createSessionHostPlugins, machineServing } from "./runtime/session-host-launch"
 import type { SandboxInFlight } from "../workspace/sandbox-start"
@@ -104,24 +103,10 @@ export type HostedAgentPluginsComposition = {
   sessionHostToolGroups: (root: CloudRootIdentity) => Promise<readonly string[]>
   /** Revokes every pass `prepareRuntime` minted for a root whose workspace is now deleted. */
   releaseRuntime: (context: WorkspaceRuntimeContext) => Promise<void>
-  /**
-   * The environment `prepareRuntime` launches a cloud root with, for a caller
-   * that allocates its own workspace and prepares its own selection.
-   */
-  rootEnvironment: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /** Whether the root's project has Tasks on now, read as the launch environment reads it. */
   tasksGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
   /** Whether the root's project has subagents on now, read the same way; what the owner grant's renewal asks. */
   subagentsGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
-  /**
-   * One root's own capability set, for a caller that allocates its own
-   * workspace: the same preparation and apply the workspace routes run, over
-   * an explicit selection instead of the project's activation defaults.
-   */
-  selectedCapabilities: {
-    prepare(input: { workspaceId: string; capabilities: AgentPluginExecutionSelection }): Promise<WorkspaceRuntimePreparation>
-    apply(input: { workspaceId: string; capabilities: AgentPluginExecutionSelection; preparation: WorkspaceRuntimePreparation }): Promise<void>
-  }
 }
 
 function required(value: string | undefined, name: string) {
@@ -230,7 +215,6 @@ export function createHostedAgentPluginsComposition(input: {
   passes: SandboxPassRegister
   /** Refreshes the caller's running sandboxes after an activation change; absent on a plane that hosts no sandboxes. */
   pluginsChanged?: (userId: string) => Promise<void>
-  pushRuntime?: (context: WorkspaceRuntimeContext, preparation: WorkspaceRuntimePreparation) => Promise<void>
   /** The plane's broker, through which a sandbox with no provider edge clones its private repository. */
   egressBroker?: HostedEgressBroker
   /** The start run a workspace's sandbox has in flight; absent on a plane that hosts no sandboxes. */
@@ -423,22 +407,6 @@ export function createHostedAgentPluginsComposition(input: {
     await input.pluginsChanged(userId)
     return { state: "applied" as const }
   }
-  const selectedCapabilities: HostedAgentPluginsComposition["selectedCapabilities"] = {
-    async prepare({ workspaceId, capabilities }) {
-      // The same cloud-VM rail as `prepareRuntime`: a workspace the control
-      // plane does not host has no projection to push, and a caller asking for
-      // one here is asking for a promise this rail cannot keep.
-      if (!(await cloudWorkspace(workspaceId))) {
-        throw new Error(`Workspace ${workspaceId} is not a cloud root this control plane provisions`)
-      }
-      return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId), { selection: capabilities })
-    },
-    async apply({ workspaceId, capabilities, preparation }) {
-      if (!input.pushRuntime) throw new Error("Selected capabilities require hosted settings delivery")
-      await input.pushRuntime({ workspaceId, capabilities }, preparation)
-    },
-  }
-
   const gateway = HostedMcpGatewayRoutes({
     env,
     revoked: input.passes.revoked,
@@ -523,10 +491,8 @@ export function createHostedAgentPluginsComposition(input: {
     sessionHostToolGroups: createCloudRootToolGroups({ activations, builtIn }),
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
-    rootEnvironment,
     tasksGroupEnabled,
     subagentsGroupEnabled,
-    selectedCapabilities,
   }
 }
 

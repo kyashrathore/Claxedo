@@ -28,3 +28,4 @@ export {
   type FakeBridge,
 } from "./fakes"
 export { fieldReasons, parsedReasons, refusalOf } from "./refusals"
+export { linkedStart, startedSession } from "./started"

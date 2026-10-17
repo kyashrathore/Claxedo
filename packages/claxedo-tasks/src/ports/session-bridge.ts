@@ -5,6 +5,7 @@ import type {
   SessionLiveness,
   SessionRef,
   SessionStarter,
+  StartPreparing,
   StartPreview,
   Task,
   TaskAttachmentRecord,
@@ -119,6 +120,10 @@ export type StartedSession = {
  * The host's half of Start. Liveness and handoff state are read here on every
  * request and never stored by Tasks; `preview` has no side effects.
  *
+ * A cloud root's `start` answers `preparing` while the root's workspace is
+ * still starting: no session exists yet, nothing is reserved, and the same
+ * Start sent once the workspace runs creates it.
+ *
  * `start` and `handoff` are two calls because the link has to be durable
  * before the task is handed to anyone: `start` reserves the origin
  * `(scope, taskId, slot, attempt)` under the configuration digest and creates
@@ -138,7 +143,7 @@ export type StartedSession = {
 export type TasksSessionBridgePort = {
   sessionState(origins: readonly SessionOrigin[]): Promise<readonly SessionStateReading[]>
   preview(command: StartPreviewCommand): Promise<TasksResult<{ preview: StartPreview }>>
-  start(command: StartCommand): Promise<TasksResult<{ session: StartedSession }>>
+  start(command: StartCommand): Promise<TasksResult<{ session: StartedSession } | { preparing: StartPreparing }>>
   /** `sent` is false when this origin's first message was already on the session. */
   handoff(command: SessionHandoffCommand): Promise<TasksResult<{ sent: boolean }>>
   /**

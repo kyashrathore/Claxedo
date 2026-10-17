@@ -236,8 +236,9 @@ export function registerTaskTools(registry: ToolRegistrar) {
             : `${preset.name} cannot start ${slot} for this task, and the host named no reason.`,
         )
       }
+      const clientRequestId = args.clientRequestId ?? crypto.randomUUID()
       const started = await client.start(args.task, {
-        clientRequestId: args.clientRequestId ?? crypto.randomUUID(),
+        clientRequestId,
         taskRevision: detail.task.revision,
         presetId: preset.id,
         presetRevision: preset.revision,
@@ -248,9 +249,18 @@ export function registerTaskTools(registry: ToolRegistrar) {
         continueFromPrevious,
         ...(startedFrom ? { startedFrom } : {}),
       })
+      const task = { id: detail.task.id, key: taskNumber(detail.task), title: detail.task.title }
+      if ("preparing" in started) {
+        return toolJson({
+          task,
+          preparing: started.preparing,
+          clientRequestId,
+          next: "The task's cloud workspace is starting; call task_start again with this clientRequestId in a minute to start its session.",
+        })
+      }
       addressed?.(started.link.sessionRef.sessionId)
       return toolJson({
-        task: { id: detail.task.id, key: taskNumber(detail.task), title: detail.task.title },
+        task,
         session: started.link.sessionRef,
         slot: started.link.slot,
         attempt: started.link.attempt,

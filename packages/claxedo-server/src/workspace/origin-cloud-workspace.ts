@@ -1,4 +1,4 @@
-import { sandboxStartFailureReason, type SandboxBrokeredSecret, type SandboxDriver, type SandboxManagerInput } from "@claxedo/sandbox-manager"
+import { sandboxStartFailureReason, type SandboxDriver } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { sha256Hex } from "@claxedo/helpers/crypto"
@@ -7,26 +7,17 @@ import { cloudRuntimeStartFailure } from "@claxedo/server-core/workspace/cloud-r
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
-import { hostedSandboxInput, type WorkspaceSandboxEgress } from "./hosted-sandbox-input"
+import type { CloudStartOutcome } from "./cloud-workspace-start"
 
 const log = Log.create({ service: "origin-cloud-workspace" })
 
-/**
- * How long a caller waits for a first provision before it is told to ask
- * again. The allocation is recoverable by construction, so a wait that
- * outlives a request budget is worse than a refusal: the next call for the
- * same origin key finds the same workspace still provisioning and picks the
- * wait up where this one left it.
- */
-const READY_DEADLINE_MS = 30_000
-const READY_POLL_CAP_MS = 2_000
-
 export type OriginCloudWorkspaceRefusal = {
-  code: "placement_unsupported" | "source_unavailable"
+  code: "placement_unsupported" | "source_unavailable" | "capability_unavailable"
   detail: string
 }
 
-export type OriginCloudWorkspaceResult = { workspace: Workspace } | OriginCloudWorkspaceRefusal
+/** A root filed and started: `running` once its sandbox serves, `starting` while its start is under way. */
+export type OriginCloudWorkspaceResult = { workspace: Workspace; state: "running" | "starting" } | OriginCloudWorkspaceRefusal
 
 /** The repository and ref a project's cloud roots clone. */
 export type OriginCloudSource = { repoUrl: string; gitBranch?: string; repoName?: string }
@@ -37,8 +28,9 @@ export type OriginCloudWorkspaceRows = {
   projectSource(projectId: string): Promise<OriginCloudSource | undefined>
 }
 
-export type OriginCloudWorkspaceInput = {
-  services: Pick<ControlPlaneServices, "sandbox" | "defaultHomeRegion">
+/** What names one origin's root, and what a root the key has none for yet would be filed as. */
+export type OriginCloudRootInput = {
+  services: Pick<ControlPlaneServices, "sandbox">
   rows: OriginCloudWorkspaceRows
   /**
    * The root this workspace belongs to. The workspace id is derived from these
@@ -52,42 +44,20 @@ export type OriginCloudWorkspaceInput = {
   /** The organization the root is created in, whose sandbox provider key places it. */
   orgId: string
   displayName: string
-  /**
-   * What every hosted root's egress allowlist is built from besides the git
-   * host this allocation clones: the deployment's relays and extra hosts, and
-   * the control-plane origin the runtime reports back to.
-   */
-  egress: WorkspaceSandboxEgress
+}
+
+export type OriginCloudWorkspaceInput = OriginCloudRootInput & {
   /**
    * Files the root with the deployment's workspace authority, as the caller,
    * or re-admits the row an earlier attempt filed. The authority holds a
    * second filing of one id to the first exactly, owner included, so a retry
    * by anyone but the root's creator is refused rather than handed their
-   * workspace. The context says whether the ensure that follows opens the
-   * root's lease, so the metering a first lease runs fires once per lease and
-   * not once per retry.
+   * workspace.
    */
-  admit(workspace: Workspace, context: OriginCloudAdmission): Promise<void>
-  /**
-   * What this root's own configuration needs, resolved once the workspace id
-   * exists and before the sandbox is created.
-   *
-   * Brokered secrets ride the driver's egress-injection channel and never
-   * enter the sandbox; `env` is the readable environment, for a credential the
-   * agent itself presents. Both reach a runtime only through `ensure`, so a
-   * caller that resolved them after readiness would have a runtime that can
-   * never be given them.
-   */
-  prepare?(workspace: Workspace): Promise<OriginCloudWorkspacePreparation>
+  admit(workspace: Workspace): Promise<void>
+  /** The workspace's one sandbox start: it begins the run or joins the one in flight, and answers at once. */
+  start(workspace: Workspace): Promise<CloudStartOutcome>
 }
-
-/** A root whose lease the next ensure opens names the driver that lease runs on. */
-export type OriginCloudAdmission = { opensLease: true; driver: string } | { opensLease: false }
-
-export type OriginCloudWorkspacePreparation = Readonly<{
-  secrets?: readonly SandboxBrokeredSecret[]
-  env?: Readonly<Record<string, string>>
-}>
 
 /**
  * `ws_<24 hex of SHA-256(originKey)>`.
@@ -102,76 +72,59 @@ export async function originCloudWorkspaceId(originKey: string): Promise<string>
 }
 
 /**
- * The dedicated cloud workspace one origin key runs in, provisioned and ready.
- *
- * Retries of the same key recover the same workspace rather than allocating a
- * second: the id is a function of the key, so the authority's row is the
- * receipt. A provision that definitely failed releases the lease and keeps
- * the row, so the next attempt re-admits it and starts a fresh sandbox
- * instead of waiting on one nothing will ever finish. The row is not
- * discarded: the authority never files a deleted id again, so a discarded
- * root's attempt could never be started.
+ * The root one origin key has, or the one it would be filed as, read without
+ * filing or starting anything: the row an earlier attempt filed, or the
+ * project's source at its ref on the driver its organization's key builds.
  */
-export async function allocateOriginCloudWorkspace(
-  input: OriginCloudWorkspaceInput,
-): Promise<OriginCloudWorkspaceResult> {
-  const sandboxManager = input.services.sandbox.sandboxManager
-  if (!sandboxManager) {
-    return {
-      code: "placement_unsupported",
-      detail: "This control plane provisions no cloud sandboxes",
-    }
+export async function originCloudRoot(input: OriginCloudRootInput): Promise<Workspace | OriginCloudWorkspaceRefusal> {
+  if (!input.services.sandbox.sandboxManager) {
+    return { code: "placement_unsupported", detail: "This control plane provisions no cloud sandboxes" }
   }
-
   const workspaceId = await originCloudWorkspaceId(input.originKey)
-  const stored = await input.rows.workspace(workspaceId)
-  const workspace = stored
-    ? await admit(stored, input, await storedRootLease(input, sandboxManager, workspaceId))
-    : await allocate(workspaceId, input)
-  if (!("id" in workspace)) return workspace
-
-  const repoUrl = workspace.repo_url
-  if (!repoUrl) {
-    return { code: "source_unavailable", detail: "The task's cloud workspace has no repository to clone" }
-  }
-
-  const prepared = (await input.prepare?.(workspace)) ?? {}
-  const ready = await awaitSandboxReady(sandboxManager, workspace.id, hostedSandboxInput({
-    workspace_id: workspace.id,
-    project_id: input.projectId,
-    home_region: input.services.defaultHomeRegion,
-    repo_url: repoUrl,
-    git_branch: workspace.git_branch,
-    remote_directory: workspace.remote_directory,
-  }, {
-    egress: input.egress,
-    preparation: { env: { ...prepared.env }, secrets: [...prepared.secrets ?? []] },
-  }))
-  if (ready.status === "ready") return { workspace }
-  if (ready.status === "provisioning") {
-    return {
-      code: "source_unavailable",
-      detail: "The cloud workspace for this attempt is still being provisioned; start it again in a moment",
-    }
-  }
-
-  log.warn("Origin cloud workspace provisioning failed", { workspaceId: workspace.id, error: ready.error })
-  await sandboxManager.release(workspace.id).catch(() => undefined)
-  return {
-    code: "source_unavailable",
-    detail: ready.error ? cloudRuntimeStartFailure(sandboxStartFailureReason(ready.error)) : "The cloud workspace could not start",
-  }
+  return (await input.rows.workspace(workspaceId)) ?? newRoot(workspaceId, input)
 }
 
 /**
- * The root for a key that has none yet: the project's source at its ref,
- * filed in the task's project, on the driver its organization's key builds.
- * An organization without a key has no placement to offer.
+ * The dedicated cloud workspace one origin key runs in, filed and started
+ * through the workspace's own sandbox start, which announces the start to the
+ * owner's open clients and drives it to ready in the background.
+ *
+ * Retries of the same key recover the same workspace rather than allocating a
+ * second: the id is a function of the key, so the authority's row is the
+ * receipt, and the start a retry asks for joins the run in flight or finds the
+ * sandbox serving.
  */
-async function allocate(
-  workspaceId: string,
-  input: OriginCloudWorkspaceInput,
-): Promise<Workspace | OriginCloudWorkspaceRefusal> {
+export async function allocateOriginCloudWorkspace(input: OriginCloudWorkspaceInput): Promise<OriginCloudWorkspaceResult> {
+  const workspace = await originCloudRoot(input)
+  if (!("id" in workspace)) return workspace
+  try {
+    await input.admit(workspace)
+  } catch (error) {
+    return {
+      code: "source_unavailable",
+      detail: `This caller may not create a cloud workspace here: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+  if (!workspace.repo_url) {
+    return { code: "source_unavailable", detail: "The task's cloud workspace has no repository to clone" }
+  }
+  const started = await input.start(workspace)
+  if ("denied" in started) return { code: "source_unavailable", detail: started.denied.error.message }
+  if (started.status === "ready") return { workspace, state: "running" }
+  if (started.status === "provisioning") return { workspace, state: "starting" }
+  if (started.status === "failed") {
+    log.warn("Origin cloud workspace preparation failed", { workspaceId: workspace.id, code: started.code, error: started.message })
+    return { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." }
+  }
+  log.warn("Origin cloud workspace start failed", { workspaceId: workspace.id, error: started.error })
+  return {
+    code: "source_unavailable",
+    detail: started.error ? cloudRuntimeStartFailure(sandboxStartFailureReason(started.error)) : "The cloud workspace could not start",
+  }
+}
+
+/** An organization without a key has no placement to offer. */
+async function newRoot(workspaceId: string, input: OriginCloudRootInput): Promise<Workspace | OriginCloudWorkspaceRefusal> {
   const source = await input.rows.projectSource(input.projectId)
   if (!source) {
     return {
@@ -193,7 +146,7 @@ async function allocate(
     }
   }
   const now = Date.now()
-  const workspace: Workspace = {
+  return {
     id: workspaceId,
     org_id: input.orgId,
     project_id: input.projectId,
@@ -206,50 +159,5 @@ async function allocate(
     remote_directory: WORKSPACE_DIR,
     created_at: now,
     updated_at: now,
-  }
-  return await admit(workspace, input, { opensLease: true, driver: placed.id })
-}
-
-/** A stored root whose lease a failed provision released opens a new one, on the driver its workspace is placed on. */
-async function storedRootLease(
-  input: OriginCloudWorkspaceInput,
-  sandboxManager: SandboxLifecycle,
-  workspaceId: string,
-): Promise<OriginCloudAdmission> {
-  const current = await sandboxManager.target(workspaceId)
-  if (current.status !== "unavailable" || current.reason !== "runtime_lease_missing") return { opensLease: false }
-  const placed = await input.services.sandbox.workspaceDriver?.(workspaceId)
-  return { opensLease: true, driver: placed?.id ?? "unknown" }
-}
-
-async function admit(
-  workspace: Workspace,
-  input: OriginCloudWorkspaceInput,
-  context: OriginCloudAdmission,
-): Promise<Workspace | OriginCloudWorkspaceRefusal> {
-  try {
-    await input.admit(workspace, context)
-  } catch (error) {
-    return {
-      code: "source_unavailable",
-      detail: `This caller may not create a cloud workspace here: ${error instanceof Error ? error.message : String(error)}`,
-    }
-  }
-  return workspace
-}
-
-type SandboxLifecycle = NonNullable<ControlPlaneServices["sandbox"]["sandboxManager"]>
-
-async function awaitSandboxReady(
-  sandboxManager: SandboxLifecycle,
-  workspaceId: string,
-  run: SandboxManagerInput,
-) {
-  const deadline = Date.now() + READY_DEADLINE_MS
-  for (;;) {
-    const result = await sandboxManager.ensure(workspaceId, run)
-    if (result.status !== "provisioning") return result
-    if (Date.now() >= deadline) return result
-    await new Promise((resolve) => setTimeout(resolve, Math.min(result.retryAfterMs, READY_POLL_CAP_MS)))
   }
 }

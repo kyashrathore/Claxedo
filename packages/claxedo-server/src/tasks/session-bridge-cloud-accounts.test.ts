@@ -13,13 +13,14 @@ import { createHostedRuntimeDelivery } from "../workspace/hosted-runtime-deliver
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
 import { hostedBrokerCredentialReader, hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { createHostedEgressBroker } from "../credentials/hosted-egress-broker"
-import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
+import { inlineSandboxStart, unusedSandboxFollow, unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
+import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
+import type { SandboxStartAnswer, SandboxStartRequest } from "../workspace/sandbox-start"
+import { startConfigurationDigest } from "@claxedo/tasks"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import type { ControlPlaneServices } from "../authority/services"
 import { createHostedTasksSessionBridge } from "./session-bridge"
-
-const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
 
 const runtimeRequest = vi.hoisted(() => vi.fn())
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: RuntimeSnapshot) => {}))
@@ -119,7 +120,7 @@ async function rootStart(secretBrokering: "native" | "none") {
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
     sandboxRedeliver: unusedSandboxRedeliver,
-    sandboxFollow: followed,
+    sandboxFollow: unusedSandboxFollow,
     idleStop: unusedWorkspaceIdleStop,
     authority: authority as unknown as DeliveryInput["authority"],
     database,
@@ -134,10 +135,20 @@ async function rootStart(secretBrokering: "native" | "none") {
       env: signing,
       origin: ORIGIN,
     }),
-    sandboxInput: async () => { throw new Error("a root is not started through the workspace routes") },
+    sandboxInput: async (workspaceId, prepared) => {
+      const row = filed.get(workspaceId)
+      if (!row) throw new Error(`no root ${workspaceId} was filed before its start`)
+      return hostedSandboxInput(
+        { workspace_id: row.id, project_id: row.project_id, repo_url: row.repo_url, remote_directory: "/workspace" },
+        { egress: { defaultHomeRegion: "us-east" }, preparation: prepared.preparation, secrets: prepared.secrets },
+      )
+    },
     settings: { read: async () => ({ version: 3, connections: {}, sandbox_driver: {} }), write: async () => {} },
     credentials, signingEnv: signing, provisionedRunner: undefined,
   })
+  const inline = inlineSandboxStart(delivery.start)
+  const requests: (SandboxStartRequest | undefined)[] = []
+  const answers: SandboxStartAnswer[] = []
   const bridge = createHostedTasksSessionBridge({
     services,
     runtimeClient: {},
@@ -149,23 +160,30 @@ async function rootStart(secretBrokering: "native" | "none") {
     },
     principal: async () => ({ principalKind: "user", actorId: owner.actorId, actorKind: "human" }),
     auth: () => ({ user: { subject: "owner" }, principal: { userId: owner.userId } }) as unknown as SignedControlPlaneAuth,
-    selectedCapabilities: {
-      prepare: async () => ({}),
-      apply: ({ workspaceId, capabilities, preparation }) => delivery.provisionRuntime({ workspaceId, capabilities }, preparation),
+    sandboxStart: async (workspaceId, request) => {
+      requests.push(request)
+      const answer = await inline(workspaceId, request)
+      answers.push(answer)
+      return answer
     },
-    workspaceRuntime: delivery.prepareRuntime,
-    sandboxEgress: { controlPlaneOrigin: ORIGIN },
   })
   runtimeRequest.mockImplementation(async () => Response.json({
     harness: "claude",
     modelSelection: { status: "optional", models: [] },
   }))
+  const actor = { scopeId: "org", ownerId: "owner" }
   const previewed = await bridge.preview({
-    actor: { scopeId: "org", ownerId: "owner" }, task, preset, slot: "primary", attempt: 1, continueFromPrevious: false,
+    actor, task, preset, slot: "primary", attempt: 1, continueFromPrevious: false,
     currentLink: null, currentState: null, authorizeTranscript: async () => true,
   })
+  if (!previewed.ok) throw new Error(`preview refused: ${previewed.error.message}`)
+  await bridge.start({
+    actor, task, preset, slot: "primary", attempt: 1, previewDigest: previewed.preview.digest, continueFromPrevious: false,
+    clientRequestId: "req_accounts", configurationDigest: await startConfigurationDigest({ preset, slot: "primary" }),
+    previousSession: null, authorizeTranscript: async () => true,
+  })
   const snapshot = configApplied.mock.calls.at(-1)?.[0]
-  return { previewed, seen, key, snapshot, rootId }
+  return { previewed, seen, key, snapshot, rootId, requests, answers }
 }
 
 test("a task's root on a driver with a provider edge launches with its owner's account on the edge, under the variable its runtime reads", async () => {
@@ -185,12 +203,13 @@ test("a task's root on a driver the plane brokers for gets its owner's account a
   expect(JSON.stringify(snapshot)).not.toContain("sk-ant-api03-root-owner")
 })
 
-test("a task's root on a driver the plane brokers for hands its provisioner the renewal its placeholders need, with its capability set", async () => {
+test("a task's root on a driver the plane brokers for is started with its capability set, and its start settles naming the renewal its placeholders need", async () => {
   const before = Date.now()
-  const { rootId } = await rootStart("none")
-  expect(followed).toHaveBeenCalledOnce()
-  const [context, due] = followed.mock.calls[0] ?? []
-  expect(context).toEqual({ workspaceId: rootId, capabilities: preset.execution.capabilities })
-  expect(due?.renewAt).toBeGreaterThan(before + 29 * 60_000)
-  expect(due?.renewAt).toBeLessThan(before + 31 * 60_000)
+  const { requests, answers } = await rootStart("none")
+  expect(requests).toEqual([{ retry: true, capabilities: preset.execution.capabilities }])
+  const ready = answers.at(-1)
+  expect(ready).toMatchObject({ status: "ready" })
+  const renewAt = ready?.status === "ready" ? ready.renewAt : undefined
+  expect(renewAt).toBeGreaterThan(before + 29 * 60_000)
+  expect(renewAt).toBeLessThan(before + 31 * 60_000)
 })

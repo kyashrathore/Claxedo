@@ -1,7 +1,9 @@
-import type { ConfigurationSlot, PresetPlacement, SessionRef, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
+import type { ConfigurationSlot, PresetPlacement, SessionRef, StartPreview, StartResponse, Task, TaskSummary } from "@claxedo/tasks"
 import type { TasksClient } from "@claxedo/tasks/client"
 import type { DomainTranslate } from "@/i18n"
 import { unreachable } from "@/lib/machine"
+import { uuid } from "@/lib/uuid"
+import type { PlacementId } from "@/server"
 import type { TasksKey } from "../i18n"
 import { groupLinksBySlot, slotAttempt } from "../model"
 import { refusalOf } from "./refusal"
@@ -26,10 +28,14 @@ export type StartChoiceInput = {
   readonly continueFromPrevious?: boolean
 }
 
+export type RootRun = { readonly kind: "running" } | { readonly kind: "failed"; readonly message: string }
+
 export type StartCalls = {
   readonly api: { readonly client: Pick<TasksClient, "getTask"> }
   readonly preview: (request: TaskStartRequest) => Promise<StartPreview>
-  readonly send: (request: TaskStartRequest, previewDigest: string) => Promise<SessionRef>
+  readonly start: (request: TaskStartRequest, previewDigest: string, clientRequestId: string) => Promise<StartResponse>
+  readonly followRoot: (workspaceId: string, following: (placementId: PlacementId) => void) => Promise<RootRun>
+  readonly open: (taskId: string, session: SessionRef) => Promise<void>
 }
 
 async function startRequest(calls: StartCalls, task: Task | TaskSummary, choice: StartChoiceInput): Promise<TaskStartRequest> {
@@ -44,6 +50,23 @@ async function startRequest(calls: StartCalls, task: Task | TaskSummary, choice:
     attempt: next.attempt,
     continueFromPrevious: choice.continueFromPrevious === true,
   }
+}
+
+async function sessionOf(
+  calls: StartCalls,
+  t: DomainTranslate<TasksKey>,
+  request: TaskStartRequest,
+  previewDigest: string,
+  report: (event: TaskStartProgressEvent) => void,
+): Promise<SessionRef | { readonly refused: string }> {
+  const clientRequestId = uuid()
+  const answered = await calls.start(request, previewDigest, clientRequestId)
+  if ("link" in answered) return answered.link.sessionRef
+  const root = await calls.followRoot(answered.preparing.workspaceId, (placementId) => report({ type: "rootFollowed", placementId }))
+  if (root.kind === "failed") return { refused: root.message }
+  report({ type: "rootRunning" })
+  const again = await calls.start(request, previewDigest, clientRequestId)
+  return "link" in again ? again.link.sessionRef : { refused: t("tasks.start.rootStillStarting") }
 }
 
 export async function startNow(
@@ -61,7 +84,9 @@ export async function startNow(
     if (request.continueFromPrevious && !resolved.previousTranscriptReadable)
       return { ok: false, message: t("tasks.start.unreadablePrevious") }
     report({ type: "previewAnswered" })
-    await calls.send({ ...request, attempt: resolved.attempt }, resolved.digest)
+    const session = await sessionOf(calls, t, { ...request, attempt: resolved.attempt }, resolved.digest, report)
+    if ("refused" in session) return { ok: false, message: session.refused }
+    await calls.open(task.id, session)
     return { ok: true }
   } catch (error) {
     return { ok: false, message: refusalOf(error).message }
@@ -74,10 +99,13 @@ export type TaskStartProgress =
   | { readonly kind: "idle" }
   | { readonly kind: "preparing"; readonly taskId: string; readonly slot: ConfigurationSlot; readonly placement: PresetPlacement }
   | { readonly kind: "starting"; readonly taskId: string; readonly slot: ConfigurationSlot }
+  | { readonly kind: "machine"; readonly taskId: string; readonly slot: ConfigurationSlot; readonly placementId: PlacementId }
 
 export type TaskStartProgressEvent =
   | { readonly type: "previewSent"; readonly taskId: string; readonly slot: ConfigurationSlot; readonly placement: PresetPlacement }
   | { readonly type: "previewAnswered" }
+  | { readonly type: "rootFollowed"; readonly placementId: PlacementId }
+  | { readonly type: "rootRunning" }
   | { readonly type: "settled" }
 
 export const START_IDLE: TaskStartProgress = { kind: "idle" }
@@ -88,6 +116,10 @@ export function startProgressTransition(state: TaskStartProgress, event: TaskSta
       return { kind: "preparing", taskId: event.taskId, slot: event.slot, placement: event.placement }
     case "previewAnswered":
       return state.kind === "preparing" ? { kind: "starting", taskId: state.taskId, slot: state.slot } : state
+    case "rootFollowed":
+      return state.kind === "starting" ? { kind: "machine", taskId: state.taskId, slot: state.slot, placementId: event.placementId } : state
+    case "rootRunning":
+      return state.kind === "machine" ? { kind: "starting", taskId: state.taskId, slot: state.slot } : state
     case "settled":
       return START_IDLE
     default:
@@ -95,8 +127,11 @@ export function startProgressTransition(state: TaskStartProgress, event: TaskSta
   }
 }
 
-export function startProgressKey(progress: TaskStartProgress, taskId: string, slot: ConfigurationSlot | undefined): TasksKey | undefined {
+export type TaskStartLine = { readonly kind: "key"; readonly key: TasksKey } | { readonly kind: "machine"; readonly placementId: PlacementId }
+
+export function startProgressLine(progress: TaskStartProgress, taskId: string, slot: ConfigurationSlot | undefined): TaskStartLine | undefined {
   if (progress.kind === "idle" || progress.taskId !== taskId || (slot !== undefined && progress.slot !== slot)) return undefined
-  if (progress.kind === "starting") return "tasks.start.progress.session"
-  return progress.placement === "cloud" ? "tasks.start.progress.cloud" : "tasks.start.progress.local"
+  if (progress.kind === "machine") return { kind: "machine", placementId: progress.placementId }
+  if (progress.kind === "starting") return { kind: "key", key: "tasks.start.progress.session" }
+  return { kind: "key", key: progress.placement === "cloud" ? "tasks.start.progress.cloud" : "tasks.start.progress.local" }
 }

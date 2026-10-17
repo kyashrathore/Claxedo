@@ -1,8 +1,9 @@
-import { createSignal } from "solid-js"
+import { createSignal, type Accessor } from "solid-js"
 import { machine } from "@/lib/machine"
-import type { ConfigurationSlot, Preset, SessionRef, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
+import type { ConfigurationSlot, Preset, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
+import { useWakeProgress } from "@/cloud"
 import { useTranslator, type DomainTranslate } from "@/i18n"
-import { uuid } from "@/lib/uuid"
+import { useServer, type WorkspaceRuntime } from "@/server"
 import { showToast } from "@/ui"
 import { tasksDictionary, type TasksKey } from "../i18n"
 import { useOpenPresetSettings, useOpenTaskSession } from "../links"
@@ -18,7 +19,7 @@ import {
   type MorePages,
 } from "./queries"
 import { refusalOf } from "./refusal"
-import { START_IDLE, startNow, startProgressKey, startProgressTransition, type StartChoiceInput, type StartOutcome, type TaskStartRequest } from "./start-run"
+import { START_IDLE, startNow, startProgressLine, startProgressTransition, type StartCalls, type StartChoiceInput, type StartOutcome, type TaskStartProgress, type TaskStartRequest } from "./start-run"
 
 export type StartChoice = { readonly presetId: string; readonly slot: ConfigurationSlot }
 
@@ -29,7 +30,7 @@ export type TaskStartOffer = {
   readonly startLabel?: string
   readonly blocker?: string
   readonly busy?: boolean
-  readonly progress?: TasksKey
+  readonly progress?: string
   readonly presetsFailure?: ListFailure
   readonly morePresets?: MorePages
   readonly onStart: (choice: StartChoice) => void
@@ -38,7 +39,7 @@ export type TaskStartOffer = {
   readonly onOpenPresetSettings: () => void
 }
 
-function createStartCalls() {
+function createStartCalls(t: DomainTranslate<TasksKey>) {
   const api = useTasksApi()
   const invalidate = useTasksInvalidation()
   const openSession = useOpenTaskSession()
@@ -46,19 +47,39 @@ function createStartCalls() {
     const { taskId, ...body } = request
     return (await api.client.startPreview(taskId, body)).preview
   }
-  const send = async (request: TaskStartRequest, previewDigest: string): Promise<SessionRef> => {
-    const { taskId, ...body } = request
-    const response = await api.client.start(taskId, {
-      ...body,
-      clientRequestId: uuid(),
-      previewDigest,
-      handoffText: null,
-    })
-    await invalidate.afterCommand(taskId)
-    await openSession(response.link.sessionRef)
-    return response.link.sessionRef
+  const calls: StartCalls & { readonly openSession: typeof openSession } = {
+    api,
+    preview,
+    start: async ({ taskId, ...body }, previewDigest, clientRequestId) =>
+      api.client.start(taskId, { ...body, clientRequestId, previewDigest, handoffText: null }),
+    followRoot: async (workspaceId, following) => {
+      const run = await api.followRoot(workspaceId, following)
+      return run.kind === "running" ? run : { kind: "failed", message: run.error?.message ?? t("tasks.start.rootDidNotStart") }
+    },
+    open: async (taskId, session) => {
+      await invalidate.afterCommand(taskId)
+      await openSession(session)
+    },
+    openSession,
   }
-  return { api, preview, send, openSession }
+  return calls
+}
+
+const NO_MACHINE: WorkspaceRuntime = { kind: "live" }
+
+function useStartProgressText(progress: Accessor<TaskStartProgress>, t: DomainTranslate<TasksKey>) {
+  const cloud = useServer().cloud
+  const machineStep = useWakeProgress(() => {
+    const current = progress()
+    return current.kind === "machine" ? cloud.runtime(current.placementId) : NO_MACHINE
+  })
+  return (taskId: string, slot: ConfigurationSlot | undefined): string | undefined => {
+    const line = startProgressLine(progress(), taskId, slot)
+    if (!line) return undefined
+    if (line.kind === "key") return t(line.key)
+    const step = machineStep()
+    return step ? t("tasks.start.progress.machine", { step }) : t("tasks.start.progress.cloud")
+  }
 }
 
 async function openLatest(calls: ReturnType<typeof createStartCalls>, t: DomainTranslate<TasksKey>, taskId: string): Promise<StartOutcome> {
@@ -78,10 +99,10 @@ async function openLatest(calls: ReturnType<typeof createStartCalls>, t: DomainT
 
 function useStartCommands() {
   const t = useTranslator(tasksDictionary)
-  const calls = createStartCalls()
+  const calls = createStartCalls(t)
   const progress = machine(START_IDLE, startProgressTransition)
   return {
-    progress: progress.state,
+    progress: useStartProgressText(progress.state, t),
     startNow: async (task: Task | TaskSummary, choice: StartChoiceInput) => {
       const outcome = await startNow(calls, t, task, choice, progress.send)
       if (!outcome.ok) showToast({ variant: "error", title: t("tasks.start.failed", { title: task.title }), description: outcome.message })
@@ -142,7 +163,7 @@ export function useTaskStartOffers(store: TasksStore) {
       presets,
       store,
       busy: busyTaskId() === task.id,
-      progress: startProgressKey(commands.progress(), task.id, options.slot),
+      progress: commands.progress(task.id, options.slot),
       defaultPresetId,
       start,
       openPresetSettings,
@@ -156,7 +177,7 @@ function buildOffer(input: {
   readonly presets: ReturnType<typeof usePresetList>
   readonly store: TasksStore
   readonly busy: boolean
-  readonly progress: TasksKey | undefined
+  readonly progress: string | undefined
   readonly defaultPresetId: (offered: readonly Preset[]) => string | undefined
   readonly start: (task: Task | TaskSummary, choice: StartChoice, continueFromPrevious?: boolean) => Promise<void>
   readonly openPresetSettings: () => void

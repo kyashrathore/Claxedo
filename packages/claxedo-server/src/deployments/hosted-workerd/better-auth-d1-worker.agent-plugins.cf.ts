@@ -14,7 +14,6 @@ import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/roo
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
-import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import type { WorkspaceRuntimeContext } from "../../workspace/route-support"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
@@ -80,7 +79,7 @@ export function composeBetterAuthD1AgentPlugins(
     tasksGrant: createTasksRootCapability(tasksRoot),
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,
-    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged, pushRuntime: base.runtimeDelivery.provisionRuntime } : {}),
+    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
     ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
     ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
   })
@@ -100,9 +99,7 @@ export function composeBetterAuthD1AgentPlugins(
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
-    selectedCapabilities: feature.selectedCapabilities,
-    rootEnvironment: feature.rootEnvironment,
-    ...(base.options.productWorkspace?.prepareRuntime ? { workspaceRuntime: base.options.productWorkspace.prepareRuntime } : {}),
+    ...(base.options.productWorkspace?.sandboxStart ? { sandboxStart: base.options.productWorkspace.sandboxStart } : {}),
     cloudCreateAdmission: {
       // The same entitlement gate the create route answers through, so a
       // task-driven create is billed or refused on the same tenant — the
@@ -122,7 +119,6 @@ export function composeBetterAuthD1AgentPlugins(
     ...(base.options.productWorkspace?.sandboxUsage
       ? { sandboxUsage: base.options.productWorkspace.sandboxUsage }
       : {}),
-    sandboxEgress: { controlPlaneOrigin: hostedControlPlaneOrigin(signingEnv) },
     signingEnv,
     passes,
     renewal: {

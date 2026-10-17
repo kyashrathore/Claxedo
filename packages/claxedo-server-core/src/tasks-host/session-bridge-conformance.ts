@@ -153,6 +153,7 @@ async function started(fixture: TasksSessionBridgeFixture, task?: Task): Promise
     await startCommand(fixture, { digest: previewed.preview.digest, ...(task ? { task } : {}) }),
   )
   assert(outcome.ok, `start refused: ${outcome.ok ? "" : outcome.error.message}`)
+  assert("session" in outcome, "the start answered that its workspace is still starting")
   return outcome.session.sessionRef
 }
 
@@ -240,6 +241,7 @@ export function tasksSessionBridgeConformance(
           const turns = fixture.turns().length
           const replayed = await fixture.bridge.start(command)
           assert(first.ok && replayed.ok, "a replayed start was refused")
+          assert("session" in first && "session" in replayed, "a replayed start answered that its workspace is still starting")
           assertSameJson(replayed.session.sessionRef, first.session.sessionRef, "the replay answered another session")
           assertSameJson(fixture.creates(), 1, "the replay created a second session")
           assertSameJson(fixture.turns().length, turns, "the replay sent the first message again")

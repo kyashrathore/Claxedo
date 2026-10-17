@@ -622,6 +622,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         ...(startedFrom ? { startedFrom } : {}),
       })
       if (!started.ok) throw new TasksError(started.error)
+      if ("preparing" in started) return { preparing: started.preparing }
 
       const link: TaskSessionLink = {
         scopeId: actor.scopeId,

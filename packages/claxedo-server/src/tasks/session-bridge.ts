@@ -1,5 +1,4 @@
 import { chooseProjectWorkspace } from "@claxedo/server-core/tasks-host/project-workspace"
-import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
   createTasksSessionBridge,
   type TasksCloudOrigin,
@@ -27,16 +26,16 @@ import {
   type CloudCreateCaller,
   type CloudCreateUsage,
 } from "../workspace/cloud-create-admission"
+import { startCloudWorkspace } from "../workspace/cloud-workspace-start"
 import {
   allocateOriginCloudWorkspace,
+  originCloudRoot,
   originCloudWorkspaceId,
+  type OriginCloudRootInput,
 } from "../workspace/origin-cloud-workspace"
+import type { SandboxStart } from "../workspace/sandbox-start"
 import type { TasksHostReads } from "./d1-host-reads"
-import type { TasksRootIdentity } from "./root-capability"
-import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
-
-const log = Log.create({ service: "tasks-session-bridge" })
 
 export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
   runtimeClient: WorkspaceRuntimeClientOptions
@@ -67,43 +66,15 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    */
   owner?: (actor: TasksActor) => TasksCapabilityOwner | undefined
   /**
-   * Projects a cloud root's capability set onto the workspace it will run in,
-   * and resolves only once the runtime has acknowledged that exact selection.
-   *
-   * A deployment that cannot do it names nothing here and its cloud Starts are
-   * blocked: a root started without the projection would run on whatever the
-   * project's defaults put in that sandbox, which is the one outcome the
-   * selection exists to prevent.
+   * The workspace's one sandbox start, the same one a person's connect begins:
+   * it takes the lease, announces the start to the owner's open clients and
+   * drives the sandbox to ready in the background, preparing every step with
+   * the capability set the start names (the owner's accounts, the project's
+   * environment, the root's Tasks grant and its selected plugins and skills).
+   * A deployment that names none cannot start a cloud root, and a cloud Start
+   * is refused before anything is filed.
    */
-  selectedCapabilities?: {
-    /**
-     * Resolves the selection and the credentials its servers need. Runs before
-     * the sandbox exists, because a brokered credential reaches a runtime only
-     * through the create that carries it.
-     */
-    prepare(input: {
-      workspaceId: string
-      capabilities: TasksCloudOrigin["capabilities"]
-    }): Promise<WorkspaceRuntimePreparation>
-    /** Projects it, and resolves only once the runtime acknowledged that exact selection. */
-    apply(input: { workspaceId: string; capabilities: TasksCloudOrigin["capabilities"]; preparation: WorkspaceRuntimePreparation }): Promise<void>
-  }
-  /**
-   * What every hosted cloud workspace starts with, the deployment's runtime
-   * delivery: its owner's model accounts (edge secrets where the driver has a
-   * provider edge) and its project's environment. A root is created through
-   * `ensure` rather than a workspace start, so its accounts reach an edge only
-   * through this preparation; a deployment that names none launches roots no
-   * harness can spend an account in.
-   */
-  workspaceRuntime?: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
-  /**
-   * The Tasks grant this root's sessions act with, minted beside the cloud
-   * root's other credentials and handed to its runtime as environment. A
-   * deployment that names none launches roots whose agents have no Tasks
-   * tools, which is what a control plane those sessions cannot reach means.
-   */
-  capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>
+  sandboxStart?: SandboxStart
   /**
    * The admission a cloud root's create passes through — the same gates `POST
    * /api/workspace/create` applies, keyed on whoever the root is created as.
@@ -121,12 +92,6 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    * leaves it invisible to the cap.
    */
   sandboxUsage?: CloudCreateUsage
-  /**
-   * The rest of what a cloud root's egress allowlist is built from: the
-   * origin the runtime reports back to this control plane at, and the
-   * operator's extra hosts. The relay comes from the services, per region.
-   */
-  sandboxEgress: Readonly<{ controlPlaneOrigin: string | undefined; extraHosts?: readonly string[] }>
 }
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
@@ -146,7 +111,7 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       }
     },
 
-    cloudTarget: createTasksCloudTarget(input),
+    ...createTasksCloudRoots(input),
 
     sessionMetas: (sessionIds) => input.reads.sessions(sessionIds),
 
@@ -167,140 +132,97 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
  * workspace is created against the task's own project as the person the
  * actor was minted from — the signed caller, or the owner a grant resolved
  * to — so the authority resolves the same organization it resolved to admit
- * the task.
+ * the task. A root whose start is still under way answers `preparing`, so a
+ * Start never waits on a sandbox's boot.
  */
-function createTasksCloudTarget(
+function createTasksCloudRoots(
   input: HostedTasksSessionBridgeInput,
-): NonNullable<TasksSessionHost["cloudTarget"]> {
+): Required<Pick<TasksSessionHost, "cloudTarget" | "cloudRefusal">> {
   // A bridge composed without one still answers its authority half: the
   // authority's own create admission and a create budget that lives as long
   // as this bridge.
   const admission = input.cloudCreateAdmission ?? createCloudCreateAdmission({ services: input.services })
-  return async (origin): Promise<TasksCloudTargetChoice> => {
-    const port = input.selectedCapabilities
-    const creator = rootCreator(input, origin)
-    // The create route's own admission, before a row or a sandbox exists: the
-    // create budget, the authority's create admission, the deployment's
-    // cloud-workspace admission, and the concurrent-lease cap. A caller nobody resolved keeps
-    // its refusal inside `admit` below, where it always was. `existing` marks
-    // the retry of a root that already holds its lease: that lease is the
-    // cap's own, so the cap does not count it a second time. A root with no
-    // row yet has no lease, and a deployment's manager cannot place a
-    // workspace its authority has never heard of to look one up.
-    if (creator) {
-      const rootId = await originCloudWorkspaceId(
-        startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
-      )
-      const lease = await input.reads.workspace(rootId)
-        ? await input.services.sandbox.sandboxManager?.target(rootId)
-        : undefined
-      const existing = lease !== undefined && !(lease.status === "unavailable" && lease.reason === "runtime_lease_missing")
-      const admitted =
-        await admission.preflight(creator.caller) ??
-        await admission.admit(creator.caller, { projectId: origin.task.projectId }, { existing })
-      if ("status" in admitted) {
-        return { blocker: { code: "source_unavailable", detail: admitted.body.error.message } }
+  const rootOf = (origin: TasksCloudOrigin): OriginCloudRootInput => ({
+    services: input.services,
+    rows: input.reads,
+    originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
+    projectId: origin.task.projectId,
+    orgId: origin.actor.scopeId,
+    displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,
+  })
+  const unstartable: StartBlocker = { code: "placement_unsupported", detail: "This control plane cannot start a cloud root" }
+  return {
+    cloudRefusal: async (origin) => {
+      const root = await originCloudRoot(rootOf(origin))
+      if (!("id" in root)) return { code: root.code, detail: root.detail }
+      return input.sandboxStart ? undefined : unstartable
+    },
+    cloudTarget: async (origin): Promise<TasksCloudTargetChoice> => {
+      const start = input.sandboxStart
+      const sandboxManager = input.services.sandbox.sandboxManager
+      if (!start || !sandboxManager) return { blocker: unstartable }
+      const creator = rootCreator(input, origin)
+      // The create route's own admission, before a row or a sandbox exists: the
+      // create budget, the authority's create admission, the deployment's
+      // cloud-workspace admission, and the concurrent-lease cap. A caller nobody resolved keeps
+      // its refusal inside `admit` below, where it always was. `existing` marks
+      // the retry of a root that already holds its lease: that lease is the
+      // cap's own, so the cap does not count it a second time. A root with no
+      // row yet has no lease, and a deployment's manager cannot place a
+      // workspace its authority has never heard of to look one up.
+      if (creator) {
+        const rootId = await originCloudWorkspaceId(rootOf(origin).originKey)
+        const lease = await input.reads.workspace(rootId) ? await sandboxManager.target(rootId) : undefined
+        const existing = lease !== undefined && !(lease.status === "unavailable" && lease.reason === "runtime_lease_missing")
+        const admitted =
+          await admission.preflight(creator.caller) ??
+          await admission.admit(creator.caller, { projectId: origin.task.projectId }, { existing })
+        if ("status" in admitted) {
+          return { blocker: { code: "source_unavailable", detail: admitted.body.error.message } }
+        }
       }
-    }
-    let projected: (() => Promise<void>) | undefined
-    // Resolving the capability set inside the allocation is what orders these
-    // two refusals: a deployment with no driver never reaches it and says so,
-    // and one that has a driver but cannot project a selection stops before a
-    // sandbox exists rather than after paying for one.
-    const allocate = () => allocateOriginCloudWorkspace({
-      rows: input.reads,
-      prepare: async (workspace) => {
-        if (!port) {
-          throw new Error("this control plane cannot project a selected capability set into a cloud root")
-        }
-        const [workspaceRuntime, preparation] = await Promise.all([
-          input.workspaceRuntime?.({ workspaceId: workspace.id }),
-          port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities }),
-        ])
-        projected = () => port.apply({ workspaceId: workspace.id, capabilities: origin.capabilities, preparation })
-        // The capability names the workspace's owner, and `admit` below makes
-        // this creator that owner. The application user id is the authority's
-        // own name for them; the actor's `ownerId` is the token subject, which
-        // no workspace row records.
-        const owner = creator?.owner
-        const grant = owner
-          ? await input.capability?.({ ...owner, projectId: origin.task.projectId, workspaceId: workspace.id })
-          : undefined
-        return {
-          secrets: [...workspaceRuntime?.secrets ?? [], ...preparation.secrets ?? []],
-          env: { ...workspaceRuntime?.env, ...grant },
-        }
-      },
-      services: input.services,
-      egress: {
-        ...(input.services.relay.relayUrl ? { relayUrl: input.services.relay.relayUrl } : {}),
-        ...(input.services.relay.relayUrls ? { relayUrls: input.services.relay.relayUrls } : {}),
-        ...(input.services.defaultHomeRegion ? { defaultHomeRegion: input.services.defaultHomeRegion } : {}),
-        ...(input.sandboxEgress.extraHosts ? { sandboxEgressExtraHosts: [...input.sandboxEgress.extraHosts] } : {}),
-        ...(input.sandboxEgress.controlPlaneOrigin ? { sandboxControlPlaneOrigin: input.sandboxEgress.controlPlaneOrigin } : {}),
-      },
-      originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
-      projectId: origin.task.projectId,
-      orgId: origin.actor.scopeId,
-      displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,
-      admit: async (workspace, context) => {
-        if (!creator) {
-          throw new Error(
-            "this host creates a cloud root as the person starting it, and this caller is neither signed nor a grant this host resolved to an owner",
-          )
-        }
-        await creator.admit(requireAuthority(input.services), {
-          workspaceId: workspace.id,
-          projectId: origin.task.projectId,
-          displayName: workspace.workspace_name ?? workspace.id,
-          ...(workspace.repo_url ? { repoUrl: workspace.repo_url } : {}),
-          ...(workspace.repo_name ? { repoName: workspace.repo_name } : {}),
-          ...(workspace.git_branch ? { gitBranch: workspace.git_branch } : {}),
-          ...(workspace.remote_directory ? { remoteDirectory: workspace.remote_directory } : {}),
-          ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
-        })
-        // Same position the first start fires it: the authority row exists,
-        // the sandbox does not yet, and `startedAt` covers the cold start.
-        if (context.opensLease) {
-          input.sandboxUsage?.leaseOpened({
-            caller: creator.caller,
+      const allocated = await allocateOriginCloudWorkspace({
+        ...rootOf(origin),
+        admit: async (workspace) => {
+          if (!creator) {
+            throw new Error(
+              "this host creates a cloud root as the person starting it, and this caller is neither signed nor a grant this host resolved to an owner",
+            )
+          }
+          await creator.admit(requireAuthority(input.services), {
             workspaceId: workspace.id,
-            driver: context.driver,
-            startedAt: Date.now(),
-            services: input.services,
+            projectId: origin.task.projectId,
+            displayName: workspace.workspace_name ?? workspace.id,
+            ...(workspace.repo_url ? { repoUrl: workspace.repo_url } : {}),
+            ...(workspace.repo_name ? { repoName: workspace.repo_name } : {}),
+            ...(workspace.git_branch ? { gitBranch: workspace.git_branch } : {}),
+            ...(workspace.remote_directory ? { remoteDirectory: workspace.remote_directory } : {}),
+            ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
           })
-        }
-      },
-    })
-    let allocated
-    try {
-      allocated = await allocate()
-    } catch (error) {
-      return { blocker: capabilityBlocker(origin, error) }
-    }
-    if ("code" in allocated) return { blocker: { code: allocated.code, detail: allocated.detail } }
-    // The lease row exists once `ensure` acquired it, so the tenant stamp the
-    // cap counts on lands here — the same post-ensure point the first start
-    // stamps it, as the caller the lease was opened for. An allocation that
-    // reached this far admitted, so `creator` resolved.
-    if (creator) {
-      await Promise.resolve(
-        input.sandboxUsage?.recordLeaseTenant({ caller: creator.caller, workspaceId: allocated.workspace.id }),
-      ).catch(() => undefined)
-    }
-    try {
-      if (!projected) throw new Error("the capability set for this root was never resolved")
-      await projected()
-    } catch (error) {
-      return { blocker: capabilityBlocker(origin, error) }
-    }
-    const target = dispatchTarget(allocated.workspace, startingAs(input, origin.actor))
-    return target ? { target } : {
-      blocker: {
-        code: "source_unavailable",
-        detail: "The task's cloud workspace cannot be reached from here",
-      },
-    }
+        },
+        // A Start asks for this root anew, so a failure held from its last
+        // start does not answer it.
+        start: async (workspace) => {
+          if (!creator) throw new Error("a cloud root is started only after its creator filed it")
+          return startCloudWorkspace(input.services, start, { admission, usage: input.sandboxUsage }, creator.caller, {
+            workspaceId: workspace.id,
+            orgId: origin.actor.scopeId,
+            ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
+            current: await sandboxManager.target(workspace.id),
+            request: { retry: true, capabilities: origin.capabilities },
+          })
+        },
+      })
+      if ("code" in allocated) return { blocker: { code: allocated.code, detail: allocated.detail } }
+      if (allocated.state === "starting") return { preparing: { workspaceId: allocated.workspace.id } }
+      const target = dispatchTarget(allocated.workspace, startingAs(input, origin.actor))
+      return target ? { target } : {
+        blocker: {
+          code: "source_unavailable",
+          detail: "The task's cloud workspace cannot be reached from here",
+        },
+      }
+    },
   }
 }
 
@@ -360,13 +282,6 @@ function rootCreator(input: HostedTasksSessionBridgeInput, origin: TasksCloudOri
       await authority.createRuntimeCloudWorkspace(principal, { ...args, orgId: owner.orgId })
     },
   }
-}
-
-function capabilityBlocker(origin: TasksCloudOrigin, error: unknown): StartBlocker {
-  log.warn("A task start's capability set could not be applied", {
-    taskId: origin.task.id, slot: origin.slot, attempt: origin.attempt, error: error instanceof Error ? error.message : String(error),
-  })
-  return { code: "capability_unavailable", detail: "The task's plugins and skills could not be set up for this start." }
 }
 
 /**

@@ -10,7 +10,7 @@ import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxe
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { createMemoryTasksStore } from "@claxedo/tasks/test-support"
+import { createMemoryTasksStore, linkedStart, startedSession } from "@claxedo/tasks/test-support"
 import {
   TasksError,
   createTasksService,
@@ -310,8 +310,8 @@ describe("local tasks session bridge", () => {
     const started = await host.bridge.start(command)
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
-    const sessionId = started.session.sessionRef.sessionId
-    expect(started.session).toMatchObject({ sessionRef: { workspaceId: host.workspaceId }, continuedFrom: null })
+    const sessionId = startedSession(started).sessionRef.sessionId
+    expect(startedSession(started)).toMatchObject({ sessionRef: { workspaceId: host.workspaceId }, continuedFrom: null })
 
     expect(host.created).toEqual([{ id: sessionId, instructions: expect.stringContaining("Read before you write.") }])
     const config: unknown = await (await host.request(`/session/${sessionId}/config`)).json()
@@ -325,7 +325,7 @@ describe("local tasks session bridge", () => {
     // The kit commits the link between the two calls, so the create hands the
     // task to nobody on its own.
     expect(host.turns).toEqual([])
-    const handed = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: started.session.sessionRef }))
+    const handed = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: startedSession(started).sessionRef }))
     expect(handed).toMatchObject({ ok: true, sent: true })
 
     const messageId = host.turns[0] ?? ""
@@ -336,8 +336,8 @@ describe("local tasks session bridge", () => {
     const replayed = await host.bridge.start(command)
     expect(replayed).toMatchObject({ ok: true })
     if (!replayed.ok) return
-    expect(replayed.session.sessionRef.sessionId).toBe(sessionId)
-    const rehanded = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: started.session.sessionRef }))
+    expect(startedSession(replayed).sessionRef.sessionId).toBe(sessionId)
+    const rehanded = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: startedSession(started).sessionRef }))
     expect(rehanded).toMatchObject({ ok: true, sent: false })
     expect(host.created).toHaveLength(1)
     expect(host.turns).toEqual([messageId])
@@ -368,16 +368,16 @@ describe("local tasks session bridge", () => {
     if (!started.ok) throw new Error("start refused")
     const retried = await host.bridge.start(command)
     if (!retried.ok) throw new Error("retried start refused")
-    expect(retried.session.sessionRef).toEqual(started.session.sessionRef)
+    expect(startedSession(retried).sessionRef).toEqual(startedSession(started).sessionRef)
     expect(host.created).toHaveLength(1)
     expect(host.turns).toEqual([])
 
     const handed = await host.bridge.handoff(
-      handoffCommand({ workspaceId: host.workspaceId, session: retried.session.sessionRef }),
+      handoffCommand({ workspaceId: host.workspaceId, session: startedSession(retried).sessionRef }),
     )
     expect(handed).toMatchObject({ ok: true, sent: true })
     const messageId = host.turns[0] ?? ""
-    const messages = await waitForMessage(host.request, retried.session.sessionRef.sessionId, messageId)
+    const messages = await waitForMessage(host.request, startedSession(retried).sessionRef.sessionId, messageId)
     expect(JSON.stringify(messages)).toContain("Fix the importer")
     expect(host.turns).toEqual([messageId])
   })
@@ -424,7 +424,7 @@ describe("local tasks session bridge", () => {
     const [ran, lost] = one.ok
       ? ["Read before you write.", "Ignore the code and rewrite it."]
       : ["Ignore the code and rewrite it.", "Read before you write."]
-    const config: unknown = await (await host.request(`/session/${winner.session.sessionRef.sessionId}/config`)).json()
+    const config: unknown = await (await host.request(`/session/${startedSession(winner).sessionRef.sessionId}/config`)).json()
     expect(config).toMatchObject({ instructions: expect.stringContaining(ran) })
     expect(JSON.stringify(config)).not.toContain(lost)
   })
@@ -449,7 +449,7 @@ describe("local tasks session bridge", () => {
     const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
-    const previous = started.session.sessionRef
+    const previous = startedSession(started).sessionRef
     expect(await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))).toMatchObject({
       ok: true,
       sent: true,
@@ -477,8 +477,8 @@ describe("local tasks session bridge", () => {
     })
     expect(restarted).toMatchObject({ ok: true })
     if (!restarted.ok) return
-    expect(restarted.session.continuedFrom).toEqual(previous)
-    expect(restarted.session.sessionRef.sessionId).not.toBe(previous.sessionId)
+    expect(startedSession(restarted).continuedFrom).toEqual(previous)
+    expect(startedSession(restarted).sessionRef.sessionId).not.toBe(previous.sessionId)
     expect(host.created[1]?.instructions).toContain("<session-handoff")
     expect(host.created[1]?.instructions).toContain("Fix the importer")
   })
@@ -501,7 +501,7 @@ describe("local tasks session bridge", () => {
     if (!first.ok) throw new Error("preview refused")
     const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
     if (!started.ok) throw new Error("start refused")
-    const previous = started.session.sessionRef
+    const previous = startedSession(started).sessionRef
     await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))
     await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
 
@@ -550,7 +550,7 @@ describe("local tasks session bridge", () => {
     if (!first.ok) throw new Error("preview refused")
     const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
     if (!started.ok) throw new Error("start refused")
-    const previous = started.session.sessionRef
+    const previous = startedSession(started).sessionRef
     await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))
     await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
 
@@ -662,7 +662,7 @@ describe("local tasks session bridge", () => {
     if (!first.ok) throw new Error("preview refused")
     const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
     if (!started.ok) throw new Error("start refused")
-    const previous = started.session.sessionRef
+    const previous = startedSession(started).sessionRef
     await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))
     await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
 
@@ -714,7 +714,7 @@ describe("local tasks session bridge", () => {
     const command = await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest })
     const started = await host.bridge.start(command)
     if (!started.ok) throw new Error("start refused")
-    const session = started.session.sessionRef
+    const session = startedSession(started).sessionRef
     await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session }))
     await waitForMessage(host.request, session.sessionId, host.turns[0] ?? "")
 
@@ -803,7 +803,7 @@ describe("local tasks session bridge", () => {
     expect(await sessionMeta(sessionId)).toBeUndefined()
     expect(host.turns).toEqual([])
 
-    const retried = await service.start(actor, created.id, await request(4))
+    const retried = linkedStart(await service.start(actor, created.id, await request(4)))
     expect(retried).toMatchObject({ created: true, link: { attempt: 1, presetRevision: 4, handoff: "sent" } })
     expect(retried.link.sessionRef.sessionId).toBe(sessionId)
     expect(host.created).toHaveLength(2)
@@ -841,7 +841,7 @@ describe("local tasks session bridge", () => {
     )
     if (!started.ok) throw new Error("start refused")
 
-    const config: unknown = await (await host.request(`/session/${started.session.sessionRef.sessionId}/config`)).json()
+    const config: unknown = await (await host.request(`/session/${startedSession(started).sessionRef.sessionId}/config`)).json()
     expect(config).toMatchObject({
       variant: "high",
       group: {

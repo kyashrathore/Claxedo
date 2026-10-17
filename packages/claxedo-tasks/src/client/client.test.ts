@@ -8,12 +8,14 @@ import {
   ACTOR,
   type FakeAuthorization,
   fakeAuthorization,
+  type FakeBridge,
   fakeBridge,
   fakeCapabilities,
   fakeClock,
   fakeIds,
 } from "../test-support/fakes"
 import { presetDraft } from "../test-support/rows"
+import { linkedStart } from "../test-support/started"
 import type { TasksStorePort } from "../ports/store"
 import { TasksApiError, TasksClientPayloadError, createTasksClient, type TasksClient } from "./client"
 
@@ -24,10 +26,14 @@ describe("tasks client over the real routes", () => {
   let store: TasksStorePort
   let authorization: FakeAuthorization
   let client: TasksClient
+  let bridge: FakeBridge
+  let requests: Response[]
 
   beforeEach(() => {
     store = createMemoryTasksStore()
     authorization = fakeAuthorization()
+    bridge = fakeBridge()
+    requests = []
     const host = new Hono()
     host.route(
       TASKS_ROUTE_PATH,
@@ -35,7 +41,7 @@ describe("tasks client over the real routes", () => {
         store,
         authorization,
         authenticate: () => ({ actor: ACTOR }),
-        bridge: fakeBridge(),
+        bridge,
         capabilities: fakeCapabilities(),
         clock: fakeClock(),
         ids: fakeIds(),
@@ -43,7 +49,11 @@ describe("tasks client over the real routes", () => {
     )
     client = createTasksClient({
       baseUrl: `${ORIGIN}${TASKS_ROUTE_PATH}`,
-      request: async (input, init) => host.request(input, init),
+      request: async (input, init) => {
+        const response = await host.request(input, init)
+        requests.push(response.clone())
+        return response
+      },
     })
   })
 
@@ -164,7 +174,7 @@ describe("tasks client over the real routes", () => {
     })
     expect(preview.available).toBe(true)
 
-    const started = await client.start(task.id, {
+    const started = linkedStart(await client.start(task.id, {
       clientRequestId: "request-start",
       taskRevision: task.revision,
       presetId: preset.id,
@@ -174,10 +184,23 @@ describe("tasks client over the real routes", () => {
       previewDigest: preview.digest,
       handoffText: "Continue the spike",
       continueFromPrevious: false,
-    })
+    }))
     expect(started.created).toBe(true)
     expect(started.link.presetNameAtStart).toBe("Careful")
     expect((await client.getTask(task.id)).links[0]?.liveness).toBe("live")
+  })
+
+  test("a Start whose cloud root is still starting answers 202 naming the workspace, and the client reads it as preparing", async () => {
+    const preset = await createPreset()
+    const task = await createTask()
+    const request = { taskRevision: task.revision, presetId: preset.id, presetRevision: preset.revision, slot: "primary" as const, attempt: 1, continueFromPrevious: false }
+    const { preview } = await client.startPreview(task.id, request)
+    bridge.prepareStart("ws_root")
+
+    const started = await client.start(task.id, { ...request, clientRequestId: "request-start", previewDigest: preview.digest, handoffText: null })
+    expect(started).toEqual({ preparing: { workspaceId: "ws_root" } })
+    expect(requests.at(-1)?.status).toBe(202)
+    expect((await client.getTask(task.id)).links).toEqual([])
   })
 
   test("a refusal arrives as a typed error carrying the server's code and fields", async () => {

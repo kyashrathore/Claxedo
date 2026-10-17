@@ -579,6 +579,25 @@ describe("task_start", () => {
     ])
   })
 
+  test("a Start whose cloud workspace is still starting names it, adds no session, and hands back the id that retries it", async () => {
+    const service = tasksService({
+      answers: { "POST /tasks/tsk_1/sessions": { status: 202, body: { preparing: { workspaceId: "ws_root" } } } },
+    })
+    const { url, audits } = await listen({ service, crossMachineWrites: true })
+    const client = await connect(url)
+
+    const answer = await json(client, "task_start", { task: "tsk_1", preset: "pst_1", clientRequestId: "req_start" })
+    expect(answer).toEqual({
+      task: { id: "tsk_1", key: "7", title: TASK.title },
+      preparing: { workspaceId: "ws_root" },
+      clientRequestId: "req_start",
+      next: "The task's cloud workspace is starting; call task_start again with this clientRequestId in a minute to start its session.",
+    })
+    expect(audits).toEqual([
+      { tool: "task_start", actor: "runtime:rt_1", client: "runtime:rt_1", workspaceId: "ws_local", callerSessionId: "ses_caller" },
+    ])
+  })
+
   test("takes the attempt past a slot's dead session, and carries continue through", async () => {
     const service = tasksService({ links: [deadLink(1), deadLink(2)] })
     const { url } = await listen({ service, crossMachineWrites: true })

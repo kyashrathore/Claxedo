@@ -25,8 +25,13 @@ export type SandboxFollowUps = { renewAt?: number; watchAt?: number }
 
 export type ReadySandboxTarget = Extract<SandboxTargetResult, { status: "ready" }>
 
-/** `retry` is a person asking again after a start failed: the failure held for that start's connects does not answer it. */
-export type SandboxStartRequest = { retry?: true }
+/**
+ * `retry` is a person asking again after a start failed: the failure held for
+ * that start's connects does not answer it. `capabilities` is a Task root's
+ * own capability set, which this start and every later step of the workspace
+ * is prepared with.
+ */
+export type SandboxStartRequest = { retry?: true; capabilities?: AgentPluginExecutionSelection }
 
 /** Begins or joins the start of a workspace's sandbox and answers at once; the work itself runs elsewhere. */
 export type SandboxStart = (workspaceId: string, request?: SandboxStartRequest) => Promise<SandboxStartAnswer>

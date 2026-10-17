@@ -11,6 +11,7 @@ import {
   fakeBridge,
   linkRow,
   presetRow,
+  startedSession,
   taskRow,
   type FakeBridge,
 } from "@claxedo/tasks/test-support"
@@ -380,7 +381,7 @@ describe("the order of refusals, and who is refused", () => {
 
     expect(refusal(await gated.preview(previewCommand(person, twoAway, unmarked)))).toBe("admitted")
     const started = await gated.start(startCommand(person, twoAway, unmarked))
-    expect(started.ok && started.session.startedFrom).toBe(null)
+    expect(startedSession(started).startedFrom).toBe(null)
     expect(inner.previews).toHaveLength(1)
     expect(inner.starts).toHaveLength(1)
   })
@@ -391,9 +392,9 @@ describe("the order of refusals, and who is refused", () => {
     const fresh = task("tsk_1")
     await store.tasks.insert(fresh)
     const started = await gated.start(startCommand(agent, fresh, marked))
-    expect(started.ok && started.session.startedBy).toBe("agent")
-    expect(started.ok && started.session.startedFrom).toEqual(ROOT)
-    expect(started.ok && started.session.sessionRef.sessionId).toBe("session-1")
+    expect(startedSession(started).startedBy).toBe("agent")
+    expect(startedSession(started).startedFrom).toEqual(ROOT)
+    expect(startedSession(started).sessionRef.sessionId).toBe("session-1")
 
     const other = await gated.start(startCommand(agent, fresh, marked, 2, { sessionId: "ses_caller", workspaceId: "ws_root" }))
     expect(refusal(other)).toBe("forbidden This session may record only itself as a task's provenance")
@@ -408,12 +409,12 @@ describe("the order of refusals, and who is refused", () => {
 
     const caller = { sessionId: "ses_caller", workspaceId: "ws_root" }
     const started = await gated.start(startCommand(agent, fresh, marked, 1, caller))
-    expect(started.ok && started.session.startedBy).toBe("agent")
-    expect(started.ok && started.session.startedFrom).toEqual(caller)
+    expect(startedSession(started).startedBy).toBe("agent")
+    expect(startedSession(started).startedFrom).toEqual(caller)
 
     const unsaid = await gated.start(startCommand(agent, fresh, marked, 2))
-    expect(unsaid.ok && unsaid.session.startedBy).toBe("agent")
-    expect(unsaid.ok && unsaid.session.startedFrom).toBe(null)
+    expect(startedSession(unsaid).startedBy).toBe("agent")
+    expect(startedSession(unsaid).startedFrom).toBe(null)
 
     for (const forged of [
       { sessionId: "ses_elsewhere", workspaceId: "ws_other" },

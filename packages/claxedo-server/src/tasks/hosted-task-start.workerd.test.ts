@@ -376,23 +376,53 @@ describe("a hosted cloud task start on workerd", () => {
     expect(sessions.get(created.body.link.sessionRef.sessionId)?.messages).toHaveLength(1)
   })
 
-  test("a root whose sandbox failed to provision is started again by the same attempt", async () => {
+  test("a root whose start failed is refused in one line with its reason, and the same attempt then starts", async () => {
     await person("bob")
     const { projectId, orgId } = await project("bob", "ws_bob_main")
     const presetId = await cloudPreset("bob", "Bob review")
     const taskId = await task("bob", projectId, "Retry the importer")
     const root = await originCloudWorkspaceId(startOriginId(orgId, taskId, "primary", 1))
-    expect((await post(`${ORIGIN}/__fail-provision`, undefined, { workspaceId: root })).status).toBe(200)
+    expect((await post(`${ORIGIN}/__fail-start`, undefined, { workspaceId: root })).status).toBe(200)
 
     const failed = await start("bob", taskId, presetId)
-    expect(failed.preview).toMatchObject({
-      available: false,
-      blockers: [{ code: "source_unavailable", detail: expect.stringContaining("The cloud workspace could not start: ") }],
+    expect(failed.preview).toMatchObject({ available: true, blockers: [] })
+    expect(failed.started).toMatchObject({
+      status: 422,
+      body: { error: { code: "unsupported", message: expect.stringContaining("The cloud workspace could not start") } },
     })
+    expect((await rows()).links.filter((row) => row.task_id === taskId)).toEqual([])
 
     const retried = await start("bob", taskId, presetId)
-    expect(retried.preview).toMatchObject({ available: true, blockers: [] })
     expect(retried.started).toMatchObject({ status: 200, body: { created: true, link: { sessionRef: { workspaceId: root } } } })
+  })
+
+  test("a Start whose root is still booting answers 202 naming the root, and the same Start sent once it runs creates the session", async () => {
+    await person("ivan")
+    const { projectId, orgId } = await project("ivan", "ws_ivan_main")
+    const presetId = await cloudPreset("ivan", "Ivan review")
+    const taskId = await task("ivan", projectId, "Ivan's task")
+    const root = await originCloudWorkspaceId(startOriginId(orgId, taskId, "primary", 1))
+    expect((await post(`${ORIGIN}/__hold-boot`, undefined, { workspaceId: root })).status).toBe(200)
+    const creates = () => runtimeRequests.filter((entry) => entry === "POST /session").length
+    const before = creates()
+
+    const preview = (await post(`${TASKS}/tasks/${taskId}/start-preview`, "ivan", startBody(presetId)) as { status: number; body: Preview })
+    expect((await rows()).workspaces.some((row) => row.workspace_id === root)).toBe(false)
+    const request = { ...startBody(presetId), clientRequestId: "start-ivan-once", previewDigest: preview.body.preview.digest, handoffText: null }
+
+    const preparing = await post(`${TASKS}/tasks/${taskId}/sessions`, "ivan", request)
+    expect(preparing).toEqual({ status: 202, body: { preparing: { workspaceId: root } } })
+    const booting = await rows()
+    expect(booting.workspaces.find((row) => row.workspace_id === root)).toMatchObject({ backing: "cloud-vm", deleted_at: null })
+    expect(booting.leases.find((row) => row.workspace_id === root)?.status).not.toBe("ready")
+    expect(booting.links.filter((row) => row.task_id === taskId)).toEqual([])
+    expect(creates()).toBe(before)
+
+    expect((await post(`${ORIGIN}/__settle`, undefined, { workspaceId: root })).body).toMatchObject({ status: "ready" })
+    const started = (await post(`${TASKS}/tasks/${taskId}/sessions`, "ivan", request)) as { status: number; body: Started }
+    expect(started).toMatchObject({ status: 200, body: { created: true, link: { sessionRef: { workspaceId: root } } } })
+    expect(creates()).toBe(before + 1)
+    expect((await rows()).links.filter((row) => row.task_id === taskId)).toHaveLength(1)
   })
 
   test("another person cannot start a session in someone else's task root", async () => {

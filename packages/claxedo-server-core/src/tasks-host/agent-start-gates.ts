@@ -145,7 +145,7 @@ export function gateAgentStarts(
       const gated = await refusal(grant, command)
       if (gated) return gated
       const started = await bridge.start(command)
-      if (!started.ok) return started
+      if (!started.ok || "preparing" in started) return started
       return {
         ok: true,
         session: { ...started.session, startedFrom: startedFromOf(grant, command), startedBy: "agent" },

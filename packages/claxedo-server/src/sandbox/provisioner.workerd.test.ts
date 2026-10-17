@@ -67,6 +67,11 @@ async function rootRenewals(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/root-renewals?ws=${workspaceId}`)).json()) as { renewals: unknown[] }).renewals
 }
 
+/** Each step of a Task root and the capability set it was prepared with, in order. */
+async function rootSteps(workspaceId: string) {
+  return ((await (await miniflare.dispatchFetch(`${ORIGIN}/root-steps?ws=${workspaceId}`)).json()) as { steps: Array<{ step: string; capabilities: unknown }> }).steps
+}
+
 /** The failures the provisioner counted before each idle read of the workspace, in order. */
 async function watches(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/watches?ws=${workspaceId}`)).json()) as { watches: number[] }).watches
@@ -188,6 +193,21 @@ describe("a sandbox start on workerd", () => {
     expect(await renewals("ws_renew_2")).toBe(2)
     expect(await driverCalls("ws_renew_2")).toBe(1)
     expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
+  test("a Task root's start names its capability set, answers at once, is announced, and every later step of the root is prepared with that set", async () => {
+    const workspaceId = "ws_task_capabilities"
+    const capabilities = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }
+    const response = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}&retry=1&plugin=linear`, { method: "POST" })
+    expect(await response.json()).toMatchObject({ status: "provisioning" })
+    await until(() => target(workspaceId), (lease) => lease.status === "ready")
+    const steps = await until(() => rootSteps(workspaceId), (rows) => rows.filter((row) => row.step === "renew").length >= 2)
+    expect(steps.slice(0, 2).map((row) => row.step)).toEqual(["acquire", "provision"])
+    expect(steps.every((row) => JSON.stringify(row.capabilities) === JSON.stringify(capabilities))).toBe(true)
+    expect(await until(() => notices(workspaceId), (rows) => rows.includes("ready"))).toEqual(["starting", "ready"])
+
+    expect(await start(workspaceId)).toMatchObject({ status: "ready" })
+    expect(await driverCalls(workspaceId)).toBe(1)
   })
 
   test("a Task root whose settings were pushed outside a run joins the renewal with its capability set, and a stopped root is renewed no more", async () => {

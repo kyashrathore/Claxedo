@@ -21,6 +21,7 @@ import {
   type SkillReference,
   type StartBlocker,
   type StartPreview,
+  type StartResponse,
   type Task,
   type TaskAttachment,
   type TaskDetailResponse,
@@ -364,10 +365,14 @@ export function decodeTaskDetail(value: unknown): Parsed<TaskDetailResponse> {
   })
 }
 
-export function decodeStartResponse(value: unknown): Parsed<{ link: TaskSessionLinkView; created: boolean }> {
+export function decodeStartResponse(value: unknown): Parsed<StartResponse> {
   const ctx = decodeContext()
-  return finishDecode(ctx, () => {
+  return finishDecode(ctx, (): StartResponse => {
     const row = ctx.read.record(value, "body")
+    if (row?.preparing !== undefined) {
+      const preparing = ctx.read.record(row.preparing, "body.preparing")
+      return { preparing: { workspaceId: ctx.read.string(preparing?.workspaceId, "body.preparing.workspaceId") ?? "" } }
+    }
     return {
       link: linkViewOf(ctx, row?.link, "body.link"),
       created: ctx.read.boolean(row?.created, "body.created") ?? false,

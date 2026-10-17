@@ -85,6 +85,8 @@ export type FakeBridge = TasksSessionBridgePort & {
   setState(sessionId: string, state: SessionLiveness): void
   nextSession(sessionId: string): void
   refuseStart(message: string): void
+  /** Starts answer that this workspace is still starting until null clears it. */
+  prepareStart(workspaceId: string | null): void
   /** Null clears the refusal, for a retry after the host would not answer. */
   refuseHandoff(message: string | null): void
   readonly starts: readonly StartCommand[]
@@ -113,6 +115,7 @@ export function fakeBridge(): FakeBridge {
     `${input.sessionId}:${input.taskId}:${input.slot}:${input.attempt}`
   let nextSessionId = "session-1"
   let refusal: string | null = null
+  let preparing: string | null = null
   let handoffRefusal: string | null = null
 
   const previewOf = (command: StartPreviewCommand): StartPreview => {
@@ -163,6 +166,7 @@ export function fakeBridge(): FakeBridge {
       }
       if (command.previousSession) transcriptReads.push(command.previousSession.sessionId)
       if (refusal !== null) return { ok: false, error: { code: "unsupported", message: refusal } }
+      if (preparing !== null) return { ok: true, preparing: { workspaceId: preparing } }
       return {
         ok: true,
         session: {
@@ -205,6 +209,9 @@ export function fakeBridge(): FakeBridge {
     },
     refuseStart: (message) => {
       refusal = message
+    },
+    prepareStart: (workspaceId) => {
+      preparing = workspaceId
     },
     refuseHandoff: (message) => {
       handoffRefusal = message

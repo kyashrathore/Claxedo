@@ -153,6 +153,25 @@ async function rootRenewals(database: D1Database, workspaceId: string): Promise<
   return rows.results.map((row) => (row.capabilities === null ? null : JSON.parse(row.capabilities)))
 }
 
+const ROOT_STEPS_TABLE = "fixture_root_steps"
+
+/**
+ * `ws_task_<name>`: a Task root started with its capability set; every step
+ * of it records the step and the capability set it was prepared with, and its
+ * settings are due again 200 ms after it is ready, for as long as it serves.
+ */
+async function recordRootStep(database: D1Database, workspaceId: string, step: string, capabilities: unknown) {
+  await database.prepare(`create table if not exists ${ROOT_STEPS_TABLE} (workspace_id text not null, step text not null, capabilities text)`).run()
+  await database.prepare(`insert into ${ROOT_STEPS_TABLE} (workspace_id, step, capabilities) values (?, ?, ?)`).bind(workspaceId, step, capabilities === undefined ? null : JSON.stringify(capabilities)).run()
+}
+
+async function rootSteps(database: D1Database, workspaceId: string): Promise<Array<{ step: string; capabilities: unknown }>> {
+  const table = await database.prepare(`select count(*) as n from sqlite_master where type = 'table' and name = ?`).bind(ROOT_STEPS_TABLE).first<{ n: number }>()
+  if (!table?.n) return []
+  const rows = await database.prepare(`select step, capabilities from ${ROOT_STEPS_TABLE} where workspace_id = ? order by rowid`).bind(workspaceId).all<{ step: string; capabilities: string | null }>()
+  return rows.results.map((row) => ({ step: row.step, capabilities: row.capabilities === null ? null : JSON.parse(row.capabilities) }))
+}
+
 const WATCHES_TABLE = "fixture_watches"
 
 /** Records one idle read with the failures the provisioner counted before it; answers how many reads the workspace has had. */
@@ -196,10 +215,18 @@ function drive(env: Env): SandboxStartDrive {
   const input = { homeRegion: "us-east", labels: {} }
   const renewing = (workspaceId: string) => /^ws_renew_(\d+)/.exec(workspaceId)
   const watching = (workspaceId: string) => /^ws_watch(fail)?_(\d+)/.exec(workspaceId)
+  const taskRoot = (workspaceId: string) => workspaceId.startsWith("ws_task_")
   return {
-    acquire: (workspaceId) => sandboxes.acquire(workspaceId, input),
-    provision: async (workspaceId, epoch) => {
+    acquire: async (workspaceId, capabilities) => {
+      if (taskRoot(workspaceId)) await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, "acquire", capabilities)
+      return sandboxes.acquire(workspaceId, input)
+    },
+    provision: async (workspaceId, epoch, capabilities) => {
       const answer = await sandboxes.provision(workspaceId, epoch, input)
+      if (taskRoot(workspaceId)) {
+        await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, "provision", capabilities)
+        return answer.status === "ready" ? { ...answer, renewAt: Date.now() + RENEWAL_DUE_MS } : answer
+      }
       if (workspaceId.startsWith("ws_step_throws") && answer.status === "ready" && await driverCalls(env.CONTROL_PLANE_DB, workspaceId) === 1) {
         throw Object.assign(new Error("the runtime refused its settings"), { code: "runtime_provision_failed" })
       }
@@ -208,6 +235,11 @@ function drive(env: Env): SandboxStartDrive {
       return answer
     },
     renew: async (workspaceId, capabilities) => {
+      if (taskRoot(workspaceId)) {
+        if ((await sandboxes.target(workspaceId)).status !== "ready") return undefined
+        await recordRootStep(env.CONTROL_PLANE_DB, workspaceId, "renew", capabilities)
+        return Date.now() + RENEWAL_DUE_MS
+      }
       if (workspaceId.startsWith("ws_root_")) {
         if ((await sandboxes.target(workspaceId)).status !== "ready") return undefined
         await recordRootRenewal(env.CONTROL_PLANE_DB, workspaceId, capabilities)
@@ -253,7 +285,11 @@ export default {
     const url = new URL(request.url)
     const workspaceId = url.searchParams.get("ws") ?? ""
     if (url.pathname === "/start") {
-      return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId, url.searchParams.has("retry") ? { retry: true } : {}))
+      const plugin = url.searchParams.get("plugin")
+      return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).start(workspaceId, {
+        ...(url.searchParams.has("retry") ? { retry: true } : {}),
+        ...(plugin ? { capabilities: { plugins: [{ sourceId: "src", pluginName: plugin }], skills: [] } } : {}),
+      }))
     }
     if (url.pathname === "/refresh") return Response.json(await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).refresh(workspaceId))
     if (url.pathname === "/redeliver") {
@@ -270,6 +306,7 @@ export default {
       return Response.json(await manager(env).stop(workspaceId, current.status === "ready" ? { expectedEpoch: current.epoch } : {}))
     }
     if (url.pathname === "/root-renewals") return Response.json({ renewals: await rootRenewals(env.CONTROL_PLANE_DB, workspaceId) })
+    if (url.pathname === "/root-steps") return Response.json({ steps: await rootSteps(env.CONTROL_PLANE_DB, workspaceId) })
     if (url.pathname === "/in-flight") return Response.json((await sandboxProvisioner(env.SANDBOX_PROVISIONER, workspaceId).inFlight()) ?? null)
     if (url.pathname === "/target") return Response.json(await manager(env).target(workspaceId))
     if (url.pathname === "/driver-calls") return Response.json({ calls: await driverCalls(env.CONTROL_PLANE_DB, workspaceId) })

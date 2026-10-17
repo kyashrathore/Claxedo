@@ -30,14 +30,13 @@ import {
  */
 export function hostedTasksRouteContributions(
   input: Omit<HostedTasksCompositionInput, "bridge" | "cloudSelectedCapabilities"> & {
-    selectedCapabilities?: NonNullable<HostedTasksSessionBridgeInput["selectedCapabilities"]>
     /**
-     * The grants the workspace routes launch every cloud root with, and the
-     * runtime delivery every cloud workspace starts with. A task's root is
-     * launched by the bridge, so it is handed the same two.
+     * The workspace's sandbox start, which prepares a root with its own
+     * capability set. Only a build whose runtime preparation projects that set
+     * names it; without it a preset naming cloud placement is refused when it
+     * is saved.
      */
-    rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
-    workspaceRuntime?: HostedTasksSessionBridgeInput["workspaceRuntime"]
+    sandboxStart?: HostedTasksSessionBridgeInput["sandboxStart"]
     sandboxUsage?: HostedTasksSessionBridgeInput["sandboxUsage"]
     /**
      * The deployment's half of the create admission a task's cloud root is
@@ -46,7 +45,6 @@ export function hostedTasksRouteContributions(
      * create budget is one bucket per isolate rather than one per request.
      */
     cloudCreateAdmission?: CloudCreateAdmissionPolicy
-    sandboxEgress: HostedTasksSessionBridgeInput["sandboxEgress"]
     renewal?: Pick<TasksGrantRenewalInput, "tasksGroupEnabled" | "grant" | "ownerGrant">
   },
 ): readonly ControlPlaneRouteContribution[] {
@@ -57,7 +55,7 @@ export function hostedTasksRouteContributions(
   const reads = createD1TasksHostReads(input.database)
   const composition = createHostedTasksComposition({
     ...input,
-    cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
+    cloudSelectedCapabilities: Boolean(input.sandboxStart),
     bridge: (principal, auth, owner) =>
       createHostedTasksSessionBridge({
         services: input.services,
@@ -66,12 +64,9 @@ export function hostedTasksRouteContributions(
         principal,
         auth,
         owner,
-        ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
-        ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
-        ...(input.workspaceRuntime ? { workspaceRuntime: input.workspaceRuntime } : {}),
+        ...(input.sandboxStart ? { sandboxStart: input.sandboxStart } : {}),
         ...(input.sandboxUsage ? { sandboxUsage: input.sandboxUsage } : {}),
         cloudCreateAdmission: createAdmission,
-        sandboxEgress: input.sandboxEgress,
       }),
   })
   const owners = requireAuthority(input.services).resolveWorkspaceOwner?.bind(requireAuthority(input.services))

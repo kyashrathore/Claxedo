@@ -18,6 +18,7 @@ import {
   fakeIds,
 } from "../test-support/fakes"
 import { fieldReasons, refusalOf } from "../test-support/refusals"
+import { linkedStart, startedSession } from "../test-support/started"
 import { presetDraft, primaryConfiguration, slotted } from "../test-support/rows"
 import type { TasksAuthorizationPort } from "../ports/authorization"
 import { TasksStoreConflict, type TasksStoreOperations, type TasksStorePort } from "../ports/store"
@@ -549,7 +550,7 @@ describe("tasks service", () => {
 
     test("the first start links attempt 1 and the bridge receives the task and preset", async () => {
       const task = (await tasks.create(ACTOR, draft({ description: "Do it well" }))).task
-      const started = await tasks.start(ACTOR, task.id, start(task, { handoffText: "Pick up from the spike" }))
+      const started = linkedStart(await tasks.start(ACTOR, task.id, start(task, { handoffText: "Pick up from the spike" })))
       expect(started.created).toBe(true)
       expect(started.link).toMatchObject({ attempt: 1, slot: "primary", liveness: "live" })
       expect(bridge.starts[0]).toMatchObject({
@@ -627,9 +628,9 @@ describe("tasks service", () => {
 
     test("re-requesting the live attempt returns the same session without starting another", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
-      const first = await tasks.start(ACTOR, task.id, start(task))
+      const first = linkedStart(await tasks.start(ACTOR, task.id, start(task)))
       const linked = (await tasks.detail(ACTOR, task.id)).task
-      const again = await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision }))
+      const again = linkedStart(await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision })))
       expect(again.created).toBe(false)
       expect(again.link.sessionRef).toEqual(first.link.sessionRef)
       expect(bridge.starts).toHaveLength(1)
@@ -638,8 +639,8 @@ describe("tasks service", () => {
     test("a Start sent again after the first one linked its session is answered with that session, though the revision it read has moved", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       const request = start(task)
-      const first = await tasks.start(ACTOR, task.id, request)
-      const again = await tasks.start(ACTOR, task.id, request)
+      const first = linkedStart(await tasks.start(ACTOR, task.id, request))
+      const again = linkedStart(await tasks.start(ACTOR, task.id, request))
       expect(again.link.sessionRef).toEqual(first.link.sessionRef)
       expect(again.created).toBe(false)
       expect(bridge.starts).toHaveLength(1)
@@ -766,11 +767,11 @@ describe("tasks service", () => {
         (await refusalOf(() => tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, attempt: 1 })))).code,
       ).toBe("conflict")
 
-      const again = await tasks.start(
+      const again = linkedStart(await tasks.start(
         ACTOR,
         task.id,
         start(task, { taskRevision: linked.revision, attempt: 2, continueFromPrevious: true }),
-      )
+      ))
       expect(again.created).toBe(true)
       expect(again.link.attempt).toBe(2)
       expect(again.link.continuedFrom?.sessionId).toBe("session-1")
@@ -787,7 +788,7 @@ describe("tasks service", () => {
       await tasks.start(ACTOR, task.id, start(task))
       const linked = (await tasks.detail(ACTOR, task.id)).task
       bridge.nextSession("session-review")
-      const review = await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, slot: "review" }))
+      const review = linkedStart(await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, slot: "review" })))
       expect(review.link.sessionRef.sessionId).toBe("session-review")
       expect((await tasks.detail(ACTOR, task.id)).links).toHaveLength(2)
     })
@@ -798,6 +799,21 @@ describe("tasks service", () => {
       const detail = await refusalOf(() => tasks.start(ACTOR, task.id, start(task)))
       expect(detail.code).toBe("unsupported")
       expect((await tasks.detail(ACTOR, task.id)).links).toHaveLength(0)
+    })
+
+    test("a Start whose cloud root is still starting answers with its workspace, links nothing, and the same Start sent once it runs links the session", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      bridge.prepareStart("ws_root")
+      expect(await tasks.start(ACTOR, task.id, start(task))).toEqual({ preparing: { workspaceId: "ws_root" } })
+      const preparing = await tasks.detail(ACTOR, task.id)
+      expect(preparing.links).toHaveLength(0)
+      expect(preparing.task.revision).toBe(task.revision)
+      expect(bridge.delivered).toHaveLength(0)
+
+      bridge.prepareStart(null)
+      const started = linkedStart(await tasks.start(ACTOR, task.id, start(task)))
+      expect(started).toMatchObject({ created: true, link: { attempt: 1, sessionRef: { sessionId: "session-1" } } })
+      expect(bridge.delivered).toHaveLength(1)
     })
 
     test("a task archived while the session was being created does not acquire it", async () => {
@@ -910,7 +926,7 @@ describe("tasks service", () => {
       // whose session is gone has to stay in them.
       expect((await rowBacked.detail(ACTOR, task.id)).links).toMatchObject([{ attempt: 1, liveness: "deleted" }])
 
-      const again = await rowBacked.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, attempt: 2 }))
+      const again = linkedStart(await rowBacked.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, attempt: 2 })))
       expect(again.created).toBe(true)
       expect(again.link).toMatchObject({ attempt: 2, sessionRef: { sessionId: "session-2" } })
 
@@ -1003,7 +1019,7 @@ describe("tasks service", () => {
             taskId: task.id,
             slot: "primary",
             attempt: 1,
-            sessionRef: started.session.sessionRef,
+            sessionRef: startedSession(started).sessionRef,
             continuedFrom: null,
             presetId: preset.id,
             presetRevision: preset.revision,
@@ -1109,7 +1125,7 @@ describe("tasks service", () => {
       ).toBe("conflict")
 
       const same = (await tasks.create(ACTOR, draft())).task
-      const answered = await racing(same, {}).start(ACTOR, same.id, start(same))
+      const answered = linkedStart(await racing(same, {}).start(ACTOR, same.id, start(same)))
       expect(answered.created).toBe(false)
       expect(answered.link.sessionRef).toEqual({ sessionId: "session-1", workspaceId: "workspace-1" })
       // The link that answered is the one already stored, so this settlement

@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { Hono } from "hono"
 import type { D1Database } from "@cloudflare/workers-types"
-import { createSandboxManager, type SandboxDriver } from "@claxedo/sandbox-manager"
+import { createSandboxManager, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -37,6 +37,8 @@ import { createHostedTasksComposition, type HostedTasksCompositionInput } from "
 import type { TasksHostReads } from "./d1-host-reads"
 import { createHostedTasksSessionBridge } from "./session-bridge"
 import { createCloudCreateAdmission } from "../workspace/cloud-create-admission"
+import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
+import type { SandboxStart } from "../workspace/sandbox-start"
 
 const runtime = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
@@ -899,6 +901,20 @@ describe("hosted Tasks cloud start from inside a session", () => {
     return { driver, ensured }
   }
 
+  /** A sandbox start whose run settles inside it, over the root the authority filed. */
+  const settledStart = (sandboxManager: SandboxManager): SandboxStart => async (workspaceId) => {
+    const row = registry.roots.get(workspaceId)
+    if (!row) throw new Error(`no root ${workspaceId} was filed before its start`)
+    const input = hostedSandboxInput(
+      { workspace_id: row.id, project_id: row.project_id, repo_url: row.repo_url, git_branch: row.git_branch, remote_directory: row.remote_directory },
+      { egress: { defaultHomeRegion: "us-east" }, preparation: undefined },
+    )
+    for (;;) {
+      const answer = await sandboxManager.ensure(workspaceId, input)
+      if (answer.status !== "provisioning") return answer
+    }
+  }
+
   /** The project's source and the roots the authority filed, as the D1 rows answer them. */
   const reads: TasksHostReads = {
     workspace: async (workspaceId) => registry.roots.get(workspaceId),
@@ -925,7 +941,6 @@ describe("hosted Tasks cloud start from inside a session", () => {
     const signingEnv = await signing()
     const { driver, ensured } = fakeDriver()
     const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
-    const rootEnvironment = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "root-grant" }))
     const controlPlane = await database()
     const app = await hostedApp(
       { sandboxManager, orgDriver: async () => ({ ...driver, id: "modal" }) },
@@ -941,9 +956,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
             principal,
             auth,
             owner,
-            selectedCapabilities: { prepare: async () => ({}), apply: async () => undefined },
-            capability: rootEnvironment,
-            sandboxEgress: { controlPlaneOrigin: "https://cp.test" },
+            sandboxStart: settledStart(sandboxManager),
           }),
       },
     )
@@ -1014,9 +1027,8 @@ describe("hosted Tasks cloud start from inside a session", () => {
       ALICE_PRINCIPAL,
       expect.objectContaining({ sessionId: link.link.sessionRef.sessionId, workspaceId: rootB }),
     )
-    expect(rootEnvironment).toHaveBeenCalledWith({ userId: "alice", orgId: "org-1", projectId: "project-a", workspaceId: rootB })
     expect([...ensured]).toEqual([rootB])
-    // Preview and Start each re-admit the one root; neither creates a second.
+    // The Start files the one root; the preview files nothing.
     const admissions = () =>
       (authority.createRuntimeCloudWorkspace.mock.calls as [unknown, { workspaceId: string }][]).map(([, args]) => args.workspaceId)
     expect(new Set(admissions())).toEqual(new Set([rootB]))
@@ -1068,7 +1080,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
       body: { error: { code: "billing_entitlement_required", message: `no cloud-workspace for ${tenant.orgId}` } },
     }))
     const app = await hostedApp(
-      { sandboxManager },
+      { sandboxManager, orgDriver: async () => ({ ...driver, id: "modal" }) },
       {
         signingEnv,
         database: await database(),
@@ -1081,9 +1093,8 @@ describe("hosted Tasks cloud start from inside a session", () => {
             principal,
             auth,
             owner,
-            selectedCapabilities: { prepare: async () => ({}), apply: async () => undefined },
+            sandboxStart: settledStart(sandboxManager),
             cloudCreateAdmission: createCloudCreateAdmission({ services, entitlement }),
-            sandboxEgress: { controlPlaneOrigin: "https://cp.test" },
           }),
       },
     )
@@ -1123,11 +1134,22 @@ describe("hosted Tasks cloud start from inside a session", () => {
       body: JSON.stringify(startBody(cloudPresetId, { workspaceId: "ws_root", sessionId: "ses_2" })),
     })
     expect(preview.status).toBe(200)
-    const previewed = ((await preview.json()) as { preview: { available: boolean; blockers: unknown[] } }).preview
-    expect(previewed).toMatchObject({
-      available: false,
-      blockers: [{ code: "source_unavailable", detail: "no cloud-workspace for org-1" }],
+    const previewed = ((await preview.json()) as { preview: { digest: string; available: boolean } }).preview
+    expect(previewed.available).toBe(true)
+    expect(entitlement).not.toHaveBeenCalled()
+
+    const started = await app.request(`https://core.test${TASKS}/tasks/${taskId}/sessions`, {
+      method: "POST",
+      headers: bearer,
+      body: JSON.stringify({
+        ...startBody(cloudPresetId, { workspaceId: "ws_root", sessionId: "ses_2" }),
+        clientRequestId: "owner-start",
+        previewDigest: previewed.digest,
+        handoffText: null,
+      }),
     })
+    expect(started.status).toBe(422)
+    expect(await started.json()).toMatchObject({ error: { code: "unsupported", message: "no cloud-workspace for org-1" } })
     expect(entitlement).toHaveBeenCalledWith({ orgId: "org-1" })
     expect(authority.createRuntimeCloudWorkspace).not.toHaveBeenCalled()
     expect(authority.createCloudWorkspace).not.toHaveBeenCalled()

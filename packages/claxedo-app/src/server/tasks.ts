@@ -3,10 +3,12 @@ import { TASKS_ROUTE_PATH, taskSummaryOf, type Page, type SessionRef, type Task,
 import { createTasksClient, type TasksClient } from "@claxedo/tasks/client"
 import { probeAvailability } from "./availability"
 import { fetchQuery } from "./fetch-query"
-import { placementId, sessionId } from "./ids"
+import type { AppError } from "./types"
+import { placementId, sessionId, type PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
 import type { FeatureAvailability, SessionLocation } from "./types"
+import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 
 export const TASKS_PRESETS_PATH = "/api/claxedo/tasks/presets"
@@ -30,7 +32,10 @@ export type TasksApi = {
   }
   readonly command: TasksClient["command"]
   readonly locateSession: (ref: SessionRef) => Promise<Pick<SessionLocation, "placementId" | "sessionId">>
+  readonly followRoot: (workspaceId: string, following: (placementId: PlacementId) => void) => Promise<TaskRootRun>
 }
+
+export type TaskRootRun = { readonly kind: "running" } | { readonly kind: "notRunning"; readonly error?: AppError }
 
 type ChildPages = InfiniteData<Page<TaskSummary>, string | undefined>
 
@@ -50,7 +55,7 @@ function withCreatedChild(pages: ChildPages | undefined, task: Task): ChildPages
   return { ...pages, pages: [{ ...first, items: [summary, ...first.items] }, ...pages.pages.slice(1)] }
 }
 
-export function createTasksApi(transport: Transport, queryClient: QueryClient, workspaces: Workspaces): TasksApi {
+export function createTasksApi(transport: Transport, queryClient: QueryClient, workspaces: Workspaces, wakes: Pick<WorkspaceWakes, "follow" | "runtime">): TasksApi {
   const scope = queryKeys.tasksAll(transport.serverUrl)
   const client = createTasksClient({ baseUrl: TASKS_ROUTE_PATH, request: (path, init) => transport.request(path, init) })
   const keys = {
@@ -76,6 +81,15 @@ export function createTasksApi(transport: Transport, queryClient: QueryClient, w
       const location = { placementId: placementId(ref.workspaceId), sessionId: sessionId(ref.sessionId) }
       if (!workspaces.byId(location.placementId) && !workspaces.shared.find(location)) await workspaces.refresh()
       return location
+    },
+    followRoot: async (workspaceId, following) => {
+      await workspaces.refresh()
+      const id = placementId(workspaceId)
+      following(id)
+      await wakes.follow(id)
+      const runtime = wakes.runtime(id)
+      if (runtime.kind === "live") return { kind: "running" }
+      return runtime.kind === "wakeFailed" ? { kind: "notRunning", error: runtime.error } : { kind: "notRunning" }
     },
   }
 }

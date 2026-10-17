@@ -3,7 +3,7 @@ import type { ConfigurationSlot, SessionRef, Task, TaskSessionLinkView } from "@
 import { useTranslator } from "@/i18n"
 import { Button, Tag } from "@/ui"
 import type { TaskStartOffer } from "../data/start"
-import { tasksDictionary, type TasksKey } from "../i18n"
+import { tasksDictionary } from "../i18n"
 import { SLOT_KEYS, slotAttempt, type TaskLinkGroup } from "../model"
 import { TaskStartControl } from "./task-row-controls"
 
@@ -20,12 +20,12 @@ export type SlotRowProps = {
 function Attempts(props: {
   readonly slot: ConfigurationSlot
   readonly history: readonly TaskSessionLinkView[]
-  readonly progress: TasksKey | undefined
+  readonly progress: string | undefined
   readonly onOpenSession: (ref: SessionRef) => void
 }): JSX.Element {
   const t = useTranslator(tasksDictionary)
   return (
-    <Show when={props.history.length > 0} fallback={<p class="tsk-hint" role="status">{t(props.progress ?? "tasks.slot.noSession")}</p>}>
+    <Show when={props.history.length > 0} fallback={<p class="tsk-hint" role="status">{props.progress ?? t("tasks.slot.noSession")}</p>}>
       <ul class="tsk-attempts">
         <For each={props.history}>
           {(link) => (
@@ -114,7 +114,7 @@ export function SlotRow(props: SlotRowProps): JSX.Element {
         )}
       </Show>
       <Show when={(props.group?.attempts.length ?? 0) > 0 ? props.offer.progress : undefined}>
-        {(key) => <p class="tsk-hint" role="status">{t(key())}</p>}
+        {(line) => <p class="tsk-hint" role="status">{line()}</p>}
       </Show>
       <Attempts slot={props.slot} history={props.group?.attempts ?? []} progress={props.offer.progress} onOpenSession={props.onOpenSession} />
     </div>

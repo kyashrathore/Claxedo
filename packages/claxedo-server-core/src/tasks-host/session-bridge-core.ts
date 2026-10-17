@@ -1,14 +1,6 @@
-import {
-  harnessEffortRefusal,
-  parseHarnessEffortLevels,
-  sessionVariantForEffort,
-} from "@claxedo/agent-runtime-contract"
+import { sessionVariantForEffort } from "@claxedo/agent-runtime-contract"
 import { renderSessionHandoff } from "@claxedo/agent-runtime-contract"
-import { asRecord, isRecord } from "@claxedo/helpers/guards"
-import {
-  sessionCreateRequest,
-  sessionHarnessQuery,
-} from "@claxedo/server-core/workspace/http/session-create-request"
+import { sessionCreateRequest } from "@claxedo/server-core/workspace/http/session-create-request"
 import {
   TasksError,
   attachmentDataUrl,
@@ -42,6 +34,7 @@ import {
   type TasksSessionBridgePort,
 } from "@claxedo/tasks"
 import type { Workspace } from "../workspace/store/index"
+import { configurationBlockers, workspaceNameOrDirectory } from "./configuration-blockers"
 import { originIds } from "./origin-ids"
 import { registeredSessionStates, type RegisteredSession } from "./registered-sessions"
 import {
@@ -71,13 +64,16 @@ export type TasksRuntimeTarget = {
 export type TasksTargetChoice = { target: TasksRuntimeTarget } | { detail: string }
 
 /**
- * Where a cloud-placement root runs, or the blocker that says why it does not.
- * The refusal names its own blocker because the two answers are not the same
- * refusal: a deployment with no sandbox driver cannot offer this placement at
- * all, while one that has a driver and could not reach the project's source
- * has an unavailable source.
+ * Where a cloud-placement root runs, the workspace whose start is still under
+ * way, or the blocker that says why it does not run. The refusal names its own
+ * blocker because the two answers are not the same refusal: a deployment with
+ * no sandbox driver cannot offer this placement at all, while one that has a
+ * driver and could not reach the project's source has an unavailable source.
  */
-export type TasksCloudTargetChoice = { target: TasksRuntimeTarget } | { blocker: StartBlocker }
+export type TasksCloudTargetChoice =
+  | { target: TasksRuntimeTarget }
+  | { preparing: { workspaceId: string } }
+  | { blocker: StartBlocker }
 
 /** The root a cloud allocation is bound to: one workspace per `(scope, task, slot, attempt)`. */
 export type TasksCloudOrigin = {
@@ -116,11 +112,18 @@ export type TasksSessionHost = {
   projectTarget(projectId: string, starter: TasksActor): Promise<TasksTargetChoice>
   /**
    * The isolated workspace a cloud-placement preset runs in, allocated to this
-   * root and recovered by a retry of it. A host that names none cannot offer
-   * cloud placement, and a preset asking for one is blocked rather than
-   * started in the task's own workspace.
+   * root and recovered by a retry of it. It answers as soon as the root's start
+   * is under way rather than once its sandbox runs; the same Start sent once it
+   * runs finds the target. A host that names none cannot offer cloud placement,
+   * and a preset asking for one is blocked rather than started in the task's
+   * own workspace.
    */
   cloudTarget?(origin: TasksCloudOrigin): Promise<TasksCloudTargetChoice>
+  /**
+   * Why this host would refuse to allocate the root, read without filing a row
+   * or starting anything, because a preview has no side effects.
+   */
+  cloudRefusal?(origin: TasksCloudOrigin): Promise<StartBlocker | undefined>
   sessionMetas(
     sessionIds: readonly string[],
   ): Promise<ReadonlyMap<string, { workspaceID?: string; archived?: number }>>
@@ -189,20 +192,16 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
     async start(command) {
       const resolved = await resolveStart(host, command)
       if (!resolved.ok) return resolved
-      if (!resolved.preview.available) {
-        const blocker = resolved.preview.blockers[0]
-        return {
-          ok: false,
-          error: tasksErrorDetail("unsupported", blocker ? blocker.detail : "This configuration cannot be started here"),
-        }
-      }
+      if (!resolved.preview.available) return unstartable(resolved.preview.blockers)
       if (command.previewDigest !== resolved.preview.digest) {
         return {
           ok: false,
           error: tasksErrorDetail("conflict", "The previewed configuration is no longer the one this Start would run"),
         }
       }
-      return startSession(host, command, resolved)
+      if (resolved.target) return startSession(host, command, resolved, resolved.target)
+      const allocated = await allocateCloudRoot(host, command, resolved)
+      return "target" in allocated ? startSession(host, command, resolved, allocated.target) : allocated
     },
 
     async handoff(command) {
@@ -217,6 +216,7 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
 
 type Handoff = { session: SessionRef; transcript: string }
 
+/** `target` is the local workspace a Start runs in; a cloud root has none until the Start allocates it. */
 type ResolvedStart = {
   ok: true
   preview: StartPreview
@@ -262,62 +262,6 @@ async function sessionStates(
   }))
 }
 
-function workspaceNameOrDirectory(workspace: Workspace): string {
-  return workspace.workspace_name || workspace.directory
-}
-
-/**
- * What the harness registered for this workspace says about the chosen model
- * and effort. A harness that selects its own model would run something other
- * than the preset's choice, which is a refusal rather than a silent
- * substitution.
- */
-async function configurationBlockers(
-  target: TasksRuntimeTarget,
-  configuration: ModelConfiguration,
-): Promise<StartBlocker[]> {
-  const response = await target
-    .request(`/session/capabilities?${sessionHarnessQuery(configuration.harness)}`)
-    .catch(() => undefined)
-  if (!response?.ok) {
-    return [{
-      code: "harness_unavailable",
-      detail: `The ${configuration.harness.id} harness is not available in ${workspaceNameOrDirectory(target.workspace)}`,
-    }]
-  }
-  const body = asRecord(await response.json().catch(() => undefined))
-  const effort = effortBlockers(body?.effortLevels, configuration)
-  const selection = asRecord(body?.modelSelection)
-  if (selection?.status === "unsupported") {
-    return [{
-      code: "model_unavailable",
-      detail: `The ${configuration.harness.id} harness selects its own model and would ignore ${configuration.model.modelID}`,
-    }, ...effort]
-  }
-  const models = Array.isArray(selection?.models) ? selection.models : []
-  const offered = models.length === 0 || models.some((model) =>
-    isRecord(model)
-    && model.providerId === configuration.model.providerID
-    && model.modelId === configuration.model.modelID)
-  return [
-    ...(offered ? [] : [{
-      code: "model_unavailable" as const,
-      detail: `${configuration.model.providerID}/${configuration.model.modelID} is not offered by the ${configuration.harness.id} harness here`,
-    }]),
-    ...effort,
-  ]
-}
-
-function effortBlockers(value: unknown, configuration: ModelConfiguration): StartBlocker[] {
-  const detail = harnessEffortRefusal({
-    harness: configuration.harness.id,
-    catalog: parseHarnessEffortLevels(value),
-    modelID: configuration.model.modelID,
-    effort: configuration.effort ?? undefined,
-  })
-  return detail ? [{ code: "effort_unsupported", detail }] : []
-}
-
 /**
  * The previous session's conversation, rendered by the runtime's own renderer.
  *
@@ -328,15 +272,15 @@ function effortBlockers(value: unknown, configuration: ModelConfiguration): Star
  */
 async function readHandoff(
   host: TasksSessionHost,
-  fallback: TasksRuntimeTarget,
+  fallback: TasksRuntimeTarget | null,
   previous: SessionRef | null,
   authorize: TranscriptGrant,
   reader: TasksActor,
 ): Promise<{ ok: true; handoff: Handoff | null } | Refusal> {
   if (!previous) return { ok: true, handoff: null }
-  const target = previous.workspaceId !== fallback.workspace.id
-    ? await host.target(previous.workspaceId, reader)
-    : fallback
+  const target = previous.workspaceId === fallback?.workspace.id
+    ? fallback
+    : await host.target(previous.workspaceId, reader)
   if (!target) return { ok: true, handoff: null }
   if (!(await authorize())) {
     return {
@@ -369,29 +313,54 @@ function previousSessionOf(command: StartPreviewCommand | StartCommand): Session
   return command.currentLink?.sessionRef ?? null
 }
 
-async function cloudTarget(
+type CloudCapabilities = Extract<PresetExecution, { placement: "cloud" }>["capabilities"]
+
+function cloudOrigin(command: StartPreviewCommand | StartCommand, capabilities: CloudCapabilities): TasksCloudOrigin {
+  return { actor: command.actor, task: command.task, slot: command.slot, attempt: command.attempt, capabilities }
+}
+
+async function cloudRefusal(
   host: TasksSessionHost,
   command: StartPreviewCommand | StartCommand,
-  capabilities: Extract<PresetExecution, { placement: "cloud" }>["capabilities"],
-): Promise<TasksCloudTargetChoice> {
+  capabilities: CloudCapabilities,
+): Promise<StartBlocker | undefined> {
   if (!host.cloudTarget) {
     return {
-      blocker: {
-        code: "placement_unsupported",
-        detail: "This host starts sessions in the task's own workspace; an isolated cloud root is not available yet",
-      },
+      code: "placement_unsupported",
+      detail: "This host starts sessions in the task's own workspace; an isolated cloud root is not available yet",
     }
   }
   const harness = command.preset.configurations[command.slot]?.harness
   const elsewhere = harness && cloudPresetHarnessRefusal(harness)
-  if (elsewhere) return { blocker: { code: "harness_unavailable", detail: elsewhere } }
-  return host.cloudTarget({
-    actor: command.actor,
-    task: command.task,
-    slot: command.slot,
-    attempt: command.attempt,
-    capabilities,
-  })
+  if (elsewhere) return { code: "harness_unavailable", detail: elsewhere }
+  return host.cloudRefusal?.(cloudOrigin(command, capabilities))
+}
+
+/**
+ * The cloud root this Start runs in, allocated now. A root whose start is
+ * still under way answers `preparing`; the harness is asked about the model
+ * only once the root runs, because only a running runtime can answer.
+ */
+async function allocateCloudRoot(
+  host: TasksSessionHost,
+  command: StartCommand,
+  resolved: ResolvedStart,
+): Promise<{ target: TasksRuntimeTarget } | Refusal | { ok: true; preparing: { workspaceId: string } }> {
+  const execution = command.preset.execution
+  if (execution.placement !== "cloud" || !host.cloudTarget) return unstartable([])
+  const choice = await host.cloudTarget(cloudOrigin(command, execution.capabilities))
+  if ("blocker" in choice) return unstartable([choice.blocker])
+  if ("preparing" in choice) return { ok: true, preparing: choice.preparing }
+  const blockers = await configurationBlockers(choice.target, resolved.configuration)
+  return blockers.length === 0 ? { target: choice.target } : unstartable(blockers)
+}
+
+function unstartable(blockers: readonly StartBlocker[]): Refusal {
+  const blocker = blockers[0]
+  return {
+    ok: false,
+    error: tasksErrorDetail("unsupported", blocker ? blocker.detail : "This configuration cannot be started here"),
+  }
 }
 
 async function startTarget(host: TasksSessionHost, task: Task, starter: TasksActor): Promise<TasksTargetChoice> {
@@ -406,17 +375,19 @@ async function resolveStart(
 ): Promise<ResolvedStart | Refusal> {
   const execution = command.preset.execution
   const placement = execution.placement
-  const choice = execution.placement === "cloud"
-    ? await cloudTarget(host, command, execution.capabilities)
-    : await startTarget(host, command.task, command.actor)
   const blockers: StartBlocker[] = []
-  if (!("target" in choice)) {
-    blockers.push("blocker" in choice ? choice.blocker : { code: "source_unavailable", detail: choice.detail })
+  let target: TasksRuntimeTarget | null = null
+  if (execution.placement === "cloud") {
+    const refused = await cloudRefusal(host, command, execution.capabilities)
+    if (refused) blockers.push(refused)
+  } else {
+    const choice = await startTarget(host, command.task, command.actor)
+    if ("target" in choice) target = choice.target
+    else blockers.push({ code: "source_unavailable", detail: choice.detail })
   }
-  const target = "target" in choice ? choice.target : null
 
   let readable: Handoff | null = null
-  if (target && blockers.length === 0) {
+  if (blockers.length === 0) {
     const read = await readHandoff(host, target, previousSessionOf(command), command.authorizeTranscript, command.actor)
     if (!read.ok) return read
     readable = read.handoff
@@ -473,19 +444,22 @@ async function resolveStart(
         ? { sessionRef: currentLink.sessionRef, liveness: currentState ?? "unavailable" }
         : null,
       previousTranscriptReadable: readable !== null,
-      destinationDescription: destination(target, composed.instructionsBytesDropped, composed.transcriptBytesDropped),
+      destinationDescription: destination(placement, target, composed.instructionsBytesDropped, composed.transcriptBytesDropped),
     },
   }
 }
 
 function destination(
+  placement: StartPreview["placement"],
   target: TasksRuntimeTarget | null,
   instructionsDropped: number,
   transcriptDropped: number,
 ): string {
-  const where = target
-    ? `${workspaceNameOrDirectory(target.workspace)}, with that workspace's own skills and plugins`
-    : "No reachable workspace"
+  const where = placement === "cloud"
+    ? "A cloud workspace of its own, with the preset's skills and plugins"
+    : target
+      ? `${workspaceNameOrDirectory(target.workspace)}, with that workspace's own skills and plugins`
+      : "No reachable workspace"
   const dropped = [
     ...(instructionsDropped > 0 ? [`${instructionsDropped} bytes of preset instructions`] : []),
     ...(transcriptDropped > 0 ? [`${transcriptDropped} bytes of the previous session`] : []),
@@ -522,9 +496,8 @@ async function startSession(
   host: TasksSessionHost,
   command: StartCommand,
   resolved: ResolvedStart,
+  target: TasksRuntimeTarget,
 ): Promise<TasksResult<{ session: StartedSession }>> {
-  const target = resolved.target
-  if (!target) return { ok: false, error: tasksErrorDetail("unsupported", "This task has no reachable workspace") }
   const { origin, sessionId } = await originIds({
     scopeId: command.actor.scopeId,
     taskId: command.task.id,

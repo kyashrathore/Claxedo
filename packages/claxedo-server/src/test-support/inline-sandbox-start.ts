@@ -8,9 +8,9 @@ export const unusedWorkspaceIdleStop: WorkspaceIdleStop = async () => {
 
 /** A start that runs its lease step and one driver step inside the caller, which is how a Node test watches a driver through the route. */
 export function inlineSandboxStart(drive: SandboxStartDrive): SandboxStart {
-  return async (workspaceId) => {
-    const admitted = await drive.acquire(workspaceId)
-    return admitted.status === "provisioning" ? drive.provision(workspaceId, admitted.epoch) : admitted
+  return async (workspaceId, request) => {
+    const admitted = await drive.acquire(workspaceId, request?.capabilities)
+    return admitted.status === "provisioning" ? drive.provision(workspaceId, admitted.epoch, request?.capabilities) : admitted
   }
 }
 
