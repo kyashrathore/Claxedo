@@ -7,6 +7,7 @@ import { sessionControls, type AccessAction, type AccessFacts } from "./model"
 export type Access = {
   readonly session: (ref: SessionLocation) => ReturnType<typeof sessionControls>
   readonly principal: Accessor<Principal | undefined>
+  readonly signedIn: Accessor<boolean>
   readonly can: (action: AccessAction, facts?: AccessFacts) => boolean
 }
 
@@ -24,6 +25,7 @@ export function useAccess(): Access {
   return {
     session: (ref) => sessionControls(server.sharedSessions.find(ref)?.level),
     principal,
+    signedIn: () => principal()?.kind === "user",
     can: (action, facts) => {
       switch (action) {
         case "accounts.manageOrg":

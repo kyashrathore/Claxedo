@@ -1,15 +1,14 @@
-import { useLocation } from "@solidjs/router"
 import { For, Match, Show, Switch } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { appUrl, useAuth } from "@/auth"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import { FailureNotice } from "@/lib/failure"
 import { useServer, type OrgMembership, type OrgRole } from "@/server"
-import { Button, showToast, Tag } from "@/ui"
+import { Tag } from "@/ui"
 import { accessDictionary } from "../i18n"
 import { isOrgManager } from "../model"
 import { useAccess } from "../store"
+import { SignedOutNotice } from "./signed-out"
 import "./access.css"
 
 const ROLE_KEY = {
@@ -17,33 +16,6 @@ const ROLE_KEY = {
   admin: "access.org.role.admin",
   member: "access.org.role.member",
 } as const satisfies Record<OrgRole, string>
-
-function SignedOut() {
-  const t = useTranslator(accessDictionary)
-  const auth = useAuth()
-  const server = useServer()
-  const location = useLocation()
-  const offered = () => auth.offered(server.capabilities()?.signedIn === true)
-  const signIn = () =>
-    void auth.signIn({ redirectUrl: appUrl(location) }).catch((error: unknown) => {
-      showToast({ title: t("access.org.signInFailed"), description: error instanceof Error ? error.message : String(error) })
-    })
-  return (
-    <Switch fallback={<p class="org-note">{t("access.org.signedOut")}</p>}>
-      <Match when={auth.state().kind === "signingIn"}>
-        <p class="org-note" role="status">{t("access.org.checking")}</p>
-      </Match>
-      <Match when={offered()}>
-        <div class="org-sign-in">
-          <p class="org-note">{t("access.org.signedOut")}</p>
-          <Button size="small" variant="neutral" onClick={signIn}>
-            {t("access.org.signIn")}
-          </Button>
-        </div>
-      </Match>
-    </Switch>
-  )
-}
 
 function OrganizationMembers(props: { readonly membership: OrgMembership }) {
   const t = useTranslator(accessDictionary)
@@ -117,7 +89,7 @@ export function OrganizationSection() {
   return (
     <div class="org-section">
       <p class="org-intro">{t("access.org.description")}</p>
-      <Show when={access.principal()?.kind === "user"} fallback={<SignedOut />}>
+      <Show when={access.signedIn()} fallback={<SignedOutNotice />}>
         <Memberships />
       </Show>
     </div>

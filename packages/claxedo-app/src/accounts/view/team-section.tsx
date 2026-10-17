@@ -1,5 +1,5 @@
 import { For, Match, Show, Switch } from "solid-js"
-import { useAccess } from "@/access"
+import { SignedOutNotice, useAccess } from "@/access"
 import type { AccountSources } from "@/server"
 import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote } from "@/settings"
 import { useDialog } from "@/ui"
@@ -47,7 +47,7 @@ function TeamAccounts(props: { readonly sources: AccountSources; readonly store:
   )
 }
 
-export function TeamSection() {
+function SignedInTeamSection() {
   const t = useAccountsText()
   const access = useAccess()
   const store = useTeamAccounts()
@@ -60,11 +60,21 @@ export function TeamSection() {
     return load.kind === "failed" ? load.error : undefined
   }
   return (
+    <Switch>
+      <Match when={failure()}>{(error) => <SettingsNote tone="danger">{t("settings.team.loadFailed", { reason: error().message })}</SettingsNote>}</Match>
+      <Match when={ready()}>{(sources) => <TeamAccounts sources={sources()} store={store} manages={access.can("accounts.manageOrg", sources())} />}</Match>
+    </Switch>
+  )
+}
+
+export function TeamSection() {
+  const t = useAccountsText()
+  const access = useAccess()
+  return (
     <div class="settings-body">
-      <Switch>
-        <Match when={failure()}>{(error) => <SettingsNote tone="danger">{t("settings.team.loadFailed", { reason: error().message })}</SettingsNote>}</Match>
-        <Match when={ready()}>{(sources) => <TeamAccounts sources={sources()} store={store} manages={access.can("accounts.manageOrg", sources())} />}</Match>
-      </Switch>
+      <Show when={access.signedIn()} fallback={<><SettingsIntro description={t("settings.team.description")} /><SignedOutNotice /></>}>
+        <SignedInTeamSection />
+      </Show>
     </div>
   )
 }
