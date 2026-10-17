@@ -1,0 +1,101 @@
+import { z } from "zod"
+
+export const SURFACE_CATALOG_ID = "https://claxedo.dev/a2ui/v0.9/catalog.json"
+
+export const SURFACE_ICON_NAMES = [
+  "accountCircle", "add", "arrowBack", "arrowForward", "attachFile", "calendarToday", "call", "camera", "check", "close",
+  "delete", "download", "edit", "event", "error", "fastForward", "favorite", "favoriteOff", "folder", "help", "home", "info",
+  "locationOn", "lock", "lockOpen", "mail", "menu", "moreVert", "moreHoriz", "notificationsOff", "notifications", "pause",
+  "payment", "person", "phone", "photo", "play", "print", "refresh", "rewind", "search", "send", "settings", "share",
+  "shoppingCart", "skipNext", "skipPrevious", "star", "starHalf", "starOff", "stop", "upload", "visibility", "visibilityOff",
+  "volumeDown", "volumeMute", "volumeOff", "volumeUp", "warning",
+] as const
+
+const MAX_TEXT = 100_000
+
+export const dataBindingSchema = z.object({ path: z.string().max(1024) }).strict()
+const dynamicString = z.union([z.string().max(MAX_TEXT), dataBindingSchema])
+const dynamicNumber = z.union([z.number(), dataBindingSchema])
+const dynamicBoolean = z.union([z.boolean(), dataBindingSchema])
+const dynamicStringList = z.union([z.array(z.string()), dataBindingSchema])
+const dynamicValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.json()), dataBindingSchema])
+const componentId = z.string().min(1).max(256)
+const childList = z.union([
+  z.array(componentId),
+  z.object({ componentId, path: z.string().max(1024) }).strict(),
+])
+
+export const surfaceActionSchema = z
+  .object({
+    event: z.object({ name: z.string().min(1).max(256), context: z.record(z.string(), dynamicValue).optional() }).strict(),
+  })
+  .strict()
+
+const common = {
+  id: componentId,
+  accessibility: z.object({ label: dynamicString.optional(), description: dynamicString.optional() }).strict().optional(),
+  weight: z.number().nonnegative().optional(),
+}
+
+function component<Name extends string, Shape extends z.ZodRawShape>(name: Name, shape: Shape) {
+  return z.object({ ...common, component: z.literal(name), ...shape }).strict()
+}
+
+const justify = z.enum(["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"])
+const align = z.enum(["start", "center", "end", "stretch"])
+
+export const surfaceComponentSchema = z.discriminatedUnion("component", [
+  component("Text", { text: dynamicString, variant: z.enum(["h1", "h2", "h3", "h4", "h5", "caption", "body"]).optional() }),
+  component("Markdown", { text: dynamicString }),
+  component("Code", { text: dynamicString, language: z.string().max(64).optional() }),
+  component("Icon", { name: z.union([z.enum(SURFACE_ICON_NAMES), dataBindingSchema]) }),
+  component("Badge", { text: dynamicString, variant: z.enum(["neutral", "accent"]).optional() }),
+  component("Link", { text: dynamicString, url: dynamicString }),
+  component("Row", { children: childList, justify: justify.optional(), align: align.optional() }),
+  component("Column", { children: childList, justify: justify.optional(), align: align.optional() }),
+  component("List", { children: childList, direction: z.enum(["vertical", "horizontal"]).optional(), align: align.optional() }),
+  component("Card", { child: componentId }),
+  component("Tabs", { tabs: z.array(z.object({ title: dynamicString, child: componentId }).strict()).min(1) }),
+  component("Collapsible", { title: dynamicString, child: componentId, open: z.boolean().optional() }),
+  component("Divider", { axis: z.enum(["horizontal", "vertical"]).optional() }),
+  component("Button", { child: componentId, variant: z.enum(["default", "primary", "borderless"]).optional(), action: surfaceActionSchema }),
+  component("TextField", {
+    label: dynamicString,
+    value: dynamicString.optional(),
+    variant: z.enum(["longText", "number", "shortText", "obscured"]).optional(),
+    validationRegexp: z.string().max(1024).optional(),
+  }),
+  component("CheckBox", { label: dynamicString, value: dynamicBoolean }),
+  component("Switch", { label: dynamicString, value: dynamicBoolean }),
+  component("ChoicePicker", {
+    label: dynamicString.optional(),
+    variant: z.enum(["multipleSelection", "mutuallyExclusive"]).optional(),
+    options: z.array(z.object({ label: dynamicString, value: z.string() }).strict()).min(1),
+    value: dynamicStringList,
+    displayStyle: z.enum(["checkbox", "chips", "dropdown"]).optional(),
+  }),
+  component("Slider", { label: dynamicString.optional(), min: z.number().optional(), max: z.number(), step: z.number().positive().optional(), value: dynamicNumber }),
+  component("DateTimeInput", {
+    value: dynamicString,
+    enableDate: z.boolean().optional(),
+    enableTime: z.boolean().optional(),
+    min: dynamicString.optional(),
+    max: dynamicString.optional(),
+    label: dynamicString.optional(),
+  }),
+  component("Progress", { value: dynamicNumber, max: z.number().positive().optional(), label: dynamicString.optional() }),
+  component("Spinner", { label: dynamicString.optional() }),
+  component("Table", {
+    columns: z.array(z.object({ key: z.string().min(1), title: dynamicString }).strict()).min(1),
+    rows: z.union([z.array(z.record(z.string(), z.json())), dataBindingSchema]),
+  }),
+  component("DiffStat", { additions: dynamicNumber, deletions: dynamicNumber }),
+  component("EmptyState", { title: dynamicString, description: dynamicString.optional() }),
+])
+
+export type SurfaceComponent = z.infer<typeof surfaceComponentSchema>
+export type SurfaceComponentName = SurfaceComponent["component"]
+export type SurfaceDataBinding = z.infer<typeof dataBindingSchema>
+export type SurfaceActionDefinition = z.infer<typeof surfaceActionSchema>
+export type SurfaceChildList = z.infer<typeof childList>
+export type SurfaceDynamicValue = z.infer<typeof dynamicValue>

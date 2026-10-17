@@ -31,6 +31,11 @@
       "types": "./src/runtime.ts",
       "development": "./src/runtime.ts",
       "default": "./src/runtime.ts"
+    },
+    "./surface": {
+      "types": "./src/surface/index.ts",
+      "development": "./src/surface/index.ts",
+      "default": "./src/surface/index.ts"
     }
   },
   "scripts": {
