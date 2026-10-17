@@ -14,7 +14,7 @@ import type { HostedControlPlane } from "../../authority/hosted-services"
 // The supervisor extends Cloudflare's DurableObject, which only workerd provides.
 vi.mock("../../plugin-backends/supervisor.cf", () => ({ pluginSupervisor: vi.fn() }))
 
-/** The routes the full hosted product serves: the core app with Pages, Agent Plugins and plugin backends. */
+/** The routes the full hosted product serves: the core app with Pages, Agent Plugins, plugin backends and the account setup the Worker composition always mounts (`better-auth-d1-compose.ts`), which holds the credential routes. */
 function hostedRoutes() {
   const services = {
     auth: { config: { enabled: true }, native: {} },
@@ -26,7 +26,7 @@ function hostedRoutes() {
   }
   const plane = {
     services,
-    env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
+    env: { CLAXEDO_DEPLOYMENT_MODE: "hosted", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") },
     orgCredentials: () => ({}),
     privateSessionAuthority: {},
     runtimeSessionAuthority: {},
@@ -52,6 +52,7 @@ function hostedRoutes() {
     usageLedger: {} as never,
     documents: {} as never,
     integrationRoutes: createIntegrationsRoutes({} as never, { gate: () => null }),
+    accountSetup: { change: {} as never, administers: async () => true },
     routeContributions: [
       ...module.routeContributions,
       {
