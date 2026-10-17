@@ -125,7 +125,7 @@ test("54 shell: a slow session shows the composer and says what it waits for; a 
   expect(JSON.stringify(await signed.owner.api.messages(workspace.directory, ids[1]))).toContain("Hello from the agent")
 })
 
-test("54 shell: panes kept for a workspace the account does not have are dropped once the catalog answers, and an account with no projects lands in onboarding", async ({ signed, page, isMobile }) => {
+test("54 shell: panes kept for a workspace the account does not have are dropped once the catalog answers, and an account with no projects lands on the hosted onboarding's first step, Where it runs", async ({ signed, page, isMobile }) => {
   const { workspace } = await sessionsIn(signed, ["Someone else's work"])
   await signed.signIn(page, signed.owner)
   const rail = await showRail(page, isMobile)
@@ -144,7 +144,8 @@ test("54 shell: panes kept for a workspace the account does not have are dropped
   await page.context().addCookies([sessionCookie(signed.url, fresh)])
   await page.goto(`${signed.url}/`)
   await expect(page.getByText("Closed tabs of workspaces that no longer exist.")).toBeVisible()
-  await expect(page.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
+  await expect(page).toHaveURL(/\/welcome$/)
+  await expect(page.getByRole("heading", { level: 1, name: "Where it runs" })).toBeVisible()
   await expect(page.getByTestId("session-unavailable")).toHaveCount(0)
   expect(await page.evaluate((key) => localStorage.getItem(key), `claxedo:workbench:user:${fresh.person.id}`)).not.toContain(workspace.id)
   expect(((await (await page.request.get(`${signed.url}/api/workspace`)).json()) as { workspaces: unknown[] }).workspaces).toEqual([])
