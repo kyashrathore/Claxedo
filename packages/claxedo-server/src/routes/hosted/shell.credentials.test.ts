@@ -4,6 +4,7 @@ import { HostedShellRoutes } from "./shell"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
+import { CursorModelsError, type MachineHarnessDraft } from "../../credentials/worker/native-launch"
 
 // An unverifiable bearer falls back to `verifyCliAccessBearer`, which reads
 // these from process.env. Clear them so "invalid token" is deterministic here
@@ -198,3 +199,48 @@ describe("a native harness draft on a cloud workspace", () => {
     expect((await app().request("/api/claxedo/agent-config/harness/options?nativeHarness=claude&workspaceId=ws_boat", { headers: { authorization: "Bearer token-a" } })).status).toBe(404)
   })
 })
+
+describe("a machine harness draft whose workspace's runtime is down", () => {
+  const edge = { baseUrl: "https://api.anthropic.com", placeholderEnv: "CLAXEDO_PROVIDER_ANTHROPIC_1F", authMode: "bearer" as const }
+  const snapshots: Record<string, CredentialSnapshot> = {
+    ws_edge: { machineOwnerUserId: "user_a", accounts: { user_a: { anthropic: edge } } },
+    ws_boat: { machineOwnerUserId: "user_a", accounts: { user_a: { anthropic: { unavailable: true, reason: "harness_needs_brokering" } } } },
+  }
+  const drafts: MachineHarnessDraft[] = []
+  const preview = { options: [{ id: "model", name: "Model", category: "model", type: "select" as const, currentValue: "default", selectOptions: [{ id: "default", name: "Default" }] }] }
+  const routes = HostedShellRoutes({ authConfig: signedConfig, verifier,
+    draftCredentials: async (_auth, workspaceId) => snapshots[workspaceId],
+    machineHarnessLaunch: async (_auth, draft) => {
+      drafts.push(draft)
+      if (draft.harness === "cursor") throw new CursorModelsError("Cursor refused the model list read (401).")
+      return draft.model === "left-to-runtime" ? undefined : preview
+    },
+  })
+  const read = (query: string) => routes.request(`/api/claxedo/agent-config/harness/options?${query}`, { headers: { authorization: "Bearer token-a" } })
+
+  test("lists the harness's launch models with the account the draft would run on and the model it names", async () => {
+    const answer = await read("nativeHarness=claude&workspaceId=ws_edge&model=opus")
+    expect(answer.status).toBe(200)
+    expect(await answer.json()).toEqual(preview)
+    expect(drafts.at(-1)).toMatchObject({ workspaceId: "ws_edge", harness: "claude", model: "opus",
+      credentials: { providers: { anthropic: { authMode: "bearer" } } } })
+  })
+
+  test("is refused before any launch list is read, and left to its runtime when the launch lists nothing", async () => {
+    const before = drafts.length
+    expect((await read("nativeHarness=claude&workspaceId=ws_boat")).status).toBe(409)
+    expect(drafts.length).toBe(before)
+    expect((await read("nativeHarness=codex&workspaceId=ws_edge")).status).toBe(409)
+    expect((await read("nativeHarness=claude&workspaceId=ws_edge&model=left-to-runtime")).status).toBe(204)
+    expect(drafts.length).toBe(before + 1)
+  })
+
+  test("names Cursor's refusal of the model list read in one line", async () => {
+    const cursor: CredentialSnapshot = { machineOwnerUserId: "user_a", accounts: { user_a: { "cursor-sdk": { baseUrl: "https://api.cursor.com", placeholderEnv: "CLAXEDO_PROVIDER_CURSOR_1F", authMode: "api-key" } } } }
+    snapshots.ws_cursor = cursor
+    const refused = await read("nativeHarness=cursor&workspaceId=ws_cursor")
+    expect(refused.status).toBe(502)
+    expect(await refused.json()).toEqual({ error: { code: "cursor_models_unavailable", message: "Cursor refused the model list read (401)." } })
+  })
+})
+

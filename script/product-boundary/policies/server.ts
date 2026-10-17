@@ -201,8 +201,15 @@ export const serverWorkerd: Policy = {
   // organization's own rows, its team model accounts and its sandbox provider
   // keys, asked once of the D1 authority's `administer` rule
   // (`credentials/worker/org-administers.ts`).
-  // 172/22, no headroom.
-  ceilings: { modules: 172, packages: 22 },
+  // +2 modules (owner: the hosted draft catalogs): a Claude Code, Codex or
+  // Cursor draft on a cloud workspace whose runtime is down lists its models
+  // from the plane (`credentials/worker/native-launch.ts`, over the harness's
+  // generated lists and Cursor's own model route), and the draft catalogs it
+  // joins (draft accounts, OpenCode, Pi) are wired from their own module
+  // (`deployments/hosted-shared/hosted-draft-catalogs.ts`), split from the
+  // core app. It adds no package edge: the harness was already in the Worker.
+  // 174/22, no headroom.
+  ceilings: { modules: 174, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

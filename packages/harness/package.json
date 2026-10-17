@@ -101,6 +101,24 @@
       "types": "./dist/transports/opencode-sdk/bundled-models.d.ts",
       "import": "./dist/transports/opencode-sdk/bundled-models.js"
     },
+    "./claude-models": {
+      "development": "./src/transports/claude-sdk/bundled-models.ts",
+      "bun": "./src/transports/claude-sdk/bundled-models.ts",
+      "types": "./dist/transports/claude-sdk/bundled-models.d.ts",
+      "import": "./dist/transports/claude-sdk/bundled-models.js"
+    },
+    "./codex-models": {
+      "development": "./src/transports/codex-app-server/bundled-models.ts",
+      "bun": "./src/transports/codex-app-server/bundled-models.ts",
+      "types": "./dist/transports/codex-app-server/bundled-models.d.ts",
+      "import": "./dist/transports/codex-app-server/bundled-models.js"
+    },
+    "./cursor-models": {
+      "development": "./src/transports/cursor-sdk/models.ts",
+      "bun": "./src/transports/cursor-sdk/models.ts",
+      "types": "./dist/transports/cursor-sdk/models.d.ts",
+      "import": "./dist/transports/cursor-sdk/models.js"
+    },
     "./cursor-worker": {
       "development": "./src/transports/cursor-sdk/host.ts",
       "bun": "./src/transports/cursor-sdk/host.ts",
@@ -112,7 +130,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run generate:codex-protocol && bun run generate:opencode-models && bun scripts/build.ts",
+    "build": "bun run generate:codex-protocol && bun run generate:opencode-models && bun run generate:native-models && bun scripts/build.ts",
     "typecheck": "bun run generate:codex-protocol && tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "check": "bun scripts/check.ts",
     "test": "node scripts/unit.mjs",
@@ -122,6 +140,7 @@
     "corpus": "bun e2e/harness/corpus.ts",
     "generate:codex-protocol": "bun scripts/generate-codex-protocol.ts",
     "generate:opencode-models": "node ../../script/test-home/run.mjs bun scripts/generate-opencode-models.ts",
+    "generate:native-models": "node ../../script/test-home/run.mjs bun scripts/generate-native-models.ts",
     "test:node": "bun run build && node --test scripts/package.node.mjs"
   },
   "dependencies": {

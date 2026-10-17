@@ -1,7 +1,8 @@
 import type { AgentConfigOption, AgentModel } from "@claxedo/agent-runtime-contract"
 import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
-import { modelAndEffortOptions } from "../../contract"
+import { asRecord, asString } from "@claxedo/helpers/guards"
+import { configOptionsPreview, modelAndEffortOptions } from "../../contract"
 import type { ProbeInputs } from "../../contract/node"
 import { TransportError } from "../../contract/errors"
 import type { CursorCredential } from "./credentials"
@@ -32,6 +33,21 @@ export function cursorModelOptions(models: readonly HostModel[], requested: stri
   if (!catalog.length) return []
   const selected = catalog.some((model) => model.id === requested) ? requested : AUTO.id
   return modelAndEffortOptions({ models: catalog, selected })
+}
+
+export function cursorApiModels(body: unknown): HostModel[] {
+  const items = asRecord(body)?.items
+  return (Array.isArray(items) ? items : []).flatMap((item) => {
+    const row = asRecord(item)
+    const id = asString(row?.id)
+    if (!id) return []
+    const description = asString(row?.description)
+    return [{ id, name: asString(row?.displayName) ?? id, ...(description ? { description } : {}) }]
+  })
+}
+
+export function cursorAccountOptions(models: readonly HostModel[], model?: string) {
+  return configOptionsPreview(cursorModelOptions(models, model ?? AUTO.id))
 }
 
 export function cursorCatalogModels(models: readonly HostModel[]): AgentModel[] {

@@ -56,6 +56,8 @@ import type { PiProviderCatalog } from "@claxedo/server-core/credentials/pi-prov
 import { piCatalogOptions, piLaunchCatalog } from "@claxedo/harness/pi-catalog"
 import { piAlternative } from "@claxedo/harness/pi-model-match"
 import { CredentialSelectionError, sessionAccountCredentials } from "@claxedo/harness/registry"
+import type { ConfigOptionsPreview, ResolvedCredentials } from "@claxedo/harness/contract"
+import { CursorModelsError, type MachineHarnessDraft } from "../../credentials/worker/native-launch"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import { credentialSnapshot, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 
@@ -101,6 +103,8 @@ export type HostedShellRouteOptions = {
    */
   draftCredentials?: (auth: SignedControlPlaneAuth, workspaceId: string) => Promise<CredentialSnapshot | undefined>
   opencodeProviderCatalog?: (auth: SignedControlPlaneAuth, workspaceId?: string) => Promise<OpenCodeCatalog>
+  /** A Claude Code, Codex or Cursor draft's models while its workspace's runtime is down; nothing sends the draft to that runtime. */
+  machineHarnessLaunch?: (auth: SignedControlPlaneAuth, draft: MachineHarnessDraft) => Promise<ConfigOptionsPreview | undefined>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
    * identity,
@@ -396,28 +400,31 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
   }
 }
 
+function isMachineHarness(harness: string): harness is MachineHarnessDraft["harness"] {
+  return harness === "claude" || harness === "codex" || harness === "cursor"
+}
+
 /**
- * The 409 a draft earns when the workspace's accounts cannot run its harness
- * there, in the shape the runtime's own options route answers. The sandbox
- * resolves each account's placeholder from its environment; here every
- * placeholder the sandbox would be handed counts as present, so only the
- * delivery's own refusals remain.
+ * The accounts a draft would run on, or the 409 it earns when the workspace's
+ * accounts cannot run its harness there, in the shape the runtime's own options
+ * route answers. The sandbox resolves each account's placeholder from its
+ * environment; here every placeholder the sandbox would be handed counts as
+ * present, so only the delivery's own refusals remain.
  */
-function draftRefusal(c: Context, delivered: CredentialSnapshot, userId: string, harness: string) {
+function draftSelection(c: Context, delivered: CredentialSnapshot, userId: string, harness: string): { refusal: Response } | { credentials: ResolvedCredentials } {
   const placeholders = Object.values(delivered.accounts).flatMap((rows) => Object.values(rows).flatMap((row) => "placeholderEnv" in row && row.placeholderEnv ? [row.placeholderEnv] : []))
   const snapshot = credentialSnapshot(delivered, Object.fromEntries(placeholders.map((name) => [name, name])))
   if (!snapshot) throw new Error("The delivered accounts do not read back as a credential snapshot")
   try {
-    sessionAccountCredentials({ ...snapshot, placement: "cloud", canUseOwnLogin: false, leaseGeneration: "draft" }, { kind: "person", userId }, { harness: { id: harness, access: "native" } })
-    return undefined
+    return { credentials: sessionAccountCredentials({ ...snapshot, placement: "cloud", canUseOwnLogin: false, leaseGeneration: "draft" }, { kind: "person", userId }, { harness: { id: harness, access: "native" } }) }
   } catch (error) {
     if (!(error instanceof CredentialSelectionError)) throw error
     const alternative = piAlternative(error.detail, c.req.query("model") || undefined)
-    return c.json({ error: { code: error.code, message: error.message, details: {
+    return { refusal: c.json({ error: { code: error.code, message: error.message, details: {
       retryable: error.retryable,
       ...(error.detail.reason ? { reason: error.detail.reason } : {}),
       ...(alternative ? { alternative } : {}),
-    } } }, 409)
+    } } }, 409) }
   }
 }
 
@@ -608,8 +615,14 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         if (!workspaceId) return c.json({ error: { code: "agent_config_workspace_required", message: "workspaceId is required" } }, 400)
         const snapshot = options.draftCredentials ? await options.draftCredentials(auth, workspaceId) : undefined
         if (!snapshot) return c.json({ error: { code: "workspace_not_found", message: "Workspace not found" } }, 404)
-        return draftRefusal(c, snapshot, auth.user.subject, harness) ?? c.body(null, 204)
+        const selection = draftSelection(c, snapshot, auth.user.subject, harness)
+        if ("refusal" in selection) return selection.refusal
+        if (!isMachineHarness(harness) || !options.machineHarnessLaunch) return c.body(null, 204)
+        const model = c.req.query("model") || undefined
+        const launch = await options.machineHarnessLaunch(auth, { workspaceId, harness, credentials: selection.credentials, ...(model ? { model } : {}) })
+        return launch ? c.json(launch) : c.body(null, 204)
       } catch (err) {
+        if (err instanceof CursorModelsError) return c.json({ error: { code: err.code, message: err.message } }, 502)
         return authErrorResponse(c, err)
       }
     })
