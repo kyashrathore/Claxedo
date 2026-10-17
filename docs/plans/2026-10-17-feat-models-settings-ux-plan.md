@@ -17,14 +17,14 @@ Each lane owns its files exclusively; run lanes A, B and C in parallel in separa
 
 ### Lane A: accounts domain (owns `src/accounts/**`, `packages/ui/src/v2/components/radio-v2.*`)
 
-- [ ] Kit radio: the checked state shows a clearly visible indicator in light and dark themes. Screenshots of every kit-radio user, before and after.
-- [ ] The `cloudChoiceShared` paragraph renders only as a help-icon tooltip beside the Accounts tab, and only when the harness has two or more choosable rows on a cloud-only surface.
-- [ ] Check: pending state is per account key (`activity()` compares the key), the icon spins while pending (still under reduced motion: no spin, a disabled state), and the tooltip reads "Check now · last checked {ago}". A failed check still shows "Couldn't check · reason".
-- [ ] Remove account: `requestConfirm` with the destructive button; `ConfirmRemove` and the `confirming` signal are deleted.
-- [ ] "Add an account" moves onto `FormDrawer` (`DialogProviderConnect` replaced). Managers see "For me / For the organization"; the organization choice shows only API-key methods, maps the provider to `vendorProvider`, and saves with `saveOrgAccount`. Non-managers never see the choice.
-- [ ] The organization account row has Check and Remove for managers. Remove confirms with the list of harnesses the vendor key serves.
-- [ ] `teamSettingsSection`, `team-section.tsx`, `team-account-form.tsx`, `team-store.ts` and the `settings.team.*` keys are deleted; `src/accounts/README.md` describes the folded flow.
-- [ ] Flows: the Models flow covers adding an organization account as a manager, its absence for a member, choosing it, and removing it through the dialog; red run recorded.
+- [x] Kit radio: the checked state shows a clearly visible indicator in light and dark themes. Screenshots of every kit-radio user, before and after.
+- [x] The `cloudChoiceShared` paragraph renders only as a help-icon tooltip beside the Accounts tab, and only when the harness has two or more choosable rows on a cloud-only surface.
+- [x] Check: pending state is per account key (`activity()` compares the key), the icon spins while pending (still under reduced motion: no spin, a disabled state), and the tooltip reads "Check now · last checked {ago}". A failed check still shows "Couldn't check · reason".
+- [x] Remove account: `requestConfirm` with the destructive button; `ConfirmRemove` and the `confirming` signal are deleted.
+- [x] "Add an account" moves onto `FormDrawer` (`DialogProviderConnect` replaced). Managers see "For me / For the organization"; the organization choice shows only API-key methods, maps the provider to `vendorProvider`, and saves with `saveOrgAccount`. Non-managers never see the choice.
+- [x] The organization account row has Check and Remove for managers. Remove confirms with the list of harnesses the vendor key serves.
+- [x] `teamSettingsSection`, `team-section.tsx`, `team-account-form.tsx`, `team-store.ts` and the `settings.team.*` keys are deleted; `src/accounts/README.md` describes the folded flow.
+- [x] Flows: the Models flow covers adding an organization account as a manager, its absence for a member, choosing it, and removing it through the dialog; red run recorded. The member case lives in flow 53 (signed) and is written and typechecked but unrun: signed stacks need macOS `sandbox-exec`.
 
 ### Lane B: confirmations and form surfaces outside accounts (owns `src/ui/confirm.tsx`, `src/ui/README.md`, `src/plugins/view/confirm-dialog.tsx`, `src/settings/view/connections.tsx`, `src/settings/view/connect-dialog.tsx`, `src/projects/view/{remove-project,edit-project,create-project}-dialog.tsx`, `src/session/view/docks/goal-dock.tsx`, `src/tasks/view/create-task-dialog.tsx`, `src/rail/view/session-dialogs.tsx`, `src/marketplace/view/install-sheet.tsx`, `src/accounts/view/sandbox-key-row.tsx`, `src/accounts/view/custom-provider-dialog.tsx`)
 
@@ -36,9 +36,9 @@ Each lane owns its files exclusively; run lanes A, B and C in parallel in separa
 
 ### Lane C: naming outside the app (owns server-core credential copy, `packages/harness/src/registry/credentials.ts`, `src/usage/locales/**`)
 
-- [ ] Server error messages and harness registry text say "organization account" (`org_account_missing`, `org_accounts_forbidden`, `org_account_rotate_by_put` messages and the usage cloud route).
-- [ ] Usage page: "Usage by organization account" and its row labels.
-- [ ] `rg -i "team (account|key)"` over `packages/` (excluding `node_modules`, plans and memory) returns nothing user-facing.
+- [x] Server error messages and harness registry text say "organization account" (`org_account_missing`, `org_accounts_forbidden`, `org_account_rotate_by_put` messages and the usage cloud route).
+- [x] Usage page: "Usage by organization account" and its row labels. The organization-scope view renders only signed in, so no flow or screenshot shows it yet.
+- [x] `rg -i "team (account|key)"` over `packages/` (excluding `node_modules`, plans and memory) returns nothing user-facing.
 
 ### Lane D: Models tab empty state (after the VM wake-up work merges; owns `src/accounts/view/harness-section.tsx`'s Models tab and `src/accounts/view/model-sources.ts`)
 
@@ -53,3 +53,7 @@ Each lane owns its files exclusively; run lanes A, B and C in parallel in separa
 - [ ] Screenshots of the Models page (one account, two accounts, organization account as manager and as member) in light and dark, attached to the PR.
 
 Progress:
+
+- Lane B's `requestConfirm` destructive flag landed first (`c706844`); lanes ran in worktrees off it.
+- Lane C merged (`8636a3d`, `78c720c`, plus `7d4acbb` for the app server adapter's and usage contract's remaining wording). Remaining "team" words are identifiers and wire values: `payer.kind === "team"`, `teamKey`, `usage.teamSpend`, `TEAM_KEYS`, `teamKeyProvider`, `teamKeyRefused`, test file names.
+- Lane A merged (`93f6ef4`, `f5fdba8`, `a56c6b7`, `5274dcf`): kit patch 0086, per-account checks, `requestConfirm` removals, `DrawerProviderConnect`, organization row Check/Remove, Team accounts deleted.
