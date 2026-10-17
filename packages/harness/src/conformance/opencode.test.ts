@@ -669,7 +669,7 @@ test("capabilities report each model's effort variants, and accept only those", 
     makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
       provider: { proof: proofProvider({}, { proof: { ...PROOF_MODEL, variants }, plain: { ...PROOF_MODEL, name: "Plain" } }) } }) })
   try {
-    const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
+    const capabilities = await context.transport.capabilities({ directory: context.backend.directory, sessionId: context.session.binding.sessionId })
     expect(capabilities.effortLevels.status).toBe("resolved")
     expect(harnessEffortVerdict(capabilities.effortLevels, "proof", "high")).toBe("accepted")
     expect(harnessEffortVerdict(capabilities.effortLevels, "proof", "max")).toBe("refused")
