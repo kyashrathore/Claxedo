@@ -1,5 +1,7 @@
 import { isPluginId } from "@claxedo/plugin-api/id"
+import { CREDENTIAL_OPERATIONS } from "./credential-operations"
 import { sharedSessions } from "./shared-sessions"
+import { USAGE_OPERATIONS } from "./usage-operations"
 import {
   defineOperation, operationPath, requiredParameter, optionalParameter, bodyField,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
@@ -10,6 +12,8 @@ import { operationInput } from "./operation-input"
 import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, optional, connection, statusResult } from "./hosted-output"
 
 export const HOSTED_OPERATIONS = {
+  ...CREDENTIAL_OPERATIONS,
+  ...USAGE_OPERATIONS,
   "session.shared.list": defineOperation({
     method: "GET", path: operationPath("/api/workspace/shared-sessions"),
     input: operationInput({}), output: sharedSessions, retry: "safe",
@@ -669,69 +673,6 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
     body: selectBody("event", "properties"),
-  }),
-  "usage.credentialSpend": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/usage/credentials", { query: ["since", "until", "scope"] }),
-    input: operationInput({ since: requiredParameter, until: requiredParameter, scope: requiredParameter }),
-    output: withArrays("credentials"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "usage.machineTime": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/usage/machine-time", { query: ["since"] }),
-    input: operationInput({ since: requiredParameter }),
-    output: withArrays("workspaces", "providers"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "credentials.sources.read": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/credentials/account-sources"),
-    input: operationInput({}),
-    output: withArrays("org"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "credentials.sources.set": defineOperation({
-    method: "PUT", path: operationPath("/api/claxedo/credentials/account-sources"),
-    input: operationInput({ provider_ids: bodyField, source: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("provider_ids", "source"),
-  }),
-  "credentials.sandbox.read": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/credentials/sandbox-drivers"),
-    input: operationInput({}),
-    output: withArrays("drivers", "keys"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "credentials.sandbox.choose": defineOperation({
-    method: "PUT", path: operationPath("/api/claxedo/credentials/sandbox-drivers/default"),
-    input: operationInput({ driver: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("driver"),
-  }),
-  "credentials.save": defineOperation({
-    method: "PUT", path: operationPath("/api/claxedo/credentials"),
-    input: operationInput({ provider_id: bodyField, kind: bodyField, source: bodyField, owner: bodyField, label: bodyField, secret: bodyField }),
-    output: withRecord("credential", object), retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("provider_id", "kind", "source", "owner", "label", "secret"),
-  }),
-  "credentials.verify": defineOperation({
-    method: "POST", path: operationPath("/api/claxedo/credentials/:id/verify"),
-    input: operationInput({ id: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-  }),
-  "credentials.remove": defineOperation({
-    method: "DELETE", path: operationPath("/api/claxedo/credentials/:id"),
-    input: operationInput({ id: requiredParameter }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-  }),
-  "usage.cloudFacts": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/usage/cloud-facts", { query: ["since", "until"] }),
-    input: operationInput({ since: requiredParameter, until: requiredParameter }),
-    output: withArrays("facts"), retry: "safe",
-    exposure: { renderer: true, app: false },
   }),
   "documents.export": defineOperation({
     method: "GET", path: operationPath("/documents/:id/export"),

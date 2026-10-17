@@ -698,8 +698,13 @@ export const desktopRenderer: Policy = {
   // the app's usage domain, `usage/account-spend.ts`,
   // `usage/view/account-spend-section.tsx`,
   // `usage/view/account-spend-table.tsx`). They add no package edge.
-  // 1398/36, no headroom.
-  ceilings: { modules: 1398, packages: 36 },
+  // The credential planes, which name whether the hosted account or the
+  // connected server answers each credential question, so a signed desktop
+  // reads its organization's accounts from the control plane (owner: the
+  // app's server domain, `server/credential-plane.ts`). It adds no package
+  // edge.
+  // 1399/36, no headroom.
+  ceilings: { modules: 1399, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
