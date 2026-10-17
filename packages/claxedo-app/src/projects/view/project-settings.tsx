@@ -9,7 +9,7 @@ import { sourceLabel } from "../project-source"
 import { getAvatarColors } from "../project-avatar"
 import { projectSettingsPath } from "../routes"
 import { useProject, useProjectCommands } from "../store"
-import { DialogEditProject } from "./edit-project-dialog"
+import { DrawerEditProject } from "./edit-project-drawer"
 import { ProjectEnvironmentSection } from "./project-environment-section"
 import { WhereItRuns } from "./where-it-runs"
 import { ProjectRemoval } from "./project-removal"
@@ -60,7 +60,7 @@ function ProjectFields(props: { readonly project: Project; readonly editable: bo
     <SettingsGroup
       action={
         props.editable ? (
-          <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
+          <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DrawerEditProject project={props.project} />)}>
             {t("projects.edit.action")}
           </Button>
         ) : undefined

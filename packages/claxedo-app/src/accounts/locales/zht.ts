@@ -162,7 +162,6 @@ export default {
   "provider.custom.error.duplicate": "重複",
   "provider.custom.error.keyHeader.invalid": "此標頭無法攜帶金鑰",
   "provider.custom.error.header.metadata": "允許的標頭：HTTP-Referer、X-Title、OpenAI-Organization、OpenAI-Project",
-  "common.goBack": "返回",
   "common.submit": "提交",
   "common.saving": "儲存中...",
   "settings.models.tab.models": "模型",

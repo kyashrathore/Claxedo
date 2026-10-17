@@ -163,7 +163,6 @@ export default {
   "provider.custom.error.duplicate": "مكرر",
   "provider.custom.error.keyHeader.invalid": "لا يمكن لهذه الترويسة أن تحمل المفتاح",
   "provider.custom.error.header.metadata": "الترويسات المسموح بها: HTTP-Referer وX-Title وOpenAI-Organization وOpenAI-Project",
-  "common.goBack": "رجوع",
   "common.submit": "إرسال",
   "common.saving": "جارٍ الحفظ...",
   "settings.models.tab.models": "النماذج",

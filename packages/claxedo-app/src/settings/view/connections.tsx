@@ -6,7 +6,7 @@ import { showToast, Button, Icon, requestConfirm, useDialog } from "@/ui"
 import { useErrorCopy, useI18n, useTranslator } from "@/i18n"
 import { connectionReadinessKey, integrationPurpose, verifyFailedMessage } from "../connections"
 import { settingsDictionary, type SettingsKey } from "../i18n"
-import { DialogConnectIntegration } from "./connect-dialog"
+import { DrawerConnectIntegration } from "./connect-drawer"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote } from "./section"
 
 const STATUS_KEY = {
@@ -25,7 +25,7 @@ export function ConnectionsSection() {
   const catalog = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: offered() }))
   const agents = useQuery(() => server.queries.agentConnections.list())
   const dialog = useDialog()
-  const connect = (next: Connecting) => dialog.show(() => <DialogConnectIntegration integration={next.integration} personalScopeEnabled={catalog.data?.personalScopeEnabled === true} {...(next.scope ? { initialScope: next.scope } : {})} />)
+  const connect = (next: Connecting) => dialog.show(() => <DrawerConnectIntegration integration={next.integration} personalScopeEnabled={catalog.data?.personalScopeEnabled === true} {...(next.scope ? { initialScope: next.scope } : {})} />)
   const [busy, setBusy] = createSignal<string>()
   const reverify = async (id: string) => {
     const outcome = await server.integrations.reverify(id)

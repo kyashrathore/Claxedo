@@ -166,7 +166,6 @@ export default {
   "provider.custom.error.duplicate": "Duplicado",
   "provider.custom.error.keyHeader.invalid": "Esta cabecera no puede llevar la clave",
   "provider.custom.error.header.metadata": "Cabeceras permitidas: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Volver",
   "common.submit": "Enviar",
   "common.saving": "Guardando...",
   "settings.models.tab.models": "Modelos",

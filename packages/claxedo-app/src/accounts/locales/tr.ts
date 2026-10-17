@@ -168,7 +168,6 @@ export default {
   "provider.custom.error.duplicate": "Tekrar",
   "provider.custom.error.keyHeader.invalid": "Bu başlık anahtarı taşıyamaz",
   "provider.custom.error.header.metadata": "İzin verilen başlıklar: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Geri git",
   "common.submit": "Gönder",
   "common.saving": "Kaydediliyor...",
   "settings.models.tab.models": "Modeller",

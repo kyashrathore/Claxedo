@@ -161,7 +161,6 @@ export default {
   "provider.custom.error.duplicate": "重複",
   "provider.custom.error.keyHeader.invalid": "このヘッダーではキーを送信できません",
   "provider.custom.error.header.metadata": "使用できるヘッダー: HTTP-Referer、X-Title、OpenAI-Organization、OpenAI-Project",
-  "common.goBack": "戻る",
   "common.submit": "送信",
   "common.saving": "保存中...",
   "settings.models.tab.models": "モデル",

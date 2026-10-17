@@ -2,7 +2,7 @@ import { createSignal, For, onCleanup, Show } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { openExternal } from "@/lib/external-link"
 import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
-import { FormDialog, SegmentedControl, SegmentedControlItem, TextField, useDialog } from "@/ui"
+import { FormDrawer, SegmentedControl, SegmentedControlItem, TextField, useDialog } from "@/ui"
 import { connectError, connectMachine, createConnectForm, grantError } from "../connections"
 import { settingsDictionary } from "../i18n"
 
@@ -31,7 +31,7 @@ function ModeChoice(props: { readonly mode: Mode; readonly onMode: (mode: Mode) 
   )
 }
 
-export function DialogConnectIntegration(props: { readonly integration: Integration; readonly personalScopeEnabled: boolean; readonly initialScope?: ConnectionScope }) {
+export function DrawerConnectIntegration(props: { readonly integration: Integration; readonly personalScopeEnabled: boolean; readonly initialScope?: ConnectionScope }) {
   const t = useTranslator(settingsDictionary)
   const server = useServer()
   const dialog = useDialog()
@@ -78,7 +78,7 @@ export function DialogConnectIntegration(props: { readonly integration: Integrat
   }
 
   return (
-    <FormDialog
+    <FormDrawer
       title={t("settings.connections.dialogTitle", { name: props.integration.name })}
       description={t(mode() === "oauth" ? "settings.connections.dialogOauth" : "settings.connections.dialogKey", { name: props.integration.name })}
       submitLabel={submitLabel()}
@@ -121,6 +121,6 @@ export function DialogConnectIntegration(props: { readonly integration: Integrat
           </div>
         )}
       </Show>
-    </FormDialog>
+    </FormDrawer>
   )
 }

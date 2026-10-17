@@ -164,7 +164,6 @@ export default {
   "provider.custom.error.duplicate": "중복",
   "provider.custom.error.keyHeader.invalid": "이 헤더로는 키를 보낼 수 없습니다",
   "provider.custom.error.header.metadata": "허용되는 헤더: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "뒤로 가기",
   "common.submit": "제출",
   "common.saving": "저장 중...",
   "settings.models.tab.models": "모델",

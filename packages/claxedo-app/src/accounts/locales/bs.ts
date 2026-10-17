@@ -164,7 +164,6 @@ export default {
   "provider.custom.error.duplicate": "Duplikat",
   "provider.custom.error.keyHeader.invalid": "Ovo zaglavlje ne može nositi ključ",
   "provider.custom.error.header.metadata": "Dozvoljena zaglavlja: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Nazad",
   "common.submit": "Pošalji",
   "common.saving": "Čuvanje...",
   "settings.models.tab.models": "Modeli",

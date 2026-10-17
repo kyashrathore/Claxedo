@@ -164,7 +164,6 @@ export default {
   "provider.custom.error.duplicate": "Duplikat",
   "provider.custom.error.keyHeader.invalid": "Denne headeren kan ikke bære nøkkelen",
   "provider.custom.error.header.metadata": "Tillatte headers: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Gå tilbake",
   "common.submit": "Send inn",
   "common.saving": "Lagrer...",
   "settings.models.tab.models": "Modeller",
