@@ -13,27 +13,28 @@ export const SURFACE_ICON_NAMES = [
 
 const MAX_TEXT = 100_000
 
-export const dataBindingSchema = z.object({ path: z.string().max(1024) }).strict()
-const dynamicString = z.union([z.string().max(MAX_TEXT), dataBindingSchema])
-const dynamicNumber = z.union([z.number(), dataBindingSchema])
-const dynamicBoolean = z.union([z.boolean(), dataBindingSchema])
-const dynamicStringList = z.union([z.array(z.string()), dataBindingSchema])
-const dynamicValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.json()), dataBindingSchema])
-const componentId = z.string().min(1).max(256)
+export const dataBindingSchema = z.object({ path: z.string().max(1024) }).strict().meta({ id: "DataBinding" })
+const dynamicString = z.union([z.string().max(MAX_TEXT), dataBindingSchema]).meta({ id: "DynamicString" })
+const dynamicNumber = z.union([z.number(), dataBindingSchema]).meta({ id: "DynamicNumber" })
+const dynamicBoolean = z.union([z.boolean(), dataBindingSchema]).meta({ id: "DynamicBoolean" })
+const dynamicStringList = z.union([z.array(z.string()), dataBindingSchema]).meta({ id: "DynamicStringList" })
+const dynamicValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.json()), dataBindingSchema]).meta({ id: "DynamicValue" })
+const componentId = z.string().min(1).max(256).meta({ id: "ComponentId" })
 const childList = z.union([
   z.array(componentId),
   z.object({ componentId, path: z.string().max(1024) }).strict(),
-])
+]).meta({ id: "ChildList" })
 
 export const surfaceActionSchema = z
   .object({
     event: z.object({ name: z.string().min(1).max(256), context: z.record(z.string(), dynamicValue).optional() }).strict(),
   })
   .strict()
+  .meta({ id: "Action" })
 
 const common = {
   id: componentId,
-  accessibility: z.object({ label: dynamicString.optional(), description: dynamicString.optional() }).strict().optional(),
+  accessibility: z.object({ label: dynamicString.optional(), description: dynamicString.optional() }).strict().meta({ id: "Accessibility" }).optional(),
   weight: z.number().nonnegative().optional(),
 }
 
@@ -41,8 +42,8 @@ function component<Name extends string, Shape extends z.ZodRawShape>(name: Name,
   return z.object({ ...common, component: z.literal(name), ...shape }).strict()
 }
 
-const justify = z.enum(["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"])
-const align = z.enum(["start", "center", "end", "stretch"])
+const justify = z.enum(["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"]).meta({ id: "Justify" })
+const align = z.enum(["start", "center", "end", "stretch"]).meta({ id: "Align" })
 
 export const surfaceComponentSchema = z.discriminatedUnion("component", [
   component("Text", { text: dynamicString, variant: z.enum(["h1", "h2", "h3", "h4", "h5", "caption", "body"]).optional() }),
