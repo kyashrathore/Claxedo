@@ -42,15 +42,15 @@ Each lane owns its files exclusively; run lanes A, B and C in parallel in separa
 
 ### Lane D: Models tab empty state (after the VM wake-up work merges; owns `src/accounts/view/harness-section.tsx`'s Models tab and `src/accounts/view/model-sources.ts`)
 
-- [ ] With no project: the copy says models appear once a project exists. With a project whose workspace cannot answer: the copy names that workspace and the failure.
-- [ ] Settings reads the same no-wake model source the composer uses for an asleep cloud draft; opening the Models tab starts no workspace (asserted against the server's start count).
+- [x] With no project: the copy says models appear once a project exists. With a project whose workspace cannot answer: the copy names that workspace and the failure.
+- [x] Settings reads the same no-wake model source the composer uses for an asleep cloud draft; opening the Models tab starts no workspace (asserted against the server's start count). Flow 59 asserts it (no `connection` POST from the page or in the control plane's requests, no new `workspace_ready`/`workspace_woken`) but is unrun: signed cloud stacks need macOS `sandbox-exec`.
 
 ## Definition of done
 
-- [ ] `bun run check`, `bun run typecheck`, `bun run test` in `packages/claxedo-app`, `bun run test:architecture-ratchets` at the repo root, all on the merge tip.
-- [ ] The Models, connections, marketplace, projects and onboarding flows pass on web and phone; every new or changed assertion has a recorded red run.
-- [ ] No Team accounts route, section, key or string remains; `/settings/team-accounts` is gone from the settings sidebar.
-- [ ] Screenshots of the Models page (one account, two accounts, organization account as manager and as member) in light and dark, attached to the PR.
+- [x] `bun run check`, `bun run typecheck`, `bun run test` in `packages/claxedo-app`, `bun run test:architecture-ratchets` at the repo root, all on the merge tip.
+- [ ] The Models, connections, marketplace, projects and onboarding flows pass on web and phone; every new or changed assertion has a recorded red run. Red runs are recorded. Verified in a Linux container only; the owner's Mac run is outstanding: there every Models, connections and onboarding test body passes but the stack fixture fails at teardown on the container's own Claude CLI reaching api.anthropic.com, the signed flows (53, 59, 01 on the web) need macOS `sandbox-exec`, OpenCode cannot start, git names its default branch `master`, and `15-settings-sandbox-keys` already fails on `origin/dev` (the unsigned page shows only the sign-in notice).
+- [x] No Team accounts route, section, key or string remains; `/settings/team-accounts` is gone from the settings sidebar.
+- [ ] Screenshots of the Models page (one account, two accounts, organization account as manager and as member) in light and dark, attached to the PR. Taken except the real member view, which needs a signed stack; a member view simulated by rewriting the account-sources read stands in. No PR yet.
 
 Progress:
 
@@ -58,3 +58,5 @@ Progress:
 - Lane C merged (`8636a3d`, `78c720c`, plus `7d4acbb` for the app server adapter's and usage contract's remaining wording). Remaining "team" words are identifiers and wire values: `payer.kind === "team"`, `teamKey`, `usage.teamSpend`, `TEAM_KEYS`, `teamKeyProvider`, `teamKeyRefused`, test file names.
 - Lane A merged (`93f6ef4`, `f5fdba8`, `a56c6b7`, `5274dcf`): kit patch 0086, per-account checks, `requestConfirm` removals, `DrawerProviderConnect`, organization row Check/Remove, Team accounts deleted.
 - Lane B merged (`a1a3728`, `872bf64`, `a6a217b`, `ad99ba8`, `f7f676d`): every destructive action outside accounts confirms through `requestConfirm`, including removing another agent's connection; forms on `FormDialog`/`FormDrawer`; new flow 18 (create task). The combined A+B+C tip is back under the app's line budget (107,601 of 107,760).
+- Lane D merged (`c987ad7`, `fea26ce`): the settings placement is a derived state (loading, failed, no project, unavailable, ready) and the Models source a loading/failed/ready union; settings reads models through the same `readHarnessOptions` the composer's draft does, and nothing the Models tab reads starts a workspace. Desktop renderer closure 1403/36, measured.
+- Final tip: `bun run check` (20/20, budget 107,702 of 107,760), app `typecheck`, `typecheck:e2e`, `bun run test` (974), root `typecheck`, `lint`, `test:architecture-ratchets` all pass. E2E (web and phone): every failure matches the unmodified `origin/dev` baseline in this container, except one `35-live-plugin-web` "swaps on save" phone run that missed the broken-build status before any changed step and passed on re-run.
