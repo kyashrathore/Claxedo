@@ -75,7 +75,6 @@ const daemonRecoveryBridge: DaemonRecoveryBridge = {
 }
 
 const api: ElectronAPI = {
-  renderMermaid: (source, theme) => invoke("render-mermaid", source, theme),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)
     ipcRenderer.on("init-step", handler)

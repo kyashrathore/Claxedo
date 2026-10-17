@@ -2,7 +2,7 @@
 /**
  * Prepares every artifact the desktop build and dev run consume: channel
  * icons, the local-server bundle and its V8 compile cache, the Host Connector
- * child and the native Mermaid renderer.
+ * child.
  *
  * `prebuild` runs this file and rebuilds everything; `predev` calls
  * {@link prepareDesktopArtifacts} with `staleOnly`, which skips the server
@@ -16,7 +16,6 @@ import { buildPublishedPackages, publishedPackageDistDirs } from "./published-pa
 import { bundleClaxedoServer, resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { buildClaxedoServerCompileCache, resolveElectronBinary } from "./build-compile-cache"
 import { bundleHostConnector } from "./bundle-host-connector"
-import { prepareMermaidRenderer } from "./build-mermaid-renderer"
 import {
   LOCAL_SERVER_ENTRY,
   localServerBootSource,
@@ -46,11 +45,7 @@ export async function prepareDesktopArtifacts(options: { staleOnly: boolean; log
   // through their published dist, so those builds finish before either bundles.
   await buildPublishedPackages(REPO_ROOT, log)
 
-  const [, hostConnector] = await Promise.all([
-    prepareServer(staleOnly, log),
-    bundleHostConnector(),
-    prepareMermaidRenderer({ required: process.env.CLAXEDO_REQUIRE_NATIVE_MERMAID === "1" }),
-  ])
+  const [, hostConnector] = await Promise.all([prepareServer(staleOnly, log), bundleHostConnector()])
   log(`Host Connector child bundled (${hostConnector.manifest.sha256})`)
 }
 

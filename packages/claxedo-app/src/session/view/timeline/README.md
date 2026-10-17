@@ -19,7 +19,7 @@ The timeline reaches the app through one prop, `host`, which `createTimelineHost
 - `syncSession?`: reads a session's conversation; used for a subagent's parent when the child has no task description and the parent's transcript is not loaded.
 - `settings`: four accessors (reasoning summaries, shell and edit tool rows expanded, turn tokens).
 - `transcriptTypography`; `t: TimelineTranslate`, typed on the 63 keys the timeline uses (`TimelineTextKey`).
-- `platform`: `openLink`, and `renderMermaid` from `desktopBridge()` (`@/lib/desktop-bridge`), present only on desktop.
+- `platform`: `openLink`, and `openPath` and `canReadLocalFiles` from `desktopBridge()` (`@/lib/desktop-bridge`), present only on desktop for a local placement.
 - `openFocus(focus)`: opens a `TimelineFocus` (file, browser, plan or subagent) as a workspace-panel tab; a subagent tab records the panel's session as its parent.
 - `openSessionInPane(sessionId, label?)`: opens a subagent in the pane at phone width.
 - `findFiles(query, signal)`: file-search candidates; resolves to `[]` on a failed lookup, never rejects.
@@ -134,7 +134,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
 - File links inside the workspace open in the file panel. Absolute paths outside it open in the same file panel on desktop for placements on this computer; `useFilesApi` reads their contents through the guarded desktop IPC. Only the context menu's Open externally action uses `platform.openPath`. Unavailable or rejected opening reports an error.
 - The context menu takes its path from a Markdown anchor's href, the chip's text or, for filename slots that render only the basename, from `data-path`. It offers Open and Copy path, plus Open externally when the desktop opener is available. Copy path resolves the absolute file path and strips line/column suffixes; slot text must not fabricate `<placement>/<basename>`.
 - The `claxedo:open-link`, `claxedo:open-plan` and `claxedo:open-subagent` details ride on DOM `CustomEvent`s, so they are read structurally.
-- Mermaid rendering is registered once (`installTimelineMermaid`). On desktop the renderer is the preload's `renderMermaid`: the main process runs the native helper (`claxedo-desktop/native/mermaid-renderer`) with the colors from `mermaidThemeVariables`, and mermaid.js is never loaded. A native failure leaves the code block; there is no fallback to mermaid.js. The web build draws with mermaid.js. Either way the transcript re-sanitizes the SVG through `sanitizeSvg` before it reaches the DOM.
+- The full-screen diagram viewer is registered once (`installTimelineMermaid`). Web and desktop draw diagrams with the same renderer, the transcript's `renderMermaidSvg`; the viewer draws its copy through it and `sanitizeSvg` too.
 - A wide table or diagram borrows the pane gutters only when its content is wider than the column, at most 20% of the column on either side, and never beyond the scroll viewport's content box after the rail gutters, so shrinking the pane removes bleed first (`markdown-surfaces.css`).
 
 ## Why failed turns read this way
@@ -161,4 +161,4 @@ Flow 30 covers the timeline. `30-transcript-corpus.spec.ts` replays every case i
 
 ## Diagram colors
 
-Mermaid takes its theme colors from the app's CSS variables. The contrast theme's surface tokens are `color-mix(...)` expressions, which mermaid's color parser rejects, and an element's computed color serializes a mixed color as `color(srgb …)`, which it rejects too. `mermaidThemeVariables` resolves each token through an element's computed color and rewrites that form as `rgba(…)`; without it every diagram falls back to its code block.
+A diagram's colors are CSS custom properties: pele draws every fill, stroke and text through a `--pele-*` variable, and `src/transcript/markdown.css` maps those to the app's theme tokens on the diagram's root (`svg.pele`). The tokens resolve wherever the SVG is shown, inline or in the viewer, so a theme change recolors every drawn and cached diagram without drawing it again, and the source-keyed SVG cache never holds an old theme's colors.
