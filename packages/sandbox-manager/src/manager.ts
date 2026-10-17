@@ -730,12 +730,13 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     },
     async endIfHostDown(workspaceId, epoch) {
       const lease = await options.leaseStore.get(workspaceId)
-      if (!lease || lease.epoch !== epoch || !options.driver.inspect) return undefined
+      if (!lease || lease.epoch !== epoch) return undefined
       const target = await leaseTarget(lease)
       if (target.status !== "ready") return undefined
-      const state = await options.driver.inspect(target)
-      if (state === "serving") {
-        await options.leaseStore.update(workspaceId, epoch, { lastHeartbeatAt: now() }, "ready")
+      const unansweredAt = now()
+      const state = options.driver.inspect ? await options.driver.inspect(target) : undefined
+      if (state === undefined || state === "serving") {
+        await options.leaseStore.update(workspaceId, epoch, { lastHealthFailureAt: unansweredAt, ...(state ? { lastHeartbeatAt: unansweredAt } : {}) }, "ready")
         return undefined
       }
       const ended = state === "gone"

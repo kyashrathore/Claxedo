@@ -2266,6 +2266,18 @@ describe("a host the provider no longer has", () => {
     expect(events).toEqual([expect.objectContaining({ kind: "stopped", cause: "provider", activeMs: 59_000 })])
   })
 
+  test("a read its runtime left unanswered is the lease's last health failure, beside the heartbeat where the provider says the host serves and alone where the driver cannot ask", async () => {
+    const inspected = createMemoryLeaseStore([serving()])
+    const inspecting = createSandboxManager({ leaseStore: inspected, driver: fakeDriver({ inspect: vi.fn(async () => "serving" as const) }), now: () => 30_000 })
+    await expect(inspecting.endIfHostDown("ws_1", 3)).resolves.toBeUndefined()
+    await expect(inspected.get("ws_1")).resolves.toMatchObject({ status: "ready", lastHeartbeatAt: 30_000, lastHealthFailureAt: 30_000 })
+
+    const blind = createMemoryLeaseStore([serving()])
+    const heartbeat = (await blind.get("ws_1"))?.lastHeartbeatAt
+    await expect(createSandboxManager({ leaseStore: blind, driver: fakeDriver(), now: () => 40_000 }).endIfHostDown("ws_1", 3)).resolves.toBeUndefined()
+    await expect(blind.get("ws_1")).resolves.toMatchObject({ status: "ready", lastHeartbeatAt: heartbeat, lastHealthFailureAt: 40_000 })
+  })
+
   test("a serving lease whose host the provider reports gone ends destroyed; one it reports serving, or a lease of another epoch, is left as it is", async () => {
     const gone = createMemoryLeaseStore([serving()])
     const goneManager = createSandboxManager({ leaseStore: gone, driver: fakeDriver({ inspect: vi.fn(async () => "gone" as const) }) })

@@ -281,8 +281,9 @@ export function createHostedRuntimeDelivery(input: {
    * answer the provider is asked: a host it stopped or no longer has ends the
    * lease at once, so the workspace stops reading as running, and a host it
    * says runs only dates the lease's heartbeat, since it bills whether or not
-   * its runtime answers. Every read the runtime leaves unanswered counts
-   * against the failure budget, whatever the provider says, and a runtime
+   * its runtime answers. Every read the runtime leaves unanswered is the
+   * lease's last health failure and counts against the failure budget,
+   * whatever the provider says, logged with the count so far, and a runtime
    * silent for the whole budget is stopped: its host is metered while nobody
    * reaches what it serves. Either way the turns its sessions were running
    * end with it.
@@ -307,7 +308,10 @@ export function createHostedRuntimeDelivery(input: {
         await runtimeLost(workspaceId)
         return undefined
       }
-      if (failures + 1 < IDLE_CHECK_FAILURE_LIMIT) throw error
+      if (failures + 1 < IDLE_CHECK_FAILURE_LIMIT) {
+        log.warn("the runtime answered no idle check; its host stays up", { workspaceId, epoch: target.epoch, failures: failures + 1, budget: IDLE_CHECK_FAILURE_LIMIT, error: String(error) })
+        throw error
+      }
       log.warn("sandbox stopped: its runtime answered no idle check for the whole failure budget", { workspaceId, epoch: target.epoch, error: String(error) })
       await input.idleStop(workspaceId, target.epoch, {})
       await runtimeLost(workspaceId)

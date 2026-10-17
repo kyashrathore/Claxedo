@@ -11,6 +11,7 @@ import type { ControlPlaneDatabase } from "../test-support/control-plane-migrati
 import { inlineSandboxStart, unusedSandboxRedeliver } from "../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 import { IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_MS, WORKSPACE_IDLE_MS } from "../sandbox/workspace-idle"
+import { setOperatorLogSink } from "@claxedo/helpers/operator-log"
 
 const pushed = vi.hoisted(() => [] as string[])
 /** When set, the runtime refuses its settings with this reason. */
@@ -323,6 +324,31 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
     expect(stops).toEqual([{ workspaceId, epoch: 1 }])
     expect(lost).toEqual([{ workspaceId, at: expect.any(Number) }])
+  })
+
+  test("each read a runtime leaves unanswered is recorded on the lease as its last health failure and logged once with its count toward the budget", async () => {
+    const { delivery, create, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    expect((await sandboxManager.list())[0]?.lastHealthFailureAt).toBeUndefined()
+    const lines: string[] = []
+    setOperatorLogSink((line) => lines.push(line))
+    try {
+      const before = Date.now()
+      await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("unreachable")
+      const first = (await sandboxManager.list())[0]?.lastHealthFailureAt ?? 0
+      expect(first).toBeGreaterThanOrEqual(before)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      await expect(delivery.start.watch(workspaceId, 5)).rejects.toThrow("unreachable")
+      expect((await sandboxManager.list())[0]?.lastHealthFailureAt).toBeGreaterThan(first)
+    } finally {
+      setOperatorLogSink(undefined)
+    }
+    const counted = lines.filter((line) => line.includes("answered no idle check") && line.includes(workspaceId))
+    expect(counted).toHaveLength(2)
+    expect(counted[0]).toContain(`failures=1 budget=${IDLE_CHECK_FAILURE_LIMIT}`)
+    expect(counted[1]).toContain(`failures=6 budget=${IDLE_CHECK_FAILURE_LIMIT}`)
   })
 
   test("a runtime that answers within its check period, however late, has answered: the read is proof of life and counts nothing against the failure budget", async () => {

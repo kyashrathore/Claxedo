@@ -160,6 +160,8 @@ export type SandboxLease = {
   lastError?: string
   lastHeartbeatAt?: number
   lastActivityAt?: number
+  /** When a start of this lease last failed, or its runtime last left a read unanswered. */
+  lastHealthFailureAt?: number
   labels?: Record<string, string>
   checkpoint?: SandboxCheckpointReference
   persistence?: SandboxPersistenceCapabilities
@@ -254,6 +256,7 @@ export type SandboxLeasePatch = Partial<
     | "retryCount"
     | "lastHeartbeatAt"
     | "lastActivityAt"
+    | "lastHealthFailureAt"
   >
 > & {
   /** `null` clears the stored value; `undefined` leaves it unchanged. */
@@ -284,6 +287,7 @@ export function applySandboxLeasePatch(current: SandboxLease, patch: SandboxLeas
     ...(patch.retryCount === undefined ? {} : { retryCount: patch.retryCount }),
     ...(patch.lastHeartbeatAt === undefined ? {} : { lastHeartbeatAt: patch.lastHeartbeatAt }),
     ...(patch.lastActivityAt === undefined ? {} : { lastActivityAt: patch.lastActivityAt }),
+    ...(patch.lastHealthFailureAt === undefined ? {} : { lastHealthFailureAt: patch.lastHealthFailureAt }),
     ...(patch.nextRetryAt === undefined ? {} : { nextRetryAt: patch.nextRetryAt ?? undefined }),
     ...(patch.lastError === undefined ? {} : { lastError: patch.lastError ?? undefined }),
     ...(patch.checkpoint === undefined ? {} : { checkpoint: patch.checkpoint ?? undefined }),
@@ -314,6 +318,7 @@ export function applySandboxLeaseFailure(current: SandboxLease, error: string, n
     retryCount: current.retryCount + 1,
     lastError: error,
     nextRetryAt,
+    lastHealthFailureAt: failedAt,
     updatedAt: failedAt,
     ...(current.start
       ? { start: { ...current.start, failures: [...current.start.failures ?? [], { epoch: current.epoch, failedAt, error }] } }
@@ -502,7 +507,9 @@ export type SandboxManager = {
    * serves, the epoch moved on, or the driver cannot inspect its hosts. A
    * host the provider says serves is the lease's heartbeat at that moment,
    * whether or not its runtime answers: the host is billed until it stops,
-   * and its boot closes at the last such proof.
+   * and its boot closes at the last such proof. Asked for a runtime that left
+   * a read unanswered, so a lease it does not end records that moment as its
+   * last health failure.
    */
   endIfHostDown: (workspaceId: string, epoch: number) => Promise<Exclude<SandboxHostState, "serving"> | undefined>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>

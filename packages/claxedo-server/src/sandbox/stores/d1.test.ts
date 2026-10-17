@@ -312,6 +312,17 @@ describe("d1 sandbox lease store", () => {
     expect(persisted?.status).toBe("unavailable")
   })
 
+  test("an update naming a health failure stamps it on a ready lease and reads it back, leaving the status as it was", async () => {
+    const { target, leaseStore } = await store(() => NOW + 1_000)
+    await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
+    await leaseStore.update("ws_1", 1, { status: "ready" })
+
+    await expect(leaseStore.update("ws_1", 1, { lastHealthFailureAt: NOW + 30_000 }, "ready")).resolves.toMatchObject({ status: "ready", lastHealthFailureAt: NOW + 30_000 })
+    const row = await target.prepare("select status, last_health_failure_at from sandbox_leases where workspace_id = ?").bind("ws_1").first()
+    expect(row).toEqual({ status: "ready", last_health_failure_at: NOW + 30_000 })
+    await expect(leaseStore.get("ws_1")).resolves.toMatchObject({ lastHealthFailureAt: NOW + 30_000 })
+  })
+
   test("recordFailure marks the lease unavailable, counts the retry, and stamps the health failure", async () => {
     const failedAt = NOW + 7_000
     const { target, leaseStore } = await store(() => failedAt)

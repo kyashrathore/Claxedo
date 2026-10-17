@@ -62,7 +62,7 @@ const CONFLICT_COLUMNS = COLUMNS.filter((column) => column !== "workspace_id" &&
 
 const PATCH_COLUMNS = [
   ["status", "status"], ["retryCount", "retry_count"], ["nextRetryAt", "next_retry_at"],
-  ["lastHeartbeatAt", "last_heartbeat_at"], ["lastActivityAt", "last_activity_at"], ["lastError", "last_error"],
+  ["lastHeartbeatAt", "last_heartbeat_at"], ["lastActivityAt", "last_activity_at"], ["lastHealthFailureAt", "last_health_failure_at"], ["lastError", "last_error"],
   ["checkpoint", "checkpoint_json"], ["restore", "restore_json"], ["start", "start_json"],
 ] as const satisfies ReadonlyArray<readonly [keyof SandboxLeasePatch, typeof COLUMNS[number]]>
 
@@ -101,6 +101,7 @@ function toSandboxLease(input: SandboxLeaseRow): SandboxLease {
     lastError: input.last_error ?? undefined,
     lastHeartbeatAt: input.last_heartbeat_at ?? undefined,
     lastActivityAt: input.last_activity_at ?? undefined,
+    lastHealthFailureAt: input.last_health_failure_at ?? undefined,
     labels: input.labels ?? undefined,
     checkpoint: input.checkpoint ?? undefined,
     persistence: input.persistence ?? undefined,
@@ -114,11 +115,7 @@ function json(input: unknown): string | null {
   return input === undefined || input === null ? null : JSON.stringify(input)
 }
 
-function rowValues(
-  lease: SandboxLease,
-  current: SandboxLeaseRow | undefined,
-  options?: { lastHealthFailureAt?: number },
-): (string | number | null)[] {
+function rowValues(lease: SandboxLease, current: SandboxLeaseRow | undefined): (string | number | null)[] {
   return [
     lease.workspaceId,
     lease.hostId ?? current?.lease_id ?? `${lease.workspaceId}:${lease.epoch}`,
@@ -135,7 +132,7 @@ function rowValues(
     lease.nextRetryAt ?? null,
     lease.lastHeartbeatAt ?? null,
     lease.lastActivityAt ?? null,
-    options?.lastHealthFailureAt ?? current?.last_health_failure_at ?? null,
+    lease.lastHealthFailureAt ?? current?.last_health_failure_at ?? null,
     lease.lastError ?? null,
     lease.machineClass ?? current?.machine_class ?? null,
     current?.accel_base_image_id ?? null,
@@ -183,10 +180,9 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     current: SandboxLeaseRow,
     columns: readonly typeof COLUMNS[number][],
     expectedStatus?: string,
-    lastHealthFailureAt?: number,
     endedAt?: number,
   ) {
-    const values = rowValues(next, current, { lastHealthFailureAt })
+    const values = rowValues(next, current)
     const guard: SandboxLeaseGuard = {
       sql: `workspace_id = ? and epoch = ?${expectedStatus === undefined ? "" : " and status = ?"}${columns.includes("routing_id") ? " and routing_id is ?" : ""}`,
       binds: [
@@ -307,7 +303,6 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
         current,
         [...columns],
         expectedStatus === undefined ? undefined : current.status,
-        undefined,
         patch.endedAt,
       )
     },
@@ -319,7 +314,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       const failedAt = clock()
       const next = applySandboxLeaseFailure(toSandboxLease(current), error, nextRetryAt, failedAt)
       return await writeFenced(workspaceId, expectedEpoch, next, current,
-        ["status", "retry_count", "next_retry_at", "last_error", "start_json", "last_health_failure_at", "updated_at"], current.status, failedAt)
+        ["status", "retry_count", "next_retry_at", "last_error", "start_json", "last_health_failure_at", "updated_at"], current.status)
     },
 
     async release(workspaceId: string) {
