@@ -12,7 +12,7 @@ export function SignedOutNotice() {
   const auth = useAuth()
   const server = useServer()
   const location = useLocation()
-  const offered = () => auth.offered(server.capabilities()?.signedIn === true)
+  const offered = () => auth.offered(server.capabilities()?.issuesSessions === true)
   const signIn = () =>
     void auth.signIn({ redirectUrl: appUrl(location) }).catch((error: unknown) => {
       showToast({ title: t("access.org.signInFailed"), description: error instanceof Error ? error.message : String(error) })

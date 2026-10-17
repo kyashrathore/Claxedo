@@ -1,39 +1,44 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { AccountsApi, SandboxKeys } from "./account-types"
 import type { AccountWrite } from "./account-writes"
-import { contractMismatch, responseError } from "./errors"
+import type { CredentialPlane } from "./credential-plane"
+import { contractMismatch, toAppError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
-import { jsonInit, type Transport } from "./transport"
 import type { FetchQuery } from "./types"
 import { accountFromWire } from "./wire/accounts"
 import { sandboxKeysFromWire } from "./wire/sandbox-keys"
 
-const CREDENTIALS_PATH = "/api/claxedo/credentials"
-const SANDBOX_PATH = `${CREDENTIALS_PATH}/sandbox-drivers`
+async function sandboxListing(plane: CredentialPlane): Promise<unknown> {
+  try {
+    return await plane.sandbox()
+  } catch (error) {
+    if (toAppError(error).status === 501) return undefined
+    throw error
+  }
+}
 
-export function sandboxKeyQueries(transport: Transport) {
+export function sandboxKeyQueries(server: string, plane: CredentialPlane) {
   const sandbox = (): FetchQuery<SandboxKeys> =>
-    fetchQuery(queryKeys.sandboxKeys(transport.serverUrl), async () => {
-      const response = await transport.request(SANDBOX_PATH)
-      if (response.status === 501) return { kind: "unsupported" }
-      if (!response.ok) throw await responseError(response, `GET ${SANDBOX_PATH}`)
-      const keys = sandboxKeysFromWire(await response.json())
+    fetchQuery(queryKeys.sandboxKeys(server), async () => {
+      const body = await sandboxListing(plane)
+      if (body === undefined) return { kind: "unsupported" }
+      const keys = sandboxKeysFromWire(body)
       if (!keys) throw contractMismatch("sandbox keys")
       return keys
     })
   return { sandbox }
 }
 
-export function createSandboxKeyWrites(transport: Transport, write: AccountWrite): Pick<AccountsApi, "saveSandboxKey" | "chooseSandboxDriver"> {
+export function createSandboxKeyWrites(plane: CredentialPlane, write: AccountWrite): Pick<AccountsApi, "saveSandboxKey" | "chooseSandboxDriver"> {
   return {
     saveSandboxKey: (driver, fields) =>
       write(async () => {
         const body = { provider_id: driver, kind: "sandbox_driver", source: "managed", secret: JSON.stringify(fields) }
-        const saved = accountFromWire(asRecord(await transport.json(CREDENTIALS_PATH, jsonInit("PUT", body)))?.credential)
+        const saved = accountFromWire(asRecord(await plane.save(body))?.credential)
         if (!saved) throw contractMismatch("sandbox key")
         return saved
       }),
-    chooseSandboxDriver: (driver) => write(async () => void (await transport.json(`${SANDBOX_PATH}/default`, jsonInit("PUT", { driver })))),
+    chooseSandboxDriver: (driver) => write(async () => void (await plane.chooseSandboxDriver(driver))),
   }
 }

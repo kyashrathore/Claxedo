@@ -3,8 +3,8 @@ import { expect, test } from "bun:test"
 import { machineId } from "@/server"
 import { principalScope } from "./principal-scope"
 
-const desktop = { signedIn: false, principal: { kind: "machine", machineId: machineId("enr_1") } } as const
-const hosted = { signedIn: true, principal: { kind: "machine" } } as const
+const desktop = { issuesSessions: false, principal: { kind: "machine", machineId: machineId("enr_1") } } as const
+const hosted = { issuesSessions: true, principal: { kind: "machine" } } as const
 
 test("per-browser state belongs to the signed-in user and its organization, so another account on the same desktop starts empty", () => {
   const ada = principalScope({ kind: "signedIn", user: { id: "ada", orgId: "org_a" } }, desktop)
@@ -16,7 +16,7 @@ test("per-browser state belongs to the signed-in user and its organization, so a
 
 test("only a signed-out reader of a local server that issues no sign-in is scoped by its machine; nothing is scoped while the account still answers", () => {
   expect(principalScope({ kind: "signedOut" }, desktop)).toBe("machine:enr_1")
-  expect(principalScope({ kind: "signedOut" }, { signedIn: false, principal: { kind: "machine" } })).toBe("machine")
+  expect(principalScope({ kind: "signedOut" }, { issuesSessions: false, principal: { kind: "machine" } })).toBe("machine")
   expect(principalScope({ kind: "signedOut" }, hosted)).toBeUndefined()
   expect(principalScope({ kind: "signingIn" }, desktop)).toBeUndefined()
   expect(principalScope({ kind: "awaitingBrowser" }, desktop)).toBe("machine:enr_1")

@@ -1,7 +1,9 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import type { HostedAccount } from "./account"
 import type { Account, AccountCheck, AccountsApi, EffectiveAccounts, MachineLogin } from "./account-types"
 import { accountSourceQueries, createAccountSourceWrites } from "./account-sources"
 import { accountWrites } from "./account-writes"
+import { CREDENTIALS_PATH, credentialPlanes, organizationCredentialPlane } from "./credential-plane"
 import { contractMismatch, responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
@@ -9,8 +11,6 @@ import { jsonInit, withQuery, type Transport } from "./transport"
 import type { FetchQuery } from "./types"
 import { accountCheckFromWire, accountFromWire, machineLoginFromWire, rowsFromWire } from "./wire/accounts"
 import { createSandboxKeyWrites, sandboxKeyQueries } from "./sandbox-keys"
-
-const CREDENTIALS_PATH = "/api/claxedo/credentials"
 
 async function unlessUnsupported(transport: Transport, path: string): Promise<unknown> {
   const response = await transport.request(path)
@@ -28,8 +28,9 @@ async function fetchMachineLogins(transport: Transport, query: { readonly harnes
   return logins
 }
 
-export function accountQueries(transport: Transport) {
+export function accountQueries(transport: Transport, account: HostedAccount | undefined) {
   const server = transport.serverUrl
+  const organization = organizationCredentialPlane(transport, account)
   const list = (): FetchQuery<readonly Account[]> =>
     fetchQuery(queryKeys.accounts(server), async () => rowsFromWire(await transport.json(CREDENTIALS_PATH), "credentials", accountFromWire) ?? [])
   const effective = (): FetchQuery<EffectiveAccounts> =>
@@ -39,25 +40,26 @@ export function accountQueries(transport: Transport) {
       return { kind: "listed", accounts: rowsFromWire(body, "credentials", accountFromWire) ?? [] }
     })
   const machineLogins = (): FetchQuery<readonly MachineLogin[]> => fetchQuery(queryKeys.machineLogins(server), () => fetchMachineLogins(transport, {}))
-  return { list, effective, machineLogins, ...accountSourceQueries(transport), ...sandboxKeyQueries(transport) }
+  return { list, effective, machineLogins, ...accountSourceQueries(server, organization), ...sandboxKeyQueries(server, organization) }
 }
 
-export function createAccountsApi(transport: Transport, queryClient: QueryClient): AccountsApi {
+export function createAccountsApi(transport: Transport, queryClient: QueryClient, account: HostedAccount | undefined): AccountsApi {
   const { refresh, write } = accountWrites(queryClient, transport.serverUrl)
+  const planes = credentialPlanes(transport, account, queryClient)
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
   return {
-    ...createAccountSourceWrites(transport, write),
-    ...createSandboxKeyWrites(transport, write),
+    ...createAccountSourceWrites(transport, planes.organization, write),
+    ...createSandboxKeyWrites(planes.organization, write),
     ...createMachineLoginScans(transport, queryClient),
     select: (ids) => write(async () => void (await post("/activate", { ids }))),
     selectMachineLogin: (providerIds) => write(async () => void (await post("/activate", { machine_login: { provider_ids: providerIds } }))),
     remove: (ids) =>
       write(async () => {
-        for (const id of ids) await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(id)}`, { method: "DELETE" })
+        for (const id of ids) await planes.ofCredential(id).remove(id)
       }),
     check: (id) =>
       write(async (): Promise<AccountCheck> => {
-        const check = accountCheckFromWire(await post(`/${encodeURIComponent(id)}/verify`, {}))
+        const check = accountCheckFromWire(await planes.ofCredential(id).verify(id))
         if (!check) throw contractMismatch("account check")
         return check
       }),

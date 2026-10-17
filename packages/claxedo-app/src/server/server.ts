@@ -90,7 +90,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     terminals: createTerminalsApi(transport, workspaces, telemetry, wakes),
     git: createGitApi(transport, workspaces, queryClient),
     cloud,
-    accounts: createAccountsApi(transport, queryClient),
+    accounts: createAccountsApi(transport, queryClient, account),
     marketplace: createMarketplaceApi(transport, queryClient, telemetry),
     tasks: createTasksApi(transport, queryClient, workspaces, wakes),
     folders: createFoldersApi(transport),
@@ -124,7 +124,7 @@ export function createServer(config: ServerConfig): ServerHandle {
   const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status, streamed })
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
   const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
-  const capabilities = createCapabilities()
+  const capabilities = createCapabilities({ hostedAccount: account !== undefined })
   const queries = createQueries(transport, workspaces, account)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })
   const projection = createSessionProjection(workspaces, account)

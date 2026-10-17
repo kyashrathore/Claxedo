@@ -35,7 +35,7 @@ function useAccountView() {
   const server = useServer()
   return createMemo((): AccountView => {
     const state = auth.state()
-    const offered = auth.offered(server.capabilities()?.signedIn === true)
+    const offered = auth.offered(server.capabilities()?.issuesSessions === true)
     const waiting = state.kind === "awaitingBrowser"
     const busy = waiting || state.kind === "signingIn"
     const notice = accountNotice(state.kind, t)
