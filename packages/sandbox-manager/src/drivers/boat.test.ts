@@ -1200,18 +1200,43 @@ describe("boat sandbox driver", () => {
     })
   })
 
-  test("stop of a sandbox whose machine is not running is a stopped sandbox: the container stop is skipped, the archive still asked, and Boat's not-running answer to that is no failure", async () => {
+  test("stop of a sandbox whose machine is not running skips the container stop and still asks Boat to archive it", async () => {
     for (const code of ["machine_not_running", "sandbox_not_ready"]) {
       const boat = fakeBoat()
-      const notRunning = (stopToo: boolean): BoatFetch => async (url, init) => {
-        if (url.endsWith("/commands") || (stopToo && url.endsWith("/stop"))) return Response.json({ ok: false, code, message: "not running" }, { status: 409 })
+      const fetchImpl: BoatFetch = async (url, init) => {
+        if (url.endsWith("/commands")) return Response.json({ ok: false, code, message: "not running" }, { status: 409 })
         return boat.fetchImpl(url, init)
       }
       const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
-      await expect(createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: notRunning(false) }).stop?.(target)).resolves.toBeUndefined()
+      await expect(createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl }).stop?.(target)).resolves.toBeUndefined()
       expect(boat.calls.map(({ method, path }) => `${method} ${path}`)).toContain(`POST /sandboxes/${ID}/stop`)
-      await expect(createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: notRunning(true) }).stop?.(target)).resolves.toBeUndefined()
     }
+  })
+
+  test("stop of a sandbox Boat already archived is a stopped sandbox; Boat's stop refusal for a sandbox in another state still fails the stop", async () => {
+    const stopRefused = (state: string): Response => {
+      const message = "Sandbox is archived, so it cannot be stopped."
+      return Response.json({
+        ok: false, type: "sandbox.error", status: 400, code: "stop_failed", message,
+        error: { code: "stop_failed", message, status: 400, details: { error: "stop_failed", message, sandbox: { ...sandboxRecord(state), url: null, ip: null } } },
+      }, { status: 400 })
+    }
+    const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
+    const driverAnswering = (state: string) => {
+      const boat = fakeBoat()
+      return createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
+        if (url.endsWith("/commands")) return Response.json({ ok: false, code: "machine_not_running", message: "not running" }, { status: 409 })
+        if (url.endsWith("/stop")) return stopRefused(state)
+        return boat.fetchImpl(url, init)
+      } })
+    }
+    await expect(driverAnswering("archived").stop?.(target)).resolves.toBeUndefined()
+    await expect(driverAnswering("error").stop?.(target)).rejects.toMatchObject({ code: "stop_failed" })
+
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", routingId: "route-ws1", status: "ready" })])
+    const manager = createSandboxManager({ leaseStore: store, driver: driverAnswering("archived"), retryDelayMs: () => 0, onEgressUnenforced: () => {} })
+    expect(await manager.stop("ws1")).toEqual({ ok: true, status: "stopped" })
+    await expect(store.get("ws1")).resolves.toMatchObject({ status: "stopped", sandboxId: ID })
   })
 
   test("resume brings an archived sandbox back under the boot deadline, re-establishes the runtime, and removes the deadline", async () => {
