@@ -180,3 +180,44 @@ test("snapshot: a gap raised while a read is in flight reads again once it lands
     dispose()
   })
 })
+
+test("snapshot: a held return lands its retained turn before its row read answers, and the row read only refreshes the row", async () => {
+  const { server: base, deps: baseDeps } = transcriptServer()
+  const row = Promise.withResolvers<SessionFirstRead>()
+  const rows: string[] = []
+  const deps = { ...baseDeps, list: { ...baseDeps.list, readRow: (read: SessionFirstRead["row"]) => void rows.push(read.title ?? "") } } as unknown as TranscriptDeps
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(transcriptRef, deps.pageShape()), first: row.promise }) } } as unknown as Server
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, transcriptRef, deps)
+    const read = readSnapshot(context, { latestTurn: latest, outline: { turns: [], complete: true } })
+    expect(context.phase.state().kind, "the retained turn is on screen in the task that opened the session").toBe("ready")
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_2", "msg_2_r"])
+    expect(rows, "the list's own row stands until the read answers").toEqual([])
+    row.resolve({ ...firstReadOf(latest), row: { ...firstReadOf(latest).row, title: "Live title" } })
+    await read
+    await idle()
+    expect(rows).toEqual(["Live title"])
+    expect(context.data.messages.map((message) => message.id), "the row read lands no page").toEqual(["msg_2", "msg_2_r"])
+    dispose()
+  })
+})
+
+test("snapshot: a held return whose row read fails keeps its retained turn on screen and logs the failure", async () => {
+  const { server: base, deps } = transcriptServer()
+  const failure = new ServerError({ class: "network", message: "unreachable" })
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(transcriptRef, deps.pageShape()), first: Promise.reject(failure) }) } } as unknown as Server
+  const warn = spyOn(console, "warn").mockImplementation(() => undefined)
+  try {
+    await createRoot(async (dispose) => {
+      const context = createTranscriptContext(server, transcriptRef, deps)
+      await readSnapshot(context, { latestTurn: latest, outline: undefined })
+      await idle()
+      expect(context.phase.state().kind).toBe("ready")
+      expect(context.data.messages.map((message) => message.id)).toEqual(["msg_2", "msg_2_r"])
+      expect(warn).toHaveBeenCalledWith("A session's row could not be read", expect.objectContaining({ error: expect.objectContaining({ class: "network" }) }))
+      dispose()
+    })
+  } finally {
+    warn.mockRestore()
+  }
+})
