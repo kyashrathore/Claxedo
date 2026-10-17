@@ -8,12 +8,12 @@ const cost = { estimatedUsd: 0.2, pricedTokens: 15, unpricedTokens: 0 }
 const spend = (payer: AccountSpendPayer): AccountSpend => ({ payer, totals, cost })
 
 describe("spend per account scopes", () => {
-  test("an owner or admin chooses between their own accounts and the team keys; a member is offered their own alone", () => {
+  test("an owner or admin chooses between their own accounts and the organization accounts; a member is offered their own alone", () => {
     expect(spendScopes(true)).toEqual(["mine", "org"])
     expect(spendScopes(false)).toEqual(["mine"])
   })
 
-  test("a member never reads the team keys, even when the team keys were chosen before the fact said otherwise", () => {
+  test("a member never reads the organization accounts, even when they were chosen before the fact said otherwise", () => {
     expect(spendScope("org", true)).toBe("org")
     expect(spendScope("org", false)).toBe("mine")
     expect(spendScope("mine", true)).toBe("mine")
@@ -29,14 +29,14 @@ describe("spend per account scopes", () => {
 })
 
 describe("spend per account rows", () => {
-  test("an own plan or API key and a team key keep their name and vendor, and say which kind they are", () => {
+  test("an own plan or API key and an organization account keep their name and vendor, and say which kind they are", () => {
     expect(spendRow(spend({ kind: "own", accountId: "cred_plan", access: "plan", label: "Work Claude", providerId: "anthropic" }))).toMatchObject({ id: "cred_plan", kind: "plan", label: "Work Claude", vendor: "Anthropic" })
     expect(spendRow(spend({ kind: "own", accountId: "cred_key", access: "apiKey", providerId: "openai" }))).toMatchObject({ id: "cred_key", kind: "apiKey", vendor: "OpenAI" })
-    expect(spendRow(spend({ kind: "team", accountId: "cred_team", access: "apiKey", label: "Team key", providerId: "cursor", members: [] }))).toMatchObject({ id: "cred_team", kind: "teamKey", label: "Team key", vendor: "Cursor" })
+    expect(spendRow(spend({ kind: "team", accountId: "cred_team", access: "apiKey", label: "Acme Cursor", providerId: "cursor", members: [] }))).toMatchObject({ id: "cred_team", kind: "teamKey", label: "Acme Cursor", vendor: "Cursor" })
     expect(spendRow(spend({ kind: "own", accountId: "cred_claude", access: "plan", providerId: "claude-sdk" }))).toMatchObject({ kind: "plan", vendor: "Anthropic" })
   })
 
-  test("a team key carries its spend per member, and no other account does", () => {
+  test("an organization account carries its spend per member, and no other account does", () => {
     const members = [{ memberId: "user_alice", member: { kind: "named", name: "Alice Liddell" }, totals, cost }] as const
     expect(spendRow(spend({ kind: "team", accountId: "cred_team", access: "apiKey", members }))).toMatchObject({ kind: "teamKey", members })
     expect(spendRow(spend({ kind: "own", accountId: "cred_key", access: "apiKey" }))).not.toHaveProperty("members")
