@@ -1,13 +1,12 @@
 import { createSignal } from "solid-js"
-import { toAppError, useServer } from "@/server"
+import { toAppError, type AccountCheck } from "@/server"
 import { showToast } from "@/ui"
 import { useAccountsText } from "./i18n"
 import type { LiveCheck } from "./model"
 
 export type KeyActivity<Kind extends string> = { readonly kind: Kind; readonly key: string }
 
-export function createKeyActions<Kind extends string>() {
-  const server = useServer()
+export function createKeyActions<Kind extends string>(check: (id: string) => Promise<AccountCheck>) {
   const t = useAccountsText()
   const [activity, setActivity] = createSignal<KeyActivity<Kind>>()
   const [liveChecks, setLiveChecks] = createSignal<Readonly<Record<string, LiveCheck>>>({})
@@ -24,8 +23,8 @@ export function createKeyActions<Kind extends string>() {
     }
   }
   const verify = async (id: string) => {
-    const check = await server.accounts.check(id).catch((error: unknown) => ({ verdict: "unknown" as const, reason: toAppError(error).message }))
-    setLiveChecks((previous) => ({ ...previous, [id]: { at: Date.now(), ...check } }))
+    const checked = await check(id).catch((error: unknown) => ({ verdict: "unknown" as const, reason: toAppError(error).message }))
+    setLiveChecks((previous) => ({ ...previous, [id]: { at: Date.now(), ...checked } }))
   }
   return { activity, liveChecks, run, verify }
 }

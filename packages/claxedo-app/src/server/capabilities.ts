@@ -9,6 +9,8 @@ export type CapabilitiesOwner = {
   readonly declare: (declaration: BootstrapDeclaration) => void
 }
 
+export type CapabilitiesScope = { readonly hostedAccount: boolean }
+
 const GOAL_MODES: Readonly<Record<string, HarnessInfo["goalMode"]>> = { claude: "evaluated", codex: "native", cursor: "native", pi: "evaluated" }
 const HARNESS_LABELS = HARNESS_TABLE as Readonly<Record<string, { readonly label: string } | undefined>>
 
@@ -31,19 +33,18 @@ export function servingMachineOf(declaration: BootstrapDeclaration): ServingMach
   return { ...(declaration.enrollmentId ? { id: machineId(declaration.enrollmentId) } : {}), name: declaration.machineName }
 }
 
-function capabilitiesFromDeclaration(declaration: BootstrapDeclaration): Capabilities {
-  const signedIn = declaration.issuesSessions
+function capabilitiesFromDeclaration(declaration: BootstrapDeclaration, scope: CapabilitiesScope): Capabilities {
   const servingMachine = servingMachineOf(declaration)
   return {
     principal: { kind: "machine", ...(declaration.enrollmentId ? { machineId: machineId(declaration.enrollmentId) } : {}) },
-    signedIn,
+    issuesSessions: declaration.issuesSessions,
     servingMachine,
     harnesses: AGENT_HARNESS_IDS.map(harnessInfo),
-    features: { documents: declaration.documents, connections: declaration.connections, cloud: signedIn, livePlugins: servingMachine !== undefined },
+    features: { documents: declaration.documents, connections: declaration.connections, cloud: scope.hostedAccount, livePlugins: servingMachine !== undefined },
   }
 }
 
-export function createCapabilities(): CapabilitiesOwner {
+export function createCapabilities(scope: CapabilitiesScope): CapabilitiesOwner {
   const [value, setValue] = createSignal<Capabilities | undefined>(undefined)
-  return { value, declare: (declaration) => { setValue(capabilitiesFromDeclaration(declaration)) } }
+  return { value, declare: (declaration) => { setValue(capabilitiesFromDeclaration(declaration, scope)) } }
 }

@@ -2,8 +2,8 @@
 import { expect, test } from "bun:test"
 import { signInGate } from "./sign-in-gate"
 
-const issuing = { signedIn: true }
-const local = { signedIn: false }
+const issuing = { issuesSessions: true }
+const local = { issuesSessions: false }
 const user = { id: "user_1", fullName: "Ada", email: "ada@claxedo.test" }
 
 test("sign-in gate: a server that issues sessions sends a signed-out or expired reader to /login, and holds while sign-in settles", () => {

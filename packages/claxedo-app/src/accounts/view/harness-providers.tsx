@@ -27,7 +27,7 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
   const t = useAccountsText()
   const sources = createCatalogAccountSources(harness, () => catalog.refresh())
   const stored = useQuery(() => server.queries.accounts.list())
-  const { activity, liveChecks, run, verify } = createKeyActions<"checking">()
+  const { activity, liveChecks, run, verify } = createKeyActions<"checking">(server.accounts.check)
   const keys: KeyRowStore = { activity, liveChecks, check: (id) => void run("checking", id, () => verify(id)) }
   const disconnect = async (provider: CatalogProvider) => {
     try {

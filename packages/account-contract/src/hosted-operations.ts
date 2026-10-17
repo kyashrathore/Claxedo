@@ -1,5 +1,7 @@
 import { isPluginId } from "@claxedo/plugin-api/id"
+import { CREDENTIAL_OPERATIONS } from "./credential-operations"
 import { sharedSessions } from "./shared-sessions"
+import { USAGE_OPERATIONS } from "./usage-operations"
 import {
   defineOperation, operationPath, requiredParameter, optionalParameter, bodyField,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
@@ -10,6 +12,8 @@ import { operationInput } from "./operation-input"
 import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, optional, connection, statusResult } from "./hosted-output"
 
 export const HOSTED_OPERATIONS = {
+  ...CREDENTIAL_OPERATIONS,
+  ...USAGE_OPERATIONS,
   "session.shared.list": defineOperation({
     method: "GET", path: operationPath("/api/workspace/shared-sessions"),
     input: operationInput({}), output: sharedSessions, retry: "safe",
@@ -669,12 +673,6 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
     body: selectBody("event", "properties"),
-  }),
-  "usage.cloudFacts": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/usage/cloud-facts", { query: ["since", "until"] }),
-    input: operationInput({ since: requiredParameter, until: requiredParameter }),
-    output: withArrays("facts"), retry: "safe",
-    exposure: { renderer: true, app: false },
   }),
   "documents.export": defineOperation({
     method: "GET", path: operationPath("/documents/:id/export"),

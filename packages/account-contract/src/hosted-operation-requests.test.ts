@@ -174,6 +174,30 @@ describe("resolveHostedOperation", () => {
     expect(() => resolveHostedOperation("usage.get", { since: 1, until: 2 })).toThrow(UnknownHostedOperation)
   })
 
+  test("reads the account's spend per credential and its cloud machine time for a range, every key required", () => {
+    expect(resolveHostedOperation("usage.credentialSpend", { since: 1, until: 2, scope: "org" })).toEqual({
+      method: "GET",
+      path: "/api/claxedo/usage/credentials?since=1&until=2&scope=org",
+    })
+    expect(() => resolveHostedOperation("usage.credentialSpend", { since: 1, until: 2 })).toThrow(MissingOperationParameter)
+    expect(resolveHostedOperation("usage.machineTime", { since: 5 })).toEqual({ method: "GET", path: "/api/claxedo/usage/machine-time?since=5" })
+    expect(() => resolveHostedOperation("usage.machineTime", {})).toThrow(MissingOperationParameter)
+  })
+
+  test("the organization's sandbox keys: the listing, the default driver, a saved key, a check and a removal; account sources stay with the server whose turns they govern", () => {
+    expect(() => resolveHostedOperation("credentials.sources.read")).toThrow(UnknownHostedOperation)
+    expect(resolveHostedOperation("credentials.sandbox.read")).toEqual({ method: "GET", path: "/api/claxedo/credentials/sandbox-drivers" })
+    expect(resolveHostedOperation("credentials.sandbox.choose", { driver: null })).toEqual({ method: "PUT", path: "/api/claxedo/credentials/sandbox-drivers/default", body: { driver: null } })
+    expect(resolveHostedOperation("credentials.save", { provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: "{\"token\":\"mo-1\"}", extra: "dropped" })).toEqual({
+      method: "PUT",
+      path: "/api/claxedo/credentials",
+      body: { provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: "{\"token\":\"mo-1\"}" },
+    })
+    expect(resolveHostedOperation("credentials.verify", { id: "cred 1" })).toEqual({ method: "POST", path: "/api/claxedo/credentials/cred%201/verify" })
+    expect(resolveHostedOperation("credentials.remove", { id: "cred_1" })).toEqual({ method: "DELETE", path: "/api/claxedo/credentials/cred_1" })
+    expect(() => resolveHostedOperation("credentials.remove", {})).toThrow(MissingOperationParameter)
+  })
+
   test("workspace.resolve omits empty optional query keys", () => {
     expect(resolveHostedOperation("workspace.resolve", { workspaceId: "ws_1" })).toEqual({
       method: "GET",

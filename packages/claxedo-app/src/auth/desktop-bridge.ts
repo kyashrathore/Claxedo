@@ -9,6 +9,7 @@ export type DesktopAccountState =
   | { readonly kind: "loading" }
   | { readonly kind: "awaitingBrowser" }
   | { readonly kind: "signed"; readonly user: AuthUser; readonly identity: "resolving" | "known" | "failed" }
+  | { readonly kind: "revoked" }
   | { readonly kind: "unavailable"; readonly reason: string }
 
 export type DesktopAccountBridge = AccountStreamPort & {
@@ -54,6 +55,7 @@ export function desktopAccountState(raw: unknown): DesktopAccountState {
     case "signed":
       return signedState(raw)
     case "unavailable":
+      if (readString(raw, "reason") === "revoked") return { kind: "revoked" }
       return { kind: "unavailable", reason: readString(raw, "detail") ?? readString(raw, "reason") ?? "The desktop account is unavailable" }
     default:
       return { kind: "unavailable", reason: "The desktop account answered a state this app does not know" }

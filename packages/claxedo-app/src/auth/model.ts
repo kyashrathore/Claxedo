@@ -31,7 +31,7 @@ export const authTransition: Transition<AuthState, AuthEvent> = (state, event) =
     case "signedOut":
       return { kind: "signedOut" }
     case "expired":
-      return state.kind === "signedIn" ? { kind: "expired" } : state
+      return state.kind === "signedIn" || state.kind === "signingIn" ? { kind: "expired" } : state
     default:
       return unreachable(event)
   }

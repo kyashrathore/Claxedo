@@ -80,7 +80,7 @@ Rules in those sheets that code cannot explain:
 
 ## Sign-in (`sign-in-gate.ts`)
 
-On a server that issues sessions (`capabilities.signedIn`, from the bootstrap's `deployment.issuesSessions`), a reader who is signed out or whose session expired is sent to `/login` with the URL replaced, as today's app does, and nothing of the shell renders. A session expires when the control plane answers any request 401 and the session read then names no one (`src/auth/README.md`); the scope is keyed by the user, so the expired reader's scope, with its refused event streams, is dropped, and signing in again builds a new one whose streams open with the new cookie; the original URL is not kept, as today. While sign-in settles the splash holds. A server that issues no sessions, or one whose bootstrap has not been read, never redirects.
+On a server that issues sessions (`capabilities.issuesSessions`, from the bootstrap's `deployment.issuesSessions`), a reader who is signed out or whose session expired is sent to `/login` with the URL replaced, as today's app does, and nothing of the shell renders. A session expires when the control plane answers any request 401 and the session read then names no one (`src/auth/README.md`); the scope is keyed by the user, so the expired reader's scope, with its refused event streams, is dropped, and signing in again builds a new one whose streams open with the new cookie; the original URL is not kept, as today. While sign-in settles the splash holds. A server that issues no sessions, or one whose bootstrap has not been read, never redirects.
 
 ## Home (`home-redirect.tsx`)
 

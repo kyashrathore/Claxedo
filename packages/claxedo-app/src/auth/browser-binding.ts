@@ -18,6 +18,7 @@ export function browserAccountBinding(adapter: BrowserAuthAdapter): AccountBindi
         user: browser.user,
         loading: browser.loading,
         unavailable: browser.unavailable,
+        ended: () => false,
         identityResolving: () => false,
         offered: (serverIssuesSessions) => serverIssuesSessions && browser.unavailable() === null,
         signIn: browser.signIn,

@@ -1,3 +1,5 @@
+import type { HostedAccount } from "./account"
+import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
@@ -21,19 +23,21 @@ function usageQuery(input: UsageRequest) {
   }
 }
 
-export function usageQueries(transport: Transport) {
+export function usageQueries(transport: Transport, account: HostedAccount | undefined) {
+  const signed = () => {
+    if (!account) throw new ServerError({ class: "auth", message: "Cloud usage belongs to a signed-in account" })
+    return account
+  }
   return {
     summary: (input: UsageRequest) =>
       fetchQuery<UsageSummary>(queryKeys.usage(transport.serverUrl, input), () =>
         transport.json(withQuery("/api/claxedo/usage", usageQuery(input))).then(usageSummaryFromWire),
       ),
     machineTime: (since: number) =>
-      fetchQuery<MachineTime>(queryKeys.machineTime(transport.serverUrl, since), () =>
-        transport.json(withQuery("/api/claxedo/usage/machine-time", { since })).then(machineTimeFromWire),
-      ),
+      fetchQuery<MachineTime>(queryKeys.machineTime(transport.serverUrl, since), () => signed().run("usage.machineTime", { since }).then(machineTimeFromWire)),
     accountSpend: (input: AccountSpendRequest) =>
       fetchQuery<AccountSpendReport>(queryKeys.accountSpend(transport.serverUrl, input), () =>
-        transport.json(withQuery("/api/claxedo/usage/credentials", { since: input.since, until: input.until, scope: input.scope })).then(accountSpendFromWire),
+        signed().run("usage.credentialSpend", { since: input.since, until: input.until, scope: input.scope }).then(accountSpendFromWire),
       ),
   }
 }

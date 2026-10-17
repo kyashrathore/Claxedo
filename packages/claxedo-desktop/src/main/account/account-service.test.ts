@@ -412,6 +412,22 @@ describe("bound desktop account lifecycle", () => {
     expect(h.service.state(), "a recoverable 401 must not sign the user out").toMatchObject({ status: "signed" })
   })
 
+  test("a 401 followed by a renewal that never reached the authorization server keeps the session: only a refusal revokes", async () => {
+    for (const refresh of [
+      async (): Promise<never> => { throw new TypeError("fetch failed") },
+      async () => ({ ok: false as const, reason: "unavailable" as const, detail: "refresh request failed: stalled" }),
+    ]) {
+      const h = harness({
+        store: memoryStore(CREDENTIAL),
+        auth: authHarness({ refresh }),
+        fetch: async () => Response.json({ error: { code: "invalid_credentials" } }, { status: 401 }),
+      })
+      await h.service.restore()
+      await expect(h.service.run("account.mode")).rejects.toThrow("could not renew the session")
+      expect(h.service.state(), "a renewal that could not be reached is not a revocation").toMatchObject({ status: "signed" })
+    }
+  })
+
   test("a 401 that survives renewal is a real revocation and ends the session", async () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),

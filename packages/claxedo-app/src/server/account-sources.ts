@@ -28,7 +28,7 @@ export function createAccountSourceWrites(transport: Transport, write: AccountWr
     setScope: (ids, scope) =>
       write(async () => {
         for (const id of ids) {
-          const answer = await transport.json(`/api/claxedo/credentials/${encodeURIComponent(id)}/scope`, jsonInit("PATCH", { scope }))
+          const answer = await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(id)}/scope`, jsonInit("PATCH", { scope }))
           if (accountScopeFromWire(asRecord(answer)?.scope) !== scope) throw contractMismatch("account scope")
         }
       }),

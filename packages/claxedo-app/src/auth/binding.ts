@@ -20,6 +20,7 @@ export type AccountSession = {
   readonly user: Accessor<AuthUser | null>
   readonly loading: Accessor<boolean>
   readonly unavailable: Accessor<string | null>
+  readonly ended: Accessor<boolean>
   readonly identityResolving: Accessor<boolean>
   readonly offered: (serverIssuesSessions: boolean) => boolean
   readonly signIn: (options?: BrowserAuthSignInOptions) => Promise<void>

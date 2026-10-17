@@ -1,4 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import type { HostedAccount } from "./account"
+import { accountCheckAnswer, accountRemovalAnswer } from "./account-answers"
 import type { Account, AccountCheck, AccountsApi, EffectiveAccounts, MachineLogin } from "./account-types"
 import { accountSourceQueries, createAccountSourceWrites } from "./account-sources"
 import { accountWrites } from "./account-writes"
@@ -7,8 +9,8 @@ import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { FetchQuery } from "./types"
-import { accountCheckFromWire, accountFromWire, machineLoginFromWire, rowsFromWire } from "./wire/accounts"
-import { createSandboxKeyWrites, sandboxKeyQueries } from "./sandbox-keys"
+import { accountFromWire, machineLoginFromWire, rowsFromWire } from "./wire/accounts"
+import { createSandboxKeyWrites, sandboxKeyPlane, sandboxKeyQueries } from "./sandbox-keys"
 
 const CREDENTIALS_PATH = "/api/claxedo/credentials"
 
@@ -28,7 +30,7 @@ async function fetchMachineLogins(transport: Transport, query: { readonly harnes
   return logins
 }
 
-export function accountQueries(transport: Transport) {
+export function accountQueries(transport: Transport, account: HostedAccount | undefined) {
   const server = transport.serverUrl
   const list = (): FetchQuery<readonly Account[]> =>
     fetchQuery(queryKeys.accounts(server), async () => rowsFromWire(await transport.json(CREDENTIALS_PATH), "credentials", accountFromWire) ?? [])
@@ -39,28 +41,23 @@ export function accountQueries(transport: Transport) {
       return { kind: "listed", accounts: rowsFromWire(body, "credentials", accountFromWire) ?? [] }
     })
   const machineLogins = (): FetchQuery<readonly MachineLogin[]> => fetchQuery(queryKeys.machineLogins(server), () => fetchMachineLogins(transport, {}))
-  return { list, effective, machineLogins, ...accountSourceQueries(transport), ...sandboxKeyQueries(transport) }
+  return { list, effective, machineLogins, ...accountSourceQueries(transport), ...sandboxKeyQueries(server, sandboxKeyPlane(transport, account)) }
 }
 
-export function createAccountsApi(transport: Transport, queryClient: QueryClient): AccountsApi {
+export function createAccountsApi(transport: Transport, queryClient: QueryClient, account: HostedAccount | undefined): AccountsApi {
   const { refresh, write } = accountWrites(queryClient, transport.serverUrl)
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
   return {
     ...createAccountSourceWrites(transport, write),
-    ...createSandboxKeyWrites(transport, write),
+    ...createSandboxKeyWrites(sandboxKeyPlane(transport, account), write),
     ...createMachineLoginScans(transport, queryClient),
     select: (ids) => write(async () => void (await post("/activate", { ids }))),
     selectMachineLogin: (providerIds) => write(async () => void (await post("/activate", { machine_login: { provider_ids: providerIds } }))),
     remove: (ids) =>
       write(async () => {
-        for (const id of ids) await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(id)}`, { method: "DELETE" })
+        for (const id of ids) accountRemovalAnswer(await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(id)}`, { method: "DELETE" }))
       }),
-    check: (id) =>
-      write(async (): Promise<AccountCheck> => {
-        const check = accountCheckFromWire(await post(`/${encodeURIComponent(id)}/verify`, {}))
-        if (!check) throw contractMismatch("account check")
-        return check
-      }),
+    check: (id) => write(async (): Promise<AccountCheck> => accountCheckAnswer(await post(`/${encodeURIComponent(id)}/verify`, {}))),
     refresh,
   }
 }

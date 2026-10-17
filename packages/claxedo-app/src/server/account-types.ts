@@ -77,4 +77,6 @@ export type AccountsApi = {
   readonly saveSandboxKey: (driver: string, fields: Readonly<Record<string, string>>) => Promise<Account>
   readonly saveOrgAccount: (providerId: string, secret: string, label: string) => Promise<Account>
   readonly chooseSandboxDriver: (driver: string | null) => Promise<void>
+  readonly checkSandboxKey: (id: string) => Promise<AccountCheck>
+  readonly removeSandboxKey: (id: string) => Promise<void>
 }

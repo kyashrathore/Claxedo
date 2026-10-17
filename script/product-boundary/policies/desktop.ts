@@ -698,8 +698,12 @@ export const desktopRenderer: Policy = {
   // the app's usage domain, `usage/account-spend.ts`,
   // `usage/view/account-spend-section.tsx`,
   // `usage/view/account-spend-table.tsx`). They add no package edge.
-  // 1398/36, no headroom.
-  ceilings: { modules: 1398, packages: 36 },
+  // The account answers a check and a removal decode to, so a removal the
+  // server refused is a failure in one line and never a silent success
+  // (owner: the app's server domain, `server/account-answers.ts`). It adds
+  // no package edge.
+  // 1399/36, no headroom.
+  ceilings: { modules: 1399, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

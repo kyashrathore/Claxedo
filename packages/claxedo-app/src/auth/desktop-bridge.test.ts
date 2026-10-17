@@ -44,3 +44,8 @@ test("desktop bridge: a state main never sends is unavailable, never signed", ()
   expect(desktopAccountState({ status: "admin" })).toMatchObject({ kind: "unavailable" })
   expect(desktopAccountState(null)).toMatchObject({ kind: "unavailable" })
 })
+
+test("desktop bridge: a session main invalidated because the server rejected it is revoked, not unavailable", () => {
+  expect(desktopAccountState({ status: "unavailable", reason: "revoked", detail: "the server rejected this session" })).toEqual({ kind: "revoked" })
+  expect(desktopAccountState({ status: "unavailable", reason: "callback-failed", detail: "The browser never came back" })).toEqual({ kind: "unavailable", reason: "The browser never came back" })
+})
