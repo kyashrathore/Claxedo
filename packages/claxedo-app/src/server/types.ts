@@ -278,6 +278,7 @@ export type HarnessInfo = {
 export type Capabilities = {
   readonly principal: MachinePrincipal
   readonly issuesSessions: boolean
+  readonly hostedAccount: boolean
   readonly servingMachine: ServingMachine | undefined
   readonly harnesses: readonly HarnessInfo[]
   readonly features: {

@@ -25,5 +25,5 @@ export const aiUsageSettingsSection = usageSection("ai-usage", "usage.ai.title",
 
 export const sandboxUsageSettingsSection: SettingsSection = {
   ...usageSection("sandbox-usage", "usage.sandbox.title", 22, lazyView(() => import("./view/sandbox-usage-section").then((module) => module.SandboxUsageSection))),
-  available: () => useServer().capabilities()?.features.cloud === true,
+  available: () => useServer().capabilities()?.hostedAccount === true,
 }

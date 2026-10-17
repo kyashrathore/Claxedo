@@ -1,8 +1,8 @@
 import type { OrgRole } from "@/server"
 
-export type AccessAction = "accounts.manageOrg" | "sandbox.manage"
+export type AccessAction = "accounts.manageOrg" | "sandbox.manage" | "usage.teamSpend"
 
-export type AccessFacts = { readonly canManageOrgAccounts?: boolean; readonly canManageSandboxKeys?: boolean }
+export type AccessFacts = { readonly canManageOrgAccounts?: boolean; readonly canManageSandboxKeys?: boolean; readonly role?: OrgRole }
 
 export const isOrgManager = (role: OrgRole | undefined) => role === "owner" || role === "admin"
 

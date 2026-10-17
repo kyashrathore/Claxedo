@@ -85,7 +85,7 @@ for (const [options, failure] of [
         worker()
         await server.retryConnection()
         expect(server.startup().kind).toBe("ready")
-        expect(server.capabilities()).toMatchObject({ issuesSessions: true, features: { cloud: true } })
+        expect(server.capabilities()).toMatchObject({ issuesSessions: true, hostedAccount: true, features: { cloud: true } })
         expect((await server.queryClient.fetchQuery(server.queries.projects.list())).map((project) => String(project.id))).toEqual(["prj_app"])
       } finally { console.error = originalError; server.dispose(); dispose() }
     })
@@ -114,7 +114,7 @@ test("an account catalog that stays unavailable opens the shell and fails only t
     try {
       await server.ready
       expect(server.startup().kind).toBe("ready")
-      expect(server.capabilities()).toMatchObject({ issuesSessions: true, features: { cloud: true } })
+      expect(server.capabilities()).toMatchObject({ issuesSessions: true, hostedAccount: true, features: { cloud: true } })
       expect(server.placements.complete()).toBe(false)
       await expect(server.queryClient.fetchQuery(server.queries.projects.list())).rejects.toMatchObject({ class: "network", code: "database_unavailable", retryable: true })
       expect(calls.filter((call) => call.path === "/api/workspace?host=provisioner").length).toBeGreaterThan(3)

@@ -38,9 +38,10 @@ function capabilitiesFromDeclaration(declaration: BootstrapDeclaration, scope: C
   return {
     principal: { kind: "machine", ...(declaration.enrollmentId ? { machineId: machineId(declaration.enrollmentId) } : {}) },
     issuesSessions: declaration.issuesSessions,
+    hostedAccount: scope.hostedAccount,
     servingMachine,
     harnesses: AGENT_HARNESS_IDS.map(harnessInfo),
-    features: { documents: declaration.documents, connections: declaration.connections, cloud: scope.hostedAccount, livePlugins: servingMachine !== undefined },
+    features: { documents: declaration.documents, connections: declaration.connections, cloud: declaration.issuesSessions, livePlugins: servingMachine !== undefined },
   }
 }
 

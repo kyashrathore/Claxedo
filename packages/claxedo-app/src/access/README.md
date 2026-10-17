@@ -15,6 +15,7 @@ Returns `principal`, `signedIn` (the principal is a user), `can(action, facts?)`
 | --- | --- |
 | `accounts.manageOrg` | `canManageOrgAccounts` from the credential server's account-source response (an org owner or admin on a hosted plane, the loopback operator of a single-user install); missing facts deny access |
 | `sandbox.manage` | `canManageSandboxKeys` from the credential server's sandbox-key listing (an org owner or admin on a hosted plane, the operator at the machine locally); missing facts deny access |
+| `usage.teamSpend` | `role` from the signed account's own organization membership (`queries.organizations.mine()`, the row the Organization page reads): an owner or admin sees the organization's team-key spend; a member or a missing membership does not |
 
 A fact the server has not reported answers `false`. Nothing is re-derived from relay, runtime or control-plane rules. `scripts/checks/access-boundary.ts` enforces this outside `src/access`: it fails a comparison, `switch` case or list membership on a role name, an ordering on a rank, and a read of `capabilities.prompt` or of a share-management flag.
 
