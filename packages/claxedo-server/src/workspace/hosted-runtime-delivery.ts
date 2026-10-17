@@ -309,7 +309,7 @@ export function createHostedRuntimeDelivery(input: {
         return undefined
       }
       if (failures + 1 < IDLE_CHECK_FAILURE_LIMIT) {
-        log.warn("the runtime answered no idle check; its host stays up", { workspaceId, epoch: target.epoch, failures: failures + 1, budget: IDLE_CHECK_FAILURE_LIMIT, error: String(error) })
+        log.warn("the runtime answered no idle check; counted toward the failure budget", { workspaceId, epoch: target.epoch, failures: failures + 1, budget: IDLE_CHECK_FAILURE_LIMIT, error: String(error) })
         throw error
       }
       log.warn("sandbox stopped: its runtime answered no idle check for the whole failure budget", { workspaceId, epoch: target.epoch, error: String(error) })
