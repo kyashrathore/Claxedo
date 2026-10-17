@@ -55,7 +55,6 @@ export default {
   "settings.appearance.theme.description": "تخصيص سمة Claxedo.",
   "settings.keybindings.palette": "لوحة الأوامر",
   "settings.connections.reconnect": "إعادة الاتصال",
-  "settings.connections.confirm": "تأكيد",
   "settings.section.connections": "الاتصالات",
   "settings.section.machines": "الأجهزة",
   "settings.common.remove": "إزالة",

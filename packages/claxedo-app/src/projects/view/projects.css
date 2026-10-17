@@ -3,12 +3,6 @@
   color: var(--v2-text-text-muted);
 }
 
-.projects-alert {
-  font-size: var(--font-size-small);
-  color: var(--v2-state-fg-danger);
-  overflow-wrap: anywhere;
-}
-
 .projects-placeholder {
   opacity: 0;
   animation: projects-appear 0s linear 150ms forwards;

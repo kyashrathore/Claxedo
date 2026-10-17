@@ -30,6 +30,16 @@ for (const goal of GOALS) {
     const opened = await fetch(`${stack.url}/session/${session.id}?view=open&directory=${encodeURIComponent(workspace.directory)}`)
     expect(JSON.stringify((await opened.json()).goal)).toContain("Write GOALDONE into notes.md")
     release()
+
+    await dock.getByRole("button", { expanded: false }).click()
+    await dock.getByRole("button", { name: "Delete", exact: true }).click()
+    const confirm = app.getByRole("dialog", { name: "Delete Goal?" })
+    const remove = confirm.getByRole("button", { name: "Delete", exact: true })
+    await expect(remove).toHaveAttribute("data-variant", "danger")
+    await remove.click()
+    await expect(dock).toHaveCount(0)
+    const cleared = await fetch(`${stack.url}/session/${session.id}?view=open&directory=${encodeURIComponent(workspace.directory)}`)
+    expect((await cleared.json()).goal).toMatchObject({ value: { goal: null } })
   })
 }
 

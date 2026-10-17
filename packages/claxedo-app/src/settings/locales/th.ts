@@ -55,7 +55,6 @@ export default {
   "settings.appearance.theme.description": "ปรับแต่งวิธีการที่ Claxedo มีธีม",
   "settings.keybindings.palette": "คำสั่งค้นหา",
   "settings.connections.reconnect": "เชื่อมต่ออีกครั้ง",
-  "settings.connections.confirm": "ยืนยัน",
   "settings.section.connections": "การเชื่อมต่อ",
   "settings.section.machines": "เครื่อง",
   "settings.common.remove": "ลบ",

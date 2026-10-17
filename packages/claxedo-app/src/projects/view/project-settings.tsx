@@ -1,4 +1,4 @@
-import { A, useNavigate } from "@solidjs/router"
+import { A } from "@solidjs/router"
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, useServer, type MissingCheckout, type Project, type ProjectId } from "@/server"
@@ -12,7 +12,7 @@ import { useProject, useProjectCommands } from "../store"
 import { DialogEditProject } from "./edit-project-dialog"
 import { ProjectEnvironmentSection } from "./project-environment-section"
 import { WhereItRuns } from "./where-it-runs"
-import { RemoveProjectDialog } from "./remove-project-dialog"
+import { ProjectRemoval } from "./project-removal"
 
 function MissingCheckoutSection(props: { readonly id: ProjectId; readonly checkout: MissingCheckout }): JSX.Element {
   const t = useProjectsText()
@@ -78,22 +78,6 @@ function ProjectFields(props: { readonly project: Project; readonly editable: bo
         </Show>
       </SettingsList>
     </SettingsGroup>
-  )
-}
-
-function ProjectRemoval(props: { readonly id: ProjectId; readonly name: string }): JSX.Element {
-  const t = useProjectsText()
-  const dialog = useDialog()
-  const navigate = useNavigate()
-  const remove = () => dialog.show(() => <RemoveProjectDialog id={props.id} name={props.name} onRemoved={() => navigate(projectSettingsPath())} />)
-  return (
-    <SettingsList>
-      <SettingsRow title={t("projects.remove.title")} description={t("projects.settings.remove.description")}>
-        <Button variant="neutral" size="small" onClick={remove}>
-          {t("projects.remove")}
-        </Button>
-      </SettingsRow>
-    </SettingsList>
   )
 }
 

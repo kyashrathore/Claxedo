@@ -55,7 +55,6 @@ export default {
   "settings.appearance.theme.description": "Claxedoのテーマをカスタマイズします。",
   "settings.keybindings.palette": "コマンドパレット",
   "settings.connections.reconnect": "再接続",
-  "settings.connections.confirm": "確認",
   "settings.section.connections": "接続",
   "settings.section.machines": "マシン",
   "settings.common.remove": "削除",

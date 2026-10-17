@@ -73,8 +73,16 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
 async function removeProject(stack: Stack, app: Page, id: string, name: string) {
   await test.step("DECISIONS 12: Remove asks first, then removes the project everywhere", async () => {
     await app.goto(`${stack.url}/settings/projects?project=${encodeURIComponent(id)}`)
+    const confirm = app.getByRole("dialog", { name: "Remove project" })
     await app.getByRole("button", { name: "Remove", exact: true }).click()
-    await app.getByRole("dialog", { name: "Remove project" }).getByRole("button", { name: "Remove", exact: true }).click()
+    await expect(confirm).toContainText(`Remove "${name}" from Claxedo?`)
+    await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(confirm).toHaveCount(0)
+    expect((await serverProject(stack.url, id)).status).toBe(200)
+    await app.getByRole("button", { name: "Remove", exact: true }).click()
+    const remove = confirm.getByRole("button", { name: "Remove", exact: true })
+    await expect(remove).toHaveAttribute("data-variant", "danger")
+    await remove.click()
     await expect(app).toHaveURL(/\/settings\/projects$/)
     await expect(app.getByRole("region", { name: "Projects" }).getByRole("link", { name, exact: true })).toHaveCount(0)
     expect((await serverProject(stack.url, id)).status).toBe(404)

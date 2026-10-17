@@ -135,7 +135,9 @@ test("35 a live plugin on the web swaps on save, keeps its last build on a broke
   await expect(appPluginRow(app, "Fixture")).toContainText("On")
 
   await appPluginRow(app, "Fixture").getByRole("button", { name: "Remove" }).click()
-  await appPluginDialog(app, "Remove Fixture?").getByRole("button", { name: "Remove" }).click()
+  const removeFixture = appPluginDialog(app, "Remove Fixture?").getByRole("button", { name: "Remove" })
+  await expect(removeFixture).toHaveAttribute("data-variant", "danger")
+  await removeFixture.click()
   await expect(appPluginRow(app, "Fixture")).toHaveCount(0)
   await expect(app.getByText("No app plugins yet.")).toBeVisible()
   expect((await listLivePlugins(stack.url)).plugins).toEqual([])
