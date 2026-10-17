@@ -1,10 +1,11 @@
-import type { ConfigurationSlot, PresetPlacement, SessionRef, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
+import type { ConfigurationSlot, PresetPlacement, SessionRef, StartBlocker, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
 import type { TasksClient } from "@claxedo/tasks/client"
 import type { DomainTranslate } from "@/i18n"
 import { unreachable } from "@/lib/machine"
+import type { AppError } from "@/server"
 import type { TasksKey } from "../i18n"
 import { groupLinksBySlot, slotAttempt } from "../model"
-import { refusalOf } from "./refusal"
+import { rateLimitOf, refusalOf, startBlockerRateLimit } from "./refusal"
 
 export type TaskStartRequest = {
   readonly taskId: string
@@ -14,6 +15,11 @@ export type TaskStartRequest = {
   readonly slot: ConfigurationSlot
   readonly attempt: number
   readonly continueFromPrevious: boolean
+}
+
+export type StartCopy = {
+  readonly t: DomainTranslate<TasksKey>
+  readonly errorMessage: (error: AppError) => string
 }
 
 export type StartOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string }
@@ -46,9 +52,20 @@ async function startRequest(calls: StartCalls, task: Task | TaskSummary, choice:
   }
 }
 
+function blockedMessage(copy: StartCopy, blocker: StartBlocker | undefined): string {
+  if (!blocker) return copy.t("tasks.start.cannotRun")
+  const limited = startBlockerRateLimit(blocker)
+  return limited ? copy.errorMessage(limited) : blocker.detail
+}
+
+function refusedMessage(copy: StartCopy, error: unknown): string {
+  const limited = rateLimitOf(error)
+  return limited ? copy.errorMessage(limited) : refusalOf(error).message
+}
+
 export async function startNow(
   calls: StartCalls,
-  t: DomainTranslate<TasksKey>,
+  copy: StartCopy,
   task: Task | TaskSummary,
   choice: StartChoiceInput,
   report: (event: TaskStartProgressEvent) => void,
@@ -57,14 +74,14 @@ export async function startNow(
     const request = await startRequest(calls, task, choice)
     report({ type: "previewSent", taskId: task.id, slot: choice.slot, placement: choice.placement })
     const resolved = await calls.preview(request)
-    if (!resolved.available) return { ok: false, message: resolved.blockers[0]?.detail ?? t("tasks.start.cannotRun") }
+    if (!resolved.available) return { ok: false, message: blockedMessage(copy, resolved.blockers[0]) }
     if (request.continueFromPrevious && !resolved.previousTranscriptReadable)
-      return { ok: false, message: t("tasks.start.unreadablePrevious") }
+      return { ok: false, message: copy.t("tasks.start.unreadablePrevious") }
     report({ type: "previewAnswered" })
     await calls.send({ ...request, attempt: resolved.attempt }, resolved.digest)
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: refusalOf(error).message }
+    return { ok: false, message: refusedMessage(copy, error) }
   } finally {
     report({ type: "settled" })
   }

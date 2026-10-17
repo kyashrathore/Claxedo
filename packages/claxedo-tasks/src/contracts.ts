@@ -28,7 +28,7 @@ export type TaskCreateStatus = (typeof TASK_CREATE_STATUSES)[number]
 export const PRESET_PLACEMENTS = ["local", "cloud"] as const
 export type PresetPlacement = (typeof PRESET_PLACEMENTS)[number]
 
-export const TASKS_ERROR_CODES = ["invalid_input", "not_found", "forbidden", "stale_revision", "conflict", "unsupported"] as const
+export const TASKS_ERROR_CODES = ["invalid_input", "not_found", "forbidden", "stale_revision", "conflict", "unsupported", "rate_limited"] as const
 export type TasksErrorCode = (typeof TASKS_ERROR_CODES)[number]
 
 /** The image types every harness's prompt inputs carry, so an attachment never needs a workspace path to reach an agent. */
@@ -502,6 +502,7 @@ export const START_BLOCKER_CODES = [
   "effort_unsupported",
   "capability_unavailable",
   "source_unavailable",
+  "rate_limited",
 ] as const
 export type StartBlockerCode = (typeof START_BLOCKER_CODES)[number]
 
