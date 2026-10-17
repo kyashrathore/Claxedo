@@ -28,11 +28,11 @@ Each lane owns its files exclusively; run lanes A, B and C in parallel in separa
 
 ### Lane B: confirmations and form surfaces outside accounts (owns `src/ui/confirm.tsx`, `src/ui/README.md`, `src/plugins/view/confirm-dialog.tsx`, `src/settings/view/connections.tsx`, `src/settings/view/connect-dialog.tsx`, `src/projects/view/{remove-project,edit-project,create-project}-dialog.tsx`, `src/session/view/docks/goal-dock.tsx`, `src/tasks/view/create-task-dialog.tsx`, `src/rail/view/session-dialogs.tsx`, `src/marketplace/view/install-sheet.tsx`, `src/accounts/view/sandbox-key-row.tsx`, `src/accounts/view/custom-provider-dialog.tsx`)
 
-- [ ] `requestConfirm` takes a destructive flag that renders the destructive button variant; Lane A consumes it (land B's `confirm.tsx` change first, or have A rebase on it).
-- [ ] Inline confirms removed: sandbox key removal, connection disconnect. `plugins/view/confirm-dialog.tsx` deleted; plugin removal uses `requestConfirm`. Remove project and delete goal use `requestConfirm`.
-- [ ] Forms moved onto the shared surfaces: rename session and create project (`FormDialog`); edit project, create task, custom provider and the settings connect dialog (`FormDrawer`); the install sheet becomes a `Drawer`.
-- [ ] `src/ui/README.md` states the confirmation rule (every destructive action, `requestConfirm`, destructive button) and the popover rule (anchored, non-modal menus and choosers through the kit's `Popover`).
-- [ ] Affected flows updated; red runs recorded.
+- [x] `requestConfirm` takes a destructive flag that renders the destructive button variant; Lane A consumes it (land B's `confirm.tsx` change first, or have A rebase on it).
+- [x] Inline confirms removed: sandbox key removal, connection disconnect. `plugins/view/confirm-dialog.tsx` deleted; plugin removal uses `requestConfirm`. Remove project and delete goal use `requestConfirm`.
+- [x] Forms moved onto the shared surfaces: rename session and create project (`FormDialog`); edit project, create task, custom provider and the settings connect dialog (`FormDrawer`); the install sheet becomes a `Drawer`. The install sheet chooses harnesses and adds the plugin, so it is a form and became a `FormDrawer` (`DrawerInstallPlugin`), per Decision 4's surface rule.
+- [x] `src/ui/README.md` states the confirmation rule (every destructive action, `requestConfirm`, destructive button) and the popover rule (anchored, non-modal menus and choosers through the kit's `Popover`).
+- [x] Affected flows updated; red runs recorded. Unrun here: sandbox key removal (flow 15-sandbox-keys already fails on `origin/dev`: the unsigned page shows only the sign-in notice), goal delete (07), desktop plugin removal (34), the integration connect drawer (53), integration disconnect and removing another agent (no flow connects one), the install drawer (needs a network plugin source).
 
 ### Lane C: naming outside the app (owns server-core credential copy, `packages/harness/src/registry/credentials.ts`, `src/usage/locales/**`)
 
@@ -57,3 +57,4 @@ Progress:
 - Lane B's `requestConfirm` destructive flag landed first (`c706844`); lanes ran in worktrees off it.
 - Lane C merged (`8636a3d`, `78c720c`, plus `7d4acbb` for the app server adapter's and usage contract's remaining wording). Remaining "team" words are identifiers and wire values: `payer.kind === "team"`, `teamKey`, `usage.teamSpend`, `TEAM_KEYS`, `teamKeyProvider`, `teamKeyRefused`, test file names.
 - Lane A merged (`93f6ef4`, `f5fdba8`, `a56c6b7`, `5274dcf`): kit patch 0086, per-account checks, `requestConfirm` removals, `DrawerProviderConnect`, organization row Check/Remove, Team accounts deleted.
+- Lane B merged (`a1a3728`, `872bf64`, `a6a217b`, `ad99ba8`, `f7f676d`): every destructive action outside accounts confirms through `requestConfirm`, including removing another agent's connection; forms on `FormDialog`/`FormDrawer`; new flow 18 (create task). The combined A+B+C tip is back under the app's line budget (107,601 of 107,760).
