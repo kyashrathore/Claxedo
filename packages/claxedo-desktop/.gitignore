@@ -36,5 +36,4 @@ resources/claxedo-server.pending-*/
 resources/claxedo-server-compile-cache/
 resources/opencode-compile-cache/
 resources/acp/
-resources/mermaid/
 resources/icons

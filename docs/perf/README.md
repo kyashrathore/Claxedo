@@ -33,6 +33,8 @@ A hash-safe `modulepreload` of the four boot chunks removed about a second of se
 
 The eager main chunk went from 2,585 kB (748 kB gzip) to about 940 kB (286 kB gzip). CSS dropped from 475 kB to 417 kB.
 
+Diagrams draw with pele instead of mermaid.js, on the web and on the desktop, which no longer packages a native Mermaid helper. A first flowchart fetches about 53 kB gzip of renderer instead of 219 kB, a diagram renders in 0.2–3.1 ms instead of one 17–168 ms task (Chromium, 1x CPU, 26 diagrams), and the web build ships 2.7 MB (0.67 MB gzip) less JavaScript.
+
 The remaining eager cost is real product: session UI, Kobalte, the API client, the English fallback dictionary, and the icon record used to build a sprite at runtime.
 
 ## Start less

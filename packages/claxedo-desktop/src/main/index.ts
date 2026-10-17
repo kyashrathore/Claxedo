@@ -96,8 +96,6 @@ import { setupHostProviderConfigPush } from "./host-connector/provider-config-pu
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging, openServerLogFile } from "./logging"
 import { createMenu } from "./menu"
-import { createNativeMermaidRenderer } from "./native-mermaid"
-import { resolveMermaidRendererPath } from "./mermaid-renderer-path"
 import {
   checkHealth,
   checkHealthOrAskRetry,
@@ -169,12 +167,6 @@ const lifecycle = createAppLifecycle({
   confirmQuit: (message, signal) => confirmQuitDialog(message, signal, mainWindow ?? undefined),
   exit: exitApp,
   log: (message, fields) => logger.log(message, fields),
-})
-const mermaidRendererPath = resolveMermaidRendererPath({
-  packaged: IS_PACKAGED,
-  resourcesPath: process.resourcesPath,
-  appPath: join(import.meta.dirname, "../.."),
-  override: process.env.CLAXEDO_MERMAID_RENDERER_PATH,
 })
 const startAtLogin = createStartAtLogin(app)
 
@@ -866,7 +858,6 @@ registerIpcHandlers({
   restart: restartApp,
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
-  renderMermaid: createNativeMermaidRenderer(mermaidRendererPath),
   browser: browserRegistry,
 })
 

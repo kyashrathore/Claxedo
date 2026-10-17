@@ -12,7 +12,6 @@
   },
   "scripts": {
     "test:contract": "bun test ./scripts/contract.test.ts",
-    "test:native-mermaid": "cargo test --manifest-path ./native/mermaid-renderer/Cargo.toml --locked",
     "test": "bun run test:broad && bun run test:bundle-single && bun run test:server-boot && bun run test:electron-boundary",
     "test:broad": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test ./src ./scripts --max-concurrency=1 --path-ignore-patterns='**/bundle-single-instance.test.ts' --path-ignore-patterns='**/claxedo-server-boot.test.ts' --path-ignore-patterns='**/renderer-daemon-access.electron.test.ts' --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:bundle-single": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test ./scripts/bundle-single-instance.test.ts --max-concurrency=1 --reporter=junit --reporter-outfile=.artifacts/unit/bundle-single-junit.xml",
@@ -22,7 +21,6 @@
     "predev": "bun ./scripts/predev.ts",
     "dev": "GOMAXPROCS=2 electron-vite dev",
     "prebuild": "bun ./scripts/prepare-artifacts.ts",
-    "build:mermaid-renderer": "bun ./scripts/build-mermaid-renderer.ts",
     "build": "bun ./scripts/build.ts",
     "build:inner": "electron-vite build",
     "preview": "electron-vite preview",
