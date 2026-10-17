@@ -1,4 +1,4 @@
-import { Match, onCleanup, Show, Switch, type JSX } from "solid-js"
+import { Match, onCleanup, Switch, type JSX } from "solid-js"
 import { useDragSource, useWorkbench } from "@/workbench"
 import type { HoverEngagement } from "../hover-engagement"
 import type { NavigationStatus } from "../model"
@@ -66,16 +66,6 @@ export function NavigationRowGlyph(props: { readonly children: JSX.Element }): J
     >
       {props.children}
     </span>
-  )
-}
-
-export function NavigationRowStatusGutter(props: { readonly status: NavigationStatus }): JSX.Element {
-  return (
-    <Show when={props.status !== "idle"}>
-      <NavigationRowGlyph>
-        <NavigationStatusMark status={props.status} />
-      </NavigationRowGlyph>
-    </Show>
   )
 }
 

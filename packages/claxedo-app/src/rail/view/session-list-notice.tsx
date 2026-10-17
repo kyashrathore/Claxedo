@@ -58,7 +58,7 @@ export function SessionLoadMore(props: { readonly loading: boolean; readonly onL
 
 const LOADING_TITLES = ["72%", "54%", "64%"] as const
 
-export function SessionRowsLoading(): JSX.Element {
+export function SessionRowsLoading(props: { readonly captioned: boolean }): JSX.Element {
   const t = useTranslator(railDictionary)
   return (
     <div role="status" aria-label={t("rail.loadingSessions")} data-testid="rail-sidebar-session-list-loading" class="flex flex-col gap-0.5">
@@ -67,7 +67,9 @@ export function SessionRowsLoading(): JSX.Element {
           {(width) => (
             <div aria-hidden="true" class="mx-1 flex flex-col gap-1.5 py-2 pl-9 pr-2.5">
               <SkeletonBar width={width()} class="h-2.5" />
-              <SkeletonBar width="36%" class="h-2" />
+              <Show when={props.captioned}>
+                <SkeletonBar width="36%" class="h-2" />
+              </Show>
             </div>
           )}
         </Index>

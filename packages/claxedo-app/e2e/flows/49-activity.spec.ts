@@ -30,6 +30,16 @@ function rowTitles(app: Page, titles: readonly string[]): Promise<string[]> {
     .evaluateAll((buttons, wanted) => buttons.map((button) => button.getAttribute("aria-label") ?? "").filter((title) => wanted.includes(title)), titles)
 }
 
+async function middle(locator: Locator): Promise<number> {
+  const box = await locator.boundingBox()
+  expect(box).not.toBeNull()
+  return box ? box.y + box.height / 2 : Number.NaN
+}
+
+async function restPointer(app: Page, isMobile: boolean): Promise<void> {
+  if (!isMobile) await app.getByRole("textbox", { name: UI.composer }).hover()
+}
+
 async function showRail(app: Page, isMobile: boolean): Promise<void> {
   if (!isMobile) return
   const open = app.getByRole("button", { name: UI.openRail })
@@ -61,7 +71,7 @@ async function sessions(stack: Stack, api: ClaxedoApi, specs: ReadonlyArray<read
   return made
 }
 
-test("49 Activity lists every project's sessions in one order, the reader's send moves a row, and Settle, Show settled and Return work in both views", async ({ stack, api, app, isMobile }) => {
+test("49 Activity lists every project's sessions in one order with the status, title and age on one line over the project's name, the reader's send moves a row, and Settle, Show settled and Return work in both views", async ({ stack, api, app, isMobile }) => {
   const titles = ["One", "Two", "Three"]
   const made = await sessions(stack, api, [["Alpha", "One"], ["Bravo", "Two"], ["Alpha", "Three"]])
   await stack.acp.write("held", { steps: [{ kind: "hold", name: "held" }, { kind: "text", text: "Held reply." }] })
@@ -71,6 +81,7 @@ test("49 Activity lists every project's sessions in one order, the reader's send
   await showRail(app, isMobile)
   await expect(rail(app).getByRole("heading", { name: "Activity" })).toBeVisible()
   await expect.poll(() => rowTitles(app, titles)).toEqual(await serverTitles(stack, titles))
+  await restPointer(app, isMobile)
   await expect(row(app, "Two")).toContainText("Bravo")
   await expect(row(app, "Two")).toContainText("<1m")
 
@@ -79,6 +90,11 @@ test("49 Activity lists every project's sessions in one order, the reader's send
   await showRail(app, isMobile)
   await expect.poll(() => rowTitles(app, titles)).toEqual(["One", "Three", "Two"])
   await expect.poll(() => serverTitles(stack, titles)).toEqual(["One", "Three", "Two"])
+  await restPointer(app, isMobile)
+  const title = await middle(row(app, "One").getByText("One", { exact: true }))
+  expect(Math.abs((await middle(row(app, "One").locator('[data-sidebar-status="working"]'))) - title)).toBeLessThanOrEqual(2)
+  expect(Math.abs((await middle(row(app, "One").getByText("<1m", { exact: true }))) - title)).toBeLessThanOrEqual(2)
+  expect(await middle(row(app, "One").getByText("Alpha", { exact: true }))).toBeGreaterThan(title + 8)
   await stack.acp.release("held")
   await expect.poll(async () => assistantText(await api.messages(made.One.directory, made.One.id))).toContain("Held reply.")
 

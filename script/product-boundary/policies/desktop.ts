@@ -702,8 +702,12 @@ export const desktopRenderer: Policy = {
   // server refused is a failure in one line and never a silent success
   // (owner: the app's server domain, `server/account-answers.ts`). It adds
   // no package edge.
-  // 1399/36, no headroom.
-  ceilings: { modules: 1399, packages: 36 },
+  // A session row's Settle button and the icon for where a session or
+  // terminal runs, each with its tooltip (owner: the app's rail domain,
+  // `rail/view/settle-button.tsx`, `rail/view/session-marker-icon.tsx`). They
+  // add no package edge.
+  // 1401/36, no headroom.
+  ceilings: { modules: 1401, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

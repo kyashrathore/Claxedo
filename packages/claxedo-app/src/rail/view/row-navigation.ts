@@ -1,6 +1,6 @@
 import { createMemo } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer } from "@/server"
+import { useServer, type PlacementId } from "@/server"
 import type { SessionRowView } from "@/session"
 import { sessionLinkPath, useShellRoute } from "@/shell"
 import { terminalPaneKind } from "@/terminal"
@@ -24,7 +24,7 @@ export function createRowNavigation() {
       return pane?.kind === "session" ? pane.sessionId : undefined
     },
     open: (row: SessionRowView) => routing.navigate(sessionLinkPath(row.ref, server.placements.byId(row.ref.placementId))),
-    markerOf: (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId), machines.data ?? []),
+    markerOf: (placementId: PlacementId) => sessionMarker(server.placements.byId(placementId), machines.data ?? []),
     prepareDrag: (row: RailRow) =>
       row.kind === "session"
         ? workbench.openRoute({ kind: "session", ...row.session.ref }, false)

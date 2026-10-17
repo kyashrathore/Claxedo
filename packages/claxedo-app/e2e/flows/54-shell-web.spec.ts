@@ -47,7 +47,7 @@ test("54 shell: sign-in shows the artwork beside the form on the web and the for
   expect(((await session.json()) as { user: { email: string } }).user.email).toBe(signed.owner.email)
 })
 
-test("54 shell: rows are two lines, the home screen offers only the composer, the account menu holds Usage and Settings but not the name, and logout stays in the menu until it is done", async ({ signed, page, isMobile }, testInfo) => {
+test("54 shell: rows are one line whose hover trades the age for the machine and Settle, the home screen offers only the composer, the account menu holds Usage and Settings but not the name, and logout stays in the menu until it is done", async ({ signed, page, isMobile }, testInfo) => {
   await sessionsIn(signed, ["Fix the login redirect"])
   await signed.signIn(page, signed.owner)
   await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible()
@@ -58,13 +58,24 @@ test("54 shell: rows are two lines, the home screen offers only the composer, th
   await page.keyboard.press("Escape")
   const rail = await showRail(page, isMobile)
   const row = rail.getByTestId("rail-sidebar-session-row").filter({ has: page.getByRole("button", { name: "Fix the login redirect", exact: true }) })
-  await expect(row.getByRole("img", { name: "shell on Signed fixture machine" })).toBeVisible()
-  await expect(row.getByText("Signed fixture machine", { exact: true })).toBeVisible()
-  await expect(row.getByText("<1m", { exact: true })).toBeVisible()
   const title = await row.getByText("Fix the login redirect", { exact: true }).boundingBox()
-  const meta = await row.getByText("<1m", { exact: true }).boundingBox()
-  expect(title && meta && meta.y >= title.y + title.height - 1, "the meta line sits under the title line").toBe(true)
-  await page.screenshot({ path: testInfo.outputPath("rail-two-line-rows.png") })
+  const age = row.getByText("<1m", { exact: true })
+  const meta = await age.boundingBox()
+  expect(title && meta && Math.abs(meta.y + meta.height / 2 - (title.y + title.height / 2)) <= 2, "the age sits on the title line").toBe(true)
+  if (isMobile) {
+    await expect(age).toBeVisible()
+    await expect(row.getByRole("img", { name: "shell on Signed fixture machine" })).toBeVisible()
+  } else {
+    await expect(row.getByRole("img", { name: "shell on Signed fixture machine" })).toHaveCount(0)
+    await row.hover()
+    await expect(age).toHaveCount(0)
+    const machine = row.getByRole("img", { name: "shell on Signed fixture machine" })
+    await machine.hover()
+    await expect(page.getByRole("tooltip", { name: "shell on Signed fixture machine" })).toBeVisible()
+    await row.getByRole("button", { name: "Settle Fix the login redirect" }).hover()
+    await expect(page.getByRole("tooltip")).toContainText("Settle: hide this session from the list until its next turn.")
+  }
+  await page.screenshot({ path: testInfo.outputPath("rail-one-line-rows.png") })
 
   const signOut = await held(page, /\/api\/auth\/sign-out/)
   await page.getByRole("button", { name: signed.owner.name, exact: true }).click()
@@ -114,7 +125,7 @@ test("54 shell: a slow session shows the composer and says what it waits for; a 
   expect(JSON.stringify(await signed.owner.api.messages(workspace.directory, ids[1]))).toContain("Hello from the agent")
 })
 
-test("54 shell: panes kept for a workspace the account does not have are dropped once the catalog answers, and an account with no projects lands in onboarding", async ({ signed, page, isMobile }) => {
+test("54 shell: panes kept for a workspace the account does not have are dropped once the catalog answers, and an account with no projects lands on the hosted onboarding's first step, Where it runs", async ({ signed, page, isMobile }) => {
   const { workspace } = await sessionsIn(signed, ["Someone else's work"])
   await signed.signIn(page, signed.owner)
   const rail = await showRail(page, isMobile)
@@ -133,7 +144,8 @@ test("54 shell: panes kept for a workspace the account does not have are dropped
   await page.context().addCookies([sessionCookie(signed.url, fresh)])
   await page.goto(`${signed.url}/`)
   await expect(page.getByText("Closed tabs of workspaces that no longer exist.")).toBeVisible()
-  await expect(page.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
+  await expect(page).toHaveURL(/\/welcome$/)
+  await expect(page.getByRole("heading", { level: 1, name: "Where it runs" })).toBeVisible()
   await expect(page.getByTestId("session-unavailable")).toHaveCount(0)
   expect(await page.evaluate((key) => localStorage.getItem(key), `claxedo:workbench:user:${fresh.person.id}`)).not.toContain(workspace.id)
   expect(((await (await page.request.get(`${signed.url}/api/workspace`)).json()) as { workspaces: unknown[] }).workspaces).toEqual([])

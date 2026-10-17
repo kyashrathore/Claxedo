@@ -19,7 +19,7 @@ function ActivityNotices(props: { readonly count: number }): JSX.Element {
   return (
     <>
       <Show when={props.count === 0 && reading()}>
-        <SessionRowsLoading />
+        <SessionRowsLoading captioned={true} />
       </Show>
       <Show when={failed()}>
         <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void list.reload()}>{t("rail.loadFailed")}</SessionListNotice>
@@ -63,7 +63,7 @@ export function ActivityView(props: { readonly filter: ActivityFilter }): JSX.El
             {(row) => (
               <RailSessionRow
                 row={row()}
-                marker={navigation.markerOf(row())}
+                marker={navigation.markerOf(row().ref.placementId)}
                 projectLabel={projectNames().get(row().ref.projectId) ?? ""}
                 caption={projectNames().get(row().ref.projectId)}
                 active={navigation.activeSessionId() === sessionId}
