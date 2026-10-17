@@ -128,8 +128,9 @@ const createCloudBody = z
     connectionId: z.string().optional(),
     repo: z.object({ fullName: z.string() }).optional(),
     // The app's create dialog sends its sandbox-provider choice. The hosted
-    // control plane composes ONE driver from env, so the field is accepted and
-    // ignored rather than 400ing the shared client on a strict body.
+    // control plane binds the organization's default provider key at the
+    // workspace's first start (org-sandbox-drivers forOrg), so the field is
+    // accepted and ignored rather than 400ing the shared client on a strict body.
     driver: z.string().optional(),
     machineClass: z.enum(sandboxMachineClasses).optional(),
   })
