@@ -27,22 +27,31 @@ async function openCreatePanel(app: Page) {
   await app.getByRole("button", { name: "Create project…" }).click()
 }
 
+function createDialog(app: Page) {
+  return app.getByRole("dialog", { name: "Create project" })
+}
+
 async function createFolderProject(app: Page, typed: string, folder: string) {
   await openCreatePanel(app)
-  await app.getByRole("button", { name: "Choose folder" }).click()
+  const create = createDialog(app)
+  await expect(create.getByRole("button", { name: "Create project", exact: true })).toBeDisabled()
+  await create.getByRole("button", { name: "Choose folder" }).click()
   const dialog = app.getByRole("dialog", { name: "New Project" })
   await dialog.getByRole("textbox", { name: "Search folders" }).fill(typed)
   await dialog.getByRole("button", { name: new RegExp(` ${folder} /$`) }).click()
   await expect(dialog).toHaveCount(0)
-  await app.getByRole("button", { name: "Create project", exact: true }).click()
+  await create.getByRole("button", { name: "Create project", exact: true }).click()
+  await expect(create).toHaveCount(0)
   await expect(projectChip(app)).toContainText(folder)
 }
 
 async function cloneProject(app: Page, url: string, name: string) {
   await openCreatePanel(app)
-  await app.getByRole("button", { name: "Repository", exact: true }).click()
-  await app.getByRole("textbox", { name: "Repository URL" }).fill(url)
-  await app.getByRole("button", { name: "Create project", exact: true }).click()
+  const create = createDialog(app)
+  await create.getByRole("button", { name: "Repository", exact: true }).click()
+  await create.getByRole("textbox", { name: "Repository URL" }).fill(url)
+  await create.getByRole("button", { name: "Create project", exact: true }).click()
+  await expect(create).toHaveCount(0)
   await expect(projectChip(app)).toContainText(name)
 }
 
