@@ -165,7 +165,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.onMarkScrollGesture()
     setToolRevealed(partId, revealed)
   }
-  installTimelineMermaid(host.platform.renderMermaid)
+  installTimelineMermaid()
   installTimelineTables()
 
   const openSubagent = (input: { childSessionId: string; label?: string; description?: string }) => {

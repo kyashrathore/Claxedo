@@ -12,7 +12,7 @@ const cloud: Placement = { id: placementId("ws_1"), projectId: projectId("j1"), 
 
 function installBridge(readFileContent: unknown): void {
   const method = () => Promise.resolve()
-  Object.assign(globalThis, { api: { openLink: method, openPath: method, renderMermaid: method, getWindowFullscreen: method, onFullscreenChange: method, readFileContent } })
+  Object.assign(globalThis, { api: { openLink: method, openPath: method, getWindowFullscreen: method, onFullscreenChange: method, readFileContent } })
 }
 
 function files(placement: Placement) {

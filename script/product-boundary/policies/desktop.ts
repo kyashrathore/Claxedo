@@ -232,7 +232,10 @@ export const desktopMainComposition: Policy = {
   // downloaded update fails to install after the daemon was stopped. Reviewed
   // owner: Electron main's updater; it is split from `auto-update.ts` only so
   // it runs without the `electron` runtime. 91/25, no headroom.
-  ceilings: { modules: 91, packages: 25 },
+  // -3 modules: `main/native-mermaid.ts`, `main/native-renderer.ts` and
+  // `main/mermaid-renderer-path.ts` are gone with the native Mermaid helper;
+  // the renderer draws diagrams itself with pele. 88/25, no headroom.
+  ceilings: { modules: 88, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

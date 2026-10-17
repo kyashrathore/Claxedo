@@ -12,11 +12,6 @@ export const desktopDir = normalize(fileURLToPath(new URL("./", import.meta.url)
 const appDir = normalize(fileURLToPath(new URL("../claxedo-app/", import.meta.url)))
 const rendererRoot = normalize(fileURLToPath(new URL("./src/renderer/", import.meta.url)))
 
-export function desktopRendererChunk(id: string) {
-  // Mermaid's two class-diagram entries emit identical dynamic chunks.
-  return /mermaid[^]*\/classDiagram/.test(id) ? "mermaid-classDiagram" : undefined
-}
-
 function appAliases(config: UserConfig) {
   const aliases = config.resolve?.alias
   if (!Array.isArray(aliases)) throw new Error("the app's Vite config no longer declares its aliases as a list")
@@ -25,13 +20,6 @@ function appAliases(config: UserConfig) {
     { find: /^#app\/styles$/, replacement: normalize(path.join(appDir, "src/styles.ts")) },
     ...aliases,
   ]
-}
-
-type RendererOutput = NonNullable<NonNullable<UserConfig["build"]>["rollupOptions"]>["output"]
-
-function desktopOutput(output: RendererOutput): RendererOutput {
-  if (Array.isArray(output)) return output.map((item) => ({ ...item, manualChunks: desktopRendererChunk }))
-  return { ...output, manualChunks: desktopRendererChunk }
 }
 
 function isWebContentSecurityPolicy(plugin: PluginOption) {
@@ -69,7 +57,6 @@ export function createElectronRenderer(env: ConfigEnv): UserConfig {
       minify: "esbuild",
       rollupOptions: {
         ...app.build?.rollupOptions,
-        output: desktopOutput(app.build?.rollupOptions?.output),
         input: {
           main: normalize(path.join(rendererRoot, "index.local.html")),
           loading: normalize(path.join(rendererRoot, "loading.html")),
