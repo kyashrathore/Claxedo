@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "Dernière vérification {{ago}}",
   "common.continue": "Soumettre",
   "common.requestFailed": "La demande a échoué",
-  "common.close": "Fermer",
   "settings.providers.agents.rescanning": "Analyse…",
   "settings.providers.agents.scannedNow": "Analysé à l'instant",
   "settings.providers.agents.scannedAt": "Analysé {{when}}",

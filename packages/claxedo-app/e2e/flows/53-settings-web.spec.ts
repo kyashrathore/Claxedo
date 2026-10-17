@@ -12,7 +12,7 @@ async function colleague(signed: SignedStack, name: string) {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
   }, person.person)
   expect(accepted.status).toBe(200)
-  return { orgName }
+  return { orgName, person }
 }
 
 async function openSettings(page: Page, isMobile: boolean) {
@@ -107,4 +107,33 @@ test("53 settings on the web: the signed-in person's organization, usage limits,
   const text = await listed.text()
   expect(JSON.parse(text)).toEqual({ names: ["API_URL"], editable: true })
   expect(text).not.toContain("secret.example.test")
+})
+
+test("53 settings on the web: a member chooses the organization account but neither adds, checks nor removes it, and the cloud choice is explained beside Accounts", async ({ signed, page, isMobile }) => {
+  const { person: member } = await colleague(signed, "Grace Member")
+  const put = (person: typeof member.person, body: unknown) =>
+    hostedFetch(signed.hosted, "/api/claxedo/credentials", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, person)
+  expect((await put(signed.owner.person, { provider_id: "cursor", kind: "api_key", source: "managed", owner: "org", label: "Acme Cursor", secret: "key_org_cursor" })).status).toBe(200)
+  expect((await put(member.person, { provider_id: "cursor-sdk", kind: "api_key", source: "managed", label: "Grace Cursor", secret: "key_grace_cursor" })).status).toBe(200)
+  const sources = await hostedFetch(signed.hosted, "/api/claxedo/credentials/account-sources", {}, member.person)
+  expect(await sources.json()).toMatchObject({ can_manage_org_accounts: false, org: [expect.objectContaining({ label: "Acme Cursor" })] })
+  await signed.signIn(page, member)
+  await openSettings(page, isMobile)
+  await openSection(page, isMobile, "Models")
+  const section = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Cursor", exact: true }) }).last()
+  const cursor = page.getByRole("radiogroup", { name: "Cursor", exact: true })
+  const org = cursor.locator('[data-slot="account-row"][data-account="org"]')
+  await expect(org).toContainText("Acme Cursor")
+  await expect(org.getByRole("button", { name: "Check now" })).toHaveCount(0)
+  await expect(org.getByRole("button", { name: "Remove" })).toHaveCount(0)
+  await expect(section.getByRole("img", { name: "Cloud workspaces use one Cursor account for you. The one you choose here is used by every harness that runs Cursor models, Pi included." })).toBeVisible()
+  await expect(section.getByText(/^Cloud workspaces use one Cursor account/)).toHaveCount(0)
+  await org.getByText("Acme Cursor", { exact: true }).click()
+  await expect(org.getByRole("radio")).toBeChecked()
+  await section.getByRole("button", { name: "Add an account" }).click()
+  const drawer = page.getByRole("dialog", { name: "Connect Cursor" })
+  await expect(drawer.getByRole("textbox", { name: "Cursor API key" })).toBeVisible()
+  await expect(drawer.getByRole("radio", { name: /^For the organization/ })).toHaveCount(0)
+  await drawer.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(drawer).toHaveCount(0)
 })

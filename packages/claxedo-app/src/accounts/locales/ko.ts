@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "마지막 확인 {{ago}}",
   "common.continue": "제출",
   "common.requestFailed": "요청 실패",
-  "common.close": "닫기",
   "settings.providers.agents.rescanning": "확인 중…",
   "settings.providers.agents.scannedNow": "방금 검사함",
   "settings.providers.agents.scannedAt": "{{when}} 검사함",

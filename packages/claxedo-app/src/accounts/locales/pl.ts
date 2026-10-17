@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "Ostatnio sprawdzono {{ago}}",
   "common.continue": "Prześlij",
   "common.requestFailed": "Żądanie nie powiodło się",
-  "common.close": "Zamknij",
   "settings.providers.agents.rescanning": "Skanowanie…",
   "settings.providers.agents.scannedNow": "Przeskanowano przed chwilą",
   "settings.providers.agents.scannedAt": "Przeskanowano {{when}}",

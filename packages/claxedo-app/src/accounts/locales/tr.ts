@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "Son kontrol {{ago}}",
   "common.continue": "Gönder",
   "common.requestFailed": "İstek başarısız",
-  "common.close": "Kapat",
   "settings.providers.agents.rescanning": "Taranıyor…",
   "settings.providers.agents.scannedNow": "Az önce tarandı",
   "settings.providers.agents.scannedAt": "{{when}} tarandı",

@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "最終確認 {{ago}}",
   "common.continue": "送信",
   "common.requestFailed": "リクエスト失敗",
-  "common.close": "閉じる",
   "settings.providers.agents.rescanning": "確認中…",
   "settings.providers.agents.scannedNow": "たった今スキャン",
   "settings.providers.agents.scannedAt": "{{when}}にスキャン",

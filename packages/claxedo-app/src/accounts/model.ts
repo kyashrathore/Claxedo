@@ -34,6 +34,7 @@ export type Harness = {
   readonly vendor: string
   readonly providerIds: readonly string[]
   readonly connectProvider: string
+  readonly vendorProvider: string
   readonly signIn: string
 }
 
@@ -45,6 +46,7 @@ export const harnesses: readonly Harness[] = HARNESS_IDS.map((id) => ({
   vendor: HARNESS_TABLE[id].vendor,
   providerIds: HARNESS_TABLE[id].providerIds,
   connectProvider: HARNESS_TABLE[id].connectProvider,
+  vendorProvider: HARNESS_TABLE[id].vendorProvider,
   signIn: SIGN_IN[id],
 }))
 
@@ -100,6 +102,14 @@ export function replacedAccountLabel(providerId: string, snapshot: AccountsSnaps
   const rows = snapshot.stored.filter((row) => row.providerId === providerId)
   const replaced = snapshot.cloudOnly ? rows[0] : methodType === "token" ? rows.find((row) => row.kind === "oauth_token") : undefined
   return replaced ? accountLabel(replaced) : undefined
+}
+
+export type OrganizationTarget = { readonly vendorProvider: string; readonly replaces: string | undefined }
+
+export function organizationTarget(harness: Harness, snapshot: AccountsSnapshot, manages: boolean): OrganizationTarget | undefined {
+  if (!manages) return undefined
+  const replaced = snapshot.sources.org.find((row) => row.providerId === harness.vendorProvider)
+  return { vendorProvider: harness.vendorProvider, replaces: replaced ? accountLabel(replaced) : undefined }
 }
 
 function mergeGroup(ordered: readonly Account[]): HarnessAccount | undefined {

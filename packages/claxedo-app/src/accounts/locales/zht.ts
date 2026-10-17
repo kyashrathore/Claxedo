@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "最後檢查 {{ago}}",
   "common.continue": "提交",
   "common.requestFailed": "要求失敗",
-  "common.close": "關閉",
   "settings.providers.agents.rescanning": "正在檢查…",
   "settings.providers.agents.scannedNow": "剛剛掃描",
   "settings.providers.agents.scannedAt": "{{when}}掃描",

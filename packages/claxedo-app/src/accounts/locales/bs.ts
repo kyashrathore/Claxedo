@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "Zadnja provjera {{ago}}",
   "common.continue": "Pošalji",
   "common.requestFailed": "Zahtjev nije uspio",
-  "common.close": "Zatvori",
   "settings.providers.agents.rescanning": "Skeniranje…",
   "settings.providers.agents.scannedNow": "Upravo skenirano",
   "settings.providers.agents.scannedAt": "Skenirano {{when}}",

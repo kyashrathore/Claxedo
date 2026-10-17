@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "Sidst tjekket {{ago}}",
   "common.continue": "Indsend",
   "common.requestFailed": "Forespørgsel mislykkedes",
-  "common.close": "Luk",
   "settings.providers.agents.rescanning": "Scanner…",
   "settings.providers.agents.scannedNow": "Scannet lige nu",
   "settings.providers.agents.scannedAt": "Scannet {{when}}",

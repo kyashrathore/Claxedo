@@ -5,7 +5,7 @@ import type { Account } from "@/server"
 import { keyCheckWords, offersCloudChoice, orgAccountWords, storedAccountWords, type AccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
-import { harnessAccounts, harnesses, harnessesServedBy, harnessRunnable, machineCheckKey, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
+import { harnessAccounts, harnesses, harnessesServedBy, harnessRunnable, machineCheckKey, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, organizationTarget, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
 
 const t: AccountsText = (key, params) => Object.entries(params ?? {}).reduce((text, [name, value]) => text.replace(`{{${name}}}`, String(value)), en[key])
 const words = { t, windowName: (window: { readonly window: string }) => window.window }
@@ -183,4 +183,12 @@ test("a provider connected with a key of yours offers that key's Check, and one 
   expect(providerOwnKeys({ id: "my-gateway", source: "custom" }, [account("own-gateway", "my-gateway")]).map((key) => key.id)).toEqual(["own-gateway"])
   expect(providerOwnKeys({ id: "groq", source: "env" }, stored)).toEqual([])
   expect(providerOwnKeys({ id: "groq", source: "harness" }, stored)).toEqual([])
+})
+
+test("accounts: only a manager is offered to add an organization account, saved under the harness's vendor provider and replacing the vendor's current one", () => {
+  const cursor = harnesses.find((harness) => harness.id === "cursor")!
+  const held = snapshot({ org: [account("org-anthropic", "anthropic", { label: "Acme Anthropic" })] })
+  expect(organizationTarget(claude, held, false)).toBeUndefined()
+  expect(organizationTarget(claude, held, true)).toEqual({ vendorProvider: "anthropic", replaces: "Acme Anthropic" })
+  expect(organizationTarget(cursor, held, true)).toEqual({ vendorProvider: "cursor", replaces: undefined })
 })

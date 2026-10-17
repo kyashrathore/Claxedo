@@ -1,16 +1,19 @@
 import { createSignal, For, onMount, Show } from "solid-js"
+import { useAccess } from "@/access"
 import { harnessConnectContext, harnessIcon } from "@/lib/harness-catalog"
 import { useI18n } from "@/i18n"
 import { ClaxedoIcon, requestConfirm, useDialog, Button, ProviderIcon, RadioGroup, RadioItem, Switch } from "@/ui"
 import type { AccountWords, CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
-import { harnessesServedBy, machineCheckKey, ORG_ACCOUNT_KEY, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
+import type { OrganizationConnect } from "../connect-form"
+import { machineCheckKey, ORG_ACCOUNT_KEY, organizationTarget, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AccountActions, LabelHint, Reach } from "./account-actions"
 import { useAccountRows } from "./account-rows"
 import { CheckedAge } from "./account-status"
 import { CloudChoiceHint } from "./cloud-choice-hint"
-import { DialogProviderConnect } from "./connect-dialog"
+import { DrawerProviderConnect } from "./connect-drawer"
+import { useServedBy } from "./served-by"
 
 export type HarnessRowProps = {
   readonly harness: Harness
@@ -78,12 +81,9 @@ function CloudConsentSwitch(props: { readonly account: AccountWords; readonly co
 
 function useRemoveAccount(props: { readonly account: AccountWords; readonly row: HarnessRowProps }) {
   const t = useAccountsText()
-  const i18n = useI18n()
   const dialog = useDialog()
-  const servedBy = () => {
-    const providerIds = props.row.snapshot.sources.org.filter((row) => props.account.ids.includes(row.id)).map((row) => row.providerId)
-    return new Intl.ListFormat(i18n.intlTag(), { style: "long", type: "conjunction" }).format(harnessesServedBy(providerIds))
-  }
+  const listServedBy = useServedBy()
+  const servedBy = () => listServedBy(props.row.snapshot.sources.org.filter((row) => props.account.ids.includes(row.id)).map((row) => row.providerId))
   return async () => {
     const org = props.account.key === ORG_ACCOUNT_KEY
     const confirmed = await requestConfirm(dialog, {
@@ -163,17 +163,38 @@ function NoAccount(props: { readonly harness: Harness; readonly onAdd: () => voi
   )
 }
 
+function useOrganizationConnect(props: HarnessRowProps): () => OrganizationConnect | undefined {
+  const access = useAccess()
+  const servedBy = useServedBy()
+  return () => {
+    const target = organizationTarget(props.harness, props.snapshot, access.can("accounts.manageOrg", props.snapshot.sources))
+    return target ? { ...target, servedBy: servedBy([target.vendorProvider]) } : undefined
+  }
+}
+
 export function AgentHarnessRow(props: HarnessRowProps) {
   const dialog = useDialog()
   const [connecting, setConnecting] = createSignal(false)
   const rows = useAccountRows(() => props.harness, () => props.snapshot, () => props.accounts)
+  const organization = useOrganizationConnect(props)
   const selected = () => selectedAccountKey(props.harness, props.snapshot)
   const openConnect = (credentialId?: string) => {
     setConnecting(true)
     const context = harnessConnectContext(props.harness.id, props.harness.label)
     const replaces = (methodType: string) => replacedAccountLabel(props.harness.connectProvider, props.snapshot, methodType)
+    const org = credentialId ? undefined : organization()
     void dialog.show(
-      () => <DialogProviderConnect provider={props.harness.connectProvider} context={context} harness={props.harness.id} {...(credentialId ? { credentialId } : {})} replaces={replaces} onConnected={() => props.accounts.rescan()} />,
+      () => (
+        <DrawerProviderConnect
+          provider={props.harness.connectProvider}
+          context={context}
+          harness={props.harness.id}
+          {...(credentialId ? { credentialId } : {})}
+          {...(org ? { organization: org } : {})}
+          replaces={replaces}
+          onConnected={() => props.accounts.rescan()}
+        />
+      ),
       () => setConnecting(false),
     )
   }

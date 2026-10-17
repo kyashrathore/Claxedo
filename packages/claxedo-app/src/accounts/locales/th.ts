@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "ตรวจสอบล่าสุด {{ago}}",
   "common.continue": "ส่ง",
   "common.requestFailed": "คำขอล้มเหลว",
-  "common.close": "ปิด",
   "settings.providers.agents.rescanning": "กำลังตรวจ…",
   "settings.providers.agents.scannedNow": "สแกนเมื่อสักครู่",
   "settings.providers.agents.scannedAt": "สแกน{{when}}",

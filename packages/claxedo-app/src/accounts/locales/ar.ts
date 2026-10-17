@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "آخر فحص {{ago}}",
   "common.continue": "إرسال",
   "common.requestFailed": "فشل الطلب",
-  "common.close": "إغلاق",
   "settings.providers.agents.rescanning": "جارٍ الفحص…",
   "settings.providers.agents.scannedNow": "تم المسح للتو",
   "settings.providers.agents.scannedAt": "تم المسح {{when}}",

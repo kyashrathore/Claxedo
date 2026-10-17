@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "最后检查 {{ago}}",
   "common.continue": "提交",
   "common.requestFailed": "请求失败",
-  "common.close": "关闭",
   "settings.providers.agents.rescanning": "正在检查…",
   "settings.providers.agents.scannedNow": "刚刚扫描",
   "settings.providers.agents.scannedAt": "{{when}}扫描",

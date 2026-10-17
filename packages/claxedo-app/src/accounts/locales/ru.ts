@@ -35,7 +35,6 @@ export default {
   "common.lastChecked": "Последняя проверка {{ago}}",
   "common.continue": "Отправить",
   "common.requestFailed": "Запрос не выполнен",
-  "common.close": "Закрыть",
   "settings.providers.agents.rescanning": "Проверяем…",
   "settings.providers.agents.scannedNow": "Просканировано только что",
   "settings.providers.agents.scannedAt": "Просканировано {{when}}",
