@@ -5,7 +5,7 @@ import type { CentralUsageRow } from "./projection"
 /**
  * Whose credential spend a read covers. `mine`: every turn that spent one of
  * the reader's own accounts, whoever sent it, and the reader's own turns on
- * anything else. `org`: every member's turns on the organization's team keys,
+ * anything else. `org`: every member's turns on the organization accounts,
  * for an administrator of the organization alone.
  */
 export type CredentialSpendScope = "mine" | "org"

@@ -17,7 +17,7 @@ export const PI_DIRECT_PROVIDERS: ReadonlySet<string> = new Set(PI_LAUNCH_PROVID
  * refused, is left out of `direct`: its provider runs without a credential and
  * the others are unaffected. `refused` says why a provider the person chose an
  * account for has none this time, that account's refusal or an organization
- * that holds no team key for it, so a turn names the reason rather than
+ * that holds no organization account for it, so a turn names the reason rather than
  * reading as no account chosen.
  */
 export async function ownerDirectDelivery(
