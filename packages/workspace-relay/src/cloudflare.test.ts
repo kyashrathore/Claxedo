@@ -3676,6 +3676,37 @@ describe("workspace relay Durable Object location hint", () => {
     expect(hint).toBe("weur")
   })
 
+  test("a browser in India whose connection is a cloud workspace's first touch lands its room at the machine's region", async () => {
+    // The browser upgrade carries the region on the query and its token on the
+    // subprotocol; the machine runs in us-east, so the room is created there and
+    // not next to the person.
+    const { hint } = await routeWith({
+      path: "/workspaces/ws_1/api/wr/events",
+      search: "?sessionID=ses_1&region=us-east",
+      cf: { country: "IN" },
+      authenticate: "rat-subprotocol",
+    })
+
+    expect(hint).toBe("enam")
+  })
+
+  test("consumes the placement inputs before the room forwards the request to the runtime", async () => {
+    // The region is the gateway's input; the room forwards a request's query
+    // and headers to the runtime, which the placement is no business of.
+    const { routed } = await routeWith({
+      path: "/workspaces/ws_1/api/wr/events",
+      search: "?sessionID=ses_1&region=us-east",
+      headers: { "x-claxedo-workspace-region": "us-east", "x-claxedo-directory": "workspace:ws_1" },
+      authenticate: "rat",
+    })
+
+    const forwarded = routed[0]?.request
+    expect(forwarded?.url).toBe("https://relay.test/workspaces/ws_1/api/wr/events?sessionID=ses_1")
+    expect(forwarded?.headers.get("x-claxedo-workspace-region")).toBeNull()
+    expect(forwarded?.headers.get("x-claxedo-directory")).toBe("workspace:ws_1")
+    expect(forwarded?.headers.get("authorization")).toMatch(/^Bearer /)
+  })
+
   test("falls back to the configured deployment hint for an unknown region", async () => {
     // Cloudflare REJECTS an unknown hint and a rejected get() fails the request,
     // so an unrecognised value must never be passed through.

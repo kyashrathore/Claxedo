@@ -9,7 +9,7 @@ export async function mintSessionHostConnection(
   authority: WorkspaceAuthority,
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
-  input: { workspaceId: string; sessionId: string; orgId: string; relayUrl: string; role: "viewer" | "editor" },
+  input: { workspaceId: string; sessionId: string; orgId: string; homeRegion: string; relayUrl: string; role: "viewer" | "editor" },
 ) {
   const { workspaceId, sessionId, role } = input
   const hostId = sessionHostId(sessionId)
@@ -32,6 +32,7 @@ export async function mintSessionHostConnection(
       workspaceId,
       hostId,
       sessionId,
+      homeRegion: input.homeRegion,
       relayUrl: input.relayUrl,
       runtimeAccessToken: token.runtimeAccessToken,
       tokenExpiresAt: token.tokenExpiresAt,

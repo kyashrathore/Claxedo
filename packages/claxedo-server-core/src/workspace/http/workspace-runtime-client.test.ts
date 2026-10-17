@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { RELAY_REGION_HEADER, relayLocationHint, relayRequestRegion } from "@claxedo/workspace-relay"
 import type { RelayProvider } from "../../adapters/relay-port"
 import type { SandboxManagerPort } from "../../sandbox/manager-port"
 import type { Workspace } from "../store/index"
@@ -114,6 +115,27 @@ describe("WorkspaceRuntimeClient", () => {
         accessToken: expect.objectContaining({ token: "token-host-a", hostId: "host-a" }),
       }),
     )
+  })
+
+  test("every request tells the relay the region the workspace's machine runs in", async () => {
+    // The relay places a workspace's room where the first authenticated request
+    // says the workspace is, permanently; the plane's own requests are often that
+    // first touch, so each one names the lease's region in the relay's header.
+    // The seam is asserted on the request the client really builds, read by the
+    // relay's own derivation, as the host tunnel's region test does.
+    const { client } = clientOptions({ ensure: vi.fn(async () => ready("host-a", "us-east", 1)) })
+    const seen: Request[] = []
+    installFetch(async (url, init) => {
+      seen.push(new Request(requestUrl(url), init))
+      return Response.json({ ok: true })
+    })
+
+    await client.request("/session/capabilities")
+
+    const request = seen[0] ?? new Request("http://none.invalid/")
+    expect(request.headers.get(RELAY_REGION_HEADER)).toBe("us-east")
+    expect(relayRequestRegion(request)).toBe("us-east")
+    expect(relayLocationHint({ region: relayRequestRegion(request) })).toBe("enam")
   })
 
   test("replaces host, relay, epoch, and token atomically after a safe-request failure", async () => {

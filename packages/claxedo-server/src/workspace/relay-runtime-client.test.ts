@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
+import { RELAY_REGION_HEADER, relayRequestRegion } from "@claxedo/workspace-relay"
 import type { ControlPlaneServices } from "../authority/services"
 import { createHostedRuntimeFetch, createRelayRuntimeClient, type RelayRuntimeCapability } from "./relay-runtime-client"
 
@@ -40,8 +41,18 @@ test("fetch preserves request options and replaces authority headers with the mi
   expect(init).toMatchObject({ method: "POST", body: "payload", signal: controller.signal })
   expect(Object.fromEntries(new Headers(init?.headers))).toEqual({
     authorization: "Bearer runtime-token", "x-claxedo-directory": "workspace:workspace/one",
+    "x-claxedo-workspace-region": "eu-west",
     "content-type": "application/json", accept: "text/event-stream",
   })
+})
+
+test("a hosted runtime request names the lease's region to the relay, where its room is placed if this is the first touch", async () => {
+  const f = client()
+  await f.runtime.fetch(capability, "/api/wr/agent-plugins/apply", { method: "POST" })
+  const [url, init] = f.request.mock.calls[0] ?? []
+  const request = new Request(url ?? "http://none.invalid/", init)
+  expect(request.headers.get(RELAY_REGION_HEADER)).toBe("eu-west")
+  expect(relayRequestRegion(request)).toBe("eu-west")
 })
 
 test("json requests JSON and retains the caller's error factory and runtime status", async () => {

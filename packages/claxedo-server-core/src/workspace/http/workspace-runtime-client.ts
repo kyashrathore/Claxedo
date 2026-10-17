@@ -1,3 +1,4 @@
+import { RELAY_REGION_HEADER } from "@claxedo/workspace-relay"
 import type { RelayTokenInput } from "../../adapters/relay/index"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "../../platform/auth/runtime-actor"
 import { decodeApiError } from "@claxedo/helpers/api-error"
@@ -206,6 +207,10 @@ export function createWorkspaceRuntimeClient(input: {
   const dispatch = async (active: RuntimeGeneration, requestPath: string, init?: RequestInit) => {
     const headers = requestHeaders(init, directory, input.headers)
     headers.set("authorization", `Bearer ${active.accessToken.token}`)
+    // The relay creates the workspace's room where its first authenticated
+    // request says the workspace is, permanently; a plane request is often
+    // that first touch.
+    headers.set(RELAY_REGION_HEADER, active.homeRegion)
     return globalThis.fetch(runtimeUrl(active.relayUrl, ws.id, requestPath), { ...init, headers })
   }
 

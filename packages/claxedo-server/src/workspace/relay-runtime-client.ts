@@ -1,5 +1,6 @@
 import type { RelayProvider, RelayTokenInput } from "@claxedo/server-core/adapters/relay-port"
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import { RELAY_REGION_HEADER } from "@claxedo/workspace-relay"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { ControlPlaneServices } from "../authority/services"
 
@@ -24,6 +25,9 @@ export function createRelayRuntimeClient(deps: {
     const headers = new Headers(init?.headers)
     headers.set("authorization", `Bearer ${token.token}`)
     headers.set("x-claxedo-directory", `workspace:${claims.workspaceId}`)
+    // A cold boot's delivery is the first request a new workspace's room ever
+    // sees, and the relay places the room by it for good.
+    headers.set(RELAY_REGION_HEADER, homeRegion)
     return await (deps.request ?? globalThis.fetch)(
       `${endpoint.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(claims.workspaceId)}${path}`,
       { ...init, headers },

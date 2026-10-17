@@ -36,7 +36,7 @@ import { createWorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins, RELAY_ALLOWED_REQUEST_HEADERS } from "./cors-origins"
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 import { forwardSessionHostHttp, isSessionHostTarget, type SessionHostNamespace } from "./session-host-forwarding"
-import { relayLocationHint, relayRequestCountry, relayRequestRegion } from "./relay-location"
+import { relayRoomPlacement } from "./relay-location"
 
 export type WorkspaceRelayDurableObjectId = unknown
 
@@ -439,14 +439,14 @@ async function traceSpan<T>(trace: RelayTrace | undefined, name: string, fn: () 
   }
 }
 
-function tracedRequest(request: Request, trace: RelayTrace) {
-  const headers = new Headers(request.headers)
+function tracedRequest(request: Request, trace: RelayTrace, forwarded: { url: string; headers: Headers } = request) {
+  const headers = new Headers(forwarded.headers)
   headers.set(TRACE_ID_HEADER, trace.id)
   // Set-or-strip, never passthrough: the sampled marker must reflect this
   // relay's own sampling decision, not a client-supplied header.
   if (trace.sampled) headers.set("x-claxedo-trace-sampled", "1")
   else headers.delete("x-claxedo-trace-sampled")
-  return new Request(request.url, {
+  return new Request(forwarded.url, {
     method: request.method,
     headers,
     body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
@@ -987,26 +987,13 @@ export function createWorkspaceRelayDurableObjectGateway(
           url.pathname.startsWith("/workspaces/") || url.pathname.startsWith("/host-tunnels/") ? 400 : 404,
         )
       }
-      // Per-workspace where possible, deployment-wide only as a floor. The DO's
-      // location is fixed at FIRST CREATION and never migrates, so this value is
-      // permanent for the workspace — see `relayLocationHint`. Request-declared
-      // inputs (region header/param, edge country) may only move the hint off
-      // that floor when the request's own credential verifies — see
-      // `relayPlacementAuthenticated`; anonymous first-touch traffic cannot pin
-      // a workspace's room placement.
-      const configuredHint = typeof env.CLAXEDO_RELAY_LOCATION_HINT === "string" ? env.CLAXEDO_RELAY_LOCATION_HINT : undefined
-      const requestRegion = relayRequestRegion(request)
-      const requestCountry = relayRequestCountry(request)
-      const floorHint = relayLocationHint(configuredHint ? { configured: configuredHint } : {})
-      const declaredHint = relayLocationHint({
-        ...(configuredHint ? { configured: configuredHint } : {}),
-        ...(requestRegion ? { region: requestRegion } : {}),
-        ...(requestCountry ? { country: requestCountry } : {}),
+      // The room's location is fixed at its first creation and never migrates,
+      // so this decision is permanent for the workspace.
+      const placement = await relayRoomPlacement(request, {
+        ...(typeof env.CLAXEDO_RELAY_LOCATION_HINT === "string" ? { configured: env.CLAXEDO_RELAY_LOCATION_HINT } : {}),
+        authenticated: () => relayPlacementAuthenticated(request, env, url, workspaceId),
       })
-      const locationHint = declaredHint === floorHint
-        || await relayPlacementAuthenticated(request, env, url, workspaceId)
-        ? declaredHint
-        : floorHint
+      const locationHint = placement.locationHint
       const routeFinishedAt = performance.now()
       const response = await namespace.get(namespace.idFromName(workspaceRelayDurableObjectRoomName(workspaceId)), {
         locationHint,
@@ -1016,7 +1003,7 @@ export function createWorkspaceRelayDurableObjectGateway(
           startedAt: gatewayStartedAt,
           routeKind: "gateway",
           phases: [],
-        }))
+        }, placement))
       const fetchFinishedAt = performance.now()
       if (response.status === 101 || ("webSocket" in response && response.webSocket)) {
         return url.pathname.startsWith("/workspaces/") ? withCors(request, response) : response

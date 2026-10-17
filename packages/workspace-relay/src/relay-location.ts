@@ -130,12 +130,63 @@ export function relayLocationHint(input: {
   return configured
 }
 
+/** The query names a request may declare the workspace region under; a browser's WebSocket upgrade can carry it nowhere else. */
+const RELAY_REGION_QUERY_PARAMS = ["region", "homeRegion"] as const
+
 /** The workspace region a request declares, if any. */
 export function relayRequestRegion(request: Request) {
   const url = new URL(request.url)
   return trimToUndefined(request.headers.get(RELAY_REGION_HEADER))
-    ?? trimToUndefined(url.searchParams.get("region"))
-    ?? trimToUndefined(url.searchParams.get("homeRegion"))
+    ?? trimToUndefined(url.searchParams.get(RELAY_REGION_QUERY_PARAMS[0]))
+    ?? trimToUndefined(url.searchParams.get(RELAY_REGION_QUERY_PARAMS[1]))
+}
+
+export type RelayRoomPlacement = {
+  locationHint: string
+  /** The request's URL and headers with the placement inputs removed. */
+  url: string
+  headers: Headers
+}
+
+/**
+ * Where a workspace's room is created, decided from what the request declares,
+ * and the request as the room should see it. The declaration is consumed here
+ * because the room forwards a request's remaining query and headers to the
+ * runtime, whose routes have no use for the relay's placement input.
+ *
+ * Request-declared inputs (region, edge country) move the hint off the
+ * configured floor only when the request's own credential verifies, so
+ * anonymous first-touch traffic cannot pin a workspace's room placement.
+ */
+export async function relayRoomPlacement(
+  request: Request,
+  input: { configured?: string; authenticated: () => Promise<boolean> },
+): Promise<RelayRoomPlacement> {
+  const configured = trimToUndefined(input.configured)
+  const region = relayRequestRegion(request)
+  const country = relayRequestCountry(request)
+  const floor = relayLocationHint(configured ? { configured } : {})
+  const declared = relayLocationHint({
+    ...(configured ? { configured } : {}),
+    ...(region ? { region } : {}),
+    ...(country ? { country } : {}),
+  })
+  const headers = new Headers(request.headers)
+  headers.delete(RELAY_REGION_HEADER)
+  return {
+    locationHint: declared === floor || (await input.authenticated()) ? declared : floor,
+    url: withoutQueryParams(request.url, RELAY_REGION_QUERY_PARAMS),
+    headers,
+  }
+}
+
+/** Drops the named parameters and leaves the rest of the query encoded as the client sent it. */
+function withoutQueryParams(url: string, names: readonly string[]) {
+  const target = new URL(url)
+  if (!names.some((name) => target.searchParams.has(name))) return url
+  const kept = target.search.slice(1).split("&").filter((pair) => !names.includes(pair.split("=")[0] ?? ""))
+  target.search = kept.length ? `?${kept.join("&")}` : ""
+  return target.toString()
 }
 
 /** The Cloudflare edge country for the request, when running on Cloudflare. */

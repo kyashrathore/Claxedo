@@ -43,7 +43,7 @@ function claims(connection: unknown) {
 describe("connecting to a session served by its own host", () => {
   test("a session reserved in its own host is handed that host's session-scoped connection before it exists", async () => {
     const minted = await hostedSessionHostConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId: RESERVED })
-    expect(minted).toMatchObject({ connection: { backing: "durable-object", hostId: sessionHostId(RESERVED), sessionId: RESERVED, relayUrl: "https://relay.test", role: "editor" } })
+    expect(minted).toMatchObject({ connection: { backing: "durable-object", hostId: sessionHostId(RESERVED), sessionId: RESERVED, homeRegion: "us-east", relayUrl: "https://relay.test", role: "editor" } })
     const token = claims(minted)
     expect(token).toMatchObject({ host_id: sessionHostId(RESERVED), role: "editor", scope: "session", session_id: RESERVED, workspace_id: WORKSPACE_ID })
     expect(token.routing_id).toBeUndefined()
@@ -62,7 +62,7 @@ describe("connecting to a session served by its own host", () => {
 
   test("a session's own connection is an editor's for whoever may send its turns and a viewer's otherwise", async () => {
     const owner = await hostedSessionConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId: ROOT })
-    expect(owner).toMatchObject({ connection: { backing: "durable-object", hostId: sessionHostId(ROOT), sessionId: ROOT, role: "editor" } })
+    expect(owner).toMatchObject({ connection: { backing: "durable-object", hostId: sessionHostId(ROOT), sessionId: ROOT, homeRegion: "us-east", role: "editor" } })
     expect(claims(owner)).toMatchObject({ scope: "session", session_id: ROOT, role: "editor", host_id: sessionHostId(ROOT) })
     expect(claims(owner).purpose).toBeUndefined()
 
