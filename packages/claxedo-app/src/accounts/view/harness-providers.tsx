@@ -1,11 +1,16 @@
 import { createEffect, createMemo, createSignal, For, onMount, Show, type JSX } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
 import { createProviderCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
 import { toAppError, useServer, type CatalogProvider, type PlacementId } from "@/server"
 import { ClaxedoIcon as Icon, showToast, useDialog, Button, ProviderIcon, Tag } from "@/ui"
-import { canDisconnectProvider, catalogNeedsSearch, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
+import { catalogNeedsSearch, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
+import { createKeyActions } from "../key-actions"
+import { accountLabel } from "../model"
+import { canDisconnectProvider, providerOwnKeys } from "../provider-keys"
+import { KeyRow, type KeyRowStore } from "./key-row"
 import { DialogCustomProvider } from "./custom-provider-dialog"
 import { CatalogAccountSourceChoice, createCatalogAccountSources } from "./catalog-account-source"
 import { ProviderSetupRow } from "./provider-setup-row"
@@ -22,6 +27,9 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
   })
   const t = useAccountsText()
   const sources = createCatalogAccountSources(harness, () => catalog.refresh())
+  const stored = useQuery(() => server.queries.accounts.list())
+  const { activity, liveChecks, run, verify } = createKeyActions<"checking">()
+  const keys: KeyRowStore = { activity, liveChecks, check: (id) => void run("checking", id, () => verify(id)) }
   const disconnect = async (provider: CatalogProvider) => {
     try {
       await server.providerConnect.disconnect(harness(), provider)
@@ -36,7 +44,19 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     }
   }
-  return { harness, catalog, sources, disconnect, connected: () => catalog.connected().length > 0, machine: () => server.capabilities()?.servingMachine?.name ?? "" }
+  return { harness, catalog, sources, disconnect, keys, ownKeys: (provider: CatalogProvider) => providerOwnKeys(provider, stored.data ?? []), connected: () => catalog.connected().length > 0, machine: () => server.capabilities()?.servingMachine?.name ?? "" }
+}
+
+function OwnKeyChecks(props: { readonly provider: CatalogProvider; readonly providers: HarnessProviders }) {
+  return (
+    <Show when={props.providers.ownKeys(props.provider).length > 0}>
+      <div class="pb-3 pl-8">
+        <For each={props.providers.ownKeys(props.provider)}>
+          {(account) => <KeyRow account={account} label={accountLabel(account)} store={props.providers.keys} />}
+        </For>
+      </div>
+    </Show>
+  )
 }
 
 function ConnectedProvider(props: { readonly provider: CatalogProvider; readonly onDisconnect: () => void; readonly children: JSX.Element }) {
@@ -132,6 +152,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
                 }
               >
                 <ConnectedProvider provider={item} onDisconnect={() => void props.providers.disconnect(item)}>
+                  <OwnKeyChecks provider={item} providers={props.providers} />
                   {choice()}
                 </ConnectedProvider>
               </Show>

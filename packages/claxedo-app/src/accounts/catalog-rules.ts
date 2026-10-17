@@ -55,6 +55,3 @@ export function providerSourceTag(source: ProviderSource | undefined): AccountsK
   return "settings.providers.tag.other"
 }
 
-export function canDisconnectProvider(source: ProviderSource | undefined): boolean {
-  return source === "api" || source === "custom"
-}
