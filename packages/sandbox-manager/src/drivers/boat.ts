@@ -249,8 +249,14 @@ function hostGoneOrThrow(err: unknown): never {
   throw err
 }
 
-function stoppedOrThrow(err: unknown): void {
+function notRunningOrThrow(err: unknown): void {
   if (err instanceof BoatApiError && NOT_RUNNING_CODES.has(err.code)) return
+  hostGoneOrThrow(err)
+}
+
+/** Boat refuses to stop a sandbox it has archived with a 400 `stop_failed` naming the sandbox `archived`; one archiving answers 202 (2026-10-17). */
+function archivedOrThrow(err: unknown): void {
+  if (err instanceof BoatApiError && err.code === "stop_failed" && err.sandboxState === "archived") return
   hostGoneOrThrow(err)
 }
 
@@ -691,8 +697,8 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     await client.command(target.sandboxId, {
       command: `docker stop -t ${CONTAINER_STOP_GRACE_SECONDS} ${containerName} >/dev/null 2>&1; true`,
       timeoutSeconds: CONTAINER_STOP_GRACE_SECONDS + 30,
-    }).then(() => undefined, stoppedOrThrow)
-    await client.stop(target.sandboxId).catch(stoppedOrThrow)
+    }).then(() => undefined, notRunningOrThrow)
+    await client.stop(target.sandboxId).catch(archivedOrThrow)
   }
 
   async function destroy(target: SandboxResource) {

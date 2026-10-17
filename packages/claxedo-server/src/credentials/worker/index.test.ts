@@ -52,6 +52,8 @@ const rows = async (orgId: string) =>
 const store = (orgId: string, now?: () => number) =>
   hostedOrgCredentials(orgId, { database: controlPlane.database, env: FULL_ENV }, now ? { now } : {})
 
+const stored = async (credentials: ReturnType<typeof store>, id: string) => (await credentials.listCredentials()).find((row) => row.id === id)
+
 describe("workerCredentials (flag off — default)", () => {
   test("the flag defaults to off", () => {
     expect(hostedCredentialsEnabled({})).toBe(false)
@@ -204,6 +206,63 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     const catalog = hostedOpenCodeCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials, runtimeProviders: async () => undefined })
     const offered = await catalog.opencodeProviderCatalog({ mode: "signed", user: { subject: "A", tokenIdentifier: "A", issuer: "test" } })
     expect(offered.connected).toEqual([])
+  })
+
+  test("a key saved beside a Claude plan the vendor rejected takes the mark, so the key is the account a sandbox spends and the one the person sees in use", async () => {
+    const orgId = freshOrg("key-beside-rejected-plan")
+    let clock = 1_000
+    const credentials = store(orgId, () => ++clock)
+    const plan = await credentials.putCredential({ ...write, owner: "A", provider_id: "claude-sdk", kind: "oauth_token" })
+    await credentials.updateCredentialHealth?.(plan.id, "auth_failed", ++clock)
+
+    const key = await credentials.putCredential({ ...write, owner: "A", provider_id: "anthropic" })
+
+    expect(key.is_active).toBe(true)
+    const marks = new Map((await credentials.listCredentials()).map((row) => [row.id, row.activated_at ?? 0]))
+    expect(marks.get(key.id)).toBeGreaterThan(marks.get(plan.id) ?? Number.POSITIVE_INFINITY)
+    const catalog = hostedOpenCodeCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials, runtimeProviders: async () => undefined })
+    const offered = await catalog.opencodeProviderCatalog({ mode: "signed", user: { subject: "A", tokenIdentifier: "A", issuer: "test" } })
+    expect(offered.connected).toEqual(["anthropic"])
+  })
+
+  test("a Claude plan the vendor rejects hands its host's mark to the person's newest usable account there, so a key saved while the plan worked becomes the one spent", async () => {
+    const orgId = freshOrg("plan-rejected-after-key")
+    let clock = 1_000
+    const credentials = store(orgId, () => ++clock)
+    const plan = await credentials.putCredential({ ...write, owner: "A", provider_id: "claude-sdk", kind: "oauth_token" })
+    const key = await credentials.putCredential({ ...write, owner: "A", provider_id: "anthropic" })
+    const other = await credentials.putCredential({ ...write, owner: "B", provider_id: "anthropic" })
+    expect(key.is_active).toBe(false)
+    await credentials.updateCredentialHealth?.(plan.id, "ok", ++clock)
+    expect((await stored(credentials, key.id))?.is_active).toBe(false)
+
+    await credentials.updateCredentialHealth?.(plan.id, "auth_failed", ++clock)
+
+    const rows = new Map((await credentials.listCredentials()).map((row) => [row.id, row]))
+    expect(rows.get(key.id)?.is_active).toBe(true)
+    expect(rows.get(key.id)?.activated_at).toBeGreaterThan(rows.get(plan.id)?.activated_at ?? Number.POSITIVE_INFINITY)
+    expect(rows.get(other.id)?.activated_at).toBe(other.activated_at)
+    const catalog = hostedOpenCodeCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials, runtimeProviders: async () => undefined })
+    const offered = await catalog.opencodeProviderCatalog({ mode: "signed", user: { subject: "A", tokenIdentifier: "A", issuer: "test" } })
+    expect(offered.connected).toEqual(["anthropic"])
+  })
+
+  test("removing the Claude plan that holds its host hands the mark to the key saved beside it, and an unmarked account the vendor refuses moves no mark", async () => {
+    const orgId = freshOrg("plan-removed-after-key")
+    let clock = 1_000
+    const credentials = store(orgId, () => ++clock)
+    const plan = await credentials.putCredential({ ...write, owner: "A", provider_id: "claude-sdk", kind: "oauth_token" })
+    const key = await credentials.putCredential({ ...write, owner: "A", provider_id: "anthropic" })
+
+    expect(await credentials.deleteCredential(plan.id)).toBe(true)
+
+    const marked = await stored(credentials, key.id)
+    expect(marked?.is_active).toBe(true)
+    const replan = await credentials.putCredential({ ...write, owner: "A", provider_id: "claude-sdk", kind: "oauth_token" })
+    expect(replan.is_active).toBe(false)
+    await credentials.updateCredentialHealth?.(replan.id, "auth_failed", ++clock)
+    expect((await stored(credentials, key.id))?.activated_at).toBe(marked?.activated_at)
+    expect((await stored(credentials, replan.id))?.is_active).toBe(false)
   })
 
   test("Pi's Anthropic connected by a Claude Code login says so and is not Pi's own key; Pi's own key is", async () => {

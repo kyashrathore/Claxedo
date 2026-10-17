@@ -2,7 +2,7 @@ import { createSignal, type Accessor } from "solid-js"
 import { machine } from "@/lib/machine"
 import type { ConfigurationSlot, Preset, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
 import { useWakeProgress } from "@/cloud"
-import { useTranslator, type DomainTranslate } from "@/i18n"
+import { useErrorCopy, useTranslator, type DomainTranslate } from "@/i18n"
 import { useServer, type WorkspaceRuntime } from "@/server"
 import { showToast } from "@/ui"
 import { tasksDictionary, type TasksKey } from "../i18n"
@@ -99,12 +99,13 @@ async function openLatest(calls: ReturnType<typeof createStartCalls>, t: DomainT
 
 function useStartCommands() {
   const t = useTranslator(tasksDictionary)
+  const errorCopy = useErrorCopy("tasks")
   const calls = createStartCalls(t)
   const progress = machine(START_IDLE, startProgressTransition)
   return {
     progress: useStartProgressText(progress.state, t),
     startNow: async (task: Task | TaskSummary, choice: StartChoiceInput) => {
-      const outcome = await startNow(calls, t, task, choice, progress.send)
+      const outcome = await startNow(calls, { t, errorMessage: (error) => errorCopy(error).message }, task, choice, progress.send)
       if (!outcome.ok) showToast({ variant: "error", title: t("tasks.start.failed", { title: task.title }), description: outcome.message })
       return outcome
     },

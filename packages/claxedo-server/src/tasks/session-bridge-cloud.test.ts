@@ -883,7 +883,7 @@ describe("hosted tasks cloud create admission", () => {
     const first = await kit.start(await startCommand("tsk_one", (await preview(kit, "tsk_one")).digest))
     expect(first).toMatchObject({ ok: true, preparing: {} })
     const again = await kit.start(await startCommand("tsk_two", (await preview(kit, "tsk_two")).digest))
-    expect(again).toMatchObject({ ok: false, error: { code: "unsupported" } })
+    expect(again).toMatchObject({ ok: false, error: { code: "rate_limited" } })
     expect(await sandboxManager.list()).toHaveLength(1)
   })
 })

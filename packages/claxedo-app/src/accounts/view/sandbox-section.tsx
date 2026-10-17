@@ -1,5 +1,5 @@
 import { For, Match, Show, Switch } from "solid-js"
-import { useAccess } from "@/access"
+import { SignedOutNotice, useAccess } from "@/access"
 import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote, SettingsRow } from "@/settings"
 import { Select, useDialog } from "@/ui"
 import { useAccountsText } from "../i18n"
@@ -55,7 +55,7 @@ function SandboxKeys(props: { readonly listing: SandboxListing; readonly store: 
   )
 }
 
-export function SandboxSection() {
+function SignedInSandboxSection() {
   const t = useAccountsText()
   const access = useAccess()
   const store = useSandboxKeys()
@@ -68,15 +68,25 @@ export function SandboxSection() {
     return load.kind === "failed" ? load.error : undefined
   }
   return (
+    <Switch>
+      <Match when={failure()}>{(error) => <SettingsNote tone="danger">{t("settings.sandbox.loadFailed", { reason: error().message })}</SettingsNote>}</Match>
+      <Match when={listing()}>{(ready) => <SandboxKeys listing={ready()} store={store} />}</Match>
+      <Match when={store.load().kind === "ready"}>
+        <SettingsIntro description={t("settings.sandbox.description")} />
+        <SettingsNote>{t("settings.sandbox.managedByAdmins")}</SettingsNote>
+      </Match>
+    </Switch>
+  )
+}
+
+export function SandboxSection() {
+  const t = useAccountsText()
+  const access = useAccess()
+  return (
     <div class="settings-body">
-      <Switch>
-        <Match when={failure()}>{(error) => <SettingsNote tone="danger">{t("settings.sandbox.loadFailed", { reason: error().message })}</SettingsNote>}</Match>
-        <Match when={listing()}>{(ready) => <SandboxKeys listing={ready()} store={store} />}</Match>
-        <Match when={store.load().kind === "ready"}>
-          <SettingsIntro description={t("settings.sandbox.description")} />
-          <SettingsNote>{t("settings.sandbox.managedByAdmins")}</SettingsNote>
-        </Match>
-      </Switch>
+      <Show when={access.signedIn()} fallback={<><SettingsIntro description={t("settings.sandbox.description")} /><SignedOutNotice /></>}>
+        <SignedInSandboxSection />
+      </Show>
     </div>
   )
 }

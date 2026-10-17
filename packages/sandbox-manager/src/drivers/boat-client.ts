@@ -39,11 +39,16 @@ export class BoatApiError extends Error {
   readonly providerKeyRefused: boolean
   /** Create, fork and resume each count as one start (Boat's own refusal, 2026-10-15). */
   readonly providerRateLimited?: SandboxStartLimit
-  constructor(message: string, readonly code: string, readonly status?: number, readonly startLimit?: BoatStartLimit) {
+  readonly startLimit?: BoatStartLimit
+  /** The state Boat's refusal gives the sandbox it refused, e.g. `archived` on a 400 `stop_failed` (2026-10-17). */
+  readonly sandboxState?: BoatSandboxState
+  constructor(message: string, readonly code: string, readonly status?: number, refusal: { startLimit?: BoatStartLimit; sandboxState?: BoatSandboxState } = {}) {
     super(message)
     this.name = "BoatApiError"
     this.providerKeyRefused = status === 401 || status === 403
-    if (startLimit) this.providerRateLimited = { window: startLimit.window, limit: startLimit.limit }
+    this.startLimit = refusal.startLimit
+    this.sandboxState = refusal.sandboxState
+    if (refusal.startLimit) this.providerRateLimited = { window: refusal.startLimit.window, limit: refusal.startLimit.limit }
   }
 }
 
@@ -150,7 +155,11 @@ export function createBoatApi(options: BoatClientOptions) {
       if (!response.ok || body?.ok === false) {
         const code = typeof body?.code === "string" ? body.code : `http_${response.status}`
         const startLimit = response.status === 429 && code === "rate_limited" ? startLimitOf(body) : undefined
-        throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status, startLimit)
+        const sandboxState = record(record(record(body?.error)?.details)?.sandbox)?.state
+        throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status, {
+          startLimit,
+          sandboxState: isSandboxState(sandboxState) ? sandboxState : undefined,
+        })
       }
       if (body?.ok !== true || typeof body.type !== "string" || !types.includes(body.type)) {
         const answered = typeof body?.type === "string" ? `"${body.type}"` : "no envelope type"

@@ -1,5 +1,6 @@
-import type { Preset, Task, TaskStatus } from "@claxedo/tasks"
+import type { Preset, StartBlocker, Task, TaskStatus } from "@claxedo/tasks"
 import { TasksApiError, TasksClientPayloadError } from "@claxedo/tasks/client"
+import { ServerError } from "@/server"
 import type { TasksKey } from "../i18n"
 
 export type FieldReasons = Readonly<Record<string, string>>
@@ -22,6 +23,17 @@ export function refusalOf(error: unknown): TasksRefusal {
   }
   if (error instanceof TasksClientPayloadError) return { message: error.message, fields: {} }
   return { message: error instanceof Error ? error.message : String(error), fields: {} }
+}
+
+const TOO_MANY_REQUESTS = 429
+
+export function rateLimitOf(error: unknown): ServerError | undefined {
+  if (!(error instanceof TasksApiError || error instanceof TasksClientPayloadError) || error.status !== TOO_MANY_REQUESTS) return undefined
+  return new ServerError({ class: "rate_limit", message: error.message, status: error.status, cause: error })
+}
+
+export function startBlockerRateLimit(blocker: StartBlocker): ServerError | undefined {
+  return blocker.code === "rate_limited" ? new ServerError({ class: "rate_limit", message: blocker.detail, code: blocker.code }) : undefined
 }
 
 const FIELD_REASON_KEYS: Readonly<Record<string, TasksKey>> = {

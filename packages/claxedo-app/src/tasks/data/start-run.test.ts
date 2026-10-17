@@ -1,13 +1,15 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import type { StartPreview, StartResponse, Task, TaskSessionLinkView } from "@claxedo/tasks"
-import type { PlacementId } from "@/server"
-import { START_IDLE, startNow, startProgressLine, startProgressTransition, type RootRun, type StartCalls, type TaskStartProgress } from "./start-run"
+import { TasksApiError, TasksClientPayloadError } from "@claxedo/tasks/client"
+import type { AppError, PlacementId } from "@/server"
+import { START_IDLE, startNow, startProgressLine, startProgressTransition, type RootRun, type StartCalls, type StartCopy, type TaskStartProgress } from "./start-run"
 
 const task = { id: "tsk_1", revision: 3, title: "Print the README" } as Task
 const READY_PREVIEW = { available: true, attempt: 1, digest: "d", blockers: [], previousTranscriptReadable: false } as unknown as StartPreview
 const SESSION = { sessionId: "ses_tasks_1", workspaceId: "ws_root" }
 const LINKED: StartResponse = { link: { sessionRef: SESSION } as TaskSessionLinkView, created: true }
+const copy: StartCopy = { t: (key) => key, errorMessage: (error: AppError) => `${error.class} copy` }
 
 function deferred<T>() {
   return Promise.withResolvers<T>()
@@ -56,7 +58,7 @@ test("a cloud start says it is starting a workspace while the preview runs, then
     },
   })
   const progress = progressOf()
-  const started = startNow(calls, (key) => key, task, CLOUD, progress.report)
+  const started = startNow(calls, copy, task, CLOUD, progress.report)
 
   await Bun.sleep(0)
   expect(progress.line()).toEqual({ kind: "key", key: "tasks.start.progress.cloud" })
@@ -91,7 +93,7 @@ test("a Start whose root is still starting follows that root's own start, shows 
     },
   })
   const progress = progressOf()
-  const started = startNow(calls, (key) => key, task, CLOUD, progress.report)
+  const started = startNow(calls, copy, task, CLOUD, progress.report)
 
   await Bun.sleep(0)
   expect(followed).toEqual(["ws_root"])
@@ -115,7 +117,7 @@ test("a root whose start failed ends the Start with that start's reason, and not
     },
     followRoot: async () => ({ kind: "failed", message: "The cloud workspace could not start: the image has no runtime" }),
   })
-  const outcome = await startNow(calls, (key) => key, task, CLOUD, progressOf().report)
+  const outcome = await startNow(calls, copy, task, CLOUD, progressOf().report)
   expect(outcome).toEqual({ ok: false, message: "The cloud workspace could not start: the image has no runtime" })
   expect(starts).toHaveLength(1)
   expect(opened).toEqual([])
@@ -130,7 +132,7 @@ test("a root still starting when the same Start is sent again ends the Start rat
       return { kind: "running" }
     },
   })
-  const outcome = await startNow(calls, (key) => key, task, CLOUD, progressOf().report)
+  const outcome = await startNow(calls, copy, task, CLOUD, progressOf().report)
   expect(outcome).toEqual({ ok: false, message: "tasks.start.rootStillStarting" })
   expect(follows).toBe(1)
   expect(opened).toEqual([])
@@ -141,8 +143,27 @@ test("a refused preview ends the start's progress with the refusal", async () =>
     preview: async () => ({ ...READY_PREVIEW, available: false, blockers: [{ code: "source_unavailable", detail: "No key" }] }) as unknown as StartPreview,
   })
   const progress = progressOf()
-  const outcome = await startNow(calls, (key) => key, task, { ...CLOUD, placement: "local" }, progress.report)
+  const outcome = await startNow(calls, copy, task, { ...CLOUD, placement: "local" }, progress.report)
   expect(outcome).toEqual({ ok: false, message: "No key" })
   expect(progress.state()).toEqual(START_IDLE)
   expect(starts).toEqual([])
+})
+
+test("a preview the control plane rate-limited says so from the error table, not with the server's words", async () => {
+  const { calls } = recording({
+    preview: async () => ({ ...READY_PREVIEW, available: false, blockers: [{ code: "rate_limited", detail: "Control Plane request limit exceeded" }] }) as unknown as StartPreview,
+  })
+  expect(await startNow(calls, copy, task, CLOUD, () => {})).toEqual({ ok: false, message: "rate_limit copy" })
+})
+
+test("a Start refused for too many requests says so from the error table", async () => {
+  const refusing = (error: Error) => recording({
+    start: async () => {
+      throw error
+    },
+  }).calls
+  const limited = new TasksApiError(429, "rate_limited", { code: "rate_limited", message: "Control Plane request limit exceeded" })
+  expect(await startNow(refusing(limited), copy, task, CLOUD, () => {})).toEqual({ ok: false, message: "rate_limit copy" })
+  const guarded = new TasksClientPayloadError(429, "Request failed with status 429")
+  expect(await startNow(refusing(guarded), copy, task, CLOUD, () => {})).toEqual({ ok: false, message: "rate_limit copy" })
 })

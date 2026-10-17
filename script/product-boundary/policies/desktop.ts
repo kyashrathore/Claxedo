@@ -691,8 +691,11 @@ export const desktopRenderer: Policy = {
   // OpenCode's provider catalog read with no workspace (owner: the app's tasks
   // domain, `tasks/presets/cloud-catalog-model-picker.tsx`,
   // `tasks/presets/cloud-catalog-models.ts`). They add no package edge.
-  // 1394/36, no headroom.
-  ceilings: { modules: 1394, packages: 36 },
+  // The signed-out notice Organization, Team accounts and Sandbox providers
+  // share, with its Sign in action (owner: the app's access domain,
+  // `access/view/signed-out.tsx`). It adds no package edge.
+  // 1395/36, no headroom.
+  ceilings: { modules: 1395, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

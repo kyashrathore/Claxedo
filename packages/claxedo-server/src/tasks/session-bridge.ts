@@ -178,7 +178,8 @@ function createTasksCloudRoots(
           await admission.preflight(creator.caller) ??
           await admission.admit(creator.caller, { projectId: origin.task.projectId }, { existing })
         if ("status" in admitted) {
-          return { blocker: { code: "source_unavailable", detail: admitted.body.error.message } }
+          const code = admitted.body.error.code === "control_plane_rate_limited" ? "rate_limited" : "source_unavailable"
+          return { blocker: { code, detail: admitted.body.error.message } }
         }
       }
       const allocated = await allocateOriginCloudWorkspace({

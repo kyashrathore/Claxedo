@@ -359,7 +359,10 @@ function unstartable(blockers: readonly StartBlocker[]): Refusal {
   const blocker = blockers[0]
   return {
     ok: false,
-    error: tasksErrorDetail("unsupported", blocker ? blocker.detail : "This configuration cannot be started here"),
+    error: tasksErrorDetail(
+      blocker?.code === "rate_limited" ? "rate_limited" : "unsupported",
+      blocker ? blocker.detail : "This configuration cannot be started here",
+    ),
   }
 }
 
