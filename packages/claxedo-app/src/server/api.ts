@@ -85,7 +85,7 @@ import type {
   TranscriptPart,
 } from "./types"
 import type { BackgroundTaskStop } from "./status-types"
-import type { MachineTime, UsageRequest, UsageSummary } from "./usage-types"
+import type { AccountSpendReport, AccountSpendRequest, MachineTime, UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
@@ -196,6 +196,7 @@ export type ServerQueries = {
   readonly usage: {
     readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary>
     readonly machineTime: (since: number) => FetchQuery<MachineTime>
+    readonly accountSpend: (input: AccountSpendRequest) => FetchQuery<AccountSpendReport>
   }
   readonly marketplace: {
     readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog>

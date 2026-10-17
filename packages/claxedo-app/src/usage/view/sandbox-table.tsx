@@ -56,8 +56,8 @@ export function SandboxTable(props: { readonly rows: readonly SandboxRow[]; read
                   <span class="usage-table-name" title={row.id}>{workspaceName(row.name, row.branch)}</span>
                   <Tag>{words.status(row)}</Tag>
                 </span>
-                <span class="usage-sandbox-detail">{words.detail(row)}</span>
-                <Show when={words.failure(row)}>{(failure) => <span class="usage-sandbox-detail">{failure()}</span>}</Show>
+                <span class="usage-table-detail">{words.detail(row)}</span>
+                <Show when={words.failure(row)}>{(failure) => <span class="usage-table-detail">{failure()}</span>}</Show>
               </th>
               <td>{row.machines.length > 0 ? format.duration(row.activeMs) : "–"}</td>
               <td>{row.machines.length > 0 ? format.spend(row.cost) : "–"}</td>

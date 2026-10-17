@@ -1,7 +1,9 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { toAppError, useServer } from "@/server"
-import { machineTimeSince, usageRequest, type MachineTimeLoad, type UsageDays, type UsageLoad, type UsageOptions, type UsageRead } from "./model"
+import { useAccess } from "@/access"
+import { toAppError, useServer, type AccountSpendScope } from "@/server"
+import { accountSpendRequest } from "./account-spend"
+import { machineTimeSince, usageRequest, type AccountSpendLoad, type MachineTimeLoad, type UsageDays, type UsageLoad, type UsageOptions, type UsageRead } from "./model"
 
 function readOf<Data>(query: { readonly data: Data | undefined; readonly isError: boolean; readonly error: unknown }): UsageRead<Data> {
   if (query.data !== undefined) return { kind: "ready", data: query.data }
@@ -26,6 +28,26 @@ export function useUsageSummary(options: Accessor<UsageOptions>, enabled: Access
     fetching: () => query.isFetching,
     refresh: () => void query.refetch(),
   }
+}
+
+export type AccountSpendRead = {
+  readonly load: Accessor<AccountSpendLoad>
+  readonly refresh: () => void
+}
+
+export function useAccountSpend(days: Accessor<UsageDays>, scope: Accessor<AccountSpendScope>): AccountSpendRead {
+  const server = useServer()
+  const now = Date.now()
+  const query = useQuery(() => server.queries.usage.accountSpend(accountSpendRequest(days(), scope(), now)))
+  const load = createMemo((): AccountSpendLoad => readOf(query))
+  return { load, refresh: () => void query.refetch() }
+}
+
+export function useManagesTeamKeys(): Accessor<boolean> {
+  const server = useServer()
+  const access = useAccess()
+  const sources = useQuery(() => server.queries.accounts.sources())
+  return () => access.can("accounts.manageOrg", sources.data)
 }
 
 export type MachineTimeRead = {

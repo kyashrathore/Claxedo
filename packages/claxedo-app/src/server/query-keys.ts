@@ -1,5 +1,6 @@
 import type { OrgId, PlacementId, ProjectId } from "./ids"
 import type { DiffScope, FileSearchEntries } from "./git-types"
+import type { AccountSpendRequest } from "./usage-types"
 
 export const queryKeys = {
   sharedSessions: (server: string) => ["server", server, "shared-sessions"] as const,
@@ -20,6 +21,7 @@ export const queryKeys = {
   sandboxKeys: (server: string) => ["server", server, "accounts", "sandbox"] as const,
   usage: (server: string, request: unknown) => ["server", server, "usage", request] as const,
   usageAll: (server: string) => ["server", server, "usage"] as const,
+  accountSpend: (server: string, request: AccountSpendRequest) => ["server", server, "usage", "account-spend", request] as const,
   machineTime: (server: string, since: number) => ["server", server, "machine-time", since] as const,
   machineTimeAll: (server: string) => ["server", server, "machine-time"] as const,
   marketplace: (server: string, projectId: ProjectId | undefined) => ["server", server, "marketplace", projectId ?? ""] as const,
