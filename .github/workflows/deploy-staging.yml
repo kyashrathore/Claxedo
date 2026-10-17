@@ -1,7 +1,7 @@
 name: deploy-staging
 
-# Everything merged to `staging` ships from here: control plane, relay, sandbox
-# image. The browser app is not a job — the control-plane deploy publishes it
+# Everything merged to `staging` ships from here: control plane, relay, and the
+# Cloudflare sandbox image when its inputs changed. The browser app is not a job — the control-plane deploy publishes it
 # (deploy-user-cloudflare.ts). The desktop app is not either — it is
 # tag-driven (`claxedo-v*` -> release-claxedo.yml).
 
@@ -30,6 +30,7 @@ concurrency:
 permissions:
   contents: read
   checks: write
+  actions: read
 
 jobs:
   plan:
@@ -39,6 +40,8 @@ jobs:
       control_plane: ${{ steps.select.outputs.control_plane }}
       relay: ${{ steps.select.outputs.relay }}
       sandbox_image: ${{ steps.select.outputs.sandbox_image }}
+      sandbox_image_force: ${{ steps.select.outputs.sandbox_image_force }}
+      ci_passed: ${{ steps.ci.outputs.ci_passed }}
       boat_image: ${{ steps.select.outputs.boat_image }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -49,8 +52,18 @@ jobs:
           REQUESTED: ${{ inputs.components || 'all' }}
         run: node script/deploy-components.mjs
 
+      # A dispatched redeploy of a commit an earlier run already gated and
+      # tested skips the gate and the CI suite; a push always runs them.
+      - name: Find an earlier passing gate and CI suite for this commit
+        id: ci
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node script/deploy-ci-passed.mjs
+
   gate:
     name: lint, typecheck, CI policy, architecture ratchets
+    needs: plan
+    if: ${{ needs.plan.outputs.ci_passed != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -81,6 +94,8 @@ jobs:
 
   unit:
     name: CI suite
+    needs: plan
+    if: ${{ needs.plan.outputs.ci_passed != 'true' }}
     uses: ./.github/workflows/test.yml
     with:
       linux-unit-only: true
@@ -93,7 +108,7 @@ jobs:
   boat-image:
     name: boat sandbox image
     needs: [plan, gate, unit]
-    if: ${{ !cancelled() && needs.plan.outputs.boat_image == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' }}
+    if: ${{ !cancelled() && needs.plan.outputs.boat_image == 'true' && (needs.plan.outputs.ci_passed == 'true' || (needs.gate.result == 'success' && needs.unit.result == 'success')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -138,7 +153,7 @@ jobs:
   control-plane:
     name: control plane (Better Auth + D1)
     needs: [plan, gate, unit, boat-image]
-    if: ${{ !cancelled() && needs.plan.outputs.control_plane == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && (needs.plan.outputs.boat_image != 'true' || needs.boat-image.result == 'success') }}
+    if: ${{ !cancelled() && needs.plan.outputs.control_plane == 'true' && (needs.plan.outputs.ci_passed == 'true' || (needs.gate.result == 'success' && needs.unit.result == 'success')) && (needs.plan.outputs.boat_image != 'true' || needs.boat-image.result == 'success') }}
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 45
@@ -235,7 +250,7 @@ jobs:
   relay:
     name: workspace relay (Cloudflare Durable Object)
     needs: [plan, gate, unit, control-plane]
-    if: ${{ !cancelled() && needs.plan.outputs.relay == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && needs.control-plane.result != 'failure' }}
+    if: ${{ !cancelled() && needs.plan.outputs.relay == 'true' && (needs.plan.outputs.ci_passed == 'true' || (needs.gate.result == 'success' && needs.unit.result == 'success')) && needs.control-plane.result != 'failure' }}
     runs-on: ubuntu-latest
     environment: staging
     timeout-minutes: 20
@@ -272,11 +287,12 @@ jobs:
   sandbox-image:
     name: cloudflare sandbox worker
     needs: [plan, gate, unit, control-plane, relay]
-    if: ${{ !cancelled() && needs.plan.outputs.sandbox_image == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && needs.control-plane.result != 'failure' && needs.relay.result != 'failure' }}
+    if: ${{ !cancelled() && needs.plan.outputs.sandbox_image == 'true' && (needs.plan.outputs.ci_passed == 'true' || (needs.gate.result == 'success' && needs.unit.result == 'success')) && needs.control-plane.result != 'failure' && needs.relay.result != 'failure' }}
     uses: ./.github/workflows/deploy-cloudflare-sandbox-worker.yml
     with:
       deploy_worker: true
       agent_plugins: true
+      only_if_changed: ${{ needs.plan.outputs.sandbox_image_force != 'true' }}
     secrets: inherit
 
   result:
@@ -290,6 +306,7 @@ jobs:
           PLAN_RESULT: ${{ needs.plan.result }}
           GATE_RESULT: ${{ needs.gate.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
+          CI_PASSED: ${{ needs.plan.outputs.ci_passed }}
           CONTROL_PLANE_SELECTED: ${{ needs.plan.outputs.control_plane }}
           CONTROL_PLANE_RESULT: ${{ needs.control-plane.result }}
           RELAY_SELECTED: ${{ needs.plan.outputs.relay }}
@@ -308,8 +325,10 @@ jobs:
             fi
           }
           require "Component selection" "$PLAN_RESULT"
-          require "Lint/typecheck/ratchets gate" "$GATE_RESULT"
-          require "CI suite" "$UNIT_RESULT"
+          if [ "$CI_PASSED" != "true" ]; then
+            require "Lint/typecheck/ratchets gate" "$GATE_RESULT"
+            require "CI suite" "$UNIT_RESULT"
+          fi
           [ "$CONTROL_PLANE_SELECTED" = "true" ] && require "Control plane" "$CONTROL_PLANE_RESULT"
           [ "$RELAY_SELECTED" = "true" ] && require "Relay" "$RELAY_RESULT"
           [ "$SANDBOX_SELECTED" = "true" ] && require "Sandbox image" "$SANDBOX_RESULT"

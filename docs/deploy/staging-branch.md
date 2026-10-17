@@ -76,10 +76,13 @@ silent.
 `script/deploy-components.mjs` picks the deploy's components (tested by
 `bun run test:ci-policy`). The control plane always deploys with the Boat image
 of its own checkout (`boat-image`), since any organization may add a Boat key.
-Staging's own Cloudflare sandbox Worker ships only when `sandbox-image` is
-dispatched by name: a Cloudflare key points at a sandbox Worker its organization
-runs, and that Worker posts idle stops only if it and the control plane share
-`CLAXEDO_SANDBOX_IDLE_STOP_TOKEN`.
+Staging's own Cloudflare sandbox Worker ships with every full deploy, after the
+relay, but only when the digest of the files its image and Worker are built from
+(its Dockerfile, `wrangler.toml`, `package.json`, `package-lock.json`, `src/` and
+the bundled `.build/`) differs from the `DEPLOY_INPUTS` the deployed Worker
+records; otherwise the job skips the ~4.5 GB image build. Dispatching
+`sandbox-image` by name redeploys it whatever it records. That Worker posts idle
+stops only if it and the control plane share `CLAXEDO_SANDBOX_IDLE_STOP_TOKEN`.
 
 ## Staging runs the user deploy
 
@@ -185,8 +188,11 @@ deletes the sandbox.
 ## Rerunning one component
 
 Dispatch `deploy-staging` from the Actions tab and pick `components`:
-`control-plane`, `relay` or `sandbox-image`. The gates still run; the other
-components are skipped and `result` does not require them.
+`control-plane`, `relay` or `sandbox-image`. The other components are skipped
+and `result` does not require them. The gate and the CI suite run unless an
+earlier `deploy-staging` run for the same commit passed both
+(`script/deploy-ci-passed.mjs`, tested by `bun run test:ci-policy`); a push
+always runs them.
 
 ## Deploying from a laptop
 

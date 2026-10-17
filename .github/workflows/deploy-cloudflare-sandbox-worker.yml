@@ -18,8 +18,8 @@ name: deploy-cloudflare-sandbox-worker
 # Dockerfile default to change which agent CLIs ship.
 
 on:
-  # deploy-staging.yml calls this only for a run dispatched with the
-  # `sandbox-image` component; no push to `staging` ships it.
+  # deploy-staging.yml calls this on every full deploy with only_if_changed, and
+  # without it for a run dispatched with the `sandbox-image` component.
   workflow_call:
     inputs:
       deploy_worker:
@@ -27,6 +27,11 @@ on:
         required: false
         type: boolean
         default: true
+      only_if_changed:
+        description: "Skip the image build and deploy when the Worker already records these inputs"
+        required: false
+        type: boolean
+        default: false
       agent_plugins:
         description: "Include the optional Agent Plugins runtime materializer"
         required: false
@@ -103,11 +108,38 @@ jobs:
             echo "no build-info.json emitted"
           fi
 
+      # DEPLOY_INPUTS is recorded on the Worker at each deploy: a digest of every
+      # file the image and Worker are built from. Building the ~4.5 GB image only
+      # to deploy what already runs is the slow part of this job.
+      - name: Compare with the deployed Worker
+        id: deployed
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ONLY_IF_CHANGED: ${{ inputs.only_if_changed }}
+        run: |
+          set -euo pipefail
+          INPUTS="$(find Dockerfile wrangler.toml package.json package-lock.json src .build -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-16)"
+          echo "inputs=$INPUTS" >> "$GITHUB_OUTPUT"
+          WORKER="$(sed -n 's/^name = "\(.*\)"$/\1/p' wrangler.toml | head -1)"
+          if ! SETTINGS="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER/settings")"; then
+            echo "::warning::Could not read $WORKER's settings; deploying"
+            SETTINGS='{}'
+          fi
+          DEPLOYED="$(jq -r '.result.bindings[]? | select(.name == "DEPLOY_INPUTS") | .text' <<<"$SETTINGS")"
+          if [ "$ONLY_IF_CHANGED" = "true" ] && [ "$DEPLOYED" = "$INPUTS" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+            echo "$WORKER already runs inputs $INPUTS; nothing to deploy."
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "$WORKER records inputs ${DEPLOYED:-none}; deploying $INPUTS."
+          fi
       # The idle stop calls the control plane at CONTROL_PLANE_URL; a Worker
       # without it refuses to start runtimes, so an empty value fails here.
       # The runtime build identity comes from the bundle the image copies, so
       # the Worker checks every container's runtime against its own image's.
       - name: Deploy (build image in CI -> push to Cloudflare registry -> deploy worker)
+        if: ${{ steps.deployed.outputs.current != 'true' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -118,7 +150,7 @@ jobs:
           INFO=../.build/build-info.json
           BUILD_ID="$(jq -er .buildId "$INFO")" && RUNTIME_VERSION="$(jq -er .coreVersion "$INFO")" && RUNTIME_DIGEST="$(jq -er .runtimeDigest "$INFO")" \
             || { echo "::error::$INFO names no buildId, coreVersion and runtimeDigest"; exit 1; }
-          npm run deploy -- --var "CONTROL_PLANE_URL:$CONTROL_PLANE_URL" --var "RUNTIME_BUILD_ID:$BUILD_ID" --var "RUNTIME_VERSION:$RUNTIME_VERSION" --var "RUNTIME_DIGEST:$RUNTIME_DIGEST"
+          npm run deploy -- --var "CONTROL_PLANE_URL:$CONTROL_PLANE_URL" --var "RUNTIME_BUILD_ID:$BUILD_ID" --var "RUNTIME_VERSION:$RUNTIME_VERSION" --var "RUNTIME_DIGEST:$RUNTIME_DIGEST" --var "DEPLOY_INPUTS:${{ steps.deployed.outputs.inputs }}"
 
       # Wrangler reports a failed container push or rollout as a bare
       # "Generic Error" and writes the cause only to its log file.

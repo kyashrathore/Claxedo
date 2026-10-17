@@ -9,8 +9,9 @@ const COMPONENTS = ["control-plane", "relay", "sandbox-image"]
  * with the Boat image its own checkout builds, published under its
  * content-addressed tag: any organization may add a Boat key, and the runtime
  * in its new sandboxes is then never older than the control plane that starts
- * them. A Cloudflare sandbox Worker belongs to whoever runs it, so staging's
- * ships only when it is named.
+ * them. Staging's Cloudflare sandbox Worker ships with every full deploy, but
+ * only when what its image is built from differs from what the deployed Worker
+ * records (`sandbox_image_force` false); naming it alone redeploys it anyway.
  */
 export function deployComponents({ requested = "all" }) {
   if (requested !== "all" && !COMPONENTS.includes(requested)) throw new Error(`Unknown component ${requested}`)
@@ -19,7 +20,8 @@ export function deployComponents({ requested = "all" }) {
   return {
     control_plane: controlPlane,
     relay: selected("relay"),
-    sandbox_image: requested === "sandbox-image",
+    sandbox_image: selected("sandbox-image"),
+    sandbox_image_force: requested === "sandbox-image",
     boat_image: controlPlane,
   }
 }
