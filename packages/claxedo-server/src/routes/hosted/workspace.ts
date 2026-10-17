@@ -408,6 +408,11 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // this one unguessable.
         const workspaceId = newWorkspaceId()
         const directory = body.remoteDirectory?.trim() || WORKSPACE_DIR
+        // The region the workspace's machine runs in, which the relay places
+        // the workspace's room by for good. A Cloudflare sandbox is created
+        // beside this plane's provisioner object and so runs where the plane
+        // does, and the Boat driver knows no region for its sandboxes: the
+        // deployment's own region is where every driver's machine runs.
         const homeRegion = normalizeClaxedoRegion(undefined, options.defaultHomeRegion)
 
         try {

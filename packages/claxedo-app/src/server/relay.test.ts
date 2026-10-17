@@ -35,6 +35,53 @@ test("relay: a read takes its connection from the read-only GET and never from t
   expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/api/wr/health")
 })
 
+test("relay: a cloud workspace's requests and sockets tell the relay the region its machine runs in, so a first touch from anywhere places the room there", async () => {
+  const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValue(Response.json([]))
+  const opened: string[] = []
+  const BrowserWebSocket = globalThis.WebSocket
+  globalThis.WebSocket = function (url: string) {
+    opened.push(url)
+  } as unknown as typeof WebSocket
+  try {
+    const relay = createRelay(server.read)
+    await relay.fetch("ws_1", "/api/wr/health")
+    await relay.fetch("ws_1", "/api/wr/events?sessionID=ses_1")
+    await relay.webSocket("ws_1", "/api/wr/pty/t_1/connect?cursor=0")
+  } finally {
+    globalThis.WebSocket = BrowserWebSocket
+  }
+
+  expect(runtimeFetch.mock.calls.map((call) => call[0])).toEqual([
+    "https://relay.test/workspaces/ws_1/api/wr/health?region=us-east",
+    "https://relay.test/workspaces/ws_1/api/wr/events?sessionID=ses_1&region=us-east",
+  ])
+  expect(opened).toEqual(["wss://relay.test/workspaces/ws_1/api/wr/pty/t_1/connect?cursor=0&region=us-east"])
+})
+
+test("relay: a workspace a person's machine serves declares no region, so its room stays near that machine", async () => {
+  const server = control({ backing: "local-worktree", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValue(Response.json([]))
+
+  await createRelay(server.read).fetch("ws_1", "/api/wr/health")
+
+  expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/api/wr/health")
+})
+
+test("relay: a kept cloud link keeps its region across a reload", async () => {
+  const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
+  const storage = tab()
+  await createRelay(server.read, { scope: "usr_ada", storage }).fetch("ws_1", "/api/wr/health")
+  await createRelay(server.read, { scope: "usr_ada", storage }).fetch("ws_1", "/api/wr/health")
+
+  expect(server.calls).toHaveLength(1)
+  expect(runtimeFetch.mock.calls.map((call) => call[0])).toEqual([
+    "https://relay.test/workspaces/ws_1/api/wr/health?region=us-east",
+    "https://relay.test/workspaces/ws_1/api/wr/health?region=us-east",
+  ])
+})
+
 test("relay: a stopped workspace answers the read with workspace_stopped and nothing reaches the relay", async () => {
   const server = control({ status: "stopped", workspaceId: "ws_1" })
 

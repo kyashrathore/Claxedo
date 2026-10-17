@@ -8,6 +8,8 @@ export type RelayConnection = {
   readonly relayUrl: string
   readonly runtimeAccessToken: string
   readonly tokenExpiresAt: number
+  /** Where the control plane placed the runtime, declared to the relay so a first touch creates the room there; absent for a runtime a person's machine serves. */
+  readonly region?: string
 }
 
 export type StartElapsed = { readonly done: readonly WorkspaceStartStep[]; readonly sinceStartMs: number; readonly sinceStepMs: number }
@@ -85,12 +87,16 @@ function startElapsedOf(value: unknown): StartElapsed | undefined {
   return { done: START_STEPS.filter((step) => reached.has(step)), sinceStartMs, sinceStepMs }
 }
 
+/** The backings whose runtime the control plane placed, as against one served from a person's own machine. */
+const PLANE_PLACED_BACKINGS: ReadonlySet<unknown> = new Set(["cloud-vm", "durable-object"])
+
 function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnection {
   const { relayUrl, runtimeAccessToken, tokenExpiresAt } = row
   if (typeof relayUrl !== "string" || typeof runtimeAccessToken !== "string" || typeof tokenExpiresAt !== "number") {
     throw new ServerError({ class: "internal", message: `The workspace connection for ${workspaceId} is malformed` })
   }
-  return { workspaceId, relayUrl: relayUrl.replace(/\/+$/, ""), runtimeAccessToken, tokenExpiresAt }
+  const region = PLANE_PLACED_BACKINGS.has(row.backing) ? nonEmptyString(row.homeRegion) : undefined
+  return { workspaceId, relayUrl: relayUrl.replace(/\/+$/, ""), runtimeAccessToken, tokenExpiresAt, ...(region ? { region } : {}) }
 }
 
 export function connectionAnswerFromWire(body: unknown, workspaceId: string, sessionId?: string): ConnectionAnswer {

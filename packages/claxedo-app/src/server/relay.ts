@@ -14,7 +14,8 @@ const REFRESH_WINDOW_MS = 60_000
 const RUNTIME_ACCESS_TOKEN_PROTOCOL = "claxedo-rat."
 
 function workspaceUrl(link: RelayConnection, path: string) {
-  return `${link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
+  const url = `${link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
+  return link.region ? `${url}${path.includes("?") ? "&" : "?"}region=${encodeURIComponent(link.region)}` : url
 }
 
 async function readConnection(read: WorkspaceConnections["read"], workspaceId: string, sessionId?: string): Promise<RelayConnection> {
@@ -36,7 +37,8 @@ function storedLinks(links: RelayLinkStorage | undefined) {
       const row = asRecordOrEmpty(JSON.parse(raw))
       const [workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt] = [asString(row.workspaceId), asString(row.relayUrl), asString(row.runtimeAccessToken), asFiniteNumber(row.tokenExpiresAt)]
       if (!workspaceId || !relayUrl || !runtimeAccessToken || tokenExpiresAt === undefined) return undefined
-      const link: RelayConnection = { workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt, ...(asString(row.sessionId) ? { sessionId: asString(row.sessionId) } : {}) }
+      const [sessionId, region] = [asString(row.sessionId), asString(row.region)]
+      const link: RelayConnection = { workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt, ...(sessionId ? { sessionId } : {}), ...(region ? { region } : {}) }
       return usable(link) ? link : undefined
     },
     write: (key: string, link: RelayConnection) => {
