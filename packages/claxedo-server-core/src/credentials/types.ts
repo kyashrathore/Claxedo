@@ -68,7 +68,12 @@ export interface CredentialMetadata {
   source: CredentialSource
   label?: string | null
   account_id?: string | null
-  /** Opaque backend reference (`local:<id>`); absent where the secret lives in the row itself. */
+  /**
+   * Opaque reference to the slot holding this row's secret: `local:<id>` in
+   * the desktop backend, `d1:<id>` for the hosted envelope column (never
+   * null there). Absent when the row holds no secret, which is what
+   * `has_secret` reports.
+   */
   secure_ref?: string | null
   status: CredentialStatus
   health?: CredentialHealth | null

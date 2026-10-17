@@ -686,6 +686,16 @@ describe("hostedCredentialSecretSlots (the rotation view of the secret column)",
     expect(await slots.probe()).toBe(true)
   })
 
+  test("every row the store reads names the slot that holds its secret", async () => {
+    const org = freshOrg("slot-ref")
+    const credentials = store(org)
+    const meta = await credentials.putCredential({ ...write, owner: "A", provider_id: "groq", secret: "groq-secret" })
+    const slots = hostedCredentialSecretSlots(org, { database: controlPlane.database, env: FULL_ENV })
+    const read = [meta, await stored(credentials, meta.id), await credentials.getCredentialByProvider("groq", { owner: "A" })]
+    expect(read.map((row) => row?.secure_ref)).toEqual([`d1:${meta.id}`, `d1:${meta.id}`, `d1:${meta.id}`])
+    expect(await slots.get(`d1:${meta.id}`)).toBe("groq-secret")
+  })
+
   test("fails closed without the KEK", () => {
     expect(() => hostedCredentialSecretSlots("org-a", { database: controlPlane.database, env: {} })).toThrow(
       new RegExp(CREDENTIALS_KEK_ENV),

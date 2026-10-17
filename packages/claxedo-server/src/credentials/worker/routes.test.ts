@@ -101,6 +101,20 @@ describe("hosted account setup through the shared credential routes", () => {
     expect(JSON.stringify(captured)).not.toContain("cursor-secret-key")
   })
 
+  test("a listed account says it holds a secret, as its stored row does, and names neither the secret nor where it is kept", async () => {
+    const { org, app } = rig()
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("groq", "gsk_listed-secret") })
+    const listed = await call(app(), "/api/claxedo/credentials")
+    const { credentials } = (await listed.json()) as { credentials: Array<{ id: string; provider_id: string; has_secret: boolean }> }
+    expect(credentials.map((row) => [row.provider_id, row.has_secret])).toEqual([["groq", true]])
+    const stored = await database.database.prepare("select secret_envelope from hosted_provider_credentials where org_id = ?").bind(org).first<{ secret_envelope: string }>()
+    expect(stored?.secret_envelope).toBeTruthy()
+    const body = JSON.stringify(credentials)
+    expect(body).not.toContain("gsk_listed-secret")
+    expect(body).not.toContain("secure_ref")
+    expect(body).not.toContain(`d1:${credentials[0]?.id}`)
+  })
+
   test("another person cannot list, check, reconnect or delete someone's account", async () => {
     const { store, app } = rig()
     await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("cursor-sdk") })

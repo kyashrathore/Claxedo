@@ -580,6 +580,7 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
     source: enumColumn(row, "source", CREDENTIAL_SOURCES),
     label: nullableTextColumn(row, "label"),
     account_id: nullableTextColumn(row, "account_id"),
+    secure_ref: hostedCredentialSlotRef(requiredTextColumn(row, "id")),
     status: enumColumn(row, "status", CREDENTIAL_STATUSES),
     health: column(row, "health") === null ? null : enumColumn(row, "health", CREDENTIAL_HEALTHS),
     expires_at: nullableIntegerColumn(row, "expires_at"),
