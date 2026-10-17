@@ -31,7 +31,7 @@ import { TasksError, refuse, refuseInvalid } from "../errors"
 import type { TasksAuthorizationPort } from "../ports/authorization"
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
-import { sessionOriginOf, type TasksSessionBridgePort } from "../ports/session-bridge"
+import { sessionOriginOf, type StartedSessionRuntime, type TasksSessionBridgePort } from "../ports/session-bridge"
 import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { admissibleAttempt, startConfigurationDigest } from "../start"
 import { idWithinBound } from "../validation"
@@ -314,7 +314,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
    * interrupted is the one that eventually arrives; the host decides its id
    * from the origin, so a session that already has it is left alone.
    */
-  const handOff = async (actor: TasksActor, task: Task, link: TaskSessionLink): Promise<void> => {
+  const handOff = async (actor: TasksActor, task: Task, link: TaskSessionLink, runtime?: StartedSessionRuntime): Promise<void> => {
     const handed = await deps.bridge.handoff({
       actor,
       task,
@@ -323,6 +323,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       handoffText: link.handoffText,
       attachments: await deps.store.attachments.listWithBytes(actor.scopeId, task.id),
       session: link.sessionRef,
+      ...(runtime ? { runtime } : {}),
     })
     if (!handed.ok) throw new TasksError(handed.error)
   }
@@ -343,6 +344,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     request: StartRequest,
     configurationDigest: string,
     sessionRef: SessionRef,
+    runtime: StartedSessionRuntime,
   ): Promise<void> => {
     const held = await deps.store.links.getCurrent(actor.scopeId, task.id, request.slot)
     if (held?.sessionRef.sessionId === sessionRef.sessionId) return
@@ -353,6 +355,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       attempt: request.attempt,
       configurationDigest,
       sessionRef,
+      runtime,
     })
   }
 
@@ -682,7 +685,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         // The session was created and nothing names it, so it is given back
         // before the refusal travels: left behind it holds the origin, and the
         // attempt the user would retry is neither startable nor replaceable.
-        await abandonUnlinked(actor, task, request, configurationDigest, started.session.sessionRef)
+        await abandonUnlinked(actor, task, request, configurationDigest, started.session.sessionRef, started.runtime)
         // A store that only discovers a broken predicate at commit reports it
         // here; for this unit either kind means the same thing, and Start has
         // no receipt to replay it from.
@@ -690,7 +693,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         throw cause
       })
 
-      await handOff(actor, task, settled.link)
+      await handOff(actor, task, settled.link, started.runtime)
 
       // A handoff that resolved is the origin's message on the session, whether
       // this call submitted it or found it already there.

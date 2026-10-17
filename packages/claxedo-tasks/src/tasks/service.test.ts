@@ -972,6 +972,38 @@ describe("tasks service", () => {
       expect(bridge.starts).toHaveLength(1)
     })
 
+    test("the handoff and the abandonment hand the bridge the runtime its Start answered; a handoff retried by a later call hands none", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      bridge.refuseHandoff("the workspace runtime would not say whether the task was already sent")
+      await refusalOf(() => tasks.start(ACTOR, task.id, start(task)))
+      expect(bridge.runtimes).toHaveLength(1)
+      expect(bridge.handoffs).toHaveLength(1)
+      expect(bridge.handoffs[0]?.runtime).toBe(bridge.runtimes[0])
+
+      bridge.refuseHandoff(null)
+      const linked = (await tasks.detail(ACTOR, task.id)).task
+      await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision }))
+      expect(bridge.starts).toHaveLength(1)
+      expect(bridge.handoffs).toHaveLength(2)
+      expect(bridge.handoffs[1]?.runtime).toBeUndefined()
+
+      const other = (await tasks.create(ACTOR, draft())).task
+      const presets = createPresetsService({ store, clock: fakeClock(), ids: fakeIds(), capabilities: fakeCapabilities() })
+      const editing: FakeBridge = {
+        ...bridge,
+        start: async (command: Parameters<FakeBridge["start"]>[0]) => {
+          await presets.edit(ACTOR, { ...slotted("review"), presetId: preset.id, revision: preset.revision, name: "Rewritten", instructions: "Rewrite it." })
+          return bridge.start(command)
+        },
+      }
+      const racing = createTasksService({ store, clock: fakeClock(), ids: fakeIds(), authorization, bridge: editing })
+      bridge.nextSession("session-2")
+      await refusalOf(() => racing.start(ACTOR, other.id, start(other)))
+      expect(bridge.runtimes).toHaveLength(2)
+      expect(bridge.abandoned).toHaveLength(1)
+      expect(bridge.abandoned[0]?.runtime).toBe(bridge.runtimes[1])
+    })
+
     test("a preset edited while the session was being created leaves no link, and the session it made is given back", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       const presets = createPresetsService({ store, clock: fakeClock(), ids: fakeIds(), capabilities: fakeCapabilities() })

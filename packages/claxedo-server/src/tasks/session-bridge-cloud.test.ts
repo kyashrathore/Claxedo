@@ -20,7 +20,10 @@ import {
   startOriginId,
   type ConfigurationSlot,
   type Preset,
+  type SessionHandoffCommand,
+  type SessionRef,
   type StartCommand,
+  type StartedSessionRuntime,
   type Task,
 } from "@claxedo/tasks"
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
@@ -110,9 +113,10 @@ function fakeDriver(overrides: Partial<SandboxDriver> = {}) {
 
 /** The endpoints a Start touches, answered per workspace so two roots cannot read each other's sessions. */
 function runtime() {
-  const sessions = new Map<string, Map<string, { instructions: string; variant?: string }>>()
+  type Row = { instructions: string; variant?: string; messages: { info: { id: string; role: string; sessionID: string }; parts: unknown[] }[] }
+  const sessions = new Map<string, Map<string, Row>>()
   mock.request.mockImplementation(async (workspaceId: string, requestPath: string, init?: RequestInit) => {
-    const rows = sessions.get(workspaceId) ?? new Map<string, { instructions: string; variant?: string }>()
+    const rows = sessions.get(workspaceId) ?? new Map<string, Row>()
     sessions.set(workspaceId, rows)
     if (requestPath.startsWith("/session/capabilities")) {
       return Response.json({
@@ -130,11 +134,27 @@ function runtime() {
       rows.set(String(body.id), {
         instructions: typeof body.instructions === "string" ? body.instructions : "",
         ...(typeof body.variant === "string" ? { variant: body.variant } : {}),
+        messages: [],
       })
       return Response.json({ id: String(body.id), directory: "/workspace", time: { created: 1, updated: 1 } }, { status: 201 })
     }
     const message = /^\/session\/([^/]+)\/message$/.exec(requestPath)
-    if (message) return rows.has(message[1]) ? Response.json([]) : Response.json({}, { status: 404 })
+    if (message) {
+      const row = rows.get(message[1])
+      return row ? Response.json(row.messages) : Response.json({}, { status: 404 })
+    }
+    const prompt = /^\/session\/([^/]+)\/prompt_async$/.exec(requestPath)
+    if (prompt) {
+      const row = rows.get(prompt[1])
+      if (!row) return Response.json({}, { status: 404 })
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { messageID?: string; parts?: unknown[] }
+      const messageID = String(body.messageID)
+      row.messages.push({
+        info: { id: messageID, role: "user", sessionID: prompt[1] },
+        parts: (body.parts ?? []).map((part, index) => ({ ...(typeof part === "object" && part ? part : {}), id: `prt_${messageID}_${index}`, sessionID: prompt[1], messageID })),
+      })
+      return new Response(null, { status: 204 })
+    }
     const config = /^\/session\/([^/]+)\/config$/.exec(requestPath)
     if (config) {
       const row = rows.get(config[1])
@@ -363,6 +383,16 @@ async function startCommand(taskId: string, digest: string): Promise<StartComman
   }
 }
 
+function handoffCommand(taskId: string, session: SessionRef, runtime?: StartedSessionRuntime): SessionHandoffCommand {
+  return { actor, task: task(taskId), slot, attempt: 1, handoffText: null, attachments: [], session, ...(runtime ? { runtime } : {}) }
+}
+
+/** The runtime a bridge's Start answered with; a refusal or a `preparing` answer fails the test that expected one. */
+function startedRuntime(result: Awaited<ReturnType<ReturnType<typeof bridge>["start"]>>): StartedSessionRuntime {
+  if (!result.ok || !("runtime" in result)) throw new Error("the Start answered no session")
+  return result.runtime
+}
+
 async function preview(kit: ReturnType<typeof bridge>, taskId: string) {
   const previewed = await kit.preview(previewCommand(taskId))
   if (!previewed.ok) throw new Error(`preview refused: ${previewed.error.message}`)
@@ -513,6 +543,35 @@ describe("hosted tasks cloud roots", () => {
     expect(started).toMatchObject({ ok: true, session: { sessionRef: { workspaceId: root } } })
     expect(mock.clients).toEqual([{ workspaceId: root, resume: false }])
     expect(ensured).toEqual([root])
+  })
+
+  test("the task is handed to the session through the client that created it when the handoff carries the Start's runtime", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    const composition = services(sandboxManager)
+    const { kit, boot } = booting(composition)
+
+    const { started } = await start(kit, "tsk_one", boot)
+    const session = startedSession(started).sessionRef
+    expect(await kit.handoff(handoffCommand("tsk_one", session, startedRuntime(started)))).toEqual({ ok: true, sent: true })
+    expect(mock.clients).toEqual([{ workspaceId: session.workspaceId, resume: false }])
+    expect(ensured).toEqual([session.workspaceId])
+  })
+
+  test("a handoff from a call that holds no Start runtime resolves the session's runtime itself, which may wake the root", async () => {
+    runtime()
+    const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver })
+    const composition = services(sandboxManager)
+    const { kit, boot } = booting(composition)
+
+    const { started } = await start(kit, "tsk_one", boot)
+    const session = startedSession(started).sessionRef
+    expect(await kit.handoff(handoffCommand("tsk_one", session))).toEqual({ ok: true, sent: true })
+    expect(mock.clients).toEqual([{ workspaceId: session.workspaceId, resume: false }, { workspaceId: session.workspaceId, resume: undefined }])
+
+    expect(await kit.handoff(handoffCommand("tsk_one", session))).toEqual({ ok: true, sent: false })
+    expect(mock.clients).toHaveLength(3)
   })
 
   test("starts the root through the workspace's own sandbox start, as a person's start, with the preset's capability set", async () => {

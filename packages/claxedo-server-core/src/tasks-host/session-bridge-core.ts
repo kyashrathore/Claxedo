@@ -2,6 +2,7 @@ import { sessionVariantForEffort } from "@claxedo/agent-runtime-contract"
 import { renderSessionHandoff } from "@claxedo/agent-runtime-contract"
 import { sessionCreateRequest } from "@claxedo/server-core/workspace/http/session-create-request"
 import {
+  STARTED_SESSION_RUNTIME,
   TasksError,
   attachmentDataUrl,
   cloudPresetHarnessRefusal,
@@ -26,6 +27,7 @@ import {
   type StartModelGroup,
   type StartPreviewCommand,
   type StartedSession,
+  type StartedSessionRuntime,
   type TranscriptGrant,
   type Task,
   type TasksActor,
@@ -175,6 +177,22 @@ export type TasksSessionHost = {
   /** Remove what `projectSessionMeta` wrote, so an abandoned session leaves no row behind. */
   forgetSessionMeta?(sessionId: string): Promise<void>
 }
+
+/**
+ * A Start's runtime target travels back to this host as the handle the package
+ * carries, opaquely, from the Start's answer into the handoff or abandonment
+ * the same service call runs; one minted by another host's bridge is not a
+ * target this one can send through.
+ */
+type HandledTarget = TasksRuntimeTarget & StartedSessionRuntime
+
+const runtimeHandle = (target: TasksRuntimeTarget): HandledTarget => ({ ...target, [STARTED_SESSION_RUNTIME]: true })
+
+const isHandledTarget = (handle: StartedSessionRuntime): handle is HandledTarget =>
+  "workspace" in handle && typeof handle.workspace === "object" && handle.workspace !== null && "request" in handle && typeof handle.request === "function"
+
+const handledTarget = (handle: StartedSessionRuntime | undefined): TasksRuntimeTarget | undefined =>
+  handle && isHandledTarget(handle) ? handle : undefined
 
 export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBridgePort {
   return {
@@ -500,7 +518,7 @@ async function startSession(
   command: StartCommand,
   resolved: ResolvedStart,
   target: TasksRuntimeTarget,
-): Promise<TasksResult<{ session: StartedSession }>> {
+): Promise<TasksResult<{ session: StartedSession; runtime: StartedSessionRuntime }>> {
   const { origin, sessionId } = await originIds({
     scopeId: command.actor.scopeId,
     taskId: command.task.id,
@@ -569,6 +587,7 @@ async function startSession(
       startedFrom: null,
       startedBy: "person",
     },
+    runtime: runtimeHandle(target),
   }
 }
 
@@ -582,7 +601,7 @@ async function sendFirstMessage(
   host: TasksSessionHost,
   command: SessionHandoffCommand,
 ): Promise<TasksResult<{ sent: boolean }>> {
-  const target = await host.target(command.session.workspaceId, command.actor)
+  const target = handledTarget(command.runtime) ?? await host.target(command.session.workspaceId, command.actor)
   if (!target) {
     return {
       ok: false,
@@ -642,7 +661,7 @@ async function abandonSession(
   host: TasksSessionHost,
   command: SessionAbandonCommand,
 ): Promise<TasksResult<{ removed: boolean }>> {
-  const target = await host.target(command.sessionRef.workspaceId, command.actor)
+  const target = handledTarget(command.runtime) ?? await host.target(command.sessionRef.workspaceId, command.actor)
   if (!target) {
     return {
       ok: false,

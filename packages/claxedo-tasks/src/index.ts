@@ -29,7 +29,9 @@ export {
   type SessionStateReading,
   type StartCommand,
   type StartPreviewCommand,
+  STARTED_SESSION_RUNTIME,
   type StartedSession,
+  type StartedSessionRuntime,
   type TasksSessionBridgePort,
   type TranscriptGrant,
 } from "./ports/session-bridge"

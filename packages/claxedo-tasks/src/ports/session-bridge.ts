@@ -85,6 +85,16 @@ export type StartCommand = {
   startedFrom?: SessionRef
 }
 
+/**
+ * The runtime a Start created its session on, as the host addressed it for
+ * that Start's actor; opaque here. The handoff or abandonment the same
+ * service call runs right after hands it back, and the host sends through it
+ * rather than resolving (and on a cloud root re-ensuring) a second one. It is
+ * never stored: a handoff or abandonment from any other call carries none.
+ */
+export const STARTED_SESSION_RUNTIME: unique symbol = Symbol("StartedSessionRuntime")
+export type StartedSessionRuntime = { readonly [STARTED_SESSION_RUNTIME]: true }
+
 export type SessionHandoffCommand = {
   actor: TasksActor
   task: Task
@@ -95,6 +105,8 @@ export type SessionHandoffCommand = {
   attachments: readonly TaskAttachmentRecord[]
   /** The session the committed link names, which is the only one this task is handed to. */
   session: SessionRef
+  /** The runtime the Start this handoff completes answered with; absent for a handoff retried by a later call. */
+  runtime?: StartedSessionRuntime
 }
 
 /** A session a Start created and the package then refused to link, named by its origin. */
@@ -106,6 +118,8 @@ export type SessionAbandonCommand = {
   /** The digest the origin was reserved under, so a host with a reservation compensates that one. */
   configurationDigest: string
   sessionRef: SessionRef
+  /** The runtime the Start that created the session answered with. */
+  runtime?: StartedSessionRuntime
 }
 
 export type StartedSession = {
@@ -143,7 +157,7 @@ export type StartedSession = {
 export type TasksSessionBridgePort = {
   sessionState(origins: readonly SessionOrigin[]): Promise<readonly SessionStateReading[]>
   preview(command: StartPreviewCommand): Promise<TasksResult<{ preview: StartPreview }>>
-  start(command: StartCommand): Promise<TasksResult<{ session: StartedSession } | { preparing: StartPreparing }>>
+  start(command: StartCommand): Promise<TasksResult<{ session: StartedSession; runtime: StartedSessionRuntime } | { preparing: StartPreparing }>>
   /** `sent` is false when this origin's first message was already on the session. */
   handoff(command: SessionHandoffCommand): Promise<TasksResult<{ sent: boolean }>>
   /**

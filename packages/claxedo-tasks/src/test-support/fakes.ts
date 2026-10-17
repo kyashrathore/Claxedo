@@ -3,13 +3,15 @@ import type { HarnessDescriptor, TasksCapabilitiesPort, TasksHostCapabilities } 
 import type { TasksAuthorizationPort } from "../ports/authorization"
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
-import type {
-  SessionAbandonCommand,
-  SessionHandoffCommand,
-  SessionOrigin,
-  StartCommand,
-  StartPreviewCommand,
-  TasksSessionBridgePort,
+import {
+  STARTED_SESSION_RUNTIME,
+  type SessionAbandonCommand,
+  type SessionHandoffCommand,
+  type SessionOrigin,
+  type StartCommand,
+  type StartPreviewCommand,
+  type StartedSessionRuntime,
+  type TasksSessionBridgePort,
 } from "../ports/session-bridge"
 import { OWNER, SCOPES, primaryConfiguration } from "./rows"
 
@@ -96,6 +98,8 @@ export type FakeBridge = TasksSessionBridgePort & {
   /** The handoffs that submitted a message, which is what must happen once. */
   readonly delivered: readonly SessionHandoffCommand[]
   readonly abandoned: readonly SessionAbandonCommand[]
+  /** The runtime each Start answered with, in order, which its handoff or abandonment must hand back. */
+  readonly runtimes: readonly StartedSessionRuntime[]
   /** Every previous-session transcript this bridge was allowed to read. */
   readonly transcriptReads: readonly string[]
 }
@@ -107,6 +111,7 @@ export function fakeBridge(): FakeBridge {
   const handoffs: SessionHandoffCommand[] = []
   const delivered: SessionHandoffCommand[] = []
   const abandoned: SessionAbandonCommand[] = []
+  const runtimes: StartedSessionRuntime[] = []
   const transcriptReads: string[] = []
   const sent = new Set<string>()
   // The real host derives the message id from the origin, so the same origin
@@ -167,6 +172,8 @@ export function fakeBridge(): FakeBridge {
       if (command.previousSession) transcriptReads.push(command.previousSession.sessionId)
       if (refusal !== null) return { ok: false, error: { code: "unsupported", message: refusal } }
       if (preparing !== null) return { ok: true, preparing: { workspaceId: preparing } }
+      const runtime = { [STARTED_SESSION_RUNTIME]: true, startedSession: nextSessionId } as const
+      runtimes.push(runtime)
       return {
         ok: true,
         session: {
@@ -175,6 +182,7 @@ export function fakeBridge(): FakeBridge {
           startedFrom: null,
           startedBy: "person",
         },
+        runtime,
       }
     },
     async handoff(command) {
@@ -230,6 +238,9 @@ export function fakeBridge(): FakeBridge {
     },
     get abandoned() {
       return abandoned
+    },
+    get runtimes() {
+      return runtimes
     },
     get transcriptReads() {
       return transcriptReads

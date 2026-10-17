@@ -149,6 +149,7 @@ export function gateAgentStarts(
       return {
         ok: true,
         session: { ...started.session, startedFrom: startedFromOf(grant, command), startedBy: "agent" },
+        runtime: started.runtime,
       }
     },
     handoff: (command) => bridge.handoff(command),
