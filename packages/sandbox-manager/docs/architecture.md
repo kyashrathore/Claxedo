@@ -151,14 +151,15 @@ Column meanings:
 - **`hostWatchesIdle`** — set when the host itself reads its runtime's
   idleness and stops once the idle window has passed (the Cloudflare sandbox
   Worker does, from inside the host). The control plane's provisioner reads
-  every serving runtime's `/api/wr/health` over the relay every 30 s: an
-  answer is recorded as the lease's heartbeat; a read that reaches no runtime
-  asks the driver's `inspect`, which records a host the provider says is
+  every serving runtime's `/api/wr/health` over the relay every 30 s, and a
+  read waits up to those 30 s for its answer: an answer is recorded as the
+  lease's heartbeat; a read the runtime leaves unanswered asks the driver's
+  `inspect` (`endIfHostDown`), which records a host the provider says is
   running as the heartbeat too (the host bills whether or not its runtime
   answers), and ends the lease at once for a host the provider stopped or no
-  longer has (`endIfHostDown`), so its boot closes within one read of the
-  host's end; ten minutes of reads that
-  reached no runtime stop the lease. Absent this flag, the provisioner also
+  longer has, so its boot closes within one read of the host's end; ten
+  minutes of reads the runtime left unanswered stop the lease, whatever the
+  provider says of its host. Absent this flag, the provisioner also
   stops the lease as idle through `SandboxManager.stop()` after ten idle
   minutes. One idle policy, one idle watcher per sandbox.
 - **`targetAccess`** — how the control plane reaches the resolved

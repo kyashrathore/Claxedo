@@ -27,8 +27,8 @@ vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClie
     return runtimeStatus.answer
   },
 }) }))
-/** What the runtime answers an idle read with: its health body, or nothing when it is unreachable. */
-const runtimeIdle = { report: undefined as Record<string, unknown> | undefined }
+/** What the runtime answers an idle read with: its health body, or nothing when it is unreachable, after `delayMs`. */
+const runtimeIdle = { report: undefined as Record<string, unknown> | undefined, delayMs: 0 }
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
 
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
@@ -40,6 +40,8 @@ afterEach(async () => {
   pushRefusal.reason = undefined
   runtimeStatus.answer = undefined
   runtimeIdle.report = undefined
+  runtimeIdle.delayMs = 0
+  vi.useRealTimers()
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
@@ -165,6 +167,7 @@ async function composition(driverId = "test") {
     },
     runtimeFetch: async (workspaceId, _orgId, path) => {
       if (path !== "/api/wr/health") return Response.json({}, { status: 404 })
+      if (runtimeIdle.delayMs) await new Promise((resolve) => setTimeout(resolve, runtimeIdle.delayMs))
       if (!runtimeIdle.report) throw new Error("the runtime is unreachable")
       return Response.json({ workspaceId, ...runtimeIdle.report })
     },
@@ -302,7 +305,7 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(stops).toHaveLength(1)
   })
 
-  test("a runtime that answers nothing is read again, counted, and stopped only once the failure budget is spent; a host its provider says runs is proven alive at each read", async () => {
+  test("a runtime that answers nothing on a host its provider says runs is counted at each read and stopped once the failure budget is spent; the provider's answer is the lease's heartbeat at each read", async () => {
     const { delivery, create, stops, lost, sandboxManager } = await composition()
     const workspaceId = await create({})
     await delivery.start.acquire(workspaceId)
@@ -315,9 +318,45 @@ describe("watching a serving hosted sandbox for idleness", () => {
     await expect(delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 2)).rejects.toThrow("unreachable")
     expect(stops).toEqual([])
     expect(lost).toEqual([])
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })
     expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
     expect(stops).toEqual([{ workspaceId, epoch: 1 }])
     expect(lost).toEqual([{ workspaceId, at: expect.any(Number) }])
+  })
+
+  test("a runtime that answers within its check period, however late, has answered: the read is proof of life and counts nothing against the failure budget", async () => {
+    const { delivery, create, stops, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    runtimeIdle.report = { idleSince: Date.now() }
+    runtimeIdle.delayMs = IDLE_CHECK_MS - 5_000
+    const provisioned = (await sandboxManager.list())[0]?.lastHeartbeatAt ?? 0
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+
+    const read = delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)
+    await vi.advanceTimersByTimeAsync(runtimeIdle.delayMs)
+
+    await expect(read).resolves.toBeGreaterThanOrEqual(Date.now() + IDLE_CHECK_MS - 1_000)
+    expect(stops).toEqual([])
+    expect((await sandboxManager.list())[0]?.lastHeartbeatAt).toBeGreaterThan(provisioned)
+  })
+
+  test("a runtime that has not answered when its check period ends is silent, and the read counts against the failure budget though the provider says its host runs", async () => {
+    const { delivery, create, stops } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    runtimeIdle.report = { idleSince: Date.now() }
+    runtimeIdle.delayMs = IDLE_CHECK_MS + 5_000
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+
+    const read = delivery.start.watch(workspaceId, 0)
+    const settled = expect(read).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(runtimeIdle.delayMs)
+
+    await settled
+    expect(stops).toEqual([])
   })
 
   test("a runtime that answers nothing on a host the provider no longer has ends its lease at the first read, without spending the failure budget", async () => {
@@ -386,17 +425,6 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(stops).toEqual([])
     expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
     expect(stops).toEqual([{ workspaceId, epoch: 1 }])
-  })
-
-  test("a runtime that answers nothing on a host the provider still serves is read again, and nothing is ended", async () => {
-    const { delivery, create, lost, sandboxManager } = await composition()
-    const workspaceId = await create({})
-    await delivery.start.acquire(workspaceId)
-    await delivery.start.provision(workspaceId, 1)
-
-    await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("unreachable")
-    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "ready" })
-    expect(lost).toEqual([])
   })
 })
 

@@ -40,7 +40,7 @@ import {
   type CredentialWrite,
   type SecretBackend,
 } from "@claxedo/server-core/credentials/types"
-import { credentialLastError, credentialStatusForHealth } from "@claxedo/server-core/credentials/health"
+import { credentialLastError, credentialStatusForHealth, credentialUndeliverable } from "@claxedo/server-core/credentials/health"
 import {
   encryptedSecretBackend,
   envelopeCipher,
@@ -190,22 +190,55 @@ export function hostedOrgCredentials(
 
   /**
    * The mark a save leaves on its row. A sandbox is delivered one account per
-   * origin, the most recently marked, so a save takes the mark only when none
-   * of the person's other marked accounts is delivered to the same origin:
-   * adding a key for one harness never moves another harness off the account
-   * it runs on. Only `setActiveCredentials` switches an origin.
+   * origin, the most recently marked one it can spend, so a save takes the
+   * mark only when none of the person's other marked accounts that can be
+   * spent is delivered to the same origin: adding a key for one harness never
+   * moves another harness off the account it runs on, and a key added beside
+   * an account the vendor refused becomes the one spent. Only
+   * `setActiveCredentials` switches an origin between spendable accounts.
    */
   const savedMark = async (row: { owner: string | null; provider_id: string; kind: CredentialKind }, id: string, timestamp: number) => {
     if (!fanoutEligibleAuth(row.kind, row.provider_id)) return null
     const current = (await readCredential(id))?.activated_at ?? null
     const origin = deliveryOrigin(row)
-    const marked = await database
-      .prepare("select provider_id, kind from hosted_provider_credentials where org_id = ? and owner is ? and id <> ? and activated_at is not null")
-      .bind(org, row.owner, id)
-      .all()
-    const held = origin !== undefined && marked.results.some((other) =>
-      deliveryOrigin({ provider_id: requiredTextColumn(other, "provider_id"), kind: enumColumn(other, "kind", CREDENTIAL_KINDS) }) === origin)
+    const held = origin !== undefined && (await ownedAccounts(row.owner, id)).some((other) => other.is_active && spentAt(other, origin))
     return held ? current : (current ?? timestamp)
+  }
+
+  /** The person's other stored accounts, newest first. */
+  const ownedAccounts = async (owner: string | null, exceptId: string) => {
+    const rows = await database
+      .prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and owner is ? and id <> ? order by created_at desc, id`)
+      .bind(org, owner, exceptId)
+      .all()
+    return rows.results.map(credentialMetadataRow)
+  }
+
+  const spentAt = (row: CredentialMetadata, origin: string) => fanoutEligible(row) && !credentialUndeliverable(row) && deliveryOrigin(row) === origin
+
+  /**
+   * A marked account that left (refused by its vendor, expired, revoked or
+   * removed) hands its origin's mark to the person's newest account there
+   * that can be spent, by the rule a save follows: nothing moves while
+   * another spendable marked account holds the origin.
+   */
+  const handOffMark = async (left: CredentialMetadata | undefined) => {
+    if (!left?.is_active) return
+    const origin = deliveryOrigin(left)
+    if (origin === undefined) return
+    const spendable = (await ownedAccounts(left.owner ?? null, left.id)).filter((row) => spentAt(row, origin))
+    const heir = spendable[0]
+    if (!heir || spendable.some((row) => row.is_active)) return
+    const timestamp = now()
+    await database
+      .prepare("update hosted_provider_credentials set activated_at = ?, updated_at = ? where org_id = ? and id = ? and activated_at is null")
+      .bind(timestamp, timestamp, org, heir.id)
+      .run()
+  }
+
+  const handOffIfUndeliverable = async (id: string) => {
+    const row = await readCredential(id)
+    if (row && credentialUndeliverable(row)) await handOffMark(row)
   }
 
   const upsert = async (input: CredentialWrite, id: string) => {
@@ -330,11 +363,14 @@ export function hostedOrgCredentials(
       if (!updated) throw unwritten()
       return updated
     },
-    deleteCredential: (id, _org, administeredBy) => {
+    deleteCredential: async (id, _org, administeredBy) => {
       const guard = administeredGuard({ owner: null, ...(administeredBy ? { administeredBy } : {}) })
-      return changed(guard
+      const removing = await readCredential(id)
+      const removed = await changed(guard
         ? database.prepare(`delete from hosted_provider_credentials where org_id = ? and id = ? and owner is null and ${guard.sql}`).bind(org, id, ...guard.bind)
         : database.prepare("delete from hosted_provider_credentials where org_id = ? and id = ?").bind(org, id))
+      if (removed) await handOffMark(removing)
+      return removed
     },
     deleteCredentialsByProvider: async (providerId, kind) => {
       const result = await database
@@ -354,6 +390,7 @@ export function hostedOrgCredentials(
         )
         .bind(status, status === "expired" ? "expired" : null, error ?? null, now(), org, id)
         .run()
+      await handOffIfUndeliverable(id)
     },
     updateCredentialHealth: async (id, health, validatedAt, _org, evidence) => {
       await database
@@ -368,6 +405,7 @@ export function hostedOrgCredentials(
         )
         .bind(health, credentialStatusForHealth(health), validatedAt, credentialLastError(health, evidence), now(), org, id)
         .run()
+      await handOffIfUndeliverable(id)
     },
     updateCredentialUsage: async (id, windows, at) => {
       await database

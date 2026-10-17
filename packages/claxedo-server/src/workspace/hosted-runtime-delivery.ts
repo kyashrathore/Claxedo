@@ -281,14 +281,20 @@ export function createHostedRuntimeDelivery(input: {
     }
   }
   /**
-   * One read of a serving runtime over the relay. An answer is the host's
-   * proof of life, recorded on the lease, and is read for idleness unless the
-   * host reads its own. For a runtime that does not answer the provider is
-   * asked: a host it says runs is proof of life all the same, and one it
-   * stopped or no longer has ends the lease at once, so the workspace stops
-   * reading as running; a runtime that answered nothing for the whole failure
-   * budget is stopped too: its host is metered while nobody reaches what it
-   * serves. Either way the turns its sessions were running end with it.
+   * One read of a serving runtime over the relay, waited on for as long as
+   * the check period: on staging the relay's hop alone took up to 2.9 s and
+   * an OpenCode engine boot held the runtime's loop for up to 7.9 s, so a
+   * runtime that answers before its next read is due has answered. An answer
+   * is the host's proof of life, recorded on the lease, and is read for
+   * idleness unless the host reads its own. For a runtime that does not
+   * answer the provider is asked: a host it stopped or no longer has ends the
+   * lease at once, so the workspace stops reading as running, and a host it
+   * says runs only dates the lease's heartbeat, since it bills whether or not
+   * its runtime answers. Every read the runtime leaves unanswered counts
+   * against the failure budget, whatever the provider says, and a runtime
+   * silent for the whole budget is stopped: its host is metered while nobody
+   * reaches what it serves. Either way the turns its sessions were running
+   * end with it.
    */
   const watch = async (workspaceId: string, failures: number): Promise<number | undefined> => {
     const target = await input.sandboxManager.target(workspaceId)
@@ -296,7 +302,7 @@ export function createHostedRuntimeDelivery(input: {
     const person = await owner(workspaceId)
     let report: Record<string, unknown> | undefined
     try {
-      const response = await withTimeout(runtimeFetch(workspaceId, person.orgId, RUNTIME_HEALTH_PATH, { method: "GET" }), LIVE_ANSWER_MS)
+      const response = await withTimeout(runtimeFetch(workspaceId, person.orgId, RUNTIME_HEALTH_PATH, { method: "GET" }), IDLE_CHECK_MS)
       if (!response.ok) throw new Error(`the runtime answered ${response.status} for its idleness`)
       report = asRecord(await response.json())
       if (report?.workspaceId !== workspaceId) throw new Error("the runtime answered for another workspace")
