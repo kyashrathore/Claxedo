@@ -363,8 +363,10 @@ export function createHostedRuntimeDelivery(input: {
     }))
     return workspaces.flat()
   }
+  // A refresh runs the driver, which boots a runtime that is not serving, and
+  // whether such a runtime comes back is the liveness watch's decision.
   const refresh = async (workspaceId: string) => {
-    if ((await input.sandboxManager.target(workspaceId)).status !== "ready") return
+    if (!await live(workspaceId)) return
     const answer = await input.sandboxRefresh(workspaceId)
     if (answer.status === "failed") throw new Error(answer.message)
     if (answer.status === "unavailable") throw new Error(`hosted runtime refresh failed: ${answer.error}`)

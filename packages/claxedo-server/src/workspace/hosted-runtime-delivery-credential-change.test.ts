@@ -10,11 +10,22 @@ import { workspaceBackingDatabase } from "../test-support/workspace-backing-data
 
 type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
 
+/** The workspaces whose runtime answers; every other one is silent, the way a runtime that died is. */
+const serving = vi.hoisted(() => new Set<string>())
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: ({ baseUrl }: { baseUrl: string }) => ({
+  configStatus: async () => {
+    if (![...serving].some((workspaceId) => baseUrl === `https://${workspaceId}.runtime.test`)) throw new Error("the runtime did not answer")
+    return { state: "applied", revision: 1 }
+  },
+}) }))
+vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
+
 const OWNERS: Record<string, string> = { "ws-a": "owner-A", "ws-b": "owner-B", "ws-a-edge": "owner-A" }
 const BROKERING: Record<string, SandboxSecretBrokering> = { "ws-a": "none", "ws-b": "none", "ws-a-edge": "native" }
 
 const disposals: Array<() => Promise<void>> = []
 afterEach(async () => {
+  serving.clear()
   await Promise.all(disposals.splice(0).map((dispose) => dispose()))
 })
 
@@ -26,7 +37,12 @@ async function plane() {
   } }, { now: (() => { let at = 1_000; return () => ++at })() })
   const leaseStore = createMemoryLeaseStore(Object.keys(OWNERS).map((workspaceId) =>
     sandboxLease({ workspaceId, status: "ready", sandboxId: `sb-${workspaceId}`, hostId: `host-${workspaceId}`, url: "https://runtime.test", routingId: `route-${workspaceId}` })))
-  const sandboxManager = { list: () => leaseStore.list(), target: async () => ({ status: "ready" }) } as unknown as Input["sandboxManager"]
+  for (const workspaceId of Object.keys(OWNERS)) serving.add(workspaceId)
+  const sandboxManager = {
+    list: () => leaseStore.list(),
+    target: async (workspaceId: string) => ({ status: "ready", epoch: 1, hostId: `host-${workspaceId}`, url: `https://${workspaceId}.runtime.test` }),
+    heartbeat: async () => ({ ok: true, status: "ready" }),
+  } as unknown as Input["sandboxManager"]
   const refreshed: string[] = []
   const redelivered: string[] = []
   const delivery = createHostedRuntimeDelivery({
@@ -100,4 +116,15 @@ test("a team key reaches only the running workspaces of people who chose the org
 
   await credentials.deleteCredential(team.id, "org")
   expect(touched()).toEqual({ refreshed: [], redelivered: ["ws-b"] })
+})
+
+test("an account change never starts a workspace whose runtime does not answer: the driver refresh that would boot it again is left to the liveness watch", async () => {
+  const { credentials, touched } = await plane()
+  serving.delete("ws-a-edge")
+  await credentials.putCredential({ owner: "owner-A", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-ant-api03-owner-a" }, "org")
+  expect(touched()).toEqual({ refreshed: [], redelivered: ["ws-a"] })
+
+  serving.add("ws-a-edge")
+  await credentials.putCredential({ owner: "owner-A", provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "sk-ant-api03-owner-a-rotated" }, "org")
+  expect(touched()).toEqual({ refreshed: ["ws-a-edge"], redelivered: ["ws-a"] })
 })

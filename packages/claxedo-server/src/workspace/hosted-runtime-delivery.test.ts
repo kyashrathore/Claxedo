@@ -50,15 +50,17 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer, orgId: "org" },
 })
 
-/** A provider that loses or stops hosts: an ensure for a host it no longer holds creates a new one. */
+/** A provider that loses or stops hosts: an ensure for a host it no longer holds creates a new one. `ensured` is every ensure, `created` those that made a host. */
 function recreatingDriver(id: string) {
   const hosts = new Set<string>()
   const stopped = new Set<string>()
   const inspection = { failure: undefined as Error | undefined }
   const created: SandboxDriverEnsureInput[] = []
+  const ensured: SandboxDriverEnsureInput[] = []
   const driver = {
     id,
     ensureHost: async (input: SandboxDriverEnsureInput) => {
+      ensured.push(input)
       const hostId = input.hostId ?? input.workspaceId
       if (!hosts.has(hostId)) {
         hosts.add(hostId)
@@ -88,14 +90,14 @@ function recreatingDriver(id: string) {
       machineClasses: ["small", "default", "large"],
     },
   } satisfies SandboxDriver
-  return { driver, created, inspection, lose: () => hosts.clear(), stopOnItsOwn: () => { for (const host of hosts) stopped.add(host) } }
+  return { driver, created, ensured, inspection, lose: () => hosts.clear(), stopOnItsOwn: () => { for (const host of hosts) stopped.add(host) } }
 }
 
 /** `driverId` names the catalog driver whose metadata the plane reads, "cloudflare" being one whose host reads its own idleness. */
 async function composition(driverId = "test") {
   const instance = await workspaceBackingDatabase([])
   active.push(instance)
-  const { driver, created, inspection, lose, stopOnItsOwn } = recreatingDriver(driverId)
+  const { driver, created, ensured, inspection, lose, stopOnItsOwn } = recreatingDriver(driverId)
   const stops: Array<{ workspaceId: string; epoch: number; idleBefore?: number }> = []
   const lost: Array<{ workspaceId: string; at: number }> = []
   const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
@@ -192,7 +194,7 @@ async function composition(driverId = "test") {
     expect(res.status).toBe(200)
     return (await res.json() as { workspaceId: string }).workspaceId
   }
-  return { app, delivery, created, inspection, lose, stopOnItsOwn, create, secrets, env, stops, lost, sandboxManager }
+  return { app, delivery, created, ensured, inspection, lose, stopOnItsOwn, create, secrets, env, stops, lost, sandboxManager }
 }
 
 describe("the steps of a hosted sandbox start", () => {
@@ -428,21 +430,21 @@ describe("watching a serving hosted sandbox for idleness", () => {
 })
 
 describe("refreshing a running hosted sandbox", () => {
-  test("a refresh that re-creates the host hands the driver everything the first start did", async () => {
-    const { app, delivery, created, lose, create } = await composition()
+  test("a refresh of a serving sandbox hands the driver everything the first start did", async () => {
+    const { app, delivery, ensured, create } = await composition()
     const workspaceId = await create({ gitBranch: "main", remoteDirectory: "/srv/widgets" })
     await app.fetch(new Request(`${REQUEST_ORIGIN}/${workspaceId}/connection`, {
       method: "POST",
       headers: { authorization: "Bearer owner", "content-type": "application/json" },
       body: "{}",
     }))
-    expect(created).toHaveLength(1)
+    expect(ensured).toHaveLength(1)
 
-    lose()
+    runtimeStatus.answer = { state: "applied", revision: 1 }
     await delivery.pluginsChanged("owner")
 
-    expect(created).toHaveLength(2)
-    const [fromCreate, fromRefresh] = created
+    expect(ensured).toHaveLength(2)
+    const [fromCreate, fromRefresh] = ensured
     const provisioned = (input: SandboxDriverEnsureInput) => ({
       source: input.source,
       projectLabel: input.labels.projectId,
@@ -462,5 +464,24 @@ describe("refreshing a running hosted sandbox", () => {
     expect(provisioned(fromRefresh)).toEqual(provisioned(fromCreate))
     expect(fromRefresh?.workspaceId).toBe(workspaceId)
     expect(pushed.slice(-2), "a ready runtime gets its settings, then its session rows pass").toEqual(["config", `session rows pass ${workspaceId}`])
+  })
+
+  test("a change to what a sandbox is delivered never starts one whose runtime does not answer: its driver and runtime are not reached, and a dead host is left to the liveness watch", async () => {
+    const { delivery, created, ensured, lose, create, sandboxManager } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+    expect(ensured).toHaveLength(1)
+    const settled = pushed.length
+
+    await delivery.pluginsChanged("owner")
+    await delivery.settingsChanged("owner")
+    lose()
+    await delivery.settingsChanged("owner")
+
+    expect(ensured).toHaveLength(1)
+    expect(created).toHaveLength(1)
+    expect(pushed).toHaveLength(settled)
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })
   })
 })
