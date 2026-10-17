@@ -94,6 +94,10 @@ describe("usage routes", () => {
     }
     expect(await message("/machine-time")).toBe("since is required")
     expect(await message(`/credentials?since=0&until=${91 * 86_400_000}`)).toBe("since and until must define a range of at most 90 days")
+    for (const path of ["/credentials?since=abc&until=2", "/?since=2026-10-01&until=2026-10-07", "/cloud-facts?since=1&until=+2"]) {
+      expect(await message(path), path).toBe("since and until must be timestamps")
+    }
+    expect(await message("/machine-time?since=yesterday")).toBe("since must be a timestamp")
   })
 
   test("refuses a bearer the verifier rejects, on both the read and the cloud facts", async () => {
