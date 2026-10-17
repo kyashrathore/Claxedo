@@ -711,8 +711,12 @@ export const desktopRenderer: Policy = {
   // `accounts/view/account-actions.css`, `accounts/view/connect-drawer.tsx`,
   // `accounts/connect-submit.ts`), in place of the Team accounts page, its
   // store and form, and the connect dialog. They add no package edge.
-  // 1402/36, no headroom.
-  ceilings: { modules: 1402, packages: 36 },
+  // The Models tab's settings placement, the state that says why a harness's
+  // models cannot be listed yet (no project, a project whose folder is
+  // missing) (owner: the app's accounts domain,
+  // `accounts/settings-placement.ts`). It adds no package edge.
+  // 1403/36, no headroom.
+  ceilings: { modules: 1403, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

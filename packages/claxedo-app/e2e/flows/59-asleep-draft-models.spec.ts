@@ -1,6 +1,11 @@
-import { chooseOrgSandboxProvider, draftModelChoices, expect, makeCloudWorkspace, sessionRoute, showHarnesses, storeOwnerKey, test } from "../harness"
+import { chooseOrgSandboxProvider, draftModelChoices, expect, makeCloudWorkspace, sessionRoute, showHarnesses, storeOwnerKey, test, type SignedStack } from "../harness"
+import { harnessSection } from "./15-settings.navigation"
 
-test("59 a draft on an asleep cloud workspace lists Claude Code's models and keeps the one picked, without waking the workspace", async ({ signedCloud, page }) => {
+async function bootsServed(signed: SignedStack) {
+  return (await signed.hosted.telemetryEvents()).filter((entry) => entry.event === "workspace_ready" || entry.event === "workspace_woken").length
+}
+
+test("59 a draft on an asleep cloud workspace and Settings → Models list Claude Code's models, the draft keeps the one picked, and neither wakes the workspace", async ({ signedCloud, page }) => {
   await storeOwnerKey(signedCloud, "claude-sdk", "sk-ant-api03-owner")
   const workspace = await makeCloudWorkspace(signedCloud, "main")
   await chooseOrgSandboxProvider(signedCloud, "boat", { api_key: "bx-e2e" })
@@ -24,4 +29,15 @@ test("59 a draft on an asleep cloud workspace lists Claude Code's models and kee
 
   expect(await draftModelChoices(signedCloud, workspace, "claude")).toEqual({ current: "default", ids: expect.arrayContaining(["default", "opus", "sonnet", "haiku"]) })
   expect(starts.filter((method) => method === "POST"), "the models come without starting the workspace").toEqual([])
+
+  const forwarded = signedCloud.controlPlaneRequests().length
+  const boots = await bootsServed(signedCloud)
+  await page.goto(`${signedCloud.url}/settings/models`)
+  const claude = harnessSection(page, "Claude Code")
+  await claude.getByRole("tab", { name: "Models" }).click()
+  for (const model of ["Opus", "Sonnet", "Haiku"]) await expect(claude.getByRole("switch", { name: model, exact: true })).toBeVisible()
+  await expect(claude.getByText(/couldn't list|can't list/)).toHaveCount(0)
+  expect(starts.filter((method) => method === "POST"), "Settings → Models starts no workspace").toEqual([])
+  expect(signedCloud.controlPlaneRequests().slice(forwarded).filter((request) => request === `POST /api/workspace/${workspace.id}/connection`)).toEqual([])
+  expect(await bootsServed(signedCloud), "the server started no workspace").toBe(boots)
 })

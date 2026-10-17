@@ -239,8 +239,12 @@ export default {
   "settings.models.add.providerSearch": "Search providers…",
   "settings.models.add.noProviders": "No providers match “{{query}}”.",
   "settings.models.harness.empty": "{{harness}} reports no models for {{workspace}}.",
+  "settings.models.harness.failed": "{{workspace}} couldn't list {{harness}}'s models: {{reason}}",
+  "settings.models.projects.none": "Models appear here once you have a project. Your accounts are in the Accounts tab.",
+  "settings.models.projects.failed": "Couldn't load your projects, so no models can be listed: {{reason}}",
+  "settings.models.project.folderMissing": "{{project}} can't list models: its folder {{directory}} is missing.",
+  "settings.models.project.workspaceUnavailable": "{{project}} can't list models: its workspace isn't available.",
   "settings.providers.status.notConnected": "Not connected",
   "common.loading": "Loading",
   "common.loading.ellipsis": "...",
-  "settings.models.workspace.required": "Open a workspace to discover this harness's models. Your connected accounts are available in the Accounts tab.",
 }
