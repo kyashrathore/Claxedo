@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { createSandboxManager, type SandboxCheckpointRuntime, type SandboxDriver, type SandboxLifecycleEvent } from "."
+import { sandboxDriverCatalog } from "./driver-catalog"
 import { createMemoryLeaseStore } from "./stores/memory"
 
 function runtime(order: string[] = []): SandboxCheckpointRuntime {
@@ -235,24 +236,98 @@ describe("checkpoint lifecycle", () => {
     expect((await store.get("ws_1"))?.status).toBe("ready")
   })
 
-  test("a person's stop whose runtime cannot be captured still stops the host on the last good checkpoint, and says the latest changes were not saved", async () => {
+  test("a stop whose runtime does not answer captures the container unfrozen, and the wake boots from that capture", async () => {
+    const store = createMemoryLeaseStore()
+    const events: SandboxLifecycleEvent[] = []
+    const snapshots = ["snapshot-1", "snapshot-unfrozen"]
+    const next = driver({ stop: vi.fn(async () => {}), snapshot: vi.fn(async () => ({ snapshotId: snapshots.shift() ?? "snapshot-extra" })) })
+    const manager = createSandboxManager({ leaseStore: store, driver: next, onLifecycle: (event) => events.push(event) })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    await manager.checkpoint("ws_1", { runtime: runtime() })
+    const dead = runtime()
+    dead.freeze = vi.fn(async () => { throw new Error("the runtime is unreachable") })
+    dead.resume = vi.fn(async () => { throw new Error("the runtime is unreachable") })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    expect(await manager.stop("ws_1", { runtime: dead })).toEqual({ ok: true, status: "stopped" })
+    warn.mockRestore()
+    expect(dead.flush).not.toHaveBeenCalled()
+    expect(next.stop).toHaveBeenCalledWith(expect.objectContaining({ epoch: 1, checkpoint: "snapshot-unfrozen" }))
+    expect(await store.get("ws_1")).toMatchObject({
+      status: "stopped",
+      checkpoint: { providerReference: "snapshot-unfrozen", metadata: { unfrozen: true } },
+    })
+    const stops = events.filter((event) => event.kind === "stopped")
+    expect(stops).toEqual([expect.objectContaining({ kind: "stopped", cause: "explicit", unfrozen: true })])
+    expect(stops[0]).not.toHaveProperty("unsaved")
+
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(next.ensureHost).toHaveBeenLastCalledWith(expect.objectContaining({ epoch: 2, bootSource: { kind: "driver-snapshot", snapshotId: "snapshot-unfrozen" } }))
+  })
+
+  test("a stop whose runtime does not answer and whose provider takes no snapshot either stops on the last good checkpoint, and says the latest changes were not saved", async () => {
     const store = createMemoryLeaseStore()
     const events: SandboxLifecycleEvent[] = []
     const next = driver({ stop: vi.fn(async () => {}) })
     const manager = createSandboxManager({ leaseStore: store, driver: next, onLifecycle: (event) => events.push(event) })
     await manager.ensure("ws_1", { homeRegion: "us-east" })
     await manager.checkpoint("ws_1", { runtime: runtime() })
-    const unreachable = runtime()
-    unreachable.freeze = vi.fn(async () => { throw new Error("the runtime is unreachable") })
-    unreachable.resume = vi.fn(async () => { throw new Error("the runtime is unreachable") })
+    next.snapshot = vi.fn(async () => { throw new Error("The workspace container is not running") })
+    const dead = runtime()
+    dead.freeze = vi.fn(async () => { throw new Error("the runtime is unreachable") })
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
 
-    expect(await manager.stop("ws_1", { runtime: unreachable })).toEqual({ ok: true, status: "stopped", unsaved: true })
+    expect(await manager.stop("ws_1", { runtime: dead })).toEqual({ ok: true, status: "stopped", unsaved: true })
     warn.mockRestore()
     expect(next.stop).toHaveBeenCalledWith(expect.objectContaining({ epoch: 1, checkpoint: "snapshot-1" }))
-    expect(next.snapshot).toHaveBeenCalledOnce()
     expect(await store.get("ws_1")).toMatchObject({ status: "stopped", checkpoint: { providerReference: "snapshot-1" } })
     expect(events.filter((event) => event.kind === "stopped")).toEqual([expect.objectContaining({ kind: "stopped", cause: "explicit", unsaved: true })])
+  })
+
+  test("a stop for a runtime that answered nothing through its failure budget is recorded as unresponsive, with that reason on the stopped lease until the next start", async () => {
+    const store = createMemoryLeaseStore()
+    const events: SandboxLifecycleEvent[] = []
+    const next = driver({ stop: vi.fn(async () => {}) })
+    const manager = createSandboxManager({ leaseStore: store, driver: next, onLifecycle: (event) => events.push(event) })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    const dead = runtime()
+    dead.freeze = vi.fn(async () => { throw new Error("the runtime is unreachable") })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    expect(await manager.stop("ws_1", { runtime: dead, expectedEpoch: 1, unresponsiveForMs: 600_000 })).toEqual({ ok: true, status: "stopped" })
+    warn.mockRestore()
+    expect(events.filter((event) => event.kind === "stopped")).toEqual([expect.objectContaining({ kind: "stopped", cause: "unresponsive", unfrozen: true })])
+    expect(await manager.target("ws_1")).toMatchObject({
+      status: "unavailable",
+      leaseStatus: "stopped",
+      stopReason: "The workspace's runtime stopped answering; it was stopped after 10 minutes.",
+    })
+
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(await store.get("ws_1")).toMatchObject({ status: "ready", epoch: 2 })
+    expect((await store.get("ws_1"))?.lastError).toBeUndefined()
+  })
+
+  test("on a provider whose stopped machine keeps its disk, a stop for a runtime that died asks the runtime nothing, loses nothing, and the wake resumes that same machine", async () => {
+    const store = createMemoryLeaseStore()
+    const events: SandboxLifecycleEvent[] = []
+    const resumeHost = vi.fn(async (input: { lease: { sandboxId?: string } }) => ({ sandboxId: input.lease.sandboxId ?? "", url: "https://runtime.test/resumed", hostId: "host-g1", labels: {} }))
+    const next = driver({ metadata: sandboxDriverCatalog.boat.metadata, stop: vi.fn(async () => {}), resumeHost })
+    const manager = createSandboxManager({ leaseStore: store, driver: next, onLifecycle: (event) => events.push(event) })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    const dead = runtime()
+    dead.freeze = vi.fn(async () => { throw new Error("the runtime is unreachable") })
+
+    expect(await manager.stop("ws_1", { runtime: dead, expectedEpoch: 1, unresponsiveForMs: 600_000 })).toEqual({ ok: true, status: "stopped" })
+    expect(dead.freeze).not.toHaveBeenCalled()
+    expect(next.snapshot).not.toHaveBeenCalled()
+    expect(next.stop).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "sandbox-g1", epoch: 1 }))
+    expect(events.filter((event) => event.kind === "stopped")).toEqual([expect.objectContaining({ cause: "unresponsive" })])
+    expect(events.find((event) => event.kind === "stopped")).not.toHaveProperty("unsaved")
+
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(resumeHost).toHaveBeenCalledWith(expect.objectContaining({ lease: expect.objectContaining({ sandboxId: "sandbox-g1" }) }))
+    expect(await store.get("ws_1")).toMatchObject({ status: "ready", epoch: 2, sandboxId: "sandbox-g1" })
   })
 
   test("a failed capture whose thaw fails too answers the capture's own failure", async () => {

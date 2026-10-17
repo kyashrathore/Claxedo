@@ -50,6 +50,8 @@ export type SandboxTargetResult =
       failure?:
         | { kind: "boot" | "unhealthy" | "provider"; message: string; retrying: boolean }
         | { kind: "checkpoint_unusable"; cause: SandboxCheckpointUnusableCause; message: string; retrying: false }
+      /** Why a stopped lease was stopped, in a person's words, when neither a person nor idleness stopped it. */
+      stopReason?: string
     }
 
 export type SandboxManagerPort = {

@@ -37,6 +37,12 @@ test("a sandbox harness on an asleep workspace says a sent message wakes it, wit
   expect(sessionScreenEnglishDictionaries.en["sessionScreen.workspace.asleep"]).toBe("This workspace is asleep. It wakes when you send a message.")
 })
 
+test("an asleep workspace the server stopped for a reason of its own says why under the same notice", () => {
+  const notice = placementNotice(t, facts({ kind: "asleep", reason: "The workspace's runtime stopped answering; it was stopped after 10 minutes." }))
+  expect(notice).toMatchObject({ tone: "info", message: "sessionScreen.workspace.asleep", detail: "The workspace's runtime stopped answering; it was stopped after 10 minutes.", action: { label: "sessionScreen.workspace.wakeNow" } })
+  expect(placementNotice(t, facts({ kind: "asleep" }))).not.toHaveProperty("detail")
+})
+
 test("a harness that answers from its own session host says nothing about the workspace machine, whatever its state", () => {
   const error = { class: "conflict" as const, message: "the start limit is used up", retryable: false }
   const states: readonly WorkspaceRuntime[] = [{ kind: "asleep" }, { kind: "waking" }, { kind: "waking", bootMode: "cold-start" }, { kind: "wakeFailed", error }, { kind: "outdated" }]

@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useWorkspaceName, type CloudWorkspaces, type WorkspaceName } from "@/cloud"
+import { cloudStatusReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useWorkspaceName, type CloudWorkspaces, type WorkspaceName } from "@/cloud"
 import { placementId, type Placement } from "@/server"
 import { useConnectMachine } from "@/settings"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
@@ -71,7 +71,7 @@ function useCloudStatus(cloud: CloudWorkspaces): Words["cloudStatus"] {
   return (placement) => {
     const list = cloud.list()
     const row = list.kind === "ready" ? list.rows.find((item) => item.id === placement.id) : undefined
-    return row ? [status(row.state), cloudFailureReason(row.state), commandFailure(row.commandFailure)].filter(Boolean).join(" — ") : undefined
+    return row ? [status(row.state), cloudStatusReason(row.state), commandFailure(row.commandFailure)].filter(Boolean).join(" — ") : undefined
   }
 }
 

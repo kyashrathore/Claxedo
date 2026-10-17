@@ -258,6 +258,17 @@ describe("workspace sandbox lifecycle", () => {
     expect(s.state.starts).toHaveLength(1)
   })
 
+  test("a running container whose runtime died is still snapshotted, and its restore launches a new runtime on that snapshot", async () => {
+    const s = sandbox()
+    await ensure(s.object)
+    for (const launch of s.state.launches.values()) launch.state = "exited"
+    const { snapshotId } = await s.object.snapshotWorkspace()
+    await s.object.stopWorkspace(IDLE.epoch)
+    expect(await ensure(s.object, snapshotId)).toEqual({ state: "ready" })
+    expect(s.state.starts.at(-1)).toMatchObject({ containerSnapshot: { id: snapshotId } })
+    expect([...s.state.launches.values()].at(-1)?.state).toBe("running")
+  })
+
   test("a sandbox with no running container answers the same envelope", async () => {
     const response = await sandbox().object.fetch(new Request("https://sbx.test/session/ses_1/outline") as never)
     expect([response.status, await response.json()]).toEqual([503, { error: { code: "upstream_unavailable", message: "The workspace machine is not running" } }])

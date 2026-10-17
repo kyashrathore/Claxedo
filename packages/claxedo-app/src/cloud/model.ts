@@ -23,8 +23,8 @@ export function isRunning(state: CloudWorkspaceStatus): boolean {
   return state.kind !== "stopped" && state.kind !== "failed"
 }
 
-export function cloudFailureReason(state: CloudWorkspaceStatus): string | undefined {
-  return state.kind === "failed" ? state.reason : undefined
+export function cloudStatusReason(state: CloudWorkspaceStatus): string | undefined {
+  return state.kind === "failed" || state.kind === "stopped" ? state.reason : undefined
 }
 
 export function cloudWorkspaceTransition(state: CloudWorkspaceStatus, event: CloudWorkspaceEvent): CloudWorkspaceStatus {

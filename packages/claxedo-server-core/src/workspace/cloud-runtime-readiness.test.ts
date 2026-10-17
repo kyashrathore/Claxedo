@@ -60,3 +60,21 @@ describe("readyCloudWorkspaces", () => {
     })
   })
 })
+
+describe("a stopped cloud workspace", () => {
+  test("names why it was stopped when neither a person nor idleness stopped it, and nothing otherwise", async () => {
+    const targets: Record<string, SandboxTargetResult> = {
+      ws_unresponsive: { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "stopped", stopReason: "The workspace's runtime stopped answering; it was stopped after 10 minutes." },
+      ws_stopped: { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "stopped" },
+    }
+    const lifecycles = await cloudWorkspaceLifecycles(
+      { target: async (id) => targets[id] },
+      Object.keys(targets).map((workspace_id) => ({ workspace_id, backing: "cloud-vm" })),
+    )
+
+    expect(Object.fromEntries(lifecycles)).toEqual({
+      ws_unresponsive: { status: "stopped", stopReason: "The workspace's runtime stopped answering; it was stopped after 10 minutes." },
+      ws_stopped: { status: "stopped" },
+    })
+  })
+})

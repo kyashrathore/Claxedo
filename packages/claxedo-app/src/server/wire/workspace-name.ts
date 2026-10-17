@@ -13,7 +13,8 @@ export function placementName(row: Record<string, unknown>, id: string, kind: Pl
     const lifecycle = cloudLifecycleOf(row)
     const failure = lifecycle === "failed" ? nonEmptyString(row.error) : undefined
     const unusable = lifecycle === "failed" && isCheckpointUnusableRow(row)
-    return { kind, lifecycle, ...(own ? { label: own } : {}), ...(failure ? { failure } : {}), ...(unusable ? { checkpointUnusable: true } : {}) }
+    const stopReason = lifecycle === "asleep" ? nonEmptyString(row.stopReason) : undefined
+    return { kind, lifecycle, ...(own ? { label: own } : {}), ...(failure ? { failure } : {}), ...(unusable ? { checkpointUnusable: true } : {}), ...(stopReason ? { stopReason } : {}) }
   }
   return { kind, label: own ?? path?.split("/").filter(Boolean).pop() ?? path ?? id }
 }

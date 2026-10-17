@@ -222,6 +222,20 @@ export function sandboxHostGoneError(reason: string) {
   return `${RUNTIME_HOST_GONE}${reason}`
 }
 
+const RUNTIME_UNRESPONSIVE = "runtime_unresponsive:"
+
+/** The error a lease stopped for a runtime that answered nothing for `forMs` keeps until its next start. */
+export function sandboxRuntimeUnresponsiveError(forMs: number) {
+  return `${RUNTIME_UNRESPONSIVE}${Math.max(1, Math.round(forMs / 60_000))}`
+}
+
+/** The one line a person is told for why a stopped lease stopped, when it was neither a person's stop nor an idle one. */
+export function sandboxStopReason(error: string | undefined): string | undefined {
+  if (!error?.startsWith(RUNTIME_UNRESPONSIVE)) return undefined
+  const minutes = Number(error.slice(RUNTIME_UNRESPONSIVE.length))
+  return `The workspace's runtime stopped answering; it was stopped after ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`
+}
+
 /**
  * The stderr line a workspace runtime prints before it exits on a boot it
  * cannot finish (`hosts/workspace-runtime/boot-contract.ts` in the server

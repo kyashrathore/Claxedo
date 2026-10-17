@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { canStart, canStartFresh, canStop, cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useStartFreshConfirm, useWorkspaceName, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
+import { canStart, canStartFresh, canStop, cloudStatusReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useStartFreshConfirm, useWorkspaceName, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
 import { useErrorCopy } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import { machineOfPlacement, useServer, type AppError, type Machine, type Placement, type Project } from "@/server"
@@ -38,7 +38,7 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
   const commandFailure = useCloudCommandFailureText()
   const named = useWorkspaceName()
   const name = () => named(props.row.name, undefined)
-  const detail = () => [props.row.branch, status(props.row.state), cloudFailureReason(props.row.state), commandFailure(props.row.commandFailure)].filter(Boolean).join(" · ")
+  const detail = () => [props.row.branch, status(props.row.state), cloudStatusReason(props.row.state), commandFailure(props.row.commandFailure)].filter(Boolean).join(" · ")
   const remove = async () => {
     const confirmed = await requestConfirm(dialog, {
       title: t("projects.where.delete.title", { name: name() }),

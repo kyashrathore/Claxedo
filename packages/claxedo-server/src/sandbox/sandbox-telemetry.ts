@@ -45,13 +45,14 @@ export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
   }
 }
 
-const STOP_CAUSES: Record<SandboxStopCause, string> = { explicit: "explicit", idle: "idle", provider: "host_stopped" }
+const STOP_CAUSES: Record<SandboxStopCause, string> = { explicit: "explicit", idle: "idle", unresponsive: "runtime_unresponsive", provider: "host_stopped" }
 
 /**
  * The close of a metered interval is `workspace_stopped` with the boot's
- * `active_ms`, whether the machine was stopped by hand, by idleness,
- * destroyed while serving, or stopped or lost by its provider, `unsaved` when
- * it ended without a capture. Destroying a machine that was already stopped
+ * `active_ms`, whether the machine was stopped by hand, by idleness, for a
+ * runtime that stopped answering, destroyed while serving, or stopped or lost
+ * by its provider, `unsaved` when it ended without a capture and `unfrozen`
+ * when it captured files its runtime did not freeze first. Destroying a machine that was already stopped
  * closes nothing. An epoch that failed while its start goes on in the next
  * one is not a failure the person saw; `workspace_failed` is the start's end.
  * A person's Start fresh is `workspace_started_fresh`, with the cause of the
@@ -78,8 +79,8 @@ export function sandboxLifecycleSink(telemetry: ControlPlaneTelemetry) {
     }
     if (event.activeMs === undefined) return
     const cause = event.kind === "destroyed" ? (event.hostGone ? "host_gone" : "deleted") : STOP_CAUSES[event.cause]
-    const unsaved = event.kind === "stopped" && event.unsaved ? { unsaved: true } : {}
-    telemetry.capture("system", "workspace_stopped", { ...machine, cause, active_ms: event.activeMs, ...unsaved })
+    const outcome = event.kind === "stopped" ? { ...(event.unsaved ? { unsaved: true } : {}), ...(event.unfrozen ? { unfrozen: true } : {}) } : {}
+    telemetry.capture("system", "workspace_stopped", { ...machine, cause, active_ms: event.activeMs, ...outcome })
   }
 }
 

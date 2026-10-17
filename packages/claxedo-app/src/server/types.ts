@@ -61,7 +61,7 @@ export type PlacementKind = "folder" | "worktree" | "cloud"
 export type CloudLifecycle = "live" | "starting" | "asleep" | "failed"
 
 export type PlacementName =
-  | { readonly kind: "cloud"; readonly label?: string; readonly lifecycle: CloudLifecycle; readonly failure?: string; readonly checkpointUnusable?: true }
+  | { readonly kind: "cloud"; readonly label?: string; readonly lifecycle: CloudLifecycle; readonly failure?: string; readonly checkpointUnusable?: true; readonly stopReason?: string }
   | { readonly kind: "folder" | "worktree"; readonly label: string }
 
 export type Placement = PlacementName & {

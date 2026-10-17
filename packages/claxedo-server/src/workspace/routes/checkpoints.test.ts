@@ -275,7 +275,7 @@ describe("workspace checkpoint routes", () => {
     expect(driver.ensureHost).toHaveBeenLastCalledWith(expect.objectContaining({ bootSource: { kind: "default" } }))
   })
 
-  test("Stop ends a running machine whose runtime cannot be reached, keeps its last checkpoint and answers that the latest changes were not saved", async () => {
+  test("Stop of a Cloudflare machine whose runtime cannot be reached snapshots its container without the runtime, so the wake boots from the files it had", async () => {
     const leaseStore = createMemoryLeaseStore()
     const driver: SandboxDriver = {
       id: "cloudflare",
@@ -296,10 +296,11 @@ describe("workspace checkpoint routes", () => {
     const stopped = await routes.request("/api/workspace/ws_1/lifecycle/stop", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
     warn.mockRestore()
     expect(stopped.status).toBe(200)
-    expect(await stopped.json()).toEqual({ ok: true, status: "stopped", unsaved: true })
-    expect(driver.snapshot).not.toHaveBeenCalled()
-    expect(driver.stop).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "claxedo-ws_1", epoch: 1, checkpoint: "snap_last" }))
-    expect(await leaseStore.get("ws_1")).toMatchObject({ status: "stopped", checkpoint: { id: "chk_1" } })
+    expect(await stopped.json()).toEqual({ ok: true, status: "stopped" })
+    expect(driver.stop).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "claxedo-ws_1", epoch: 1, checkpoint: "snap_new" }))
+    expect(await leaseStore.get("ws_1")).toMatchObject({ status: "stopped", checkpoint: { providerReference: "snap_new", metadata: { unfrozen: true } } })
+    await sandboxManager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(driver.ensureHost).toHaveBeenLastCalledWith(expect.objectContaining({ epoch: 2, bootSource: { kind: "driver-snapshot", snapshotId: "snap_new" } }))
   })
 
   test("Start fresh needs write authority on the workspace, as Stop does", async () => {

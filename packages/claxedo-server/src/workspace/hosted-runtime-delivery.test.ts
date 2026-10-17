@@ -322,8 +322,12 @@ describe("watching a serving hosted sandbox for idleness", () => {
     expect(lost).toEqual([])
     expect(await sandboxManager.target(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })
     expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
-    expect(stops).toEqual([{ workspaceId, epoch: 1 }])
+    expect(stops).toEqual([{ workspaceId, epoch: 1, unresponsiveForMs: IDLE_CHECK_MS * IDLE_CHECK_FAILURE_LIMIT }])
     expect(lost).toEqual([{ workspaceId, at: expect.any(Number) }])
+    expect(await sandboxManager.target(workspaceId)).toMatchObject({
+      leaseStatus: "stopped",
+      stopReason: "The workspace's runtime stopped answering; it was stopped after 10 minutes.",
+    })
   })
 
   test("each read a runtime leaves unanswered is recorded on the lease as its last health failure and logged once with its count toward the budget", async () => {
@@ -451,7 +455,7 @@ describe("watching a serving hosted sandbox for idleness", () => {
     await expect(delivery.start.watch(workspaceId, 0)).rejects.toThrow("the runtime is unreachable")
     expect(stops).toEqual([])
     expect(await delivery.start.watch(workspaceId, IDLE_CHECK_FAILURE_LIMIT - 1)).toBeUndefined()
-    expect(stops).toEqual([{ workspaceId, epoch: 1 }])
+    expect(stops).toEqual([{ workspaceId, epoch: 1, unresponsiveForMs: IDLE_CHECK_MS * IDLE_CHECK_FAILURE_LIMIT }])
   })
 })
 

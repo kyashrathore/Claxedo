@@ -213,6 +213,11 @@ test("wakes: a start the server refused until a retry time reads failed with its
   expect(starts).toHaveLength(1)
 })
 
+test("wakes: an asleep workspace the server stopped for a runtime that stopped answering reads asleep with that reason", () => {
+  const { wakes } = fixture({ value: false }, { lifecycle: "asleep", stopReason: "The workspace's runtime stopped answering; it was stopped after 10 minutes." })
+  expect(wakes.runtime(cloud)).toEqual({ kind: "asleep", reason: "The workspace's runtime stopped answering; it was stopped after 10 minutes." })
+})
+
 test("wakes: after a reload, a workspace whose start failed reads failed with the reason the catalog names, not asleep", () => {
   const { wakes } = fixture({ value: false }, { lifecycle: "failed", failure: "Boat's daily start limit (200) is used up; try again later." })
   const runtime = wakes.runtime(cloud)

@@ -21,6 +21,7 @@ export type ServerScript = {
   readonly lifecycle?: Lifecycle
   readonly failure?: string
   readonly checkpointUnusable?: true
+  readonly stopReason?: string
   readonly startProgress?: readonly WorkspaceStartProgress[]
   readonly startFresh?: () => Promise<unknown>
 }
@@ -72,7 +73,7 @@ function fakeWorkspaces(running: { value: boolean }, server: ServerScript): Work
     ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false, onThisMachine: false },
   }
   const lifecycle = (): Lifecycle => (running.value ? "live" : server.lifecycle ?? "asleep")
-  const cloudFacts = () => ({ lifecycle: lifecycle(), ...(server.failure ? { failure: server.failure } : {}), ...(server.checkpointUnusable ? { checkpointUnusable: true } : {}) })
+  const cloudFacts = () => ({ lifecycle: lifecycle(), ...(server.failure ? { failure: server.failure } : {}), ...(server.checkpointUnusable ? { checkpointUnusable: true } : {}), ...(server.stopReason ? { stopReason: server.stopReason } : {}) })
   return {
     load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
     byId: (id: string) => ({ ...placements[id], ...(id === "ws_cloud" ? cloudFacts() : {}), reachable: id === "ws_cloud" && running.value }),

@@ -35,7 +35,9 @@ import {
   sandboxProviderRateLimit,
   sandboxProviderRateLimitedError,
   sandboxRuntimeBootFailedError,
+  sandboxRuntimeUnresponsiveError,
   sandboxStartLimitRetryMs,
+  sandboxStopReason,
 } from "./lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import {
@@ -47,7 +49,7 @@ import {
 } from "./checkpoint-manager"
 import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
 import { createSandboxStartRecorder } from "./start-telemetry"
-import { createLifecycleReporter } from "./lease-lifecycle"
+import { createLifecycleReporter, type SandboxStopCause } from "./lease-lifecycle"
 import { continuedStart, leaseBootMode } from "./lease-start"
 import { startSandboxFresh } from "./start-fresh"
 import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
@@ -222,12 +224,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     const resource = leaseResource(lease)
     if (lease.status !== "ready" || !resource || !resource.url || !lease.routingId) {
       const failure = sandboxLeaseFailure(lease, { now: now(), maxRetryCount })
+      const stopReason = lease.status === "stopped" ? sandboxStopReason(lease.lastError) : undefined
       return {
         status: "unavailable",
         reason: "runtime_lease_not_ready",
         leaseStatus: lease.status,
         ...(lease.nextRetryAt !== undefined ? { retryAfterMs: Math.max(0, lease.nextRetryAt - now()) } : {}),
         ...(failure ? { failure } : {}),
+        ...(stopReason ? { stopReason } : {}),
         ...(lease.start && (lease.status === "acquiring" || lease.status === "unavailable") ? { start: { ...lease.start, epoch: lease.epoch } } : {}),
         ...(lease.status === "acquiring" && lease.hostId ? { booting: { epoch: lease.epoch, hostId: lease.hostId } } : {}),
       }
@@ -492,7 +496,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     }
   }
 
-  function capture(manager: Pick<SandboxManager, "target" | "snapshot">, workspaceId: string, request: SandboxCheckpointCaptureInput, endsLease = false) {
+  function capture(manager: Pick<SandboxManager, "target" | "snapshot">, workspaceId: string, request: SandboxCheckpointCaptureInput, endsLease?: { stoppedError?: string }) {
     return captureSandboxCheckpoint({
       workspaceId,
       request,
@@ -500,7 +504,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       target: (id) => manager.target(id),
       snapshot: (id, committed) => manager.snapshot(id, committed),
       ...(options.driver.deleteSnapshot ? { deleteSnapshot: options.driver.deleteSnapshot } : {}),
-      endsLease,
+      ...(endsLease ? { endsLease } : {}),
       now,
     })
   }
@@ -681,18 +685,20 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         if (lease?.status === "stopped") return stopped
         const target = await this.target(workspaceId)
         const stopHost = input.hostStopsItself ? undefined : options.driver.suspend ?? options.driver.stop
+        const cause: SandboxStopCause = input.idleBefore !== undefined ? "idle" : input.unresponsiveForMs !== undefined ? "unresponsive" : "explicit"
+        const stoppedError = input.unresponsiveForMs === undefined ? undefined : sandboxRuntimeUnresponsiveError(input.unresponsiveForMs)
         // A host the provider no longer has cannot be stopped and is not held: the lease ends destroyed, and the next start places anew.
         const ended = async (resource: SandboxResource & { epoch: number; checkpoint?: string }, status: "stopped" | "destroyed", unsaved = false) => {
           if (!lease) return undefined
           const endedAt = status === "destroyed" ? hostLastProvenAliveAt(lease) : undefined
           const updated = await options.leaseStore.update(workspaceId, resource.epoch, {
             status,
-            ...(status === "destroyed" ? { lastError: sandboxHostGoneError(`${resource.sandboxId} is gone`) } : {}),
+            ...(status === "destroyed" ? { lastError: sandboxHostGoneError(`${resource.sandboxId} is gone`) } : stoppedError ? { lastError: stoppedError } : {}),
             ...(endedAt === undefined ? {} : { endedAt }),
           })
           if (!updated) return undefined
           if (status === "destroyed") lifecycle.hostGone(lease, endedAt)
-          else lifecycle.stopped(lease, input.idleBefore !== undefined, unsaved)
+          else lifecycle.stopped(lease, cause, unsaved ? { unsaved: true } : {})
           return { ok: true as const, status, ...(unsaved ? { unsaved: true as const } : {}) }
         }
         if (target.status !== "ready") {
@@ -706,10 +712,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         if (input.runtime && persistence && persistence.capture !== "none") {
           try {
             // The commit stops the lease before the host stops, so a send from here on wakes a restore of this capture.
-            const captured = await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, true)
+            const captured = await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, stoppedError ? { stoppedError } : {})
             const checkpoint = captured.checkpoint.providerReference
             if (persistence.captureSource === "preserved") await stopHost?.({ ...target, checkpoint })
-            if (lease) lifecycle.stopped(lease, input.idleBefore !== undefined)
+            if (lease) lifecycle.stopped(lease, cause, captured.checkpoint.metadata.unfrozen ? { unfrozen: true } : {})
             return stopped
           } catch (error) {
             // An idle stop is the runtime's to refuse; any other stop ends the machine, which bills for as long as it runs.

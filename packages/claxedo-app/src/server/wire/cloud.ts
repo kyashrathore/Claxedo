@@ -12,7 +12,8 @@ import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import { isCheckpointUnusableRow } from "./connection"
 import { cloudWorkspaceName } from "./workspace-name"
 
-function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown, checkpointUnusable = false): CloudWorkspaceStatus {
+function cloudStatusFromRow(row: Record<string, unknown>): CloudWorkspaceStatus {
+  const { status, step } = row
   switch (status) {
     case "provisioning":
     case "acquiring_sandbox":
@@ -28,11 +29,13 @@ function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown,
       return { kind: "ready" }
     case "stopping":
       return { kind: "stopping" }
-    case "stopped":
-      return { kind: "stopped" }
+    case "stopped": {
+      const reason = nonEmptyString(row.stopReason)
+      return { kind: "stopped", ...(reason ? { reason } : {}) }
+    }
     case "error":
     case "failed":
-      return { kind: "failed", reason: nonEmptyString(message) ?? "The cloud workspace failed", ...(checkpointUnusable ? { checkpointUnusable: true } : {}) }
+      return { kind: "failed", reason: nonEmptyString(row.error) ?? "The cloud workspace failed", ...(isCheckpointUnusableRow(row) ? { checkpointUnusable: true } : {}) }
     default:
       return { kind: "failed", reason: `The cloud workspace reports an unknown status: ${String(status)}` }
   }
@@ -58,7 +61,7 @@ export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined 
     projectId: projectId(owner),
     ...(name ? { name } : {}),
     ...(branch ? { branch } : {}),
-    status: cloudStatusFromWire(row.status, row.step, row.error, isCheckpointUnusableRow(row)),
+    status: cloudStatusFromRow(row),
   }
 }
 

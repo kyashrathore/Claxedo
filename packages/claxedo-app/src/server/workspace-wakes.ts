@@ -38,7 +38,8 @@ function runtimeOf(wake: WakeState, placement: Placement | undefined): Workspace
     const error = new ServerError({ class: "conflict", message: placement.failure ?? START_FAILED, ...(placement.checkpointUnusable ? { code: WORKSPACE_CHECKPOINT_UNUSABLE } : {}) })
     return { kind: "wakeFailed", error, ...(placement.checkpointUnusable ? { checkpointUnusable: true } : {}) }
   }
-  return asleep ? { kind: "asleep" } : { kind: "live" }
+  if (!asleep) return { kind: "live" }
+  return placement?.kind === "cloud" && placement.stopReason ? { kind: "asleep", reason: placement.stopReason } : { kind: "asleep" }
 }
 
 const START_FAILED = "The cloud workspace could not start"

@@ -22,7 +22,8 @@ function cloudWorkspaceIds(rows: readonly unknown[]) {
 }
 
 export type CloudRuntimeLifecycle =
-  | { status: "ready" | "stopped" }
+  | { status: "ready" }
+  | { status: "stopped"; stopReason?: string }
   | { status: "provisioning"; failure?: string }
   | { status: "failed"; error: string; checkpointUnusable?: SandboxCheckpointUnusableCause }
 
@@ -42,7 +43,7 @@ export function cloudRuntimeLifecycle(target: SandboxTargetResult | undefined): 
   if (target.status === "ready") return { status: "ready" }
   if (target.leaseStatus === "acquiring") return { status: "provisioning" }
   if (target.leaseStatus === "stopped" || target.leaseStatus === "destroyed" || target.reason === "runtime_lease_missing") {
-    return { status: "stopped" }
+    return { status: "stopped", ...(target.stopReason ? { stopReason: target.stopReason } : {}) }
   }
   const failure = target.failure
   if (!failure) return { status: "failed", error: "The cloud workspace is not running" }

@@ -282,13 +282,14 @@ function lifecycleError(c:{ json: (body: unknown, status: 409 | 503) => Response
 export type WorkspaceIdleStop = (
   workspaceId: string,
   epoch: number,
-  stop: { idleBefore?: number; hostStopsItself?: true },
+  stop: { idleBefore?: number; hostStopsItself?: true; unresponsiveForMs?: number },
 ) => Promise<SandboxMutationResult>
 
 /**
  * Stops lease generation `epoch` of a workspace as its owner, the way an idle
- * watcher does: `idleBefore` meters the stop as idle, and `hostStopsItself`
- * leaves the host to the watcher that is the host.
+ * watcher does: `idleBefore` meters the stop as idle, `unresponsiveForMs` as
+ * a runtime silent for that long, and `hostStopsItself` leaves the host to
+ * the watcher that is the host.
  */
 export function hostedWorkspaceIdleStop(services: ControlPlaneServices): WorkspaceIdleStop {
   return async (workspaceId, epoch, stop) => {

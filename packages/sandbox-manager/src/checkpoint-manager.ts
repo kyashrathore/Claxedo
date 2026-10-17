@@ -32,6 +32,8 @@ export type SandboxStopInput = {
   expectedEpoch?: number
   /** The caller is the host: it stops itself once the lease says stopped, so the manager stops no host. */
   hostStopsItself?: boolean
+  /** How long the runtime had answered nothing when the caller stopped it; the stop is metered as unresponsive and the stopped lease says so. */
+  unresponsiveForMs?: number
 }
 
 export type SandboxCheckpointRestoreInput = {
@@ -51,8 +53,13 @@ export async function captureSandboxCheckpoint(input: {
   target: (workspaceId: string) => Promise<SandboxTargetResult>
   snapshot: (workspaceId: string, committed?: string) => Promise<SandboxSnapshotManagerResult>
   deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
-  /** The capture ends this lease: its commit stops it, and the runtime stays frozen for the host stop that follows. */
-  endsLease?: boolean
+  /**
+   * The capture ends this lease: its commit stops it, recording `stoppedError`
+   * as why, and the runtime stays frozen for the host stop that follows. A
+   * runtime that does not freeze is captured unfrozen, since its host stops
+   * either way; only an idle stop is the runtime's to refuse.
+   */
+  endsLease?: { stoppedError?: string }
   now?: () => number
   checkpointId?: () => string
 }): Promise<SandboxCheckpointResult> {
@@ -66,9 +73,7 @@ export async function captureSandboxCheckpoint(input: {
   let capturedSource = false
   let result: SandboxCheckpointResult
   try {
-    await input.request.runtime.freeze(input.request.policy ?? "drain", { idleBefore: input.request.idleBefore })
-    await input.request.runtime.flush()
-    await input.request.runtime.scrub()
+    const frozen = await freezeForCapture(input.request, input.endsLease !== undefined, input.workspaceId)
     const captured = persistence.capture === "same-resource"
       ? { ok: true as const, snapshotId: target.driverResourceId ?? target.sandboxId }
       : await input.snapshot(input.workspaceId, (await input.leaseStore.get(input.workspaceId))?.checkpoint?.providerReference)
@@ -84,12 +89,14 @@ export async function captureSandboxCheckpoint(input: {
         scope: persistence.capture,
         sourceBehavior: requireCaptureSource(persistence.captureSource),
         restoreMount: requireRestoreMount(persistence.restoreMount),
+        ...(frozen ? {} : { unfrozen: true as const }),
       },
     }
     const replaced = (await input.leaseStore.get(input.workspaceId))?.checkpoint
     const updated = await input.leaseStore.update(input.workspaceId, lease.epoch, {
       checkpoint,
       restore: null,
+      ...(input.endsLease?.stoppedError ? { lastError: input.endsLease.stoppedError } : {}),
       ...(input.endsLease || persistence.captureSource === "stopped" || persistence.captureSource === "deleted"
         ? { status: "stopped" as const }
         : {}),
@@ -110,6 +117,24 @@ export async function captureSandboxCheckpoint(input: {
   }
   if (!input.endsLease && persistence.captureSource === "preserved") await input.request.runtime.resume()
   return result
+}
+
+/**
+ * Whether the runtime froze, flushed and scrubbed before the capture. A
+ * runtime that died or hangs cannot, and the files it left are as a crash
+ * leaves them: its store reopens from its own journal.
+ */
+async function freezeForCapture(request: SandboxCheckpointCaptureInput, endsLease: boolean, workspaceId: string) {
+  try {
+    await request.runtime.freeze(request.policy ?? "drain", { idleBefore: request.idleBefore })
+    await request.runtime.flush()
+    await request.runtime.scrub()
+    return true
+  } catch (error) {
+    if (!endsLease || request.idleBefore !== undefined) throw error
+    console.warn("A stopping sandbox's runtime did not freeze; its files are captured as they are", { workspaceId, error: String(error) })
+    return false
+  }
 }
 
 /** The capture's own failure is the answer; a runtime that cannot be thawed either is the operator's to see. */

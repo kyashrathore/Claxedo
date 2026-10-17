@@ -109,6 +109,13 @@ describe("workspace lifecycle events", () => {
     emit({ ...machine, kind: "stopped", cause: "explicit", activeMs: 9_000 })
     expect(captured.map((entry) => [entry.properties?.cause, entry.properties?.unsaved])).toEqual([["explicit", true], ["explicit", undefined]])
   })
+
+  test("a stop for a runtime that stopped answering is its own cause, and one that captured files its runtime did not freeze says so", () => {
+    const { captured, telemetry } = sink()
+    const emit = sandboxLifecycleSink(telemetry)
+    emit({ ...machine, kind: "stopped", cause: "unresponsive", activeMs: 820_604, unfrozen: true })
+    expect(captured.map((entry) => [entry.properties?.cause, entry.properties?.unfrozen, entry.properties?.unsaved])).toEqual([["runtime_unresponsive", true, undefined]])
+  })
 })
 
 describe("sandbox egress events", () => {

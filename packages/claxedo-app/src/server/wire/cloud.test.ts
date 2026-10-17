@@ -19,6 +19,7 @@ test("cloud rows: every lifecycle status the hosted inventory sends maps to its 
     [{ status: "ready", reachable: true }, { kind: "ready" }],
     [{ status: "provisioning", reachable: false }, { kind: "provisioning", step: "provisioning" }],
     [{ status: "stopped", reachable: false }, { kind: "stopped" }],
+    [{ status: "stopped", stopReason: "The workspace's runtime stopped answering; it was stopped after 10 minutes.", reachable: false }, { kind: "stopped", reason: "The workspace's runtime stopped answering; it was stopped after 10 minutes." }],
     [{ status: "failed", error: "provider_rejected", reachable: false }, { kind: "failed", reason: "provider_rejected" }],
     [{ status: "failed", error: "saved files expired", checkpointUnusable: "expired", reachable: false }, { kind: "failed", reason: "saved files expired", checkpointUnusable: true }],
   ] as const

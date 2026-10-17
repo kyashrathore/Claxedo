@@ -54,6 +54,8 @@ export type SandboxCheckpointReference = {
     scope: Exclude<SandboxCaptureScope, "none">
     sourceBehavior: Exclude<SandboxCaptureSourceBehavior, "not-applicable">
     restoreMount: Exclude<SandboxRestoreMountBehavior, "not-applicable">
+    /** The runtime did not freeze before this capture: turns and writes in flight are as a crash left them. */
+    unfrozen?: true
   }
 }
 
@@ -654,6 +656,8 @@ export type SandboxTargetResult =
       retryAfterMs?: number
       /** What the lease's last start or health report failed on, when it is unavailable for that reason. */
       failure?: SandboxLeaseFailure
+      /** Why a stopped lease was stopped, in a person's words, when neither a person nor idleness stopped it. */
+      stopReason?: string
       /** The start the lease is on while it is acquiring or waiting out a retry, as far as it has been observed. */
       start?: SandboxEpochStart
       /** The epoch and host an acquiring lease is booting, once the driver has handed it a host. */

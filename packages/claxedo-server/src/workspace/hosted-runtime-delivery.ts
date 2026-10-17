@@ -313,7 +313,7 @@ export function createHostedRuntimeDelivery(input: {
         throw error
       }
       log.warn("sandbox stopped: its runtime answered no idle check for the whole failure budget", { workspaceId, epoch: target.epoch, error: String(error) })
-      await input.idleStop(workspaceId, target.epoch, {})
+      await input.idleStop(workspaceId, target.epoch, { unresponsiveForMs: IDLE_CHECK_MS * IDLE_CHECK_FAILURE_LIMIT })
       await runtimeLost(workspaceId)
       return undefined
     }
