@@ -42,7 +42,7 @@ const spent = { turnCount: 2, input: 100, output: 20, reasoning: 0, cacheRead: 3
 const totals = { turnCount: 2, input: 100, output: 20, reasoning: 0, cacheRead: 300, cacheWrite: 0, unknownCategories: 0 }
 const cost = { estimatedUsd: 0.01, pricedTokens: 420, unpricedTokens: 0 }
 
-test("spend per credential names each payer in the app's terms: an own or team account by id, access, label and vendor, and the payers that carry nothing of an account", () => {
+test("spend per credential names each payer in the app's terms: an own or organization account by id, access, label and vendor, and the payers that carry nothing of an account", () => {
   const body = {
     since: 1,
     until: 2,
@@ -73,7 +73,7 @@ test("spend per credential names each payer in the app's terms: an own or team a
   })
 })
 
-test("a team key's spend per member names each member by the organization's name for them, a member it has no name for, and one who has left", () => {
+test("an organization account's spend per member names each member by the organization's name for them, a member it has no name for, and one who has left", () => {
   const members = [
     { ...spent, userId: "user_alice", name: "Alice Liddell" },
     { ...spent, userId: "user_carol" },
