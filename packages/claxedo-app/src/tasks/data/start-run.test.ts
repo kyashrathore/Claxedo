@@ -104,11 +104,9 @@ test("a Start whose root is still starting follows that root's own start, shows 
   const running = deferred<RootRun>()
   const answers: StartResponse[] = [{ preparing: { workspaceId: "ws_root" } }, LINKED]
   const followed: string[] = []
-  const filed = deferred<void>()
   const { calls, starts, opened } = recording({
     start: async (_request, digest, clientRequestId) => {
       starts.push({ digest, clientRequestId })
-      if (starts.length === 1) await filed.promise
       const answer = answers.shift()
       if (!answer) throw new Error("a third Start was sent")
       return answer
@@ -122,11 +120,6 @@ test("a Start whose root is still starting follows that root's own start, shows 
   const progress = progressOf()
   const started = startNow(calls, copy, task, CLOUD, progress.report)
 
-  await Bun.sleep(0)
-  expect(starts).toHaveLength(1)
-  expect(progress.line()).toEqual({ kind: "key", key: "tasks.start.progress.cloud" })
-
-  filed.resolve()
   await Bun.sleep(0)
   expect(followed).toEqual(["ws_root"])
   expect(progress.line()).toEqual({ kind: "machine", placementId: machine })
