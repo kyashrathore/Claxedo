@@ -101,13 +101,13 @@ function codexConnection(binary: string): { connection: CodexConnection; close()
 }
 
 async function codexModels(): Promise<CodexModel[]> {
-  const { connection, close } = codexConnection(path.join(packageRoot, "node_modules/@openai/codex/bin/codex.js"))
+  const codex = codexConnection(path.join(packageRoot, "node_modules/@openai/codex/bin/codex.js"))
   try {
-    await connection.request("initialize", { clientInfo: { name: "claxedo-bundled-catalog", version: "0" } })
-    await connection.request("account/login/start", { type: "apiKey", apiKey: "sk-bundled-catalog" })
-    return await readCodexModels(connection)
+    await codex.connection.request("initialize", { clientInfo: { name: "claxedo-bundled-catalog", version: "0" } })
+    await codex.connection.request("account/login/start", { type: "apiKey", apiKey: "sk-bundled-catalog" })
+    return await readCodexModels(codex.connection)
   } finally {
-    close()
+    codex.close()
   }
 }
 
