@@ -61,7 +61,7 @@ export function AccountSpendTable(props: { readonly rows: readonly SpendRow[]; r
               </th>
               <td>{format.whole(row.totals.turnCount)}</td>
               <td>{words.tokens(row)}</td>
-              <td>{format.cost(costEstimate(row.cost, row.totals))}</td>
+              <td>{format.spend(costEstimate(row.cost, row.totals))}</td>
             </tr>
           )}
         </For>
