@@ -83,12 +83,11 @@ function pastedRefusal(fullName: string, access: Extract<RepositoryConnectionAcc
       message: `Your GitHub connection could not list its repositories, so ${repository} could not be checked. Try again, or reconnect GitHub in Connections.`,
     }
   }
-  const owner = fullName.split("/")[0]
   return {
     ok: false,
     status: 403,
     code: "repository_access_required",
-    message: `None of your GitHub connections can read ${repository}. Give the GitHub App access to it in GitHub's installation settings (https://github.com/settings/installations, or https://github.com/organizations/${owner}/settings/installations for an organization's repository), then try again.`,
+    message: `The GitHub App can't read ${repository}; give it access in GitHub, then try again.`,
   }
 }
 

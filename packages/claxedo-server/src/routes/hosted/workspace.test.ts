@@ -1631,14 +1631,13 @@ describe("hosted cloud workspace create (POST /create)", () => {
       }
     })
 
-    test("of a private repository no connection can read is refused at create, naming the GitHub App's installation settings", async () => {
+    test("of a private repository no connection can read is refused at create in one line naming the repository", async () => {
       const run = pasted("https://github.com/acme/widgets", { ok: false, status: 404, code: "repository_not_found" })
       const res = await run.response
       expect(res.status).toBe(403)
       const body = (await res.json()) as { error: { code: string; message: string } }
       expect(body.error.code).toBe("repository_access_required")
-      expect(body.error.message).toContain("acme/widgets")
-      expect(body.error.message).toContain("https://github.com/organizations/acme/settings/installations")
+      expect(body.error.message).toBe("The GitHub App can't read github.com/acme/widgets; give it access in GitHub, then try again.")
       expect(run.repositoryVisibility).toHaveBeenCalledWith("acme/widgets")
       expect(run.created()).toBeUndefined()
     })
