@@ -19,6 +19,7 @@ type Quota = { status: string; snapshot?: { accounts: Array<{ label?: string; cr
 test("the hosted usage limits show a member their own accounts and the organization's, never another member's", async () => {
   const credentials = (orgId: string) => hostedOrgCredentials(orgId, { database: controlPlane.database, env: ENV })
   const routes = UsageRoutes({
+    orgMembers: async () => [],
     ledger: createD1UsageLedger({ database: controlPlane.database }),
     identity: async (request) => {
       const person = request.headers.get("x-test-person")

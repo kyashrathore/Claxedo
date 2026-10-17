@@ -76,6 +76,7 @@ async function boot(workspaceId: string, startsAt: number, machineClass: "small"
 
 async function machineTime(person: string, since = PERIOD, org = "org_acme") {
   const routes = UsageRoutes({
+    orgMembers: async () => [],
     ledger: createD1UsageLedger({ database: controlPlane.database }),
     identity: async (request) => {
       const signed = request.headers.get("x-test-person")
@@ -216,6 +217,7 @@ test("a boot that failed on the host it created is the machine time it spent, it
 
 test("the machine-time read refuses an unsigned caller, a period over 90 days, and a ledger that keeps no boots", async () => {
   const routes = (ledger: Parameters<typeof UsageRoutes>[0]["ledger"]) => UsageRoutes({
+    orgMembers: async () => [],
     ledger,
     identity: async (request) => (request.headers.has("x-test-person") ? { org_id: "org_acme", user_id: "usr_alice" } : undefined),
     pricing: tokenTrackerPricing("bundled"),

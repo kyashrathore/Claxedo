@@ -25,6 +25,7 @@ const identity = async (request: Request) => {
 describe("usage routes", () => {
   test("serves no sync endpoint and answers no sync counters", async () => {
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: { usageDashboard: async () => ({ totals: {}, daily: [] }) },
@@ -40,6 +41,7 @@ describe("usage routes", () => {
   test("derives tenant from verified auth and never trusts query identity", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: { turn_count: 1 }, daily: [], breakdown: [] }))
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: { usageDashboard },
@@ -64,7 +66,7 @@ describe("usage routes", () => {
 
   test("rejects unsigned, invalid ranges, and invalid group dimensions", async () => {
     const ledger = { usageDashboard: async () => ({}) }
-    const app = UsageRoutes({ identity, ledger, pricing })
+    const app = UsageRoutes({ orgMembers: async () => [], identity, ledger, pricing })
     expect((await app.request("/?since=1&until=2")).status).toBe(401)
     expect((await app.request("/?since=2&until=1", { headers: { authorization: "Bearer valid" } })).status).toBe(400)
     expect(
@@ -83,7 +85,7 @@ describe("usage routes", () => {
   })
 
   test("a usage read that names no range is told the range is required, and one too long is told its limit", async () => {
-    const app = UsageRoutes({ identity, ledger: { usageDashboard: async () => ({}), cloudUsageFacts: async () => [], credentialSpend: async () => [] }, pricing })
+    const app = UsageRoutes({ orgMembers: async () => [], identity, ledger: { usageDashboard: async () => ({}), cloudUsageFacts: async () => [], credentialSpend: async () => [] }, pricing })
     const headers = { authorization: "Bearer valid" }
     const message = async (path: string) => {
       const body = await (await app.request(path, { headers })).json() as { message?: string; error?: { message?: string } }
@@ -103,6 +105,7 @@ describe("usage routes", () => {
   test("refuses a bearer the verifier rejects, on both the read and the cloud facts", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: {}, daily: [] }))
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: { usageDashboard, cloudUsageFacts: async () => [] },
@@ -124,6 +127,7 @@ describe("usage routes", () => {
       throw new Error("must not run")
     })
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: { usageDashboard },
@@ -142,6 +146,7 @@ describe("usage routes", () => {
 
   test("accepts a 90-calendar-day range containing a DST fall-back hour", async () => {
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: {
@@ -156,6 +161,7 @@ describe("usage routes", () => {
 
   test("prices Claxedo from the dashboard's own model rows and returns Claxedo in the app breakdown", async () => {
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: {
@@ -181,6 +187,7 @@ describe("usage routes", () => {
 
   test("a row whose model has no price reads as unpriced even when some of its token categories are unknown", async () => {
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: {
@@ -213,6 +220,7 @@ describe("usage routes", () => {
 
   test("returns a canonical priced breakdown page from the exact dashboard projection", async () => {
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: {
@@ -275,6 +283,7 @@ describe("usage routes", () => {
       input_tokens: index + 1,
     }))
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: {
@@ -302,6 +311,7 @@ describe("usage routes", () => {
 
   test("sorts breakdown pages by the selected usage metric", async () => {
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: {
@@ -352,7 +362,7 @@ describe("usage routes", () => {
 
   test("answers cloud facts for the verified account only, never the one a query names", async () => {
     const cloudUsageFacts = vi.fn(async () => [])
-    const app = UsageRoutes({ pricing, identity, ledger: { cloudUsageFacts } })
+    const app = UsageRoutes({ orgMembers: async () => [], pricing, identity, ledger: { cloudUsageFacts } })
     const headers = { authorization: "Bearer valid" }
 
     const response = await app.request("/cloud-facts?since=1&until=2&org_id=attacker&user_id=attacker", { headers })
@@ -378,6 +388,7 @@ describe("usage routes", () => {
   test("refuses a cloud-facts range that holds more turns than one answer carries", async () => {
     const turn = { messageId: "m" } as TurnUsageRevision
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       ledger: { cloudUsageFacts: async ({ limit }) => Array.from({ length: limit }, () => turn) },
@@ -385,13 +396,14 @@ describe("usage routes", () => {
     const response = await app.request("/cloud-facts?since=1&until=2", { headers: { authorization: "Bearer valid" } })
     expect(response.status).toBe(422)
     expect(await response.json()).toMatchObject({ error: { code: "cloud_usage_range_too_large" } })
-    expect((await UsageRoutes({ pricing, identity, ledger: {} })
+    expect((await UsageRoutes({ orgMembers: async () => [], pricing, identity, ledger: {} })
       .request("/cloud-facts?since=1&until=2", { headers: { authorization: "Bearer valid" } })).status).toBe(503)
   })
 
   test("captures bounded operational evidence without tenant or usage dimensions", async () => {
     const capture = vi.fn()
     const app = UsageRoutes({
+      orgMembers: async () => [],
       pricing,
       identity,
       telemetry: { capture },

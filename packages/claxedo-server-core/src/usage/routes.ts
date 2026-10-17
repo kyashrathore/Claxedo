@@ -39,6 +39,7 @@ import {
 import { publicUsageHref } from "./public-href"
 import { quotaAnswers } from "./quota-answers"
 import { CloudUsageRoutes, MAX_CLOUD_USAGE_FACTS, type SignedUsageIdentity } from "./cloud-routes"
+import type { OrgMemberName } from "./credential-spend"
 import { usageRangeRefusal } from "./usage-range"
 
 type UsageTelemetry = {
@@ -436,6 +437,8 @@ export function UsageRoutes(input: {
    * throws the `ControlPlaneAuthError` its verifier raised.
    */
   identity: (request: Request) => Promise<SignedUsageIdentity | undefined>
+  /** The signed person's organization's current members, which name the members spending its team keys. */
+  orgMembers: (request: Request) => Promise<readonly OrgMemberName[]>
   now?: () => number
   /** Plan usage for the quota view: the signed person's own accounts and the organization's they may spend. */
   quota?: (input: { org: string; person: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
@@ -444,7 +447,7 @@ export function UsageRoutes(input: {
 }) {
   const app = new Hono()
   const quotas = quotaAnswers()
-  app.route("/", CloudUsageRoutes({ ledger: input.ledger, identity: input.identity, now: input.now ?? Date.now, pricing: input.pricing }))
+  app.route("/", CloudUsageRoutes({ ledger: input.ledger, identity: input.identity, orgMembers: input.orgMembers, now: input.now ?? Date.now, pricing: input.pricing }))
   app.get("/", async (c) => {
     const startedAt = Date.now()
     try {

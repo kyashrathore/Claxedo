@@ -64,13 +64,37 @@ test("spend per credential names each payer in the app's terms: an own or team a
     accounts: [
       { payer: { kind: "own", accountId: "cred_plan", access: "plan", label: "Work Claude", providerId: "anthropic" }, totals, cost },
       { payer: { kind: "own", accountId: "cred_token", access: "plan" }, totals, cost },
-      { payer: { kind: "team", accountId: "cred_team", access: "apiKey", label: "Team OpenAI", providerId: "openai" }, totals, cost },
+      { payer: { kind: "team", accountId: "cred_team", access: "apiKey", label: "Team OpenAI", providerId: "openai", members: [] }, totals, cost },
       { payer: { kind: "otherMember" }, totals: { ...totals, partialTurnCount: 1 }, cost },
       { payer: { kind: "machine" }, totals, cost },
       { payer: { kind: "unresolved" }, totals, cost },
       { payer: { kind: "unreported" }, totals: { ...totals, unavailableTurnCount: 2 }, cost },
     ],
   })
+})
+
+test("a team key's spend per member names each member by the organization's name for them, a member it has no name for, and one who has left", () => {
+  const members = [
+    { ...spent, userId: "user_alice", name: "Alice Liddell" },
+    { ...spent, userId: "user_carol" },
+    { ...spent, userId: "user_bob", former: true, errorTurnCount: 1 },
+  ]
+  const body = { since: 1, until: 2, scope: "org", credentials: [{ ...spent, source: "org", credentialId: "cred_team", kind: "api_key", members }] }
+  expect(accountSpendFromWire(body).accounts[0]?.payer).toEqual({
+    kind: "team",
+    accountId: "cred_team",
+    access: "apiKey",
+    members: [
+      { memberId: "user_alice", member: { kind: "named", name: "Alice Liddell" }, totals, cost },
+      { memberId: "user_carol", member: { kind: "unnamed" }, totals, cost },
+      { memberId: "user_bob", member: { kind: "former" }, totals: { ...totals, errorTurnCount: 1 }, cost },
+    ],
+  })
+  const team = (member: Record<string, unknown>) => ({ ...body, credentials: [{ ...spent, source: "org", credentialId: "cred_team", kind: "api_key", members: [member] }] })
+  expect(() => accountSpendFromWire(team({ ...spent }))).toThrow()
+  expect(() => accountSpendFromWire(team({ ...spent, userId: "user_a", turnCount: "1" }))).toThrow()
+  expect(() => accountSpendFromWire(team({ ...spent, userId: "user_a", name: 4 }))).toThrow()
+  expect(() => accountSpendFromWire({ ...body, credentials: [{ ...spent, source: "org", credentialId: "cred_team", kind: "api_key", members: {} }] })).toThrow()
 })
 
 test("spend per credential is refused when a payer, an account's id or kind, or a figure is not what the contract says", () => {

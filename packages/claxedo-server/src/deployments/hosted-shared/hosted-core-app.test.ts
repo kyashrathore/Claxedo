@@ -740,7 +740,11 @@ describe("hosted-core usage", () => {
     const cloudUsageFacts = vi.fn(async () => [])
     const machineTime = vi.fn(async () => ({ activeMs: 600_000, running: 1, workspaces: [], providers: [] }))
     const writeRevision = vi.fn(async () => ({ status: "accepted" as const, firstSettled: true }))
-    const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts, machineTime } })
+    const teamKeyRow = { source: "org" as const, credential_id: "cred_team", credential_kind: "api_key", label: "Team key", credential_provider_id: "anthropic", model: "anthropic/claude-sonnet-4-5", turn_count: 1, output_tokens: 10 }
+    const credentialSpend = vi.fn(async () => [{ ...teamKeyRow, spender: "alice" }, { ...teamKeyRow, spender: "bob" }])
+    const listOrgMembers = vi.fn(async () => [{ user_id: "alice", public_id: "alice", role: "owner" as const, joined_at: 1, name: "Alice Liddell", you: true }])
+    Object.assign(composed.services.authority!, { listOrgMembers })
+    const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts, machineTime, credentialSpend } })
 
     const view = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2", {
       headers: { authorization: "Bearer alice" },
@@ -774,6 +778,16 @@ describe("hosted-core usage", () => {
     expect(await time.json()).toMatchObject({ since, activeMs: 600_000, running: 1 })
     expect(machineTime).toHaveBeenCalledWith({ org_id: "org-1", user_id: "alice", since, until: expect.any(Number) })
     expect((await app.fetch(new Request(`https://core.test/api/claxedo/usage/machine-time?since=${since}`))).status).toBe(401)
+
+    const team = await app.fetch(new Request("https://core.test/api/claxedo/usage/credentials?since=1&until=2&scope=org", {
+      headers: { authorization: "Bearer alice" },
+    }))
+    expect(team.status).toBe(200)
+    expect((await team.json()).credentials[0].members).toEqual([
+      expect.objectContaining({ userId: "alice", name: "Alice Liddell", turnCount: 1 }),
+      expect.objectContaining({ userId: "bob", former: true, turnCount: 1 }),
+    ])
+    expect(listOrgMembers).toHaveBeenCalledWith(expect.objectContaining({ principal: expect.anything() }), { orgId: "org-1" })
 
     const leaseId = await signedTurnLease(env, {
       principal_kind: "user", actor_id: "actor:alice", actor_kind: "human", org_id: "org-1", workspace_id: "ws_cloud",

@@ -1,5 +1,5 @@
 import { vendorName } from "@claxedo/agent-runtime-contract"
-import type { AccountSpend, AccountSpendRequest, AccountSpendScope } from "@/server"
+import type { AccountSpend, AccountSpendRequest, AccountSpendScope, MemberSpend } from "@/server"
 import { inclusiveLocalRange, totalTokens, type UsageDays } from "./model"
 
 export type SpendRowKind = "plan" | "apiKey" | "teamKey" | "otherMember" | "machine" | "unresolved" | "unreported"
@@ -11,6 +11,7 @@ export type SpendRow = {
   readonly vendor?: string
   readonly totals: AccountSpend["totals"]
   readonly cost: AccountSpend["cost"]
+  readonly members?: readonly MemberSpend[]
 }
 
 export function spendScopes(managesTeamKeys: boolean): readonly AccountSpendScope[] {
@@ -25,7 +26,7 @@ export function accountSpendRequest(days: UsageDays, scope: AccountSpendScope, n
   return { ...inclusiveLocalRange(days, now), scope }
 }
 
-export function spendTokens(row: SpendRow): number | undefined {
+export function spendTokens(row: Pick<SpendRow, "totals">): number | undefined {
   const tokens = totalTokens(row.totals)
   const reportedNothing = row.totals.turnCount > 0 && (row.totals.unavailableTurnCount ?? 0) >= row.totals.turnCount
   return reportedNothing && tokens === 0 ? undefined : tokens
@@ -42,6 +43,7 @@ export function spendRow(spend: AccountSpend): SpendRow {
         kind: payer.kind === "team" ? "teamKey" : payer.access,
         ...(payer.label ? { label: payer.label } : {}),
         ...(payer.providerId ? { vendor: vendorName(payer.providerId) } : {}),
+        ...(payer.kind === "team" ? { members: payer.members } : {}),
         ...figures,
       }
     default:

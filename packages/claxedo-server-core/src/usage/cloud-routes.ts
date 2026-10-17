@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import type { CredentialSpendResponse, MachineTimeResponse } from "@claxedo/usage-contract"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../platform/auth/auth"
 import type { UsagePricing } from "./adapters/token-tracker-pricing"
-import { credentialSpend } from "./credential-spend"
+import { credentialSpend, type OrgMemberName } from "./credential-spend"
 import type { CredentialSpendScope, UsageProjectionLedger } from "./ledger"
 import { usageRangeRefusal, usageSinceRefusal } from "./usage-range"
 
@@ -29,6 +29,7 @@ function cloudUsageError(c: Context, status: 400 | 401 | 403 | 422 | 503, code: 
 export function CloudUsageRoutes(input: {
   ledger: UsageProjectionLedger
   identity: (request: Request) => Promise<SignedUsageIdentity | undefined>
+  orgMembers: (request: Request) => Promise<readonly OrgMemberName[]>
   now: () => number
   pricing: UsagePricing
 }) {
@@ -65,7 +66,8 @@ export function CloudUsageRoutes(input: {
     if (!input.ledger.credentialSpend) return cloudUsageError(c, 503, "usage_projection_unavailable", "Cloud usage is not stored here")
     const rows = await input.ledger.credentialSpend({ ...identity, scope, since, until })
     if (!rows) return cloudUsageError(c, 403, "usage_scope_forbidden", "Only an owner or admin of the organization can see its team accounts' spend.")
-    return c.json({ since, until, scope, credentials: await credentialSpend(input.pricing, rows) } satisfies CredentialSpendResponse)
+    const members = scope === "org" ? await input.orgMembers(c.req.raw) : []
+    return c.json({ since, until, scope, credentials: await credentialSpend(input.pricing, rows, members) } satisfies CredentialSpendResponse)
   }))
   app.get("/machine-time", signed(async (c, identity) => {
     const until = input.now()

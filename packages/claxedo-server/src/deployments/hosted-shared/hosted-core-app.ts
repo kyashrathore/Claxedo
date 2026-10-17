@@ -537,6 +537,14 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         if (!auth?.principal) return undefined
         return { org_id: await requireAuthority(services).resolveOrgId(auth), user_id: auth.principal.userId }
       },
+      orgMembers: async (request) => {
+        const auth = await routeAuth(request, { authentication: options.authentication, requireSigned: true })
+        const authority = requireAuthority(services)
+        if (!auth?.principal) throw new ControlPlaneAuthError(401, "missing_bearer_token", "A signed organization session is required")
+        if (!authority.listOrgMembers) throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
+        const members = await authority.listOrgMembers(auth, { orgId: await authority.resolveOrgId(auth) })
+        return members.map((member) => ({ userId: member.user_id, name: member.name }))
+      },
       ...(plane.orgCredentials
         ? {
             quota: createHostedQuotaReader({

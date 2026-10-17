@@ -377,6 +377,7 @@ describe("the hosted usage view over the D1 ledger", () => {
     await store.writeRevision(cloud({ messageId: "msg_bob", sessionId: "ses_2", sessionRef: "workspace:ws_main:session:ses_2" }), { owner: BOB, turnId: TURN })
     const identities: Record<string, { org_id: string; user_id: string }> = { alice: ALICE, mallory: MALLORY }
     const routes = UsageRoutes({
+      orgMembers: async () => [],
       ledger: store,
       identity: async (request) => identities[request.headers.get("x-test-user") ?? ""],
       pricing,
@@ -437,6 +438,7 @@ describe("the signed account's cloud turns, as the hosted plane hands them to a 
       aliceElsewhere: { org_id: MALLORY.org_id, user_id: ALICE.user_id },
     }
     const routes = UsageRoutes({
+      orgMembers: async () => [],
       ledger: store,
       identity: async (request) => identities[request.headers.get("x-test-user") ?? ""],
       pricing,
@@ -461,7 +463,7 @@ describe("the signed account's cloud turns, as the hosted plane hands them to a 
   test("are exactly what the desktop's own usage route merges beside this machine's turns", async () => {
     const store = await ledger()
     await store.writeRevision(cloud({ messageId: "msg_cloud" }), { owner: ALICE, turnId: TURN })
-    const hosted = UsageRoutes({ ledger: store, identity: async () => ALICE, pricing })
+    const hosted = UsageRoutes({ orgMembers: async () => [], ledger: store, identity: async () => ALICE, pricing })
     const range = `since=${DAY - 3_600_000}&until=${DAY + 3_600_000}`
     const answered = await (await hosted.request(`/cloud-facts?${range}`)).json() as { facts: TurnUsageRevision[] }
 

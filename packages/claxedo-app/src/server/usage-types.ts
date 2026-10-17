@@ -71,9 +71,20 @@ export type SpentAccount = {
   readonly providerId?: string
 }
 
+export type SpendCost = { readonly estimatedUsd: number; readonly pricedTokens: number; readonly unpricedTokens: number }
+
+export type SpendingMember = { readonly kind: "named"; readonly name: string } | { readonly kind: "unnamed" } | { readonly kind: "former" }
+
+export type MemberSpend = {
+  readonly memberId: string
+  readonly member: SpendingMember
+  readonly totals: UsageTotals
+  readonly cost: SpendCost
+}
+
 export type AccountSpendPayer =
   | ({ readonly kind: "own" } & SpentAccount)
-  | ({ readonly kind: "team" } & SpentAccount)
+  | ({ readonly kind: "team"; readonly members: readonly MemberSpend[] } & SpentAccount)
   | { readonly kind: "otherMember" }
   | { readonly kind: "machine" }
   | { readonly kind: "unresolved" }
@@ -82,7 +93,7 @@ export type AccountSpendPayer =
 export type AccountSpend = {
   readonly payer: AccountSpendPayer
   readonly totals: UsageTotals
-  readonly cost: { readonly estimatedUsd: number; readonly pricedTokens: number; readonly unpricedTokens: number }
+  readonly cost: SpendCost
 }
 
 export type AccountSpendReport = {
