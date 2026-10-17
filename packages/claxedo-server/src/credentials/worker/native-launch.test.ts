@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import type { ResolvedCredentials } from "@claxedo/harness/contract"
-import { claudeBundledOptions, codexBundledOptions } from "@claxedo/harness/launch-models"
+import { claudeBundledOptions } from "@claxedo/harness/claude-models"
+import { codexBundledOptions } from "@claxedo/harness/codex-models"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { CursorModelsError, hostedMachineHarnessLaunch, type MachineHarnessDraft } from "./native-launch"

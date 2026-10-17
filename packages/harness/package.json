@@ -101,11 +101,23 @@
       "types": "./dist/transports/opencode-sdk/bundled-models.d.ts",
       "import": "./dist/transports/opencode-sdk/bundled-models.js"
     },
-    "./launch-models": {
-      "development": "./src/launch-models.ts",
-      "bun": "./src/launch-models.ts",
-      "types": "./dist/launch-models.d.ts",
-      "import": "./dist/launch-models.js"
+    "./claude-models": {
+      "development": "./src/transports/claude-sdk/bundled-models.ts",
+      "bun": "./src/transports/claude-sdk/bundled-models.ts",
+      "types": "./dist/transports/claude-sdk/bundled-models.d.ts",
+      "import": "./dist/transports/claude-sdk/bundled-models.js"
+    },
+    "./codex-models": {
+      "development": "./src/transports/codex-app-server/bundled-models.ts",
+      "bun": "./src/transports/codex-app-server/bundled-models.ts",
+      "types": "./dist/transports/codex-app-server/bundled-models.d.ts",
+      "import": "./dist/transports/codex-app-server/bundled-models.js"
+    },
+    "./cursor-models": {
+      "development": "./src/transports/cursor-sdk/models.ts",
+      "bun": "./src/transports/cursor-sdk/models.ts",
+      "types": "./dist/transports/cursor-sdk/models.d.ts",
+      "import": "./dist/transports/cursor-sdk/models.js"
     },
     "./cursor-worker": {
       "development": "./src/transports/cursor-sdk/host.ts",

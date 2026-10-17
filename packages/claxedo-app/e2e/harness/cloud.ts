@@ -107,6 +107,13 @@ export async function storedMessages(signed: SignedStack, workspace: CloudWorksp
   return (JSON.parse(page.body) as { messages: { info: { role: string } }[] }).messages
 }
 
+export async function draftModelChoices(signed: SignedStack, workspace: CloudWorkspace, harness: string) {
+  const reply = await asOwner(signed)("GET", `/api/claxedo/agent-config/harness/options?nativeHarness=${harness}&workspaceId=${workspace.id}`)
+  const options = (JSON.parse(reply.body) as { options: { category: string; currentValue?: string; selectOptions?: { id: string }[] }[] }).options
+  const model = options.find((option) => option.category === "model")
+  return { current: model?.currentValue, ids: model?.selectOptions?.map((choice) => choice.id) ?? [] }
+}
+
 export async function storeOwnerKey(signed: SignedStack, providerId: string, secret: string) {
   await asOwner(signed)("PUT", "/api/claxedo/credentials", { provider_id: providerId, kind: "api_key", source: "managed", label: providerId, secret })
 }

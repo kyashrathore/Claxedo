@@ -1,6 +1,8 @@
 import { isProviderUnavailable, type ProviderBinding } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "@claxedo/harness/contract"
-import { claudeBundledOptions, codexBundledOptions, cursorAccountOptions, cursorApiModels } from "@claxedo/harness/launch-models"
+import { claudeBundledOptions } from "@claxedo/harness/claude-models"
+import { codexBundledOptions } from "@claxedo/harness/codex-models"
+import { cursorAccountOptions, cursorApiModels } from "@claxedo/harness/cursor-models"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { credentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
@@ -20,16 +22,16 @@ export class CursorModelsError extends Error {
   readonly code = "cursor_models_unavailable"
 }
 
-type DeliveredAccount = { readonly plan: boolean; readonly credentialId: string | undefined }
+type DraftAccount = { readonly plan: boolean; readonly credentialId: string | undefined }
 
-function deliveredAccount(credentials: ResolvedCredentials): DeliveredAccount | undefined {
+function draftAccount(credentials: ResolvedCredentials): DraftAccount | undefined {
   const binding = Object.values(credentials.providers).find((row): row is ProviderBinding => !isProviderUnavailable(row))
   if (binding) return { plan: binding.authMode === "bearer", credentialId: binding.account?.credentialId }
   const direct = Object.values(credentials.direct ?? {})[0]
   return direct && { plan: direct.authKind === "subscription", credentialId: direct.account?.credentialId }
 }
 
-async function readCursorModels(token: string, fetcher: typeof fetch) {
+async function fetchCursorAccountModels(token: string, fetcher: typeof fetch) {
   const response = await withDeadlineSignal(CURSOR_REQUEST_TIMEOUT_MS, (signal) =>
     fetcher(CURSOR_MODELS_URL, { headers: { authorization: `Bearer ${token}` }, signal })).catch((cause: unknown) => {
     throw new CursorModelsError("Cursor's model list could not be reached.", { cause })
@@ -59,13 +61,13 @@ export function hostedMachineHarnessLaunch(input: {
   return {
     machineHarnessLaunch: async (auth: SignedControlPlaneAuth, draft: MachineHarnessDraft) => {
       if (await input.runtimeReady(draft.workspaceId)) return undefined
-      const account = deliveredAccount(draft.credentials)
+      const account = draftAccount(draft.credentials)
       if (!account) return undefined
       if (draft.harness === "claude") return claudeBundledOptions(account.plan ? "plan" : "api", draft.model)
       if (draft.harness === "codex") return codexBundledOptions(draft.model)
       const token = account.credentialId && await cursorToken(auth, account.credentialId)
       if (!token) return undefined
-      return cursorAccountOptions(await readCursorModels(token, input.fetch ?? globalThis.fetch), draft.model)
+      return cursorAccountOptions(await fetchCursorAccountModels(token, input.fetch ?? globalThis.fetch), draft.model)
     },
   }
 }
