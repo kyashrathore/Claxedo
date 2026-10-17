@@ -81,6 +81,11 @@ To let people connect GitHub repositories by signing in rather than pasting a to
 (separate from the sign-in OAuth app) and also export `CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID` and, optionally,
 `CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET`. Without them, GitHub connects by pasted token only.
 
+Give the App, under Repository permissions, **Contents: Read-only**; choose Read and write only if agents
+should push. An App with no repository permissions installs with "No repositories" and its token lists no
+private repository, so private repos never appear in the project picker. Each person then installs the App on
+the repositories they want to clone (GitHub → Settings → Applications → Installed GitHub Apps).
+
 The deploy:
 
 1. finds the D1 databases `claxedo-auth` and `claxedo-control-plane`, and creates them the first time;
