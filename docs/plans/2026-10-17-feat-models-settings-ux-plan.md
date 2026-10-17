@@ -1,0 +1,55 @@
+# Models settings UX: accounts, organization accounts, confirmations and surfaces
+
+Base: `origin/dev`. The team-accounts code this plan changes exists only there; local checkouts older than `3165ea625e` lack it.
+
+## Decisions (owner, 2026-10-17)
+
+1. **The account choice stays a radio, with a look that reads as a choice.** The kit's checked radio (`packages/ui/src/v2/components/radio-v2.css`, accent fill with a grey centre dot) reads as an avatar. It becomes a visible selected control in every use of the kit radio. The paragraph "Cloud workspaces use one {vendor} account for you…" (`settings.providers.agents.cloudChoiceShared`) leaves the card and becomes the tooltip of a help icon beside the harness's Accounts tab, shown only where the choice exists (`cloudOnly`, and two or more choosable rows).
+2. **Org-paid model keys are "Organization account".** "Team account", "team key" and "Team keys" leave every user-facing string: app locales, server error messages, harness registry text and the usage page. "Team" stays reserved for access groups (D17).
+3. **No Team accounts page.** `teamSettingsSection` and its view are deleted. "Add an account" on a harness offers "For me" or "For the organization" to readers with `can("accounts.manageOrg")`. The organization choice offers API keys only, and saves under the harness's vendor provider (`vendorProvider`, e.g. `anthropic`, not `claude-sdk`) through the existing `saveOrgAccount`. The organization account row in each harness's picker carries Check and Remove for managers. Its remove confirmation names every harness the key serves ("Used by Claude Code and Pi").
+4. **Every destructive action confirms in a dialog.** `requestConfirm` (`src/ui/confirm.tsx`) gains a destructive confirm button and is the only confirmation. Inline confirms and hand-built confirm dialogs are removed. Forms follow `src/ui/README.md`: a form of one or two fields is a `FormDialog`, a longer or explanatory one is a `FormDrawer`, reading-only content is a `Drawer`, and nothing in a list expands into a form.
+5. **Check shows its own progress.** The check icon spins only on the account being checked; other accounts' checks stay available. Its tooltip reads "Check now · last checked {ago}". The age label stays.
+6. **An empty Models tab says why.** The copy names the real cause (no project yet, or the workspace cannot answer). Settings moves to the no-wake model read when the VM wake-up session's flow 59 path lands on `dev`.
+
+## Lanes
+
+Each lane owns its files exclusively; run lanes A, B and C in parallel in separate worktrees off `origin/dev`, then D after the VM wake-up work merges. Every lane follows `packages/claxedo-app/AGENTS.md` (no comments, one owner per concept, e2e on the real stack with a recorded red run, flows updated at desktop width and in `phone`).
+
+### Lane A: accounts domain (owns `src/accounts/**`, `packages/ui/src/v2/components/radio-v2.*`)
+
+- [ ] Kit radio: the checked state shows a clearly visible indicator in light and dark themes. Screenshots of every kit-radio user, before and after.
+- [ ] The `cloudChoiceShared` paragraph renders only as a help-icon tooltip beside the Accounts tab, and only when the harness has two or more choosable rows on a cloud-only surface.
+- [ ] Check: pending state is per account key (`activity()` compares the key), the icon spins while pending (still under reduced motion: no spin, a disabled state), and the tooltip reads "Check now · last checked {ago}". A failed check still shows "Couldn't check · reason".
+- [ ] Remove account: `requestConfirm` with the destructive button; `ConfirmRemove` and the `confirming` signal are deleted.
+- [ ] "Add an account" moves onto `FormDrawer` (`DialogProviderConnect` replaced). Managers see "For me / For the organization"; the organization choice shows only API-key methods, maps the provider to `vendorProvider`, and saves with `saveOrgAccount`. Non-managers never see the choice.
+- [ ] The organization account row has Check and Remove for managers. Remove confirms with the list of harnesses the vendor key serves.
+- [ ] `teamSettingsSection`, `team-section.tsx`, `team-account-form.tsx`, `team-store.ts` and the `settings.team.*` keys are deleted; `src/accounts/README.md` describes the folded flow.
+- [ ] Flows: the Models flow covers adding an organization account as a manager, its absence for a member, choosing it, and removing it through the dialog; red run recorded.
+
+### Lane B: confirmations and form surfaces outside accounts (owns `src/ui/confirm.tsx`, `src/ui/README.md`, `src/plugins/view/confirm-dialog.tsx`, `src/settings/view/connections.tsx`, `src/settings/view/connect-dialog.tsx`, `src/projects/view/{remove-project,edit-project,create-project}-dialog.tsx`, `src/session/view/docks/goal-dock.tsx`, `src/tasks/view/create-task-dialog.tsx`, `src/rail/view/session-dialogs.tsx`, `src/marketplace/view/install-sheet.tsx`, `src/accounts/view/sandbox-key-row.tsx`, `src/accounts/view/custom-provider-dialog.tsx`)
+
+- [ ] `requestConfirm` takes a destructive flag that renders the destructive button variant; Lane A consumes it (land B's `confirm.tsx` change first, or have A rebase on it).
+- [ ] Inline confirms removed: sandbox key removal, connection disconnect. `plugins/view/confirm-dialog.tsx` deleted; plugin removal uses `requestConfirm`. Remove project and delete goal use `requestConfirm`.
+- [ ] Forms moved onto the shared surfaces: rename session and create project (`FormDialog`); edit project, create task, custom provider and the settings connect dialog (`FormDrawer`); the install sheet becomes a `Drawer`.
+- [ ] `src/ui/README.md` states the confirmation rule (every destructive action, `requestConfirm`, destructive button) and the popover rule (anchored, non-modal menus and choosers through the kit's `Popover`).
+- [ ] Affected flows updated; red runs recorded.
+
+### Lane C: naming outside the app (owns server-core credential copy, `packages/harness/src/registry/credentials.ts`, `src/usage/locales/**`)
+
+- [ ] Server error messages and harness registry text say "organization account" (`org_account_missing`, `org_accounts_forbidden`, `org_account_rotate_by_put` messages and the usage cloud route).
+- [ ] Usage page: "Usage by organization account" and its row labels.
+- [ ] `rg -i "team (account|key)"` over `packages/` (excluding `node_modules`, plans and memory) returns nothing user-facing.
+
+### Lane D: Models tab empty state (after the VM wake-up work merges; owns `src/accounts/view/harness-section.tsx`'s Models tab and `src/accounts/view/model-sources.ts`)
+
+- [ ] With no project: the copy says models appear once a project exists. With a project whose workspace cannot answer: the copy names that workspace and the failure.
+- [ ] Settings reads the same no-wake model source the composer uses for an asleep cloud draft; opening the Models tab starts no workspace (asserted against the server's start count).
+
+## Definition of done
+
+- [ ] `bun run check`, `bun run typecheck`, `bun run test` in `packages/claxedo-app`, `bun run test:architecture-ratchets` at the repo root, all on the merge tip.
+- [ ] The Models, connections, marketplace, projects and onboarding flows pass on web and phone; every new or changed assertion has a recorded red run.
+- [ ] No Team accounts route, section, key or string remains; `/settings/team-accounts` is gone from the settings sidebar.
+- [ ] Screenshots of the Models page (one account, two accounts, organization account as manager and as member) in light and dark, attached to the PR.
+
+Progress:
