@@ -131,9 +131,9 @@ export function startProgressTransition(state: TaskStartProgress, event: TaskSta
     case "previewSent":
       return { kind: "preparing", taskId: event.taskId, slot: event.slot, placement: event.placement }
     case "previewAnswered":
-      return state.kind === "preparing" ? { kind: "starting", taskId: state.taskId, slot: state.slot } : state
+      return state.kind === "preparing" && state.placement === "local" ? { kind: "starting", taskId: state.taskId, slot: state.slot } : state
     case "rootFollowed":
-      return state.kind === "starting" ? { kind: "machine", taskId: state.taskId, slot: state.slot, placementId: event.placementId } : state
+      return state.kind === "preparing" ? { kind: "machine", taskId: state.taskId, slot: state.slot, placementId: event.placementId } : state
     case "rootRunning":
       return state.kind === "machine" ? { kind: "starting", taskId: state.taskId, slot: state.slot } : state
     case "settled":

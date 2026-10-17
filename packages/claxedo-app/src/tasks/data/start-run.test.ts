@@ -47,7 +47,7 @@ function progressOf() {
 
 const CLOUD = { presetId: "tpr_1", presetRevision: 1, placement: "cloud", slot: "primary" } as const
 
-test("a cloud start says it is starting a workspace while the preview runs, then the session, then nothing once it settles", async () => {
+test("a cloud start says it is starting a workspace while the preview and the Start run, then nothing once it settles", async () => {
   const preview = deferred<StartPreview>()
   const sent = deferred<void>()
   const { calls } = recording({
@@ -67,6 +67,31 @@ test("a cloud start says it is starting a workspace while the preview runs, then
 
   preview.resolve(READY_PREVIEW)
   await Bun.sleep(0)
+  expect(progress.line()).toEqual({ kind: "key", key: "tasks.start.progress.cloud" })
+
+  sent.resolve()
+  expect(await started).toEqual({ ok: true })
+  expect(progress.line()).toBeUndefined()
+})
+
+test("a local start says it is checking the workspace while the preview runs, then the session while the Start runs", async () => {
+  const preview = deferred<StartPreview>()
+  const sent = deferred<void>()
+  const { calls } = recording({
+    preview: () => preview.promise,
+    start: async () => {
+      await sent.promise
+      return LINKED
+    },
+  })
+  const progress = progressOf()
+  const started = startNow(calls, copy, task, { ...CLOUD, placement: "local" }, progress.report)
+
+  await Bun.sleep(0)
+  expect(progress.line()).toEqual({ kind: "key", key: "tasks.start.progress.local" })
+
+  preview.resolve(READY_PREVIEW)
+  await Bun.sleep(0)
   expect(progress.line()).toEqual({ kind: "key", key: "tasks.start.progress.session" })
 
   sent.resolve()
@@ -79,9 +104,11 @@ test("a Start whose root is still starting follows that root's own start, shows 
   const running = deferred<RootRun>()
   const answers: StartResponse[] = [{ preparing: { workspaceId: "ws_root" } }, LINKED]
   const followed: string[] = []
+  const filed = deferred<void>()
   const { calls, starts, opened } = recording({
     start: async (_request, digest, clientRequestId) => {
       starts.push({ digest, clientRequestId })
+      if (starts.length === 1) await filed.promise
       const answer = answers.shift()
       if (!answer) throw new Error("a third Start was sent")
       return answer
@@ -95,6 +122,11 @@ test("a Start whose root is still starting follows that root's own start, shows 
   const progress = progressOf()
   const started = startNow(calls, copy, task, CLOUD, progress.report)
 
+  await Bun.sleep(0)
+  expect(starts).toHaveLength(1)
+  expect(progress.line()).toEqual({ kind: "key", key: "tasks.start.progress.cloud" })
+
+  filed.resolve()
   await Bun.sleep(0)
   expect(followed).toEqual(["ws_root"])
   expect(progress.line()).toEqual({ kind: "machine", placementId: machine })
