@@ -87,10 +87,9 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
   return {
     kind: "saved-model-unavailable",
     tone: "warning",
-    message: `${input.savedModelUnavailable} is unavailable`,
-    detail: "Reconnect its account in Settings → Models, or choose another model.",
+    message: `${input.harnessLabel} no longer offers ${input.savedModelUnavailable}`,
+    detail: "Choose another model.",
     retry: false,
-    ...(input.openProviders ? { action: openModels(input.openProviders) } : {}),
   }
 }
 

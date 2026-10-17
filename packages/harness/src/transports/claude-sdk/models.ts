@@ -47,7 +47,7 @@ export class ClaudeModelCatalog {
     const probe = query({ prompt: { async *[Symbol.asyncIterator]() {
       await new Promise<void>((resolve) => abort.signal.addEventListener("abort", () => resolve(), { once: true }))
     } }, options: {
-      ...context, abortController: abort,
+      ...context, ...claudeProbeModel(input), abortController: abort,
       spawnClaudeCodeProcess: (options) => {
         const child = new ClaudeProcess(this.services, options, sessionId ?? "probe", "probe")
         spawned.push(child)
@@ -62,6 +62,10 @@ export class ClaudeModelCatalog {
       await Promise.all(spawned.map((child) => child.retire({ at: Date.now() + 5_000, signal: new AbortController().signal })))
     }
   }
+}
+
+export function claudeProbeModel(input: StartInput | DraftLaunch): { model?: string } {
+  return input.model ? { model: input.model.modelID } : {}
 }
 
 export function claudeCatalogModel(models: readonly ModelInfo[], modelId?: string): ModelInfo | undefined {

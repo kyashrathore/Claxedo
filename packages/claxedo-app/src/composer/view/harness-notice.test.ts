@@ -36,10 +36,11 @@ test("harness notice: setup, then failed models, then an unavailable saved model
   expect(resolveHarnessNotice({ ...base, savedModelUnavailable: "Opus" })).toEqual({
     kind: "saved-model-unavailable",
     tone: "warning",
-    message: "Opus is unavailable",
-    detail: "Reconnect its account in Settings → Models, or choose another model.",
+    message: "Cursor no longer offers Opus",
+    detail: "Choose another model.",
     retry: false,
   })
+  expect(resolveHarnessNotice({ ...base, savedModelUnavailable: "Opus", openProviders: open })).not.toHaveProperty("action")
   expect(resolveHarnessNotice(base)).toBeUndefined()
 })
 
