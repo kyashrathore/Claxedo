@@ -45,7 +45,7 @@ const piTurn = (auth: NonNullable<ReturnType<typeof parseTurnDelivery>>["auth"])
   sessionAccountCredentials({ ...auth, placement: "cloud", canUseOwnLogin: false, leaseGeneration: "lease" }, { kind: "person", userId: plane.owner.principal!.userId },
     { harness: { id: "pi", access: "native" }, model: { providerID: "pi", modelID: "anthropic/claude-sonnet-4-5" } })
 
-test("a person on the team account is handed it, not their own key, and a reported vendor refusal marks it only when the plane's own check of the current key agrees", async () => {
+test("a person on the organization account is handed it, not their own key, and a reported vendor refusal marks it only when the plane's own check of the current key agrees", async () => {
   const ownerId = plane.owner.principal!.userId
   const accounts = plane.credentials(plane.orgId)
   const team = await accounts.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team", label: "Team" })
@@ -74,7 +74,7 @@ test("a person on the team account is handed it, not their own key, and a report
   await accounts.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team", label: "Team" })
 })
 
-test("once the team account is removed the turn is refused in words that say so, and nothing is handed over in its place", async () => {
+test("once the organization account is removed the turn is refused in words that say so, and nothing is handed over in its place", async () => {
   const accounts = plane.credentials(plane.orgId)
   const [team] = (await accounts.listCredentials()).filter((row) => row.owner === null)
   await accounts.deleteCredential(team.id)
@@ -83,10 +83,10 @@ test("once the team account is removed the turn is refused in words that say so,
   const ownerId = plane.owner.principal!.userId
   expect(delivery.auth.direct).toEqual({ [ownerId]: {} })
   expect(delivery.auth.accounts[ownerId]).toMatchObject({ anthropic: { unavailable: true, reason: "org_account_unavailable" } })
-  expect(() => piTurn(delivery.auth)).toThrow("Your organization has no Anthropic API key, and this harness is set to use the organization's account. Ask an admin to add a team key, or choose your own account in Settings → Models.")
+  expect(() => piTurn(delivery.auth)).toThrow("Your organization has no Anthropic API key, and this harness is set to use the organization's account. Ask an owner or admin to add an organization account in Settings → Models, or choose your own account there.")
 })
 
-test("a session whose workspace owner no longer stands in the organization is handed no account at all, the team key included", async () => {
+test("a session whose workspace owner no longer stands in the organization is handed no account at all, the organization account included", async () => {
   const accounts = plane.credentials(plane.orgId)
   await accounts.putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-team-again" })
   const proof = await plane.relayProof(plane.owner, { hostId: sessionHostId(ROOT), backing: "durable-object", jti: "rat_turn_left" })

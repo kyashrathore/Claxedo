@@ -740,7 +740,7 @@ describe("hosted-core usage", () => {
     const cloudUsageFacts = vi.fn(async () => [])
     const machineTime = vi.fn(async () => ({ activeMs: 600_000, running: 1, workspaces: [], providers: [] }))
     const writeRevision = vi.fn(async () => ({ status: "accepted" as const, firstSettled: true }))
-    const teamKeyRow = { source: "org" as const, credential_id: "cred_team", credential_kind: "api_key", label: "Team key", credential_provider_id: "anthropic", model: "anthropic/claude-sonnet-4-5", turn_count: 1, output_tokens: 10 }
+    const teamKeyRow = { source: "org" as const, credential_id: "cred_team", credential_kind: "api_key", label: "Acme key", credential_provider_id: "anthropic", model: "anthropic/claude-sonnet-4-5", turn_count: 1, output_tokens: 10 }
     const credentialSpend = vi.fn(async () => [{ ...teamKeyRow, spender: "alice" }, { ...teamKeyRow, spender: "bob" }])
     const listOrgMembers = vi.fn(async () => [{ user_id: "alice", public_id: "alice", role: "owner" as const, joined_at: 1, name: "Alice Liddell", you: true }])
     Object.assign(composed.services.authority!, { listOrgMembers })

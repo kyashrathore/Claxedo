@@ -91,13 +91,13 @@ function thrown(run: () => unknown): unknown {
   throw new Error("expected a refusal")
 }
 
-test("a provider its owner chose the organization's account for, where the organization holds no team key, names the vendor and the way out, not that no account was chosen", () => {
+test("a provider its owner chose the organization's account for, where the organization holds no organization account, names the vendor and the way out, not that no account was chosen", () => {
   const missing = { unavailable: true as const, reason: ORG_ACCOUNT_UNAVAILABLE }
   const claude = { ...snapshot, placement: "cloud" as const, canUseOwnLogin: false, providerIds: ["claude-sdk", "claude-acp", "anthropic"],
     accounts: { B: { "claude-sdk": missing, "claude-acp": missing, anthropic: missing } } }
   expect(() => selectSessionCredentials(claude, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({
     code: "account_unavailable",
-    message: "Your organization has no Anthropic API key, and this harness is set to use the organization's account. Ask an admin to add a team key, or choose your own account in Settings → Models.",
+    message: "Your organization has no Anthropic API key, and this harness is set to use the organization's account. Ask an owner or admin to add an organization account in Settings → Models, or choose your own account there.",
     detail: { reason: ORG_ACCOUNT_UNAVAILABLE },
   }))
   expect(classifyFirstTurnError(thrown(() => selectSessionCredentials(claude, { kind: "person", userId: "B" })))).toBe("credential")

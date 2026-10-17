@@ -147,7 +147,7 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
   }
 }
 
-/** A team account as a member reads it: its status and verdict, never the vendor's own error text. */
+/** An organization account as a member reads it: its status and verdict, never the vendor's own error text. */
 function withoutVendorError<Row extends { last_error: unknown } | null>(row: Row): Row {
   return row && { ...row, last_error: null }
 }
@@ -206,10 +206,11 @@ export type CredentialRoutesOptions = {
   /** Absent on a host that provisions no sandboxes and keeps no provider keys for them. */
   sandboxDriverKeys?: SandboxDriverKeys
   /**
-   * Whether the caller adds, checks, rotates and removes the organization's
-   * team accounts: its owners and admins on a host whose organizations have
-   * roles. Absent, the loopback operator of a single-tenant install does,
-   * since that install's organization is theirs alone.
+   * Whether the caller adds, checks, rotates and removes organization
+   * accounts: the organization's owners and admins on a host whose
+   * organizations have roles. Absent, the loopback operator of a
+   * single-tenant install does, since that install's organization is theirs
+   * alone.
    */
   managesOrgAccounts?: (request: Request, org: string) => Promise<boolean>
   /** Where each Check's verdict is recorded as `credential_checked`; absent, verdicts stay in the answer alone. */
@@ -306,7 +307,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   }
   const sandboxKeysUnavailable = () => errorBody("sandbox_driver_keys_unavailable", "This host keeps no sandbox provider keys")
   const sandboxKeysForbidden = () => errorBody("sandbox_driver_keys_forbidden", "Only an organization owner or admin manages sandbox provider keys")
-  const orgAccountsForbidden = () => errorBody("org_accounts_forbidden", "Only an organization owner or admin manages its team accounts")
+  const orgAccountsForbidden = () => errorBody("org_accounts_forbidden", "Only an organization owner or admin manages its organization accounts")
   /**
    * One row, in the caller's org. Scoped before anything else runs: an
    * out-of-org id must 404 before a secret is resolved or a provider is called
@@ -317,7 +318,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     credentials.getCredential
       ? await credentials.getCredential(id, scope)
       : (await credentials.listCredentials(scope)).find((item) => item.id === id)
-  /** An account the caller may check or change: their own, or a team account they manage. */
+  /** An account the caller may check or change: their own, or an organization account they manage. */
   const changeableAccount = async (request: Request, row: CredentialMetadata | undefined) =>
     !!row && (row.owner === actor(request) || (isOrgAccount(row) && await managesOrgAccounts(request)))
   const findCredential = async (request: Request, id: string) => {
@@ -633,7 +634,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
       if (isOrgAccount(credential)) {
-        return c.json(errorBody("org_account_rotate_by_put", "Rotate a team key by adding the new key for the same vendor in Settings → Team accounts."), 409)
+        return c.json(errorBody("org_account_rotate_by_put", "Rotate an organization account by adding the new key for the same vendor in Settings → Models, under a harness's Add an account → For the organization."), 409)
       }
       if (!credentials.updateCredentialSecret || !credentials.updateCredentialHealth) {
         return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)

@@ -19,7 +19,7 @@ export type HostedCredentialRoutesInput = {
   resolveOrgId(auth: SignedControlPlaneAuth): Promise<string>
   credentials: (orgId: string) => ControlPlaneCredentials
   change: CredentialChange
-  /** Who manages the organization's own rows: its team accounts and its sandbox provider keys. */
+  /** Who manages the organization's own rows: its organization accounts and its sandbox provider keys. */
   administers: OrgAdministers
   /** The plane's credential keys: a sign-in's callback can land on another Worker instance than its authorize did. */
   keys: EnvelopeKeyProvider

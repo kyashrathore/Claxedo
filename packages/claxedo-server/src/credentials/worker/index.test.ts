@@ -265,7 +265,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect((await stored(credentials, replan.id))?.is_active).toBe(false)
   })
 
-  test("removing the team's Claude plans by provider hands their host's mark to the team key saved beside them, and leaves a person's own accounts alone", async () => {
+  test("removing the organization's Claude plans by provider hands their host's mark to the organization account saved beside them, and leaves a person's own accounts alone", async () => {
     const orgId = freshOrg("team-plans-removed-after-key")
     let clock = 1_000
     const credentials = store(orgId, () => ++clock)
