@@ -1,6 +1,6 @@
 import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, vendorName, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { isRefusal } from "@/lib/account-health"
-import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin } from "@/server"
+import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, ProviderSource } from "@/server"
 
 export { isRefusal, isUnavailable } from "@/lib/account-health"
 
@@ -68,6 +68,15 @@ export function accountIdentity(row: Account): { text: string; readable: boolean
   const fingerprint = /^fp_[0-9a-f]{8}(….+)$/.exec(row.accountId)
   if (fingerprint?.[1]) return { text: fingerprint[1], readable: true }
   return { text: row.accountId, readable: !OPAQUE_ACCOUNT_ID.test(row.accountId) }
+}
+
+export function canDisconnectProvider(source: ProviderSource | undefined): boolean {
+  return source === "api" || source === "custom"
+}
+
+export function providerOwnKeys(provider: { readonly id: string; readonly source?: ProviderSource }, stored: readonly Account[]): readonly Account[] {
+  if (!canDisconnectProvider(provider.source)) return []
+  return stored.filter((account) => account.providerId === provider.id && account.hasSecret)
 }
 
 export function accountLabel(row: Account): string {

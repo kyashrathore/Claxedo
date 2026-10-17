@@ -5,7 +5,7 @@ import type { Account } from "@/server"
 import { keyCheckWords, orgAccountWords, storedAccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
-import { harnessAccounts, harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
+import { harnessAccounts, harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
 
 const t: AccountsText = (key, params) => Object.entries(params ?? {}).reduce((text, [name, value]) => text.replace(`{{${name}}}`, String(value)), en[key])
 const words = { t, windowName: (window: { readonly window: string }) => window.window }
@@ -147,4 +147,12 @@ test("accounts: a key whose provider Claxedo cannot check says so on one line, a
   expect(keyCheckWords(t, groq, undefined)).toEqual(["Not checked yet"])
   expect(keyCheckWords(t, { ...groq, health: "auth_failed" }, undefined)).toEqual(["Rejected by the provider"])
   expect(keyCheckWords(t, groq, { at: 1, verdict: "unknown", reason: "The server could not be reached" })).toEqual(["Couldn't check", "The server could not be reached"])
+})
+
+test("a provider connected with a key of yours offers that key's Check, and one connected another way offers none", () => {
+  const stored = [account("own-groq", "groq"), account("own-anthropic", "anthropic"), account("groq-no-secret", "groq", { hasSecret: false })]
+  expect(providerOwnKeys({ id: "groq", source: "api" }, stored).map((key) => key.id)).toEqual(["own-groq"])
+  expect(providerOwnKeys({ id: "my-gateway", source: "custom" }, [account("own-gateway", "my-gateway")]).map((key) => key.id)).toEqual(["own-gateway"])
+  expect(providerOwnKeys({ id: "groq", source: "env" }, stored)).toEqual([])
+  expect(providerOwnKeys({ id: "groq", source: "harness" }, stored)).toEqual([])
 })
