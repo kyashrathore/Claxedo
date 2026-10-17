@@ -13,7 +13,7 @@ import { createHostedRuntimeDelivery } from "../workspace/hosted-runtime-deliver
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
 import { hostedBrokerCredentialReader, hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { createHostedEgressBroker } from "../credentials/hosted-egress-broker"
-import { inlineSandboxStart, unusedSandboxFollow, unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
+import { inlineSandboxStart, unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
 import type { SandboxStartAnswer, SandboxStartRequest } from "../workspace/sandbox-start"
 import { startConfigurationDigest } from "@claxedo/tasks"
@@ -120,7 +120,6 @@ async function rootStart(secretBrokering: "native" | "none") {
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
     sandboxRedeliver: unusedSandboxRedeliver,
-    sandboxFollow: unusedSandboxFollow,
     idleStop: unusedWorkspaceIdleStop,
     authority: authority as unknown as DeliveryInput["authority"],
     database,

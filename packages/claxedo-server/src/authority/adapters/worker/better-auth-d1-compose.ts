@@ -291,7 +291,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         ...(sandbox.announce ? { announce: sandbox.announce } : {}),
         sandboxRefresh: sandbox.refresh,
         sandboxRedeliver: sandbox.redeliver,
-        sandboxFollow: sandbox.follow,
         idleStop: hostedWorkspaceIdleStop(plane.services),
       })
     : undefined
@@ -329,7 +328,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
           sandboxStart: sandbox.start,
           sandboxInFlight: sandbox.inFlight,
           prepareRuntime: delivery.prepareRuntime,
-          provisionRuntime: delivery.provisionRuntime,
           runtimeProvisioned: delivery.runtimeProvisioned,
         },
       } : {}),

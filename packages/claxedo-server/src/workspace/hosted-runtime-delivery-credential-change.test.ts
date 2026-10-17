@@ -3,7 +3,7 @@ import { createMemoryLeaseStore, sandboxLease } from "@claxedo/sandbox-manager/s
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { unusedWorkspaceIdleStop, unusedSandboxFollow } from "../test-support/inline-sandbox-start"
+import { unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { orgRoutedCredentials } from "../credentials/worker/org-routed"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
@@ -35,7 +35,6 @@ async function plane() {
       return { status: "provisioning" as const, retryAfterMs: 1, epoch: 1, homeRegion: "us-east" }
     }),
     sandboxRedeliver: async (workspaceId) => void redelivered.push(workspaceId),
-    sandboxFollow: unusedSandboxFollow,
     idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async (workspaceId: string) => ({ userId: OWNERS[workspaceId], orgId: "org" }) } as unknown as Input["authority"],
     database: database.database,

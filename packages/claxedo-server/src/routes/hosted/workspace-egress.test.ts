@@ -13,7 +13,7 @@ import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/au
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
-import { inlineSandboxStart, unusedSandboxFollow } from "../../test-support/inline-sandbox-start"
+import { inlineSandboxStart } from "../../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "../../workspace/hosted-runtime-delivery"
 import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../../test-support/inline-sandbox-start"
@@ -139,7 +139,6 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
   const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
-      sandboxFollow: unusedSandboxFollow,
       idleStop: unusedWorkspaceIdleStop,
     authority: services.authority as unknown as WorkspaceAuthority,
     database: backing.database,

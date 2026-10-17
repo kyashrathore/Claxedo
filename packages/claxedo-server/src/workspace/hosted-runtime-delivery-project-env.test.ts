@@ -5,7 +5,7 @@ import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/wo
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop, unusedSandboxFollow } from "../test-support/inline-sandbox-start"
+import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 
 type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
 
@@ -21,7 +21,6 @@ async function setup() {
   const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
-      sandboxFollow: unusedSandboxFollow,
       idleStop: unusedWorkspaceIdleStop,
     authority: {
       resolveWorkspaceOwner: async () => ({ userId: "owner", actorId: "act_owner", orgId: "org", projectId: "project" }),

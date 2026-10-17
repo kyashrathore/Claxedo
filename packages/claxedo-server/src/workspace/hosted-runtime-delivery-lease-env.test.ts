@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { D1Database } from "@cloudflare/workers-types"
 import { RUNTIME_LEASE_ENV_PATH } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
-import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop, unusedSandboxFollow } from "../test-support/inline-sandbox-start"
+import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
@@ -27,7 +27,6 @@ async function composition(runtimeAnswer = 204) {
   const delivery = createHostedRuntimeDelivery({
     sandboxRefresh: unusedSandboxStart,
     sandboxRedeliver: unusedSandboxRedeliver,
-    sandboxFollow: unusedSandboxFollow,
     idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database: instance.database as unknown as D1Database,

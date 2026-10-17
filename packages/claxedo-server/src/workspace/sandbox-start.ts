@@ -1,7 +1,6 @@
 import type { SandboxEnsureResult, SandboxTargetResult } from "@claxedo/sandbox-manager"
 import { timed } from "../platform/http/server-timing"
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
-import type { WorkspaceRuntimeContext } from "./route-support"
 import type { MachineNotice } from "./machine-notice"
 
 /**
@@ -68,12 +67,6 @@ export type SandboxProvisionerStub = {
   refresh(workspaceId: string): Promise<SandboxStartAnswer>
   /** A settings push to a serving sandbox with no driver step and no run; a run in flight delivers them as it settles. */
   redeliver(workspaceId: string): Promise<void>
-  /**
-   * Takes up the follow-ups of a sandbox whose settings were pushed outside a
-   * run: they are scheduled as a ready start's are, and every later step of
-   * the workspace is prepared with the capability set the context names.
-   */
-  follow(context: WorkspaceRuntimeContext, due: SandboxFollowUps): Promise<void>
   /** The run in flight, which a read answers instead of asking a runtime the run is replacing; begins nothing. */
   inFlight(): Promise<SandboxStartAnswer | undefined>
 }
@@ -90,7 +83,6 @@ export function sandboxProvisioner(namespace: SandboxProvisionerNamespace, works
     start: (id, request) => timed("do", () => stub.start(id, request)),
     refresh: (id) => timed("do", () => stub.refresh(id)),
     redeliver: (id) => timed("do", () => stub.redeliver(id)),
-    follow: (context, due) => timed("do", () => stub.follow(context, due)),
     inFlight: () => timed("do", () => stub.inFlight()),
   }
 }

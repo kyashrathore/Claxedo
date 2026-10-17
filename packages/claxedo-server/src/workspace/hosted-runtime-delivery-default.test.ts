@@ -5,8 +5,6 @@ import { workspaceBackingDatabase } from "../test-support/workspace-backing-data
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
 
-const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
-
 const configStatus = vi.hoisted(() => vi.fn(async (): Promise<import("@claxedo/workspace-runtime/config").RuntimeConfigApplyStatus> => ({ state: "idle", revision: 0 })))
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
 vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied, configStatus })) }))
@@ -23,12 +21,14 @@ async function createDelivery(config: UserAgentConfig, backing: "cloud-vm" | "lo
   return createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
-      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database: instance.database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],
-    sandboxManager: {} as Input["sandboxManager"],
+    sandboxManager: {
+      target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test", epoch: 1 }),
+      heartbeat: async () => ({ ok: true, status: "ready" }),
+    } as unknown as Input["sandboxManager"],
     workspaceSecretBrokering: async () => "native",
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
     settings: { read: async () => config, write: async () => {} },
@@ -38,11 +38,12 @@ async function createDelivery(config: UserAgentConfig, backing: "cloud-vm" | "lo
   })
 }
 
-async function firstPush(config: UserAgentConfig, plugins: import("@claxedo/server-core/agent-config/runtime-snapshot").AgentPluginRuntimeContribution = { harnessLaunch: {}, mcp: {} }, backing?: "cloud-vm" | "local-worktree") {
-  const delivery = await createDelivery(config, backing)
+async function firstPush(config: UserAgentConfig, plugins: import("@claxedo/server-core/agent-config/runtime-snapshot").AgentPluginRuntimeContribution = { harnessLaunch: {}, mcp: {} }) {
+  const delivery = await createDelivery(config)
   delivery.composeRuntime({ prepareRuntime: delivery.prepareRuntime, pluginRuntime: async () => plugins })
   configApplied.mockClear()
-  await delivery.provisionRuntime({ workspaceId: "ws" }, await delivery.prepareRuntime({ workspaceId: "ws" }))
+  configStatus.mockResolvedValueOnce({ state: "applied", revision: 1 })
+  await delivery.start.renew("ws")
   return configApplied.mock.calls.at(-1)?.[0]
 }
 
@@ -78,8 +79,4 @@ test("readiness comes from applied settings, survives a refresh, and reports fai
   }
   configStatus.mockResolvedValueOnce({ state: "failed", revision: 1, error: { code: "refused", message: "Harness refused settings" } })
   await expect(delivery.runtimeProvisioned({ workspaceId: "ws" })).rejects.toThrow("Harness refused settings")
-})
-
-test("a machine-placed workspace takes its config from its machine, never a hosted sandbox push", async () => {
-  expect(await firstPush({ version: 3, connections: {}, sandbox_driver: {} }, undefined, "local-worktree")).toBeUndefined()
 })

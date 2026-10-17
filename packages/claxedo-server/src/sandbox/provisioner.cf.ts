@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers"
 import { sandboxLeaseEndedUnderStart, sandboxProviderRateLimit, sandboxRuntimeBootFailure } from "@claxedo/sandbox-manager"
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
-import type { WorkspaceRuntimeContext } from "../workspace/route-support"
 import type { SandboxFollowUps, SandboxStartAnswer, SandboxStartDrive, SandboxStartRequest } from "../workspace/sandbox-start"
 
 /** `failure` is the error of the last step that failed and is being retried; a step that succeeds or ends the run clears it. */
@@ -144,14 +143,6 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
         if (at === undefined) await this.ctx.storage.delete("renewal")
         else await this.ctx.storage.put("renewal", { workspaceId, at, failures: 0 } satisfies FollowUp)
         await this.#armFollowUps()
-      })
-    }
-
-    follow(context: WorkspaceRuntimeContext, due: SandboxFollowUps): Promise<void> {
-      return this.#flushed(async () => {
-        if (context.capabilities) await this.ctx.storage.put("capabilities", context.capabilities)
-        if (await this.ctx.storage.get<Run>("run")) return
-        await this.#schedule(context.workspaceId, due)
       })
     }
 

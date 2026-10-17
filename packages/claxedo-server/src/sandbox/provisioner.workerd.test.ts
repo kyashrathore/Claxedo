@@ -62,11 +62,6 @@ async function renewals(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/renewals?ws=${workspaceId}`)).json()) as { renewals: number }).renewals
 }
 
-/** The capability set each renewal of a workspace pushed outside a run was prepared with, in order. */
-async function rootRenewals(workspaceId: string) {
-  return ((await (await miniflare.dispatchFetch(`${ORIGIN}/root-renewals?ws=${workspaceId}`)).json()) as { renewals: unknown[] }).renewals
-}
-
 /** Each step of a Task root and the capability set it was prepared with, in order. */
 async function rootSteps(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/root-steps?ws=${workspaceId}`)).json()) as { steps: Array<{ step: string; capabilities: unknown }> }).steps
@@ -195,7 +190,7 @@ describe("a sandbox start on workerd", () => {
     expect(await start("ws_renew_2")).toMatchObject({ status: "ready", epoch: 1 })
   })
 
-  test("a Task root's start names its capability set, answers at once, is announced, and every later step of the root is prepared with that set", async () => {
+  test("a Task root's start names its capability set, answers at once, is announced, every later step of the root is prepared with that set, and a stopped root is renewed no more", async () => {
     const workspaceId = "ws_task_capabilities"
     const capabilities = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }
     const response = await miniflare.dispatchFetch(`${ORIGIN}/start?ws=${workspaceId}&retry=1&plugin=linear`, { method: "POST" })
@@ -208,29 +203,15 @@ describe("a sandbox start on workerd", () => {
 
     expect(await start(workspaceId)).toMatchObject({ status: "ready" })
     expect(await driverCalls(workspaceId)).toBe(1)
-  })
 
-  test("a workspace whose settings were pushed outside a run joins the renewal with its capability set, and a stopped one is renewed no more", async () => {
-    const workspaceId = "ws_root_renewal"
-    const capabilities = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }
-    await start(workspaceId)
-    await until(() => target(workspaceId), (lease) => lease.status === "ready")
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    expect(await rootRenewals(workspaceId)).toEqual([])
-
-    const followed = await miniflare.dispatchFetch(`${ORIGIN}/follow?ws=${workspaceId}&plugin=linear`, { method: "POST" })
-    expect(followed.status).toBe(200)
-    const renewed = await until(() => rootRenewals(workspaceId), (rows) => rows.length >= 2)
-    expect(renewed.every((row) => JSON.stringify(row) === JSON.stringify(capabilities))).toBe(true)
-    expect(await driverCalls(workspaceId)).toBe(1)
-
+    const renewals = async () => (await rootSteps(workspaceId)).filter((row) => row.step === "renew").length
     expect((await miniflare.dispatchFetch(`${ORIGIN}/stop?ws=${workspaceId}`, { method: "POST" })).status).toBe(200)
-    const atStop = (await rootRenewals(workspaceId)).length
+    const atStop = await renewals()
     await new Promise((resolve) => setTimeout(resolve, 700))
-    expect((await rootRenewals(workspaceId)).length).toBeLessThanOrEqual(atStop + 1)
-    const settled = (await rootRenewals(workspaceId)).length
+    expect(await renewals()).toBeLessThanOrEqual(atStop + 1)
+    const settled = await renewals()
     await new Promise((resolve) => setTimeout(resolve, 500))
-    expect((await rootRenewals(workspaceId)).length).toBe(settled)
+    expect(await renewals()).toBe(settled)
   })
 
   test("a redelivery pushes a serving sandbox's settings at once, with no driver step and no run a read would see", async () => {

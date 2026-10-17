@@ -126,8 +126,6 @@ export function createHostedRuntimeDelivery(input: {
   sandboxRefresh: SandboxStart
   /** The workspace's provisioner's settings push to a serving sandbox, with no driver step; a run in flight delivers them instead. */
   sandboxRedeliver: (workspaceId: string) => Promise<void>
-  /** Hands the workspace's provisioner the follow-ups of a push made outside a start run. */
-  sandboxFollow: (context: WorkspaceRuntimeContext, due: SandboxFollowUps) => Promise<void>
   /** Stops a lease generation the idle watch found idle, or unreachable for the whole failure budget. */
   idleStop: WorkspaceIdleStop
   /** Ends the turns the workspace's runtime was running when the idle watch found that runtime gone at `at`. */
@@ -239,13 +237,6 @@ export function createHostedRuntimeDelivery(input: {
       }),
     ])
     return { ...(renewAt === undefined ? {} : { renewAt }), watchAt: Date.now() + IDLE_CHECK_MS }
-  }
-  // A push outside a start run hands the follow-ups a ready start would
-  // schedule to the workspace's provisioner, which renews and watches the
-  // sandbox from then on as it does any other.
-  const provisionRuntime = async (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
-    if (await cloudRootBacking(input.database, context.workspaceId) !== "cloud") return
-    await input.sandboxFollow(context, await push(context.workspaceId, preparation))
   }
   const hooks: HostedRuntimeHooks = { prepareRuntime: prepare }
   const refused = (code: "runtime_prepare_failed" | "runtime_provision_failed", cause: unknown, message: string): SandboxStartAnswer =>
@@ -415,7 +406,6 @@ export function createHostedRuntimeDelivery(input: {
   }
   return {
     prepareRuntime: prepare,
-    provisionRuntime,
     start,
     /** The accounts a cloud workspace's sandbox is delivered, as its runtime sees them; nothing for a workspace no sandbox serves. */
     credentialSnapshot: async (workspaceId: string): Promise<CredentialSnapshot | undefined> => {

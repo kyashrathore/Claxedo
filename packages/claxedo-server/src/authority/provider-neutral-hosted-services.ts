@@ -46,8 +46,7 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { sandboxEgressUnenforcedSink, sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
-import type { SandboxFollowUps, SandboxInFlight, SandboxStart } from "../workspace/sandbox-start"
-import type { WorkspaceRuntimeContext } from "../workspace/route-support"
+import type { SandboxInFlight, SandboxStart } from "../workspace/sandbox-start"
 import type { MachineNotice } from "../workspace/machine-notice"
 
 export { HostedWorkerCompositionError } from "./composition-error"
@@ -117,7 +116,6 @@ export type HostedSandboxBinding = {
   start: SandboxStart
   refresh: SandboxStart
   redeliver: (workspaceId: string) => Promise<void>
-  follow: (context: WorkspaceRuntimeContext, due: SandboxFollowUps) => Promise<void>
   inFlight: SandboxInFlight
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** Ends the turns a workspace's runtime was running when the plane found that runtime gone. */

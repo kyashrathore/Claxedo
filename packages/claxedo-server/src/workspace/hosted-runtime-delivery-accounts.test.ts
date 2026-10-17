@@ -6,10 +6,8 @@ import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/wo
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
-const followed = vi.fn(async (_context: { workspaceId: string }, _due: { renewAt?: number; watchAt?: number }) => {})
-
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
-vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied })) }))
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: vi.fn(() => ({ applyConfig: configApplied, configStatus: async () => ({ state: "applied", revision: 1 }) })) }))
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: vi.fn(async () => ({ supervisorBackplaneToken: "supervisor-token" })) }))
 
 const OWNERS: Record<string, string> = { "ws-a": "owner-A", "ws-b": "owner-B" }
@@ -27,11 +25,14 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
-      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
       authority: { resolveWorkspaceOwner: async (workspaceId: string) => ({ userId: OWNERS[workspaceId], orgId: "org" }) } as unknown as Input["authority"],
       database: database.database,
-      services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"], sandboxManager: {} as Input["sandboxManager"],
+      services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],
+      sandboxManager: {
+        target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test", epoch: 1 }),
+        heartbeat: async () => ({ ok: true, status: "ready" }),
+      } as unknown as Input["sandboxManager"],
       workspaceSecretBrokering: async () => "native",
       sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
       settings: { read: async () => ({ version: 3, connections: {}, sandbox_driver: {} }), write: async () => {} },
@@ -39,7 +40,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     })
     const deliveredTo = async (workspaceId: string) => {
       const preparation = await delivery.prepareRuntime({ workspaceId })
-      await delivery.provisionRuntime({ workspaceId }, preparation)
+      await delivery.start.renew(workspaceId)
       return { secrets: preparation.secrets ?? [], snapshot: configApplied.mock.calls.at(-1)![0] }
     }
     const a = await deliveredTo("ws-a")
@@ -77,7 +78,6 @@ test("a key saved for Pi never moves Claude Code off its Anthropic login; only c
     const delivery = createHostedRuntimeDelivery({
       sandboxRefresh: unusedSandboxStart,
       sandboxRedeliver: unusedSandboxRedeliver,
-      sandboxFollow: followed,
       idleStop: unusedWorkspaceIdleStop,
       authority: { resolveWorkspaceOwner: async () => ({ userId: owner, orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
       database: database.database,
