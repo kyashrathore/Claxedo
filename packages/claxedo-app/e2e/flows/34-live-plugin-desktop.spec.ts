@@ -115,18 +115,21 @@ test("34 a live plugin on the desktop: every primitive works in the app, panes a
   await expect.poll(async () => (await desktop.api.sessions(workspace.directory)).map((session) => session.title)).toContain("Fixture session")
 })
 
-test("34 a live plugin on the desktop swaps on save, keeps its last build on a broken save, asks again when its access changes, turns off and is removed", { tag: "@desktop" }, async ({ desktop }) => {
+test("34 a live plugin on the desktop asks again when its code changes, keeps its last build on a broken save, asks again when its access changes, turns off and is removed", { tag: "@desktop" }, async ({ desktop }) => {
   const { folder, window } = await startWithFixture(desktop)
   const home = await openFixture(window)
   await expect(home.getByRole("heading", { name: "Fixture v1" })).toBeVisible()
   await writeLivePlugin(folder, fixtureFolder({ label: "Fixture v2" }))
-  await expect(home.getByRole("heading", { name: "Fixture v2" })).toBeVisible()
+  const changed = appPluginDialog(window, "The app plugin Fixture has new code")
+  await expect(changed.getByRole("note")).toHaveText(APP_PLUGIN_WARNING.desktop)
+  await expect(window.getByRole("button", { name: "Fixture", exact: true })).toHaveCount(0)
+  await changed.getByRole("button", { name: "Turn on" }).click()
+  await expect((await openFixture(window)).getByRole("heading", { name: "Fixture v2" })).toBeVisible()
 
   await breakFixturePlugin(folder)
   await openSettingsSection(window, "App plugins")
   const row = appPluginRow(window, "Fixture")
   await expect(row).toContainText("The newest build failed, so the previous one keeps running")
-  await expect(row).toContainText("Code changed since you approved")
   await leaveSettings(window)
   await expect((await openFixture(window)).getByRole("heading", { name: "Fixture v2" })).toBeVisible()
 

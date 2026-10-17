@@ -15,7 +15,7 @@ const en = {
   "plugins.warning.web": "App plugins run sandboxed in frames. An app plugin sees only what this app passes it and reaches only the server routes and operations its manifest names, as you, and nothing else on the network. Turn on only app plugins you trust.",
   "plugins.unapproved": "Waiting for your approval",
   "plugins.accessChanged": "Asks for different access. Turn it on to review the change.",
-  "plugins.codeChanged": "Code changed since you approved, {{time}}",
+  "plugins.codeChanged": "Code changed since you approved, {{time}}. Turn it on to review the new build.",
   "plugins.details": "Details",
   "plugins.manifest.name": "Name",
   "plugins.manifest.id": "ID",

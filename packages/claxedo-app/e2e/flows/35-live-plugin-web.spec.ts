@@ -97,7 +97,7 @@ test("35 a live plugin on the web: every primitive but panes and icon skins work
   await expect.poll(async () => (await api.sessions(workspace.directory)).map((session) => session.title)).toContain("Fixture session")
 })
 
-test("35 a live plugin on the web swaps on save, keeps its last build on a broken save, asks again when its access changes, and is removed", async ({ stack, app }) => {
+test("35 a live plugin on the web asks again when its code changes, keeps its last build on a broken save, asks again when its access changes, and is removed", async ({ stack, app }) => {
   await stack.daemon.makeWorkspace("fixture", "Fixture project")
   const folder = await writeFixturePlugin(stack.dataDir, { label: "Fixture v1" })
   await registerLivePlugin(stack.url, folder)
@@ -107,13 +107,16 @@ test("35 a live plugin on the web swaps on save, keeps its last build on a broke
   const home = await openFixture(stack, app)
   await expect(home.getByRole("heading", { name: "Fixture v1" })).toBeVisible()
   await writeLivePlugin(folder, fixtureFolder({ label: "Fixture v2" }))
-  await expect(home.getByRole("heading", { name: "Fixture v2" })).toBeVisible()
+  const changed = appPluginDialog(app, "The app plugin Fixture has new code")
+  await expect(changed.getByRole("note")).toHaveText(APP_PLUGIN_WARNING.web)
+  await expect(app.getByTitle("Fixture", { exact: true })).toHaveCount(0)
+  await changed.getByRole("button", { name: "Turn on" }).click()
+  await expect((await openFixture(stack, app)).getByRole("heading", { name: "Fixture v2" })).toBeVisible()
 
   await breakFixturePlugin(folder)
   await app.goto(`${stack.url}/settings/app-plugins`)
   const row = appPluginRow(app, "Fixture")
   await expect(row).toContainText("The newest build failed, so the previous one keeps running")
-  await expect(row).toContainText("Code changed since you approved")
   await expect((await openFixture(stack, app)).getByRole("heading", { name: "Fixture v2" })).toBeVisible()
 
   await writeLivePlugin(folder, fixtureFolder({ label: "Fixture v3", routes: ["/api/claxedo/projects", "/api/claxedo/tasks"] }))
