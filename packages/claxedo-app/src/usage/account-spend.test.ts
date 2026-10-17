@@ -32,8 +32,14 @@ describe("spend per account rows", () => {
   test("an own plan or API key and a team key keep their name and vendor, and say which kind they are", () => {
     expect(spendRow(spend({ kind: "own", accountId: "cred_plan", access: "plan", label: "Work Claude", providerId: "anthropic" }))).toMatchObject({ id: "cred_plan", kind: "plan", label: "Work Claude", vendor: "Anthropic" })
     expect(spendRow(spend({ kind: "own", accountId: "cred_key", access: "apiKey", providerId: "openai" }))).toMatchObject({ id: "cred_key", kind: "apiKey", vendor: "OpenAI" })
-    expect(spendRow(spend({ kind: "team", accountId: "cred_team", access: "apiKey", label: "Team key", providerId: "cursor" }))).toMatchObject({ id: "cred_team", kind: "teamKey", label: "Team key", vendor: "Cursor" })
+    expect(spendRow(spend({ kind: "team", accountId: "cred_team", access: "apiKey", label: "Team key", providerId: "cursor", members: [] }))).toMatchObject({ id: "cred_team", kind: "teamKey", label: "Team key", vendor: "Cursor" })
     expect(spendRow(spend({ kind: "own", accountId: "cred_claude", access: "plan", providerId: "claude-sdk" }))).toMatchObject({ kind: "plan", vendor: "Anthropic" })
+  })
+
+  test("a team key carries its spend per member, and no other account does", () => {
+    const members = [{ memberId: "user_alice", member: { kind: "named", name: "Alice Liddell" }, totals, cost }] as const
+    expect(spendRow(spend({ kind: "team", accountId: "cred_team", access: "apiKey", members }))).toMatchObject({ kind: "teamKey", members })
+    expect(spendRow(spend({ kind: "own", accountId: "cred_key", access: "apiKey" }))).not.toHaveProperty("members")
   })
 
   test("a deleted account keeps its kind with no name or vendor, so the row is still told apart by its id", () => {

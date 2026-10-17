@@ -106,6 +106,8 @@ export default {
   "usage.accounts.machine": "Your machine's own login",
   "usage.accounts.unresolved": "An account that is no longer available",
   "usage.accounts.unreported": "Not recorded",
+  "usage.accounts.member.unnamed": "Member without a name",
+  "usage.accounts.member.former": "Former member",
   "usage.claxedo.unavailable": "Usage through Claxedo is unavailable",
   "usage.claxedo.empty": "No sessions ran through Claxedo in this period. Usage shows here once one does.",
   "usage.window.credits": "Credits",

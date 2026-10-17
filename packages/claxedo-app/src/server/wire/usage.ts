@@ -2,7 +2,7 @@ import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import type { CredentialSpend, MachineTimeProvider as MachineTimeProviderWire, MachineTimeRate, MachineTimeResponse, MachineTimeWorkspace as MachineTimeWorkspaceWire } from "@claxedo/usage-contract"
 import { contractMismatch } from "../errors"
 import { placementId, projectId } from "../ids"
-import type { AccountSpend, AccountSpendPayer, AccountSpendReport, AccountSpendScope, MachineRate, MachineTime, MachineTimeProvider, MachineTimeWorkspace, SpentAccount, UsageSummary } from "../usage-types"
+import type { AccountSpend, AccountSpendPayer, AccountSpendReport, AccountSpendScope, MachineRate, MachineTime, MachineTimeProvider, MachineTimeWorkspace, MemberSpend, SpendingMember, SpentAccount, UsageSummary } from "../usage-types"
 
 const MACHINE_TIME_FIELDS = ["since", "until", "activeMs", "running"] as const satisfies readonly (keyof MachineTimeResponse)[]
 
@@ -91,12 +91,37 @@ function spentAccount(row: Record<string, unknown>): SpentAccount | undefined {
   return { accountId, access: ACCESS[kind], ...(label ? { label } : {}), ...(providerId ? { providerId } : {}) }
 }
 
+function spendingMember(row: Record<string, unknown>): SpendingMember | undefined {
+  if (row.former === true) return row.name === undefined ? { kind: "former" } : undefined
+  if (row.former !== undefined) return undefined
+  if (row.name === undefined) return { kind: "unnamed" }
+  const name = nonEmptyString(row.name)
+  return name ? { kind: "named", name } : undefined
+}
+
+function memberSpendFromWire(row: unknown): MemberSpend {
+  if (!isRecord(row)) throw contractMismatch("spend per member")
+  const memberId = nonEmptyString(row.userId)
+  const member = spendingMember(row)
+  if (!memberId || !member) throw contractMismatch("spend per member")
+  return { memberId, member, ...spentFigures(row, "spend per member") }
+}
+
+function teamMembers(row: Record<string, unknown>): readonly MemberSpend[] {
+  if (row.members === undefined) return []
+  if (!Array.isArray(row.members)) throw contractMismatch("spend per member")
+  return row.members.map(memberSpendFromWire)
+}
+
 function payerFromWire(row: Record<string, unknown>): AccountSpendPayer | undefined {
   switch (row.source) {
-    case "personal":
+    case "personal": {
+      const account = spentAccount(row)
+      return account && { kind: "own", ...account }
+    }
     case "org": {
       const account = spentAccount(row)
-      return account && { kind: row.source === "org" ? "team" : "own", ...account }
+      return account && { kind: "team", ...account, members: teamMembers(row) }
     }
     case "other_member":
       return { kind: "otherMember" }
@@ -109,14 +134,11 @@ function payerFromWire(row: Record<string, unknown>): AccountSpendPayer | undefi
   }
 }
 
-function spendFromWire(row: unknown): AccountSpend {
-  if (!isRecord(row) || !SPEND_FIGURES.every((field) => finite(row[field])) || !SPEND_COUNTS.every((field) => row[field] === undefined || finite(row[field]))) throw contractMismatch("spend per account")
-  const payer = payerFromWire(row)
-  if (!payer) throw contractMismatch("spend per account")
+function spentFigures(row: Record<string, unknown>, contract: string): Pick<AccountSpend, "totals" | "cost"> {
+  if (!SPEND_FIGURES.every((field) => finite(row[field])) || !SPEND_COUNTS.every((field) => row[field] === undefined || finite(row[field]))) throw contractMismatch(contract)
   const counts = Object.fromEntries(SPEND_COUNTS.flatMap((field) => (finite(row[field]) ? [[field, row[field]]] : [])))
   const figure = (field: (typeof SPEND_FIGURES)[number]) => Number(row[field])
   return {
-    payer,
     totals: {
       turnCount: figure("turnCount"),
       input: figure("input"),
@@ -129,6 +151,14 @@ function spendFromWire(row: unknown): AccountSpend {
     },
     cost: { estimatedUsd: figure("estimatedUsd"), pricedTokens: figure("pricedTokens"), unpricedTokens: figure("unpricedTokens") },
   }
+}
+
+function spendFromWire(row: unknown): AccountSpend {
+  if (!isRecord(row)) throw contractMismatch("spend per account")
+  const figures = spentFigures(row, "spend per account")
+  const payer = payerFromWire(row)
+  if (!payer) throw contractMismatch("spend per account")
+  return { payer, ...figures }
 }
 
 export function accountSpendFromWire(body: unknown): AccountSpendReport {

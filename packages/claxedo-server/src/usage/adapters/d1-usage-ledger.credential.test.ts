@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { credentialSpend } from "@claxedo/server-core/usage/credential-spend"
 import type { TurnUsageCredential, TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
@@ -152,18 +152,22 @@ describe("spend per credential", () => {
     ])
   })
 
-  test("an organization's admin sees every member's spend on the team's keys and none of their personal accounts; a member is refused", async () => {
+  test("an organization's admin sees each member's spend on the team's keys and none of their personal accounts; a member is refused", async () => {
     const { ledger } = await spentByBoth()
 
-    expect(summary(await ledger.credentialSpend({ ...ALICE, ...RANGE, scope: "org" }))).toEqual([
-      ["org", "cred_team", "api_key", "Team key", 2, 600],
+    const spent = await ledger.credentialSpend({ ...ALICE, ...RANGE, scope: "org" })
+    expect(spent?.map((row) => [row.source, row.credential_id, row.spender, row.label, row.turn_count, row.output_tokens])).toEqual([
+      ["org", "cred_team", "user_alice", "Team key", 1, 200],
+      ["org", "cred_team", "user_bob", "Team key", 1, 400],
     ])
+    expect((await ledger.credentialSpend({ ...ALICE, ...RANGE, scope: "mine" }))?.every((row) => row.spender === null)).toBe(true)
     expect(await ledger.credentialSpend({ ...BOB, ...RANGE, scope: "org" })).toBeUndefined()
   })
 
   test("the usage API answers each credential priced by its models, and refuses the team's spend to a member", async () => {
     const { ledger } = await spentByBoth()
-    const as = (identity: typeof ALICE) => UsageRoutes({ ledger, identity: async () => identity, pricing: tokenTrackerPricing("bundled") })
+    const orgMembers = vi.fn(async () => [{ userId: "user_alice", name: "Alice Liddell" }])
+    const as = (identity: typeof ALICE) => UsageRoutes({ ledger, identity: async () => identity, orgMembers, pricing: tokenTrackerPricing("bundled") })
     const read = (identity: typeof ALICE, query: string) => as(identity).request(`/credentials?since=${RANGE.since}&until=${RANGE.until}${query}`)
 
     const mine = await read(ALICE, "")
@@ -178,12 +182,21 @@ describe("spend per credential", () => {
       ]))
     expect(body.credentials.every((spend) => spend.estimatedUsd > 0 && spend.unpricedTokens === 0)).toBe(true)
     expect(body.credentials.map((spend) => spend.estimatedUsd)).toEqual(body.credentials.map((spend) => spend.estimatedUsd).toSorted((a, b) => b - a))
+    expect(body.credentials.some((spend) => "members" in spend)).toBe(false)
 
     const team = await (await read(ALICE, "&scope=org")).json() as CredentialSpendResponse
     expect(team.credentials).toEqual([expect.objectContaining({ source: "org", credentialId: "cred_team", turnCount: 2, output: 600 })])
+    const [teamKey] = team.credentials
+    expect(teamKey?.members?.map(({ userId, name, former, turnCount, output }) => ({ userId, name, former, turnCount, output }))).toEqual([
+      { userId: "user_bob", name: undefined, former: true, turnCount: 1, output: 400 },
+      { userId: "user_alice", name: "Alice Liddell", former: undefined, turnCount: 1, output: 200 },
+    ])
+    expect(teamKey?.members?.every((member) => member.estimatedUsd > 0)).toBe(true)
+    expect(teamKey?.members?.reduce((total, member) => total + member.estimatedUsd, 0)).toBeCloseTo(teamKey?.estimatedUsd ?? 0, 10)
     const refused = await read(BOB, "&scope=org")
     expect(refused.status).toBe(403)
     expect(await refused.json()).toEqual({ error: { code: "usage_scope_forbidden", message: expect.any(String) } })
     expect((await read(ALICE, "&scope=everyone")).status).toBe(400)
+    expect(orgMembers).toHaveBeenCalledTimes(1)
   })
 })

@@ -181,6 +181,19 @@ export type UnifiedUsageResponse = {
  */
 export type CredentialSpendSource = "personal" | "org" | "other_member" | "machine" | "unresolved" | "unreported"
 
+/**
+ * One member's turns on a team key. `name` is the one the organization's members list gives them, absent when it has
+ * none; `former` marks a member who has since left the organization.
+ */
+export type CredentialMemberSpend = UsageTotals & {
+  userId: string
+  name?: string
+  former?: true
+  estimatedUsd: number
+  pricedTokens: number
+  unpricedTokens: number
+}
+
 export type CredentialSpend = UsageTotals & {
   source: CredentialSpendSource
   /** Present for `personal` and `org`, with `kind`. */
@@ -192,6 +205,8 @@ export type CredentialSpend = UsageTotals & {
   estimatedUsd: number
   pricedTokens: number
   unpricedTokens: number
+  /** `scope=org` alone: the key's spend per member who sent turns on it, costliest first. */
+  members?: CredentialMemberSpend[]
 }
 
 /**

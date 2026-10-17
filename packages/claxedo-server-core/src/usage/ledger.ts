@@ -21,6 +21,8 @@ export type CredentialSpendRow = CentralUsageRow & {
   credential_kind: string | null
   label: string | null
   credential_provider_id: string | null
+  /** The member whose turns these are, for `org` scope alone. */
+  spender: string | null
   model: string
 }
 

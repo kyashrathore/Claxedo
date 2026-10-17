@@ -270,8 +270,8 @@ const SCOPE_SQL: Record<CredentialSpendScope, string> = {
 
 /**
  * Grouped in SQL by credential and model, so a model's tokens can be priced,
- * with the label the credential carries now; a credential since deleted has
- * none.
+ * and for the team's keys by the member who sent the turns, with the label the
+ * credential carries now; a credential since deleted has none.
  */
 async function readCredentialSpend(
   database: D1Database,
@@ -286,16 +286,17 @@ async function readCredentialSpend(
         case when ${OTHER_MEMBER_SQL} then 'other_member' else credential_source end as source,
         case when ${OTHER_MEMBER_SQL} then null else credential_id end as credential_id,
         case when ${OTHER_MEMBER_SQL} then null else credential_kind end as credential_kind,
+        ${query.scope === "org" ? "user_id" : "null"} as spender,
         ${MODEL_SQL} as model,
         ${METRICS_SQL}
       from usage_turn_facts
       where org_id = ?1 and observed_at >= ?3 and observed_at <= ?4 and ${SCOPE_SQL[query.scope]}
-      group by 1, 2, 3, 4
+      group by 1, 2, 3, 4, 5
     )
     select spent.*, credential.label as label, credential.provider_id as credential_provider_id
     from spent
     left join hosted_provider_credentials credential on credential.org_id = ?1 and credential.id = spent.credential_id
-    order by spent.source, spent.credential_id, spent.model
+    order by spent.source, spent.credential_id, spent.spender, spent.model
   `).bind(query.org_id, query.user_id, query.since, query.until).all<CredentialSpendRow>()
   return rows.results
 }
