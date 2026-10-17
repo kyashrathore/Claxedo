@@ -1,5 +1,6 @@
-import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, vendorName, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, piProviderSpending, vendorName, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { isRefusal } from "@/lib/account-health"
+import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, ProviderSource } from "@/server"
 
 export { isRefusal, isUnavailable } from "@/lib/account-health"
@@ -54,6 +55,16 @@ export const TEAM_VENDORS: readonly TeamVendor[] = ["anthropic", "openai", HARNE
 export const MACHINE_LOGIN_KEY = "machine"
 
 export const ORG_ACCOUNT_KEY = "org"
+
+export function machineCheckKey(harness: Harness): string {
+  return `${MACHINE_LOGIN_KEY}:${harness.id}`
+}
+
+export function harnessesServedBy(providerIds: readonly string[]): readonly string[] {
+  const cli = harnesses.filter((harness) => providerIds.some((id) => harness.providerIds.includes(id))).map((harness) => harness.label)
+  const engines = providerIds.some((id) => piProviderSpending(id) !== undefined) ? [harnessDisplayLabel("pi")] : []
+  return [...cli, ...engines]
+}
 
 export function accountReach(delivery: AccountDelivery | undefined): AccountReach | undefined {
   if (delivery === undefined) return "local-only"

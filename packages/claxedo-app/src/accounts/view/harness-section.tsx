@@ -8,6 +8,7 @@ import { useAccountsText } from "../i18n"
 import { useModelSource, groupContext, modelKeyOf, type SettingsPlacement } from "../model-sources"
 import { harnessHasAccount, type Harness } from "../model"
 import type { Accounts } from "../store"
+import { CloudChoiceHint } from "./cloud-choice-hint"
 import { AgentHarnessAccounts } from "./harness-accounts"
 import { createHarnessProviders, HarnessProvidersSection } from "./harness-providers"
 import { enabledCount, ModelsTab, soleSelfGroup } from "./models-tab"
@@ -20,25 +21,28 @@ const TABS: readonly HarnessTab[] = ["accounts", "models"]
 
 const LINK = "min-h-8 rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base"
 
-function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void; readonly actions: JSX.Element }) {
+function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void; readonly accountsHint?: JSX.Element; readonly actions: JSX.Element }) {
   const t = useAccountsText()
   return (
-    <div class="flex items-center gap-1" role="tablist">
-      <For each={TABS}>
-        {(value) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={props.tab === value}
-            class="min-h-8 rounded-md px-2.5 py-1 text-13-regular"
-            classList={{ "text-text-strong bg-surface-base": props.tab === value, "text-text-weak": props.tab !== value }}
-            data-action={`settings-models-tab-${value}`}
-            onClick={() => props.onTab(value)}
-          >
-            {t(value === "accounts" ? "settings.models.tab.accounts" : "settings.models.tab.models")}
-          </button>
-        )}
-      </For>
+    <div class="flex items-center gap-1">
+      <div class="flex items-center gap-1" role="tablist">
+        <For each={TABS}>
+          {(value) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={props.tab === value}
+              class="min-h-8 rounded-md px-2.5 py-1 text-13-regular"
+              classList={{ "text-text-strong bg-surface-base": props.tab === value, "text-text-weak": props.tab !== value }}
+              data-action={`settings-models-tab-${value}`}
+              onClick={() => props.onTab(value)}
+            >
+              {t(value === "accounts" ? "settings.models.tab.accounts" : "settings.models.tab.models")}
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={props.tab === "accounts"}>{props.accountsHint}</Show>
       <span class="flex-1" />
       {props.actions}
     </div>
@@ -169,7 +173,12 @@ function HarnessWithTabs(props: SectionProps) {
     <section class="flex flex-col gap-4">
       <HarnessTitle harness={props.harness} />
       <div class="flex flex-col gap-4">
-        <HarnessTabs tab={props.tab} onTab={props.onTab} actions={actions} />
+        <HarnessTabs
+          tab={props.tab}
+          onTab={props.onTab}
+          accountsHint={<Show when={props.harness.cli}>{(cli) => <CloudChoiceHint harness={cli()} accounts={props.accounts} />}</Show>}
+          actions={actions}
+        />
         <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>
           <Show when={props.placement} fallback={<SettingsEmpty><span>{t("settings.models.workspace.required")}</span></SettingsEmpty>}>
             {(placement) => <HarnessModels harness={props.harness} placement={placement()} />}

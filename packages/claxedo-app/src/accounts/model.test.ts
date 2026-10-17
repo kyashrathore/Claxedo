@@ -2,10 +2,10 @@
 import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import { expect, test } from "bun:test"
 import type { Account } from "@/server"
-import { keyCheckWords, orgAccountWords, storedAccountWords } from "./account-words"
+import { keyCheckWords, offersCloudChoice, orgAccountWords, storedAccountWords, type AccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
-import { harnessAccounts, harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
+import { harnessAccounts, harnesses, harnessesServedBy, harnessRunnable, machineCheckKey, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
 
 const t: AccountsText = (key, params) => Object.entries(params ?? {}).reduce((text, [name, value]) => text.replace(`{{${name}}}`, String(value)), en[key])
 const words = { t, windowName: (window: { readonly window: string }) => window.window }
@@ -34,10 +34,38 @@ test("accounts: a harness whose every provider spends the org account selects th
   const chosen = snapshot({ stored: [own], org: [org], sources: allOrg, effective: [org] })
   expect(selectedAccountKey(claude, chosen)).toBe(ORG_ACCOUNT_KEY)
   expect(harnessRunnable(claude, chosen, {})).toBe(true)
-  expect(orgAccountWords(words, claude, chosen, true, false)).toMatchObject({ key: ORG_ACCOUNT_KEY, ids: [], label: "Acme", disabled: false, refused: false })
-  expect(orgAccountWords(words, claude, chosen, true, true)?.ids).toEqual([org.id])
-  expect(orgAccountWords(words, claude, chosen, false, false)).toMatchObject({ label: "Acme", disabled: false })
+  expect(orgAccountWords(words, claude, chosen, true, false, {})).toMatchObject({ key: ORG_ACCOUNT_KEY, ids: [], label: "Acme", disabled: false, refused: false })
+  expect(orgAccountWords(words, claude, chosen, true, true, {})?.ids).toEqual([org.id])
+  expect(orgAccountWords(words, claude, chosen, false, false, {})).toMatchObject({ label: "Acme", disabled: false })
   expect(harnessRunnable(claude, snapshot({ stored: [own], org: [account("org-1", "claude-sdk", { health: "auth_failed", lastValidatedAt: 5 })], sources: allOrg }), {})).toBe(false)
+})
+
+test("accounts: a manager's live check of the org account is what its row says, and a member's org row carries no ids to check or remove", () => {
+  const org = account("org-1", "anthropic", { label: "Acme", health: "ok", lastValidatedAt: 5 })
+  const listed = snapshot({ org: [org] })
+  const live = { "org-1": { at: 9, verdict: "unknown" as const, reason: "timed out" } }
+  expect(orgAccountWords(words, claude, listed, false, true, live)).toMatchObject({ ids: ["org-1"], checkedAt: 9, detail: "Organization account · Couldn't check · timed out" })
+  expect(orgAccountWords(words, claude, listed, false, false, live)?.ids).toEqual([])
+})
+
+test("accounts: an organization's vendor key names every harness that can choose it, the catalog engine Pi included", () => {
+  expect(harnessesServedBy(["anthropic"])).toEqual(["Claude Code", "Pi"])
+  expect(harnessesServedBy(["claude-sdk"])).toEqual(["Claude Code", "Pi"])
+  expect(harnessesServedBy(["openai"])).toEqual(["Codex", "Pi"])
+  expect(harnessesServedBy(["cursor"])).toEqual(["Cursor"])
+})
+
+test("accounts: each harness's machine login is checked under its own key", () => {
+  const keys = harnesses.map(machineCheckKey)
+  expect(new Set(keys).size).toBe(harnesses.length)
+  expect(keys).not.toContain(MACHINE_LOGIN_KEY)
+})
+
+test("accounts: the cloud account choice is explained only off a machine and only where two rows can be chosen", () => {
+  const row = (key: string, disabled = false): AccountWords => ({ key, ids: [key], label: key, refused: false, machine: false, disabled })
+  expect(offersCloudChoice(true, [row("a"), row("b")])).toBe(true)
+  expect(offersCloudChoice(true, [row("a"), row("b", true)])).toBe(false)
+  expect(offersCloudChoice(false, [row("a"), row("b")])).toBe(false)
 })
 
 test("accounts: a person whose organization holds no team key for their org choice cannot run and is told so, naming the vendor", () => {
@@ -45,9 +73,9 @@ test("accounts: a person whose organization holds no team key for their org choi
   expect(selectedAccountKey(claude, chosen)).toBe(ORG_ACCOUNT_KEY)
   expect(harnessRunnable(claude, chosen, {})).toBe(false)
   const unavailable = t("settings.providers.accountSource.unavailable", { name: "Anthropic" })
-  expect(orgAccountWords(words, claude, chosen, true, true)).toMatchObject({ label: "Organization account", detail: unavailable, alert: unavailable, disabled: true, ids: [] })
-  expect(orgAccountWords(words, claude, snapshot(), false, false)).toBeUndefined()
-  expect(orgAccountWords(words, claude, snapshot(), false, true)).toBeUndefined()
+  expect(orgAccountWords(words, claude, chosen, true, true, {})).toMatchObject({ label: "Organization account", detail: unavailable, alert: unavailable, disabled: true, ids: [] })
+  expect(orgAccountWords(words, claude, snapshot(), false, false, {})).toBeUndefined()
+  expect(orgAccountWords(words, claude, snapshot(), false, true, {})).toBeUndefined()
 })
 
 test("accounts: on the person's own side an org row the effective read names is not theirs, so their own mark or login decides", () => {
