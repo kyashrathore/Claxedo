@@ -33,6 +33,7 @@ export const freshness = {
   cloud: placementOwned,
   livePlugins: { kind: "event-owned", events: ["pluginsChanged"] },
   usage: { kind: "event-owned", events: ["usageChanged"] },
+  accountSpend: { kind: "event-owned", events: ["usageChanged"] },
   machineTime: placementOwned,
   fileTree: fileOwned,
   fileContent: fileOwned,

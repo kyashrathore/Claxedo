@@ -1,4 +1,4 @@
-import type { UnifiedUsageResponse, UsageFilters } from "@claxedo/usage-contract"
+import type { UnifiedUsageResponse, UsageFilters, UsageTotals } from "@claxedo/usage-contract"
 import type { PlacementId, ProjectId } from "./ids"
 
 export type UsageRequest = {
@@ -54,4 +54,40 @@ export type MachineTime = {
   readonly running: number
   readonly workspaces: readonly MachineTimeWorkspace[]
   readonly providers: readonly MachineTimeProvider[]
+}
+
+export type AccountSpendScope = "mine" | "org"
+
+export type AccountSpendRequest = {
+  readonly since: number
+  readonly until: number
+  readonly scope: AccountSpendScope
+}
+
+export type SpentAccount = {
+  readonly accountId: string
+  readonly access: "plan" | "apiKey"
+  readonly label?: string
+  readonly providerId?: string
+}
+
+export type AccountSpendPayer =
+  | ({ readonly kind: "own" } & SpentAccount)
+  | ({ readonly kind: "team" } & SpentAccount)
+  | { readonly kind: "otherMember" }
+  | { readonly kind: "machine" }
+  | { readonly kind: "unresolved" }
+  | { readonly kind: "unreported" }
+
+export type AccountSpend = {
+  readonly payer: AccountSpendPayer
+  readonly totals: UsageTotals
+  readonly cost: { readonly estimatedUsd: number; readonly pricedTokens: number; readonly unpricedTokens: number }
+}
+
+export type AccountSpendReport = {
+  readonly since: number
+  readonly until: number
+  readonly scope: AccountSpendScope
+  readonly accounts: readonly AccountSpend[]
 }

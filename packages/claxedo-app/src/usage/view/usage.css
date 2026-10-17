@@ -160,7 +160,7 @@
   min-width: 0;
 }
 
-.usage-sandbox-detail {
+.usage-table-detail {
   display: block;
   font-size: var(--font-size-small);
   line-height: var(--line-height-18);

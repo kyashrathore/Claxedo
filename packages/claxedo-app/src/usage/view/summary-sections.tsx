@@ -1,12 +1,13 @@
-import { createSignal, Match, Switch, type Accessor, type JSX } from "solid-js"
+import { createSignal, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import { FailureNotice } from "@/lib/failure"
-import type { UsageSummary } from "@/server"
+import { useServer, type UsageSummary } from "@/server"
 import { ClaxedoIconButton } from "@/ui"
 import { useUsageSummary, type UsageSummaryRead } from "../api"
 import { usageDictionary } from "../i18n"
 import type { UsageMetric, UsageOptions, UsageView } from "../model"
+import { AccountSpendSection } from "./account-spend-section"
 import type { BreakdownPaging } from "./breakdown"
 import { Choices, type Choice } from "./choices"
 import { ClaxedoUsage } from "./claxedo-usage"
@@ -99,6 +100,7 @@ export function UsageLimitsSection(): JSX.Element {
 
 export function AiUsageSection(): JSX.Element {
   const t = useTranslator(usageDictionary)
+  const server = useServer()
   const summary = useSummaryOptions("claxedo")
   const options = summary.options
   return (
@@ -122,6 +124,9 @@ export function AiUsageSection(): JSX.Element {
           />
         )}
       </SummaryLoad>
+      <Show when={server.capabilities()?.features.cloud === true}>
+        <AccountSpendSection days={options().days} />
+      </Show>
     </div>
   )
 }

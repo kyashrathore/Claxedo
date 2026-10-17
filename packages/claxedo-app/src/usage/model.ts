@@ -1,4 +1,4 @@
-import type { AppError, MachineTime, UsageRequest, UsageSummary } from "@/server"
+import type { AccountSpendReport, AppError, MachineTime, UsageRequest, UsageSummary } from "@/server"
 
 export type UsageTotals = UsageSummary["claxedo"]["totals"]
 
@@ -33,6 +33,8 @@ export type UsageRead<Data> =
 export type UsageLoad = UsageRead<UsageSummary>
 
 export type MachineTimeLoad = UsageRead<MachineTime>
+
+export type AccountSpendLoad = UsageRead<AccountSpendReport>
 
 export const BREAKDOWN_PAGE_SIZE = 25
 

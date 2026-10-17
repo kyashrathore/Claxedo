@@ -4,7 +4,8 @@ import type { AccountSources } from "@/server"
 import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote } from "@/settings"
 import { useDialog } from "@/ui"
 import { useAccountsText } from "../i18n"
-import { accountLabel, teamVendorLabel } from "../model"
+import { vendorName } from "@/lib/vendor-names"
+import { accountLabel } from "../model"
 import { useTeamAccounts, type TeamAccountsStore } from "../team-store"
 import { KeyRow } from "./key-row"
 import { DrawerTeamAccount } from "./team-account-form"
@@ -35,7 +36,7 @@ function TeamAccounts(props: { readonly sources: AccountSources; readonly store:
               <KeyRow
                 account={account}
                 label={accountLabel(account)}
-                detail={teamVendorLabel(account.providerId)}
+                detail={vendorName(account.providerId)}
                 store={props.store}
                 readOnly={!props.manages}
               />

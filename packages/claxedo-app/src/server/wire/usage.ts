@@ -1,8 +1,8 @@
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
-import type { MachineTimeProvider as MachineTimeProviderWire, MachineTimeRate, MachineTimeResponse, MachineTimeWorkspace as MachineTimeWorkspaceWire } from "@claxedo/usage-contract"
+import type { CredentialSpend, MachineTimeProvider as MachineTimeProviderWire, MachineTimeRate, MachineTimeResponse, MachineTimeWorkspace as MachineTimeWorkspaceWire } from "@claxedo/usage-contract"
 import { contractMismatch } from "../errors"
 import { placementId, projectId } from "../ids"
-import type { MachineRate, MachineTime, MachineTimeProvider, MachineTimeWorkspace, UsageSummary } from "../usage-types"
+import type { AccountSpend, AccountSpendPayer, AccountSpendReport, AccountSpendScope, MachineRate, MachineTime, MachineTimeProvider, MachineTimeWorkspace, SpentAccount, UsageSummary } from "../usage-types"
 
 const MACHINE_TIME_FIELDS = ["since", "until", "activeMs", "running"] as const satisfies readonly (keyof MachineTimeResponse)[]
 
@@ -68,6 +68,74 @@ export function machineTimeFromWire(body: unknown): MachineTime {
     workspaces: body.workspaces.map(workspaceFromWire),
     providers: body.providers.map(providerFromWire),
   }
+}
+
+const SPEND_FIGURES = ["turnCount", "input", "output", "reasoning", "cacheRead", "cacheWrite", "unknownCategories", "estimatedUsd", "pricedTokens", "unpricedTokens"] as const satisfies readonly (keyof CredentialSpend)[]
+
+const SPEND_COUNTS = ["partialTurnCount", "unavailableTurnCount", "errorTurnCount"] as const satisfies readonly (keyof CredentialSpend)[]
+
+const ACCESS: Readonly<Record<NonNullable<CredentialSpend["kind"]>, SpentAccount["access"]>> = {
+  api_key: "apiKey",
+  oauth_token: "plan",
+  subscription_session: "plan",
+}
+
+const SCOPES: readonly AccountSpendScope[] = ["mine", "org"]
+
+function spentAccount(row: Record<string, unknown>): SpentAccount | undefined {
+  const accountId = nonEmptyString(row.credentialId)
+  const kind = Object.keys(ACCESS).find((name): name is keyof typeof ACCESS => name === row.kind)
+  if (!accountId || !kind) return undefined
+  const label = nonEmptyString(row.label)
+  const providerId = nonEmptyString(row.providerId)
+  return { accountId, access: ACCESS[kind], ...(label ? { label } : {}), ...(providerId ? { providerId } : {}) }
+}
+
+function payerFromWire(row: Record<string, unknown>): AccountSpendPayer | undefined {
+  switch (row.source) {
+    case "personal":
+    case "org": {
+      const account = spentAccount(row)
+      return account && { kind: row.source === "org" ? "team" : "own", ...account }
+    }
+    case "other_member":
+      return { kind: "otherMember" }
+    case "machine":
+    case "unresolved":
+    case "unreported":
+      return { kind: row.source }
+    default:
+      return undefined
+  }
+}
+
+function spendFromWire(row: unknown): AccountSpend {
+  if (!isRecord(row) || !SPEND_FIGURES.every((field) => finite(row[field])) || !SPEND_COUNTS.every((field) => row[field] === undefined || finite(row[field]))) throw contractMismatch("spend per account")
+  const payer = payerFromWire(row)
+  if (!payer) throw contractMismatch("spend per account")
+  const counts = Object.fromEntries(SPEND_COUNTS.flatMap((field) => (finite(row[field]) ? [[field, row[field]]] : [])))
+  const figure = (field: (typeof SPEND_FIGURES)[number]) => Number(row[field])
+  return {
+    payer,
+    totals: {
+      turnCount: figure("turnCount"),
+      input: figure("input"),
+      output: figure("output"),
+      reasoning: figure("reasoning"),
+      cacheRead: figure("cacheRead"),
+      cacheWrite: figure("cacheWrite"),
+      unknownCategories: figure("unknownCategories"),
+      ...counts,
+    },
+    cost: { estimatedUsd: figure("estimatedUsd"), pricedTokens: figure("pricedTokens"), unpricedTokens: figure("unpricedTokens") },
+  }
+}
+
+export function accountSpendFromWire(body: unknown): AccountSpendReport {
+  if (!isRecord(body) || !finite(body.since) || !finite(body.until) || !Array.isArray(body.credentials)) throw contractMismatch("spend per account")
+  const scope = SCOPES.find((name) => name === body.scope)
+  if (!scope) throw contractMismatch("spend per account")
+  return { since: body.since, until: body.until, scope, accounts: body.credentials.map(spendFromWire) }
 }
 
 function isUsageSummary(value: unknown): value is UsageSummary {
