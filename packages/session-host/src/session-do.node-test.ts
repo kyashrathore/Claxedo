@@ -267,7 +267,8 @@ void describe("SessionDO under workerd with PiHarness", () => {
   void it("reports the turn's first output when the model streamed its first text, not when the answer completed", { timeout: 120_000 }, async () => {
     const root = "ses_first_output"
     const host = await session(root)
-    model.setTextStreamPacing({ chunks: 4, delayMs: 400 })
+    const pacing = { chunks: 4, delayMs: 400 }
+    model.setTextStreamPacing(pacing)
     try {
       await host.prompt("msg_first_output", "Reply with exactly this one token: PIFIRSTOUTPUTSTREAMED")
       await host.settled("PIFIRSTOUTPUTSTREAMED")
@@ -277,7 +278,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const firstOutputAt = readField(settled, "firstOutputAt")
     const completedAt = readField(settled, "completedAt")
     assert.ok(typeof firstOutputAt === "number" && typeof completedAt === "number", JSON.stringify(settled))
-    assert.ok(completedAt - firstOutputAt >= 1_000, JSON.stringify({ firstOutputAt, completedAt }))
+    assert.ok(completedAt - firstOutputAt >= pacing.delayMs, JSON.stringify({ firstOutputAt, completedAt }))
   })
 
   void it("reports the stored account the vendor refused, under the turn's lease, and the failed turn's row and usage", { timeout: 120_000 }, async () => {
