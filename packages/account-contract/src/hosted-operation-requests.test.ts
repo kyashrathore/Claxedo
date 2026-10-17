@@ -184,19 +184,14 @@ describe("resolveHostedOperation", () => {
     expect(() => resolveHostedOperation("usage.machineTime", {})).toThrow(MissingOperationParameter)
   })
 
-  test("the organization's account facts: the person's sources and the org's rows, the sandbox keys, a saved key, a check and a removal", () => {
-    expect(resolveHostedOperation("credentials.sources.read")).toEqual({ method: "GET", path: "/api/claxedo/credentials/account-sources" })
-    expect(resolveHostedOperation("credentials.sources.set", { provider_ids: ["claude-sdk", "claude-acp"], source: "org" })).toEqual({
-      method: "PUT",
-      path: "/api/claxedo/credentials/account-sources",
-      body: { provider_ids: ["claude-sdk", "claude-acp"], source: "org" },
-    })
+  test("the organization's sandbox keys: the listing, the default driver, a saved key, a check and a removal; account sources stay with the server whose turns they govern", () => {
+    expect(() => resolveHostedOperation("credentials.sources.read")).toThrow(UnknownHostedOperation)
     expect(resolveHostedOperation("credentials.sandbox.read")).toEqual({ method: "GET", path: "/api/claxedo/credentials/sandbox-drivers" })
     expect(resolveHostedOperation("credentials.sandbox.choose", { driver: null })).toEqual({ method: "PUT", path: "/api/claxedo/credentials/sandbox-drivers/default", body: { driver: null } })
-    expect(resolveHostedOperation("credentials.save", { provider_id: "anthropic", kind: "api_key", source: "managed", owner: "org", label: "Team", secret: "sk-ant-api03-team", extra: "dropped" })).toEqual({
+    expect(resolveHostedOperation("credentials.save", { provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: "{\"token\":\"mo-1\"}", extra: "dropped" })).toEqual({
       method: "PUT",
       path: "/api/claxedo/credentials",
-      body: { provider_id: "anthropic", kind: "api_key", source: "managed", owner: "org", label: "Team", secret: "sk-ant-api03-team" },
+      body: { provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: "{\"token\":\"mo-1\"}" },
     })
     expect(resolveHostedOperation("credentials.verify", { id: "cred 1" })).toEqual({ method: "POST", path: "/api/claxedo/credentials/cred%201/verify" })
     expect(resolveHostedOperation("credentials.remove", { id: "cred_1" })).toEqual({ method: "DELETE", path: "/api/claxedo/credentials/cred_1" })

@@ -27,7 +27,7 @@ export function useTeamAccounts(): TeamAccountsStore {
     if (query.data) return { kind: "ready", sources: query.data }
     return query.error ? { kind: "failed", error: toAppError(query.error) } : { kind: "loading" }
   })
-  const { activity, liveChecks, run, verify } = createKeyActions<TeamActivity["kind"]>()
+  const { activity, liveChecks, run, verify } = createKeyActions<TeamActivity["kind"]>(server.accounts.check)
   return {
     load,
     activity,

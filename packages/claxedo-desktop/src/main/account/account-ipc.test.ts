@@ -571,8 +571,6 @@ test("the renderer-visible operation set stays pinned", async () => {
     "credentials.sandbox.choose",
     "credentials.sandbox.read",
     "credentials.save",
-    "credentials.sources.read",
-    "credentials.sources.set",
     "credentials.verify",
     "documents.agentOpen",
     "documents.content.get",

@@ -137,62 +137,55 @@ function hostedAccount(answer: (operation: string, input: Readonly<Record<string
 
 const sandboxListing = { drivers: [{ id: "modal", label: "Modal", fields: [{ key: "token", label: "Token", secret: true }] }], keys: [{ ...orgRow, id: "cred-sandbox", provider_id: "modal", kind: "sandbox_driver" }], default_driver: "modal", machine_classes: ["default"], can_manage: true }
 
-test("accounts: with a hosted account the organization's facts are the account's, and the connected server is never asked for them", async () => {
-  const { seen, transport } = serve(() => Response.json({ error: { code: "unexpected", message: "the connected server was asked" } }, { status: 500 }))
-  const { account, calls } = hostedAccount((operation) => {
-    if (operation === "credentials.sources.read") return { sources: { "claude-sdk": "org" }, org: [orgRow], can_manage_org_accounts: true }
-    if (operation === "credentials.sandbox.read") return sandboxListing
-    if (operation === "credentials.save") return { credential: { ...orgRow, id: "cred-saved", provider_id: "anthropic" } }
-    return {}
+function serverAndAccount() {
+  const { seen, transport } = serve((request) => {
+    if (request.path === "/api/claxedo/credentials/account-sources" && request.method === "GET") return Response.json({ sources: {}, org: [orgRow], can_manage_org_accounts: true })
+    if (request.path.endsWith("/verify")) return Response.json({ result: "ok" })
+    if (request.method === "DELETE") return Response.json({ deleted: true })
+    return Response.json({ credential: { ...orgRow, id: "cred-team", provider_id: "anthropic" }, sources: {} })
   })
-  const client = new QueryClient()
-  const queries = accountQueries(transport, account)
-  const sources = await client.fetchQuery(queries.sources())
-  expect(sources.org).toEqual([expect.objectContaining({ id: "cred-org" })])
-  expect(sources.canManageOrgAccounts).toBe(true)
-  const sandbox = await client.fetchQuery(queries.sandbox())
-  expect(sandbox).toMatchObject({ kind: "listed", defaultDriver: "modal", canManage: true, keys: [expect.objectContaining({ id: "cred-sandbox" })] })
-  const api = createAccountsApi(transport, client, account)
-  await api.setSource(["claude-sdk", "claude-acp"], "org")
-  await api.chooseSandboxDriver(null)
-  expect(await api.saveOrgAccount("anthropic", "sk-ant-api03-team", "Team")).toMatchObject({ id: "cred-saved" })
-  expect(await api.saveSandboxKey("modal", { token: "mo-1" })).toMatchObject({ id: "cred-saved" })
-  expect(calls.map((call) => call.operation)).toEqual([
-    "credentials.sources.read",
-    "credentials.sandbox.read",
-    "credentials.sources.set",
-    "credentials.sandbox.choose",
-    "credentials.save",
-    "credentials.save",
-  ])
-  expect(calls[2]?.input).toEqual({ provider_ids: ["claude-sdk", "claude-acp"], source: "org" })
-  expect(calls[3]?.input).toEqual({ driver: null })
-  expect(calls[4]?.input).toEqual({ provider_id: "anthropic", kind: "api_key", source: "managed", owner: "org", label: "Team", secret: "sk-ant-api03-team" })
-  expect(calls[5]?.input).toEqual({ provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: JSON.stringify({ token: "mo-1" }) })
-  expect(seen).toEqual([])
-})
-
-test("accounts: a check or removal goes to the plane whose listing named the row: the hosted account for its organization's and sandbox rows, the connected server for every other", async () => {
-  const { seen, transport } = serve((request) => (request.path.endsWith("/verify") ? Response.json({ result: "ok" }) : Response.json({ deleted: true })))
   const { account, calls } = hostedAccount((operation) => {
-    if (operation === "credentials.sources.read") return { sources: {}, org: [orgRow], can_manage_org_accounts: true }
     if (operation === "credentials.sandbox.read") return sandboxListing
+    if (operation === "credentials.save") return { credential: { ...orgRow, id: "cred-sandbox-2", provider_id: "modal", kind: "sandbox_driver" } }
     if (operation === "credentials.verify") return { result: "auth_failed" }
     return { deleted: true }
   })
   const client = new QueryClient()
-  const queries = accountQueries(transport, account)
-  await client.fetchQuery(queries.sources())
-  await client.fetchQuery(queries.sandbox())
-  const api = createAccountsApi(transport, client, account)
-  expect(await api.check("cred-org")).toEqual({ verdict: "auth_failed" })
-  expect(await api.check("cred-local")).toEqual({ verdict: "ok" })
-  await api.remove(["cred-sandbox", "cred-local"])
-  expect(calls.filter((call) => call.operation === "credentials.verify" || call.operation === "credentials.remove")).toEqual([
-    { operation: "credentials.verify", input: { id: "cred-org" } },
+  return { seen, calls, client, queries: accountQueries(transport, account), api: createAccountsApi(transport, client, account) }
+}
+
+test("accounts: with a hosted account, account sources, team keys and the person's own rows stay with the connected server, whose turns they govern", async () => {
+  const { seen, calls, client, queries, api } = serverAndAccount()
+  expect((await client.fetchQuery(queries.sources())).org).toEqual([expect.objectContaining({ id: "cred-org" })])
+  await api.setSource(["claude-sdk"], "org")
+  expect(await api.saveOrgAccount("anthropic", "sk-ant-api03-team", "Team")).toMatchObject({ id: "cred-team" })
+  expect(await api.check("cred-org")).toEqual({ verdict: "ok" })
+  await api.remove(["cred-org"])
+  expect(seen.map((request) => `${request.method} ${request.path}`)).toEqual([
+    "GET /api/claxedo/credentials/account-sources",
+    "PUT /api/claxedo/credentials/account-sources",
+    "PUT /api/claxedo/credentials",
+    "POST /api/claxedo/credentials/cred-org/verify",
+    "DELETE /api/claxedo/credentials/cred-org",
+  ])
+  expect(calls).toEqual([])
+})
+
+test("accounts: with a hosted account the sandbox keys, their saves, checks, removals and default driver are the account's, since its cloud workspaces start on them", async () => {
+  const { seen, calls, client, queries, api } = serverAndAccount()
+  expect(await client.fetchQuery(queries.sandbox())).toMatchObject({ kind: "listed", defaultDriver: "modal", keys: [expect.objectContaining({ id: "cred-sandbox" })] })
+  expect(await api.saveSandboxKey("modal", { token: "mo-1" })).toMatchObject({ id: "cred-sandbox-2" })
+  await api.chooseSandboxDriver(null)
+  expect(await api.checkSandboxKey("cred-sandbox")).toEqual({ verdict: "auth_failed" })
+  await api.removeSandboxKey("cred-sandbox")
+  expect(calls).toEqual([
+    { operation: "credentials.sandbox.read" },
+    { operation: "credentials.save", input: { provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: JSON.stringify({ token: "mo-1" }) } },
+    { operation: "credentials.sandbox.choose", input: { driver: null } },
+    { operation: "credentials.verify", input: { id: "cred-sandbox" } },
     { operation: "credentials.remove", input: { id: "cred-sandbox" } },
   ])
-  expect(seen.map((request) => `${request.method} ${request.path}`)).toEqual(["POST /api/claxedo/credentials/cred-local/verify", "DELETE /api/claxedo/credentials/cred-local"])
+  expect(seen).toEqual([])
 })
 
 test("accounts: a hosted plane that keeps no sandbox keys answers unsupported through the account as it does on the wire", async () => {
@@ -203,8 +196,22 @@ test("accounts: a hosted plane that keeps no sandbox keys answers unsupported th
   expect(await new QueryClient().fetchQuery(accountQueries(transport, account).sandbox())).toEqual({ kind: "unsupported" })
 })
 
-test("accounts: without a hosted account the organization's facts are the connected server's, as before", async () => {
-  const { seen, transport } = serve(() => Response.json({ sources: {}, org: [], can_manage_org_accounts: false }))
-  await new QueryClient().fetchQuery(accountQueries(transport, undefined).sources())
-  expect(seen.map((request) => request.path)).toEqual(["/api/claxedo/credentials/account-sources"])
+test("accounts: without a hosted account the sandbox keys and the account sources are the connected server's, as before", async () => {
+  const { seen, transport } = serve((request) => request.path.endsWith("/sandbox-drivers") ? Response.json(sandboxListing) : Response.json({ sources: {}, org: [], can_manage_org_accounts: false }))
+  const client = new QueryClient()
+  const queries = accountQueries(transport, undefined)
+  await client.fetchQuery(queries.sources())
+  expect(await client.fetchQuery(queries.sandbox())).toMatchObject({ kind: "listed", defaultDriver: "modal" })
+  expect(seen.map((request) => request.path)).toEqual(["/api/claxedo/credentials/account-sources", "/api/claxedo/credentials/sandbox-drivers"])
+})
+
+test("accounts: a removal the server answers as not deleted fails in one line instead of passing silently, and rereads the accounts", async () => {
+  const { transport } = serve(() => Response.json({ deleted: false }))
+  const client = new QueryClient()
+  const read = accountQueries(transport, undefined).list()
+  client.setQueryData(read.queryKey, [])
+  const api = createAccountsApi(transport, client, undefined)
+  await expect(api.remove(["gone"])).rejects.toMatchObject({ class: "not_found", message: "This account is no longer stored here." })
+  await expect(api.removeSandboxKey("gone")).rejects.toMatchObject({ class: "not_found" })
+  expect(client.getQueryState(read.queryKey)?.isInvalidated).toBe(true)
 })

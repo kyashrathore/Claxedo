@@ -3,19 +3,6 @@ import { operationInput } from "./operation-input"
 import { object, withArrays, withRecord } from "./hosted-output"
 
 export const CREDENTIAL_OPERATIONS = {
-  "credentials.sources.read": defineOperation({
-    method: "GET", path: operationPath("/api/claxedo/credentials/account-sources"),
-    input: operationInput({}),
-    output: withArrays("org"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
-  "credentials.sources.set": defineOperation({
-    method: "PUT", path: operationPath("/api/claxedo/credentials/account-sources"),
-    input: operationInput({ provider_ids: bodyField, source: bodyField }),
-    output: object, retry: "never",
-    exposure: { renderer: true, app: false },
-    body: selectBody("provider_ids", "source"),
-  }),
   "credentials.sandbox.read": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/credentials/sandbox-drivers"),
     input: operationInput({}),
@@ -31,10 +18,10 @@ export const CREDENTIAL_OPERATIONS = {
   }),
   "credentials.save": defineOperation({
     method: "PUT", path: operationPath("/api/claxedo/credentials"),
-    input: operationInput({ provider_id: bodyField, kind: bodyField, source: bodyField, owner: bodyField, label: bodyField, secret: bodyField }),
+    input: operationInput({ provider_id: bodyField, kind: bodyField, source: bodyField, secret: bodyField }),
     output: withRecord("credential", object), retry: "never",
     exposure: { renderer: true, app: false },
-    body: selectBody("provider_id", "kind", "source", "owner", "label", "secret"),
+    body: selectBody("provider_id", "kind", "source", "secret"),
   }),
   "credentials.verify": defineOperation({
     method: "POST", path: operationPath("/api/claxedo/credentials/:id/verify"),

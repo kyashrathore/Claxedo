@@ -31,14 +31,14 @@ export function useSandboxKeys(): SandboxKeysStore {
     if (query.data) return query.data.kind === "listed" ? { kind: "ready", listing: query.data } : { kind: "unsupported" }
     return query.error ? { kind: "failed", error: toAppError(query.error) } : { kind: "loading" }
   })
-  const { activity, liveChecks, run, verify } = createKeyActions<SandboxActivity["kind"]>()
+  const { activity, liveChecks, run, verify } = createKeyActions<SandboxActivity["kind"]>(server.accounts.checkSandboxKey)
   return {
     load,
     activity,
     liveChecks,
     save: (driver, fields) => run("saving", driver, async () => verify((await server.accounts.saveSandboxKey(driver, fields)).id)),
     check: (id) => void run("checking", id, () => verify(id)),
-    remove: (id) => void run("removing", id, () => server.accounts.remove([id])),
+    remove: (id) => void run("removing", id, () => server.accounts.removeSandboxKey(id)),
     choose: (driver) => void run("choosing", driver ?? "", () => server.accounts.chooseSandboxDriver(driver)),
   }
 }

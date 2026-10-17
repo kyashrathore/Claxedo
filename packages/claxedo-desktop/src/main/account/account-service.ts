@@ -462,11 +462,13 @@ export function createAccountService(options: AccountServiceOptions) {
     }
     const renewed = await renew(held)
     if (startedIn !== era) throw new Error("not signed in")
-    if (renewed.ok) {
-      const retried = await issue(renewed.token)
-      if (startedIn !== era) throw new Error("not signed in")
-      if (retried.status !== 401) return retried
-    }
+    // A renewal the authorization server refused has already invalidated the
+    // session inside exchangeRefresh; one that never reached it leaves the
+    // credential neither confirmed nor refuted, so the session survives.
+    if (!renewed.ok) throw new Error(renewed.detail)
+    const retried = await issue(renewed.token)
+    if (startedIn !== era) throw new Error("not signed in")
+    if (retried.status !== 401) return retried
     invalidate("the server rejected this session")
     throw new Error("session rejected")
   }
