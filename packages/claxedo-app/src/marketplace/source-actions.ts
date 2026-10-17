@@ -18,6 +18,7 @@ export function createSourceActions(input: {
       body: t("marketplace.confirm.removeSourceBody"),
       confirmLabel: t("marketplace.confirm.remove"),
       cancelLabel: t("marketplace.cancel"),
+      destructive: true,
     })
     if (!confirmed) return
     try {
