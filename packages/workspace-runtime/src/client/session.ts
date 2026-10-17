@@ -17,7 +17,7 @@ import type {
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type { HarnessCapabilities, AgentRuntimeRecoveryInspection } from "@claxedo/session-core"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
-import type { BackgroundTaskStopResult, ConfigOptionsPreview } from "@claxedo/harness/contract"
+import type { BackgroundTaskStopResult, ConfigOptionsPreview, McpCallToolResult, McpReadResourceResult, McpToolInfo } from "@claxedo/harness/contract"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import type { FirstRead, TurnPage } from "@claxedo/agent-runtime-contract"
 import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
@@ -32,6 +32,7 @@ type Ok = { ok: true }
 type SessionDeleted = Ok & { deletedSessionIds: string[] }
 
 export type SessionInput = WorkspaceScope & { sessionID: string }
+export type SessionMcpInput = SessionInput & { server: string }
 export type SessionCreateInput = WorkspaceScope & {
   parentID?: string
   title?: string
@@ -154,6 +155,11 @@ export type WorkspaceSessionClient = {
   backgroundTasks: {
     stop(input: SessionInput & { toolCallId: string }, options?: Options): Reply<BackgroundTaskStopResult>
   }
+  mcp: {
+    tools(input: SessionMcpInput, options?: Options): Reply<{ tools: McpToolInfo[] }>
+    callTool(input: SessionMcpInput & { tool: string; arguments?: Record<string, unknown> }, options?: Options): Reply<McpCallToolResult>
+    readResource(input: SessionMcpInput & { uri: string }, options?: Options): Reply<McpReadResourceResult>
+  }
 }
 
 export type WorkspacePermissionClient = {
@@ -167,6 +173,8 @@ export type WorkspaceQuestionClient = {
   reply(input: WorkspaceScope & { requestID: string; answers?: AgentQuestionAnswer[] }, options?: Options): Reply<Ok>
   reject(input: WorkspaceScope & { requestID: string }, options?: Options): Reply<Ok>
 }
+
+const mcpPath = (input: SessionMcpInput) => `/mcp/${encodeURIComponent(input.server)}`
 
 const SESSION_LIST_QUERY = ["scope", "path", "roots", "start", "search", "limit"] as const
 const SESSION_SUMMARY_QUERY = ["roots", "archived", "limit"] as const
@@ -328,6 +336,12 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     },
     backgroundTasks: {
       stop: (input, options) => write<BackgroundTaskStopResult>("session.backgroundTasks.stop", "POST", input, "/background-task/stop", options, { toolCallId: input.toolCallId }),
+    },
+    mcp: {
+      tools: (input, options) => read("session.mcp.tools", input, `${mcpPath(input)}/tools`, options),
+      callTool: (input, options) => write<McpCallToolResult>("session.mcp.callTool", "POST", input, `${mcpPath(input)}/tool-call`, options,
+        { tool: input.tool, arguments: input.arguments ?? {} }),
+      readResource: (input, options) => write<McpReadResourceResult>("session.mcp.readResource", "POST", input, `${mcpPath(input)}/resource-read`, options, { uri: input.uri }),
     },
   }
 }

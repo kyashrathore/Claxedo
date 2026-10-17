@@ -43,10 +43,12 @@ import { runtimeSessionTime, type RuntimeSessionTime } from "../session/session-
 import { sessionAccessContext, sessionAccessDenied, sessionTurnOrigin } from "../session-access-policy"
 import { SessionRollbackError } from "../session-rollback-error"
 import { elicitationError } from "./elicitation-error"
-import { errorBody } from "./error-body"
+import { errorBody, sessionNotFound } from "./error-body"
 import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, noStoreJson, requestBodyTooLargeBody } from "./http"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT } from "./session-children"
 import { backgroundTaskStopRoute } from "./session-background-tasks"
+import { mcpResourceReadRoute, mcpToolCallRoute, mcpToolsRoute } from "./session-mcp"
+import { messageAttachmentRoute, messagePartRoute } from "./session-part-reads"
 import {
   creationReservationGuard,
   filterSessionRows,
@@ -99,7 +101,6 @@ import {
   type SessionRouteOptions as Opts,
 } from "./session-route-options"
 import { cancelAdmittedTurn, recoveryCaller } from "./session-turn-containment"
-import { toolImageResponse } from "./tool-image"
 import { sessionUpdated, withDir } from "../projection/presentation-events"
 import { sessionDeleteRoute } from "./session-delete"
 import { sessionIdentityChanges } from "./session-identity-changes"
@@ -259,10 +260,6 @@ export function parseDraftId(raw: string | null | undefined): string | undefined
     })
   }
   return raw
-}
-
-function sessionNotFound() {
-  return errorBody("session_not_found", "Session not found")
 }
 
 function errorMessage(error: unknown) {
@@ -1061,6 +1058,9 @@ export function createSessionRoutes(opts: Opts) {
     .post("/session/:id/goal/resume", goalRoute(opts, "goal_resume", async ({ c, sessionId, directory, runtime }) =>
       goalMutationResponse(c, await runtime.goals.resume(sessionId, directory))))
     .post("/session/:id/background-task/stop", backgroundTaskStopRoute(opts))
+    .get("/session/:id/mcp/:server/tools", mcpToolsRoute(opts))
+    .post("/session/:id/mcp/:server/tool-call", mcpToolCallRoute(opts))
+    .post("/session/:id/mcp/:server/resource-read", mcpResourceReadRoute(opts))
     .post("/session/:id/goal/stop", goalRoute(opts, "goal_stop", async ({ c, sessionId, directory, runtime }) =>
       goalMutationResponse(c, await runtime.goals.stop(sessionId, directory))))
     .delete("/session/:id/goal", goalRoute(opts, "goal_delete", async ({ c, sessionId, directory, runtime }) =>
@@ -1106,25 +1106,8 @@ export function createSessionRoutes(opts: Opts) {
     .patch("/session/:id/config", (c) => sessionConfigWrite(opts, c))
     .delete("/session/:id", (c) => sessionDeleteRoute(opts, c, withSessionChange))
     .post("/session/:id/message", (c) => sessionMessageRoute(opts, c))
-    .get("/session/:id/message/:messageId/attachment/:attachmentId", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const messages = await opts.getMessages?.(c, directory, sessionId)
-      if (!messages) return noStoreJson(c, sessionNotFound(), 404)
-      return toolImageResponse({ readAttachment: opts.readAttachment, messages, sessionId, messageId: c.req.param("messageId"), attachmentId: c.req.param("attachmentId") })
-    })
-    .get("/session/:id/message/:messageId/part/:partId", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
-      if (guarded) return guarded
-      if (!opts.getPart) throw new HTTPException(501, { message: "part reads are not supported for this session" })
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const part = await opts.getPart(c, directory, sessionId, c.req.param("messageId"), c.req.param("partId"))
-      if (!part) return noStoreJson(c, { error: { code: "part_not_found", message: "The session has no such part" } }, 404)
-      return noStoreJson(c, part)
-    })
+    .get("/session/:id/message/:messageId/attachment/:attachmentId", messageAttachmentRoute(opts))
+    .get("/session/:id/message/:messageId/part/:partId", messagePartRoute(opts))
     .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")

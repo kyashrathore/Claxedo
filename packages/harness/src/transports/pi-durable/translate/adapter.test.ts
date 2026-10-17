@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { EDGE_REFUSED_MESSAGE, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { EDGE_REFUSED_MESSAGE, MCP_APP_MIME, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { piDurableAdapter } from "./adapter"
 
 function translate() {
@@ -72,6 +72,34 @@ test("a Pi tool's result shows its output and its diagnostics' messages, a succe
     model: [{ role: "toolResult", isError: false, content: [{ type: "text", text: "99999" }, { type: "text", text: `<harness>\n[warn] ${truncated.message}\n</harness>` }] }],
     data: { diagnostics: [truncated] },
   } })).toEqual([{ type: "tool-output", toolCallId: "call-3", output: { content: [{ type: "text", text: "99999" }, { type: "text", text: truncated.message }], details: { diagnostics: [truncated] } } }])
+})
+
+test("an MCP tool's result carries its MCP facts as metadata and its captured app document as one inline attachment", async () => {
+  const send = translate()
+  const appDocument = `data:${MCP_APP_MIME};base64,${btoa("<p>app</p>")}`
+  const app = { resourceUri: "ui://weather/app", prefersBorder: true }
+  const ended = (toolCallId: string, isError: boolean, details: unknown) => send({ type: "tool_execution_end", toolCallId, toolName: "mcp__weather__forecast", entry: {
+    model: [{ role: "toolResult", isError, content: [{ type: "text", text: "Sunny" }], details }], data: { diagnostics: [] },
+  } })
+
+  send({ type: "tool_execution_start", toolCallId: "call-app", toolName: "mcp__weather__forecast", args: {} })
+  expect(ended("call-app", false, { mcp: { server: "weather", tool: "forecast", structuredContent: { temperature: 21 }, app }, appDocument })).toEqual([{
+    type: "tool-output", toolCallId: "call-app",
+    output: { content: [{ type: "text", text: "Sunny" }], details: { diagnostics: [] } },
+    attachments: [{ kind: "inline", mime: MCP_APP_MIME, url: appDocument, filename: "mcp-app.html" }],
+    metadata: { mcp: { server: "weather", tool: "forecast", structuredContent: { temperature: 21 }, app } },
+  }])
+
+  send({ type: "tool_execution_start", toolCallId: "call-lost", toolName: "mcp__weather__forecast", args: {} })
+  expect(ended("call-lost", false, { mcp: { server: "weather", tool: "forecast", app }, appDocument: "data:text/html;base64,PHA+" })).toEqual([{
+    type: "tool-output", toolCallId: "call-lost", output: { content: [{ type: "text", text: "Sunny" }], details: { diagnostics: [] } },
+    metadata: { mcp: { server: "weather", tool: "forecast" } },
+  }])
+
+  send({ type: "tool_execution_start", toolCallId: "call-failed", toolName: "mcp__weather__forecast", args: {} })
+  expect(ended("call-failed", true, { mcp: { server: "weather", tool: "forecast", resultMeta: { trace: "t1" } } })).toEqual([{
+    type: "tool-error", toolCallId: "call-failed", error: "Sunny", metadata: { mcp: { server: "weather", tool: "forecast", resultMeta: { trace: "t1" } } },
+  }])
 })
 
 test("Pi's retry after the vendor edge's block page names the refused connection, never the page", () => {

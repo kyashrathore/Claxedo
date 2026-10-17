@@ -47,6 +47,13 @@ export function mcpAppCsp(value: unknown): McpAppCsp | undefined {
   return Object.keys(csp).length > 0 ? csp : undefined
 }
 
+export type McpToolAudience = "model" | "app"
+
+export function mcpToolVisibleTo(toolMeta: unknown, audience: McpToolAudience): boolean {
+  const visibility = asRecord(asRecord(toolMeta)?.ui)?.visibility
+  return !Array.isArray(visibility) || visibility.includes(audience)
+}
+
 export function mcpAppResourceUri(toolMeta: unknown): string | undefined {
   const meta = asRecord(toolMeta)
   const uri = asRecord(meta?.ui)?.resourceUri ?? meta?.["ui/resourceUri"]

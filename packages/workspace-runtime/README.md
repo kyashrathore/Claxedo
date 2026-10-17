@@ -282,6 +282,22 @@ launched to answer. A harness without the operation is refused 409
 `unsupported_operation` and reads `backgroundTasks: false` in
 `GET /session/:id/capabilities`.
 
+An MCP App's host reaches the session's MCP servers through three routes
+(`src/host/mcp.ts` in session-core, routes in `src/routes/session-mcp.ts`):
+`GET /session/:id/mcp/:server/tools` answers `{ tools }` (each with its
+`annotations` and `_meta`), `POST /session/:id/mcp/:server/tool-call` with
+`{ tool, arguments }` answers the server's `CallToolResult`, and
+`POST /session/:id/mcp/:server/resource-read` with `{ uri }` answers its
+`ReadResourceResult`. They run on the MCP connections the harness holds with
+the owner's identity, so all three are `session_control` writes
+(`mcp_tools_list`, `mcp_tool_call`, `mcp_resource_read`) that a `send` or
+`follow` share is refused. 404 `not_found` names an unknown server or tool and
+a session holding no harness process, which is never launched to answer; 403
+`refused` a tool declared without `"app"` visibility; 502 `unavailable` a
+server that cannot be reached; 400 a malformed body. A harness without the
+operations is refused 409 `unsupported_operation` and reads `mcp: false` in
+`GET /session/:id/capabilities`.
+
 `RuntimeEventHub` is the hub for session/runtime events: session routes
 publish committed client-presentation events to its global channel, which
 `/api/wr/events` serves. `createSessionEventWriter` appends each projected event,

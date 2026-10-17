@@ -63,6 +63,45 @@ export interface BackgroundTaskOperations {
   stop(session: HarnessSession, task: BackgroundTaskRef): Promise<BackgroundTaskStopResult>
 }
 
+export type McpToolInfo = {
+  readonly name: string
+  readonly description?: string
+  readonly annotations?: Readonly<Record<string, unknown>>
+  readonly _meta?: Readonly<Record<string, unknown>>
+}
+
+export type McpCallToolResult = {
+  readonly content: readonly unknown[]
+  readonly structuredContent?: Readonly<Record<string, unknown>>
+  readonly isError?: boolean
+  readonly _meta?: Readonly<Record<string, unknown>>
+}
+
+export type McpResourceContents = {
+  readonly uri: string
+  readonly mimeType?: string
+  readonly text?: string
+  readonly blob?: string
+  readonly _meta?: Readonly<Record<string, unknown>>
+}
+
+export type McpReadResourceResult = {
+  readonly contents: readonly McpResourceContents[]
+  readonly _meta?: Readonly<Record<string, unknown>>
+}
+
+export type McpOperationRefusal = { ok: false; status: "not_found" | "refused" | "unavailable"; message: string }
+
+export type McpToolCall = { server: string; tool: string; arguments: Readonly<Record<string, unknown>> }
+
+export type McpResourceRead = { server: string; uri: string }
+
+export interface McpOperations {
+  listTools(session: HarnessSession, server: string): Promise<{ ok: true; tools: readonly McpToolInfo[] } | McpOperationRefusal>
+  callTool(session: HarnessSession, call: McpToolCall): Promise<{ ok: true; result: McpCallToolResult } | McpOperationRefusal>
+  readResource(session: HarnessSession, read: McpResourceRead): Promise<{ ok: true; result: McpReadResourceResult } | McpOperationRefusal>
+}
+
 export interface NativeGoalOperations {
   read(session: HarnessSession): Promise<RuntimeGoalSnapshot | null>
   start(session: HarnessSession, objective: string, broker: SessionBroker): Promise<AgentGoalMutationResult>
@@ -144,6 +183,7 @@ export interface HarnessTransport {
   dispose(): Promise<void>
   readonly steer?: SteerOperations
   readonly backgroundTasks?: BackgroundTaskOperations
+  readonly mcp?: McpOperations
   readonly goals?: NativeGoalOperations
   readonly providerCatalog?: { providers(draft: DraftLaunch): Promise<readonly ProviderCatalogEntry[]> }
   readonly config?: ConfigOperations

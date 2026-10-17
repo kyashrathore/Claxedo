@@ -16,6 +16,7 @@ import type {
   HarnessSession,
   HarnessTransport,
   HealthOperations,
+  McpOperations,
   NamingOperations,
   NativeGoalOperations,
   RoutedEvent,
@@ -92,6 +93,7 @@ export type FakeTransportOptions = {
   agents?: AgentListOperations
   goals?: NativeGoalOperations
   backgroundTasks?: BackgroundTaskOperations
+  mcp?: McpOperations
   naming?: NamingOperations
   health?: HealthOperations
 }
@@ -131,6 +133,7 @@ export class FakeTransport implements HarnessTransport {
   agents: AgentListOperations | undefined
   goals: NativeGoalOperations | undefined
   backgroundTasks: BackgroundTaskOperations | undefined
+  mcp: McpOperations | undefined
   naming: NamingOperations | undefined
   health: HealthOperations | undefined
   readonly steer: SteerOperations | undefined
@@ -148,6 +151,7 @@ export class FakeTransport implements HarnessTransport {
     this.agents = options.agents
     this.goals = options.goals
     this.backgroundTasks = options.backgroundTasks
+    this.mcp = options.mcp
     this.naming = options.naming
     this.health = options.health
     this.steer = options.steer ? { steer: options.steer } : undefined

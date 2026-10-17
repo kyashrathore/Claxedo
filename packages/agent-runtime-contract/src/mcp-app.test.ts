@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentToolPart } from "./content"
-import { mcpAppCsp, mcpAppResourceUri, toolMcpFacts } from "./mcp-app"
+import { mcpAppCsp, mcpAppResourceUri, mcpToolVisibleTo, toolMcpFacts } from "./mcp-app"
 import { toolPartHeader } from "./tool-header"
 
 const facts = {
@@ -52,5 +52,17 @@ describe("toolPartHeader with MCP facts", () => {
     const header = toolPartHeader(part)
     expect(header.headerOnly).toBe(true)
     expect(header.state.status === "completed" && header.state.metadata).toEqual({ mcp: { server: "weather", tool: "forecast", app: facts.app } })
+  })
+})
+
+describe("mcpToolVisibleTo", () => {
+  test("a tool without a visibility list is visible to the model and to apps", () => {
+    expect(mcpToolVisibleTo({ ui: { resourceUri: "ui://a/b" } }, "model")).toBe(true)
+    expect(mcpToolVisibleTo(undefined, "app")).toBe(true)
+  })
+
+  test("a declared list hides the tool from an audience it does not name", () => {
+    expect(mcpToolVisibleTo({ ui: { visibility: ["app"] } }, "model")).toBe(false)
+    expect(mcpToolVisibleTo({ ui: { visibility: ["app"] } }, "app")).toBe(true)
   })
 })

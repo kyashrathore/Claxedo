@@ -1,7 +1,7 @@
 {
-  "contract": 1290,
+  "contract": 1330,
   "rpc": 300,
-  "translate": 555,
+  "translate": 561,
   "broker": 2300,
   "registry": 900,
   "capabilities": 450,
@@ -10,7 +10,7 @@
   "transports/codex-app-server": 3626,
   "transports/cursor-sdk": 1888,
   "transports/acp": 3149,
-  "transports/pi-durable": 1841,
+  "transports/pi-durable": 2004,
   "transports/opencode-sdk": 3205,
   "compose.ts": 62
 }

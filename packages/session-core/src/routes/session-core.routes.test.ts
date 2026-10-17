@@ -34,6 +34,7 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "GET /session/:id/config-options",
   "GET /session/:id/goal",
   "GET /session/:id/goal/capabilities",
+  "GET /session/:id/mcp/:server/tools",
   "GET /session/:id/message",
   "GET /session/:id/message/:messageId/attachment/:attachmentId",
   "GET /session/:id/message/:messageId/part/:partId",
@@ -58,6 +59,8 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /session/:id/goal/pause",
   "POST /session/:id/goal/resume",
   "POST /session/:id/goal/stop",
+  "POST /session/:id/mcp/:server/resource-read",
+  "POST /session/:id/mcp/:server/tool-call",
   "POST /session/:id/message",
   "POST /session/:id/prompt_async",
   "POST /session/:id/queue/:seq/:action",
@@ -143,6 +146,7 @@ describe("Claxedo client-presentation session route inventory", () => {
     expect(byClass.session_control).toEqual([
       "DELETE /session/:id",
       "DELETE /session/:id/goal",
+      "GET /session/:id/mcp/:server/tools",
       "PATCH /session/:id",
       "PATCH /session/:id/config",
       "POST /session",
@@ -152,6 +156,8 @@ describe("Claxedo client-presentation session route inventory", () => {
       "POST /session/:id/goal/pause",
       "POST /session/:id/goal/resume",
       "POST /session/:id/goal/stop",
+      "POST /session/:id/mcp/:server/resource-read",
+      "POST /session/:id/mcp/:server/tool-call",
       "PUT /session/:id/permission-mode",
     ])
     expect(byClass.read).toContain("GET /session/:id/queue")
