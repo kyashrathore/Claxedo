@@ -24,6 +24,7 @@ export type ProjectBlockProps = SessionRowMenuActions & {
   readonly onSelect: (section: ProjectSection) => void
   readonly onNewTerminal: (section: ProjectSection) => void
   readonly onActivate: (row: SessionRowView) => void
+  readonly onPress: (row: SessionRowView) => void
   readonly markerOf: (placementId: PlacementId) => SessionMarker | undefined
   readonly prepareDrag: (row: RailRow) => string | undefined
 }
@@ -73,6 +74,7 @@ function ProjectSessions(
         prepareDrag={props.prepareDrag}
         projectLabel={props.section.label}
         onActivate={props.onActivate}
+        onPress={props.onPress}
         onRename={props.onRename}
         onToggleSettled={props.onToggleSettled}
       />

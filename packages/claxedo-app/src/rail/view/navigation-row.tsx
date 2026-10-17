@@ -13,6 +13,7 @@ export type NavigationRowProps = {
   readonly label: string
   readonly active: boolean
   readonly onActivate: () => void
+  readonly onPress?: () => void
   readonly onContextMenu?: (event: MouseEvent) => void
   readonly engagement: HoverEngagement
   readonly prepareDrag?: () => string | undefined
@@ -52,6 +53,9 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
         aria-current={props.active ? "page" : undefined}
         data-slot="navigation-row-activate"
         class="ui-navigation-row-activate absolute inset-0 rounded-[inherit] outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
+        onPointerDown={(event) => {
+          if (event.button === 0 && event.pointerType !== "touch") props.onPress?.()
+        }}
         onClick={() => props.onActivate()}
       />
       {props.children}
