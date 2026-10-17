@@ -1,25 +1,19 @@
-import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
-import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type PlacementId, type Project, type ProjectSource } from "@/server"
+import { Show, type JSX } from "solid-js"
+import { toAppError, type ProjectSource } from "@/server"
 import { Button, ClaxedoIcon as Icon, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { draftProjectName, pastedRepositoryHint } from "../project-source"
 import { ConnectCodeHost } from "./project-create-connect"
+import { createProjectCreateDraft, type ProjectCreateDraft, type RepositoryChoice } from "./project-create-draft"
 import { AccountSelect, FIELD_BOX, RepositoryList } from "./project-create-repository"
 
-type Submit =
-  | { onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>; submitLabel?: string; onCreated?: undefined }
-  | { onSubmit?: undefined; onCreated: (project: Project, placementId: PlacementId | undefined) => void }
-
 export type ProjectCreateFormProps = {
-  folderMachine?: string
-  namedByRepository?: boolean
-  pickFolder?: () => Promise<string | undefined>
-  onCancel?: () => void
-} & Submit
-
-type SourceMode = "folder" | "repository"
-type RepositoryEntry = "list" | "url"
+  readonly folderMachine?: string
+  readonly namedByRepository?: boolean
+  readonly pickFolder?: () => Promise<string | undefined>
+  readonly submitLabel?: string
+  readonly onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>
+}
 
 function FolderField(props: { machine: string; folder: string; onChoose: () => void }) {
   const t = useProjectsText()
@@ -42,33 +36,6 @@ function FolderField(props: { machine: string; folder: string; onChoose: () => v
     </div>
   )
 }
-
-function createRepositoryChoice(active: Accessor<boolean>) {
-  const server = useServer()
-  const connectionsServed = () => server.capabilities()?.features.connections === true
-  const offered = useQuery(() => ({ ...server.queries.integrations.codeHosts(), enabled: active() && connectionsServed() }))
-  const integration = () => codeHostIntegrations(offered.data)[0]
-  const usable = createMemo(() => codeHostConnections(offered.data).filter((connection) => connection.status !== "broken"))
-  const [chosenId, setChosenId] = createSignal<string>()
-  const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
-  const [entry, setEntry] = createSignal<RepositoryEntry>("list")
-  const view = (): "checking" | "url" | "connect" | "list" | "failed" => {
-    if (!connectionsServed()) return "url"
-    if (offered.isPending) return "checking"
-    if (offered.error) return "failed"
-    if (!integration()) return "url"
-    if (entry() === "url") return "url"
-    return connection() ? "list" : "connect"
-  }
-  const repositories = useQuery(() => {
-    const id = connection()?.id ?? ""
-    return { ...server.queries.codeHost.repositories(id), enabled: active() && view() === "list" && id !== "" }
-  })
-  const switchable = () => integration() !== undefined
-  return { integration, usable, connection, setChosenId, entry, setEntry, view, repositories, switchable, error: () => offered.error, retry: () => offered.refetch() }
-}
-
-type RepositoryChoice = ReturnType<typeof createRepositoryChoice>
 
 function RepositoryStatus(props: { choice: RepositoryChoice }): JSX.Element {
   const t = useProjectsText()
@@ -126,45 +93,15 @@ function RepositorySection(props: { choice: RepositoryChoice; url: string; onUrl
   )
 }
 
-function createFormState(props: ProjectCreateFormProps) {
-  const [name, setName] = createSignal("")
-  const [folder, setFolder] = createSignal("")
-  const [repoUrl, setRepoUrl] = createSignal("")
-  const [busy, setBusy] = createSignal(false)
-  const [error, setError] = createSignal("")
-  const [source, setSource] = createSignal<SourceMode>("folder")
-  const [query, setQuery] = createSignal("")
-  const [selected, setSelected] = createSignal<string>()
-  const offersFolder = () => props.folderMachine !== undefined && Boolean(props.pickFolder)
-  const mode = (): SourceMode => (offersFolder() ? source() : "repository")
-  const choice = createRepositoryChoice(() => mode() === "repository")
-  const chosen = (): ProjectSource | undefined => {
-    if (mode() === "folder") return folder() ? { kind: "folder", path: folder() } : undefined
-    const connection = choice.connection()
-    if (choice.view() === "list") return connection && selected() ? { kind: "connectedRepository", connectionId: connection.id, fullName: selected() ?? "" } : undefined
-    if (choice.view() !== "url") return undefined
-    return repoUrl().trim() ? { kind: "repository", url: repoUrl().trim() } : undefined
-  }
-  const editUrl = (url: string) => {
-    setError("")
-    setRepoUrl(url)
-  }
-  return { name, setName, folder, setFolder, repoUrl, editUrl, busy, setBusy, error, setError, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
-}
-
-type FormState = ReturnType<typeof createFormState>
-
-function SourceSwitch(props: { form: FormState }) {
+function SourceSwitch(props: { draft: ProjectCreateDraft }) {
   const t = useProjectsText()
   return (
     <SegmentedControl
       class="segmented-control-v2--fit"
       aria-label={t("projects.create.source")}
-      value={props.form.mode()}
+      value={props.draft.mode()}
       onChange={(value) => {
-        if (value !== "folder" && value !== "repository") return
-        props.form.setError("")
-        props.form.setSource(value)
+        if (value === "folder" || value === "repository") props.draft.chooseSource(value)
       }}
     >
       <SegmentedControlItem value="folder">{t("projects.create.source.folder")}</SegmentedControlItem>
@@ -173,65 +110,53 @@ function SourceSwitch(props: { form: FormState }) {
   )
 }
 
-function useProjectCreateSubmit(props: ProjectCreateFormProps, form: FormState) {
-  const server = useServer()
-  return async (event: Event) => {
-    event.preventDefault()
-    const picked = form.chosen()
-    if (!picked || form.busy()) return
-    const name = form.name().trim() || undefined
-    form.setBusy(true)
-    form.setError("")
-    try {
-      if (props.onSubmit) return await props.onSubmit(picked, name)
-      let placementId: PlacementId | undefined
-      const project = await server.projects.create({ source: picked, ...(name ? { name } : {}), onPlacement: (id) => (placementId = id) })
-      props.onCreated(project, placementId)
-    } catch (cause) {
-      form.setError(toAppError(cause).message)
-    } finally {
-      form.setBusy(false)
-    }
-  }
-}
-
-export function ProjectCreateForm(props: ProjectCreateFormProps) {
+export function ProjectCreateFields(props: { readonly draft: ProjectCreateDraft; readonly namedByRepository?: boolean }): JSX.Element {
   const t = useProjectsText()
-  const form = createFormState(props)
-  const submit = useProjectCreateSubmit(props, form)
-  const chooseFolder = async () => {
-    const picked = await props.pickFolder?.()
-    if (picked) form.setFolder(picked)
-  }
-  const submitLabel = () => (props.onSubmit ? (props.submitLabel ?? t("projects.create.continue")) : form.busy() ? t("projects.create.creating") : t("projects.add.create"))
   const namePlaceholder = () => {
-    const picked = form.chosen()
+    const picked = props.draft.chosen()
     return picked ? draftProjectName(picked) : ""
   }
   return (
-    <form onSubmit={(event) => void submit(event)} class="flex w-full flex-col gap-4">
-      <Show when={form.offersFolder()}>
-        <SourceSwitch form={form} />
+    <>
+      <Show when={props.draft.offersFolder()}>
+        <SourceSwitch draft={props.draft} />
       </Show>
       <Show
-        when={form.mode() === "folder" ? props.folderMachine : undefined}
+        when={props.draft.mode() === "folder" ? props.draft.folderMachine() : undefined}
         fallback={
-          <RepositorySection choice={form.choice} url={form.repoUrl()} onUrl={form.editUrl} query={form.query()} onQuery={form.setQuery} selected={form.selected()} onSelect={form.setSelected} />
+          <RepositorySection choice={props.draft.choice} url={props.draft.repoUrl()} onUrl={props.draft.editUrl} query={props.draft.query()} onQuery={props.draft.setQuery} selected={props.draft.selected()} onSelect={props.draft.setSelected} />
         }
       >
-        {(machine) => <FolderField machine={machine()} folder={form.folder()} onChoose={() => void chooseFolder()} />}
+        {(machine) => <FolderField machine={machine()} folder={props.draft.folder()} onChoose={() => void props.draft.chooseFolder()} />}
       </Show>
       <Show when={!props.namedByRepository}>
-        <TextField label={t("projects.add.name")} placeholder={namePlaceholder()} value={form.name()} onChange={form.setName} spellcheck={false} />
+        <TextField label={t("projects.add.name")} placeholder={namePlaceholder()} value={props.draft.name()} onChange={props.draft.setName} spellcheck={false} />
       </Show>
-      <Show when={form.error()}>
-        <p class="text-12-regular text-icon-warning-base" role="alert">{form.error()}</p>
+    </>
+  )
+}
+
+export function ProjectCreateForm(props: ProjectCreateFormProps): JSX.Element {
+  const t = useProjectsText()
+  const draft = createProjectCreateDraft({
+    folderMachine: () => props.folderMachine,
+    ...(props.pickFolder ? { pickFolder: props.pickFolder } : {}),
+    send: async (source, name) => props.onSubmit(source, name),
+  })
+  return (
+    <form
+      class="flex w-full flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void draft.submit()
+      }}
+    >
+      <ProjectCreateFields draft={draft} namedByRepository={props.namedByRepository} />
+      <Show when={draft.error()}>
+        {(message) => <p class="text-12-regular text-icon-warning-base" role="alert">{message()}</p>}
       </Show>
       <div class="flex justify-end gap-2 pt-1">
-        <Show when={props.onCancel}>
-          <Button type="button" variant="ghost" size="normal" onClick={() => props.onCancel?.()}>{t("projects.cancel")}</Button>
-        </Show>
-        <Button type="submit" variant="contrast" size="normal" disabled={form.busy() || !form.chosen()}>{submitLabel()}</Button>
+        <Button type="submit" variant="contrast" size="normal" disabled={draft.busy() || !draft.chosen()}>{props.submitLabel ?? t("projects.create.continue")}</Button>
       </div>
     </form>
   )

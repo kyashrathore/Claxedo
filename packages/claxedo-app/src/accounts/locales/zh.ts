@@ -158,7 +158,6 @@ export default {
   "provider.custom.error.duplicate": "重复",
   "provider.custom.error.keyHeader.invalid": "此请求头不能携带密钥",
   "provider.custom.error.header.metadata": "允许的请求头：HTTP-Referer、X-Title、OpenAI-Organization、OpenAI-Project",
-  "common.goBack": "返回",
   "common.submit": "提交",
   "common.saving": "保存中...",
   "settings.models.tab.models": "模型",

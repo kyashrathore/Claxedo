@@ -162,7 +162,6 @@ export default {
   "provider.custom.error.duplicate": "Doublon",
   "provider.custom.error.keyHeader.invalid": "Cet en-tête ne peut pas porter la clé",
   "provider.custom.error.header.metadata": "En-têtes autorisés : HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Retour",
   "common.submit": "Soumettre",
   "common.saving": "Enregistrement...",
   "settings.models.tab.models": "Modèles",

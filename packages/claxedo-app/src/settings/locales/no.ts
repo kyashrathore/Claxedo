@@ -53,7 +53,6 @@ export default {
   "settings.appearance.theme.description": "Tilpass hvordan Claxedo er tematisert.",
   "settings.keybindings.palette": "Kommandopalett",
   "settings.connections.reconnect": "Koble til på nytt",
-  "settings.connections.confirm": "Bekreft",
   "settings.section.connections": "Tilkoblinger",
   "settings.section.machines": "Maskiner",
   "settings.common.remove": "Fjern",

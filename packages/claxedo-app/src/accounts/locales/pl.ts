@@ -161,7 +161,6 @@ export default {
   "provider.custom.error.duplicate": "Duplikat",
   "provider.custom.error.keyHeader.invalid": "Ten nagłówek nie może przenosić klucza",
   "provider.custom.error.header.metadata": "Dozwolone nagłówki: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Wstecz",
   "common.submit": "Prześlij",
   "common.saving": "Zapisywanie...",
   "settings.models.tab.models": "Modele",

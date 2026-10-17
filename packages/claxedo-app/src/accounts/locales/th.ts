@@ -158,7 +158,6 @@ export default {
   "provider.custom.error.duplicate": "ซ้ำ",
   "provider.custom.error.keyHeader.invalid": "ส่วนหัวนี้ใช้ส่งคีย์ไม่ได้",
   "provider.custom.error.header.metadata": "ส่วนหัวที่อนุญาต: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "ย้อนกลับ",
   "common.submit": "ส่ง",
   "common.saving": "กำลังบันทึก...",
   "settings.models.tab.models": "โมเดล",

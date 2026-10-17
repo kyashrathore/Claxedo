@@ -158,7 +158,6 @@ export default {
   "provider.custom.error.duplicate": "Дубликат",
   "provider.custom.error.keyHeader.invalid": "Этот заголовок не может передавать ключ",
   "provider.custom.error.header.metadata": "Разрешённые заголовки: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Назад",
   "common.submit": "Отправить",
   "common.saving": "Сохранение...",
   "settings.models.tab.models": "Модели",

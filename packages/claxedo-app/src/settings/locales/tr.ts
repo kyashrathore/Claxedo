@@ -54,7 +54,6 @@ export default {
   "settings.appearance.theme.description": "Claxedo'un temasını özelleştirin.",
   "settings.keybindings.palette": "Komut paleti",
   "settings.connections.reconnect": "Yeniden bağlan",
-  "settings.connections.confirm": "Onayla",
   "settings.section.connections": "Bağlantılar",
   "settings.section.machines": "Makineler",
   "settings.common.remove": "Kaldır",

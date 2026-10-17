@@ -9,7 +9,7 @@ import { tasksDictionary } from "../i18n"
 import { useTaskProjects } from "../links"
 import { TASK_COLLECTION_KEYS, TASK_COLLECTION_STATUSES } from "../model"
 import type { TasksStore } from "../store"
-import { DialogCreateTask } from "./create-task-dialog"
+import { DrawerCreateTask } from "./create-task-drawer"
 import { TaskBoard } from "./task-board"
 import { createTaskCommands } from "./task-commands"
 import { TaskList } from "./task-list"
@@ -56,7 +56,7 @@ export function TasksView(props: TasksViewProps): JSX.Element {
     offers.offerFor(task, { onOpen: task.links.count > 0 ? () => void offers.openLatestSession(task.id) : undefined })
   const openCreate = (status?: TaskCreateStatus) =>
     void dialog.show(() => (
-      <DialogCreateTask
+      <DrawerCreateTask
         projectId={props.projectId()}
         status={status}
         onClose={() => dialog.close()}

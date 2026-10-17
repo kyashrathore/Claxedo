@@ -131,6 +131,7 @@ const en = {
   "tasks.create.addImage": "Add image",
   "tasks.create.removeImage": "Remove {{name}}",
   "tasks.create.create": "Create",
+  "tasks.create.creating": "Creating…",
   "tasks.image.notImage": "{{name}} is not a PNG, JPEG, GIF or WebP image.",
   "tasks.image.tooLarge": "{{name}} could not be brought under {{limit}} MiB.",
   "tasks.image.unreadable": "{{name}} could not be read.",

@@ -27,22 +27,31 @@ async function openCreatePanel(app: Page) {
   await app.getByRole("button", { name: "Create project…" }).click()
 }
 
+function createDialog(app: Page) {
+  return app.getByRole("dialog", { name: "Create project" })
+}
+
 async function createFolderProject(app: Page, typed: string, folder: string) {
   await openCreatePanel(app)
-  await app.getByRole("button", { name: "Choose folder" }).click()
+  const create = createDialog(app)
+  await expect(create.getByRole("button", { name: "Create project", exact: true })).toBeDisabled()
+  await create.getByRole("button", { name: "Choose folder" }).click()
   const dialog = app.getByRole("dialog", { name: "New Project" })
   await dialog.getByRole("textbox", { name: "Search folders" }).fill(typed)
   await dialog.getByRole("button", { name: new RegExp(` ${folder} /$`) }).click()
   await expect(dialog).toHaveCount(0)
-  await app.getByRole("button", { name: "Create project", exact: true }).click()
+  await create.getByRole("button", { name: "Create project", exact: true }).click()
+  await expect(create).toHaveCount(0)
   await expect(projectChip(app)).toContainText(folder)
 }
 
 async function cloneProject(app: Page, url: string, name: string) {
   await openCreatePanel(app)
-  await app.getByRole("button", { name: "Repository", exact: true }).click()
-  await app.getByRole("textbox", { name: "Repository URL" }).fill(url)
-  await app.getByRole("button", { name: "Create project", exact: true }).click()
+  const create = createDialog(app)
+  await create.getByRole("button", { name: "Repository", exact: true }).click()
+  await create.getByRole("textbox", { name: "Repository URL" }).fill(url)
+  await create.getByRole("button", { name: "Create project", exact: true }).click()
+  await expect(create).toHaveCount(0)
   await expect(projectChip(app)).toContainText(name)
 }
 
@@ -51,6 +60,10 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
     const dialog = app.getByRole("dialog", { name: "Edit project" })
     const field = dialog.getByRole("textbox", { name: "Name", exact: true })
     await expect(field).toHaveValue(from)
+    const box = await dialog.boundingBox()
+    const viewport = app.viewportSize()
+    if (!box || !viewport) throw new Error("The Edit project drawer is not laid out")
+    expect(box.x + box.width, "Edit project is a drawer at the right edge").toBeCloseTo(viewport.width, 0)
     await expect(dialog.getByRole("button", { name: "Save" })).toBeInViewport({ ratio: 1 })
     await field.fill(to)
     await dialog.getByRole("button", { name: "Save" }).click()
@@ -73,8 +86,16 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
 async function removeProject(stack: Stack, app: Page, id: string, name: string) {
   await test.step("DECISIONS 12: Remove asks first, then removes the project everywhere", async () => {
     await app.goto(`${stack.url}/settings/projects?project=${encodeURIComponent(id)}`)
+    const confirm = app.getByRole("dialog", { name: "Remove project" })
     await app.getByRole("button", { name: "Remove", exact: true }).click()
-    await app.getByRole("dialog", { name: "Remove project" }).getByRole("button", { name: "Remove", exact: true }).click()
+    await expect(confirm).toContainText(`Remove "${name}" from Claxedo?`)
+    await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(confirm).toHaveCount(0)
+    expect((await serverProject(stack.url, id)).status).toBe(200)
+    await app.getByRole("button", { name: "Remove", exact: true }).click()
+    const remove = confirm.getByRole("button", { name: "Remove", exact: true })
+    await expect(remove).toHaveAttribute("data-variant", "danger")
+    await remove.click()
     await expect(app).toHaveURL(/\/settings\/projects$/)
     await expect(app.getByRole("region", { name: "Projects" }).getByRole("link", { name, exact: true })).toHaveCount(0)
     expect((await serverProject(stack.url, id)).status).toBe(404)

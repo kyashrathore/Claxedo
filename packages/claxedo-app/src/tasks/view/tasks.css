@@ -1133,14 +1133,6 @@
   min-width: 0;
 }
 
-.tsk-dialog-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 4px;
-}
-
 .tsk-notice-inline {
   display: flex;
   align-items: flex-start;

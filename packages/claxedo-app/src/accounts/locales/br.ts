@@ -162,7 +162,6 @@ export default {
   "provider.custom.error.duplicate": "Duplicado",
   "provider.custom.error.keyHeader.invalid": "Este cabeçalho não pode levar a chave",
   "provider.custom.error.header.metadata": "Cabeçalhos permitidos: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Voltar",
   "common.submit": "Enviar",
   "common.saving": "Salvando...",
   "settings.models.tab.models": "Modelos",

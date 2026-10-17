@@ -156,7 +156,6 @@ export default {
   "provider.custom.error.duplicate": "Duplikat",
   "provider.custom.error.keyHeader.invalid": "Dieser Header kann den Schlüssel nicht tragen",
   "provider.custom.error.header.metadata": "Erlaubte Header: HTTP-Referer, X-Title, OpenAI-Organization, OpenAI-Project",
-  "common.goBack": "Zurück",
   "common.submit": "Absenden",
   "common.saving": "Speichert...",
   "settings.models.tab.models": "Modelle",
