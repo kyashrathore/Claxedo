@@ -1,6 +1,6 @@
 # Claxedo as an MCP Apps host
 
-Status: planned, not started. Owner direction 2026-10-18: Claxedo supports MCP Apps as a standard, separate from agent-generated UI. Base: `dev`.
+Status: P1 and P2 built on Pi; P3–P5 not started. Owner direction 2026-10-18: Claxedo supports MCP Apps as a standard, separate from agent-generated UI. Base: `dev`.
 
 [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (SEP-1865, protocol `2026-01-26`, Stable; `@modelcontextprotocol/ext-apps` 2.0.3) lets an MCP tool declare a `ui://` HTML resource that the host draws in a sandboxed frame beside the tool call. The frame talks to the host over JSON-RPC on `postMessage`.
 
@@ -44,6 +44,7 @@ This plan builds the frame host for MCP Apps only. Its API takes a document, a p
 1. **Frame isolation on the web.** The spec requires web hosts to use a double iframe: a sandbox-proxy frame on an origin other than the app's, holding the app's frame. Desktop and native hosts may draw one sandboxed frame. t3code draws one `sandbox="allow-scripts allow-forms"` frame on a signed URL everywhere, which gives an opaque origin but not the spec's proxy.
    - **Proposed:** follow the spec. On the web, a proxy document served from a separate sandbox origin; on desktop, one sandboxed frame. P1 builds the single frame, and the proxy lands before hosted web ships apps.
    - **Owner input needed:** the sandbox origin for the hosted web app and for the local daemon's web UI.
+   - **Built meanwhile:** one sandboxed `srcdoc` frame on both platforms (§4). It has an opaque origin and runs under the app's own network lock, so it reaches nothing the app itself could not; the proxy is still the spec's requirement for web hosts.
 2. **When an app shows.**
    - **Proposed:** an app draws in place of its tool row and is never folded into the turn's work group. Its frame mounts only when the row scrolls into view and is torn down when the row unmounts or its session leaves the cache. The first page after a session switch paints text first, and the app document is fetched when the frame mounts. This is the same question as an agent reply surface in the plugin plan, and should get one answer.
 3. **Who may drive an app** (shared sessions, `follow` / `send`).
@@ -71,15 +72,15 @@ This plan builds the frame host for MCP Apps only. Its API takes a document, a p
 
   type McpAppReference = {
     resourceUri: string
-    document: { messageId: string; attachmentId: string; bytes: number }
     csp?: McpAppCsp
-    permissions?: McpAppPermissions
     prefersBorder?: boolean
   }
   ```
 
+  The types and their readers (`toolMcpFacts`, `mcpAppCsp`, `mcpToolVisibleTo`) live in `packages/agent-runtime-contract/src/mcp-app.ts`. The app document itself is the part's attachment with mime `text/html;profile=mcp-app` (§3), so the reference names no document. `permissions` is not read: the host grants none.
+
 - **Text output:** `formatToolOutput` keeps producing the text for the model and the generic row.
-- **Header reads:** the header shape for MCP tools (`HEADERS` in `tool-header.ts`) keeps `metadata.mcp.app`, so a header-only read is enough to draw the app's frame.
+- **Header reads:** every tool header keeps `metadata.mcp.{server, tool, app}` (`toolMcpHeader`), so a header-only read knows to draw the app's frame; the frame loads the part's body, attachment included, when it mounts.
 - **Name:** the server is always in `metadata.mcp.server`, so no reader parses `mcp__server__tool` for it. The harness spellings stay as they are.
 
 ### 2. A harness MCP operation group
@@ -96,20 +97,16 @@ This plan builds the frame host for MCP Apps only. Its API takes a document, a p
 
 ### 3. Capture: a snapshot of the app document
 - **Trigger:** a completed MCP tool call whose tool declares `_meta.ui.resourceUri` (or the deprecated `_meta["ui/resourceUri"]`).
-- **Steps:** the runtime calls `readResource` once on the same server, checks the mime type `text/html;profile=mcp-app` and the size, and stores the document as an attachment of that tool part. It keeps the resource's `_meta.ui` (`csp`, `permissions`, `prefersBorder`) in `metadata.mcp.app`.
+- **Steps:** the runtime calls `readResource` once on the same client, checks the mime type `text/html;profile=mcp-app` and the size, and stores the document as an inline `data:` attachment of that tool part (`mcp-app.html`). It keeps the resource's `_meta.ui` (`csp`, `prefersBorder`) in `metadata.mcp.app`. Pi carries both through the tool result's `details`, so a replayed session redraws the same app (`packages/harness/src/transports/pi-durable/mcp-app.ts`, `translate/tools.ts`).
 - **Size cap:** 2 MiB of HTML, checked before decoding, so the base64 part fits the 5 MiB JSON body limit (`packages/session-core/src/routes/http.ts:10`) and the 16 MiB relay tunnel. This is a proposed number for the owner to confirm.
 - **Timing:** capture runs after the tool part completes. The row draws as an ordinary tool row until the reference lands as a part update. A failed, oversized or wrong-type capture leaves the ordinary row and logs the reason.
 - **Lifetime:** the snapshot is fixed at call time, so the transcript replays the same app after the server changes or goes away. Deleting the session deletes it with the transcript.
 
-### 4. Serving the document
-- **Route:** the session attachment route serves an app document (mime `text/html;profile=mcp-app`) beside images, from the same reader (`readSessionAttachment`). The hosted session-host gains the same read.
-- **Response headers:**
-  - `Content-Security-Policy` with `sandbox allow-scripts allow-forms` plus the policy built from the resource's declared `connectDomains`, `resourceDomains`, `frameDomains` and `baseUriDomains`;
-  - with nothing declared, the spec's default (`default-src 'none'`, inline scripts and styles, `data:` images and media, `connect-src 'none'`), with no `'self'`;
-  - always `object-src 'none'`, `form-action 'none'` and `base-uri 'none'` unless declared;
-  - `nosniff` and `cache-control: private, no-store`.
-- **Domain lists:** only scheme-qualified origins, at most 32 of them, each at most 256 characters.
-- **Auth:** the read uses the session route's own authorization (`message_read`).
+### 4. Drawing the document (built instead of a served route)
+- **No route.** The document reaches the app with the part's body, so it is read under the session's own `message_read` authorization and needs no new origin, signed URL or attachment route.
+- **Frame document:** a `srcdoc` holding only our `<meta>` Content-Security-Policy and a fixed bootstrap script (`src/mcp-apps/bootstrap.ts`). A `srcdoc` frame inherits the app's own policy, which refuses inline scripts, so the bootstrap's hash is in the shared `script-src` (`content-security-policy.ts`, the web and the desktop renderer policy). The host posts the HTML once after the frame's first `load`; the bootstrap adopts its head and body and recreates every script from a `blob:` URL in document order, then fires `DOMContentLoaded` and `load`.
+- **Our policy:** `default-src 'none'`, `script-src` the bootstrap hash and `blob:`, inline styles, `data:` images, media and fonts, `connect-src 'none'`, `object-src`, `form-action` and `base-uri 'none'`, plus the resource's declared origins (only scheme-qualified, no wildcard, at most 32, each at most 256 characters).
+- **Measured (Chromium 141, the production web and desktop policies):** classic and module scripts run in order; `eval`, inline event handlers and an undeclared `fetch` are refused; a declared outside origin is still refused by the inherited app `connect-src`, so an app reaches only what the network lock allows; the app's own CSP `<meta>` can only tighten. Details in `packages/claxedo-app/src/mcp-apps/README.md`.
 
 ### 5. The frame host (`packages/claxedo-app/src/mcp-apps/`, a new domain with its README)
 
@@ -160,7 +157,7 @@ This plan builds the frame host for MCP Apps only. Its API takes a document, a p
 
 ## Phases and acceptance
 
-- [ ] **P1. Contract, capture and frame on Pi (local).**
+- [x] **P1. Contract, capture and frame on Pi (local).**
   - **Build:**
     - `metadata.mcp` with its header shape;
     - the harness MCP group for Pi;
@@ -177,8 +174,8 @@ This plan builds the frame host for MCP Apps only. Its API takes a document, a p
     - a frame message from another window is ignored;
     - the app's `fetch` to an undeclared origin is blocked;
     - a navigating app is stopped.
-  - Progress:
-- [ ] **P2. Interaction.**
+  - Progress: built on Pi. Contract and header (`agent-runtime-contract/src/mcp-app.ts`); Pi advertises the extension, keeps `_meta` and `annotations`, hides model-hidden tools and captures the snapshot; the `mcp` operation group and its owner-only routes `GET /session/:id/mcp/:server/tools`, `POST …/tool-call`, `POST …/resource-read` (session-core `routes/session-mcp.ts`); the frame host `src/mcp-apps/` drawn in place of the tool row (`ToolPartDisplay`). Flow 62 (web and phone) proves the app paints the tool result and the host's colour scheme, repaints after a reload and after its server stops, and its red run (the resource served as `text/html`) leaves the ordinary row. Unit tests cover the oversized and wrong-mime captures, a message from another window, the in-flight and size limits, and navigation.
+- [x] **P2. Interaction.**
   - **Build:** `tools/call` and `ui/message` with consent and share-level rules; fullscreen; `tool-cancelled`.
   - **Flows:**
     - a confirmed `tools/call` runs and its result reaches the app;
@@ -187,7 +184,7 @@ This plan builds the frame host for MCP Apps only. Its API takes a document, a p
     - `ui/message` asks, and posts as the reader when allowed;
     - a `follow` reader's calls are refused without a prompt;
     - a `send` reader's `tools/call` is refused.
-  - Progress:
+  - Progress: built. `tools/call` (owner only; a tool not marked `readOnlyHint` asks first), `ui/message` (needs `send`, always asks), fullscreen in the top layer, and `tool-cancelled`. Flow 62 proves a declined call never reaches the server (its call log) and a confirmed one returns into the frame; unit tests prove a `follow` reader and a `send` reader are refused without a prompt.
 - [ ] **P3. Codex, then Claude Code.**
   - **Codex:** the `mcpInput` and metadata fields, the three `rpc.request` operations, and the client capability.
   - **Claude Code:** `mcpServerStatus`, `readMcpResource` and the kept `tool_use_result`; `callTool` answers `unsupported` until proven.

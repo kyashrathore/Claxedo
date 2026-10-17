@@ -15,11 +15,11 @@ doc or package README that owns it.
   keeps phone layouts, gives every project an id, and has four first-party plugins and a
   benchmark gate against today's app.
 - [App plugins and agent replies: declarative UI, sandboxed logic](./2026-09-25-001-app-plugins-declarative-ui-plan.md)
-  — planned, not started. Plugin logic in a sandboxed worker and plugin and agent-reply UI drawn natively from one
-  catalog, in A2UI v0.9 with our own Solid renderer (owner, 2026-10-18); P1 prototypes and measures it, with an agent-reply fixture.
+  — in progress on `plan/a2ui-surfaces-and-mcp-apps`. The A2UI v0.9 renderer and catalog, agent `ui_show` replies and
+  plugin surface pages are built with flows 60 and 61; the P1 measurements, the worker sandbox and the cut-over remain.
 - [Claxedo as an MCP Apps host](./2026-10-18-feat-mcp-apps-host-plan.md)
-  — planned, not started. One sandboxed frame host speaking the MCP Apps bridge, app snapshots on the tool part,
-  and a harness MCP operation group: Pi first, then Codex and Claude Code; Cursor, OpenCode and ACP keep plain tool rows.
+  — in progress on `plan/a2ui-surfaces-and-mcp-apps`. P1 and P2 are built on Pi (flow 62): snapshots on the tool part,
+  the frame host and its consent rules; Codex, Claude Code, model context and the web sandbox proxy remain.
 - [Steering admission and transcript reconciliation](./2026-09-20-harness-steering-admission.md)
   — queue execution and admission safety implemented; provider incorporation,
   transcript placement and the acceptance matrix remain.
