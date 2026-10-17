@@ -123,6 +123,34 @@ const autolinkRule = new RegExp(`^${autolinkSource}`, "i")
 const autolinkStart = new RegExp(autolinkSource, "i")
 const autolinkTrailing = /[),.;:!?]+$/
 
+// marked calls `start` once per inline text step with the whole rest of the
+// paragraph, so an unbounded search is quadratic: a 131 KB paragraph scanned
+// 71 MB in 1,087 calls (55 ms in V8). The search stops after this many
+// characters and cuts the text before a whitespace run instead, where no link,
+// email or hard break can straddle the cut and marked merges the two text
+// tokens back into one.
+const autolinkScanLimit = 1024
+const longestAutolinkMatchStart = Math.max(...transcriptLinkPrefixes.map((prefix) => prefix.length)) + 1
+
+function isAsciiSpace(code: number) {
+  return code === 32 || (code >= 9 && code <= 13)
+}
+
+function whitespaceRunStartBefore(src: string, limit: number) {
+  for (let index = limit; index > 0; index--) {
+    if (isAsciiSpace(src.charCodeAt(index)) && !isAsciiSpace(src.charCodeAt(index - 1))) return index
+  }
+  return undefined
+}
+
+function autolinkStartIndex(src: string) {
+  const window = autolinkScanLimit + longestAutolinkMatchStart
+  if (src.length <= window) return autolinkStart.exec(src)?.index
+  const found = autolinkStart.exec(src.slice(0, window))
+  if (found && found.index < autolinkScanLimit) return found.index
+  return whitespaceRunStartBefore(src, autolinkScanLimit) ?? autolinkStart.exec(src)?.index
+}
+
 /**
  * Emits marked's own `link` token rather than a token of its own, so the anchor
  * comes out of the same renderer as `[text](url)` and GFM's autolink, and the
@@ -133,9 +161,7 @@ export const markedTranscriptAutolink: MarkedExtension = {
     {
       name: "transcriptAutolink",
       level: "inline",
-      start(src) {
-        return autolinkStart.exec(src)?.index
-      },
+      start: autolinkStartIndex,
       tokenizer(src) {
         // Matches the guard marked puts on its own url rule: a link label is
         // inline-tokenized with `inLink` set, and nesting an anchor is invalid.
