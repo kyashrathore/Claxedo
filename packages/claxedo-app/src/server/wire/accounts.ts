@@ -95,6 +95,7 @@ const VERDICTS: readonly AccountVerdict[] = ["ok", "auth_failed", "no_billing", 
 
 export function accountCheckFromWire(value: unknown): AccountCheck | undefined {
   const row = asRecord(value)
+  if (row?.result === "uncheckable") return { uncheckable: true }
   const verdict = VERDICTS.find((candidate) => candidate === row?.result)
   if (!row || !verdict) return undefined
   const usage = usageWindowsFromWire(row.usage)

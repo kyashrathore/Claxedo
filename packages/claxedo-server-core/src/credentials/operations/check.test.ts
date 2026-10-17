@@ -136,6 +136,15 @@ describe("one stored account's Check", () => {
       .resolves.toEqual({ status: "no_secret" })
   })
 
+  test("a provider Claxedo has no check for is uncheckable, and nothing is asked or written", async () => {
+    const host = store()
+
+    await expect(checkCredential(host.credentials, row({ provider_id: "groq" }), options({ fetch: host.fetch })))
+      .resolves.toEqual({ status: "uncheckable" })
+    expect(host.provider).not.toHaveBeenCalled()
+    expect(host.calls.updateCredentialHealth).not.toHaveBeenCalled()
+  })
+
   test("a failing account leaves the next account checkable", async () => {
     const failing = store({ secret: () => Promise.reject(new Error("keychain is locked")) })
     const healthy = store()

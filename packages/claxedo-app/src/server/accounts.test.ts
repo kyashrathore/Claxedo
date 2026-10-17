@@ -116,3 +116,11 @@ test("accounts: a refused removal rereads the accounts, so a row another tab alr
   await expect(createAccountsApi(transport, client).remove(["gone"])).rejects.toMatchObject({ class: "not_found" })
   expect(client.getQueryState(read.queryKey)?.isInvalidated).toBe(true)
 })
+
+test("accounts: a Check of a provider Claxedo has no check for answers uncheckable, not a verdict", async () => {
+  const { seen, transport } = serve(() => Response.json({ result: "uncheckable" }))
+  const api = createAccountsApi(transport, new QueryClient())
+
+  await expect(api.check("cred-groq")).resolves.toEqual({ uncheckable: true })
+  expect(seen.map((request) => `${request.method} ${request.path}`)).toContain("POST /api/claxedo/credentials/cred-groq/verify")
+})

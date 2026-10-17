@@ -2,9 +2,9 @@ import { createSignal, Show, type Accessor } from "solid-js"
 import type { Account } from "@/server"
 import { SettingsRow } from "@/settings"
 import { Button, ClaxedoIconButton } from "@/ui"
-import { VERDICT_KEY } from "../account-words"
+import { keyCheckWords } from "../account-words"
 import { useAccountsText } from "../i18n"
-import { isVerdict, type LiveCheck } from "../model"
+import type { LiveCheck } from "../model"
 
 export type KeyRowStore = {
   readonly activity: Accessor<{ readonly key: string } | undefined>
@@ -18,10 +18,7 @@ export function KeyRow(props: { readonly account: Account; readonly label: strin
   const [confirming, setConfirming] = createSignal(false)
   const busy = () => props.store.activity()?.key === props.account.id
   const description = () => {
-    const live = props.store.liveChecks()[props.account.id]
-    const stored = props.account.health !== undefined && isVerdict(props.account.health) ? props.account.health : undefined
-    const verdict = live?.verdict ?? stored
-    const health = verdict === undefined ? [t("settings.keys.notChecked")] : [t(VERDICT_KEY[verdict]), ...(live?.reason === undefined ? [] : [live.reason])]
+    const health = keyCheckWords(t, props.account, props.store.liveChecks()[props.account.id])
     return [...(props.detail === undefined ? [] : [props.detail]), ...health].join(" · ")
   }
   return (

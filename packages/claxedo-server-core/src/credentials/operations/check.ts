@@ -35,6 +35,8 @@ export type CredentialCheckOutcome =
   | { status: "unsupported" }
   /** The row is there and its secret is not, so there is nothing to ask with. */
   | { status: "no_secret" }
+  /** Claxedo has no check for this provider, so the account is spent as saved. */
+  | { status: "uncheckable" }
   | { status: "failed"; detail: { name: string; message: string }; provider: boolean }
 
 export async function checkCredential(
@@ -101,6 +103,7 @@ export async function checkCredential(
       ...(options.replace ? { stored: true } : {}),
     }
   } catch (error: unknown) {
+    if (error instanceof CredentialVerificationError && error.code === "credential_verification_unsupported") return { status: "uncheckable" }
     return {
       status: "failed",
       detail: credentialFailureDetail(error, secret),

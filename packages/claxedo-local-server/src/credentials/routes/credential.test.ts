@@ -569,19 +569,28 @@ describe("credential routes", () => {
           ],
         },
         "verify": {
-          "error": {
-            "code": "credential_verification_failed",
-            "details": {
-              "detail": {
-                "message": "Credential provider does not support verification",
-                "name": "CredentialVerificationError",
-              },
-            },
-            "message": "Credential verification failed",
-          },
+          "result": "uncheckable",
         },
       }
     `)
+  })
+
+  test("a provider Claxedo has no check for answers uncheckable rather than a server failure, and the row keeps its health", async () => {
+    const row = { ...(await credentials().listCredentials())[0], provider_id: "groq", health: null }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
+      resolveCredentialSecretById: vi.fn(async () => "gsk-route-secret"),
+      updateCredentialHealth: vi.fn(async () => {}),
+    })
+    const request = providerFetch(() => Response.json({}))
+    const app = CredentialRoutes(registry, { fetch: request as unknown as typeof fetch })
+
+    const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ result: "uncheckable" })
+    expect(request).not.toHaveBeenCalled()
+    expect(registry.updateCredentialHealth).not.toHaveBeenCalled()
   })
 
   test("returns a secret-safe upstream error when the provider request fails", async () => {

@@ -348,7 +348,8 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
    * One Check, in the answer its caller can act on. A host that cannot verify,
    * a row whose secret is gone and a provider that refused the request are
    * three different repairs, so they are three different status codes rather
-   * than one failure.
+   * than one failure. A provider Claxedo has no check for needs no repair, so
+   * it is an answer rather than a failure.
    */
   const checkAnswer = (
     id: string,
@@ -360,6 +361,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     if (outcome.status === "no_secret") {
       return [errorBody("credential_secret_unavailable", "Credential secret is unavailable"), 409]
     }
+    if (outcome.status === "uncheckable") return [{ result: "uncheckable" }, 200]
     if (outcome.status === "failed") {
       log.warn("Credential verification failed", { credential_id: id, ...outcome.detail })
       return [

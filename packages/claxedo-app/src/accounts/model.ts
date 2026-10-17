@@ -22,6 +22,7 @@ export type LiveCheck = {
   readonly verdict?: AccountVerdict
   readonly usage?: readonly QuotaWindow[]
   readonly reason?: string
+  readonly uncheckable?: true
 }
 
 export type HarnessAccount = Account & { readonly ids: readonly string[]; readonly partialCloudConsent: boolean }

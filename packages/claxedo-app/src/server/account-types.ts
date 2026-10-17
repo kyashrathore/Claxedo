@@ -47,7 +47,7 @@ export type MachineLogin = {
 
 export type AccountVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
 
-export type AccountCheck = { readonly verdict: AccountVerdict; readonly usage?: readonly QuotaWindow[] }
+export type AccountCheck = { readonly verdict: AccountVerdict; readonly usage?: readonly QuotaWindow[] } | { readonly uncheckable: true }
 
 export type SandboxDriverField = { readonly key: string; readonly label: string; readonly secret: boolean }
 

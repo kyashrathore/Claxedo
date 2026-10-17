@@ -2,7 +2,7 @@
 import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import { expect, test } from "bun:test"
 import type { Account } from "@/server"
-import { orgAccountWords, storedAccountWords } from "./account-words"
+import { keyCheckWords, orgAccountWords, storedAccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
 import { harnessAccounts, harnesses, harnessRunnable, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
@@ -139,4 +139,12 @@ test("accounts: a rate-capped account says when its soonest window resets, is ma
   expect(harnessRunnable(claude, snapshot({ stored: [{ ...row, active: true }] }), {})).toBe(true)
   const noReset = storedAccountWords({ ...words, now: 0 }, harnessAccounts(claude, [{ ...row, usage: [{ window: "5h", usedPercent: 100, resetsAt: null }] }])[0], undefined)
   expect(noReset.alert).toBe("Rate limit reached")
+})
+
+test("accounts: a key whose provider Claxedo cannot check says so on one line, and a stored verdict or a refusal reads as before", () => {
+  const groq = account("team-groq", "groq", { owner: null })
+  expect(keyCheckWords(t, groq, { at: 1, uncheckable: true })).toEqual(["Claxedo can't check this provider's keys; it's used as saved."])
+  expect(keyCheckWords(t, groq, undefined)).toEqual(["Not checked yet"])
+  expect(keyCheckWords(t, { ...groq, health: "auth_failed" }, undefined)).toEqual(["Rejected by the provider"])
+  expect(keyCheckWords(t, groq, { at: 1, verdict: "unknown", reason: "The server could not be reached" })).toEqual(["Couldn't check", "The server could not be reached"])
 })

@@ -86,6 +86,7 @@ export default {
   "settings.providers.live.resets": "Resets {{when}}",
   "settings.providers.live.expired": "Expired",
   "settings.providers.live.unknown": "Couldn't check",
+  "settings.providers.live.uncheckable": "Claxedo can't check this provider's keys; it's used as saved.",
   "settings.providers.live.window": "{{name}} {{used}}% used",
   "settings.sandbox.title": "Sandbox providers",
   "settings.sandbox.managedByAdmins": "Your organization's owners and admins add and choose sandbox providers.",

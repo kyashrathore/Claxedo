@@ -8,6 +8,7 @@ import {
   accountReach,
   isRefusal,
   isUnavailable,
+  isVerdict,
   MACHINE_LOGIN_KEY,
   partialMachineLogin,
   strandedBinding,
@@ -20,7 +21,7 @@ import {
   type HarnessAccount,
   type LiveCheck,
 } from "./model"
-import type { AccountVerdict, MachineLogin } from "@/server"
+import type { Account, AccountVerdict, MachineLogin } from "@/server"
 
 export type CloudConsent = {
   readonly allowed: boolean
@@ -75,6 +76,14 @@ function rateCapReset(words: Words, live: LiveCheck) {
 function verdictWords(words: Words, live: LiveCheck | undefined) {
   if (live?.verdict === undefined) return []
   return [words.t(VERDICT_KEY[live.verdict]), ...rateCapReset(words, live), ...(live.reason === undefined ? [] : [live.reason])]
+}
+
+export function keyCheckWords(t: AccountsText, account: Pick<Account, "health">, live: LiveCheck | undefined): readonly string[] {
+  if (live?.uncheckable) return [t("settings.providers.live.uncheckable")]
+  const stored = account.health !== undefined && isVerdict(account.health) ? account.health : undefined
+  const verdict = live?.verdict ?? stored
+  if (verdict === undefined) return [t("settings.keys.notChecked")]
+  return [t(VERDICT_KEY[verdict]), ...(live?.reason === undefined ? [] : [live.reason])]
 }
 
 function cloudNoteOf(t: Words["t"], row: HarnessAccount) {
