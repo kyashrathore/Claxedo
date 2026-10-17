@@ -180,6 +180,8 @@ test("15 settings: the operator adds an organization account from a harness's Ad
   const org = cursor.locator('[data-slot="account-row"][data-account="org"]')
   await expect(org).toContainText("Acme Cursor")
   await expect(org).toContainText("Organization account")
+  await expect(app.getByText("Sandbox providers", { exact: true })).toHaveCount(1)
+  await expect(app.getByText("Team accounts", { exact: true })).toHaveCount(0)
   const saved = (await accountSources(stack.url)).org.find((row) => row.label === "Acme Cursor")
   expect(saved?.provider_id).toBe("cursor")
 

@@ -17,14 +17,6 @@ export const modelsSettingsSection: SettingsSection = {
   view: lazyView(() => import("./view/models-section").then((module) => module.ModelsSection)),
 }
 
-export const teamSettingsSection: SettingsSection = {
-  id: "team-accounts",
-  title: () => useAccountsText()("settings.team.title"),
-  group: "account",
-  order: 40,
-  view: lazyView(() => import("./view/team-section").then((module) => module.TeamSection)),
-}
-
 export const sandboxSettingsSection: SettingsSection = {
   id: "sandbox",
   title: () => useAccountsText()("settings.sandbox.title"),

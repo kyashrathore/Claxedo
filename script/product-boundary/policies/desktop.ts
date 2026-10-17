@@ -656,11 +656,9 @@ export const desktopRenderer: Policy = {
   // picker's hint about where a code host grants more repositories (owner:
   // the app's projects domain, `projects/repository-access.ts`,
   // `projects/view/project-repository-access.tsx`). They add no package edge.
-  // The organization's team accounts page and its add drawer, their store, and
-  // the Check and Remove actions it shares with the sandbox keys (owner: the
-  // app's accounts domain, `accounts/view/team-section.tsx`,
-  // `accounts/view/team-account-form.tsx`, `accounts/team-store.ts`,
-  // `accounts/key-actions.ts`). They add no package edge.
+  // The Check and Remove actions the sandbox keys and a catalog harness's own
+  // keys share (owner: the app's accounts domain, `accounts/key-actions.ts`).
+  // It adds no package edge.
   // The one Wake now the placement notice and the model picker share (owner:
   // the app's cloud domain, `cloud/view/wake-workspace.ts`), the picker's
   // words for an empty model list split from its wiring (owner: the app's
@@ -691,8 +689,8 @@ export const desktopRenderer: Policy = {
   // OpenCode's provider catalog read with no workspace (owner: the app's tasks
   // domain, `tasks/presets/cloud-catalog-model-picker.tsx`,
   // `tasks/presets/cloud-catalog-models.ts`). They add no package edge.
-  // The signed-out notice Organization, Team accounts and Sandbox providers
-  // share, with its Sign in action (owner: the app's access domain,
+  // The signed-out notice Organization and Sandbox providers share, with its
+  // Sign in action (owner: the app's access domain,
   // `access/view/signed-out.tsx`). It adds no package edge.
   // AI usage's By account breakdown, its rows and the read behind it (owner:
   // the app's usage domain, `usage/account-spend.ts`,
@@ -706,8 +704,15 @@ export const desktopRenderer: Policy = {
   // terminal runs, each with its tooltip (owner: the app's rail domain,
   // `rail/view/settle-button.tsx`, `rail/view/session-marker-icon.tsx`). They
   // add no package edge.
-  // 1401/36, no headroom.
-  ceilings: { modules: 1401, packages: 36 },
+  // A harness picker's row words, shared with its cloud-choice help icon, the
+  // Check spin while that account's own check runs, and the add-account drawer
+  // with the step its one submit does (owner: the app's accounts domain,
+  // `accounts/view/account-rows.ts`, `accounts/view/cloud-choice-hint.tsx`,
+  // `accounts/view/account-actions.css`, `accounts/view/connect-drawer.tsx`,
+  // `accounts/connect-submit.ts`), in place of the Team accounts page, its
+  // store and form, and the connect dialog. They add no package edge.
+  // 1402/36, no headroom.
+  ceilings: { modules: 1402, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

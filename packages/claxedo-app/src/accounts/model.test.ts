@@ -68,7 +68,7 @@ test("accounts: the cloud account choice is explained only off a machine and onl
   expect(offersCloudChoice(false, [row("a"), row("b")])).toBe(false)
 })
 
-test("accounts: a person whose organization holds no team key for their org choice cannot run and is told so, naming the vendor", () => {
+test("accounts: a person whose organization holds no account for their org choice cannot run and is told so, naming the vendor", () => {
   const chosen = snapshot({ stored: [account("own-1", "claude-sdk", { active: true })], sources: allOrg })
   expect(selectedAccountKey(claude, chosen)).toBe(ORG_ACCOUNT_KEY)
   expect(harnessRunnable(claude, chosen, {})).toBe(false)

@@ -1,4 +1,4 @@
-import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, piProviderSpending, vendorName, type HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, piProviderSpending, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { isRefusal } from "@/lib/account-health"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import type { Account, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, ProviderSource } from "@/server"
@@ -49,10 +49,6 @@ export const harnesses: readonly Harness[] = HARNESS_IDS.map((id) => ({
   vendorProvider: HARNESS_TABLE[id].vendorProvider,
   signIn: SIGN_IN[id],
 }))
-
-export type TeamVendor = { readonly id: string; readonly label: string }
-
-export const TEAM_VENDORS: readonly TeamVendor[] = ["anthropic", "openai", HARNESS_TABLE.cursor.vendorProvider, "openrouter", "google", "groq", "xai"].map((id) => ({ id, label: vendorName(id) }))
 
 export const MACHINE_LOGIN_KEY = "machine"
 

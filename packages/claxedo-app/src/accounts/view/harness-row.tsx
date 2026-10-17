@@ -6,14 +6,13 @@ import { ClaxedoIcon, requestConfirm, useDialog, Button, ProviderIcon, RadioGrou
 import type { AccountWords, CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
 import type { OrganizationConnect } from "../connect-form"
-import { machineCheckKey, ORG_ACCOUNT_KEY, organizationTarget, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
+import { harnessesServedBy, machineCheckKey, ORG_ACCOUNT_KEY, organizationTarget, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AccountActions, LabelHint, Reach } from "./account-actions"
 import { useAccountRows } from "./account-rows"
 import { CheckedAge } from "./account-status"
 import { CloudChoiceHint } from "./cloud-choice-hint"
 import { DrawerProviderConnect } from "./connect-drawer"
-import { useServedBy } from "./served-by"
 
 export type HarnessRowProps = {
   readonly harness: Harness
@@ -77,6 +76,11 @@ function CloudConsentSwitch(props: { readonly account: AccountWords; readonly co
       <Show when={error()}>{(message) => <span role="alert" class="text-icon-warning-base">{message()}</span>}</Show>
     </div>
   )
+}
+
+function useServedBy(): (providerIds: readonly string[]) => string {
+  const i18n = useI18n()
+  return (providerIds) => new Intl.ListFormat(i18n.intlTag(), { style: "long", type: "conjunction" }).format(harnessesServedBy(providerIds))
 }
 
 function useRemoveAccount(props: { readonly account: AccountWords; readonly row: HarnessRowProps }) {

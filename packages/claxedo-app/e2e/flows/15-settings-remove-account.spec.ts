@@ -53,9 +53,9 @@ test("15 settings: a chosen organization account that was removed says so and di
   const json = (method: string, body: unknown) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
   const sources = (source: string) => fetch(`${stack.url}/api/claxedo/credentials/account-sources`, json("PUT", { provider_ids: HARNESS_TABLE.cursor.providerIds, source }))
   expect((await sources("org")).status).toBe(409)
-  const team = await fetch(`${stack.url}/api/claxedo/credentials`, json("PUT", { provider_id: "cursor", kind: "api_key", owner: "org", label: "Team Cursor", secret: "key_team_cursor" }))
-  expect(team.status).toBe(200)
-  const { credential } = await team.json() as { credential: { id: string } }
+  const added = await fetch(`${stack.url}/api/claxedo/credentials`, json("PUT", { provider_id: "cursor", kind: "api_key", owner: "org", label: "Acme Cursor", secret: "key_org_cursor" }))
+  expect(added.status).toBe(200)
+  const { credential } = await added.json() as { credential: { id: string } }
   expect((await sources("org")).status).toBe(200)
   expect((await fetch(`${stack.url}/api/claxedo/credentials/${credential.id}`, json("DELETE", {}))).status).toBe(200)
   await app.goto(`${stack.url}/settings/models`)
@@ -63,7 +63,7 @@ test("15 settings: a chosen organization account that was removed says so and di
   const missing = accounts.locator('[data-account="org"]')
   await expect(missing.getByRole("radio")).toBeChecked()
   await expect(missing.getByRole("radio")).toBeDisabled()
-  await expect(missing.getByText("Your organization has no Cursor API key. Ask an admin to add a team key, or choose your own account.", { exact: true })).toBeVisible()
+  await expect(missing.getByText("Your organization has no Cursor API key. Ask an admin to add an organization account, or choose your own account.", { exact: true })).toBeVisible()
   await accounts.getByText(/^Login on /).click()
   await expect(missing).toHaveCount(0)
   const read = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`)

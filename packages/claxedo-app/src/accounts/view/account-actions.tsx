@@ -1,10 +1,13 @@
 import { Show, type JSX } from "solid-js"
+import { useAgeClock } from "@/lib/clock"
+import { formatRelativeTime } from "@/lib/relative-time"
+import { useI18n } from "@/i18n"
 import { ClaxedoIconButton, Button, Tooltip } from "@/ui"
 import type { AccountWords } from "../account-words"
 import { useAccountsText } from "../i18n"
 import { ORG_ACCOUNT_KEY, type AccountReach } from "../model"
-import { AccountCheckButton } from "./account-check"
 import { ACCOUNT_REACH_KEYS } from "./account-status"
+import "./account-actions.css"
 
 export function LabelHint(props: { readonly value: string; readonly children: JSX.Element }) {
   return (
@@ -24,6 +27,30 @@ export function Reach(props: { readonly reach: AccountReach; readonly source?: s
         {[props.source, t(ACCOUNT_REACH_KEYS[props.reach].label)].filter(Boolean).join(" · ")}
       </span>
     </LabelHint>
+  )
+}
+
+function AccountCheckButton(props: { readonly checking: boolean; readonly disabled: boolean; readonly checkedAt: number | undefined; readonly onCheck: () => void }) {
+  const t = useAccountsText()
+  const i18n = useI18n()
+  const now = useAgeClock(() => props.checkedAt)
+  const hint = () => {
+    const at = props.checkedAt
+    return at === undefined ? t("settings.providers.agents.checkNow") : t("settings.providers.agents.checkNowAgo", { ago: formatRelativeTime(at, i18n.intlTag(), now()) })
+  }
+  return (
+    <Tooltip value={hint()} placement="top" class="flex">
+      <ClaxedoIconButton
+        icon="reload"
+        size="small"
+        variant="ghost"
+        data-action="agent-account-check"
+        aria-label={t("settings.providers.agents.checkNow")}
+        aria-busy={props.checking ? "true" : undefined}
+        disabled={props.checking || props.disabled}
+        onClick={() => props.onCheck()}
+      />
+    </Tooltip>
   )
 }
 
