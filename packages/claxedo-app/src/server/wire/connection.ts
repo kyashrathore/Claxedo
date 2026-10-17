@@ -8,7 +8,6 @@ export type RelayConnection = {
   readonly relayUrl: string
   readonly runtimeAccessToken: string
   readonly tokenExpiresAt: number
-  /** Where the control plane placed the runtime, declared to the relay so a first touch creates the room there; absent for a runtime a person's machine serves. */
   readonly region?: string
 }
 
@@ -87,7 +86,6 @@ function startElapsedOf(value: unknown): StartElapsed | undefined {
   return { done: START_STEPS.filter((step) => reached.has(step)), sinceStartMs, sinceStepMs }
 }
 
-/** The backings whose runtime the control plane placed, as against one served from a person's own machine. */
 const PLANE_PLACED_BACKINGS: ReadonlySet<unknown> = new Set(["cloud-vm", "durable-object"])
 
 function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnection {
