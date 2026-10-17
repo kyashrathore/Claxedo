@@ -35,11 +35,18 @@ import { startedSession } from "@claxedo/tasks/test-support"
 import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
 import type { SandboxStart, SandboxStartRequest } from "../workspace/sandbox-start"
 
-const mock = vi.hoisted(() => ({ request: vi.fn(), register: (_workspaceId: string, _sessionId: string) => {} }))
+const mock = vi.hoisted(() => ({
+  request: vi.fn(),
+  register: (_workspaceId: string, _sessionId: string) => {},
+  clients: [] as { workspaceId: string; resume: boolean | undefined }[],
+}))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
-  createWorkspaceRuntimeClient: ({ workspace }: { workspace: { id: string } }) => ({
-    request: (requestPath: string, init?: RequestInit) => mock.request(workspace.id, requestPath, init),
-  }),
+  createWorkspaceRuntimeClient: ({ workspace, options }: { workspace: { id: string }; options?: { resume?: boolean } }) => {
+    mock.clients.push({ workspaceId: workspace.id, resume: options?.resume })
+    return {
+      request: (requestPath: string, init?: RequestInit) => mock.request(workspace.id, requestPath, init),
+    }
+  },
 }))
 
 const HARNESS = { id: "codex", access: "native" as const }
@@ -391,6 +398,7 @@ async function rootOf(taskId: string): Promise<Workspace | undefined> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mock.clients.length = 0
 })
 
 /**
@@ -491,6 +499,20 @@ describe("hosted tasks cloud roots", () => {
     expect(started).toMatchObject({ ok: true, session: { sessionRef: { workspaceId: root } } })
     expect(ensured).toEqual([root])
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledOnce()
+  })
+
+  test("the Start sent once the root runs creates its session through one client that inspects the running root rather than re-ensuring its sandbox", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    const composition = services(sandboxManager)
+    const { kit, boot } = booting(composition)
+
+    const { started } = await start(kit, "tsk_one", boot)
+    const root = (await rootOf("tsk_one"))?.id
+    expect(started).toMatchObject({ ok: true, session: { sessionRef: { workspaceId: root } } })
+    expect(mock.clients).toEqual([{ workspaceId: root, resume: false }])
+    expect(ensured).toEqual([root])
   })
 
   test("starts the root through the workspace's own sandbox start, as a person's start, with the preset's capability set", async () => {

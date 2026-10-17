@@ -216,7 +216,10 @@ function createTasksCloudRoots(
       })
       if ("code" in allocated) return { blocker: { code: allocated.code, detail: allocated.detail } }
       if (allocated.state === "starting") return { preparing: { workspaceId: allocated.workspace.id } }
-      const target = dispatchTarget(allocated.workspace, startingAs(input, origin.actor))
+      // The start just proved this root's runtime answers; a client that
+      // re-ensured the sandbox would run the driver a second time (1.2 s on
+      // Cloudflare) and write the lease again before the first request.
+      const target = dispatchTarget(allocated.workspace, { ...startingAs(input, origin.actor), resume: false })
       return target ? { target } : {
         blocker: {
           code: "source_unavailable",

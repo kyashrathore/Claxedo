@@ -57,8 +57,9 @@ function createStartCalls(t: DomainTranslate<TasksKey>) {
       return run.kind === "running" ? run : { kind: "failed", message: run.error?.message ?? t("tasks.start.rootDidNotStart") }
     },
     open: async (taskId, session) => {
-      await invalidate.afterCommand(taskId)
+      const refreshed = invalidate.afterCommand(taskId)
       await openSession(session)
+      await refreshed
     },
     openSession,
   }
