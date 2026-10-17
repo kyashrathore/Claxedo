@@ -265,6 +265,21 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect((await stored(credentials, replan.id))?.is_active).toBe(false)
   })
 
+  test("removing the team's Claude plans by provider hands their host's mark to the team key saved beside them, and leaves a person's own accounts alone", async () => {
+    const orgId = freshOrg("team-plans-removed-after-key")
+    let clock = 1_000
+    const credentials = store(orgId, () => ++clock)
+    await credentials.putCredential({ ...write, owner: null, provider_id: "claude-sdk", kind: "oauth_token" })
+    const key = await credentials.putCredential({ ...write, owner: null, provider_id: "anthropic" })
+    const personal = await credentials.putCredential({ ...write, owner: "A", provider_id: "anthropic" })
+    expect(key.is_active).toBe(false)
+
+    expect(await credentials.deleteCredentialsByProvider("claude-sdk", "oauth_token")).toBe(1)
+
+    expect((await stored(credentials, key.id))?.is_active).toBe(true)
+    expect((await stored(credentials, personal.id))?.activated_at).toBe(personal.activated_at)
+  })
+
   test("Pi's Anthropic connected by a Claude Code login says so and is not Pi's own key; Pi's own key is", async () => {
     const orgId = freshOrg("pi-via")
     const credentials = store(orgId)

@@ -373,13 +373,15 @@ export function hostedOrgCredentials(
       return removed
     },
     deleteCredentialsByProvider: async (providerId, kind) => {
-      const result = await database
+      const removed = await database
         .prepare(
-          `delete from hosted_provider_credentials where org_id = ? and owner is null and provider_id = ?${kind ? " and kind = ?" : ""}`,
+          `delete from hosted_provider_credentials where org_id = ? and owner is null and provider_id = ?${kind ? " and kind = ?" : ""}
+           returning ${METADATA_COLUMNS}`,
         )
         .bind(org, providerId, ...(kind ? [kind] : []))
-        .run()
-      return result.meta.changes ?? 0
+        .all()
+      for (const row of removed.results) await handOffMark(credentialMetadataRow(row))
+      return removed.results.length
     },
     updateCredentialStatus: async (id, status, error) => {
       await database
