@@ -1,6 +1,6 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { PanelToggle } from "@/panel"
+import { PanelToggle, usePanel } from "@/panel"
 import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { ScopeButtons } from "./scope-buttons"
@@ -36,7 +36,9 @@ export function ShowSidebarButton(props: { readonly peek: boolean }): JSX.Elemen
 
 export function WorkbenchHeader(props: { readonly global: boolean; readonly tabs?: JSX.Element }): JSX.Element {
   const layout = useShellLayout()
+  const panel = usePanel()
   const toggleShown = () => !props.global
+  const toggles = () => (toggleShown() && !panel.open() ? (panel.sessionId() !== "" ? 2 : 1) : 0)
   return (
     <div
       data-testid="workbench-shell-header"
@@ -44,8 +46,9 @@ export function WorkbenchHeader(props: { readonly global: boolean; readonly tabs
       data-window-drag-region
       class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
       classList={{
-        "pr-10": toggleShown() && !layout.panelShown(),
-        "pr-1": !toggleShown() || layout.panelShown(),
+        "pr-16": toggles() === 2,
+        "pr-10": toggles() === 1,
+        "pr-1": toggles() === 0,
       }}
     >
       <div class="flex min-w-0 flex-1 items-center gap-1 px-1" data-clear-window-controls={layout.sidebarPinned() ? undefined : ""}>

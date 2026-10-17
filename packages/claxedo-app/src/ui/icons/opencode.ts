@@ -118,6 +118,7 @@ const OPEN_CODE_GLYPHS = [
 const OPEN_CODE_ALIASES = {
   ...PROCESS_ICON_GLYPHS.opencode,
   "changes": "review",
+  details: "bullet-list",
   "inspect-element": "window-cursor",
   cloud: "cloud-upload",
   "folder-open": "folders",

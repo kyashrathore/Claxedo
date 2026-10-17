@@ -23,6 +23,7 @@ function WorkspacePanel(): JSX.Element {
       open={panel.open()}
       width={panel.width()}
       label={t("panel.label")}
+      borderless={panel.activeTab().kind === "context"}
       onAvailable={panel.setAvailable}
       data-testid="workspace-panel-shell"
       data-state-open={panel.open() ? "true" : "false"}
