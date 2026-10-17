@@ -535,7 +535,49 @@ describe("bound desktop account lifecycle", () => {
       reason: "callback-failed",
       detail: "token exchange failed: 503",
     })
-    expect(h.service.state()).toEqual({ status: "unsigned", detail: "token exchange failed: 503" })
+    expect(h.service.state()).toEqual({ status: "unsigned", detail: "token exchange failed: 503", signInUnfinished: true })
+  })
+
+  test("a browser sign-in that timed out or was cancelled ends unsigned and says it was not finished", async () => {
+    for (const reason of ["timeout", "cancelled"] as const) {
+      const h = harness({ auth: authHarness({ signIn: async () => ({ ok: false, reason, detail: reason }) }) })
+      await h.service.signIn()
+      expect(h.service.state()).toEqual({ status: "unsigned", detail: reason, signInUnfinished: true })
+    }
+  })
+
+  test("cancelling a waiting browser sign-in answers once the account is unsigned again", async () => {
+    let cancelled = 0
+    let finish: (result: Awaited<ReturnType<DesktopNativeAuth["signIn"]>>) => void = () => {}
+    const h = harness({
+      auth: authHarness({
+        signIn: () => new Promise((resolve) => (finish = resolve)),
+        cancel: () => {
+          cancelled++
+          finish({ ok: false, reason: "cancelled", detail: "sign-in cancelled" })
+        },
+      }),
+    })
+    const signIn = h.service.signIn()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(h.service.state()).toEqual({ status: "pending" })
+
+    await h.service.cancelSignIn()
+
+    expect(cancelled).toBe(1)
+    expect(h.service.state()).toEqual({ status: "unsigned", detail: "sign-in cancelled", signInUnfinished: true })
+    await expect(signIn).resolves.toMatchObject({ ok: false, reason: "cancelled" })
+  })
+
+  test("cancelling with no browser sign-in waiting leaves a signed account signed", async () => {
+    let cancelled = 0
+    const h = harness({ store: memoryStore(CREDENTIAL), auth: authHarness({ cancel: () => void cancelled++ }) })
+    await h.service.restore()
+
+    await h.service.cancelSignIn()
+
+    expect(cancelled).toBe(0)
+    expect(h.service.state()).toMatchObject({ status: "signed" })
   })
 
   test("a concurrent sign-in waits for the durable logout boundary before replacing the credential", async () => {

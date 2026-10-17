@@ -238,6 +238,7 @@ export type ElectronAPI = {
     onState: (listener: (state: unknown) => void) => () => void
     signIn: () => Promise<unknown>
     signOut: () => Promise<unknown>
+    cancelSignIn: () => Promise<unknown>
     run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>
     streamOpen: (operation: string, input?: Record<string, unknown>) => Promise<{ streamId: string }>
     streamStart: (streamId: string) => Promise<void>

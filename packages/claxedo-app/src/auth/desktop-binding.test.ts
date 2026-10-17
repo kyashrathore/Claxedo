@@ -28,6 +28,7 @@ function fakeBridge() {
     onState: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
     signIn: answer,
     signOut: answer,
+    cancelSignIn: answer,
     run: async (operation, input) => {
       runs.push({ operation, ...(input ? { input } : {}) })
       if (runFails) throw new Error("Error invoking remote method: HOSTED_HTTP 401 {}")
@@ -100,7 +101,47 @@ test("desktop account: sign-in and sign-out follow main's pushed transitions, an
     await signingIn
     expect(auth.state().kind).toBe("signingIn")
     fake.push({ status: "signed", identity: { userId: "u2", displayName: "Grace" } })
-    expect(seen).toEqual(["signingIn", "signedIn:u1", "signedOut", "signingIn", "signedIn:u2"])
+    expect(seen).toEqual(["signingIn", "signedIn:u1", "signedOut", "awaitingBrowser", "signingIn", "signedIn:u2"])
+    dispose()
+  })
+})
+
+test("desktop account: while the browser sign-in waits the reader stays signed out, never signing in, and Cancel ends it as unfinished", async () => {
+  const fake = fakeBridge()
+  await createRoot(async (dispose) => {
+    const auth = createAuth(desktopAccountBinding(fake.bridge, { signInEnabled: true }))
+    const seen: string[] = []
+    createEffect(() => {
+      const kind = auth.state().kind
+      if (seen.at(-1) !== kind) seen.push(kind)
+    })
+    fake.answers[0]?.resolve({ status: "unsigned" })
+    await settle()
+    const signingIn = auth.signIn()
+    fake.push({ status: "pending" })
+    expect(auth.state()).toEqual({ kind: "awaitingBrowser" })
+    const cancelling = auth.cancelSignIn()
+    fake.answers[2]?.resolve({ status: "unsigned", detail: "sign-in cancelled", signInUnfinished: true })
+    await cancelling
+    fake.answers[1]?.resolve({ status: "unsigned", detail: "sign-in cancelled", signInUnfinished: true })
+    await signingIn
+    expect(auth.state()).toEqual({ kind: "signInUnfinished" })
+    expect(seen).toEqual(["signingIn", "signedOut", "awaitingBrowser", "signInUnfinished"])
+    dispose()
+  })
+})
+
+test("desktop account: a browser sign-in that timed out says it was not finished until the next sign-in starts", async () => {
+  const fake = fakeBridge()
+  await createRoot(async (dispose) => {
+    const auth = createAuth(desktopAccountBinding(fake.bridge, { signInEnabled: true }))
+    fake.answers[0]?.resolve({ status: "pending" })
+    await settle()
+    fake.push({ status: "unsigned", detail: "no callback within 600000ms", signInUnfinished: true })
+    expect(auth.state()).toEqual({ kind: "signInUnfinished" })
+    void auth.signIn()
+    fake.push({ status: "pending" })
+    expect(auth.state()).toEqual({ kind: "awaitingBrowser" })
     dispose()
   })
 })

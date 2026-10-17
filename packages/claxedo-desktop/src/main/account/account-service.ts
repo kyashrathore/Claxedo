@@ -45,7 +45,8 @@ export type AccountIdentity = {
 }
 
 export type AccountState =
-  | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
+  /** `signInUnfinished` marks an unsigned account whose browser sign-in ended without approval: timed out, cancelled or failed. */
+  | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string; signInUnfinished?: true }
   | { status: "pending" }
   | { status: "signed"; identity: AccountIdentity; identityLookup?: "failed" }
   /**
@@ -117,6 +118,7 @@ export function createAccountService(options: AccountServiceOptions) {
   let renewing: Promise<Credential> | undefined
   let renewFailure: { at: number; detail: string } | undefined
   let logoutInFlight: Promise<void> | undefined
+  let signInInFlight: Promise<unknown> | undefined
   let era = 0
   const activeRequests = new Set<AbortController>()
 
@@ -469,6 +471,55 @@ export function createAccountService(options: AccountServiceOptions) {
     throw new Error("session rejected")
   }
 
+  const signInOnce = async () => {
+    await logoutInFlight
+    // A signed account is the goal, not a state to replace: a second flow
+    // would drop the working session into `pending` for an approval nobody
+    // needs.
+    if (state.status === "signed") return { ok: true as const }
+    if (!(await reconcilePendingRevocation())) {
+      return {
+        ok: false as const,
+        reason: "callback-failed" as const,
+        detail: "remote logout is still pending confirmation; sign-in did not replace its retryable intent",
+      }
+    }
+    const startedIn = ++era
+    setState({ status: "pending" })
+    let result: Awaited<ReturnType<DesktopNativeAuth["signIn"]>>
+    try {
+      result = await options.auth.signIn()
+    } catch (error) {
+      const detail = `sign-in could not load the selected deployment: ${String(error)}`
+      setState({ status: "unavailable", reason: "callback-failed", detail })
+      return { ok: false as const, reason: "callback-failed" as const, detail }
+    }
+    if (startedIn !== era)
+      return { ok: false as const, reason: "cancelled" as const, detail: "sign-in was cancelled" }
+    if (!result.ok) {
+      if (result.reason === "no-secure-storage") {
+        setState({ status: "unavailable", reason: "no-secure-storage", detail: result.detail })
+        return result
+      }
+      // Back to unsigned so the rail offers Sign in again and says the
+      // attempt ended. The IPC returns state rather than the OAuth result,
+      // so the non-secret detail stays on the state as the live diagnostic.
+      options.onError?.("sign-in", result.detail)
+      setState({ status: "unsigned", detail: result.detail, signInUnfinished: true })
+      return result
+    }
+    const adopted = adopt(result.credential)
+    if (!adopted.ok) {
+      // `adopt` has already put the service in `unavailable`. Reporting
+      // success here would leave the caller believing in a session that was
+      // never stored, and leave `pending` as the resting state of a sign-in
+      // that is over.
+      return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
+    }
+    publishSigned(result.credential.tokens.accessToken, startedIn)
+    return { ok: true as const }
+  }
+
   return {
     state: () => state,
 
@@ -511,59 +562,19 @@ export function createAccountService(options: AccountServiceOptions) {
     },
 
     async signIn() {
-      await logoutInFlight
-      // A signed account is the goal, not a state to replace: starting a
-      // second flow discarded the working session into `pending`, and the
-      // rail's "Cancel sign in" then logged the user out of it.
-      if (state.status === "signed") return { ok: true as const }
-      if (!(await reconcilePendingRevocation())) {
-        return {
-          ok: false as const,
-          reason: "callback-failed" as const,
-          detail: "remote logout is still pending confirmation; sign-in did not replace its retryable intent",
-        }
-      }
-      const startedIn = ++era
-      setState({ status: "pending" })
-      let result: Awaited<ReturnType<DesktopNativeAuth["signIn"]>>
+      const operation = signInOnce()
+      signInInFlight = operation
       try {
-        result = await options.auth.signIn()
-      } catch (error) {
-        const detail = `sign-in could not load the selected deployment: ${String(error)}`
-        setState({ status: "unavailable", reason: "callback-failed", detail })
-        return { ok: false as const, reason: "callback-failed" as const, detail }
+        return await operation
+      } finally {
+        if (signInInFlight === operation) signInInFlight = undefined
       }
-      if (startedIn !== era)
-        return { ok: false as const, reason: "callback-failed" as const, detail: "sign-in was cancelled" }
-      if (!result.ok) {
-        if (result.reason === "already-running") {
-          // Another attempt owns `pending`; do not clobber it.
-          return result
-        }
-        if (result.reason === "no-secure-storage") {
-          setState({ status: "unavailable", reason: "no-secure-storage", detail: result.detail })
-          return result
-        }
-        // timeout / callback-failed — back to unsigned so the rail can offer
-        // Sign in again instead of resting on a dead `pending`/`unavailable`.
-        // Keep the non-secret failure detail on the authoritative state. The
-        // IPC intentionally returns state rather than the OAuth result, so
-        // dropping it here made a failed token exchange look exactly like a
-        // user who never clicked Sign in and left no live diagnostic.
-        options.onError?.("sign-in", result.detail)
-        setState({ status: "unsigned", detail: result.detail })
-        return result
-      }
-      const adopted = adopt(result.credential)
-      if (!adopted.ok) {
-        // `adopt` has already put the service in `unavailable`. Reporting
-        // success here would leave the caller believing in a session that was
-        // never stored, and leave `pending` as the resting state of a sign-in
-        // that is over.
-        return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
-      }
-      publishSigned(result.credential.tokens.accessToken, startedIn)
-      return { ok: true as const }
+    },
+
+    async cancelSignIn() {
+      if (state.status !== "pending") return
+      options.auth.cancel()
+      await signInInFlight
     },
 
     async signOut() {

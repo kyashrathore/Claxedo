@@ -4,8 +4,8 @@
  * `pkce.ts` holds the cryptographic decisions and `secure-storage.ts` decides
  * whether this machine may hold a credential at all. This file is the order of
  * operations, which is where the remaining mistakes live — a listener that
- * outlives a failed attempt, an exchange that runs on an unverified callback,
- * a second browser window opened because the first attempt never settled.
+ * outlives a failed or replaced attempt, an exchange that runs on an
+ * unverified callback.
  *
  * Every effect is injected. The result is that the whole flow, including its
  * failure paths, is testable without Electron, a browser, or a network — and
@@ -23,7 +23,7 @@ export type OAuthConfig = {
   clientId: string
   scope: string
   resource?: string
-  /** How long to wait for the user to finish in the browser. */
+  /** How long the authorization server keeps this request valid, which is how long the browser is waited for. */
   timeoutMs: number
 }
 
@@ -63,28 +63,26 @@ export type OAuthSeams = {
 
 export type SignInResult =
   | { ok: true; tokens: TokenSet }
-  | { ok: false; reason: "no-secure-storage" | "callback-failed" | "timeout" | "already-running"; detail: string }
+  | { ok: false; reason: "no-secure-storage" | "callback-failed" | "timeout" | "cancelled"; detail: string }
 
 /**
- * One sign-in attempt at a time.
+ * One sign-in attempt at a time, and the newest one wins.
  *
- * Not a nicety. Two attempts mean two loopback listeners on different ports and
- * two `state` values, and the browser will return to exactly one of them — so
- * the other leaks a listening socket for its whole timeout. Refusing the second
- * attempt is also what the user means: clicking "Sign in" twice is impatience,
- * not a request for two sessions.
+ * Two live attempts mean two loopback listeners and two `state` values, and the
+ * browser returns to exactly one of them, so the other would hold a socket that
+ * accepts authorization codes for its whole lifetime. Clicking "Sign in" again
+ * means the person lost or closed the first browser tab: the older attempt is
+ * cancelled and its listener closed, and only the newer one can complete.
  */
-export function createOAuthFlow(config: OAuthConfig, seams: OAuthSeams) {
-  let running = false
+export function createOAuthFlow(seams: OAuthSeams) {
   let active: AbortController | undefined
 
   return {
-    isRunning: () => running,
     cancel() {
       active?.abort(new Error("sign-in cancelled"))
     },
-    async signIn(): Promise<SignInResult> {
-      if (running) return { ok: false, reason: "already-running", detail: "a sign-in attempt is already open" }
+    async signIn(config: OAuthConfig): Promise<SignInResult> {
+      active?.abort(new Error("sign-in replaced by a newer attempt"))
 
       // Checked BEFORE opening a browser. Discovering there is nowhere to put
       // the credential after the user has typed a password is both a worse
@@ -92,14 +90,12 @@ export function createOAuthFlow(config: OAuthConfig, seams: OAuthSeams) {
       const storage = secureStorageVerdict(seams.safeStorage())
       if (!storage.usable) return { ok: false, reason: "no-secure-storage", detail: storage.detail }
 
-      running = true
       const controller = new AbortController()
       active = controller
       try {
         return await attempt(config, seams, controller.signal)
       } finally {
         if (active === controller) active = undefined
-        running = false
       }
     },
   }
@@ -113,12 +109,12 @@ async function attempt(config: OAuthConfig, seams: OAuthSeams, signal: AbortSign
   // produces a CODE, and whether that becomes a signed-in account is decided
   // afterwards by the exchange. Collapsing the two would mean inventing a token
   // set here to represent "the callback arrived".
-  type Arrival = { ok: true; code: string } | { ok: false; reason: "callback-failed" | "timeout"; detail: string }
+  type Arrival = { ok: true; code: string } | { ok: false; reason: "callback-failed" | "timeout" | "cancelled"; detail: string }
   let settle: (arrival: Arrival) => void = () => {}
   const arrived = new Promise<Arrival>((resolve) => {
     settle = resolve
   })
-  const cancel = () => settle({ ok: false, reason: "callback-failed", detail: "sign-in cancelled" })
+  const cancel = () => settle({ ok: false, reason: "cancelled", detail: String(signal.reason) })
   signal.addEventListener("abort", cancel, { once: true })
 
   const server = await seams.listen((url) => {

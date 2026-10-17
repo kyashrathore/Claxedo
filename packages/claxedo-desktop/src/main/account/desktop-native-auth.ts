@@ -23,7 +23,7 @@ export type DesktopNativeAuth = {
     | { ok: true; credential: BoundDesktopCredential }
     | {
         ok: false
-        reason: "no-secure-storage" | "callback-failed" | "timeout" | "already-running"
+        reason: "no-secure-storage" | "callback-failed" | "timeout" | "cancelled"
         detail: string
       }
   >
@@ -40,6 +40,14 @@ type SelectedDesktopAdapter = {
 const DESCRIPTOR_PATH = "/api/claxedo/auth/descriptor"
 const DESCRIPTOR_MEMO_MS = 5 * 60_000
 const NETWORK_TIMEOUT_MS = 30_000
+/**
+ * Better Auth's `codeExpiresIn` default, which signs the consent page's `exp`
+ * at 600 s after the authorize request. The descriptor does not publish it, so
+ * the browser is waited for exactly as long as that request can still be
+ * approved: a shorter wait closes the loopback while the consent page still
+ * accepts, and the approval lands on a closed port.
+ */
+const AUTHORIZATION_REQUEST_LIFETIME_MS = 600_000
 
 /**
  * Whether a failed revocation response says the token itself is not valid.
@@ -115,7 +123,7 @@ export function createDesktopNativeAuth(input: {
   const fetchImpl = input.fetch ?? fetch
   const now = input.now ?? Date.now
   const timeoutMs = input.timeoutMs ?? NETWORK_TIMEOUT_MS
-  let activeFlow: ReturnType<typeof createOAuthFlow> | undefined
+  const flow = createOAuthFlow(input.seams)
 
   const request = () => fetchImpl(`${input.coreOrigin}${DESCRIPTOR_PATH}`, {
     method: "GET",
@@ -182,7 +190,7 @@ export function createDesktopNativeAuth(input: {
         clientId: descriptor.binding.id,
         scope: descriptor.binding.scopes.join(" "),
         resource: descriptor.binding.resource,
-        timeoutMs,
+        timeoutMs: AUTHORIZATION_REQUEST_LIFETIME_MS,
       },
       refresh: (refreshToken) =>
         input.refresh({
@@ -243,34 +251,27 @@ export function createDesktopNativeAuth(input: {
 
   return {
     cancel() {
-      activeFlow?.cancel()
+      flow.cancel()
     },
     discover,
     validate,
     async signIn() {
       const descriptor = await discover()
-      const adapter = select(descriptor)
-      const flow = createOAuthFlow(adapter.oauth, input.seams)
-      activeFlow = flow
-      try {
-        const result = await flow.signIn()
-        if (!result.ok) return result
-        if (!result.tokens.refreshToken) {
-          return {
-            ok: false,
-            reason: "callback-failed",
-            detail: "Authorization server returned no refresh token for the native session",
-          }
-        }
+      const result = await flow.signIn(select(descriptor).oauth)
+      if (!result.ok) return result
+      if (!result.tokens.refreshToken) {
         return {
-          ok: true,
-          credential: {
-            binding: descriptor.binding,
-            tokens: { ...result.tokens, refreshToken: result.tokens.refreshToken },
-          },
+          ok: false,
+          reason: "callback-failed",
+          detail: "Authorization server returned no refresh token for the native session",
         }
-      } finally {
-        if (activeFlow === flow) activeFlow = undefined
+      }
+      return {
+        ok: true,
+        credential: {
+          binding: descriptor.binding,
+          tokens: { ...result.tokens, refreshToken: result.tokens.refreshToken },
+        },
       }
     },
     async refresh(credential) {

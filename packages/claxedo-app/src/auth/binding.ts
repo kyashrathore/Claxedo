@@ -8,6 +8,13 @@ export type ControlPlaneAccess =
   | { readonly kind: "cookie" }
   | { readonly kind: "port"; readonly run: RunHostedOperation; readonly events: AccountEvents }
 
+export type BrowserSignIn = "idle" | "waiting" | "unfinished"
+
+export type BrowserSignInPort = {
+  readonly state: Accessor<BrowserSignIn>
+  readonly cancel: () => Promise<void>
+}
+
 export type AccountSession = {
   readonly methods: Accessor<readonly BrowserAuthMethod[]>
   readonly user: Accessor<AuthUser | null>
@@ -20,6 +27,7 @@ export type AccountSession = {
   readonly signOut: () => Promise<void>
   readonly refresh: () => Promise<void>
   readonly controlPlane: ControlPlaneAccess
+  readonly browserSignIn?: BrowserSignInPort
 }
 
 export type AccountBinding = {

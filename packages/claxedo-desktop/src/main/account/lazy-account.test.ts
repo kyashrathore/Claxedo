@@ -5,6 +5,7 @@ import { join } from "node:path"
 
 import type { AccountState } from "./account-service"
 import {
+  ACCOUNT_CANCEL_SIGN_IN_CHANNEL,
   ACCOUNT_SIGN_IN_CHANNEL,
   ACCOUNT_STATE_CHANNEL,
   ACCOUNT_STREAM_OPEN_CHANNEL,
@@ -35,6 +36,7 @@ function fixture(
     state: () => state,
     signIn: async () => { state = { status: "pending" } },
     signOut: async () => { state = { status: "unsigned" } },
+    cancelSignIn: async () => { state = { status: "unsigned", signInUnfinished: true } },
     run: async () => ({ ok: true }),
     openStream,
   }
@@ -99,6 +101,29 @@ describe("setupLazyAccount", () => {
       expect(await target.handlers.get(ACCOUNT_SIGN_IN_CHANNEL)?.({})).toEqual({ status: "pending" })
       expect(await target.handlers.get(ACCOUNT_SIGN_IN_CHANNEL)?.({})).toEqual({ status: "pending" })
       expect(loads).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("cancelling before any sign-in loads nothing, and after one reaches the loaded account", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "claxedo-lazy-account-"))
+    try {
+      const target = ipc()
+      let loads = 0
+      setupLazyAccount({
+        ipcMain: target.target,
+        userDataDir: dir,
+        load: async () => {
+          loads++
+          return { createAccountAssembly: () => fixture() }
+        },
+      })
+
+      expect(await target.handlers.get(ACCOUNT_CANCEL_SIGN_IN_CHANNEL)?.({})).toEqual({ status: "unsigned" })
+      expect(loads).toBe(0)
+      await target.handlers.get(ACCOUNT_SIGN_IN_CHANNEL)?.({})
+      expect(await target.handlers.get(ACCOUNT_CANCEL_SIGN_IN_CHANNEL)?.({})).toEqual({ status: "unsigned", signInUnfinished: true })
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

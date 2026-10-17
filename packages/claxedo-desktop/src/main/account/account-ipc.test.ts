@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { EventEmitter } from "node:events"
 import {
+  ACCOUNT_CANCEL_SIGN_IN_CHANNEL,
   ACCOUNT_SIGN_IN_CHANNEL,
   ACCOUNT_SIGN_OUT_CHANNEL,
   ACCOUNT_STATE_CHANNEL,
@@ -29,6 +30,7 @@ function harness(overrides: Partial<AccountIpcService> = {}) {
     state: () => ({ status: "signed", identity: { userId: "user_1" } }),
     signIn: async () => ({ ok: true, tokens: { accessToken: "at_1", expiresAt: 1 } }),
     signOut: async () => {},
+    cancelSignIn: async () => {},
     run: async (name, input) => {
       calls.push({ name, input })
       return { ran: name }
@@ -113,6 +115,7 @@ describe("registered channels", () => {
       ACCOUNT_STATE_CHANNEL,
       ACCOUNT_SIGN_IN_CHANNEL,
       ACCOUNT_SIGN_OUT_CHANNEL,
+      ACCOUNT_CANCEL_SIGN_IN_CHANNEL,
       ACCOUNT_STREAM_OPEN_CHANNEL,
       ACCOUNT_STREAM_START_CHANNEL,
       ACCOUNT_STREAM_CLOSE_CHANNEL,
@@ -519,6 +522,18 @@ describe("account channels", () => {
     })
 
     expect(await h.invoke(ACCOUNT_SIGN_OUT_CHANNEL)).toEqual({ status: "unsigned" })
+  })
+
+  test("cancelSignIn returns the state once the waiting sign-in has ended", async () => {
+    let cancelled = false
+    const h = harness({
+      cancelSignIn: async () => {
+        cancelled = true
+      },
+      state: () => (cancelled ? { status: "unsigned", signInUnfinished: true } : { status: "pending" }),
+    })
+
+    expect(await h.invoke(ACCOUNT_CANCEL_SIGN_IN_CHANNEL)).toEqual({ status: "unsigned", signInUnfinished: true })
   })
 
   test("state carries no credential", () => {

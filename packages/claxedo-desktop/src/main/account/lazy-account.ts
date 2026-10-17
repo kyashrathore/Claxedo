@@ -65,6 +65,7 @@ export function setupLazyAccount(input: {
       if (!assembly && !hasAccountCredentialRecord(input.userDataDir)) return
       await (await ensureLoaded()).service.signOut()
     },
+    cancelSignIn: async () => await assembly?.service.cancelSignIn(),
     run: async (name, params) => {
       const result = await (await ensureLoaded()).service.run(name, params)
       input.onOperation?.(name)

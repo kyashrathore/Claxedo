@@ -24,9 +24,6 @@ import type { OAuthSeams } from "./oauth-flow"
 import { createCliCredentialFile, type CliSignInMode } from "./cli-credential-file"
 import { clearClaxedoCredentials, loadClaxedoCredentials, storeClaxedoCredentials } from "@claxedo/helpers/claxedo-credentials"
 
-/** How long to wait for the browser callback before failing the attempt. */
-const SIGN_IN_TIMEOUT_MS = 90_000
-
 /**
  * Build the account service and register its IPC.
  *
@@ -75,6 +72,7 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
         state: () => unavailable,
         signIn: async () => unavailable,
         signOut: async () => {},
+        cancelSignIn: async () => {},
         run: async () => {
           throw new Error(unavailable.detail)
         },
@@ -146,7 +144,6 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     seams,
     refresh: refreshExchange(controlPlaneFetch),
     fetch: controlPlaneFetch,
-    timeoutMs: SIGN_IN_TIMEOUT_MS,
   })
 
   const service = createAccountService({

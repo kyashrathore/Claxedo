@@ -1,12 +1,12 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js"
 import { accountEvents } from "@/server"
-import type { AccountBinding, ControlPlaneAccess, AccountSession } from "./binding"
+import type { AccountBinding, AccountSession, BrowserSignIn, ControlPlaneAccess } from "./binding"
 import { desktopAccountState, type DesktopAccountBridge, type DesktopAccountState } from "./desktop-bridge"
 
 type Adopt = (answer: () => Promise<unknown>) => Promise<void>
 
 function followBridge(bridge: DesktopAccountBridge) {
-  const [state, setState] = createSignal<DesktopAccountState>({ kind: "pending" })
+  const [state, setState] = createSignal<DesktopAccountState>({ kind: "loading" })
   let revision = 0
   onCleanup(
     bridge.onState((next) => {
@@ -48,7 +48,7 @@ function readers(state: Accessor<DesktopAccountState>) {
       const now = state()
       return now.kind === "signed" ? now.user : null
     },
-    loading: () => state().kind === "pending",
+    loading: () => state().kind === "loading",
     unavailable: () => {
       const now = state()
       return now.kind === "unavailable" ? now.reason : null
@@ -58,6 +58,12 @@ function readers(state: Accessor<DesktopAccountState>) {
       return now.kind === "signed" && now.identity === "resolving"
     },
   }
+}
+
+function browserSignIn(state: Accessor<DesktopAccountState>): BrowserSignIn {
+  const kind = state().kind
+  if (kind === "awaitingBrowser") return "waiting"
+  return kind === "signInUnfinished" ? "unfinished" : "idle"
 }
 
 export function desktopAccountBinding(bridge: DesktopAccountBridge, options: { readonly signInEnabled: boolean }): AccountBinding {
@@ -75,6 +81,7 @@ export function desktopAccountBinding(bridge: DesktopAccountBridge, options: { r
         signOut: () => adopt(bridge.signOut),
         refresh,
         controlPlane: portAccess(bridge, refresh),
+        browserSignIn: { state: () => browserSignIn(state), cancel: () => adopt(bridge.cancelSignIn) },
       }
     },
   }

@@ -50,12 +50,15 @@ function harness() {
   const requests: Array<{ url: string; init?: RequestInit }> = []
   const exchanges: Parameters<OAuthSeams["exchange"]>[0][] = []
   const refreshes: Parameters<RefreshExchange>[0][] = []
+  const waits: number[] = []
   let callback: ((url: string) => unknown) | undefined
   let opened = ""
+  let browserApproves = true
   let clock = NOW
   const seams: OAuthSeams = {
     openExternal: async (url) => {
       opened = url
+      if (!browserApproves) return
       queueMicrotask(() => {
         const state = new URL(url).searchParams.get("state")
         callback?.(`${REDIRECT_PATH}?code=code-1&state=${state}`)
@@ -70,7 +73,10 @@ function harness() {
       return { accessToken: "access-1", refreshToken: "refresh-1", expiresAt: 2_000_000_000 }
     },
     safeStorage: () => ({ available: true, platform: "darwin" }),
-    setTimeout: () => ({ cancel: () => {} }),
+    setTimeout: (_fn, ms) => {
+      waits.push(ms)
+      return { cancel: () => {} }
+    },
   }
   const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
     requests.push({ url: requestUrl(url), init })
@@ -91,6 +97,10 @@ function harness() {
     exchanges,
     refreshes,
     opened: () => opened,
+    waits,
+    browserApproves: (next: boolean) => {
+      browserApproves = next
+    },
     expireDescriptor: () => {
       clock = NOW + 60_001
     },
@@ -116,6 +126,28 @@ describe("descriptor-selected desktop native auth", () => {
         redirectUri: `http://127.0.0.1:51337${REDIRECT_PATH}`,
       }),
     ])
+  })
+
+  test("waits for the browser as long as Better Auth keeps the authorization request valid, not the network timeout", async () => {
+    const h = harness()
+    await h.auth.signIn()
+
+    expect(h.waits).toEqual([600_000])
+  })
+
+  test("a newer sign-in replaces a wait the browser never finished", async () => {
+    const h = harness()
+    h.browserApproves(false)
+    const older = h.auth.signIn()
+    while (!h.opened()) await new Promise((resolve) => setTimeout(resolve, 0))
+    const olderUrl = h.opened()
+
+    h.browserApproves(true)
+    const newer = await h.auth.signIn()
+
+    expect(newer).toMatchObject({ ok: true })
+    expect(h.opened()).not.toBe(olderUrl)
+    await expect(older).resolves.toMatchObject({ ok: false, reason: "cancelled" })
   })
 
   test("revalidates descriptor expiry and immutable config before refresh and API use", async () => {

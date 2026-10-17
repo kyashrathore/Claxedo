@@ -1,28 +1,40 @@
 import { batch, createEffect, createSignal, type Accessor } from "solid-js"
 import type { AccountBinding, AccountSession } from "./binding"
-import { authMachine, type AuthState } from "./model"
+import { authMachine, type AuthEvent, type AuthState } from "./model"
 import { lastAuthIdentity } from "./persistence"
 
-export type Auth = Omit<AccountSession, "loading"> & {
+export type Auth = Omit<AccountSession, "loading" | "browserSignIn"> & {
   readonly state: Accessor<AuthState>
   readonly restoringUserId: Accessor<string | undefined>
+  readonly cancelSignIn: () => Promise<void>
 }
 
 type AuthMachine = ReturnType<typeof authMachine>
 
+function sessionEvent(session: AccountSession, confirming: boolean): AuthEvent {
+  if (session.loading()) return { type: "started" }
+  const browser = session.browserSignIn?.state()
+  if (browser === "waiting") return { type: "browserSignInStarted" }
+  const user = session.user()
+  if (confirming && !user) return { type: "expired" }
+  if (browser === "unfinished") return { type: "browserSignInUnfinished" }
+  const reason = session.unavailable()
+  return { type: "settled", user, ...(reason ? { reason } : {}) }
+}
+
 function followSession(session: AccountSession, auth: AuthMachine, restored: () => void) {
   let confirming: Promise<void> | undefined
   const settle = () => {
-    if (session.loading()) return auth.send({ type: "started" })
-    const reason = session.unavailable()
-    const user = session.user()
+    const event = sessionEvent(session, confirming !== undefined)
+    if (event.type === "started") return auth.send(event)
     batch(() => {
-      auth.send(confirming && !user ? { type: "expired" } : { type: "settled", user, ...(reason ? { reason } : {}) })
+      auth.send(event)
       restored()
     })
   }
   createEffect(settle)
   const run = async (task: () => Promise<void>) => {
+    if (session.browserSignIn) return task()
     auth.send({ type: "started" })
     try {
       await task()
@@ -68,6 +80,7 @@ export function createAuth(binding: AccountBinding): Auth {
       auth.send({ type: "signedOut" })
     },
     refresh,
+    cancelSignIn: () => session.browserSignIn?.cancel() ?? Promise.resolve(),
     controlPlane: session.controlPlane,
   }
 }

@@ -46,7 +46,7 @@ function harness(overrides: {
           port: PORT,
           close: async () => {
             state.closes++
-            handler = undefined
+            if (handler === incoming) handler = undefined
           },
         }
       },
@@ -84,9 +84,9 @@ function issuedState(opened: string[]) {
 describe("signIn", () => {
   test("opens the system browser and exchanges a verified code", async () => {
     const h = harness()
-    const flow = createOAuthFlow(CONFIG, h.seams)
+    const flow = createOAuthFlow(h.seams)
 
-    const pending = flow.signIn()
+    const pending = flow.signIn(CONFIG)
     // Wait for the listener and browser open to have happened.
     await Promise.resolve()
     await Promise.resolve()
@@ -105,8 +105,8 @@ describe("signIn", () => {
     // The verifier appearing there would defeat PKCE; it belongs in the
     // server-to-server exchange and nowhere else.
     const h = harness()
-    const flow = createOAuthFlow(CONFIG, h.seams)
-    const pending = flow.signIn()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
     h.callback(`${REDIRECT_PATH}?code=the-code&state=${issuedState(h.opened)}`)
@@ -122,8 +122,8 @@ describe("signIn", () => {
     // The authorization server compares them. A mismatch is a rejected exchange
     // after the user has already signed in, which reads as a random failure.
     const h = harness()
-    const flow = createOAuthFlow(CONFIG, h.seams)
-    const pending = flow.signIn()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
     h.callback(`${REDIRECT_PATH}?code=the-code&state=${issuedState(h.opened)}`)
@@ -137,8 +137,8 @@ describe("signIn", () => {
     // The attack this defends: a local process hands the listener a code of its
     // own and the user ends up signed into someone else's account.
     const h = harness()
-    const flow = createOAuthFlow(CONFIG, h.seams)
-    const pending = flow.signIn()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
     h.callback(`${REDIRECT_PATH}?code=attacker-code&state=wrong`)
@@ -153,8 +153,8 @@ describe("signIn", () => {
     // A favicon request or a port scan must not cancel a sign-in the user is
     // still completing.
     const h = harness()
-    const flow = createOAuthFlow(CONFIG, h.seams)
-    const pending = flow.signIn()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
 
@@ -173,7 +173,7 @@ describe("signIn", () => {
       (h: Harness) => h.fireTimeout(),
     ]) {
       const h = harness()
-      const pending = createOAuthFlow(CONFIG, h.seams).signIn()
+      const pending = createOAuthFlow(h.seams).signIn(CONFIG)
       await Promise.resolve()
       await Promise.resolve()
       finish(h)
@@ -190,8 +190,8 @@ describe("signIn", () => {
         throw new Error("token endpoint said no")
       },
     })
-    const flow = createOAuthFlow(CONFIG, h.seams)
-    const pending = flow.signIn()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
     h.callback(`${REDIRECT_PATH}?code=c&state=${issuedState(h.opened)}`)
@@ -204,7 +204,7 @@ describe("signIn", () => {
 
   test("times out instead of waiting forever", async () => {
     const h = harness()
-    const pending = createOAuthFlow(CONFIG, h.seams).signIn()
+    const pending = createOAuthFlow(h.seams).signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
     h.fireTimeout()
@@ -220,43 +220,60 @@ describe("signIn", () => {
     // starts to look reasonable.
     const h = harness({ safeStorage: { available: true, platform: "linux", backend: "basic_text" } })
 
-    const result = await createOAuthFlow(CONFIG, h.seams).signIn()
+    const result = await createOAuthFlow(h.seams).signIn(CONFIG)
 
     expect(!result.ok && result.reason).toBe("no-secure-storage")
     expect(h.opened).toEqual([])
     expect(h.closes).toBe(0)
   })
 
-  test("refuses a second concurrent attempt", async () => {
-    // Two attempts mean two listeners and two states; the browser returns to
-    // one, and the other holds a socket open for its whole timeout.
+  test("a newer attempt replaces a waiting one: the older ends cancelled with its listener closed", async () => {
     const h = harness()
-    const flow = createOAuthFlow(CONFIG, h.seams)
-    const first = flow.signIn()
+    const flow = createOAuthFlow(h.seams)
+    const first = flow.signIn(CONFIG)
+    await Promise.resolve()
+    await Promise.resolve()
+    const firstState = issuedState(h.opened)
+
+    const second = flow.signIn(CONFIG)
+    await expect(first).resolves.toMatchObject({ ok: false, reason: "cancelled" })
+    expect(h.closes).toBe(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(h.opened).toHaveLength(2)
+
+    expect(h.callback(`${REDIRECT_PATH}?code=c&state=${firstState}`).status).toBe(400)
+    await expect(second).resolves.toMatchObject({ ok: false, reason: "callback-failed" })
+    expect(h.exchanges).toEqual([])
+  })
+
+  test("cancel ends a waiting attempt as cancelled and closes its listener", async () => {
+    const h = harness()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
 
-    const second = await flow.signIn()
-    expect(!second.ok && second.reason).toBe("already-running")
-    expect(h.opened).toHaveLength(1)
+    flow.cancel()
 
-    h.callback(`${REDIRECT_PATH}?code=c&state=${issuedState(h.opened)}`)
-    await first
-    expect(flow.isRunning()).toBe(false)
+    await expect(pending).resolves.toMatchObject({ ok: false, reason: "cancelled" })
+    expect(h.closes).toBe(1)
+    expect(h.timerCancels).toBe(1)
+    expect(h.exchanges).toEqual([])
   })
 
   test("allows a new attempt after one fails", async () => {
     // The single-flight latch must clear on the failure path too, or one
     // timeout permanently disables sign-in until the app restarts.
     const h = harness()
-    const flow = createOAuthFlow(CONFIG, h.seams)
-    const first = flow.signIn()
+    const flow = createOAuthFlow(h.seams)
+    const first = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
     h.fireTimeout()
     await first
 
-    const second = flow.signIn()
+    const second = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
     h.callback(`${REDIRECT_PATH}?code=c&state=${issuedState(h.opened)}`)

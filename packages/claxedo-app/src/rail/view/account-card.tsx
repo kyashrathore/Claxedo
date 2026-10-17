@@ -14,10 +14,11 @@ const HELP_URL = "https://github.com/kyashrathore/Claxedo"
 
 type AccountView = {
   readonly signed: boolean
-  readonly pending: boolean
+  readonly waiting: boolean
   readonly resolving: boolean
   readonly local: boolean
   readonly label: string
+  readonly notice: string | undefined
   readonly image: string | undefined
   readonly action: "signin" | "logout" | undefined
 }
@@ -29,13 +30,16 @@ function useAccountView() {
   return createMemo((): AccountView => {
     const state = auth.state()
     const offered = auth.offered(server.capabilities()?.signedIn === true)
-    const pending = state.kind === "signingIn"
-    const base = { pending, resolving: pending || (state.kind === "signedIn" && auth.identityResolving()), local: !pending && state.kind !== "signedIn" && !offered }
+    const waiting = state.kind === "awaitingBrowser"
+    const busy = waiting || state.kind === "signingIn"
+    const notice = state.kind === "signInUnfinished" ? t("rail.account.signInUnfinished") : undefined
+    const base = { waiting, notice, resolving: busy || (state.kind === "signedIn" && auth.identityResolving()), local: !busy && state.kind !== "signedIn" && !offered }
     if (state.kind === "signedIn") {
       const label = state.user.fullName ?? state.user.email ?? t("rail.account.signedIn")
       return { ...base, signed: true, label, image: state.user.imageUrl, action: "logout" }
     }
-    if (pending) return { ...base, signed: false, label: t("rail.account.signingIn"), image: undefined, action: undefined }
+    if (waiting) return { ...base, signed: false, label: t("rail.account.waitingForBrowser"), image: undefined, action: "signin" }
+    if (busy) return { ...base, signed: false, label: t("rail.account.signingIn"), image: undefined, action: undefined }
     const label = offered ? t("rail.account.signIn") : t("rail.account.notSignedIn")
     return { ...base, signed: false, label, image: undefined, action: offered ? "signin" : undefined }
   })
@@ -68,9 +72,37 @@ function IdentityMark(props: { readonly view: AccountView }): JSX.Element {
 export function AccountCard(props: { readonly anchor: () => HTMLElement | undefined }): JSX.Element {
   const t = useTranslator(railDictionary)
   const auth = useAuth()
+  const view = useAccountView()
+  return (
+    <>
+      <Show when={view().notice}>
+        {(notice) => <p role="status" data-testid="rail-account-notice" class="px-2 pb-1 text-xs text-text-weak">{notice()}</p>}
+      </Show>
+      <div class="flex items-center gap-1">
+        <div class="min-w-0 flex-1">
+          <AccountMenu anchor={props.anchor} view={view} />
+        </div>
+        <Show when={view().waiting}>
+          <button
+            type="button"
+            data-testid="rail-account-cancel-sign-in"
+            class="shrink-0 rounded px-1.5 py-0.5 text-xs text-text-weak transition-colors duration-100 hover:text-text-base focus-visible:ring-2 focus-visible:ring-border-interactive-base outline-none"
+            onClick={() => void auth.cancelSignIn()}
+          >
+            {t("rail.cancel")}
+          </button>
+        </Show>
+      </div>
+    </>
+  )
+}
+
+function AccountMenu(props: { readonly anchor: () => HTMLElement | undefined; readonly view: () => AccountView }): JSX.Element {
+  const t = useTranslator(railDictionary)
+  const auth = useAuth()
   const routing = useShellRoute()
   const location = useLocation()
-  const view = useAccountView()
+  const view = props.view
   let trigger: HTMLButtonElement | undefined
   const [open, setOpen] = createSignal(false)
   const [signingOut, setSigningOut] = createSignal(false)
@@ -125,12 +157,6 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
               {t("rail.account.help")}
             </DropdownMenu.Item>
           </DropdownMenu.Group>
-          <Show when={view().pending}>
-            <DropdownMenu.Item onSelect={() => void settle(auth.signOut(), t("rail.account.signOutFailed"))}>
-              <Icon name="circle-ban-sign" size="small" />
-              {t("rail.account.cancelSignIn")}
-            </DropdownMenu.Item>
-          </Show>
           <Show when={view().action === "signin"}>
             <DropdownMenu.Item onSelect={signIn}>
               <Icon name="arrow-right" size="small" />

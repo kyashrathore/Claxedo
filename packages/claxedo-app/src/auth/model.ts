@@ -5,11 +5,15 @@ import type { AuthUser } from "./display-user"
 export type AuthState =
   | { readonly kind: "signedOut"; readonly reason?: string }
   | { readonly kind: "signingIn" }
+  | { readonly kind: "awaitingBrowser" }
+  | { readonly kind: "signInUnfinished" }
   | { readonly kind: "signedIn"; readonly user: AuthUser }
   | { readonly kind: "expired" }
 
 export type AuthEvent =
   | { readonly type: "started" }
+  | { readonly type: "browserSignInStarted" }
+  | { readonly type: "browserSignInUnfinished" }
   | { readonly type: "settled"; readonly user: AuthUser | null; readonly reason?: string }
   | { readonly type: "signedOut" }
   | { readonly type: "expired" }
@@ -18,6 +22,10 @@ export const authTransition: Transition<AuthState, AuthEvent> = (state, event) =
   switch (event.type) {
     case "started":
       return { kind: "signingIn" }
+    case "browserSignInStarted":
+      return { kind: "awaitingBrowser" }
+    case "browserSignInUnfinished":
+      return { kind: "signInUnfinished" }
     case "settled":
       return event.user ? { kind: "signedIn", user: event.user } : { kind: "signedOut", ...(event.reason ? { reason: event.reason } : {}) }
     case "signedOut":

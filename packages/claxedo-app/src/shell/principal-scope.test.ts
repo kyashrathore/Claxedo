@@ -19,5 +19,7 @@ test("only a signed-out reader of a local server that issues no sign-in is scope
   expect(principalScope({ kind: "signedOut" }, { signedIn: false, principal: { kind: "machine" } })).toBe("machine")
   expect(principalScope({ kind: "signedOut" }, hosted)).toBeUndefined()
   expect(principalScope({ kind: "signingIn" }, desktop)).toBeUndefined()
+  expect(principalScope({ kind: "awaitingBrowser" }, desktop)).toBe("machine:enr_1")
+  expect(principalScope({ kind: "signInUnfinished" }, desktop)).toBe("machine:enr_1")
   expect(principalScope({ kind: "signedIn", user: { id: "ada" } }, undefined)).toBeUndefined()
 })

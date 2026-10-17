@@ -29,6 +29,7 @@ export const ACCOUNT_STATE_CHANNEL = "claxedo.account.state"
 export const ACCOUNT_STATE_CHANGED_CHANNEL = "claxedo.account.stateChanged"
 export const ACCOUNT_SIGN_IN_CHANNEL = "claxedo.account.signIn"
 export const ACCOUNT_SIGN_OUT_CHANNEL = "claxedo.account.signOut"
+export const ACCOUNT_CANCEL_SIGN_IN_CHANNEL = "claxedo.account.cancelSignIn"
 export const ACCOUNT_STREAM_OPEN_CHANNEL = "claxedo.account.stream.open"
 export const ACCOUNT_STREAM_START_CHANNEL = "claxedo.account.stream.start"
 export const ACCOUNT_STREAM_CLOSE_CHANNEL = "claxedo.account.stream.close"
@@ -70,6 +71,7 @@ export type AccountIpcService = {
   state: () => AccountState
   signIn: () => Promise<unknown>
   signOut: () => Promise<void>
+  cancelSignIn: () => Promise<void>
   run: (name: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
   openStream: (input: {
     name: HostedOperationName
@@ -102,6 +104,10 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
   })
   handle(ACCOUNT_SIGN_OUT_CHANNEL, async () => {
     await service.signOut()
+    return service.state()
+  })
+  handle(ACCOUNT_CANCEL_SIGN_IN_CHANNEL, async () => {
+    await service.cancelSignIn()
     return service.state()
   })
 

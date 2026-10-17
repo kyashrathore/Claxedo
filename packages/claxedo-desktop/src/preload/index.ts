@@ -202,6 +202,7 @@ const api: ElectronAPI = {
     },
     signIn: () => invoke("claxedo.account.signIn"),
     signOut: () => invoke("claxedo.account.signOut"),
+    cancelSignIn: () => invoke("claxedo.account.cancelSignIn"),
     run: (operation: string, input?: Record<string, unknown>) =>
       invoke(`claxedo.account.operation:${operation}`, input),
     streamOpen: (operation: string, input?: Record<string, unknown>) =>

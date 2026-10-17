@@ -7,18 +7,20 @@ const member = () => Promise.resolve(undefined)
 test("desktop bridge: only a preload exposing every account member, its event stream's included, is a bridge", () => {
   const unsubscribe = () => () => undefined
   const account = {
-    state: member, onState: unsubscribe, signIn: member, signOut: member, run: member,
+    state: member, onState: unsubscribe, signIn: member, signOut: member, cancelSignIn: member, run: member,
     streamOpen: member, streamStart: member, streamClose: member, onStreamChunk: unsubscribe, onStreamEnd: unsubscribe, onStreamError: unsubscribe,
   }
   expect(desktopAccountBridge({ api: { account } })).toBe(account)
   expect(desktopAccountBridge({ api: { account: { ...account, run: undefined } } })).toBeUndefined()
   expect(desktopAccountBridge({ api: { account: { ...account, onStreamChunk: undefined } } })).toBeUndefined()
+  expect(desktopAccountBridge({ api: { account: { ...account, cancelSignIn: undefined } } })).toBeUndefined()
   expect(desktopAccountBridge({})).toBeUndefined()
 })
 
 test("desktop bridge: main's states decode into the account's states", () => {
   expect(desktopAccountState({ status: "unsigned", detail: "remote revoked" })).toEqual({ kind: "unsigned" })
-  expect(desktopAccountState({ status: "pending" })).toEqual({ kind: "pending" })
+  expect(desktopAccountState({ status: "pending" })).toEqual({ kind: "awaitingBrowser" })
+  expect(desktopAccountState({ status: "unsigned", detail: "no callback within 600000ms", signInUnfinished: true })).toEqual({ kind: "signInUnfinished" })
   expect(desktopAccountState({ status: "signed", identity: { userId: "u1", displayName: "Ada", email: "ada@claxedo.test", orgId: "org" } })).toEqual({
     kind: "signed",
     user: { id: "u1", fullName: "Ada", email: "ada@claxedo.test", orgId: "org" },
@@ -33,7 +35,7 @@ test("desktop bridge: a signed account with no name is resolving until the looku
 })
 
 test("desktop bridge: a signed account main has not named yet is still signing in, and one main could not name is unavailable", () => {
-  expect(desktopAccountState({ status: "signed", identity: { userId: "" } })).toEqual({ kind: "pending" })
+  expect(desktopAccountState({ status: "signed", identity: { userId: "" } })).toEqual({ kind: "loading" })
   expect(desktopAccountState({ status: "signed", identity: { userId: "" }, identityLookup: "failed" })).toMatchObject({ kind: "unavailable" })
 })
 
