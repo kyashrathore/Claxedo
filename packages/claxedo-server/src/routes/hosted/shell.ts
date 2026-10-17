@@ -400,17 +400,17 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
   }
 }
 
-/**
- * The 409 a draft earns when the workspace's accounts cannot run its harness
- * there, in the shape the runtime's own options route answers. The sandbox
- * resolves each account's placeholder from its environment; here every
- * placeholder the sandbox would be handed counts as present, so only the
- * delivery's own refusals remain.
- */
 function isMachineHarness(harness: string): harness is MachineHarnessDraft["harness"] {
   return harness === "claude" || harness === "codex" || harness === "cursor"
 }
 
+/**
+ * The accounts a draft would run on, or the 409 it earns when the workspace's
+ * accounts cannot run its harness there, in the shape the runtime's own options
+ * route answers. The sandbox resolves each account's placeholder from its
+ * environment; here every placeholder the sandbox would be handed counts as
+ * present, so only the delivery's own refusals remain.
+ */
 function draftSelection(c: Context, delivered: CredentialSnapshot, userId: string, harness: string): { refusal: Response } | { credentials: ResolvedCredentials } {
   const placeholders = Object.values(delivered.accounts).flatMap((rows) => Object.values(rows).flatMap((row) => "placeholderEnv" in row && row.placeholderEnv ? [row.placeholderEnv] : []))
   const snapshot = credentialSnapshot(delivered, Object.fromEntries(placeholders.map((name) => [name, name])))
