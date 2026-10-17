@@ -136,7 +136,7 @@ const RENEWAL_DUE_MS = 200
 const ROOT_RENEWALS_TABLE = "fixture_root_renewals"
 
 /**
- * `ws_root_<name>`: a Task root, whose start schedules nothing and whose
+ * `ws_root_<name>`: a workspace whose start schedules nothing and whose
  * settings a push outside any run delivered; every renewal records the
  * capability set it was prepared with, and it is due again 200 ms later for
  * as long as its lease is ready.

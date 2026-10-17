@@ -62,7 +62,7 @@ async function renewals(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/renewals?ws=${workspaceId}`)).json()) as { renewals: number }).renewals
 }
 
-/** The capability set each renewal of a Task root was prepared with, in order. */
+/** The capability set each renewal of a workspace pushed outside a run was prepared with, in order. */
 async function rootRenewals(workspaceId: string) {
   return ((await (await miniflare.dispatchFetch(`${ORIGIN}/root-renewals?ws=${workspaceId}`)).json()) as { renewals: unknown[] }).renewals
 }
@@ -210,7 +210,7 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls(workspaceId)).toBe(1)
   })
 
-  test("a Task root whose settings were pushed outside a run joins the renewal with its capability set, and a stopped root is renewed no more", async () => {
+  test("a workspace whose settings were pushed outside a run joins the renewal with its capability set, and a stopped one is renewed no more", async () => {
     const workspaceId = "ws_root_renewal"
     const capabilities = { plugins: [{ sourceId: "src", pluginName: "linear" }], skills: [] }
     await start(workspaceId)

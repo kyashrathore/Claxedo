@@ -35,11 +35,11 @@ function rowSource(row: HostedWorkspaceRow): SandboxSource {
 
 /**
  * The whole ensure input of a hosted workspace's sandbox, rebuilt from its
- * row by every site that ensures one: the create, a connection, a Tasks
- * cloud root, and a refresh of a running sandbox. A driver that re-creates
- * its host boots it from exactly this input, so a field left off one site
- * comes back missing: no source or root, no project label, no tool-group
- * consent (`env`), or unrestricted egress (`net`).
+ * row by every site that ensures one: the create, a start (a person's
+ * connect or a Tasks cloud root's), and a refresh of a running sandbox. A
+ * driver that re-creates its host boots it from exactly this input, so a
+ * field left off one site comes back missing: no source or root, no project
+ * label, no tool-group consent (`env`), or unrestricted egress (`net`).
  *
  * `secrets` joins the caller's own brokered secrets to the preparation's; an
  * absent pair says nothing about the installed set, while an empty one

@@ -240,9 +240,9 @@ export function createHostedRuntimeDelivery(input: {
     ])
     return { ...(renewAt === undefined ? {} : { renewAt }), watchAt: Date.now() + IDLE_CHECK_MS }
   }
-  // A push outside a start run (a Task root's first settings) hands the
-  // follow-ups a ready start would schedule to the workspace's provisioner,
-  // which renews and watches the sandbox from then on as it does any other.
+  // A push outside a start run hands the follow-ups a ready start would
+  // schedule to the workspace's provisioner, which renews and watches the
+  // sandbox from then on as it does any other.
   const provisionRuntime = async (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
     if (await cloudRootBacking(input.database, context.workspaceId) !== "cloud") return
     await input.sandboxFollow(context, await push(context.workspaceId, preparation))

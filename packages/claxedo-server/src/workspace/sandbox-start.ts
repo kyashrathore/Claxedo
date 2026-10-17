@@ -70,9 +70,8 @@ export type SandboxProvisionerStub = {
   redeliver(workspaceId: string): Promise<void>
   /**
    * Takes up the follow-ups of a sandbox whose settings were pushed outside a
-   * run, as a Task root's are when it is created: they are scheduled as a
-   * ready start's are, and every later step of the workspace is prepared with
-   * the root's capability set.
+   * run: they are scheduled as a ready start's are, and every later step of
+   * the workspace is prepared with the capability set the context names.
    */
   follow(context: WorkspaceRuntimeContext, due: SandboxFollowUps): Promise<void>
   /** The run in flight, which a read answers instead of asking a runtime the run is replacing; begins nothing. */
