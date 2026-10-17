@@ -41,6 +41,7 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   app_plugin_check: "transcript.claxedoTool.app_plugin_check",
   app_plugin_add: "transcript.claxedoTool.app_plugin_add",
   app_plugin_guide: "transcript.claxedoTool.app_plugin_guide",
+  you_web_search: "transcript.claxedoTool.you_web_search",
 } as const satisfies Record<ClaxedoToolName, TranscriptTextKey>
 
 export function claxedoToolArguments(input: Record<string, unknown> | undefined): Record<string, unknown> {

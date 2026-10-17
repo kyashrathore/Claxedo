@@ -38,7 +38,12 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
   const auths = new WeakMap<McpCredential, SignedControlPlaneAuth>()
   const { sessionMcp } = input
   const enabledToolGroups = input.options.enabledToolGroups
-  const registered = (input.options.registerTools ?? []).map((group) => group.id)
+  const registerTools = input.options.registerTools ?? []
+  const registered = registerTools.map((group) => group.id)
+  // Account-reach groups ("Outside the project altogether. Never on until a
+  // user says so.") are not enabled by the default fallback — only an explicit
+  // enabledToolGroups resolver can turn them on for a caller.
+  const accountReach = new Set(registerTools.filter((group) => group.reach === "account").map((group) => group.id))
   const mount = createClaxedoMcpRoutes({
     mount: "hosted",
     ...(sessionMcp ? { verifyRuntimeCredential: (token: string) => sessionMcp.verify(token) } : {}),
@@ -76,7 +81,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
     registerTools: input.options.registerTools ?? [],
     enabledToolGroups: async (credential: McpCredential) => {
       if (credential.kind === "runtime") return sessionMcp ? await sessionMcp.toolGroups(credential) : []
-      return enabledToolGroups ? await enabledToolGroups(credential) : registered
+      return enabledToolGroups ? await enabledToolGroups(credential) : registered.filter((id) => !accountReach.has(id))
     },
     audit: async (event: McpAuditEvent) => {
       const record = mcpAuditRecord(event)
