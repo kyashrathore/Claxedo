@@ -17,9 +17,9 @@ function declared(declaration: BootstrapDeclaration, hostedAccount: boolean) {
   })
 }
 
-test("capabilities: cloud features belong to the scope with a hosted account, whichever server serves the app, and issuing sessions is the declaration's own fact", () => {
-  expect(declared(daemon, true)).toMatchObject({ issuesSessions: false, features: { cloud: true }, servingMachine: { name: "Ada's Mac" } })
-  expect(declared(daemon, false)).toMatchObject({ issuesSessions: false, features: { cloud: false } })
-  expect(declared(worker, true)).toMatchObject({ issuesSessions: true, features: { cloud: true }, servingMachine: undefined })
-  expect(declared(worker, false)).toMatchObject({ issuesSessions: true, features: { cloud: false } })
+test("capabilities: the hosted account is the scope's own fact, while issuing sessions and creating cloud workspaces of this server's projects are the declaration's, so a signed desktop served by its daemon reads hosted facts without offering what its daemon cannot do", () => {
+  expect(declared(daemon, true)).toMatchObject({ issuesSessions: false, hostedAccount: true, features: { cloud: false }, servingMachine: { name: "Ada's Mac" } })
+  expect(declared(daemon, false)).toMatchObject({ issuesSessions: false, hostedAccount: false, features: { cloud: false } })
+  expect(declared(worker, true)).toMatchObject({ issuesSessions: true, hostedAccount: true, features: { cloud: true }, servingMachine: undefined })
+  expect(declared(worker, false)).toMatchObject({ issuesSessions: true, hostedAccount: false, features: { cloud: true } })
 })

@@ -124,7 +124,7 @@ export function AiUsageSection(): JSX.Element {
           />
         )}
       </SummaryLoad>
-      <Show when={server.capabilities()?.features.cloud === true}>
+      <Show when={server.capabilities()?.hostedAccount === true}>
         <AccountSpendSection days={options().days} />
       </Show>
     </div>

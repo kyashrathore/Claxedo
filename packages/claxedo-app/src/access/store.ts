@@ -2,7 +2,7 @@ import { unreachable } from "@/lib/machine"
 import { createMemo, type Accessor } from "solid-js"
 import { useAuth, type AuthUser } from "@/auth"
 import { userId, useServer, type Principal, type SessionLocation, type UserPrincipal } from "@/server"
-import { sessionControls, type AccessAction, type AccessFacts } from "./model"
+import { isOrgManager, sessionControls, type AccessAction, type AccessFacts } from "./model"
 
 export type Access = {
   readonly session: (ref: SessionLocation) => ReturnType<typeof sessionControls>
@@ -32,6 +32,8 @@ export function useAccess(): Access {
           return facts?.canManageOrgAccounts === true
         case "sandbox.manage":
           return facts?.canManageSandboxKeys === true
+        case "usage.teamSpend":
+          return isOrgManager(facts?.role)
         default:
           return unreachable(action)
       }
