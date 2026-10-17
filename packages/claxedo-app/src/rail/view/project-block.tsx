@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, on, Show, untrack, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import type { SessionId } from "@/server"
+import type { PlacementId, SessionId } from "@/server"
 import type { SessionList, SessionRowView } from "@/session"
 import { usePreferences } from "@/settings"
 import type { TerminalItem } from "@/terminal"
@@ -24,7 +24,7 @@ export type ProjectBlockProps = SessionRowMenuActions & {
   readonly onSelect: (section: ProjectSection) => void
   readonly onNewTerminal: (section: ProjectSection) => void
   readonly onActivate: (row: SessionRowView) => void
-  readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
+  readonly markerOf: (placementId: PlacementId) => SessionMarker | undefined
   readonly prepareDrag: (row: RailRow) => string | undefined
 }
 
@@ -77,7 +77,7 @@ function ProjectSessions(
         onToggleSettled={props.onToggleSettled}
       />
       <Show when={props.paging.loadingInitial()}>
-        <SessionRowsLoading />
+        <SessionRowsLoading captioned={false} />
       </Show>
       <Show when={props.paging.errorInitial()}>
         <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void props.list.reload()}>

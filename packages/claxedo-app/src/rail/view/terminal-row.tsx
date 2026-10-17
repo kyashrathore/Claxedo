@@ -2,12 +2,14 @@ import { createEffect, createMemo, on, onCleanup, Show, type Accessor, type JSX 
 import { useWorkspaceName } from "@/cloud"
 import { useTranslator } from "@/i18n"
 import { useServer, type PlacementId } from "@/server"
-import { sidebarModeOf, useShellRoute } from "@/shell"
+import { sidebarModeOf, useShellLayout, useShellRoute } from "@/shell"
 import { useTerminals, type TerminalItem } from "@/terminal"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
 import { terminalNavigationStatus } from "../model"
+import type { SessionMarker } from "../session-marker"
 import { NavigationRow, NavigationRowGlyph, NavigationStatusMark } from "./navigation-row"
+import { SessionMarkerIcon } from "./session-marker-icon"
 import { ClaxedoIcon as Icon, ClaxedoIconV2, Tooltip } from "@/ui"
 
 const TITLE_SUFFIX = {
@@ -17,10 +19,19 @@ const TITLE_SUFFIX = {
   done: "rail.terminal.done",
 } as const
 
-export function RailTerminalRow(props: { readonly row: TerminalItem; readonly active: boolean; readonly prepareDrag?: () => string | undefined }): JSX.Element {
+export type TerminalRowProps = {
+  readonly row: TerminalItem
+  readonly marker: SessionMarker | undefined
+  readonly projectLabel: string
+  readonly active: boolean
+  readonly prepareDrag?: () => string | undefined
+}
+
+export function RailTerminalRow(props: TerminalRowProps): JSX.Element {
   const t = useTranslator(railDictionary)
   const terminals = useTerminals()
   const engagement = createHoverEngagement()
+  const layout = useShellLayout()
   const server = useServer()
   const named = useWorkspaceName()
   const status = () => terminalNavigationStatus(props.row)
@@ -54,9 +65,11 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
           <NavigationStatusMark status={status()} />
         </Show>
       </NavigationRowGlyph>
-      <span class="relative z-[1] pointer-events-none flex flex-col gap-0.5 flex-1 min-w-0 overflow-hidden py-1.5">
-        <span class="ui-session-title leading-tight truncate" classList={{ "text-text-strong": props.active }}>{props.row.title}</span>
-        <Show when={meta()}>{(text) => <span class="ui-session-navigation-meta truncate text-xs leading-4">{text()}</span>}</Show>
+      <span class="relative z-[1] pointer-events-none flex flex-1 min-w-0 items-center gap-1 py-1.5">
+        <span class="ui-session-title leading-tight truncate flex-1 min-w-0" classList={{ "text-text-strong": props.active }}>{props.row.title}</span>
+        <Show when={(engagement.engaged() || layout.coarsePointer()) && props.marker}>
+          {(marker) => <SessionMarkerIcon marker={marker()} projectLabel={props.projectLabel} />}
+        </Show>
       </span>
       <Tooltip placement="top" value={t("rail.terminal.close")}>
         <button

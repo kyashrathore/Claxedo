@@ -37,6 +37,8 @@ const en = {
   "rail.settleSession": "Settle {{title}}",
   "rail.returnToActive": "Return to active",
   "rail.returnSession": "Return {{title}} to active",
+  "rail.settleDescription": "Settle: hide this session from the list until its next turn. Show settled lists it again.",
+  "rail.returnDescription": "Return to active: put this session back in the active list.",
   "rail.settleFailed": "The session could not be settled",
   "rail.collapseProject": "Collapse project",
   "rail.expandProject": "Expand project",

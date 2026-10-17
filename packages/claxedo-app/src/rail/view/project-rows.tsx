@@ -1,5 +1,5 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
-import type { SessionId } from "@/server"
+import type { PlacementId, SessionId } from "@/server"
 import type { SessionList, SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 import { sessionRowKey, terminalRowKey, type RailRow } from "../model"
@@ -15,7 +15,7 @@ export type ProjectRowsProps = SessionRowMenuActions & {
   readonly activeSessionId: string | undefined
   readonly activeTerminalId: string | undefined
   readonly onActivate: (row: SessionRowView) => void
-  readonly markerOf: (row: SessionRowView) => SessionMarker | undefined
+  readonly markerOf: (placementId: PlacementId) => SessionMarker | undefined
   readonly projectLabel: string
   readonly prepareDrag: (row: RailRow) => string | undefined
 }
@@ -29,6 +29,8 @@ function TerminalRows(props: ProjectRowsProps): JSX.Element {
           {(terminal) => (
             <RailTerminalRow
               row={terminal()}
+              marker={props.markerOf(terminal().placementId)}
+              projectLabel={props.projectLabel}
               active={props.activeTerminalId === terminal().terminalId}
               prepareDrag={() => props.prepareDrag({ kind: "terminal", key, terminal: terminal() })}
             />
@@ -47,7 +49,7 @@ function SessionRows(props: ProjectRowsProps): JSX.Element {
           {(session) => (
             <RailSessionRow
               row={session()}
-              marker={props.markerOf(session())}
+              marker={props.markerOf(session().ref.placementId)}
               projectLabel={props.projectLabel}
               active={props.activeSessionId === sessionId}
               onActivate={props.onActivate}

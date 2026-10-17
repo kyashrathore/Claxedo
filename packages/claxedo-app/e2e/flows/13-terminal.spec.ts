@@ -103,10 +103,15 @@ async function expectNoTerminalTab(app: Page) {
   await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
 }
 
-test("13 terminal: a terminal closed in the rail leaves the compact tabs too", async ({ stack, app }) => {
+test("13 terminal: a terminal's rail row is one line, its title, with where it runs in its name, and closing it leaves the compact tabs too", async ({ stack, app }) => {
   const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  await newShell(app)
+  const terminalId = await newShell(app)
+  const row = app.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${terminalId}"]`)
+  const label = (await row.locator('[data-slot="navigation-row-activate"]').getAttribute("aria-label")) ?? ""
+  const [title, where] = label.split(" · ")
+  expect(where, "the row's name says where the terminal runs").toBeTruthy()
+  await expect(row).toHaveText(title ?? "")
   await app.getByRole("button", { name: /^Close terminal: / }).click()
   await expectNoTerminalTab(app)
 })

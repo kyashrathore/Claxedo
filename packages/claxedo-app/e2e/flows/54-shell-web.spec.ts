@@ -47,7 +47,7 @@ test("54 shell: sign-in shows the artwork beside the form on the web and the for
   expect(((await session.json()) as { user: { email: string } }).user.email).toBe(signed.owner.email)
 })
 
-test("54 shell: rows are two lines, the home screen offers only the composer, the account menu holds Usage and Settings but not the name, and logout stays in the menu until it is done", async ({ signed, page, isMobile }, testInfo) => {
+test("54 shell: rows are one line whose hover trades the age for the machine and Settle, the home screen offers only the composer, the account menu holds Usage and Settings but not the name, and logout stays in the menu until it is done", async ({ signed, page, isMobile }, testInfo) => {
   await sessionsIn(signed, ["Fix the login redirect"])
   await signed.signIn(page, signed.owner)
   await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible()
@@ -58,13 +58,24 @@ test("54 shell: rows are two lines, the home screen offers only the composer, th
   await page.keyboard.press("Escape")
   const rail = await showRail(page, isMobile)
   const row = rail.getByTestId("rail-sidebar-session-row").filter({ has: page.getByRole("button", { name: "Fix the login redirect", exact: true }) })
-  await expect(row.getByRole("img", { name: "shell on Signed fixture machine" })).toBeVisible()
-  await expect(row.getByText("Signed fixture machine", { exact: true })).toBeVisible()
-  await expect(row.getByText("<1m", { exact: true })).toBeVisible()
   const title = await row.getByText("Fix the login redirect", { exact: true }).boundingBox()
-  const meta = await row.getByText("<1m", { exact: true }).boundingBox()
-  expect(title && meta && meta.y >= title.y + title.height - 1, "the meta line sits under the title line").toBe(true)
-  await page.screenshot({ path: testInfo.outputPath("rail-two-line-rows.png") })
+  const age = row.getByText("<1m", { exact: true })
+  const meta = await age.boundingBox()
+  expect(title && meta && Math.abs(meta.y + meta.height / 2 - (title.y + title.height / 2)) <= 2, "the age sits on the title line").toBe(true)
+  if (isMobile) {
+    await expect(age).toBeVisible()
+    await expect(row.getByRole("img", { name: "shell on Signed fixture machine" })).toBeVisible()
+  } else {
+    await expect(row.getByRole("img", { name: "shell on Signed fixture machine" })).toHaveCount(0)
+    await row.hover()
+    await expect(age).toHaveCount(0)
+    const machine = row.getByRole("img", { name: "shell on Signed fixture machine" })
+    await machine.hover()
+    await expect(page.getByRole("tooltip", { name: "shell on Signed fixture machine" })).toBeVisible()
+    await row.getByRole("button", { name: "Settle Fix the login redirect" }).hover()
+    await expect(page.getByRole("tooltip")).toContainText("Settle: hide this session from the list until its next turn.")
+  }
+  await page.screenshot({ path: testInfo.outputPath("rail-one-line-rows.png") })
 
   const signOut = await held(page, /\/api\/auth\/sign-out/)
   await page.getByRole("button", { name: signed.owner.name, exact: true }).click()
