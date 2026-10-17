@@ -39,10 +39,7 @@ function AddTabMenu(): JSX.Element {
           <Show when={hasContext()}>
             <DropdownMenu.Item
               disabled={!session()}
-              onSelect={() => {
-                const ref = session()
-                if (ref) panel.show({ kind: "context", sessionId: ref.sessionId })
-              }}
+              onSelect={() => panel.show({ kind: "context" })}
             >
               <Icon name="circle-half" size="small" />
               {t("panel.tab.context")}

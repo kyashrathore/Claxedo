@@ -706,8 +706,12 @@ export const desktopRenderer: Policy = {
   // terminal runs, each with its tooltip (owner: the app's rail domain,
   // `rail/view/settle-button.tsx`, `rail/view/session-marker-icon.tsx`). They
   // add no package edge.
-  // 1401/36, no headroom.
-  ceilings: { modules: 1401, packages: 36 },
+  // The session details the workspace panel's Context tab shows, Environment
+  // and Background tasks (owner: the app's session domain,
+  // `session/view/details/`: the panel view, both cards, their models, their
+  // shared card frame and their strings). They add no package edge.
+  // 1408/36, no headroom.
+  ceilings: { modules: 1408, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

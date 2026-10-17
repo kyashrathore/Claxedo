@@ -141,4 +141,4 @@ export type SessionStores = {
 export { SessionStoresProvider, useSessionStores } from "./store/provider"
 export { canSettle, matchesActivityFilter, sessionActivity, unseenOutcome, type ActivityFilter, type SessionActivity, type UnseenOutcome } from "./list/activity"
 export { ACTIVITY_WINDOW, type WindowKey } from "./list/model"
-export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"
+export { draftSessionPaneKind, sessionDetailsPanelView, sessionPaneKind, subagentPanelView } from "./view"
