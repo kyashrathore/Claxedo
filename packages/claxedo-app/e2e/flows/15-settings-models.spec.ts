@@ -1,6 +1,6 @@
-import type { Page } from "@playwright/test"
+import type { Page, Route } from "@playwright/test"
 import { apiRequests, expect, sessionRoute, test, type Stack } from "../harness"
-import { openSection, openSettings } from "./15-settings.navigation"
+import { harnessSection, openSection, openSettings } from "./15-settings.navigation"
 
 type Credential = { readonly id: string; readonly provider_id: string; readonly label?: string; readonly is_active?: boolean }
 
@@ -22,8 +22,17 @@ test("15 settings: accounts can be connected before any workspace exists", async
   const pi = harnessSection(app, "Pi")
   await expect(pi.getByRole("tab", { name: "Models" })).toBeVisible()
   const disconnect = pi.getByRole("button", { name: "Disconnect" })
-  for (let remaining = await disconnect.count(); remaining > 0; remaining--) {
+  const connected = await disconnect.count()
+  const confirm = app.getByRole("dialog").filter({ hasText: /^Disconnect .+ from Pi\?/ })
+  await disconnect.first().click()
+  await expect(confirm).toContainText("keys you saved for Pi. Other harnesses keep their own accounts.")
+  await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(disconnect).toHaveCount(connected)
+  for (let remaining = connected; remaining > 0; remaining--) {
     await disconnect.first().click()
+    await confirm.getByRole("button", { name: "Disconnect", exact: true }).click()
+    await expect(confirm).toHaveCount(0)
     await expect(disconnect).toHaveCount(remaining - 1)
   }
   await expect(pi.getByRole("tab")).toHaveCount(0)
@@ -38,7 +47,7 @@ test("15 settings: accounts can be connected before any workspace exists", async
   await expect(cursor.getByRole("radio", { name: /^Before workspace/ })).toBeVisible()
   expect(await credentialNamed(stack.url, "Before workspace")).toBeDefined()
   await cursor.getByRole("tab", { name: "Models" }).click()
-  await expect(cursor.getByText("Open a workspace to discover this harness's models. Your connected accounts are available in the Accounts tab.")).toBeVisible()
+  await expect(cursor.getByText("Models appear here once you have a project. Your accounts are in the Accounts tab.", { exact: true })).toBeVisible()
   await cursor.getByRole("tab", { name: "Accounts" }).click()
   await expect(cursor.getByRole("radio", { name: /^Before workspace/ })).toBeVisible()
 })
@@ -88,7 +97,9 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
 
   for (const label of ["Flow fifteen B", "Flow fifteen A"]) {
     await row(label).getByRole("button", { name: "Remove", exact: true }).click()
-    await row(label).getByRole("button", { name: "Remove", exact: true }).click()
+    const confirm = app.getByRole("dialog").filter({ hasText: `Remove ${label}?` })
+    await confirm.getByRole("button", { name: "Remove", exact: true }).click()
+    await expect(confirm).toHaveCount(0)
     await expect(cursor.getByRole("radio", { name: new RegExp(`^${label}`) })).toHaveCount(0)
     await expect.poll(async () => credentialNamed(stack.url, label)).toBeUndefined()
   }
@@ -96,9 +107,98 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   await expect(machineLogin).toBeEnabled()
 })
 
-function harnessSection(app: Page, name: string) {
-  return app.locator("section").filter({ has: app.getByRole("heading", { level: 2, name, exact: true }) }).last()
+test("15 settings: Check runs for its own account alone, spins only its own icon, and says when it last ran", async ({ stack, app }) => {
+  await stack.daemon.makeWorkspace("checks", "Checks")
+  for (const [label, ending] of [["Check one", "one"], ["Check two", "two"]] as const) {
+    const saved = await fetch(new URL("/api/claxedo/credentials", stack.url), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider_id: "cursor-sdk", kind: "api_key", source: "managed", label, secret: JSON.stringify({ unread: ending }) }),
+    })
+    expect(saved.status).toBe(200)
+  }
+  const held: Route[] = []
+  await app.route("**/api/claxedo/credentials/*/verify", (route) => void held.push(route))
+  await app.goto(`${stack.url}/settings/models`)
+  const cursor = app.getByRole("radiogroup", { name: "Cursor", exact: true })
+  const row = (label: string) => cursor.locator('[data-slot="account-row"]').filter({ hasText: label })
+  const check = (label: string) => row(label).getByRole("button", { name: "Check now", exact: true })
+  await check("Check one").click()
+  await expect(check("Check one")).toHaveAttribute("aria-busy", "true")
+  await expect(check("Check one")).toBeDisabled()
+  await expect(check("Check two")).toBeEnabled()
+  await expect(check("Check two")).not.toHaveAttribute("aria-busy", "true")
+  await check("Check two").click()
+  await expect(check("Check two")).toHaveAttribute("aria-busy", "true")
+  await expect.poll(() => held.length).toBe(2)
+  const answers = await Promise.all(held.map(async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({ response })
+    const body = await response.json() as { readonly error?: { readonly code?: string } }
+    return [response.status(), body.error?.code]
+  }))
+  for (const label of ["Check one", "Check two"]) {
+    await expect(check(label)).toBeEnabled()
+    await expect(check(label)).not.toHaveAttribute("aria-busy", "true")
+    await expect(row(label)).toContainText("Couldn't check")
+  }
+  expect(answers).toEqual([[502, "credential_verification_failed"], [502, "credential_verification_failed"]])
+  await check("Check one").hover()
+  await expect(app.getByRole("tooltip")).toHaveText(/^Check now · last checked /)
+})
+
+type AccountSourcesRead = { readonly can_manage_org_accounts: boolean; readonly sources: Readonly<Record<string, string>>; readonly org: readonly { readonly id: string; readonly provider_id: string; readonly label?: string }[] }
+
+async function accountSources(url: string): Promise<AccountSourcesRead> {
+  const response = await fetch(new URL("/api/claxedo/credentials/account-sources", url))
+  expect(response.status).toBe(200)
+  return await response.json() as AccountSourcesRead
 }
+
+test("15 settings: the operator adds an organization account from a harness's Add an account, chooses it, and removes it through the dialog", async ({ stack, app }) => {
+  await stack.daemon.makeWorkspace("org-account", "Organization account")
+  expect((await accountSources(stack.url)).can_manage_org_accounts).toBe(true)
+  await app.goto(`${stack.url}/settings/models`)
+  const section = harnessSection(app, "Cursor")
+  const cursor = app.getByRole("radiogroup", { name: "Cursor", exact: true })
+  await section.getByRole("button", { name: "Add an account" }).click()
+  const drawer = app.getByRole("dialog", { name: "Connect Cursor" })
+  await expect(drawer.getByRole("radio", { name: /^For me/ })).toBeChecked()
+  await drawer.getByText("For the organization", { exact: true }).click()
+  await expect(drawer.getByRole("radio", { name: /^For the organization/ })).toBeChecked()
+  await expect(drawer.getByText("An API key anyone in your organization can choose for Cursor.", { exact: true })).toBeVisible()
+  const key = drawer.getByRole("textbox", { name: "Cursor API key" })
+  await key.fill("cursor-org-key")
+  await drawer.getByRole("textbox", { name: "Label" }).fill("Acme Cursor")
+  await drawer.getByRole("button", { name: "Continue", exact: true }).click()
+  await expect(drawer.getByText(/Cursor API keys start with key_/)).toBeVisible()
+  await expect(key).toHaveAttribute("aria-invalid", "true")
+  expect((await accountSources(stack.url)).org.some((row) => row.label === "Acme Cursor")).toBe(false)
+  await key.fill("key_org_cursor")
+  await drawer.getByRole("button", { name: "Continue", exact: true }).click()
+  await expect(drawer).toHaveCount(0)
+  const org = cursor.locator('[data-slot="account-row"][data-account="org"]')
+  await expect(org).toContainText("Acme Cursor")
+  await expect(org).toContainText("Organization account")
+  await expect(app.getByText("Sandbox providers", { exact: true })).toHaveCount(1)
+  await expect(app.getByText("Team accounts", { exact: true })).toHaveCount(0)
+  const saved = (await accountSources(stack.url)).org.find((row) => row.label === "Acme Cursor")
+  expect(saved?.provider_id).toBe("cursor")
+
+  await org.getByText("Acme Cursor", { exact: true }).click()
+  await expect(org.getByRole("radio")).toBeChecked()
+  await expect.poll(async () => (await accountSources(stack.url)).sources["cursor-sdk"]).toBe("org")
+  await expect(org.getByRole("button", { name: "Check now", exact: true })).toBeEnabled()
+
+  await org.getByRole("button", { name: "Remove", exact: true }).click()
+  const confirm = app.getByRole("dialog").filter({ hasText: "Remove Acme Cursor?" })
+  await expect(confirm.getByText("Used by Cursor", { exact: true })).toBeVisible()
+  await confirm.getByRole("button", { name: "Remove", exact: true }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(org).not.toContainText("Acme Cursor")
+  await expect(org.getByRole("radio")).toBeDisabled()
+  expect((await accountSources(stack.url)).org.some((row) => row.id === saved?.id)).toBe(false)
+})
 
 async function claudeModels(app: Page) {
   const trigger = app.getByRole("button", { name: /^Select harness and model/ })

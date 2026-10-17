@@ -54,7 +54,6 @@ export default {
   "settings.appearance.theme.description": "Personaliza el tema de Claxedo.",
   "settings.keybindings.palette": "Paleta de comandos",
   "settings.connections.reconnect": "Volver a conectar",
-  "settings.connections.confirm": "Confirmar",
   "settings.section.connections": "Conexiones",
   "settings.section.machines": "Máquinas",
   "settings.common.remove": "Quitar",

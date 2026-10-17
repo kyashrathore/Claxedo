@@ -1,9 +1,8 @@
 import { For, Show, createSignal } from "solid-js"
-import { ClaxedoIcon as Icon, Button, Dialog, DialogBody, DialogHeader, DialogTitle } from "@/ui"
-import { useDialog } from "@/ui"
+import { ClaxedoIcon as Icon, Button, requestConfirm, useDialog } from "@/ui"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
-import { createDockAction, type DockAction } from "./dock-action"
+import { createDockAction } from "./dock-action"
 import { goalControls, type GoalControl, type GoalActions, type GoalSnapshot, type GoalStatus } from "./model"
 
 const STATUS_KEYS: Readonly<Record<GoalStatus, SessionScreenTextKey>> = {
@@ -24,38 +23,6 @@ function goalMetrics(goal: GoalSnapshot, t: ReturnType<typeof useSessionScreenTe
   return rows.filter((row): row is string => row !== undefined)
 }
 
-function GoalDeleteDialog(props: { action: DockAction<GoalControl>; remove: () => Promise<void> }) {
-  const t = useSessionScreenText()
-  const dialog = useDialog()
-  const removing = () => props.action.runningAction() === "remove"
-  return (
-    <Dialog fit>
-      <DialogHeader>
-        <DialogTitle>{t("sessionScreen.goal.deleteTitle")}</DialogTitle>
-      </DialogHeader>
-      <DialogBody class="flex flex-col gap-4 px-4 pb-4">
-        <p class="text-14-regular text-text-strong">{t("sessionScreen.goal.deleteConfirm")}</p>
-        <Show when={props.action.error()}>
-          {(error) => <p role="alert" class="text-12-regular text-icon-critical-base">{error().message}</p>}
-        </Show>
-        <div class="flex justify-end gap-2">
-          <Button variant="ghost" size="large" onClick={() => dialog.close()} disabled={removing()}>
-            {t("sessionScreen.action.cancel")}
-          </Button>
-          <Button
-            variant="contrast"
-            size="large"
-            disabled={removing()}
-            onClick={() => void props.action.run("remove", props.remove).then((removed) => removed && dialog.close())}
-          >
-            {t(removing() ? "sessionScreen.action.loading" : "sessionScreen.goal.delete")}
-          </Button>
-        </div>
-      </DialogBody>
-    </Dialog>
-  )
-}
-
 export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
   const t = useSessionScreenText()
   const dialog = useDialog()
@@ -68,9 +35,17 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
     const work = props.actions[current]
     if (work) void action.run(current, work)
   }
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     const remove = props.actions.remove
-    if (remove) void dialog.show(() => <GoalDeleteDialog action={action} remove={remove} />)
+    if (!remove) return
+    const confirmed = await requestConfirm(dialog, {
+      title: t("sessionScreen.goal.deleteTitle"),
+      body: t("sessionScreen.goal.deleteConfirm"),
+      confirmLabel: t("sessionScreen.goal.delete"),
+      cancelLabel: t("sessionScreen.action.cancel"),
+      destructive: true,
+    })
+    if (confirmed) await action.run("remove", remove)
   }
   const metrics = () => goalMetrics(props.goal, t)
 
@@ -129,8 +104,8 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
               </Button>
             </Show>
             <Show when={controls().remove}>
-              <Button variant="ghost" size="normal" disabled={busy()} onClick={confirmDelete}>
-                {t("sessionScreen.goal.delete")}
+              <Button variant="ghost" size="normal" disabled={busy()} onClick={() => void confirmDelete()}>
+                {label("remove", "sessionScreen.goal.delete")}
               </Button>
             </Show>
           </div>

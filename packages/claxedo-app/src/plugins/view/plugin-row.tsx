@@ -2,13 +2,12 @@ import { createSignal, For, Show, type JSX } from "solid-js"
 import { useI18n } from "@/i18n"
 import { formatDateTimeMed } from "@/lib/relative-time"
 import { unreachable } from "@/lib/machine"
-import { Switch, Button, useDialog } from "@/ui"
+import { Switch, Button, requestConfirm, useDialog } from "@/ui"
 import { approvalLetsRun } from "../approval"
 import { failureReason } from "../failure"
 import { usePluginsText, type PluginsKey, type PluginsText } from "../i18n"
 import { failureOf, type PluginState, type PluginSummary } from "../model"
 import { usePluginHost } from "../provider"
-import { confirmThrough } from "./confirm-dialog"
 import { PluginManifestSummary } from "./plugin-manifest"
 
 function stateKey(state: PluginState): PluginsKey {
@@ -57,10 +56,12 @@ function RowActions(props: { readonly plugin: PluginSummary; readonly expanded: 
   const remove = async () => {
     setRemoveFailure(undefined)
     const name = props.plugin.name
-    const confirmed = await confirmThrough(dialog, {
+    const confirmed = await requestConfirm(dialog, {
       title: t("plugins.remove.title", { name }),
-      description: t("plugins.remove.description"),
+      body: t("plugins.remove.description"),
       confirmLabel: t("plugins.remove"),
+      cancelLabel: t("plugins.cancel"),
+      destructive: true,
     })
     if (!confirmed) return
     try {

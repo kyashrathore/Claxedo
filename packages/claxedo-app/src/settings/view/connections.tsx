@@ -2,11 +2,11 @@ import { createSignal, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { toAppError, useServer, type AppError, type Connection, type ConnectionScope, type Integration, type IntegrationsCatalog } from "@/server"
 import type { HarnessConnectionRef, HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
-import { showToast, Button, Icon, useDialog } from "@/ui"
+import { showToast, Button, Icon, requestConfirm, useDialog } from "@/ui"
 import { useErrorCopy, useI18n, useTranslator } from "@/i18n"
 import { connectionReadinessKey, integrationPurpose, verifyFailedMessage } from "../connections"
 import { settingsDictionary, type SettingsKey } from "../i18n"
-import { DialogConnectIntegration } from "./connect-dialog"
+import { DrawerConnectIntegration } from "./connect-drawer"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote } from "./section"
 
 const STATUS_KEY = {
@@ -25,7 +25,7 @@ export function ConnectionsSection() {
   const catalog = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: offered() }))
   const agents = useQuery(() => server.queries.agentConnections.list())
   const dialog = useDialog()
-  const connect = (next: Connecting) => dialog.show(() => <DialogConnectIntegration integration={next.integration} personalScopeEnabled={catalog.data?.personalScopeEnabled === true} {...(next.scope ? { initialScope: next.scope } : {})} />)
+  const connect = (next: Connecting) => dialog.show(() => <DrawerConnectIntegration integration={next.integration} personalScopeEnabled={catalog.data?.personalScopeEnabled === true} {...(next.scope ? { initialScope: next.scope } : {})} />)
   const [busy, setBusy] = createSignal<string>()
   const reverify = async (id: string) => {
     const outcome = await server.integrations.reverify(id)
@@ -34,6 +34,17 @@ export function ConnectionsSection() {
   const settle = (task: () => Promise<void>) => async () => {
     await task()
     return undefined
+  }
+
+  const confirmed = (title: string, body: string, confirmLabel: string) =>
+    requestConfirm(dialog, { title, body, confirmLabel, cancelLabel: t("settings.common.cancel"), destructive: true })
+  const disconnect = async (integration: Integration, entry: Connection) => {
+    if (!(await confirmed(t("settings.connections.disconnectConfirm"), [integration.name, entry.accountLabel].filter(Boolean).join(" · "), t("settings.common.disconnect")))) return
+    await act(entry.id, settle(() => server.integrations.disconnect(entry.id)), `${integration.name} disconnected`)
+  }
+  const removeAgent = async (row: HarnessConnectionRef) => {
+    if (!(await confirmed(t("settings.connections.agents.removeConfirm", { name: row.label }), t("settings.connections.agents.removeBody"), t("settings.common.remove")))) return
+    await act(row.connectionId, settle(() => server.agentConnections.remove(row.connectionId)), `${row.label} removed`)
   }
 
   const act = async (id: string, task: () => Promise<string | undefined>, done: string) => {
@@ -51,7 +62,7 @@ export function ConnectionsSection() {
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.connections.description")} />
-      <AgentConnections rows={agents.data} error={agents.error} onRemove={(row) => void act(row.connectionId, settle(() => server.agentConnections.remove(row.connectionId)), `${row.label} removed`)} busy={busy()} />
+      <AgentConnections rows={agents.data} error={agents.error} onRemove={(row) => void removeAgent(row)} busy={busy()} />
       <Show when={!offered() && agents.data?.status !== "supported"}>
         <SettingsEmpty>{t("settings.connections.nothing")}</SettingsEmpty>
       </Show>
@@ -69,7 +80,7 @@ export function ConnectionsSection() {
                     busy={busy()}
                     onConnecting={connect}
                     onReverify={(entry) => void act(entry.id, () => reverify(entry.id), `${integration.name} verified`)}
-                    onDisconnect={(entry) => void act(entry.id, settle(() => server.integrations.disconnect(entry.id)), `${integration.name} disconnected`)}
+                    onDisconnect={(entry) => void disconnect(integration, entry)}
                   />
                 )}
               </For>
@@ -132,7 +143,6 @@ function ConnectionRow(props: {
   readonly onDisconnect: () => void
 }) {
   const t = useTranslator(settingsDictionary)
-  const [confirming, setConfirming] = createSignal(false)
   return (
     <div class="settings-account" data-connection={props.connection.id} data-status={props.connection.status}>
       <span class="settings-dot" data-tone={STATUS_TONE[props.connection.status]} aria-hidden="true" />
@@ -150,11 +160,7 @@ function ConnectionRow(props: {
         <Show when={props.connection.status !== "connected"}>
           <Button size="small" variant="neutral" onClick={() => props.onReconnect()}>{t("settings.connections.reconnect")}</Button>
         </Show>
-        <Show when={confirming()} fallback={<Button size="small" variant="ghost" disabled={props.busy} onClick={() => setConfirming(true)}>{t("settings.common.disconnect")}</Button>}>
-          <span class="settings-row-description">{t("settings.connections.disconnectConfirm")}</span>
-          <Button size="small" variant="contrast" disabled={props.busy} onClick={() => { setConfirming(false); props.onDisconnect() }}>{t("settings.connections.confirm")}</Button>
-          <Button size="small" variant="ghost" onClick={() => setConfirming(false)}>{t("settings.common.cancel")}</Button>
-        </Show>
+        <Button size="small" variant="ghost" disabled={props.busy} onClick={() => props.onDisconnect()}>{t("settings.common.disconnect")}</Button>
       </div>
     </div>
   )

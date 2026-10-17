@@ -17,8 +17,8 @@ const HARNESS_LOGINS: ReadonlySet<string> = new Set(HARNESS_IDS.flatMap(harnessB
 /**
  * How each vendor's API keys begin, by its published key formats. Anything
  * else is refused before it is stored: a ChatGPT login's JWT, a Claude
- * refresh token (sk-ant-ort…) or a plan token (sk-ant-oat…) pasted as a team
- * key would be sent as one.
+ * refresh token (sk-ant-ort…) or a plan token (sk-ant-oat…) pasted as an
+ * organization account's key would be sent as one.
  */
 const TEAM_KEYS: Readonly<Record<string, { vendor: string; prefix: string; refused?: string }>> = {
   anthropic: { vendor: "Anthropic", prefix: "sk-ant-api" },
@@ -34,7 +34,7 @@ export function isOrgAccount(row: CredentialMetadata): boolean {
   return row.owner === null && fanoutEligible(row)
 }
 
-/** A team key write the store refused because its author no longer administers the organization. */
+/** An organization account write the store refused because its author no longer administers the organization. */
 export class OrgAccountWriteRefusedError extends Error {
   constructor() {
     super("The organization's account was not written: its author no longer administers the organization")
@@ -43,7 +43,7 @@ export class OrgAccountWriteRefusedError extends Error {
 }
 
 /**
- * Why a write cannot be a team account, or nothing when it can. A harness's
+ * Why a write cannot be an organization account, or nothing when it can. A harness's
  * own binding (`claude-sdk`, `codex-app-server`, …) is refused because the
  * vendor id beside it already reaches the same origin: one row per vendor is
  * what keeps a person's org choice to exactly one delivered key per host.
@@ -51,30 +51,30 @@ export class OrgAccountWriteRefusedError extends Error {
 export function orgAccountRefusal(input: { provider_id: string; kind: CredentialKind; secret: string }) {
   const key = Object.hasOwn(TEAM_KEYS, input.provider_id) ? TEAM_KEYS[input.provider_id] : undefined
   if (!key || !builtInProviderRow(input.provider_id) || HARNESS_LOGINS.has(input.provider_id)) {
-    return errorBody("org_account_provider_unsupported", "A team account is a model vendor's API key, such as Anthropic's or OpenAI's.")
+    return errorBody("org_account_provider_unsupported", "An organization account is a model vendor's API key, such as Anthropic's or OpenAI's.")
   }
   const secret = pastedSecret(input.secret)
   if (input.kind !== "api_key" || !secret.startsWith(key.prefix) || (key.refused !== undefined && secret.startsWith(key.refused))) {
     return errorBody(
       "org_account_plan_refused",
-      `Team accounts hold API keys only, and ${key.vendor} API keys start with ${key.prefix}. A Claude or ChatGPT plan belongs to one person: add it under your own accounts in Settings → Models.`,
+      `Organization accounts hold API keys only, and ${key.vendor} API keys start with ${key.prefix}. A Claude or ChatGPT plan belongs to one person: add it under your own accounts in Settings → Models.`,
     )
   }
   return undefined
 }
 
-/** The provider whose team key serves `providerId`: itself, or for a harness's own binding the vendor behind that harness. */
+/** The provider whose organization account serves `providerId`: itself, or for a harness's own binding the vendor behind that harness. */
 function teamKeyProvider(providerId: string): string {
   const harness = harnessForProviderId(providerId)
   return harness && HARNESS_LOGINS.has(providerId) ? HARNESS_TABLE[harness].vendorProvider : providerId
 }
 
-/** Why a person cannot choose the org account for these providers: the organization holds no team key for one of them. */
+/** Why a person cannot choose the org account for these providers: the organization holds no organization account for one of them. */
 export function orgSourceRefusal(rows: readonly CredentialMetadata[], providerIds: readonly string[]) {
   const held = new Set(rows.flatMap((row) => isOrgAccount(row) ? [row.provider_id] : []))
   if (providerIds.every((providerId) => held.has(providerId) || held.has(teamKeyProvider(providerId)))) return undefined
   return errorBody(
     "org_account_missing",
-    "Your organization has no team account for this provider. Ask an owner or admin to add one in Settings → Team accounts, or keep your own account.",
+    "Your organization has no organization account for this provider. Ask an owner or admin to add one in Settings → Models, or keep your own account.",
   )
 }

@@ -35,7 +35,7 @@ export function noAccountChosen() {
 function orgAccountMissing(providerId: string | undefined) {
   const key = providerId ? `${vendorName(providerId)} API key` : "API key for this provider"
   return new CredentialSelectionError("account_unavailable",
-    `Your organization has no ${key}, and this harness is set to use the organization's account. Ask an admin to add a team key, or choose your own account in Settings → Models.`,
+    `Your organization has no ${key}, and this harness is set to use the organization's account. Ask an owner or admin to add an organization account in Settings → Models, or choose your own account there.`,
     { reason: ORG_ACCOUNT_UNAVAILABLE })
 }
 

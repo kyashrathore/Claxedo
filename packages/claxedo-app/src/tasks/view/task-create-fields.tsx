@@ -19,15 +19,14 @@ import { ProseField } from "./prose-field"
 import { TaskStatusChip } from "./status-control"
 import { TaskTitleField } from "./title-field"
 
-export type TaskCreateFormProps = {
+export type ImageQueue = ReturnType<typeof createImageQueue>
+
+export type TaskCreateFieldsProps = {
   readonly draft: TaskDraft
   readonly projects: readonly TaskProject[]
-  readonly busy?: boolean
-  readonly error?: string
+  readonly queue: ImageQueue
   readonly fieldErrors?: FieldReasons
   readonly onDraftChange: (draft: TaskDraft) => void
-  readonly onSubmit: () => void
-  readonly onCancel: () => void
 }
 
 function imageFiles(transfer: DataTransfer | null): File[] {
@@ -39,7 +38,7 @@ function imageFiles(transfer: DataTransfer | null): File[] {
 
 function ImageStrip(props: {
   readonly images: readonly TaskAttachmentDraft[]
-  readonly queue: ReturnType<typeof createImageQueue>
+  readonly queue: ImageQueue
 }) {
   const t = useTranslator(tasksDictionary)
   let picker: HTMLInputElement | undefined
@@ -88,7 +87,7 @@ function ImageStrip(props: {
   )
 }
 
-function ChipRow(props: TaskCreateFormProps & { readonly patch: (input: Partial<TaskDraft>) => void }): JSX.Element {
+function ChipRow(props: TaskCreateFieldsProps & { readonly patch: (input: Partial<TaskDraft>) => void }): JSX.Element {
   const t = useTranslator(tasksDictionary)
   const project = () => props.projects.find((entry) => entry.id === props.draft.projectId)
   const projectError = () => props.fieldErrors?.projectId
@@ -129,57 +128,27 @@ function FieldError(props: { readonly reason?: string }): JSX.Element {
   return <Show when={props.reason}>{(reason) => <span class="tsk-error">{t(fieldReasonKey(reason()))}</span>}</Show>
 }
 
-export function TaskCreateForm(props: TaskCreateFormProps): JSX.Element {
+export function TaskCreateFields(props: TaskCreateFieldsProps): JSX.Element {
   const t = useTranslator(tasksDictionary)
   const patch = (input: Partial<TaskDraft>) => props.onDraftChange({ ...props.draft, ...input })
   const images = () => props.draft.attachments ?? []
-  const queue = createImageQueue({
-    images,
-    setImages: (attachments) => patch({ attachments: [...attachments] }),
-  })
   const imageFieldError = () =>
     Object.entries(props.fieldErrors ?? {}).find(([path]) => path.startsWith("attachments"))?.[1]
-  const project = () => props.projects.find((entry) => entry.id === props.draft.projectId)
-  const submit = () => {
-    if (queue.reading() > 0) {
-      void queue.drained().then(() => {
-        if (!props.busy) props.onSubmit()
-      })
-      return
-    }
-    if (!props.busy) props.onSubmit()
+  const dropped = (event: ClipboardEvent | DragEvent, transfer: DataTransfer | null) => {
+    const files = imageFiles(transfer)
+    if (files.length === 0) return
+    event.preventDefault()
+    props.queue.add(files)
   }
   return (
-    <form
+    <div
       class="tsk tsk-create"
-      data-testid="task-create-dialog"
-      onSubmit={(event) => {
-        event.preventDefault()
-        submit()
-      }}
-      onPaste={(event) => {
-        const files = imageFiles(event.clipboardData)
-        if (files.length === 0) return
-        event.preventDefault()
-        queue.add(files)
-      }}
+      onPaste={(event) => dropped(event, event.clipboardData)}
       onDragOver={(event) => {
         if (event.dataTransfer?.types.includes("Files")) event.preventDefault()
       }}
-      onDrop={(event) => {
-        const files = imageFiles(event.dataTransfer)
-        if (files.length === 0) return
-        event.preventDefault()
-        queue.add(files)
-      }}
+      onDrop={(event) => dropped(event, event.dataTransfer)}
     >
-      <nav class="tsk-crumbs" aria-label={t("tasks.detail.breadcrumb")}>
-        <span>{project()?.label ?? t("tasks.create.project")}</span>
-        <span class="tsk-crumb-sep" aria-hidden="true">
-          ›
-        </span>
-        <span class="tsk-crumb-current">{t("tasks.newTask")}</span>
-      </nav>
       <TaskTitleField
         testId="task-create-title"
         ariaLabel={t("tasks.detail.titleLabel")}
@@ -199,8 +168,8 @@ export function TaskCreateForm(props: TaskCreateFormProps): JSX.Element {
         />
       </div>
       <FieldError reason={props.fieldErrors?.description} />
-      <ImageStrip images={images()} queue={queue} />
-      <Show when={queue.notice()}>
+      <ImageStrip images={images()} queue={props.queue} />
+      <Show when={props.queue.notice()}>
         {(notice) => (
           <p class="tsk-error" role="status" data-testid="task-create-image-notice">
             {t(notice().key, notice().params)}
@@ -209,32 +178,6 @@ export function TaskCreateForm(props: TaskCreateFormProps): JSX.Element {
       </Show>
       <FieldError reason={imageFieldError()} />
       <ChipRow {...props} patch={patch} />
-      <Show when={props.error}>
-        {(message) => (
-          <p class="tsk-error" role="alert">
-            {message()}
-          </p>
-        )}
-      </Show>
-      <div class="tsk-dialog-actions">
-        <Button size="small" variant="ghost" onClick={() => props.onCancel()}>
-          {t("tasks.cancel")}
-        </Button>
-        <Button
-          type="submit"
-          size="small"
-          variant="contrast"
-          data-testid="task-create-submit"
-          disabled={
-            props.busy ||
-            queue.reading() > 0 ||
-            props.draft.title.trim().length === 0 ||
-            props.draft.projectId.length === 0
-          }
-        >
-          {t("tasks.create.create")}
-        </Button>
-      </div>
-    </form>
+    </div>
   )
 }

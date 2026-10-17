@@ -68,10 +68,10 @@ const teamKey = (secret = "sk-ant-api03-team-key", label = "Team Anthropic") =>
   ({ provider_id: "anthropic", kind: "api_key", secret, label, owner: "org" })
 const CLAUDE = ["claude-sdk", "claude-acp", "anthropic"]
 
-describe("an organization's team accounts on the hosted plane", () => {
+describe("organization accounts on the hosted plane", () => {
   test("only an owner or admin adds one; it is the organization's row, not a person's", async () => {
     const refused = await call("member", "", "PUT", teamKey())
-    expect(refused).toMatchObject({ status: 403, body: { error: { code: "org_accounts_forbidden" } } })
+    expect(refused).toMatchObject({ status: 403, body: { error: { code: "org_accounts_forbidden", message: "Only an organization owner or admin manages its organization accounts" } } })
     expect(await store().listCredentials()).toEqual([])
 
     const added = await call("owner", "", "PUT", teamKey())
@@ -83,7 +83,7 @@ describe("an organization's team accounts on the hosted plane", () => {
     expect(changes.at(-1)).toBe(orgId)
   })
 
-  test("a personal plan is refused as a team account, whatever field it was pasted into", async () => {
+  test("a personal plan is refused as an organization account, whatever field it was pasted into", async () => {
     for (const body of [
       teamKey("sk-ant-oat01-plan-token"),
       { ...teamKey("sk-ant-oat01-plan-token"), kind: "oauth_token" },
@@ -100,12 +100,16 @@ describe("an organization's team accounts on the hosted plane", () => {
     }
     expect((await call("owner", "", "PUT", teamKey("sk-ant-oat01-plan-token"))).body.error).toMatchObject({
       code: "org_account_plan_refused",
-      message: expect.stringContaining("API keys only"),
+      message: "Organization accounts hold API keys only, and Anthropic API keys start with sk-ant-api. A Claude or ChatGPT plan belongs to one person: add it under your own accounts in Settings → Models.",
+    })
+    expect((await call("owner", "", "PUT", { provider_id: "claude-sdk", kind: "api_key", owner: "org", secret: "sk-ant-api03-binding" })).body.error).toMatchObject({
+      code: "org_account_provider_unsupported",
+      message: "An organization account is a model vendor's API key, such as Anthropic's or OpenAI's.",
     })
     expect(await store().listCredentials()).toHaveLength(1)
   })
 
-  test("a member sees the team account's label, provider and health, never its secret, and cannot check, rotate or remove it", async () => {
+  test("a member sees the organization account's label, provider and health, never its secret, and cannot check, rotate or remove it", async () => {
     const [team] = await store().listCredentials()
     await fixture.database.prepare("update hosted_provider_credentials set last_error = 'auth_failed: 401 authentication_error acct_internal' where id = ?").bind(team.id).run()
     const listing = await call("member", "/account-sources")
@@ -133,16 +137,22 @@ describe("an organization's team accounts on the hosted plane", () => {
     expect(JSON.stringify(event?.properties)).not.toContain(team.id)
     expect(JSON.stringify(event?.properties)).not.toContain("sk-ant")
 
-    expect(await call("owner", `/${team.id}/reconnect`, "POST", { secret: "sk-ant-api03-by-reconnect" })).toMatchObject({ status: 409, body: { error: { code: "org_account_rotate_by_put" } } })
+    expect(await call("owner", `/${team.id}/reconnect`, "POST", { secret: "sk-ant-api03-by-reconnect" })).toMatchObject({ status: 409, body: { error: {
+      code: "org_account_rotate_by_put",
+      message: "Rotate an organization account by adding the new key for the same vendor in Settings → Models, under a harness's Add an account → For the organization.",
+    } } })
     const rotated = await call("owner", "", "PUT", teamKey("sk-ant-api03-team-rotated"))
     expect(rotated.body.credential).toMatchObject({ id: team.id, owner: null })
     expect(await store().getCredential?.(team.id)).toMatchObject({ revision: 2 })
     expect(await store().resolveCredentialSecretById?.(team.id)).toBe("sk-ant-api03-team-rotated")
   })
 
-  test("a person chooses the team account only for a provider the organization holds one for", async () => {
+  test("a person chooses the organization account only for a provider the organization holds one for", async () => {
     const missing = await call("member", "/account-sources", "PUT", { provider_ids: ["codex-app-server", "openai"], source: "org" })
-    expect(missing).toMatchObject({ status: 409, body: { error: { code: "org_account_missing" } } })
+    expect(missing).toMatchObject({ status: 409, body: { error: {
+      code: "org_account_missing",
+      message: "Your organization has no organization account for this provider. Ask an owner or admin to add one in Settings → Models, or keep your own account.",
+    } } })
     expect((await call("member", "/account-sources")).body.sources).toEqual({})
     const mixed = await call("member", "/account-sources", "PUT", { provider_ids: ["anthropic", "openai"], source: "org" })
     expect(mixed).toMatchObject({ status: 409, body: { error: { code: "org_account_missing" } } })

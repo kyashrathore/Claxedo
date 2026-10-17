@@ -4,7 +4,7 @@ import { createProviderCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
 import { toAppError, useServer, type CatalogProvider, type PlacementId } from "@/server"
-import { ClaxedoIcon as Icon, showToast, useDialog, Button, ProviderIcon, Tag } from "@/ui"
+import { ClaxedoIcon as Icon, requestConfirm, showToast, useDialog, Button, ProviderIcon, Tag } from "@/ui"
 import { catalogNeedsSearch, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
 import { createKeyActions } from "../key-actions"
@@ -29,7 +29,17 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
   const stored = useQuery(() => server.queries.accounts.list())
   const { activity, liveChecks, run, verify } = createKeyActions<"checking">(server.accounts.check)
   const keys: KeyRowStore = { activity, liveChecks, check: (id) => void run("checking", id, () => verify(id)) }
+  const dialog = useDialog()
   const disconnect = async (provider: CatalogProvider) => {
+    const names = { provider: provider.name, harness: harnessDisplayLabel(harness()) }
+    const confirmed = await requestConfirm(dialog, {
+      title: t("provider.disconnect.confirm.title", names),
+      body: t("provider.disconnect.confirm.body", names),
+      confirmLabel: t("common.disconnect"),
+      cancelLabel: t("common.cancel"),
+      destructive: true,
+    })
+    if (!confirmed) return
     try {
       await server.providerConnect.disconnect(harness(), provider)
       showToast({

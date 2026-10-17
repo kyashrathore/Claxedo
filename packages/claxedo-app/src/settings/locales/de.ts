@@ -53,7 +53,6 @@ export default {
   "settings.appearance.theme.description": "Das Thema von Claxedo anpassen.",
   "settings.keybindings.palette": "Befehlspalette",
   "settings.connections.reconnect": "Neu verbinden",
-  "settings.connections.confirm": "Bestätigen",
   "settings.section.connections": "Verbindungen",
   "settings.section.machines": "Maschinen",
   "settings.common.remove": "Entfernen",

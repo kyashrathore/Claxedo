@@ -53,11 +53,11 @@ test("accounts: a source answer naming anything but own or org is a contract mis
   await expect(new QueryClient().fetchQuery(accountQueries(transport, undefined).sources())).rejects.toMatchObject({ class: "internal" })
 })
 
-test("accounts: a team account is saved as the organization's API key, and the server's refusal of a plan comes back in its words", async () => {
+test("accounts: an organization account is saved as the organization's API key, and the server's refusal of a plan comes back in its words", async () => {
   const { seen, transport } = serve((request) => {
     const body = request.body as { secret?: string }
     if (body.secret?.startsWith("sk-ant-oat")) {
-      return Response.json({ error: { code: "org_account_plan_refused", message: "Team accounts hold API keys only." } }, { status: 400 })
+      return Response.json({ error: { code: "org_account_plan_refused", message: "Organization accounts hold API keys only." } }, { status: 400 })
     }
     return Response.json({ credential: { id: "cred-team", provider_id: "anthropic", kind: "api_key", source: "managed", label: "Team", owner: null } })
   })
@@ -68,7 +68,7 @@ test("accounts: a team account is saved as the organization's API key, and the s
     path: "/api/claxedo/credentials",
     body: { provider_id: "anthropic", kind: "api_key", source: "managed", owner: "org", label: "Team", secret: " sk-ant-api03-team " },
   })
-  await expect(api.saveOrgAccount("anthropic", "sk-ant-oat01-plan", "")).rejects.toMatchObject({ code: "org_account_plan_refused", message: "Team accounts hold API keys only." })
+  await expect(api.saveOrgAccount("anthropic", "sk-ant-oat01-plan", "")).rejects.toMatchObject({ code: "org_account_plan_refused", message: "Organization accounts hold API keys only." })
   expect(seen.at(-1)?.body).toEqual({ provider_id: "anthropic", kind: "api_key", source: "managed", owner: "org", secret: "sk-ant-oat01-plan" })
 })
 
@@ -154,7 +154,7 @@ function serverAndAccount() {
   return { seen, calls, client, queries: accountQueries(transport, account), api: createAccountsApi(transport, client, account) }
 }
 
-test("accounts: with a hosted account, account sources, team keys and the person's own rows stay with the connected server, whose turns they govern", async () => {
+test("accounts: with a hosted account, account sources, organization accounts and the person's own rows stay with the connected server, whose turns they govern", async () => {
   const { seen, calls, client, queries, api } = serverAndAccount()
   expect((await client.fetchQuery(queries.sources())).org).toEqual([expect.objectContaining({ id: "cred-org" })])
   await api.setSource(["claude-sdk"], "org")

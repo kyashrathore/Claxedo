@@ -17,39 +17,46 @@ Each lane owns its files exclusively; run lanes A, B and C in parallel in separa
 
 ### Lane A: accounts domain (owns `src/accounts/**`, `packages/ui/src/v2/components/radio-v2.*`)
 
-- [ ] Kit radio: the checked state shows a clearly visible indicator in light and dark themes. Screenshots of every kit-radio user, before and after.
-- [ ] The `cloudChoiceShared` paragraph renders only as a help-icon tooltip beside the Accounts tab, and only when the harness has two or more choosable rows on a cloud-only surface.
-- [ ] Check: pending state is per account key (`activity()` compares the key), the icon spins while pending (still under reduced motion: no spin, a disabled state), and the tooltip reads "Check now · last checked {ago}". A failed check still shows "Couldn't check · reason".
-- [ ] Remove account: `requestConfirm` with the destructive button; `ConfirmRemove` and the `confirming` signal are deleted.
-- [ ] "Add an account" moves onto `FormDrawer` (`DialogProviderConnect` replaced). Managers see "For me / For the organization"; the organization choice shows only API-key methods, maps the provider to `vendorProvider`, and saves with `saveOrgAccount`. Non-managers never see the choice.
-- [ ] The organization account row has Check and Remove for managers. Remove confirms with the list of harnesses the vendor key serves.
-- [ ] `teamSettingsSection`, `team-section.tsx`, `team-account-form.tsx`, `team-store.ts` and the `settings.team.*` keys are deleted; `src/accounts/README.md` describes the folded flow.
-- [ ] Flows: the Models flow covers adding an organization account as a manager, its absence for a member, choosing it, and removing it through the dialog; red run recorded.
+- [x] Kit radio: the checked state shows a clearly visible indicator in light and dark themes. Screenshots of every kit-radio user, before and after.
+- [x] The `cloudChoiceShared` paragraph renders only as a help-icon tooltip beside the Accounts tab, and only when the harness has two or more choosable rows on a cloud-only surface.
+- [x] Check: pending state is per account key (`activity()` compares the key), the icon spins while pending (still under reduced motion: no spin, a disabled state), and the tooltip reads "Check now · last checked {ago}". A failed check still shows "Couldn't check · reason".
+- [x] Remove account: `requestConfirm` with the destructive button; `ConfirmRemove` and the `confirming` signal are deleted.
+- [x] "Add an account" moves onto `FormDrawer` (`DialogProviderConnect` replaced). Managers see "For me / For the organization"; the organization choice shows only API-key methods, maps the provider to `vendorProvider`, and saves with `saveOrgAccount`. Non-managers never see the choice.
+- [x] The organization account row has Check and Remove for managers. Remove confirms with the list of harnesses the vendor key serves.
+- [x] `teamSettingsSection`, `team-section.tsx`, `team-account-form.tsx`, `team-store.ts` and the `settings.team.*` keys are deleted; `src/accounts/README.md` describes the folded flow.
+- [x] Flows: the Models flow covers adding an organization account as a manager, its absence for a member, choosing it, and removing it through the dialog; red run recorded. The member case lives in flow 53 (signed) and is written and typechecked but unrun: signed stacks need macOS `sandbox-exec`.
 
 ### Lane B: confirmations and form surfaces outside accounts (owns `src/ui/confirm.tsx`, `src/ui/README.md`, `src/plugins/view/confirm-dialog.tsx`, `src/settings/view/connections.tsx`, `src/settings/view/connect-dialog.tsx`, `src/projects/view/{remove-project,edit-project,create-project}-dialog.tsx`, `src/session/view/docks/goal-dock.tsx`, `src/tasks/view/create-task-dialog.tsx`, `src/rail/view/session-dialogs.tsx`, `src/marketplace/view/install-sheet.tsx`, `src/accounts/view/sandbox-key-row.tsx`, `src/accounts/view/custom-provider-dialog.tsx`)
 
-- [ ] `requestConfirm` takes a destructive flag that renders the destructive button variant; Lane A consumes it (land B's `confirm.tsx` change first, or have A rebase on it).
-- [ ] Inline confirms removed: sandbox key removal, connection disconnect. `plugins/view/confirm-dialog.tsx` deleted; plugin removal uses `requestConfirm`. Remove project and delete goal use `requestConfirm`.
-- [ ] Forms moved onto the shared surfaces: rename session and create project (`FormDialog`); edit project, create task, custom provider and the settings connect dialog (`FormDrawer`); the install sheet becomes a `Drawer`.
-- [ ] `src/ui/README.md` states the confirmation rule (every destructive action, `requestConfirm`, destructive button) and the popover rule (anchored, non-modal menus and choosers through the kit's `Popover`).
-- [ ] Affected flows updated; red runs recorded.
+- [x] `requestConfirm` takes a destructive flag that renders the destructive button variant; Lane A consumes it (land B's `confirm.tsx` change first, or have A rebase on it).
+- [x] Inline confirms removed: sandbox key removal, connection disconnect. `plugins/view/confirm-dialog.tsx` deleted; plugin removal uses `requestConfirm`. Remove project and delete goal use `requestConfirm`.
+- [x] Forms moved onto the shared surfaces: rename session and create project (`FormDialog`); edit project, create task, custom provider and the settings connect dialog (`FormDrawer`); the install sheet becomes a `Drawer`. The install sheet chooses harnesses and adds the plugin, so it is a form and became a `FormDrawer` (`DrawerInstallPlugin`), per Decision 4's surface rule.
+- [x] `src/ui/README.md` states the confirmation rule (every destructive action, `requestConfirm`, destructive button) and the popover rule (anchored, non-modal menus and choosers through the kit's `Popover`).
+- [x] Affected flows updated; red runs recorded. Unrun here: sandbox key removal (flow 15-sandbox-keys already fails on `origin/dev`: the unsigned page shows only the sign-in notice), goal delete (07), desktop plugin removal (34), the integration connect drawer (53), integration disconnect and removing another agent (no flow connects one), the install drawer (needs a network plugin source).
 
 ### Lane C: naming outside the app (owns server-core credential copy, `packages/harness/src/registry/credentials.ts`, `src/usage/locales/**`)
 
-- [ ] Server error messages and harness registry text say "organization account" (`org_account_missing`, `org_accounts_forbidden`, `org_account_rotate_by_put` messages and the usage cloud route).
-- [ ] Usage page: "Usage by organization account" and its row labels.
-- [ ] `rg -i "team (account|key)"` over `packages/` (excluding `node_modules`, plans and memory) returns nothing user-facing.
+- [x] Server error messages and harness registry text say "organization account" (`org_account_missing`, `org_accounts_forbidden`, `org_account_rotate_by_put` messages and the usage cloud route).
+- [x] Usage page: "Usage by organization account" and its row labels. The organization-scope view renders only signed in, so no flow or screenshot shows it yet.
+- [x] `rg -i "team (account|key)"` over `packages/` (excluding `node_modules`, plans and memory) returns nothing user-facing.
 
 ### Lane D: Models tab empty state (after the VM wake-up work merges; owns `src/accounts/view/harness-section.tsx`'s Models tab and `src/accounts/view/model-sources.ts`)
 
-- [ ] With no project: the copy says models appear once a project exists. With a project whose workspace cannot answer: the copy names that workspace and the failure.
-- [ ] Settings reads the same no-wake model source the composer uses for an asleep cloud draft; opening the Models tab starts no workspace (asserted against the server's start count).
+- [x] With no project: the copy says models appear once a project exists. With a project whose workspace cannot answer: the copy names that workspace and the failure.
+- [x] Settings reads the same no-wake model source the composer uses for an asleep cloud draft; opening the Models tab starts no workspace (asserted against the server's start count). Flow 59 asserts it (no `connection` POST from the page or in the control plane's requests, no new `workspace_ready`/`workspace_woken`) but is unrun: signed cloud stacks need macOS `sandbox-exec`.
 
 ## Definition of done
 
-- [ ] `bun run check`, `bun run typecheck`, `bun run test` in `packages/claxedo-app`, `bun run test:architecture-ratchets` at the repo root, all on the merge tip.
-- [ ] The Models, connections, marketplace, projects and onboarding flows pass on web and phone; every new or changed assertion has a recorded red run.
-- [ ] No Team accounts route, section, key or string remains; `/settings/team-accounts` is gone from the settings sidebar.
-- [ ] Screenshots of the Models page (one account, two accounts, organization account as manager and as member) in light and dark, attached to the PR.
+- [x] `bun run check`, `bun run typecheck`, `bun run test` in `packages/claxedo-app`, `bun run test:architecture-ratchets` at the repo root, all on the merge tip.
+- [ ] The Models, connections, marketplace, projects and onboarding flows pass on web and phone; every new or changed assertion has a recorded red run. Red runs are recorded. Verified in a Linux container only; the owner's Mac run is outstanding: there every Models, connections and onboarding test body passes but the stack fixture fails at teardown on the container's own Claude CLI reaching api.anthropic.com, the signed flows (53, 59, 01 on the web) need macOS `sandbox-exec`, OpenCode cannot start, git names its default branch `master`, and `15-settings-sandbox-keys` already fails on `origin/dev` (the unsigned page shows only the sign-in notice).
+- [x] No Team accounts route, section, key or string remains; `/settings/team-accounts` is gone from the settings sidebar.
+- [ ] Screenshots of the Models page (one account, two accounts, organization account as manager and as member) in light and dark, attached to the PR. Taken except the real member view, which needs a signed stack; a member view simulated by rewriting the account-sources read stands in. No PR yet.
 
 Progress:
+
+- Lane B's `requestConfirm` destructive flag landed first (`c706844`); lanes ran in worktrees off it.
+- Lane C merged (`8636a3d`, `78c720c`, plus `7d4acbb` for the app server adapter's and usage contract's remaining wording). Remaining "team" words are identifiers and wire values: `payer.kind === "team"`, `teamKey`, `usage.teamSpend`, `TEAM_KEYS`, `teamKeyProvider`, `teamKeyRefused`, test file names.
+- Lane A merged (`93f6ef4`, `f5fdba8`, `a56c6b7`, `5274dcf`): kit patch 0086, per-account checks, `requestConfirm` removals, `DrawerProviderConnect`, organization row Check/Remove, Team accounts deleted.
+- Lane B merged (`a1a3728`, `872bf64`, `a6a217b`, `ad99ba8`, `f7f676d`): every destructive action outside accounts confirms through `requestConfirm`, including removing another agent's connection; forms on `FormDialog`/`FormDrawer`; new flow 18 (create task). The combined A+B+C tip is back under the app's line budget (107,601 of 107,760).
+- Lane D merged (`c987ad7`, `fea26ce`): the settings placement is a derived state (loading, failed, no project, unavailable, ready) and the Models source a loading/failed/ready union; settings reads models through the same `readHarnessOptions` the composer's draft does, and nothing the Models tab reads starts a workspace. Desktop renderer closure 1403/36, measured.
+- Final tip: `bun run check` (20/20, budget 107,702 of 107,760), app `typecheck`, `typecheck:e2e`, `bun run test` (974), root `typecheck`, `lint`, `test:architecture-ratchets` all pass. E2E (web and phone): every failure matches the unmodified `origin/dev` baseline in this container, except one `35-live-plugin-web` "swaps on save" phone run that missed the broken-build status before any changed step and passed on re-run.
