@@ -15,6 +15,7 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.
 
 - Invitation continuation (`login-continuation.ts`): sign-in or sign-up retains `/invitations#<token>`, then calls the server's typed `acceptOrgInvitation` action. The server owns email matching, expiry, revocation, single use and membership; the app owns only the authentication and acceptance screen.
+- Native client continuation (`loginDestination`): a sign-in that continues a native client's authorization request loads the Worker's authorize URL as a full navigation, never through the client router, because on a deployment whose API and app share an origin the router would render the app shell at that path and the consent page would never appear.
 
 ## Machine
 
