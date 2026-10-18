@@ -7,6 +7,8 @@ import {
 } from "./vercel"
 import { workspaceRuntimeVersion } from "../runtime-version"
 
+const credentialPath = (prefix: string) => ({ regex: expect.stringMatching(new RegExp(`^\\^${prefix}\\(`)) })
+
 function sandbox(input: Partial<VercelSandboxLike> & { sandboxId?: string } = {}) {
   return {
     sandboxId: input.sandboxId ?? "vercel-sb-1",
@@ -78,7 +80,7 @@ describe("VercelSandboxDriver", () => {
         allow: {
           "*": [],
           "api.notion.com": [{
-            match: { path: { startsWith: "/v1" }, method: ["POST"], headers: [{ key: { exact: "authorization" }, value: { exact: "claxedo-broker:NOTION_TOKEN" } }] },
+            match: { path: credentialPath("/v1"), method: ["POST"], headers: [{ key: { exact: "authorization" }, value: { exact: "claxedo-broker:NOTION_TOKEN" } }] },
             transform: [{ headers: { Authorization: "ntn-secret" } }],
           }],
         },
@@ -111,7 +113,7 @@ describe("VercelSandboxDriver", () => {
 
     const merged = (created.updateNetworkPolicy as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(merged.allow["api.anthropic.com"]).toEqual([{
-      match: { path: { startsWith: "/v1/messages" }, method: ["POST"], headers: [{ key: { exact: "authorization" }, value: { exact: "Bearer claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK" } }] },
+      match: { path: credentialPath("/v1/messages"), method: ["POST"], headers: [{ key: { exact: "authorization" }, value: { exact: "Bearer claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK" } }] },
       transform: [{ headers: { Authorization: "Bearer sk-ant-oat01-fixture" } }],
     }])
     const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
@@ -148,7 +150,7 @@ describe("VercelSandboxDriver", () => {
     expect(merged.allow["github.com"]).toEqual([])
     expect(merged.allow["registry.npmjs.org"]).toEqual([])
     expect(merged.allow["api.anthropic.com"]).toEqual([{
-      match: { path: { startsWith: "/v1/messages" }, method: ["POST"], headers: [{ key: { exact: "x-api-key" }, value: { exact: "claxedo-broker:ANTHROPIC" } }] },
+      match: { path: credentialPath("/v1/messages"), method: ["POST"], headers: [{ key: { exact: "x-api-key" }, value: { exact: "claxedo-broker:ANTHROPIC" } }] },
       transform: [{ headers: { "x-api-key": "sk-ant" } }],
     }])
   })
@@ -162,9 +164,54 @@ describe("VercelSandboxDriver", () => {
     pathPrefixes: ["/v1"],
   }
   const brokeredRule = {
-    match: { path: { startsWith: "/v1" }, method: ["POST"], headers: [{ key: { exact: "x-key" }, value: { exact: "claxedo-broker:A" } }] },
+    match: { path: credentialPath("/v1"), method: ["POST"], headers: [{ key: { exact: "x-key" }, value: { exact: "claxedo-broker:A" } }] },
     transform: [{ headers: { "x-key": "v" } }],
   }
+
+  test("the credential rides only on whole segments under the prefix, never on a dot segment or encoded separator", () => {
+    const pattern = (prefix: string) => {
+      const policy = vercelBrokeredNetworkPolicy([{ ...brokered, pathPrefixes: [prefix] }], "deny-all")
+      if (typeof policy === "string" || Array.isArray(policy.allow)) throw new Error("expected the record form")
+      const regex = policy.allow?.["api.a.test"]?.[0]?.match?.path
+      if (!regex || !("regex" in regex) || !regex.regex) throw new Error("expected a regex path matcher")
+      return new RegExp(regex.regex)
+    }
+    const messages = pattern("/v1/messages")
+    for (const path of ["/v1/messages", "/v1/messages/batches", "/v1/messages?beta=true", "/v1/messages/a%20b", "/v1/messages/...", "/v1/messages/.well-known"]) {
+      expect(messages.test(path), path).toBe(true)
+    }
+    for (const path of [
+      "/v1/messagesX",
+      "/v1/messages/../models",
+      "/v1/messages/./batches",
+      "/v1/messages/..",
+      "/v1/messages/%2e%2e/models",
+      "/v1/messages/%2E%2e/models",
+      "/v1/messages%2fx",
+      "/v1/messages/a%5cb",
+      "/v1/messages/a%252fb",
+      "/v1/messages/a\\b",
+      "/v2/messages",
+      "/x/v1/messages",
+    ]) {
+      expect(messages.test(path), path).toBe(false)
+    }
+
+    const repository = pattern("/owner/repo.git/")
+    expect(repository.test("/owner/repo.git/info/refs")).toBe(true)
+    expect(repository.test("/owner/repo.git/")).toBe(true)
+    expect(repository.test("/owner/repoxgit/info/refs")).toBe(false)
+    expect(repository.test("/owner/repo.git/../../other/private.git/info/refs")).toBe(false)
+    expect(repository.test("/owner/repo.git")).toBe(false)
+  })
+
+  test("a path prefix that is not a plain absolute path carries the credential nowhere", () => {
+    for (const prefix of ["v1", "/v1/../admin", "/v1/%2e%2e", "/v1/./x", "/v1/a%2fb"]) {
+      expect(vercelBrokeredNetworkPolicy([{ ...brokered, pathPrefixes: [prefix, "/v1"] }], "deny-all"), prefix).toEqual({
+        allow: { "api.a.test": [brokeredRule] },
+      })
+    }
+  })
 
   test("brokered secret with an empty host allowlist is rejected", async () => {
     const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory() })
@@ -227,7 +274,7 @@ describe("VercelSandboxDriver", () => {
       {
         allow: {
           "api.anthropic.com": [{
-            match: { path: { startsWith: "/v1/messages" }, method: ["POST"], headers: [{ key: { exact: "x-api-key" }, value: { exact: "claxedo-broker:ANTHROPIC" } }] },
+            match: { path: credentialPath("/v1/messages"), method: ["POST"], headers: [{ key: { exact: "x-api-key" }, value: { exact: "claxedo-broker:ANTHROPIC" } }] },
             transform: [{ headers: { "x-api-key": "sk-ant" } }],
           }],
         },

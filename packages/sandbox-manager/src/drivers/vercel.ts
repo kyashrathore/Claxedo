@@ -204,8 +204,10 @@ export function vercelBrokeredNetworkPolicy(
       // no rule at all, so the firewall attaches the credential nowhere.
       const rules = (allow[host] ??= [])
       for (const prefix of methods.length ? pathPrefixes : []) {
+        const path = credentialPathPattern(prefix)
+        if (path === undefined) continue
         rules.push({
-          match: { path: { startsWith: prefix }, method: methods,
+          match: { path: { regex: path }, method: methods,
             headers: [{ key: { exact: secret.header.toLowerCase() }, value: { exact: `${secret.scheme ? `${secret.scheme} ` : ""}claxedo-broker:${secret.name}` } }] },
           transform: [{ headers: { [secret.header]: value } }],
         })
@@ -214,6 +216,32 @@ export function vercelBrokeredNetworkPolicy(
   }
   const subnets = typeof base === "object" && base?.subnets ? { subnets: base.subnets } : {}
   return { allow, ...subnets } satisfies NetworkPolicy
+}
+
+const RE2_SPECIAL = /[\\.+*?()|[\]{}^$]/g
+// A path character, or a percent escape other than %2e %2f %5c %25: an
+// upstream router can decode those differently from the firewall's matcher.
+const PATH_CHAR = "(?:[^/\\\\%?#]|%(?:2[0-46-9a-dA-D]|5[0-9abd-fABD-F]|[013-46-9a-fA-F][0-9a-fA-F]))"
+const PATH_CHAR_NOT_DOT = "(?:[^./\\\\%?#]|%(?:2[0-46-9a-dA-D]|5[0-9abd-fABD-F]|[013-46-9a-fA-F][0-9a-fA-F]))"
+// Any segment but "." and "..", spelled without lookahead, which RE2 lacks.
+const SEGMENT = `(?:(?:${PATH_CHAR_NOT_DOT}|\\.${PATH_CHAR_NOT_DOT}|\\.\\.${PATH_CHAR})${PATH_CHAR}*)?`
+
+/**
+ * The RE2 pattern a request path must match for the credential to ride on it:
+ * the prefix itself, or the prefix followed by whole segments, with no dot
+ * segment and no encoded separator, dot or percent anywhere after it, then an
+ * optional query. `startsWith` alone let `/v1/messagesX` and
+ * `/owner/repo/../other/repo` through, and a vendor normalizes the second to a
+ * repository the credential was never scoped to. A prefix that is not itself
+ * a plain absolute path gets no pattern, so the credential rides nowhere under
+ * it, the same refusal the broker gives such a path at request time.
+ */
+function credentialPathPattern(prefix: string) {
+  if (!new RegExp(`^(?:/${SEGMENT})+$`).test(prefix)) return undefined
+  const base = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix
+  const literal = base.replace(RE2_SPECIAL, "\\$&")
+  const rest = prefix.endsWith("/") ? `/${SEGMENT}(?:/${SEGMENT})*` : `(?:/${SEGMENT})*`
+  return `^${literal}${rest}(?:\\?.*)?$`
 }
 
 /**
