@@ -31,7 +31,6 @@ export type BrowserAuthState = {
 }
 
 export type BrowserAuthDeployment = {
-  /** The page's origin, which serves the auth and API routes too. */
   origin: string
   issuesSessions: boolean
 }

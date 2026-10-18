@@ -12,7 +12,6 @@ export type ServerConfig = {
   readonly onSignInRefused?: () => void
   readonly eventSocket?: boolean
   readonly relayLinks?: RelayLinkStorage
-  /** Where this client reaches every relay room, when its origin fronts the relay; absent, each connection's own relay URL. */
   readonly relayUrl?: string
 }
 

@@ -58,7 +58,6 @@ export async function run(label: string, command: string, args: string[], option
 
 export type AppBuild = { distDir: string; built: boolean; ms: number }
 
-/** The web build, which reaches its server and the relay on whichever origin serves it. */
 export async function ensureAppBuilt(input: { outDir?: string } = {}): Promise<AppBuild> {
   const started = Date.now()
   const distDir = input.outDir ?? appDistDir()

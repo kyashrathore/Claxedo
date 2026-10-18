@@ -2,7 +2,6 @@ export function appOrigin(): string {
   return window.location.origin
 }
 
-/** Where this browser reaches every relay room: its own origin forwards `/relay` to the relay, so no request leaves the page's origin. */
 export function relayUrl(): string {
   return `${appOrigin()}/relay`
 }
