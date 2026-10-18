@@ -2,9 +2,10 @@ import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery, type UseQueryResult } from "@tanstack/solid-query"
 import type { HarnessId } from "@claxedo/agent-runtime-contract"
 import { createProviderCatalog, harnessModelPickerProvider, modelGroupKey } from "@/composer"
-import { isCatalogHarnessId, nativeHarness, type HarnessSelection } from "@/lib/harness-selection"
+import { nativeHarness, type HarnessSelection } from "@/lib/harness-selection"
 import { toAppError, useServer, type HarnessOptionChoice, type HarnessOptions, type ModelChoice } from "@/server"
 import { catalogProviders } from "./catalog-rules"
+import { piModelChoices } from "./model"
 import type { ReadyPlacement } from "./settings-placement"
 
 export type ModelItem = { readonly id: string; readonly name: string; readonly provider: { readonly id: string; readonly name: string }; readonly connected?: boolean }
@@ -62,7 +63,7 @@ function queryModelSource(selection: HarnessSelection, query: UseQueryResult<Har
   })
 }
 
-function useHarnessModels(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
+export function useConnectionModelSource(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
   const server = useServer()
   const harness = selection.kind === "native" ? selection.harnessId : selection.connectionId
   return queryModelSource(selection, useQuery(() => server.queries.harnesses.options(placement().placementId, harness)))
@@ -73,9 +74,19 @@ export function useAccountModelSource(harness: HarnessId): Accessor<ModelSource>
   return queryModelSource(nativeHarness(harness), useQuery(() => server.queries.harnesses.catalogOptions(harness)))
 }
 
-function useCatalogModels(harness: string, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
+function usePiModels(): Accessor<ModelSource> {
   const server = useServer()
-  const catalog = createProviderCatalog({ server, harness: () => harness, placementId: () => placement().placementId, eager: true })
+  const catalog = createProviderCatalog({ server, harness: () => "pi", eager: true })
+  return createMemo((): ModelSource => {
+    const reason = catalog.error()
+    if (reason) return { kind: "failed", reason }
+    return catalog.resolved() ? { kind: "ready", groups: harnessGroups(nativeHarness("pi"), piModelChoices(catalog.connected())) } : { kind: "loading" }
+  })
+}
+
+function useOpenCodeModels(): Accessor<ModelSource> {
+  const server = useServer()
+  const catalog = createProviderCatalog({ server, harness: () => "opencode", eager: true })
   const [hydrating, setHydrating] = createSignal(true)
   const providers = createMemo(() => catalogProviders([...catalog.all().values()], catalog.connected().map((item) => item.id), "", []))
   let hydrated = ""
@@ -110,7 +121,7 @@ function useCatalogModels(harness: string, placement: Accessor<ReadyPlacement>):
   })
 }
 
-export function usePlacementModelSource(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
-  if (selection.kind === "native" && isCatalogHarnessId(selection.harnessId)) return useCatalogModels(selection.harnessId, placement)
-  return useHarnessModels(selection, placement)
+export function useCatalogModelSource(harness: "pi" | "opencode"): Accessor<ModelSource> {
+  return harness === "pi" ? usePiModels() : useOpenCodeModels()
 }
+

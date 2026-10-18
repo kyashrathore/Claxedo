@@ -48,7 +48,7 @@ test("15 settings: accounts can be connected before any workspace exists", async
   expect(await credentialNamed(stack.url, "Before workspace")).toBeDefined()
   const acp = harnessSection(app, "Scripted ACP")
   await acp.getByRole("tab", { name: "Models" }).click()
-  await expect(acp.getByText("Models appear here once you have a project. Your accounts are in the Accounts tab.", { exact: true })).toBeVisible()
+  await expect(acp.getByText("Scripted ACP lists its models from a project, so they appear here once you have one.", { exact: true })).toBeVisible()
 })
 
 test("15 settings: Models lists each agent's accounts and this computer's logins", async ({ stack, app, isMobile }) => {

@@ -5,7 +5,7 @@ import type { Account } from "@/server"
 import { cloudChoiceWords, groupAccounts, keyCheckWords, machineLoginWords, offersCloudChoice, orgAccountWords, storedAccountWords, type AccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
-import { harnessAccounts, harnesses, harnessesServedBy, harnessRunnable, machineCheckKey, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, organizationTarget, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
+import { harnessAccounts, harnesses, harnessesServedBy, harnessRunnable, machineCheckKey, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, organizationTarget, piModelChoices, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
 
 const t: AccountsText = (key, params) => Object.entries(params ?? {}).reduce((text, [name, value]) => text.replace(`{{${name}}}`, String(value)), en[key])
 const words = { t, windowName: (window: { readonly window: string }) => window.window }
@@ -235,4 +235,19 @@ test("accounts: rows are grouped saved, this computer's login, then organization
     ["org", ["org"]],
   ])
   expect(groupAccounts([row("a", "stored")]).map((entry) => entry.group)).toEqual(["stored"])
+})
+
+test("pi model choices: each connected provider's catalog models are named by the provider/model ids Pi's harness options use", () => {
+  expect(piModelChoices([
+    { id: "anthropic", name: "Anthropic", models: { "claude-sonnet-5": { id: "claude-sonnet-5", name: "Claude Sonnet 5" } } },
+    { id: "openai", name: "OpenAI", models: { "gpt-6": { id: "gpt-6", name: "GPT-6" }, "gpt-6-mini": { id: "gpt-6-mini", name: "GPT-6 mini" } } },
+  ])).toEqual([
+    { id: "anthropic/claude-sonnet-5", name: "Claude Sonnet 5" },
+    { id: "openai/gpt-6", name: "GPT-6" },
+    { id: "openai/gpt-6-mini", name: "GPT-6 mini" },
+  ])
+})
+
+test("pi model choices: no connected provider lists nothing", () => {
+  expect(piModelChoices([])).toEqual([])
 })

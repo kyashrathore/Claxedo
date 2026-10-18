@@ -101,14 +101,14 @@ function Note(props: { readonly text: string | undefined }) {
   )
 }
 
-export function PlacementNote(props: { readonly placement: SettingsPlacement }) {
+export function PlacementNote(props: { readonly placement: SettingsPlacement; readonly harnessLabel: string }) {
   const t = useAccountsText()
   const text = (): string | undefined => {
     const placement = props.placement
     if (placement.kind === "ready") return undefined
     if (placement.kind === "loading") return `${t("common.loading")}${t("common.loading.ellipsis")}`
     if (placement.kind === "failed") return t("settings.models.projects.failed", { reason: placement.error.message })
-    if (placement.kind === "noProject") return t("settings.models.projects.none")
+    if (placement.kind === "noProject") return t("settings.models.projects.none", { harness: props.harnessLabel })
     return placement.why.kind === "folderMissing"
       ? t("settings.models.project.folderMissing", { project: placement.project, directory: placement.why.directory })
       : t("settings.models.project.workspaceUnavailable", { project: placement.project })
