@@ -96,6 +96,43 @@ describe("remote workspace session authority", () => {
     ])
   })
 
+  test("identical calls in flight share one request, and the next identical call asks the plane again", async () => {
+    const answers: Array<(response: Response) => void> = []
+    const bodies: unknown[] = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: (_url, init) => new Promise<Response>((answer) => {
+        bodies.push({ body: sentJson(init), authorization: new Headers(init?.headers).get("authorization") })
+        answers.push(answer)
+      }),
+    })
+    const read = () => policy.authorize({ ...input, operation: "message_read" })
+    const reads = [read(), read(), policy.authorize({ ...input, operation: "queue_read" })]
+    const otherCredential = policy.authorize({ ...input, credential: "Bearer another-rht", operation: "message_read" })
+    const otherSession = policy.authorize({ ...input, sessionId: "ses_other", operation: "message_read" })
+    const stream = policy.authorizeStream!({ ...input, operation: "message_read" })
+    const own = policy.authorize({ ...input, operation: "message_read", signal: new AbortController().signal })
+    const sent = () => new Promise((resolve) => setTimeout(resolve, 0))
+    await sent()
+    expect(bodies).toEqual([
+      { body: { sessionId: "ses_private", action: "read" }, authorization: "Bearer signed-rht" },
+      { body: { sessionId: "ses_private", action: "read" }, authorization: "Bearer another-rht" },
+      { body: { sessionId: "ses_other", action: "read" }, authorization: "Bearer signed-rht" },
+      { body: { sessionId: "ses_private", action: "read", stream: true }, authorization: "Bearer signed-rht" },
+      { body: { sessionId: "ses_private", action: "read" }, authorization: "Bearer signed-rht" },
+    ])
+    answers[0](Response.json({ allowed: true }))
+    expect(await Promise.all(reads)).toEqual([{ allowed: true }, { allowed: true }, { allowed: true }])
+    for (const answer of answers.slice(1)) answer(Response.json({ allowed: true, lease: "lease_1", expiresAt: 10 }))
+    await Promise.all([otherCredential, otherSession, stream, own])
+    const again = read()
+    await sent()
+    expect(bodies).toHaveLength(6)
+    expect(bodies[5]).toEqual({ body: { sessionId: "ses_private", action: "read" }, authorization: "Bearer signed-rht" })
+    answers[5](new Response(null, { status: 403 }))
+    expect((await again).allowed).toBe(false)
+  })
+
   test("reserves a child as the presented proof's principal and answers the operation the authority minted", async () => {
     const requests: Array<{ headers: Headers; body: unknown }> = []
     const policy = remoteWorkspaceSessionAccessPolicy({

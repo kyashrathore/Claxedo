@@ -80,6 +80,14 @@ export function remoteWorkspaceSessionAccessPolicy(
   const log = options.log ?? consoleAuthorityLog
   const authorityUrl = () => (typeof options.url === "function" ? options.url() : options.url)?.trim()
   /**
+   * The authority calls in flight, by endpoint, credential and body: a call
+   * identical to one still unanswered awaits that answer instead of asking
+   * again, since the plane would decide the same question the same way at the
+   * same moment. The entry leaves the moment the answer lands, so no decision
+   * is ever reused across requests: the next identical call asks the plane.
+   */
+  const asking = new Map<string, Promise<AuthorityAnswer>>()
+  /**
    * POST one authority action and let `decode` name its SUCCESS shape.
    *
    * Every failure — no URL, a missing turn id, a transport error, a non-2xx
@@ -107,30 +115,41 @@ export function remoteWorkspaceSessionAccessPolicy(
       (!requestOptions?.leaseId || !positiveInteger(requestOptions.fencingToken))
     )
       return denied(503, "session_turn_lease_required")
-    const askedAt = Date.now()
-    try {
-      return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
-        const response = await (options.fetch ?? globalThis.fetch)(url, {
-          method: "POST",
-          headers: {
-            ...(input.credential && action !== "turn_renew" && action !== "turn_release"
-              ? { authorization: input.credential }
-              : {}),
-            "content-type": "application/json",
-          },
-          body: JSON.stringify(authorityRequestBody(input, action, requestOptions)),
-          signal,
-        })
-        if (response.ok) return decode(await jsonBody(response))
-        const body = await jsonBody(response)
-        const denial = deniedFromResponse(response, body)
-        if (denial.status === 503) reportUnavailable(log, { action, sessionId: input.sessionId, askedAt, status: response.status, code: asString(asRecord(body?.error)?.code) })
-        return denial
-      }, input.signal)
-    } catch (error) {
-      if (!input.signal?.aborted) reportUnavailable(log, { action, sessionId: input.sessionId, askedAt, error })
-      return denied(503, "session_authority_unavailable")
+    const credential = input.credential && action !== "turn_renew" && action !== "turn_release" ? input.credential : undefined
+    const body = JSON.stringify(authorityRequestBody(input, action, requestOptions))
+    const ask = async (): Promise<AuthorityAnswer> => {
+      const askedAt = Date.now()
+      try {
+        return await withDeadlineSignal(options.timeoutMs ?? 5_000, async (signal) => {
+          const response = await (options.fetch ?? globalThis.fetch)(url, {
+            method: "POST",
+            headers: { ...(credential ? { authorization: credential } : {}), "content-type": "application/json" },
+            body,
+            signal,
+          })
+          const answer = await jsonBody(response)
+          if (response.ok) return { admitted: answer }
+          const denial = deniedFromResponse(response.status, answer)
+          if (denial.status === 503) reportUnavailable(log, { action, sessionId: input.sessionId, askedAt, status: response.status, code: asString(asRecord(answer?.error)?.code) })
+          return denial
+        }, input.signal)
+      } catch (error) {
+        if (!input.signal?.aborted) reportUnavailable(log, { action, sessionId: input.sessionId, askedAt, error })
+        return denied(503, "session_authority_unavailable")
+      }
     }
+    const shared = () => {
+      const key = `${url}\0${credential ?? ""}\0${body}`
+      const sharing = asking.get(key)
+      if (sharing) return sharing
+      const asked = ask().finally(() => asking.delete(key))
+      asking.set(key, asked)
+      return asked
+    }
+    // A caller with its own abort signal keeps its own request, since its
+    // abort must not answer another caller 503.
+    const answer = await (input.signal ? ask() : shared())
+    return "admitted" in answer ? decode(answer.admitted) : answer
   }
   /**
    * A session the authority has no row for is refused with the same 403 as
@@ -253,6 +272,9 @@ export function remoteWorkspaceSessionAccessPolicy(
  */
 type AuthorityRequestInput = SessionAccessPolicyInput & { sessionId: string }
 
+/** The plane's answer before the action's decoder reads it: the admitting body, or the denial every action shares. */
+type AuthorityAnswer = { admitted: Record<string, unknown> | undefined } | AuthorityDenial
+
 type AuthorityRequestOptions = {
   writeClass?: SessionWriteClass
   lease?: string
@@ -345,9 +367,9 @@ function decodeTurnRelease(body: Record<string, unknown> | undefined): { release
  * else — a fault, a throttle, a missing route — is the authority being away,
  * which a lease outlives and a reader retries, never a refusal it acts on.
  */
-function deniedFromResponse(response: Response, body: Record<string, unknown> | undefined): AuthorityDenial {
+function deniedFromResponse(answered: number, body: Record<string, unknown> | undefined): AuthorityDenial {
   const error = asRecord(body?.error)
-  const status = response.status === 401 ? 401 : response.status === 403 ? 403 : response.status === 409 ? 409 : 503
+  const status = answered === 401 ? 401 : answered === 403 ? 403 : answered === 409 ? 409 : 503
   return denied(
     status,
     asString(error?.code)
