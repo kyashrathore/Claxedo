@@ -9,7 +9,8 @@ import { useModelSource, groupContext, modelKeyOf, type SettingsPlacement } from
 import { harnessHasAccount, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AgentHarnessAccounts } from "./harness-accounts"
-import { createHarnessProviders, HarnessProvidersSection } from "./harness-providers"
+import { createHarnessProviders } from "../harness-providers-state"
+import { HarnessProvidersSection } from "./harness-providers"
 import { enabledCount, ModelsTab, soleSelfGroup } from "./models-tab"
 
 export type HarnessTab = "accounts" | "models"
