@@ -32,6 +32,9 @@ import {
 } from "../../provider-neutral-hosted-services"
 import { createD1UsageLedger } from "../../../usage/adapters/d1-usage-ledger"
 import {
+  BETTER_AUTH_CLI_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_CLIENT_ID,
+  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   BETTER_AUTH_NATIVE_SCOPES,
   BETTER_AUTH_SESSION_COOKIE,
   betterAuthIssuer,
@@ -43,12 +46,7 @@ import {
   type AuthEmailSender,
   type BetterAuthConfiguration,
 } from "../../../platform/auth/better-auth-configuration"
-import {
-  BETTER_AUTH_CLI_CLIENT_ID,
-  BETTER_AUTH_DESKTOP_CLIENT_ID,
-  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
-  betterAuthNativeResource,
-} from "../../../platform/auth/better-auth-native-clients"
+import { betterAuthNativeResource } from "../../../platform/auth/better-auth-native-clients"
 import { createBetterAuthD1AuthenticationEvidenceResolver, betterAuthAccount } from "../../../platform/auth/better-auth-d1-authentication-evidence"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
 import { orgInvitationEmailDelivery } from "../../../platform/auth/auth-email-delivery"

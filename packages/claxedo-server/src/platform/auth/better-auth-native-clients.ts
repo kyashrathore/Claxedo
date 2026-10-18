@@ -1,11 +1,13 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { symmetricEncrypt } from "better-auth/crypto"
 
-import { BETTER_AUTH_NATIVE_SCOPES } from "./better-auth-d1-foundation"
+import {
+  BETTER_AUTH_CLI_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_CLIENT_ID,
+  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+  BETTER_AUTH_NATIVE_SCOPES,
+} from "./better-auth-d1-foundation"
 
-export const BETTER_AUTH_CLI_CLIENT_ID = "claxedo-cli"
-export const BETTER_AUTH_DESKTOP_CLIENT_ID = "claxedo-desktop"
-export const BETTER_AUTH_INTROSPECTION_CLIENT_ID = "claxedo-control-plane"
 /**
  * The desktop binds an ephemeral port for every authorization attempt. Better
  * Auth applies RFC 8252 loopback matching and ignores that port, while still
