@@ -4,11 +4,22 @@
     "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "customConditions": ["development"],
+    "customConditions": [
+      "development"
+    ],
     "noUncheckedIndexedAccess": false,
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "e2e"
+  ]
 }
