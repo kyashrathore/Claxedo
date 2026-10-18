@@ -13,6 +13,7 @@ export type RunMeta = {
   readonly startedAt: string
   readonly elapsedMs: number
   readonly host: string
+  readonly failures: readonly string[]
 }
 
 const MARK_COLUMNS = ["fcp", "shell", "rail", "session-text", "session-fold", "session-two-screens", "session-settled", "composer", "login", "marketplace", "settings"] as const
@@ -65,7 +66,7 @@ function readinessTable(results: readonly StepResult[]) {
     const med = (pick: (result: StepResult) => number | undefined) => median(group.map((result) => pick(result) ?? Number.NaN))
     return [
       `${first.scenario}/${first.step}`, first.profile, first.cache, String(group.length),
-      `${first.primary.name} ${fmt(med((result) => result.primary.ms))}`,
+      `${first.primary.name.replace(/:ses_.*$/, "")} ${fmt(med((result) => result.primary.ms))}`,
       ...MARK_COLUMNS.map((column) => fmt(med((result) => markValue(result, column)))),
       fmt(med((result) => result.lcp?.at)),
       fmt(med((result) => result.waterfall.requests)), kb(med((result) => result.waterfall.transferBytes)), fmt(med((result) => result.waterfall.waves)),
@@ -93,7 +94,8 @@ function mainThreadSection(result: StepResult) {
   const scripts = table(["script", "compile ms", "evaluate ms", "streamed compile ms"], main.scripts.slice(0, 20).map((script) => [script.url, fmt(script.compileMs, 1), fmt(script.evaluateMs, 1), fmt(script.streamedCompileMs, 1)]))
   const sheets = main.styleSheets.length ? table(["stylesheet", "parse ms"], main.styleSheets.slice(0, 8).map((sheet) => [sheet.url, fmt(sheet.parseMs, 1)])) : ""
   const tasks = table(["start", "ms", "top of the task"], main.longTasks.slice(0, 12).map((task) => [fmt(task.startMs), fmt(task.durMs), task.top.join("<br>").replace(/\|/g, "\\|")]))
-  return [`Window ${main.windowMs.toFixed(0)} ms, main thread busy ${main.busyMs.toFixed(0)} ms, TBT ${main.tbtMs.toFixed(0)} ms, ${main.longTasks.length} long tasks.`, "", `Totals (ms): ${totals}`, "", scripts, "", sheets, "", tasks].join("\n")
+  const cpu = result.cpu ? [table(["chunk", "sampled self ms"], result.cpu.byChunk.map((chunk) => [chunk.url, fmt(chunk.ms, 1)])), "", ...result.cpu.top.map((line) => `- ${line.replace(/\|/g, "\\|")}`)] : []
+  return [`Window ${main.windowMs.toFixed(0)} ms, main thread busy ${main.busyMs.toFixed(0)} ms, TBT ${main.tbtMs.toFixed(0)} ms, ${main.longTasks.length} long tasks.`, "", `Totals (ms): ${totals}`, "", scripts, "", sheets, "", tasks, "", ...cpu].join("\n")
 }
 
 function bytesSection(bytes: DistBytes) {
@@ -125,6 +127,7 @@ export function renderMarkdown(meta: RunMeta, results: readonly StepResult[], by
     `# Web perf rig: ${meta.label}`, "",
     `Target ${meta.target}. Profiles ${meta.profiles.join(", ")}; ${meta.reps} repetition(s) each; CPU ×${meta.cpu}. Started ${meta.startedAt}, ran ${(meta.elapsedMs / 1000).toFixed(0)} s. Host: ${meta.host}.`, "",
     "Times are milliseconds from the navigation's time origin (boots) or from the trusted press/keydown (interactions); each cell is the median over repetitions. `headline` is the step's own readiness mark.", "",
+    ...(meta.failures.length ? ["## Failed steps", "", ...meta.failures.map((failure) => `- ${failure}`), ""] : []),
     "## Readiness", "", readinessTable(results), "",
     "## Lazy chunks by step (representative run)", "", lazyChunkSection(results), "",
   ]

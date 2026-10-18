@@ -8,7 +8,8 @@ import { startHostedRelay } from "./hosted-relay"
 import { reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
-export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean; relayPort?: number }
+/** `relayUrl` is the relay origin the control plane hands out and the app may reach; it defaults to the port the relay listens on, and names a front of it otherwise. */
+export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean; relayPort?: number; relayUrl?: string }
 
 export const HOSTED_SANDBOX_TEST_TOKEN = "hosted-sandbox-test-token"
 
@@ -23,7 +24,7 @@ export async function startHostedStack(label: string, options: HostedStackOption
   const workerOrigin = `https://127.0.0.1:${workerPort}`
   const workerUrl = options.apiOrigin ?? workerOrigin
   const sandboxOrigin = `https://127.0.0.1:${sandboxPort}`
-  const relayUrl = `http://127.0.0.1:${relayPort}`
+  const relayUrl = options.relayUrl ?? `http://127.0.0.1:${relayPort}`
   const credentials = await hostedCertificate(root)
   const model = await startScriptedModelServer({ port: modelPort, red: false })
   const git = await startHostedGitServer(root, gitPort)

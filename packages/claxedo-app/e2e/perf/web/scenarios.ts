@@ -3,8 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { installPaintedFrames } from "../../harness/painted-frames"
-import { createSourceMapper } from "../panel/trace"
-import { summarizeMainThread, type MainThreadSummary } from "./main-thread"
+import { createSourceMapper, summarizeProfile } from "../panel/trace"
+import { profileSelfByUrl, summarizeMainThread, type MainThreadSummary } from "./main-thread"
 import { installWebProbe, type ProbeState } from "./probe"
 import type { Profile } from "./profiles"
 import { startRecorder, type Recorder, type Recording } from "./recorder"
@@ -29,6 +29,8 @@ export type StepResult = {
   readonly waterfall: Waterfall
   readonly lazyChunks: readonly WaterfallRow[]
   readonly mainThread: MainThreadSummary | undefined
+  /** Sampled self time by chunk, then the panel profile summary (top frames and app stacks). */
+  readonly cpu: { readonly byChunk: readonly { readonly url: string; readonly ms: number }[]; readonly top: readonly string[] } | undefined
   readonly probeLongTasks: { readonly count: number; readonly tbtMs: number }
   readonly hostLoad: string
   readonly traceFile: string | undefined
@@ -113,13 +115,17 @@ type Measure = {
 
 async function measure(input: RunInput, session: Session, spec: Measure): Promise<StepResult> {
   const { page, recorder } = session
-  await recorder.begin({ trace: true })
-  if (spec.reference === "input") await page.evaluate(() => window.__webPerf?.arm())
-  await spec.act()
-  for (const name of spec.required) await waitForMark(page, name, MARK_TIMEOUT_MS)
-  if (spec.settle) await waitForMark(page, spec.settle, SETTLE_TIMEOUT_MS)
-  await page.waitForTimeout(QUIET_MS)
-  const recording = await recorder.end()
+  await recorder.begin({ trace: true, profile: true })
+  let recording: Recording | undefined
+  try {
+    if (spec.reference === "input") await page.evaluate(() => window.__webPerf?.arm())
+    await spec.act()
+    for (const name of spec.required) await waitForMark(page, name, MARK_TIMEOUT_MS)
+    if (spec.settle) await waitForMark(page, spec.settle, SETTLE_TIMEOUT_MS)
+    await page.waitForTimeout(QUIET_MS)
+  } finally {
+    recording = await recorder.end()
+  }
   const state = await readProbe(page)
   return summarizeStep(input, session, spec, recording, state)
 }
@@ -146,6 +152,7 @@ async function summarizeStep(input: RunInput, session: Session, spec: Measure, r
   const mapper = input.target.distDir ? createSourceMapper(input.target.distDir) : undefined
   const windowUs = { fromUs: referenceTs * 1_000_000, toUs: (referenceTs + endMs / 1000) * 1_000_000 }
   const mainThread = recording.traceEvents.length > 0 ? summarizeMainThread(recording.traceEvents, windowUs, mapper) : undefined
+  const cpu = recording.profile ? { byChunk: profileSelfByUrl(recording.profile).slice(0, 12), top: mapper ? summarizeProfile(recording.profile, mapper) : [] } : undefined
   const longTasks = state.longTasks.filter((task) => task.start >= referenceMs && task.start <= referenceMs + endMs)
   const keys = state.keys.filter((key) => key.at >= referenceMs).map((key) => key.latencyMs)
   const traceFile = recording.traceEvents.length > 0 ? path.join(input.out, `${input.label}-${input.profile.name}-${spec.scenario}-${spec.step}-rep${input.rep}.trace.json`) : undefined
@@ -156,12 +163,11 @@ async function summarizeStep(input: RunInput, session: Session, spec: Measure, r
     primary: first ? { name: first, ms: marks[first] ?? Number.NaN } : { name: "key p50", ms: round(quantile(keys, 0.5)) },
     marks, lcp: spec.reference === "navigation" ? state.lcp : undefined, railRows: state.railRows,
     keys: keys.length > 0 ? { p50: round(quantile(keys, 0.5)), p95: round(quantile(keys, 0.95)), max: round(Math.max(...keys)), n: keys.length } : undefined,
-    waterfall, lazyChunks, mainThread,
+    waterfall, lazyChunks, mainThread, cpu,
     probeLongTasks: { count: longTasks.length, tbtMs: round(longTasks.reduce((sum, task) => sum + Math.max(0, task.duration - 50), 0)) },
     hostLoad: hostLoad(), traceFile,
   }
-  const headline = spec.required.map((name) => `${name} ${marks[name] ?? "—"}`).join(", ")
-  input.log(`${input.profile.name} ${spec.scenario}/${spec.step} rep ${input.rep}: ${headline} ms; ${waterfall.requests} requests, ${(waterfall.transferBytes / 1000).toFixed(0)} kB, ${waterfall.waves} waves; TBT ${mainThread?.tbtMs ?? "—"} ms; ${result.hostLoad}`)
+  input.log(`${input.profile.name} ${spec.scenario}/${spec.step} rep ${input.rep}: ${result.primary.name} ${result.primary.ms} ms; ${waterfall.requests} requests, ${(waterfall.transferBytes / 1000).toFixed(0)} kB, ${waterfall.waves} waves; TBT ${mainThread?.tbtMs ?? "—"} ms; ${result.hostLoad}`)
   return result
 }
 
@@ -183,46 +189,65 @@ async function pressByRole(page: Page, locate: () => ReturnType<Page["locator"]>
 
 const sessionMarks = (id: string) => ({ required: [`session-text:${id}`], settle: `session-settled:${id}` })
 
-async function coldNavigation(input: RunInput, scenario: string, url: string, signedIn: boolean, until: { required: readonly string[]; settle?: string }): Promise<{ session: Session; result: StepResult }> {
-  const session = await openSession(input, signedIn)
-  const result = await measure(input, session, { scenario, step: "boot", cache: "cold", reference: "navigation", required: until.required, settle: until.settle, act: () => session.page.goto(url, { waitUntil: "commit" }).then(() => undefined) })
-  return { session, result }
-}
+export type ScenarioRun = { readonly results: readonly StepResult[]; readonly failures: readonly string[] }
 
-/** Every scenario once for one profile and repetition: three contexts, the second carrying the warm chain. */
-export async function runScenarios(input: RunInput): Promise<StepResult[]> {
+/** Every scenario once for one profile and repetition: three contexts, the second carrying the warm chain. A failed step is recorded with a screenshot and the chain goes on. */
+export async function runScenarios(input: RunInput): Promise<ScenarioRun> {
   const { target } = input
   const [first, second] = target.sessions
   if (!first || !second) throw new Error("the target names fewer than two sessions")
   const results: StepResult[] = []
-  const root = await coldNavigation(input, "cold-root", `${target.url}/`, true, { required: ["rail"] })
-  results.push(root.result)
-  await root.session.context.close()
+  const failures: string[] = []
+  const attempt = async (name: string, page: Page | undefined, run: () => Promise<StepResult>) => {
+    try {
+      results.push(await run())
+    } catch (error) {
+      const shot = page ? path.join(input.out, `${input.label}-${input.profile.name}-${name.replace(/\//g, "-")}-rep${input.rep}-failed.png`) : undefined
+      if (shot) await page?.screenshot({ path: shot }).catch(() => undefined)
+      const message = `${input.profile.name} ${name} rep ${input.rep} failed: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}${shot ? ` (${shot})` : ""}`
+      failures.push(message)
+      input.log(message)
+    }
+  }
+  const coldStep = async (scenario: string, url: string, signedIn: boolean, until: { required: readonly string[]; settle?: string }) => {
+    const session = await openSession(input, signedIn)
+    try {
+      await attempt(`${scenario}/boot`, session.page, () => measure(input, session, { scenario, step: "boot", cache: "cold", reference: "navigation", required: until.required, settle: until.settle, act: () => session.page.goto(url, { waitUntil: "commit" }).then(() => undefined) }))
+      return session
+    } catch (error) {
+      await session.context.close()
+      throw error
+    }
+  }
+  const root = await coldStep("cold-root", `${target.url}/`, true, { required: ["rail"] })
+  await root.context.close()
 
-  const chain = await coldNavigation(input, "cold-session", first.url, true, sessionMarks(first.id))
-  results.push(chain.result)
-  const { page } = chain.session
+  const chain = await coldStep("cold-session", first.url, true, sessionMarks(first.id))
+  const { page } = chain
   try {
-    results.push(await measure(input, chain.session, { scenario: "warm-session", step: "reload", cache: "warm", reference: "navigation", ...sessionMarks(first.id), act: () => page.goto(first.url, { waitUntil: "commit" }).then(() => undefined) }))
-    results.push(await measure(input, chain.session, { scenario: "open-session", step: "press", cache: "warm", reference: "input", ...sessionMarks(second.id), act: () => pressRailRow(page, second.id) }))
-    await pressByRole(page, () => page.locator('[data-component="prompt-input"][contenteditable="true"]').first())
-    results.push(await measure(input, chain.session, { scenario: "open-session", step: "type", cache: "warm", reference: "input", required: [], settle: undefined, act: async () => {
-      await page.keyboard.type(TYPED, { delay: 80 })
-      await page.waitForTimeout(QUIET_MS)
-    } }))
+    await attempt("warm-session/reload", page, () => measure(input, chain, { scenario: "warm-session", step: "reload", cache: "warm", reference: "navigation", ...sessionMarks(first.id), act: () => page.goto(first.url, { waitUntil: "commit" }).then(() => undefined) }))
+    await attempt("open-session/press", page, () => measure(input, chain, { scenario: "open-session", step: "press", cache: "warm", reference: "input", ...sessionMarks(second.id), act: () => pressRailRow(page, second.id) }))
+    await attempt("open-session/type", page, async () => {
+      await pressByRole(page, () => page.locator('[data-component="prompt-input"][contenteditable="true"]').first())
+      return measure(input, chain, { scenario: "open-session", step: "type", cache: "warm", reference: "input", required: [], settle: undefined, act: async () => {
+        await page.keyboard.type(TYPED, { delay: 80 })
+        await page.waitForTimeout(QUIET_MS)
+      } })
+    })
     for (let index = 0; index < SWITCHES; index += 1) {
       const destination = index % 2 === 0 ? first : second
-      results.push(await measure(input, chain.session, { scenario: "switch-sessions", step: `return-${index + 1}`, cache: "warm", reference: "input", ...sessionMarks(destination.id), act: () => pressRailRow(page, destination.id) }))
+      await attempt(`switch-sessions/return-${index + 1}`, page, () => measure(input, chain, { scenario: "switch-sessions", step: `return-${index + 1}`, cache: "warm", reference: "input", ...sessionMarks(destination.id), act: () => pressRailRow(page, destination.id) }))
     }
-    results.push(await measure(input, chain.session, { scenario: "lazy-pages", step: "marketplace", cache: "warm", reference: "input", required: ["marketplace"], settle: undefined, act: () => pressByRole(page, () => page.getByTestId("global-navigation").getByRole("button", { name: "Marketplace", exact: true })) }))
-    await pressByRole(page, () => page.getByTestId("rail-account-trigger"))
-    results.push(await measure(input, chain.session, { scenario: "lazy-pages", step: "settings", cache: "warm", reference: "input", required: ["settings"], settle: undefined, act: () => pressByRole(page, () => page.getByRole("menuitem", { name: "Settings", exact: true })) }))
+    await attempt("lazy-pages/marketplace", page, () => measure(input, chain, { scenario: "lazy-pages", step: "marketplace", cache: "warm", reference: "input", required: ["marketplace"], settle: undefined, act: () => pressByRole(page, () => page.getByRole("button", { name: /Marketplace/ }).first()) }))
+    await attempt("lazy-pages/settings", page, async () => {
+      await pressByRole(page, () => page.getByTestId("rail-account-trigger"))
+      return measure(input, chain, { scenario: "lazy-pages", step: "settings", cache: "warm", reference: "input", required: ["settings"], settle: undefined, act: () => pressByRole(page, () => page.getByRole("menuitem", { name: "Settings", exact: true })) })
+    })
   } finally {
-    await chain.session.context.close()
+    await chain.context.close()
   }
 
-  const signedOut = await coldNavigation(input, "signed-out-login", `${target.url}/`, false, { required: ["login"] })
-  results.push(signedOut.result)
-  await signedOut.session.context.close()
-  return results
+  const signedOut = await coldStep("signed-out-login", `${target.url}/`, false, { required: ["login"] })
+  await signedOut.context.close()
+  return { results, failures }
 }

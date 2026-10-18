@@ -1,5 +1,6 @@
 import type { CDPSession } from "@playwright/test"
 import { traceEventsFrom, type TraceEvent } from "../../harness/trace-events"
+import type { CpuProfile } from "../panel/trace"
 
 export type Initiator = {
   readonly type: string
@@ -46,11 +47,11 @@ export type NetworkRecord = {
   websocket: boolean
 }
 
-export type Recording = { readonly requests: readonly NetworkRecord[]; readonly traceEvents: readonly TraceEvent[] }
+export type Recording = { readonly requests: readonly NetworkRecord[]; readonly traceEvents: readonly TraceEvent[]; readonly profile: CpuProfile | undefined }
 
 export type Recorder = {
   /** Forgets finished requests; those still streaming keep updating. */
-  begin(options: { trace: boolean }): Promise<void>
+  begin(options: { trace: boolean; profile: boolean }): Promise<void>
   end(): Promise<Recording>
 }
 
@@ -76,6 +77,7 @@ export async function startRecorder(cdp: CDPSession): Promise<Recorder> {
   const requests = new Map<string, NetworkRecord>()
   let traceChunks: TraceEvent[] = []
   let tracing = false
+  let profiling = false
   cdp.on("Network.requestWillBeSent", (event) => {
     const frame = event.initiator.stack?.callFrames.find((candidate) => candidate.url)
     const previous = event.redirectResponse ? requests.get(event.requestId) : undefined
@@ -160,23 +162,34 @@ export async function startRecorder(cdp: CDPSession): Promise<Recorder> {
     if (tracing) traceChunks.push(...traceEventsFrom(event))
   })
   await cdp.send("Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 })
+  await cdp.send("Profiler.enable")
+  await cdp.send("Profiler.setSamplingInterval", { interval: 250 })
   return {
-    begin: async ({ trace }) => {
+    begin: async ({ trace, profile }) => {
       for (const [id, record] of requests) if (record.endTs !== undefined || record.failed) requests.delete(id)
       traceChunks = []
+      if (profile) {
+        profiling = true
+        await cdp.send("Profiler.start")
+      }
       if (trace) {
         tracing = true
         await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: TRACE_CATEGORIES, recordMode: "recordContinuously" } })
       }
     },
     end: async () => {
+      let profile: CpuProfile | undefined
+      if (profiling) {
+        profiling = false
+        profile = ((await cdp.send("Profiler.stop")) as { profile: CpuProfile }).profile
+      }
       if (tracing) {
         const complete = new Promise<void>((resolve) => cdp.once("Tracing.tracingComplete", () => resolve()))
         await cdp.send("Tracing.end")
         await complete
         tracing = false
       }
-      return { requests: [...new Set(requests.values())].filter((record) => Number.isFinite(record.startTs)).sort((a, b) => a.startTs - b.startTs), traceEvents: traceChunks }
+      return { requests: [...new Set(requests.values())].filter((record) => Number.isFinite(record.startTs)).sort((a, b) => a.startTs - b.startTs), traceEvents: traceChunks, profile }
     },
   }
 }

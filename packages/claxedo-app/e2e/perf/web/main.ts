@@ -30,16 +30,19 @@ async function main() {
     }
     log(`measuring ${target.description}; sessions ${target.sessions.map((session) => session.id).join(", ")}`)
     const results: StepResult[] = []
+    const failures: string[] = []
     for (let rep = 0; rep < options.reps; rep += 1) {
       for (const name of options.profiles) {
         const profile = PROFILES[name]
         target.useProfile(profile)
-        results.push(...(await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, log })))
+        const run = await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, log })
+        results.push(...run.results)
+        failures.push(...run.failures)
       }
     }
     const written = await writeReport(options.out, {
       label: options.label, target: target.description, profiles: options.profiles, reps: options.reps, cpu: options.cpu,
-      startedAt: startedAt.toISOString(), elapsedMs: Date.now() - startedAt.getTime(), host: `${os.cpus()[0]?.model ?? "unknown"} ×${os.cpus().length}, ${hostLoad()}`,
+      startedAt: startedAt.toISOString(), elapsedMs: Date.now() - startedAt.getTime(), host: `${os.cpus()[0]?.model ?? "unknown"} ×${os.cpus().length}, ${hostLoad()}`, failures,
     }, results, target.bytes)
     log(`wrote ${written.md} and ${written.json} after ${((Date.now() - startedAt.getTime()) / 1000).toFixed(0)} s`)
   } finally {

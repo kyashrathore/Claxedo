@@ -45,6 +45,24 @@ One isolated stack serves each variant from its own origin on a fixed port (4828
 
 `--throttle=4` slows the CPU fourfold. Each run writes `<label>-<variant>-run<N>.json`, `.cpuprofile` and, when asked, `.heapprofile` and `.trace.json` to `--out`; the builds' hidden source maps map them back to source.
 
+## Performance: the web app as a person meets it
+
+```sh
+CLAXEDO_E2E_PORT_RANGE=48300-48399 bun run e2e:perf-web -- --reps=3 --label=dev-8b2d1e9 --out=/tmp/web-perf
+bun run e2e:perf-web -- --target=https://app.claxedo.dev --cookies=/path/to/cookies.json --profile=none --reps=3
+```
+
+`e2e/perf/web/main.ts` drives headless Chromium over CDP against the signed e2e stack (the hosted Worker on Miniflare, the relay, an enrolled local machine) or against any origin given `--cookies`, a Playwright `storageState` file or a cookie-editor export of a browser already signed in there; the rig never signs in itself. The local stack's front serves the build the way Cloudflare Pages does: pre-compressed (brotli 11, gzip 6), `/assets/*` immutable, the shell revalidated with an ETag. Two network profiles ship and run in turn: `fast` (20 ms latency, 100 Mbps) and `india-staging` (100 ms to static, 300 ms to the API, 10 Mbps); `--profile=none` keeps the host's own network. `Network.emulateNetworkConditions` adds its latency once per request before headers can arrive; the API's extra 200 ms is added by the front, since Chromium cannot delay one origin's requests more than another's. `--cpu=4` slows the CPU fourfold.
+
+Each repetition runs every scenario once, in three contexts at 1440×900, device scale 2: a cold boot of `/` to the rail; then one context for a cold boot of the newest session's route, its warm reload, a press on the second session's rail row (a first visit), a 34-character line typed into the composer, four return switches between the two sessions, the Marketplace and Settings pages from the rail; then a cold signed-out boot of `/` to the login form. The rail holds the two measured sessions of `--seed-turns` scripted turns each above `--rail-sessions` one-turn sessions. Every step records:
+
+- the painted frame that first showed each fact (`e2e/perf/web/probe.ts` on `installPaintedFrames`): first contentful paint and the largest paint, the shell, a filled rail, the login form, a page, and per session its first assistant text, a filled fold, two screens of text, the composer editable, and four stable frames of transcript, which is the switch's "done";
+- every request's queueing, DNS, connect, TLS, time to first byte and download, transfer against decoded bytes, encoding, cache state, priority, initiator, and the response it waited on and so its dependency wave; for an interaction, the requests after the trusted press and the lazy chunks among them;
+- a timeline trace of the window (`devtools.timeline`, `v8`, `disabled-by-default-v8.compile`, `loading`, user timing): per chunk compile and evaluate time on and off the main thread, long tasks with their top frames mapped through the hidden source maps, total blocking time, style recalculation, layout, paint and stylesheet parse totals;
+- per typed character, keydown to the frame that showed it; the host's load and free memory beside every line.
+
+`--out` receives `<label>-summary.json` (every step), `<label>-summary.md` (medians per step and profile, the representative run's waterfall, main thread and lazy chunks, and for a local target every dist asset's raw/gzip/brotli size with the initial chunks' bytes by source) and one `.trace.json` per step.
+
 ## Writing a flow
 
 One spec per user flow, named `e2e/flows/NN-flow-name.spec.ts`, where `NN` is the flow number from the plan. The spec imports everything from `../harness`:

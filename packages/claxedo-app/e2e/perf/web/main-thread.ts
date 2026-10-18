@@ -1,5 +1,5 @@
 import { traceText, type TraceEvent } from "../../harness/trace-events"
-import { describeTraceEvent, type Mapper } from "../panel/trace"
+import { describeTraceEvent, type CpuProfile, type Mapper } from "../panel/trace"
 import { mainThreadEvents } from "../stream-switch/main-thread"
 
 export type LongTask = { readonly startMs: number; readonly durMs: number; readonly top: readonly string[] }
@@ -46,6 +46,19 @@ function topOf(task: TraceEvent, onMain: readonly TraceEvent[], mapper: Mapper) 
     const url = EVALUATE.test(event.name) || COMPILE.test(event.name) ? scriptUrl(event).split("/").pop() : ""
     return url ? `${line} ${url}` : line
   })
+}
+
+/** Sampled self time per script URL, so a module's top-level evaluation is attributed to its chunk. */
+export function profileSelfByUrl(profile: CpuProfile) {
+  const byId = new Map(profile.nodes.map((node) => [node.id, node]))
+  const totals = new Map<string, number>()
+  profile.samples.forEach((id, index) => {
+    const node = byId.get(id)
+    if (!node || ["(idle)", "(program)", "(garbage collector)", "(root)"].includes(node.callFrame.functionName)) return
+    const url = node.callFrame.url.split("/").pop() || "(native)"
+    totals.set(url, (totals.get(url) ?? 0) + (profile.timeDeltas[index] ?? 0))
+  })
+  return [...totals.entries()].map(([url, us]) => ({ url, ms: round(us / 1000) })).sort((a, b) => b.ms - a.ms)
 }
 
 /** Main-thread work between two monotonic trace times (µs), with every script's compile and evaluate cost in the window. */

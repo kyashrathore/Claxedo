@@ -4,7 +4,7 @@ export type WaterfallRow = {
   readonly id: string
   readonly url: string
   readonly path: string
-  readonly kind: "document" | "script" | "stylesheet" | "font" | "image" | "api" | "event-stream" | "websocket" | "other"
+  readonly kind: "document" | "script" | "stylesheet" | "font" | "image" | "api" | "preflight" | "asset" | "event-stream" | "websocket" | "other"
   readonly method: string
   readonly status: number | undefined
   readonly protocol: string | undefined
@@ -13,6 +13,7 @@ export type WaterfallRow = {
   readonly encoding: string | undefined
   readonly initiator: string
   readonly waitedOn: string | undefined
+  readonly waitedOnUrl: string | undefined
   readonly wave: number
   readonly gapMs: number | undefined
   readonly afterApi: string | undefined
@@ -45,7 +46,9 @@ const API_GAP_MS = 50
 
 function kindOf(record: NetworkRecord): WaterfallRow["kind"] {
   if (record.websocket) return "websocket"
+  if (record.method === "OPTIONS" || record.initiator.type === "preflight") return "preflight"
   if (record.mimeType === "text/event-stream") return "event-stream"
+  if ((record.type === "Fetch" || record.type === "XHR") && record.url.includes("/assets/")) return "asset"
   switch (record.type) {
     case "Document": return "document"
     case "Script": return "script"
@@ -103,7 +106,8 @@ export function buildWaterfall(records: readonly NetworkRecord[], originTs: numb
     const connectEnd = timing ? Math.max(0, timing.dnsEnd, timing.connectEnd) : 0
     const headersEndMs = timing && requestTimeMs !== undefined ? requestTimeMs + timing.receiveHeadersEnd : undefined
     const initiator = initiatorUrl(record)
-    const parent = record === document ? undefined : (initiator ? byUrl.get(initiator) : undefined) ?? (document ? byUrl.get(document.url) : undefined)
+    const preflighted = kind === "preflight" ? byUrl.get(record.url) : undefined
+    const parent = record === document ? undefined : preflighted ? byUrl.get(preflighted.waitedOnUrl ?? "") : (initiator ? byUrl.get(initiator) : undefined) ?? (document ? byUrl.get(document.url) : undefined)
     const lastApi = kind === "api" ? [...api].reverse().find((row) => row.endMs !== undefined && row.endMs <= startMs && startMs - row.endMs <= API_GAP_MS) : undefined
     const row: WaterfallRow = {
       id: record.id,
@@ -118,6 +122,7 @@ export function buildWaterfall(records: readonly NetworkRecord[], originTs: numb
       encoding: record.encoding,
       initiator: initiatorLabel(record),
       waitedOn: parent?.path,
+      waitedOnUrl: parent?.url,
       wave: parent ? parent.wave + 1 : 0,
       gapMs: parent?.endMs === undefined ? undefined : round(startMs - parent.endMs),
       afterApi: lastApi?.path,

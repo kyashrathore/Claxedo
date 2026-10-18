@@ -114,7 +114,3 @@ export async function analyzeDist(distDir: string): Promise<DistBytes> {
     compressMs: Date.now() - started,
   }
 }
-
-export function kib(bytes: number) {
-  return `${(bytes / 1024).toFixed(1)} kB`
-}
