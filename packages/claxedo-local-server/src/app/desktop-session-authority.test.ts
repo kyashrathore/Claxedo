@@ -96,7 +96,7 @@ function fakeAuthority() {
     let raw = ""
     request.on("data", (chunk) => { raw += chunk })
     request.on("end", () => {
-      const body = JSON.parse(raw || "{}") as { action?: string; writeClass?: string; sessionId?: string }
+      const body = JSON.parse(raw || "{}") as { action?: string; writeClass?: string; sessionId?: string; turnId?: string }
       const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? "")?.[1]
       const actor = bearer ? bearers.get(bearer) : undefined
       authorityCalls.push({
@@ -107,8 +107,8 @@ function fakeAuthority() {
       })
       // Both adapters refuse a `follow` grantee's write, and any grantee's
       // `session_control` write, with the same 403 they raise for a session
-      // the caller has no row for at all. A turn action carries no class and
-      // is the turn itself.
+      // the caller has no row for at all. A turn's acquisition names the
+      // `agent_turn` class and is the turn itself.
       const writing = body.action === "write" || String(body.action).startsWith("turn_")
       const shared = actor ? shareLevels.get(actor.actorId) : undefined
       const refusedShare = shared === "follow" || (!!shared && body.writeClass === "session_control")
@@ -122,7 +122,7 @@ function fakeAuthority() {
       if (body.action === "turn_acquire") {
         response.end(JSON.stringify({
           allowed: true,
-          turnId: "turn_1",
+          turnId: body.turnId,
           leaseId: "lease_1",
           fencingToken: 1,
           acquiredAt: Date.now(),
@@ -292,13 +292,14 @@ describe("a serving desktop answers a relayed caller privately and its own user 
 
     const refused = await prompt(relayed("member-token"))
     expect(refused.status).toBe(403)
-    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([`write:${MEMBER.actorId}`])
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([`turn_acquire:${MEMBER.actorId}`])
 
     authorityCalls.length = 0
-    // The owner passes the authority and is then refused by the unconfigured
-    // harness, which is what this fixture has instead of an agent.
+    // The owner is admitted by the acquisition and then refused by the
+    // unconfigured harness, which is what this fixture has instead of an
+    // agent; the turn it was admitted to is released without a bearer.
     await prompt(relayed("owner-token"))
-    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([`write:${OWNER.actorId}`])
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([`turn_acquire:${OWNER.actorId}`, "turn_release:undefined"])
 
     authorityCalls.length = 0
     await prompt(identity.capability)
@@ -359,12 +360,13 @@ describe("a share level decides what a relayed grantee may do", () => {
     })
 
     // Past the authority, the runtime answers for a session it does not hold.
+    // The prompt's one question is its acquisition, which names the turn's class.
     expect(read.code).toBe(404)
     expect(stream.code).toBe(200)
     expect(prompt.status).toBe(403)
     expect(await prompt.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
-    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`))
-      .toEqual([`read:${MEMBER.actorId}`, `read:${MEMBER.actorId}`, `write:${MEMBER.actorId}`])
+    expect(authorityCalls.map((call) => `${call.action}${call.writeClass ? `/${call.writeClass}` : ""}:${call.actorId}`))
+      .toEqual([`read:${MEMBER.actorId}`, `read:${MEMBER.actorId}`, `turn_acquire/agent_turn:${MEMBER.actorId}`])
   })
 
   test("a send grantee is refused the fork, the permission mode and the delete, and the authority is asked for control", async () => {
@@ -407,11 +409,13 @@ describe("a share level decides what a relayed grantee may do", () => {
       body: JSON.stringify({ messageID: "msg_1", parts: [{ type: "text", text: "hi" }] }),
     })
 
-    // Admitted, then refused by the unconfigured harness this fixture has
-    // instead of an agent — which is as far past admission as it can get here.
+    // Admitted by its acquisition; then the runtime answers for a session it
+    // does not hold and releases the turn it was admitted to.
     expect(prompt.status).not.toBe(403)
-    expect(authorityCalls.map((call) => `${call.action}/${call.writeClass}:${call.actorId}`))
-      .toEqual([`write/agent_turn:${MEMBER.actorId}`])
+    expect(authorityCalls.map((call) => [call.action, call.writeClass, call.actorId])).toEqual([
+      ["turn_acquire", "agent_turn", MEMBER.actorId],
+      ["turn_release", undefined, undefined],
+    ])
   })
 })
 

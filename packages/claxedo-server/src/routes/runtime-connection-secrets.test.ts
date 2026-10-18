@@ -170,7 +170,7 @@ async function turnFixture() {
   const acquireTurn = async (workspaceId = "workspace-1") => {
     const response = await app.request("/session-authorize", { method: "POST",
       headers: { authorization: `Bearer ${await relayProof(workspaceId)}`, "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: "ses-1", action: "turn_acquire", turnId: "msg-1" }) })
+      body: JSON.stringify({ sessionId: "ses-1", action: "turn_acquire", turnId: "msg-1", writeClass: "agent_turn" }) })
     expect(response.status).toBe(200)
     return (await response.json() as { leaseId: string }).leaseId
   }

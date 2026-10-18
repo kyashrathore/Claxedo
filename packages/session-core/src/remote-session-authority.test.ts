@@ -386,6 +386,14 @@ describe("a share level narrows the authority's answer, not the runtime's questi
       ...controlOperations.map(() => "write"),
       "read",
     ])
+
+    bodies.length = 0
+    await policy.acquireTurn!({ ...input, operation: "prompt", turnId: "turn_named" })
+    await policy.acquireTurn!({ ...input, operation: "prompt", turnId: "turn_granted", grant: "signed-grant" })
+    expect(bodies.map((body) => [body?.action, body?.writeClass, body?.grant])).toEqual([
+      ["turn_acquire", "agent_turn", undefined],
+      ["turn_acquire", undefined, "signed-grant"],
+    ])
   })
 
   test("a send grantee is the same runtime asking the same questions and being admitted", async () => {

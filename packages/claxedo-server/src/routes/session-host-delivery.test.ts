@@ -81,7 +81,7 @@ describe("a session placed in its own host answers to that host alone", () => {
     const proof = await vmProof("rat_vm_on_hosted")
     for (const body of [
       { action: "read", sessionId: ROOT },
-      { action: "turn_acquire", sessionId: ROOT, turnId: "turn_vm" },
+      { action: "turn_acquire", sessionId: ROOT, turnId: "turn_vm", writeClass: "agent_turn" },
       { action: "turn_grant", sessionId: ROOT, intent: "queued_prompt", turnId: "turn_vm_grant" },
     ]) {
       const answer = await plane.post("/session-authorize", body, proof)
@@ -132,6 +132,7 @@ describe("a session placed in its own host answers to that host alone", () => {
 describe("/turn-delivery", () => {
   test("hands the session's own host the owner's Pi accounts as direct secrets and nothing else", async () => {
     const proof = await hostProof("rat_delivery")
+    const readsBefore = pluginReads.length
     const lease = await plane.acquire(proof, ROOT, "turn_delivery")
     const answer = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
     expect(answer.status).toBe(200)
@@ -139,7 +140,10 @@ describe("/turn-delivery", () => {
     const delivery = parseTurnDelivery(await answer.json())
     const ownerId = plane.owner.principal!.userId
     expect(delivery).toMatchObject({ auth: { machineOwnerUserId: ownerId, accounts: {} }, plugins: PI_PLUGINS, providerDefinitions: [] })
-    expect(pluginReads).toEqual([WORKSPACE_ID])
+    expect(pluginReads.slice(readsBefore)).toEqual([WORKSPACE_ID, WORKSPACE_ID])
+    const acquired = parseTurnDelivery(lease.delivery)!
+    expect({ ...acquired, firstPartyMcp: undefined }).toEqual({ ...delivery!, firstPartyMcp: undefined })
+    expect(acquired.firstPartyMcp?.url).toBe(delivery!.firstPartyMcp?.url)
     expect(delivery!.auth.direct).toEqual({
       [ownerId]: { anthropic: expect.objectContaining({ delivery: "direct", baseUrl: "https://api.anthropic.com", secret: "sk-ant-api03-owner", authKind: "api-key" }) },
     })

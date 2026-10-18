@@ -1,18 +1,21 @@
+import type { D1Database } from "@cloudflare/workers-types"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createD1CoreAuthority } from "../authority/adapters/d1/core-authority"
 import { miniflareControlPlaneDatabase } from "./control-plane-migrations"
 import { inviteOrgMember } from "./invite-org-member"
 import { signedD1Identity } from "./signed-d1-identity"
 
-export async function d1Authority() {
+/** `database` wraps the migrated database before the authority is built over it, as a round counter does. */
+export async function d1Authority(options: { database?: (database: D1Database) => D1Database } = {}) {
   const backing = await miniflareControlPlaneDatabase()
-  const authority = createD1CoreAuthority(backing.database, {
+  const database = options.database?.(backing.database) ?? backing.database
+  const authority = createD1CoreAuthority(database, {
     deploymentId: "test",
     product: { kind: "claxedo-hosted" },
   })
   return {
     authority,
-    database: backing.database,
+    database,
     dispose: () => backing.dispose(),
     signIn: (subject: string) => signedD1Identity(authority, subject),
     addMember: (owner: SignedControlPlaneAuth, member: SignedControlPlaneAuth, orgId: string) =>

@@ -463,8 +463,6 @@ export function createSessionRoutes(opts: Opts) {
       const answer = await invokeGoalRuntime(opts, c, sessionId, directory, goalStartInvocation(input.first.goal))
       return answer.status === 201 ? { created: { goal: await answer.json() } } : { refused: answer }
     }
-    const guarded = await sessionOperationGuard(opts, c, sessionId, "prompt")
-    if (guarded) return { refused: guarded }
     const admission = await admitPrompt(c, { sessionId, directory, body: input.first.prompt })
     if (admission.answer.status === 204 && !admission.failed) return { created: { prompt: { delivery: "start" } } }
     await Promise.allSettled([admission.turn])
@@ -1287,10 +1285,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
-      if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
-      if (!await readSession(opts, c, directory, id)) return c.json(sessionNotFound(), 404)
       const body = parseSessionPromptBody(await boundedJsonBody(c))
       const admission = await admitPrompt(c, { sessionId: id, directory, body })
       if (admission.failed) publishTurnFailure(opts.publishGlobal, directory, id, admission.failed.error)

@@ -1,3 +1,4 @@
+import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken, type RelayBacking } from "@claxedo/workspace-relay"
@@ -35,6 +36,8 @@ export async function sessionHostPlane(input: {
   plugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
   relayUrl?: string
   toolGroups?: readonly string[]
+  /** Wraps the control plane's database before anything is built over it, as a round counter does. */
+  database?: (database: D1Database) => D1Database
 } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
@@ -44,7 +47,7 @@ export async function sessionHostPlane(input: {
     [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64"),
     [HOSTED_CREDENTIALS_FLAG]: "1",
   }
-  const fixture = await d1Authority()
+  const fixture = await d1Authority(input.database ? { database: input.database } : {})
   const store = fixture.authority
   const owner = await fixture.signIn("owner")
   const member = await fixture.signIn("member")
@@ -151,9 +154,9 @@ export async function sessionHostPlane(input: {
   const createVmSession = (sessionId: string) => createSession(sessionId, { harnessId: "codex", hostId: "host_vm", backing: "cloud-vm" })
 
   async function acquire(proof: string, sessionId: string, turnId: string) {
-    const answer = await post("/session-authorize", { action: "turn_acquire", sessionId, turnId }, proof)
+    const answer = await post("/session-authorize", { action: "turn_acquire", sessionId, turnId, writeClass: "agent_turn" }, proof)
     if (answer.status !== 200) throw new Error(`turn_acquire answered ${answer.status}: ${await answer.text()}`)
-    return await answer.json() as { leaseId: string; fencingToken: number; turnId: string }
+    return await answer.json() as { leaseId: string; fencingToken: number; turnId: string; delivery?: unknown }
   }
 
   return {

@@ -30,14 +30,17 @@ async function deliveryGeneration(value: unknown): Promise<string> {
 }
 
 /**
- * The control-plane calls a turn makes, each proven by the session's current
- * turn lease: `/turn-delivery` once per lease for its credentials, plugins
- * and provider definitions, `/turn-execution` for the token that reaches the
- * workspace machine, and `/turn-credential-refused` when the vendor refused
- * one of the delivered accounts. The first two are held for the lease and
- * dropped when its turn ends. The plane refuses a machine that is not running
- * at once; the refusal says whether this call started it, when its start can
- * next answer differently, and how long it has run.
+ * What a turn holds from the control plane, each under the session's current
+ * turn lease: its delivery (credentials, plugins and provider definitions),
+ * handed over with the lease when the turn is acquired and asked of
+ * `/turn-delivery` only for a lease this object took over after a restart or
+ * whose accounts the vendor refused; `/turn-execution` for the token that
+ * reaches the workspace machine; and `/turn-credential-refused` when the
+ * vendor refused one of the delivered accounts. The delivery and the
+ * execution are held for the lease and dropped when its turn ends. The plane
+ * refuses a machine that is not running at once; the refusal says whether
+ * this call started it, when its start can next answer differently, and how
+ * long it has run.
  */
 const askedKey = (leaseKey: string, request: ExecutionRequest) => `${leaseKey}:${request.start ? "start" : "read"}`
 
@@ -54,25 +57,36 @@ export class SessionHostTurns {
     return lease ? this.delivered.get(turnLeaseKey(lease)) : undefined
   }
 
+  /** Holds the delivery the control plane handed over with `lease`, so the turn asks it for nothing more. */
+  hold(lease: Pick<TurnLease, "turnId" | "fencingToken">, delivery: TurnDelivery): Promise<HeldTurn> {
+    return this.keep(turnLeaseKey(lease), Promise.resolve(delivery))
+  }
+
   delivery(sessionId: string, options: { renew?: true } = {}): Promise<HeldTurn> {
     const lease = this.lease(sessionId)
     const key = turnLeaseKey(lease)
     const held = this.deliveries.get(key)
     const expired = (this.delivered.get(key)?.delivery.expiresAt ?? Infinity) <= Date.now()
     if (held && !options.renew && !expired) return held
-    const fetched = this.post("turn-delivery", lease).then(async (body) => {
+    return this.keep(key, this.post("turn-delivery", lease).then((body) => {
       const delivery = parseTurnDelivery(body)
       if (!delivery) throw new TurnAuthorityError(502, "turn_delivery_invalid")
+      return delivery
+    }))
+  }
+
+  private keep(key: string, delivering: Promise<TurnDelivery>): Promise<HeldTurn> {
+    const kept = delivering.then(async (delivery) => {
       if (delivery.expiresAt <= Date.now()) throw new TurnAuthorityError(502, "turn_delivery_expired")
       const mcp = delivery.firstPartyMcp
       const generation = await deliveryGeneration([delivery.plugins, delivery.providerDefinitions, mcp ? [mcp.name, mcp.url, mcp.toolGroups] : null])
       const turn = { key, delivery, generation }
-      if (this.deliveries.get(key) === fetched) this.delivered.set(key, turn)
+      if (this.deliveries.get(key) === kept) this.delivered.set(key, turn)
       return turn
     })
-    this.deliveries.set(key, fetched)
-    fetched.catch(() => { if (this.deliveries.get(key) === fetched) this.deliveries.delete(key) })
-    return fetched
+    this.deliveries.set(key, kept)
+    kept.catch(() => { if (this.deliveries.get(key) === kept) this.deliveries.delete(key) })
+    return kept
   }
 
   execution(sessionId: string, request: ExecutionRequest): Promise<TurnExecutionAccess> {

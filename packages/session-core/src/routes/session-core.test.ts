@@ -2379,13 +2379,13 @@ describe("a share level reaches the runtime as the authority's answer to a write
 
   /**
    * The routes a `send` grant exists for. A follow grantee must be refused all
-   * three, and the refusal has to come from the same `write` question the
-   * prompt already asked — not from a fourth place that could drift from it.
-   * The machine's owner starts a turn that asks one permission and one
-   * question, so the grantee has a live request of each kind to answer.
+   * three, and each refusal has to be the authority's answer to that write,
+   * the turn's carried by its acquisition — not a fourth place that could
+   * drift from it. The machine's owner starts a turn that asks one permission
+   * and one question, so the grantee has a live request of each kind to answer.
    */
   async function sharedRoutes(input: { authorizeWrite: () => Promise<SessionAccessDecision> }) {
-    const actions: Array<{ operation: string; write: boolean }> = []
+    const actions: Array<{ operation: string; write: boolean; turn?: true }> = []
     const prompted: string[] = []
     const answered: string[] = []
     const h = harness({
@@ -2420,14 +2420,19 @@ describe("a share level reaches the runtime as the authority's answer to a write
           registerSession: async () => ({ allowed: true }),
           // The lease is rejected unless it names the turn the caller asked
           // for, and the prompt route derives that from the message id.
-          acquireTurn: async (value) => ({
-            allowed: true,
-            turnId: value.turnId,
-            leaseId: "lease_1",
-            fencingToken: 1,
-            acquiredAt: 1,
-            expiresAt: Date.now() + 60_000,
-          }),
+          acquireTurn: async (value) => {
+            actions.push({ operation: value.operation, write: true, turn: true })
+            const decision = await input.authorizeWrite()
+            if (!decision.allowed) return decision
+            return {
+              allowed: true,
+              turnId: value.turnId,
+              leaseId: "lease_1",
+              fencingToken: 1,
+              acquiredAt: 1,
+              expiresAt: Date.now() + 60_000,
+            }
+          },
           renewTurn: async (value) => ({
             allowed: true,
             turnId: value.turnId,
@@ -2474,7 +2479,7 @@ describe("a share level reaches the runtime as the authority's answer to a write
     expect(actions).toEqual([
       { operation: "permission_response", write: true },
       { operation: "question_response", write: true },
-      { operation: "prompt", write: true },
+      { operation: "prompt", write: true, turn: true },
       { operation: "message_read", write: false },
     ])
   })

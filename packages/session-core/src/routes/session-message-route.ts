@@ -7,7 +7,7 @@ import { boundedJsonBody } from "./http"
 import { sessionOperationGuard } from "./session-operation-guard"
 import { rejectPermissionOverride } from "./session-permission-ceiling"
 import {
-  acquireManagedPromptLease,
+  admitPromptTurn,
   admitQueuedDelivery,
   flushDocumentsAfterTurn,
   messageIdConflict,
@@ -34,19 +34,25 @@ function lostTurnResponse(sessionId: string, lease?: ActiveSessionTurnLease) {
   ), { status: 409 })
 }
 
-/** `POST /session/:id/message`: a prompt answered with the turn it ran, once that turn ends. */
+/**
+ * `POST /session/:id/message`: a prompt answered with the turn it ran, once
+ * that turn ends. Authorized as `prompt_async` is: a turn it starts by its
+ * lease, a queued delivery by the policy's `prompt` answer, each before the
+ * session is read.
+ */
 export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response> {
   const id = routeParam(c, "id")
-  const guarded = await sessionOperationGuard(opts, c, id, "prompt")
-  if (guarded) return guarded
   const directory = await opts.resolveDirectory(c, { sessionId: id })
-  if (!await readSession(opts, c, directory, id)) return c.json(errorBody("session_not_found", "Session not found"), 404)
   const runtime = await opts.runtime(c)
-  const parsedBody = parseSessionPromptBody(await boundedJsonBody(c))
-  const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-  const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
-  if (permissionRefusal) return permissionRefusal
+  let body = parseSessionPromptBody(await boundedJsonBody(c))
+  const prepare = async () => {
+    if (!await readSession(opts, c, directory, id)) return c.json(errorBody("session_not_found", "Session not found"), 404)
+    body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body }) ?? body
+    return rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
+  }
   if (body.delivery) {
+    const refused = await sessionOperationGuard(opts, c, id, "prompt") ?? await prepare()
+    if (refused) return refused
     const messageID = body.messageID ?? `msg_${crypto.randomUUID()}`
     const delivered = await admitQueuedDelivery(opts, c, runtime, { sessionId: id, body: { ...body, messageID, delivery: body.delivery } })
     if ("refused" in delivered) return delivered.refused
@@ -55,7 +61,7 @@ export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response>
     return c.json({ ...delivered.steered, error: delivered.steered.message }, steerAnswerStatus(delivered.steered))
   }
   const lostTurn = captureTurnTarget((target) => opts.childSessions?.onTurnStarted(id, directory, target.turnId))
-  const turnAdmission = await acquireManagedPromptLease({
+  const turnAdmission = await admitPromptTurn({
     opts,
     c,
     directory,
@@ -65,6 +71,11 @@ export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response>
   })
   if (turnAdmission.rejected) return turnAdmission.rejected
   const lease = turnAdmission.lease
+  const refused = await prepare()
+  if (refused) {
+    await lease?.release().catch(() => undefined)
+    return refused
+  }
   const activeTurn = opts.createActiveTurnScope
     ? turnScope(opts.createActiveTurnScope({ c, directory, sessionId: id }), lease)
     : undefined

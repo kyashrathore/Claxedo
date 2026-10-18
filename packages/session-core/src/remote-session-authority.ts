@@ -1,3 +1,4 @@
+import { parseTurnDelivery } from "@claxedo/harness/contract"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 import { asBoolean, asNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import {
@@ -156,10 +157,12 @@ export function remoteWorkspaceSessionAccessPolicy(
           ...(lease ? { lease } : {}),
         }),
       registerSession: (input) => request(input, "register", decodeAllowed),
+      // A grant was minted while a credential proved the class; a bearer
+      // names it here, and the authority decides it with the lease.
       acquireTurn: (input) =>
         request(input, "turn_acquire", decodeTurnLease, {
           turnId: input.turnId,
-          ...(input.grant ? { grant: input.grant } : {}),
+          ...(input.grant ? { grant: input.grant } : { writeClass: sessionAccessWriteClass(input) }),
         }),
       renewTurn: (input) =>
         request(input, "turn_renew", decodeTurnLease, {
@@ -297,7 +300,13 @@ function decodeTurnLease(
     || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
   ) return denied(503, "session_authority_invalid_response")
   const connectionCredential = asString(body?.connectionCredential)
-  return { allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt, ...(connectionCredential ? { connectionCredential } : {}) }
+  const delivery = body?.delivery === undefined ? undefined : parseTurnDelivery(body.delivery)
+  if (body?.delivery !== undefined && !delivery) return denied(503, "session_authority_invalid_response")
+  return {
+    allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt,
+    ...(connectionCredential ? { connectionCredential } : {}),
+    ...(delivery ? { delivery } : {}),
+  }
 }
 
 function decodeTurnGrant(

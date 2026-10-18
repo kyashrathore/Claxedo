@@ -80,7 +80,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     }
     this.meta = new SessionHostMeta(ctx.storage.sql)
     this.turns = new SessionHostTurns({ fetch: this.controlPlane, authorityUrl: env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL, leases: () => this.leases })
-    this.leases = new TurnLeases(ctx.storage.sql, (lease) => this.turns.forget(lease))
+    this.leases = new TurnLeases(ctx.storage.sql, this.turns)
     this.policy = this.leases.observe(remoteWorkspaceSessionAccessPolicy({ url: env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL, fetch: this.controlPlane }))
     this.pi = new PiHarness({ harness: (input) => this.placement.factory(() => this.boot())(input) })
     this.placement = new DurablePiPlacement({

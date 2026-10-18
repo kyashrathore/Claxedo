@@ -220,7 +220,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(existsSync(path.join(directory, "ask-denied.txt")), false)
   })
 
-  void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for one delivery", { timeout: 120_000 }, async () => {
+  void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for nothing beyond its lease", { timeout: 120_000 }, async () => {
     const root = "ses_turn"
     const host = await session(root)
     model.scriptTool({ name: "write", input: { path: "written.txt", content: "the session host wrote this\n" }, whenPromptIncludes: "PIWRITE" })
@@ -228,10 +228,11 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const messages = await host.settled("PIWRITE")
     assert.equal(await readFile(path.join(directory, "written.txt"), "utf8"), "the session host wrote this\n")
     assert.ok(messages.some((message) => message.parts.some((part) => part.type === "tool" && part.tool === "write")))
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_write"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_write"])
     await host.prompt("msg_again", "Reply with exactly this one token: PIAGAIN")
     await host.settled("PIAGAIN")
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_write", "msg_again"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_write", "msg_again"])
+    assert.deepEqual(host.controlPlane.calls.deliveries, [])
     assert.ok(host.controlPlane.calls.executions.length >= 1)
     const spent = new Set(model.requests.filter((request) => request.prompt.includes("PIWRITE")).map((request) => request.authorization))
     assert.deepEqual(spent, new Set([`Bearer ${SECRET}`]))
@@ -322,10 +323,11 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(before.options.find((option) => option.id === "model")?.currentValue, MODEL.modelID)
     await host.crash()
     assert.deepEqual(await host.json(`/session/${root}/config-options`), before)
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_catalog"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_catalog"])
     await host.prompt("msg_restored_catalog", "Reply with exactly this one token: PIRESTOREDCATALOG")
     await host.settled("PIRESTOREDCATALOG")
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_catalog", "msg_restored_catalog"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_catalog", "msg_restored_catalog"])
+    assert.deepEqual(host.controlPlane.calls.deliveries, [])
   })
 
   void it("answers a prompt sent again under a message id the session already holds as it first did, running it no second time, before and after the object restarts", { timeout: 120_000 }, async () => {
@@ -340,7 +342,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(await send(), first)
     await host.prompt("msg_after_lost_ack", "Reply with exactly this one token: PIAFTERLOSTACK")
     await host.settled("PIAFTERLOSTACK")
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_lost_ack", "msg_after_lost_ack"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_lost_ack", "msg_after_lost_ack"])
   })
 
   void it("stops a turn and the command it was running on the machine", { timeout: 120_000 }, async () => {
@@ -376,7 +378,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await eventually(`the held command ${pid} retired`, async () => pidAlive(pid) ? undefined : true, 15_000)
     await host.settled("PIQUEUEDAFTERSTOP").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
     assert.deepEqual(await host.json(`/session/${root}/queue`), [])
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_stopped", "msg_queued_after_stop"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_stopped", "msg_queued_after_stop"])
     assert.equal(assistantText(await host.messages()).includes("PISTOPQUEUED"), false)
   })
 
@@ -395,7 +397,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     }
     await host.settled("PIQUEUEDB").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
     assert.deepEqual(await host.json(`/session/${root}/queue`), [])
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_brief", "msg_queued_a", "msg_queued_b"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_brief", "msg_queued_a", "msg_queued_b"])
     assert.match(assistantText(await host.messages()), /PIBRIEFTURN[\s\S]*PIQUEUEDA[\s\S]*PIQUEUEDB/)
   })
 
@@ -424,7 +426,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.notEqual(sent.status, 409, answer)
     await host.settled("PISTEEREDIN")
     await eventually("the steered row leaving the queue", async () => (await host.json<QueueRow[]>(`/session/${root}/queue`)).length === 0 ? true : undefined)
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_send_now_busy"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_send_now_busy"])
   })
 
   void it("runs a queued message the queue could not start on Retry, as its own turn under its own grant", { timeout: 120_000 }, async () => {
@@ -446,7 +448,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual({ status: retried.status, body: await retried.json() }, { status: 200, body: { ok: true } })
     await host.settled("PIRETRIED").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
     assert.deepEqual(await host.json(`/session/${root}/queue`), [])
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_retry_first", "msg_retried"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_retry_first", "msg_retried"])
   })
 
   void it("runs a message queued behind a run the object took over after it restarted, once that run's lease is released", { timeout: 120_000 }, async () => {
@@ -463,7 +465,8 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await host.settled("PIEVICTQUEUED")
     await host.settled("PIAFTEREVICT").catch(async (error: unknown) => { throw new Error(`${String(error)}\nqueue: ${JSON.stringify(await host.json(`/session/${root}/queue`))}`) })
     assert.deepEqual(await host.json(`/session/${root}/queue`), [])
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_evict_queued", "msg_evict_queued", "msg_after_evict"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_evict_queued", "msg_after_evict"])
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_evict_queued"])
     assert.ok(host.controlPlane.calls.releases.indexOf("msg_evict_queued") >= 0)
   })
 
@@ -476,7 +479,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(host.controlPlane.calls.releases.includes("msg_gap_first"), false)
     await host.prompt("msg_gap_next", "Reply with exactly this one token: PIGAPNEXT")
     await host.settled("PIGAPNEXT")
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_gap_first", "msg_gap_next"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_gap_first", "msg_gap_next"])
     assert.deepEqual(host.controlPlane.calls.releases.slice(0, 1), ["msg_gap_first"])
   })
 
@@ -515,9 +518,10 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const answeredBefore = model.requests.length
     await host.crash()
     await eventually(`the held command ${pid} retired with the lost object`, async () => pidAlive(pid) ? undefined : true, 15_000)
-    await eventually("the alarm restarting the object and Pi asking the model again", async () => host.controlPlane.calls.deliveries.length === 2 && model.requests.length > answeredBefore ? true : undefined, 60_000)
+    await eventually("the alarm restarting the object and Pi asking the model again", async () => host.controlPlane.calls.deliveries.length === 1 && model.requests.length > answeredBefore ? true : undefined, 60_000)
     const messages = await host.settled("PIEVICT")
-    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_evict", "msg_evict"])
+    assert.deepEqual(host.controlPlane.calls.acquisitions, ["msg_evict"])
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_evict"])
     await eventually("the taken-over lease released once Pi went idle", async () => host.controlPlane.calls.releases.includes("msg_evict") ? true : undefined)
     assert.ok(messages.some((message) => message.parts.some((part) => part.state?.status === "error" && /interrupted/.test(part.state.error ?? ""))),
       JSON.stringify(messages))
@@ -693,6 +697,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const viewer = host.as("user_viewer")
     await assert.rejects(viewer.json(`/session/${root}/prompt_async`, { method: "POST", body: { parts: [{ type: "text", text: "PIVIEWER" }], messageID: "msg_viewer", model: MODEL } }), /answered 403/)
     await assert.rejects(viewer.json(`/session/${root}`, { method: "DELETE" }), /answered 403/)
+    assert.deepEqual(host.controlPlane.calls.acquisitions, [])
     assert.deepEqual(host.controlPlane.calls.deliveries, [])
     assert.deepEqual(host.controlPlane.calls.deletes, [])
     assert.ok((await host.tables()).includes("session_host_meta"))

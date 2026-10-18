@@ -224,8 +224,13 @@ export const serverWorkerd: Policy = {
   // every desktop authorization shows the consent screen
   // (`platform/auth/desktop-consent-policy.ts`). They add no package edge:
   // Better Auth and the helpers were already in the Worker.
-  // 179/22, no headroom.
-  ceilings: { modules: 179, packages: 22 },
+  // +1 module (owner: the runtime session authority): a turn's admission
+  // (`session/runtime-turn-admission.ts`), the one `/session-authorize` request
+  // that authorizes the actor's `agent_turn` write, takes the lease and hands
+  // a session's own host its delivery, split from the route when the three
+  // requests it replaced became one. It adds no package edge.
+  // 180/22, no headroom.
+  ceilings: { modules: 180, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
