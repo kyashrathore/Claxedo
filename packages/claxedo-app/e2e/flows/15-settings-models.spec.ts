@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test"
-import { apiRequests, expect, sessionRoute, test, type Stack } from "../harness"
+import { apiRequests, expect, expectFooterAtDialogInset, sessionRoute, test, type Stack } from "../harness"
 import { harnessSection, openSection, openSettings } from "./15-settings.navigation"
 
 type Credential = { readonly id: string; readonly provider_id: string; readonly label?: string; readonly is_active?: boolean }
@@ -98,6 +98,7 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   for (const label of ["Flow fifteen B", "Flow fifteen A"]) {
     await row(label).getByRole("button", { name: "Remove", exact: true }).click()
     const confirm = app.getByRole("dialog").filter({ hasText: `Remove ${label}?` })
+    await expectFooterAtDialogInset(confirm, confirm.getByRole("button", { name: "Remove", exact: true }))
     await confirm.getByRole("button", { name: "Remove", exact: true }).click()
     await expect(confirm).toHaveCount(0)
     await expect(cursor.getByRole("radio", { name: new RegExp(`^${label}`) })).toHaveCount(0)

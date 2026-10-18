@@ -1,8 +1,7 @@
 import { createSignal, onCleanup, Show, type JSX } from "solid-js"
 import { useServer, type Integration, type IntegrationFailure, type IntegrationGrant } from "@/server"
 import { useProjectsText, type ProjectsText } from "../i18n"
-import { FIELD_BOX } from "./project-create-repository"
-import { Button } from "@/ui"
+import { Button, TextField } from "@/ui"
 
 const FAILURE_KEYS = {
   exists: "projects.connect.failure.exists",
@@ -58,18 +57,17 @@ function TokenForm(props: { integration: Integration; state: Connect }): JSX.Ele
   const t = useProjectsText()
   const prompt = () => props.integration.prompts.find((item) => item.secret) ?? props.integration.prompts[0]
   const text = () => "text-13-regular"
-  const box = () => `${FIELD_BOX} text-14-regular`
   return (
     <div class="flex flex-col gap-2">
-      <input
+      <TextField
         type={prompt()?.secret ? "password" : "text"}
-        value={props.state.secret()}
-        onInput={(event) => props.state.setSecret(event.currentTarget.value)}
+        label={prompt()?.label ?? t("projects.connect.token", { host: props.integration.name })}
+        hideLabel
         placeholder={prompt()?.placeholder ?? prompt()?.label}
-        aria-label={prompt()?.label ?? t("projects.connect.token", { host: props.integration.name })}
+        value={props.state.secret()}
+        onChange={props.state.setSecret}
         autocomplete="off"
         spellcheck={false}
-        class={`${box()} w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
       />
       <div class="flex flex-wrap items-center gap-3">
         <Button type="button" variant="neutral" size="normal" disabled={props.state.busy() || !props.state.secret().trim()} onClick={() => void props.state.connect("key")}>
