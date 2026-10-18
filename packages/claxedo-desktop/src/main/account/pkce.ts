@@ -96,34 +96,45 @@ export function buildAuthorizeUrl(input: AuthorizeRequest) {
   return url.toString()
 }
 
-export type CallbackResult = { ok: true; code: string } | { ok: false; reason: string }
+/**
+ * `otherPath` is a request to any other path on the listener, and `foreign` a
+ * request to the callback path without the state this attempt issued. The
+ * listener's port is visible to every local process and to port-scanning pages,
+ * so neither may end the attempt. `refused` is the authorization server's own
+ * answer, proven by the state it echoes, and does end it.
+ */
+export type CallbackResult =
+  | { ok: true; code: string }
+  | { ok: false; kind: "otherPath" | "foreign" | "refused"; reason: string }
 
 /**
  * Read the authorization server's redirect back to our loopback listener.
  *
  * Every rejection here is a security decision, so each is distinct rather than
  * one generic failure: an unexpected `state` and a missing `code` mean very
- * different things when they show up in a log.
+ * different things when they show up in a log. The state is checked before
+ * `error`, because an unauthenticated `?error=` would otherwise be read as the
+ * server's refusal.
  */
 export function readCallback(input: { url: string; expectedState: string; redirectPath: string }): CallbackResult {
   let parsed: URL
   try {
     parsed = new URL(input.url, "http://127.0.0.1")
   } catch {
-    return { ok: false, reason: "callback url could not be parsed" }
+    return { ok: false, kind: "otherPath", reason: "callback url could not be parsed" }
   }
   if (parsed.pathname !== input.redirectPath)
-    return { ok: false, reason: `unexpected callback path ${parsed.pathname}` }
-
-  const error = parsed.searchParams.get("error")
-  if (error) return { ok: false, reason: `authorization server returned ${error}` }
+    return { ok: false, kind: "otherPath", reason: `unexpected callback path ${parsed.pathname}` }
 
   const state = parsed.searchParams.get("state")
-  if (!state) return { ok: false, reason: "callback carried no state" }
-  if (!statesMatch(input.expectedState, state)) return { ok: false, reason: "callback state did not match" }
+  if (!state) return { ok: false, kind: "foreign", reason: "callback carried no state" }
+  if (!statesMatch(input.expectedState, state)) return { ok: false, kind: "foreign", reason: "callback state did not match" }
+
+  const error = parsed.searchParams.get("error")
+  if (error) return { ok: false, kind: "refused", reason: `authorization server returned ${error}` }
 
   const code = parsed.searchParams.get("code")
-  if (!code) return { ok: false, reason: "callback carried no code" }
+  if (!code) return { ok: false, kind: "refused", reason: "callback carried no code" }
   return { ok: true, code }
 }
 

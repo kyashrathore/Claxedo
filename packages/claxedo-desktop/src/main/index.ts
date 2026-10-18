@@ -78,7 +78,7 @@ import { createDaemonStatus, DAEMON_STATUS_CHANNELS, type DaemonExit } from "./d
 import { embeddedServerReadiness } from "./server-readiness"
 import { recordStartupClock } from "../shared/startup-clock-probe"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
-import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
+import { installIpcCallerGuard, mainIpcCallerGuard, readIpcCaller } from "./ipc-caller-guard"
 import { setupLazyAccount } from "./account/lazy-account"
 import { readCliSignInMode } from "./account/cli-credential-file"
 import { store } from "./store"
@@ -513,7 +513,7 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
           // The same registry the IPC boundary trusts: a webContents this
           // process registered as bridge-carrying, never a URL a page controls.
           isBridgeCarryingWebContents: (webContentsId) =>
-            mainIpcCallerGuard().check({ senderId: webContentsId, isMainFrame: true }).allowed,
+            mainIpcCallerGuard().trusts(webContentsId),
           isTrustedDocumentUrl: isTrustedMainRendererUrl,
         },
         onBeforeSendHeaders: (filter, listener) =>
@@ -589,12 +589,7 @@ function restartApp(reload: () => void) {
 installIpcCallerGuard({
   ipcMain,
   guard: mainIpcCallerGuard(),
-  readCaller: (event) => ({
-    senderId: event.sender.id,
-    // Null when the frame is already gone, which is not a top frame and so
-    // fails closed.
-    isMainFrame: event.senderFrame !== null && event.senderFrame === event.sender.mainFrame,
-  }),
+  readCaller: (event) => readIpcCaller(event, isRendererDocumentUrl),
   onRejected: (channel, reason) => logger.warn(`[security] ${reason} (channel ${channel})`),
 })
 

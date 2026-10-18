@@ -109,25 +109,32 @@ describe("readCallback", () => {
     // it a code of its own and sign the user into an attacker's account.
     const result = ok("?code=abc&state=someone-elses")
 
-    expect(result.ok).toBe(false)
+    expect(result).toMatchObject({ ok: false, kind: "foreign" })
     expect(!result.ok && result.reason).toContain("state did not match")
   })
 
   test("rejects a callback with no state at all", () => {
     // Distinct from a mismatch: an absent state is a client that never sent
     // one, which would otherwise read as "nothing to compare, so fine".
-    expect(ok("?code=abc").ok).toBe(false)
+    expect(ok("?code=abc")).toMatchObject({ ok: false, kind: "foreign" })
   })
 
   test("rejects a callback with no code", () => {
-    expect(ok(`?state=${expectedState}`).ok).toBe(false)
+    expect(ok(`?state=${expectedState}`)).toMatchObject({ ok: false, kind: "refused" })
   })
 
   test("reports the authorization server's own error", () => {
     const result = ok(`?error=access_denied&state=${expectedState}`)
 
-    expect(result.ok).toBe(false)
+    expect(result).toMatchObject({ ok: false, kind: "refused" })
     expect(!result.ok && result.reason).toContain("access_denied")
+  })
+
+  test("reads an error without this attempt's state as foreign, not as the server's answer", () => {
+    // Any local process or port-scanning page can send `?error=`; only the
+    // state proves the authorization server sent it.
+    expect(ok("?error=access_denied")).toMatchObject({ ok: false, kind: "foreign" })
+    expect(ok("?error=access_denied&state=someone-elses")).toMatchObject({ ok: false, kind: "foreign" })
   })
 
   test("rejects a request to any other path on the listener", () => {
@@ -135,7 +142,7 @@ describe("readCallback", () => {
     // another process, must not be read as a callback.
     const result = readCallback({ url: `/other?code=abc&state=${expectedState}`, expectedState, redirectPath: REDIRECT_PATH })
 
-    expect(result.ok).toBe(false)
+    expect(result).toMatchObject({ ok: false, kind: "otherPath" })
     expect(!result.ok && result.reason).toContain("unexpected callback path")
   })
 })
