@@ -19,6 +19,12 @@ function zodAliasTarget(rendered: string): string {
   return JSON.parse(target)
 }
 
+function semanticConventionsAliasTarget(rendered: string): string {
+  const target = /^"@opentelemetry\/semantic-conventions" = ("[^"\n]+")$/m.exec(rendered)?.[1]
+  if (!target) throw new Error("the config declares no @opentelemetry/semantic-conventions alias")
+  return JSON.parse(target)
+}
+
 function config(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[number]) {
   const artifact = certifiedHostedWorkerArtifact(artifactId)
   return renderWorkerWranglerConfig({
@@ -63,5 +69,20 @@ describe("the certified hosted Worker bundle contract", () => {
     const substituted = zod as unknown as Record<string, unknown>
     const original = zodV4 as unknown as Record<string, unknown>
     expect(aliased.filter((name) => substituted[name] !== original[name])).toEqual([])
+  })
+
+  test("@opentelemetry/semantic-conventions resolves to its ES module build, which carries the attributes Better Auth imports", async () => {
+    const target = semanticConventionsAliasTarget(HOSTED_WORKER_BUNDLE_CONTRACT)
+    expect(target.endsWith(path.join("build", "esm", "index.js"))).toBe(true)
+    for (const artifactId of CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS) {
+      expect(semanticConventionsAliasTarget(config(artifactId)), artifactId).toBe(target)
+    }
+    const conventions = (await import(target)) as Record<string, unknown>
+    expect(conventions).toMatchObject({
+      ATTR_DB_COLLECTION_NAME: "db.collection.name",
+      ATTR_DB_OPERATION_NAME: "db.operation.name",
+      ATTR_HTTP_RESPONSE_STATUS_CODE: "http.response.status_code",
+      ATTR_HTTP_ROUTE: "http.route",
+    })
   })
 })
