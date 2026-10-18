@@ -1,6 +1,6 @@
 import fs from "node:fs"
-import type { Page, Request } from "@playwright/test"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test, UI, type SignedStack } from "../harness"
+import type { Page, Request, TestInfo } from "@playwright/test"
+import { acpScriptToken, expect, makeCloudWorkspace, SCRIPTED_ACP_HARNESS, sessionRoute, showHarnesses, storeOwnerKey, test, UI, type SignedStack } from "../harness"
 
 const DELAY_MS = Number(process.env.PROBE_DELAY_MS ?? 600)
 const PROJECTS = Number(process.env.PROBE_PROJECTS ?? 3)
@@ -46,19 +46,9 @@ async function seed(signed: SignedStack) {
   }
 }
 
-test("98 composer reads probe: the requests and waves until the composer's model chip names a model", async ({ signed, page }, testInfo) => {
-  test.setTimeout(240_000)
-  await seed(signed)
-  await page.route((url) => url.pathname.startsWith("/api/") || url.origin !== signed.url, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, DELAY_MS))
-    await route.continue()
-  })
-  await signed.signIn(page, signed.owner)
-  await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole("button", { name: /^Select harness and model/ })).toContainText(MODEL, { timeout: 60_000 })
-
+async function measureReload(page: Page, origin: string, out: string | undefined, testInfo: TestInfo, model: RegExp) {
   let t0 = 0
-  const requests = record(page, signed.url, () => t0)
+  const requests = record(page, origin, () => t0)
   await page.addInitScript(() => {
     const log: Array<{ t: number; text: string }> = []
     Object.assign(window, { __chipLog: log })
@@ -77,13 +67,46 @@ test("98 composer reads probe: the requests and waves until the composer's model
   t0 = Date.now()
   await page.reload()
   await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible({ timeout: 60_000 })
-  await expect(page.getByRole("button", { name: /^Select harness and model/ })).toContainText(MODEL, { timeout: 60_000 })
+  await expect(page.getByRole("button", { name: /^Select harness and model/ })).toContainText(model, { timeout: 60_000 })
   await expect(page.locator('[data-action="prompt-harness-model"][data-readiness="ready"][data-ready-for-submit="true"]')).toBeVisible({ timeout: 60_000 })
   const chipAt = Date.now() - t0
   await page.waitForTimeout(3 * DELAY_MS + 1000)
   const chipLog = (await page.evaluate(() => (window as unknown as { __chipLog: Array<{ t: number; text: string }> }).__chipLog)).map((entry) => ({ t: Math.round(entry.t - t0), text: entry.text }))
-  const summary = { delayMs: DELAY_MS, projects: PROJECTS, chipAt, chipLog, requests }
-  const text = JSON.stringify(summary, null, 2)
+  const text = JSON.stringify({ delayMs: DELAY_MS, projects: PROJECTS, chipAt, chipLog, requests }, null, 2)
   await testInfo.attach("composer-reads", { body: text, contentType: "application/json" })
-  if (OUT) fs.writeFileSync(OUT, text)
+  if (out) fs.writeFileSync(out, text)
+}
+
+function delayApi(page: Page, origin: string) {
+  return page.route((url) => url.pathname.startsWith("/api/") || url.origin !== origin, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, DELAY_MS))
+    await route.continue()
+  })
+}
+
+test("98 composer reads probe: a machine workspace's draft, from reload until the model chip is ready to send", async ({ signed, page }, testInfo) => {
+  test.setTimeout(240_000)
+  await seed(signed)
+  await delayApi(page, signed.url)
+  await signed.signIn(page, signed.owner)
+  await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole("button", { name: /^Select harness and model/ })).toContainText(MODEL, { timeout: 60_000 })
+  await measureReload(page, signed.url, OUT, testInfo, MODEL)
+})
+
+test("98 composer reads probe: a cloud workspace's Pi draft, from reload until the model chip is ready to send", async ({ signedCloud, page }, testInfo) => {
+  test.setTimeout(240_000)
+  await storeOwnerKey(signedCloud, "openai", "cloud-owner-key")
+  const workspace = await makeCloudWorkspace(signedCloud, "asleep")
+  await delayApi(page, signedCloud.url)
+  await signedCloud.signIn(page, signedCloud.owner)
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
+  await page.getByRole("button", { name: /^Select harness and model/ }).click()
+  const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })
+  await showHarnesses(picker)
+  await page.getByRole("button", { name: "Pi", exact: true }).click()
+  await picker.getByRole("button", { name: "GPT-4.1", exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("button", { name: "Select harness and model" })).toContainText("GPT-4.1")
+  await measureReload(page, signedCloud.url, process.env.PROBE_CLOUD_OUT, testInfo, /GPT-4\.1/)
 })

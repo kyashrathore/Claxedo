@@ -1,18 +1,18 @@
 {
   "delayMs": 600,
   "projects": 3,
-  "chipAt": 2248,
+  "chipAt": 2289,
   "chipLog": [
     {
-      "t": 697,
+      "t": 732,
       "text": "Select a harness | unresolved | submit=false | /"
     },
     {
-      "t": 1348,
+      "t": 1397,
       "text": "Loading models | ready | submit=false | /"
     },
     {
-      "t": 1967,
+      "t": 2006,
       "text": "Claude Opus 5.5 | ready | submit=true | pi/anthropic/claude-opus-5-5"
     }
   ],
@@ -20,112 +20,112 @@
     {
       "url": "/api/claxedo/auth/descriptor",
       "origin": "app",
-      "start": 662.3798828125,
-      "end": 1274.6948828125,
+      "start": 684.633056640625,
+      "end": 1302.012056640625,
       "bytes": 595,
       "decoded": 1661
     },
     {
       "url": "/api/claxedo/bootstrap",
       "origin": "app",
-      "start": 662.47802734375,
-      "end": 1278.22802734375,
+      "start": 684.7978515625,
+      "end": 1300.8148515625,
       "bytes": 152,
       "decoded": 163
     },
     {
-      "url": "/api/workspace?host=provisioner",
-      "origin": "app",
-      "start": 666.038818359375,
-      "end": 1282.3908183593749,
-      "bytes": 550,
-      "decoded": 1957
-    },
-    {
-      "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
-      "origin": "app",
-      "start": 666.14794921875,
-      "end": 1286.19894921875,
-      "bytes": 623,
-      "decoded": 2060
-    },
-    {
       "url": "/api/workspace/shared-sessions",
       "origin": "app",
-      "start": 662.451904296875,
-      "end": 1285.376904296875,
+      "start": 684.751953125,
+      "end": 1302.974953125,
       "bytes": 51,
       "decoded": 15
     },
     {
-      "url": "/api/auth/get-session",
-      "origin": "app",
-      "start": 666.122802734375,
-      "end": 1287.830802734375,
-      "bytes": 415,
-      "decoded": 624
-    },
-    {
       "url": "/api/claxedo/remote-access/devices",
       "origin": "app",
-      "start": 1295.455078125,
-      "end": 1912.877078125,
-      "bytes": 312,
+      "start": 686.9658203125,
+      "end": 1308.7858203125002,
+      "bytes": 307,
       "decoded": 349
+    },
+    {
+      "url": "/api/workspace?host=provisioner",
+      "origin": "app",
+      "start": 684.831787109375,
+      "end": 1311.1337871093751,
+      "bytes": 545,
+      "decoded": 1957
     },
     {
       "url": "/api/claxedo/agent-config/connections",
       "origin": "app",
-      "start": 1295.48193359375,
-      "end": 1914.52793359375,
+      "start": 687.046875,
+      "end": 1320.2558749999998,
       "bytes": 239,
       "decoded": 383
     },
     {
+      "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      "origin": "app",
+      "start": 687.0859375,
+      "end": 1324.5799375000001,
+      "bytes": 624,
+      "decoded": 2060
+    },
+    {
+      "url": "/api/auth/get-session",
+      "origin": "app",
+      "start": 687.04296875,
+      "end": 1324.17596875,
+      "bytes": 413,
+      "decoded": 624
+    },
+    {
       "url": "/workspaces/<uuid>/api/wr/pty",
       "origin": "127.0.0.1:48702",
-      "start": 1298.51513671875,
-      "end": 1927.9451367187498,
+      "start": 1337.95703125,
+      "end": 1984.88903125,
       "bytes": 37,
       "decoded": 2
     },
     {
       "url": "/workspaces/<uuid>/api/wr/pty",
       "origin": "127.0.0.1:48702",
-      "start": 1298.614013671875,
-      "end": 1928.388013671875,
+      "start": 1338.041015625,
+      "end": 1985.062015625,
       "bytes": 37,
       "decoded": 2
     },
     {
       "url": "/workspaces/<uuid>/api/wr/pty",
       "origin": "127.0.0.1:48702",
-      "start": 1298.6689453125,
-      "end": 1928.5029453124998,
+      "start": 1338.15283203125,
+      "end": 1985.29083203125,
       "bytes": 37,
       "decoded": 2
     },
     {
       "url": "/api/claxedo/agent-config/harness?workspaceId=<uuid>",
       "origin": "app",
-      "start": 1298.373779296875,
-      "end": 1950.980779296875,
+      "start": 1337.85791015625,
+      "end": 1993.68791015625,
       "bytes": 175,
       "decoded": 273
     },
     {
       "url": "/workspaces/<uuid>/api/wr/git/status",
       "origin": "127.0.0.1:48702",
-      "start": 1298.698974609375,
-      "end": 1956.740974609375,
+      "start": 1338.30908203125,
+      "end": 2020.64808203125,
       "bytes": 85,
       "decoded": 64
     },
     {
       "url": "/workspaces/<uuid>/api/wr/harness-config-options?nativeHarness=pi",
       "origin": "127.0.0.1:48702",
-      "start": 1952.579833984375,
-      "end": 2562.652833984375,
+      "start": 1994.18408203125,
+      "end": 2606.5710820312497,
       "bytes": 802,
       "decoded": 4649
     }

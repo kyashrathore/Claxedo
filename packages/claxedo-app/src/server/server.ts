@@ -114,6 +114,15 @@ function retryConnections(startup: Pick<ReturnType<typeof createStartup>, "retry
   }
 }
 
+function createServerQueries(queryClient: QueryClient, transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined): ServerQueries {
+  const queries = createQueries(transport, workspaces, account)
+  if (account) {
+    void queryClient.prefetchQuery(queries.machines.list())
+    void queryClient.prefetchQuery(queries.agentConnections.list())
+  }
+  return queries
+}
+
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
@@ -126,7 +135,7 @@ export function createServer(config: ServerConfig): ServerHandle {
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
   const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
   const capabilities = createCapabilities({ hostedAccount: account !== undefined })
-  const queries = createQueries(transport, workspaces, account)
+  const queries = createServerQueries(queryClient, transport, workspaces, account)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })
   const projection = createSessionProjection(workspaces, account)
   const stopProjecting = intake.subscribe(projection.observe)

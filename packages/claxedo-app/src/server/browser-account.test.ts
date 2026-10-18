@@ -38,6 +38,8 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean; identity
       return Response.json({ workspaces: url.searchParams.get("host") === "machine" ? [machine] : [cloud, machine] })
     }
     if (url.pathname === "/api/control/sessions/ses_1/outline") return Response.json({ session: { session_id: "ses_1", title: "Stored turn", created_at: 1, updated_at: 2 }, outline: { turns: [], complete: true }, page: { turns: [{ messages: stored }] } })
+    if (url.pathname === "/api/claxedo/remote-access/devices") return Response.json({ devices: [{ enrollment_id: "enr_1", display_name: "Studio", state: "online" }] })
+    if (url.pathname === "/api/claxedo/agent-config/connections") return Response.json({ status: "supported", connections: [] })
     if (url.pathname === "/api/control/session-list") return Response.json({ items: [{ sessionId: "ses_1", workspaceId: "ws_cloud", directory: "workspace:ws_cloud", title: "Stored turn", sessionRef: "ws_cloud:ses_1", createdAt: 1, updatedAt: 2 }] })
     throw new Error(`Unexpected Worker request: ${url.pathname}`)
   }, { preconnect: originalFetch.preconnect })
@@ -63,6 +65,22 @@ test("signed browser build lists account projects, placements and sessions with 
       expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
       expect(calls.filter((call) => call.path.startsWith("/api/control/session-list"))).toHaveLength(1)
       expect(calls.every((call) => call.init?.credentials === "include" && !new Headers(call.init?.headers).has("Authorization"))).toBe(true)
+    } finally { server.dispose(); dispose() }
+  })
+})
+
+test("a signed browser reads its machines and agent connections beside the account catalog, before any screen asks for them", async () => {
+  const calls = worker()
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
+    try {
+      await server.ready
+      const shellReads = ["/api/claxedo/remote-access/devices", "/api/claxedo/agent-config/connections"]
+      const beforeAnyScreen = calls.map((call) => call.path)
+      expect(shellReads.filter((path) => beforeAnyScreen.includes(path))).toEqual(shellReads)
+      expect((await server.queryClient.fetchQuery(server.queries.machines.list())).map((machine) => [String(machine.id), machine.name, machine.online])).toEqual([["enr_1", "Studio", true]])
+      expect(await server.queryClient.fetchQuery(server.queries.agentConnections.list())).toEqual({ status: "supported", connections: [] })
+      expect(shellReads.map((path) => calls.filter((call) => call.path === path).length)).toEqual([1, 1])
     } finally { server.dispose(); dispose() }
   })
 })

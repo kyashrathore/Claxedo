@@ -1,0 +1,85 @@
+{
+  "delayMs": 600,
+  "projects": 3,
+  "chipAt": 990,
+  "chipLog": [
+    {
+      "t": 728,
+      "text": "GPT-4.1 | ready | submit=true | pi/openai/gpt-4.1"
+    }
+  ],
+  "requests": [
+    {
+      "url": "/api/claxedo/bootstrap",
+      "origin": "app",
+      "start": 675.47509765625,
+      "end": 1290.48809765625,
+      "bytes": 152,
+      "decoded": 163
+    },
+    {
+      "url": "/api/claxedo/auth/descriptor",
+      "origin": "app",
+      "start": 675.3759765625,
+      "end": 1292.0669765625,
+      "bytes": 595,
+      "decoded": 1661
+    },
+    {
+      "url": "/api/workspace/shared-sessions",
+      "origin": "app",
+      "start": 675.453857421875,
+      "end": 1293.837857421875,
+      "bytes": 51,
+      "decoded": 15
+    },
+    {
+      "url": "/api/workspace?host=provisioner",
+      "origin": "app",
+      "start": 675.52294921875,
+      "end": 1305.13794921875,
+      "bytes": 296,
+      "decoded": 409
+    },
+    {
+      "url": "/api/claxedo/remote-access/devices",
+      "origin": "app",
+      "start": 675.65380859375,
+      "end": 1310.93280859375,
+      "bytes": 228,
+      "decoded": 233
+    },
+    {
+      "url": "/api/claxedo/agent-config/connections",
+      "origin": "app",
+      "start": 675.77001953125,
+      "end": 1314.11401953125,
+      "bytes": 239,
+      "decoded": 383
+    },
+    {
+      "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      "origin": "app",
+      "start": 677.865966796875,
+      "end": 1318.8019667968751,
+      "bytes": 151,
+      "decoded": 138
+    },
+    {
+      "url": "/api/auth/get-session",
+      "origin": "app",
+      "start": 677.830810546875,
+      "end": 1319.6128105468752,
+      "bytes": 414,
+      "decoded": 624
+    },
+    {
+      "url": "/api/claxedo/agent-config/harness/options?nativeHarness=pi&workspaceId=ws_mvdp31h1_v6261vp5d0yf5tc6&model=openai%2Fgpt-4.1",
+      "origin": "app",
+      "start": 1331.07080078125,
+      "end": 1941.74380078125,
+      "bytes": 559,
+      "decoded": 3082
+    }
+  ]
+}
