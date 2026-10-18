@@ -5,11 +5,15 @@ describe("createChannelRegistry", () => {
   test("detects enabled chat-sdk channels from environment", () => {
     const registry = createChannelRegistry({
       GITHUB_APP_ID: "1",
+      GITHUB_WEBHOOK_SECRET: "github-secret",
       TELEGRAM_BOT_TOKEN: "telegram",
       TELEGRAM_WEBHOOK_SECRET_TOKEN: "secret",
       SLACK_BOT_TOKEN: "slack",
+      SLACK_SIGNING_SECRET: "slack-secret",
       DISCORD_BOT_TOKEN: "discord",
+      DISCORD_PUBLIC_KEY: "discord-key",
       WHATSAPP_ACCESS_TOKEN: "whatsapp",
+      WHATSAPP_APP_SECRET: "whatsapp-secret",
     })
 
     expect(registry.enabled.map((item) => [item.channel, item.transport])).toEqual([
@@ -58,6 +62,41 @@ describe("createChannelRegistry", () => {
       botToken: "canonical-bot",
       secretToken: "canonical-secret",
     })
+  })
+
+  test("does not enable a webhook channel without its verification secret", () => {
+    const registry = createChannelRegistry({
+      CLAXEDO_CHANNEL_GITHUB_APP_ID: "1",
+      SLACK_BOT_TOKEN: "slack",
+      CLAXEDO_CHANNEL_DISCORD_BOT_TOKEN: "discord",
+      CLAXEDO_CHANNEL_WHATSAPP_ACCESS_TOKEN: "whatsapp",
+    })
+
+    expect(registry.enabled).toEqual([])
+    expect(registry.byPath.get("/github")?.reason).toContain("GITHUB_WEBHOOK_SECRET")
+    expect(registry.byPath.get("/slack")?.reason).toContain("SLACK_SIGNING_SECRET")
+    expect(registry.byPath.get("/discord")?.reason).toContain("DISCORD_PUBLIC_KEY")
+    expect(registry.byPath.get("/whatsapp")?.reason).toContain("WHATSAPP_APP_SECRET")
+  })
+
+  test("carries each webhook channel's credentials, aliases included, to its adapter", () => {
+    const registry = createChannelRegistry({
+      CLAXEDO_CHANNEL_GITHUB_APP_ID: "1",
+      CLAXEDO_CHANNEL_GITHUB_WEBHOOK_SECRET: "github-secret",
+      SLACK_BOT_TOKEN: "slack",
+      SLACK_SIGNING_SECRET: "slack-secret",
+      CLAXEDO_CHANNEL_DISCORD_BOT_TOKEN: "discord",
+      CLAXEDO_CHANNEL_DISCORD_PUBLIC_KEY: "discord-key",
+      CLAXEDO_CHANNEL_WHATSAPP_ACCESS_TOKEN: "whatsapp",
+      CLAXEDO_CHANNEL_WHATSAPP_APP_SECRET: "whatsapp-secret",
+    })
+
+    expect(registry.enabled.map((item) => [item.channel, item.adapterConfig])).toEqual([
+      ["github", { webhookSecret: "github-secret" }],
+      ["slack", { botToken: "slack", signingSecret: "slack-secret" }],
+      ["discord", { botToken: "discord", publicKey: "discord-key" }],
+      ["whatsapp", { accessToken: "whatsapp", appSecret: "whatsapp-secret" }],
+    ])
   })
 
   test("selects Baileys only through WhatsApp personal mode", () => {

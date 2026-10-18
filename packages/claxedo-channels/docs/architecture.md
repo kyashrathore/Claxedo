@@ -114,11 +114,16 @@ telegram, slack, discord, whatsapp-official), `"baileys"`
   `createChannelRegistry` also accepts a `CLAXEDO_CHANNEL_*` alias per
   credential. The registry resolves them into `ChannelRegistration.adapterConfig`
   and `createChatSdkBot` constructs the adapter with it, so the configuration
-  that enabled a channel is the configuration that verifies its callers. An
-  enabled Telegram registration missing either credential is refused before any
-  adapter loads, rather than letting the adapter answer from `process.env`: its
-  verification is configuration-only, so an adapter left without a secret token
-  accepts every forged update.
+  that enabled a channel is the configuration that verifies its callers. No
+  webhook channel is enabled without its verification secret
+  (`GITHUB_WEBHOOK_SECRET`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`,
+  `SLACK_SIGNING_SECRET`, `DISCORD_PUBLIC_KEY`, `WHATSAPP_APP_SECRET`, each
+  also under its `CLAXEDO_CHANNEL_*` alias except Slack's), and an enabled
+  registration handed to `createChatSdkBot` without it — or, for Telegram,
+  without its bot token — is refused before any adapter loads, rather than
+  letting the adapter answer from `process.env`: Telegram's verification is
+  configuration-only, so an adapter left without a secret token accepts every
+  forged update.
 - **GitHub (direct)** — `src/transport/github.ts`'s `githubWebhookEnvelope`
   is for callers building their own webhook route instead of using the Chat
   SDK adapter. It only emits an envelope for `issue_comment`,

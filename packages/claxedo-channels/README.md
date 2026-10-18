@@ -367,9 +367,12 @@ between unrelated tenants.
 
 ### Chat SDK Adapters
 
-Chat SDK adapters are mounted as provider webhooks. Keep adapter package
-versions in lockstep, configure provider secrets in the adapter, and keep the
-bot account scoped to the channels/workspaces it is meant to control.
+Chat SDK adapters are mounted as provider webhooks. The channel registry
+enables GitHub, Slack, Discord and official WhatsApp only when their webhook
+verification secret is configured (`GITHUB_WEBHOOK_SECRET`,
+`SLACK_SIGNING_SECRET`, `DISCORD_PUBLIC_KEY`, `WHATSAPP_APP_SECRET`) and hands
+it to the adapter. Keep adapter package versions in lockstep and keep the bot
+account scoped to the channels/workspaces it is meant to control.
 
 ## Least-Privilege Example
 
