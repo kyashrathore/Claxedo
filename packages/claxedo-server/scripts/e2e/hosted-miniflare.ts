@@ -23,6 +23,8 @@ type Input = {
   apiOrigin: string
   appOrigin: string
   emailPassword: boolean
+  /** Worker variables the caller sets over the fixture's own, such as a measurement's raised request ceilings. */
+  workerEnv: Record<string, string>
 }
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
@@ -91,6 +93,7 @@ async function main(input: Input) {
     bindings: {
       ...converted.workerOptions.bindings,
       ...env,
+      ...input.workerEnv,
       CF_VERSION_METADATA: { id: "11111111-1111-4111-8111-111111111111", tag: "hosted-e2e-release" },
     },
     modules: [{ type: "ESModule", path: "worker.js", contents: readFileSync(bundle, "utf8") }],
@@ -163,6 +166,17 @@ async function main(input: Input) {
   }
 }
 
+function workerEnvOf(value: unknown): Record<string, string> {
+  if (value === undefined) return {}
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("hosted Miniflare workerEnv must be an object of strings")
+  const env: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry !== "string") throw new Error(`hosted Miniflare workerEnv ${key} must be a string`)
+    env[key] = entry
+  }
+  return env
+}
+
 if (import.meta.main) {
   const raw = process.env.CLAXEDO_E2E_HOSTED_MINIFLARE
   if (!raw) throw new Error("missing hosted Miniflare configuration")
@@ -190,5 +204,6 @@ if (import.meta.main) {
     apiOrigin: required("apiOrigin"),
     appOrigin: required("appOrigin"),
     emailPassword: field("emailPassword") === true,
+    workerEnv: workerEnvOf(field("workerEnv")),
   })
 }

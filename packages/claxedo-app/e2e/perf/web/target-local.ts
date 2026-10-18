@@ -12,6 +12,9 @@ import type { Target } from "./target"
 
 const DIST_DIR = path.resolve(import.meta.dirname, "../../../dist-e2e-web-perf")
 
+/** Production allows 600 requests a minute per client and 120 on control routes; three repetitions boot the app fifteen times a minute, which a person never does. */
+const UNLIMITED_REQUESTS = { CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: "1000000", CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "1000000" }
+
 export type LocalTargetInput = { readonly seedTurns: number; readonly railSessions: number; readonly log: (line: string) => void }
 
 /**
@@ -38,6 +41,7 @@ export async function localTarget(input: LocalTargetInput): Promise<Target> {
   const signed = await startSignedStack({
     label: "web-perf", frontPort, relayPort, relayUrl: relay.url, distDir: build.distDir,
     shaping: { apiDelayMs: () => profile.apiDelayMs, encoded: bytes.encoded },
+    workerEnv: UNLIMITED_REQUESTS,
   }).catch(async (error: unknown) => {
     await relay.close()
     for (const port of ports) releasePort(port)

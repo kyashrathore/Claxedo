@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import assert from "node:assert/strict"
+import { describe, test } from "node:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -24,8 +25,8 @@ describe("pagesHeaders", () => {
 /assets/*.js
   Content-Type: application/javascript
 `))
-    expect(answer("/index.html")).toEqual({ cacheControl: "no-transform, public, max-age=0, must-revalidate", compress: false })
-    expect(answer("/assets/main-abc.js")).toEqual({ cacheControl: "no-transform, public, max-age=31536000, immutable", compress: false })
+    assert.deepEqual(answer("/index.html"), { cacheControl: "no-transform, public, max-age=0, must-revalidate", compress: false })
+    assert.deepEqual(answer("/assets/main-abc.js"), { cacheControl: "no-transform, public, max-age=31536000, immutable", compress: false })
   })
 
   test("assets compress once their block drops no-transform while the shell keeps it", () => {
@@ -35,8 +36,8 @@ describe("pagesHeaders", () => {
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
 `))
-    expect(answer("/assets/main-abc.js")).toEqual({ cacheControl: "public, max-age=31536000, immutable", compress: true })
-    expect(answer("/w/x/session/y").compress).toBe(false)
+    assert.deepEqual(answer("/assets/main-abc.js"), { cacheControl: "public, max-age=31536000, immutable", compress: true })
+    assert.equal(answer("/w/x/session/y").compress, false)
   })
 
   test("a repeated header without a detach joins, and no file means the publisher's default", () => {
@@ -45,7 +46,7 @@ describe("pagesHeaders", () => {
 /*.css
   Cache-Control: max-age=60
 `))
-    expect(joined("/main.css").cacheControl).toBe("public, max-age=60")
-    expect(pagesHeaders(distWith(undefined))("/anything")).toEqual({ cacheControl: "public, max-age=0, must-revalidate", compress: true })
+    assert.equal(joined("/main.css").cacheControl, "public, max-age=60")
+    assert.deepEqual(pagesHeaders(distWith(undefined))("/anything"), { cacheControl: "public, max-age=0, must-revalidate", compress: true })
   })
 })
