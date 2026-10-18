@@ -39,14 +39,20 @@ function record(page: Page, origin: string, t0: () => number) {
 
 async function seed(signed: SignedStack) {
   await signed.local.acp.write("hello", { steps: [{ kind: "text", text: "Hello from the agent" }] })
+  const sessions: Array<{ readonly workspaceId: string; readonly sessionId: string }> = []
   for (let index = 0; index < PROJECTS; index++) {
     const workspace = await signed.makeWorkspace(`p${index}`, `Project ${index}`)
     const session = await signed.owner.api.createSession(workspace.directory, { title: `Session ${index}`, harness: SCRIPTED_ACP_HARNESS })
     await signed.owner.api.prompt(workspace.directory, session.id, `Say hello. ${acpScriptToken("hello")}`)
+    sessions.push({ workspaceId: workspace.id, sessionId: session.id })
   }
+  return sessions
 }
 
-async function measureReload(page: Page, origin: string, out: string | undefined, testInfo: TestInfo, model: RegExp) {
+const READY_TO_SEND = '[data-action="prompt-harness-model"][data-readiness="ready"][data-ready-for-submit="true"]'
+const READY_ON_MANAGED_MODEL = '[data-action="prompt-harness-model"][data-readiness="ready"]'
+
+async function measureReload(page: Page, origin: string, out: string | undefined, testInfo: TestInfo, model: RegExp, ready = READY_TO_SEND) {
   let t0 = 0
   const requests = record(page, origin, () => t0)
   await page.addInitScript(() => {
@@ -68,7 +74,7 @@ async function measureReload(page: Page, origin: string, out: string | undefined
   await page.reload()
   await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole("button", { name: /^Select harness and model/ })).toContainText(model, { timeout: 60_000 })
-  await expect(page.locator('[data-action="prompt-harness-model"][data-readiness="ready"][data-ready-for-submit="true"]')).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator(ready)).toBeVisible({ timeout: 60_000 })
   const chipAt = Date.now() - t0
   await page.waitForTimeout(3 * DELAY_MS + 1000)
   const chipLog = (await page.evaluate(() => (window as unknown as { __chipLog: Array<{ t: number; text: string }> }).__chipLog)).map((entry) => ({ t: Math.round(entry.t - t0), text: entry.text }))
@@ -92,6 +98,17 @@ test("98 composer reads probe: a machine workspace's draft, from reload until th
   await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole("button", { name: /^Select harness and model/ })).toContainText(MODEL, { timeout: 60_000 })
   await measureReload(page, signed.url, OUT, testInfo, MODEL)
+})
+
+test("98 composer reads probe: a session on a connection harness, from reload until its model chip is ready to send", async ({ signed, page }, testInfo) => {
+  test.setTimeout(240_000)
+  const [first] = await seed(signed)
+  await delayApi(page, signed.url)
+  await signed.signIn(page, signed.owner)
+  await page.goto(`${signed.url}${sessionRoute(first!.workspaceId, first!.sessionId)}`)
+  await expect(page.getByText("Hello from the agent")).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole("button", { name: /^Select harness and model/ })).toContainText("Scripted ACP default", { timeout: 60_000 })
+  await measureReload(page, signed.url, process.env.PROBE_SESSION_OUT, testInfo, /Scripted ACP default/, READY_ON_MANAGED_MODEL)
 })
 
 test("98 composer reads probe: a cloud workspace's Pi draft, from reload until the model chip is ready to send", async ({ signedCloud, page }, testInfo) => {
