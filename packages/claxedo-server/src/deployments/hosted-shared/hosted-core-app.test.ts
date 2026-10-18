@@ -1227,7 +1227,7 @@ describe("hosted-core adapter-native device login", () => {
 
 describe("the public origin", () => {
   test("forwards every path the control plane mounts, so a new mount cannot be lost behind the app's assets", () => {
-    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+    const app = createHostedCoreApp(plane(), { ...options, egressBroker: async () => new Response(null, { status: 204 }) }) as unknown as Hono
     const mounted = [...new Set(app.routes.map((route) => route.path))].filter((path) => path !== "/*" && path !== "*")
     expect(mounted.length).toBeGreaterThan(10)
     expect(mounted.filter((path) => publicOriginRoute(path) !== "control-plane")).toEqual([])
