@@ -9,6 +9,7 @@ import { ColumnView, DividerView, GridView, SurfaceListView, RowView } from "./l
 import { ListItemView } from "./list-item-view"
 import { FooterView, HeaderView, SectionView } from "./page-views"
 import { DateTimeInputView, SliderView } from "./range-views"
+import { ImageView } from "./image-view"
 import { DiffStatView, EmptyStateView, ProgressView, SpinnerView } from "./status-views"
 import { CalloutView, KeyValueView, StatView } from "./summary-views"
 import { TableView } from "./table-view"
@@ -23,6 +24,7 @@ export const SURFACE_VIEWS: SurfaceViews = {
   Icon: IconView,
   Badge: BadgeView,
   Link: LinkView,
+  Image: ImageView,
   Row: RowView,
   Column: ColumnView,
   List: SurfaceListView,

@@ -111,13 +111,20 @@ describe("ui_show", () => {
 
   test("refuses a component outside the catalog before the handler runs", async () => {
     const { url } = await listen()
+    const refused = await show(await connect(url), { title: "Outside", components: [{ id: "root", component: "Modal", url: "https://example.com/a.png" }] })
+    expect(refused.isError).toBe(true)
+    expect(refused.text).toMatch(/Input validation error/)
+    expect(refused.text).toContain("components")
+  })
+
+  test("refuses an Image that would fetch, with the url's pointer, and shows one that carries its bytes", async () => {
+    const { url } = await listen()
     const client = await connect(url)
-    for (const component of ["Image", "Modal"]) {
-      const refused = await show(client, { title: "Outside", components: [{ id: "root", component, url: "https://example.com/a.png" }] })
-      expect(refused.isError).toBe(true)
-      expect(refused.text).toMatch(/Input validation error/)
-      expect(refused.text).toContain("components")
-    }
+    const image = (src: string) => ({ title: "Screenshot", components: [{ id: "root", component: "Image", url: src, accessibility: { label: "Login page" } }] })
+    const refused = await show(client, image("https://example.com/a.png"))
+    expect(refused).toEqual({ isError: true, text: "/components/0/url: an Image url is a data: URL of a PNG, JPEG, GIF or WebP, or a blob: URL of the app's own origin" })
+    const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    expect(await show(client, image(pixel))).toEqual({ isError: false, text: 'Shown "Screenshot" with 1 component.' })
   })
 })
 

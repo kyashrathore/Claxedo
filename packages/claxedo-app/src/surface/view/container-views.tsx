@@ -1,9 +1,10 @@
 import { createSignal, Index, onCleanup, onMount } from "solid-js"
 import { Card, Collapsible, Tabs } from "@/ui"
+import { boundNumber, createBoundValue } from "../binding"
 import type { SurfaceNodeProps } from "../model"
-import { tabStripEdge, type TabStripEdge } from "../tab-strip"
+import { selectedTabIndex, tabStripEdge, type TabStripEdge } from "../tab-strip"
 import { SurfaceNode } from "./surface-node"
-import { useSurfaceReader } from "./surface-runtime"
+import { useSurfaceReader, useSurfaceRuntime } from "./surface-runtime"
 
 export function CardView(props: SurfaceNodeProps<"Card">) {
   return (
@@ -30,14 +31,22 @@ function revealSelectedTab(list: HTMLElement | undefined) {
 }
 
 export function TabsView(props: SurfaceNodeProps<"Tabs">) {
+  const runtime = useSurfaceRuntime()
   const read = useSurfaceReader()
+  const selected = createBoundValue(() => props.def.selected, () => props.scope, runtime.state.data, boundNumber)
   const [edge, setEdge] = createSignal<TabStripEdge>("none")
   let list: HTMLDivElement | undefined
   onMount(() => {
     if (list) onCleanup(watchTabStrip(list, setEdge))
   })
+  const select = (value: string) => {
+    const index = selectedTabIndex(Number(value), props.def.tabs.length)
+    selected.set(index)
+    runtime.fire(props.def.change, props.def.id, props.scope, { index })
+    queueMicrotask(() => revealSelectedTab(list))
+  }
   return (
-    <Tabs defaultValue="0" data-slot="surface-tabs" onChange={() => queueMicrotask(() => revealSelectedTab(list))}>
+    <Tabs value={String(selectedTabIndex(selected.value(), props.def.tabs.length))} data-slot="surface-tabs" onChange={select}>
       <Tabs.List ref={list} data-edge={edge()}>
         <Index each={props.def.tabs}>
           {(tab, index) => <Tabs.Trigger value={String(index)}>{read.text(tab().title, props.scope)}</Tabs.Trigger>}

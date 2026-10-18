@@ -1,5 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { checkSurfaceSpec, componentReferences, surfaceComponentSchema, surfaceMessageSchema, surfaceSpecMessages, SURFACE_CATALOG_ID } from "./index"
+import {
+  checkSurfaceSpec,
+  componentReferences,
+  surfaceComponentEvents,
+  surfaceComponentSchema,
+  surfaceImageUrl,
+  surfaceMessageSchema,
+  surfaceSpecMessages,
+  SURFACE_CATALOG_ID,
+  SURFACE_EVENT_FIELDS,
+  SURFACE_IMAGE_MAX_DATA_URL_LENGTH,
+} from "./index"
 
 const form = {
   title: "Deploy settings",
@@ -59,7 +70,7 @@ describe("checkSurfaceSpec", () => {
   })
 
   test("refuses components outside the catalog's network and overlay rules", () => {
-    for (const component of ["Image", "Video", "AudioPlayer", "Modal"]) {
+    for (const component of ["Video", "AudioPlayer", "Modal"]) {
       const check = checkSurfaceSpec({ title: component, components: [{ id: "root", component, url: "https://example.com/a" }] })
       expect(check.ok).toBe(false)
     }
@@ -196,5 +207,101 @@ describe("surfaceMessageSchema", () => {
 
   test("accepts a data-model delete as an update with no value", () => {
     expect(surfaceMessageSchema.safeParse({ version: "v0.9", updateDataModel: { surfaceId: "s", path: "/items/3" } }).success).toBe(true)
+  })
+})
+
+const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+function image(url: unknown, extra: Record<string, unknown> = {}) {
+  return { title: "Image", components: [{ id: "root", component: "Image", url, accessibility: { label: "Build badge" }, ...extra }] }
+}
+
+describe("Image", () => {
+  test("accepts a base64 PNG, JPEG, GIF or WebP data: URL and a bound url", () => {
+    for (const mime of ["png", "jpeg", "gif", "webp"]) expect(checkSurfaceSpec(image(PIXEL.replace("png", mime))).ok).toBe(true)
+    expect(checkSurfaceSpec({ ...image({ path: "/shot" }), data: { shot: PIXEL } }).ok).toBe(true)
+    expect(checkSurfaceSpec(image(PIXEL, { fit: "cover", variant: "avatar" })).ok).toBe(true)
+  })
+
+  test("refuses a literal url by scheme, SVG or malformed payload, and a blob: with no origin to compare", () => {
+    const cases = ["https://example.com/a.png", "http://example.com/a.png", "file:///etc/a.png", "javascript:alert(1)", "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", "data:image/png,raw", "blob:https://app.example/1"]
+    const issues = cases.map((url) => {
+      const check = checkSurfaceSpec(image(url))
+      return check.ok ? [] : check.issues.map((issue) => issue.path)
+    })
+    expect(issues).toEqual(cases.map(() => ["/components/0/url"]))
+  })
+
+  test("requires an accessibility label and refuses an unknown fit or variant", () => {
+    const unlabelled = { title: "Image", components: [{ id: "root", component: "Image", url: PIXEL }] }
+    expect(checkSurfaceSpec(unlabelled).ok).toBe(false)
+    expect(checkSurfaceSpec(image(PIXEL, { accessibility: { description: "no label" } })).ok).toBe(false)
+    expect(checkSurfaceSpec(image(PIXEL, { fit: "stretch" })).ok).toBe(false)
+    expect(checkSurfaceSpec(image(PIXEL, { variant: "banner" })).ok).toBe(false)
+  })
+})
+
+describe("surfaceImageUrl", () => {
+  test("names why it refuses a url", () => {
+    expect(surfaceImageUrl("https://example.com/a.png")).toEqual({ ok: false, reason: "scheme" })
+    expect(surfaceImageUrl("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")).toEqual({ ok: false, reason: "mime" })
+    expect(surfaceImageUrl(`data:image/png;base64,${"A".repeat(SURFACE_IMAGE_MAX_DATA_URL_LENGTH)}`)).toEqual({ ok: false, reason: "size" })
+    expect(surfaceImageUrl(PIXEL)).toEqual({ ok: true, url: PIXEL })
+  })
+
+  test("accepts a blob: only from the app's own non-opaque origin", () => {
+    expect(surfaceImageUrl("blob:http://127.0.0.1:4000/5b1e", "http://127.0.0.1:4000")).toEqual({ ok: true, url: "blob:http://127.0.0.1:4000/5b1e" })
+    expect(surfaceImageUrl("blob:null/5b1e", "http://127.0.0.1:4000")).toEqual({ ok: false, reason: "origin" })
+    expect(surfaceImageUrl("blob:https://other.example/5b1e", "http://127.0.0.1:4000")).toEqual({ ok: false, reason: "origin" })
+    expect(surfaceImageUrl("blob:file:///5b1e", "null")).toEqual({ ok: false, reason: "origin" })
+  })
+})
+
+describe("input events", () => {
+  const picker = (context: Record<string, unknown>) => ({
+    title: "Region",
+    components: [
+      {
+        id: "root",
+        component: "ChoicePicker",
+        options: [{ label: "EU", value: "eu" }],
+        value: { path: "/region" },
+        change: { event: { name: "pickRegion", context } },
+      },
+    ],
+    data: { region: ["eu"] },
+  })
+
+  test("accept a change, submit or tab change whose context names no supplied field", () => {
+    expect(checkSurfaceSpec(picker({ form: "deploy" })).ok).toBe(true)
+    const spec = {
+      title: "Events",
+      components: [
+        { id: "root", component: "Tabs", tabs: [{ title: "A", child: "name" }], selected: { path: "/tab" }, change: { event: { name: "showTab" } } },
+        { id: "name", component: "TextField", label: "Name", value: { path: "/name" }, submit: { event: { name: "rename", context: { previous: "api" } } } },
+      ],
+      data: { tab: 0, name: "api" },
+    }
+    expect(checkSurfaceSpec(spec).ok).toBe(true)
+  })
+
+  test("refuse a declared context key that collides with a supplied field, at that key's pointer", () => {
+    const check = checkSurfaceSpec(picker({ value: { path: "/region" } }))
+    expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual(["/components/0/change/event/context/value"])
+    const tabs = checkSurfaceSpec({
+      title: "Tabs",
+      components: [
+        { id: "root", component: "Tabs", tabs: [{ title: "A", child: "a" }], change: { event: { name: "showTab", context: { index: 1 } } } },
+        { id: "a", component: "Text", text: "A" },
+      ],
+    })
+    expect(tabs.ok ? [] : tabs.issues.map((issue) => issue.path)).toEqual(["/components/0/change/event/context/index"])
+  })
+
+  test("declare each component's supplied field names once", () => {
+    const component = surfaceComponentSchema.parse({ id: "s", component: "Switch", label: "On", value: true, change: { event: { name: "toggle" } } })
+    expect(surfaceComponentEvents(component)).toEqual([{ prop: "change", action: { event: { name: "toggle" } }, supplied: ["value"] }])
+    expect(SURFACE_EVENT_FIELDS.Tabs).toEqual({ change: ["index"] })
+    expect(surfaceComponentEvents(surfaceComponentSchema.parse({ id: "c", component: "CheckBox", label: "On", value: true }))).toEqual([])
   })
 })

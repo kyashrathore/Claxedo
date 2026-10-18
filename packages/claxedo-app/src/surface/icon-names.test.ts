@@ -16,6 +16,12 @@ describe("surface icons", () => {
     }
   })
 
+  test("draws the task status names circle, circleDashed, circleHalf, checkCircle and alertCircle with their own glyphs", () => {
+    for (const name of ["circle", "circleDashed", "circleHalf", "checkCircle", "alertCircle"] as const) {
+      expect(surfaceIconSource(name)).toEqual({ kind: "glyph", name })
+    }
+  })
+
   test("reads only catalog names from a bound value", () => {
     expect(surfaceIconName("star")).toBe("star")
     expect(["volumeUp", "rocket", 3, null].map(surfaceIconName)).toEqual([undefined, undefined, undefined, undefined])

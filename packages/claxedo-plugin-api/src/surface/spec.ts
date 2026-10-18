@@ -1,5 +1,7 @@
 import { z } from "zod"
 import { SURFACE_CATALOG_ID, surfaceComponentSchema, type SurfaceChildList, type SurfaceComponent } from "./catalog"
+import { surfaceComponentEvents } from "./events"
+import { SURFACE_IMAGE_REFUSALS, surfaceImageUrl } from "./image-url"
 import { SURFACE_MAX_COMPONENTS, SURFACE_PROTOCOL_VERSION, type SurfaceMessage } from "./messages"
 
 export const SURFACE_ROOT_ID = "root"
@@ -100,10 +102,31 @@ function graphIssues(components: readonly SurfaceComponent[]): SurfaceIssue[] {
   return issues
 }
 
+function eventIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
+  return surfaceComponentEvents(component).flatMap((event) =>
+    Object.keys(event.action.event.context ?? {})
+      .filter((key) => event.supplied.includes(key))
+      .map((key) => ({
+        path: `${at}/${event.prop}/event/context/${pointerOf([key]).slice(1)}`,
+        message: `the ${component.component}'s ${event.prop} event supplies ${key} itself; give this context entry another name`,
+      })),
+  )
+}
+
+function imageIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
+  if (component.component !== "Image" || typeof component.url !== "string") return []
+  const checked = surfaceImageUrl(component.url)
+  return checked.ok ? [] : [{ path: `${at}/url`, message: SURFACE_IMAGE_REFUSALS[checked.reason] }]
+}
+
+function componentIssues(components: readonly SurfaceComponent[]): SurfaceIssue[] {
+  return components.flatMap((component, index) => [...eventIssues(component, `/components/${index}`), ...imageIssues(component, `/components/${index}`)])
+}
+
 export function checkSurfaceSpec(value: unknown): SurfaceCheck {
   const parsed = surfaceSpecSchema.safeParse(value)
   if (!parsed.success) return { ok: false, issues: parsed.error.issues.map((issue) => ({ path: pointerOf(issue.path), message: issue.message })) }
-  const issues = graphIssues(parsed.data.components)
+  const issues = [...graphIssues(parsed.data.components), ...componentIssues(parsed.data.components)]
   return issues.length > 0 ? { ok: false, issues } : { ok: true, spec: parsed.data }
 }
 

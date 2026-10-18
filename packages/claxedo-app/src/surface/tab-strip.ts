@@ -7,3 +7,7 @@ export function tabStripEdge(scrollLeft: number, clientWidth: number, scrollWidt
   if (hiddenStart) return "start"
   return hiddenEnd ? "end" : "none"
 }
+
+export function selectedTabIndex(value: number, count: number): number {
+  return Number.isInteger(value) && value >= 0 && value < count ? value : 0
+}

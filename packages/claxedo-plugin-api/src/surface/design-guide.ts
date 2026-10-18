@@ -36,8 +36,17 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 | One of a few options | \`ChoicePicker\` with \`chips\`; a \`dropdown\` past about five |
 | A bounded continuous value | \`Slider\`; a small whole number is a number \`TextField\` |
 | Nothing to show yet | \`EmptyState\` |
+| A picture the producer has (a screenshot, an attachment, an avatar) | \`Image\` with a \`data:\` URL and an \`accessibility.label\` |
+| A work item's status beside its title | A ListItem \`icon\` or an \`Icon\` of \`circleDashed\` (not started), \`circle\` (to do), \`circleHalf\` (in progress), \`checkCircle\` (done) or \`alertCircle\` (blocked), with the status word in a Badge |
 
 A Badge's \`variant\` may be bound, so a template row can carry its own tone: put the tone beside the status word in each item (\`{"status": "Failed", "tone": "danger"}\`) and bind both (\`"text": {"path": "status"}, "variant": {"path": "tone"}\`); an unknown tone draws neutral. The text still says the state, so colour is never the only signal.
+
+## Images
+
+- \`url\` is a \`data:\` URL of a base64 PNG, JPEG, GIF or WebP, at most 2 MiB decoded, usually bound from \`data\` (\`"url": {"path": "/shot"}\`). A plugin may also bind a \`blob:\` URL it made in the app's own document. Nothing else draws: no \`http(s)\`, no \`file:\`, no SVG. A surface never fetches.
+- \`accessibility.label\` is required and says what the picture shows ("Login page after the fix"), not "image". A refused url draws a dashed box with that label instead of the picture.
+- \`variant\` sets the size: \`icon\` 24 px, \`avatar\` a 40 px circle, \`smallFeature\`, \`mediumFeature\` and \`largeFeature\` up to 120, 240 and 480 px wide, \`header\` the full width at most 200 px tall. Without one the picture keeps its own size, never wider than its column. \`fit\` (\`contain\` by default, \`cover\`, \`fill\`, \`none\`, \`scaleDown\`) says how it fills that box.
+- Several pictures sit in a Grid; a picture beside text sits in a Row.
 
 ## Provenance
 
@@ -338,7 +347,9 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 
 ## Interaction rules
 
-- Only a Button sends anything. An input writes into the data model inside the app; nothing leaves the surface until a Button fires.
+- A Button sends its \`action\`. An input writes into the data model inside the app and sends nothing unless it declares an event: a TextField's \`submit\` (Enter in a one-line field; Mod+Enter or Mod+S in a \`longText\` field), the \`change\` of a ChoicePicker, CheckBox or Switch (after the new value is written), and the \`change\` of Tabs (bind \`selected\` to a number to read or set the open tab).
+- An input's event carries what the input supplies, added to its \`context\` under fixed names: \`value\` (the text, the list of chosen values, or the boolean) and, for Tabs, \`index\`. A \`context\` key with one of those names is refused; name your own entries differently.
+- In an agent reply every event asks the person before it is sent and arrives as a new user message, so an agent reply keeps to Buttons; \`change\` and \`submit\` are for plugin pages that answer each one with a patch (filters, inline edits, Save on Mod+S).
 - Bind every input a Button depends on into its \`context\` (\`"name": {"path": "/target/name"}\`). The receiver sees only the context, never the model.
 - Name the event for what it does, in camelCase (\`approveRelease\`, \`createDeployTarget\`). It is what the agent-reply confirmation shows ("Send “approveRelease” to the agent?") and what a plugin's \`action\` handler switches on.
 - Inside a template (\`children: {"componentId": ..., "path": ...}\`) a path without a leading \`/\` reads the current item (\`{"path": "title"}\`); one with \`/\` reads from the root. A Button in a template sends its item's key: \`"context": {"card": {"path": "id"}}\`.
@@ -376,6 +387,8 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 | Every row showing several text buttons and links in different styles | One \`primaryAction\` per row; the rest icon-only in \`actions\`, shown on hover |
 | A decorative Header icon | An icon that names the object type, or none |
 | Preformatted numbers in a Table ("1,204 ms") | JSON numbers, with the unit in the column title |
+| An Image pointing at an \`https\` URL | A \`data:\` URL in \`data\`, bound to \`url\` |
+| A status shown only as a coloured circle | The status glyph with its word in a Badge |
 
 ## Before you show it
 
@@ -395,4 +408,5 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 14. Each Callout has the tone that matches its meaning, a title, and an \`action\` when it is \`danger\`; at most one per Section.
 15. A view with inputs ends with a Footer.
 16. Each repeated row has at most one text action (\`primaryAction\`); every Button in its \`actions\` has an \`icon\`, and a destructive one uses \`delete\`.
+17. Every Image has a \`data:\` URL and an \`accessibility.label\` that says what it shows.
 `

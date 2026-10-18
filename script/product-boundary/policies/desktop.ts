@@ -727,9 +727,11 @@ export const desktopRenderer: Policy = {
   // (`surface/grid-columns.ts`, `surface/key-value.ts`, `surface/range-fill.ts`,
   // `surface/tab-strip.ts`,
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
-  // renderer. They add no package edge.
-  // 1481/36, no headroom.
-  ceilings: { modules: 1481, packages: 36 },
+  // renderer, as do the Image view that draws only the URLs the catalog's
+  // rule admits (`surface/view/image-view.tsx`) and the key that fires a text
+  // field's submit event (`surface/submit-key.ts`). They add no package edge.
+  // 1483/36, no headroom.
+  ceilings: { modules: 1483, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

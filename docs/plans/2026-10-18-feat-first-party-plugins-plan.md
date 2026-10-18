@@ -657,12 +657,18 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
 - Delete or rename per §2(g); `slash-popover` keeps only file and mention options.
 - **Checks:** app test (`src/composer`), typecheck, check (budget for Composer drops), e2e `06-composer.spec.ts`, `34-live-plugin-desktop.spec.ts`, `35-live-plugin-web.spec.ts` (plugin mentions).
 - Progress:
-- [ ] **S2. Input events, `Image`, status glyphs.**
+- [x] **S2. Input events, `Image`, status glyphs.**
 - Implement §3.0 and S2 in the catalog, spec check, renderer, design guide and `ui_guide`.
 - **Tests:** plugin-api spec tests (collisions, Image URL rule, agent-only refusals); app `src/surface` tests (supplied fields, change fires after the write, Image refusals).
 - **Flow 61 fixture:** an `Image` with a data: URL paints; an https URL shows the refused slot and makes no request; a `ChoicePicker.change` reaches the plugin.
 - **Checks:** plugin-api test and typecheck; app test, typecheck and check (raise the surface budget in `budget.ts` to the measured lines with its owner, no headroom); mcp test (`surfaces`); ratchets plus `bun run --cwd packages/claxedo-desktop verify:closure` (desktop-renderer modules grow by the new view files; record the exact number).
-- Progress:
+- **As built:**
+  - `Image` takes its required `accessibility` (`label` required) in its own shape instead of a refinement, so the `ui_show` JSON Schema states it;
+  - `surfaceImageUrl(value, origin?)` refuses every `blob:` when the origin is absent or opaque (`"null"`), so the spec check refuses a literal blob and the desktop's `file:` renderer accepts none; Tasks images use `data:` (§4);
+  - `checkSurfaceSpec`'s `producer` option lands with the first plugin-only prop in S3; S2 adds none;
+  - the renderer adds `submit-key.ts` (Enter; Mod+Enter or Mod+S in `longText`) and `tab-strip.ts` `selectedTabIndex`;
+  - flow 61's phone arrange opens the drawer until the fixture row is in view: the shell's `navigated` event closes the drawer once the home workspace is chosen, which failed the phone project at the base commit.
+- Progress: done 2026-10-18 — input `change`/`submit` events, `Image` (data:/same-origin blob:) and the five status glyphs; desktop-renderer 1483 modules, surface budget 2430.
 - [ ] **S3. `Board` with `move`.**
 - **Tests:** keyboard machine transitions, supplied move fields, the renderer never writes data, pending cleared by a patch to either column.
 - **Flow 61 fixture:** drag a card to another column; keyboard Space, ArrowRight, Space; the plugin patches and the card stays.

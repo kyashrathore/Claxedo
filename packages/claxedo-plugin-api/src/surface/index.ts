@@ -2,6 +2,8 @@ export {
   SURFACE_BADGE_TONES,
   SURFACE_CATALOG_ID,
   SURFACE_ICON_NAMES,
+  SURFACE_IMAGE_FITS,
+  SURFACE_IMAGE_VARIANTS,
   dataBindingSchema,
   surfaceActionSchema,
   surfaceComponentSchema,
@@ -14,6 +16,10 @@ export type {
   SurfaceDataBinding,
   SurfaceDynamicValue,
 } from "./catalog"
+export { SURFACE_EVENT_FIELDS, surfaceComponentEvents } from "./events"
+export type { SurfaceComponentEvent } from "./events"
+export { SURFACE_IMAGE_MAX_DATA_URL_LENGTH, SURFACE_IMAGE_REFUSALS, surfaceImageUrl } from "./image-url"
+export type { SurfaceImageRefusal, SurfaceImageUrl } from "./image-url"
 export {
   SURFACE_MAX_COMPONENTS,
   SURFACE_PROTOCOL_VERSION,
