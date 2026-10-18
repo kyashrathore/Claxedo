@@ -393,13 +393,13 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
         const harness = c.req.query("nativeHarness")
         if ((harness !== "pi" && harness !== "opencode") || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi or nativeHarness=opencode" } }, 400)
+        const view = readProviderCatalogView({ provider: c.req.query("provider"), view: c.req.query("view") })
         if (harness === "opencode") {
           if (!options.opencodeProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "OpenCode provider catalog is not configured" } }, 503)
-          const view = readProviderCatalogView({ provider: c.req.query("provider"), view: c.req.query("view") })
           return c.json(projectProviderCatalog(await options.opencodeProviderCatalog(auth, c.req.query("workspaceId")), view))
         }
         if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
-        return c.json(await options.piProviderCatalog(auth))
+        return c.json(projectProviderCatalog(await options.piProviderCatalog(auth), view))
       } catch (err) {
         if (err instanceof ProviderCatalogViewError) return c.json({ error: { code: err.code, message: err.message } }, err.status)
         return authErrorResponse(c, err)

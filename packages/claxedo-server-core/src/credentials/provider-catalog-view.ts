@@ -1,6 +1,7 @@
 /**
- * The forms `/agent-config/providers` answers in. The full catalog stays the
- * default because today's app reads it whole; opencode's is 2.3 MB.
+ * The forms `/agent-config/providers` answers in. A request that names no view
+ * gets the full catalog; the app asks for the summary and then one provider at
+ * a time, since opencode's full catalog is 2.3 MB and Pi's 45 KB.
  */
 type CatalogProvider = { id: string; name: string; source?: string; refused?: string; models: Record<string, unknown> }
 

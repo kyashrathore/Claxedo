@@ -96,7 +96,7 @@ test("51 Pi started from the composer on a cloud workspace runs in its own sessi
   await host.call("DELETE", `/session/${sessionId}`)
   await expect.poll(async () => (await listedSessions(signedCloud, workspace)).map((row) => row.sessionId)).not.toContain(sessionId)
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
-  await expect(page.getByRole("navigation", { name: UI.rail }).getByText("No sessions match the current view.")).toBeVisible()
+  await expect(page.getByRole("navigation", { name: UI.rail }).getByText("No active sessions. Show settled lists them all.")).toBeVisible()
 })
 
 test("51 a cloud Pi session opens by its URL, and a Codex session on the same workspace runs on the workspace machine", async ({ signedCloud, page, isMobile }) => {
