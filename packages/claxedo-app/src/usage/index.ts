@@ -27,3 +27,4 @@ export const sandboxUsageSettingsSection: SettingsSection = {
   ...usageSection("sandbox-usage", "usage.sandbox.title", 22, lazyView(() => import("./view/sandbox-usage-section").then((module) => module.SandboxUsageSection))),
   available: () => useServer().capabilities()?.hostedAccount === true,
 }
+export { usageDictionary } from "./i18n"

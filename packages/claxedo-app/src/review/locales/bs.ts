@@ -1,6 +1,6 @@
 import type { ReviewKey } from "../i18n"
 
-export const dict: Partial<Record<ReviewKey, string>> = {
+const dict: Partial<Record<ReviewKey, string>> = {
   "review.mode.branch": "Promjene na grani",
   "review.scope.staged": "Pripremljene izmjene",
   "review.scope.branch": "Promjene na grani",
@@ -53,3 +53,5 @@ export const dict: Partial<Record<ReviewKey, string>> = {
   "review.error.git_push_rejected": "Push odbijen: {{message}}",
   "review.error.git_timeout": "Git je istekao: {{message}}",
 }
+
+export default dict

@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname } from "node:path"
-import { resolveAccountBindingSelection, type AccountBindingId } from "./vite.account-binding"
+import { resolveAccountBindingSelection, type AccountBindingBuildSelection, type AccountBindingId } from "./vite.account-binding"
 import { webDocumentPlugin } from "./vite.web-document"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
@@ -27,6 +27,25 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
     key: readFileSync(new URL("key.pem", dir)),
     cert: readFileSync(new URL("cert.pem", dir)),
   }
+}
+
+const localeFile = /\/src\/(?:[^/]+\/locales|i18n\/errors)\/([a-z]+)\.ts$/
+
+function localeChunk(id: string): string | undefined {
+  const match = localeFile.exec(normalizePath(id))
+  return match && match[1] !== "en" ? `locale-${match[1]}` : undefined
+}
+
+const vendorChunks: Record<string, readonly string[]> = { "vendor-solid": ["solid-js"] }
+
+function vendorChunk(id: string, binding: AccountBindingBuildSelection): string | undefined {
+  const path = normalizePath(id)
+  if (!path.includes("/node_modules/")) return undefined
+  const chunks: Record<string, readonly string[]> = { ...vendorChunks, ...binding.manualChunks }
+  for (const [chunk, packages] of Object.entries(chunks)) {
+    if (packages.some((name) => path.includes(`/node_modules/${name}/`))) return chunk
+  }
+  return undefined
 }
 
 function manifestField(value: unknown, key: string): unknown {
@@ -128,10 +147,7 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
           browserPreview: fileURLToPath(new URL("./browser-preview.html", import.meta.url)),
         },
         output: {
-          manualChunks: {
-            "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],
-            ...accountBinding.manualChunks,
-          },
+          manualChunks: (id) => localeChunk(id) ?? vendorChunk(id, accountBinding),
         },
       },
     },

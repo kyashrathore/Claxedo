@@ -1,14 +1,19 @@
-import { modelsSettingsSection, sandboxSettingsSection, teamSettingsSection } from "@/accounts"
+import { accountsDictionary, modelsSettingsSection, sandboxSettingsSection, teamSettingsSection } from "@/accounts"
 import { authRoutes } from "@/auth"
+import { errorDictionary, type Translations } from "@/i18n"
+import { notificationsDictionary } from "@/notifications"
 import { onboardingRoute } from "@/onboarding"
 import { pluginsSettingsSection } from "@/plugins"
-import { projectsSettingsSection } from "@/projects"
-import { marketplacePage, tasksPage } from "@/rail"
-import { settingsSections } from "@/settings"
+import { projectsDictionary, projectsSettingsSection } from "@/projects"
+import { marketplacePage, railDictionary, tasksPage } from "@/rail"
+import { reviewDictionary } from "@/review"
+import { settingsDictionary, settingsSections } from "@/settings"
 import { presetsSettingsSection } from "@/tasks"
 import { draftSessionPaneKind, sessionDetailsPanelView, sessionPaneKind, subagentPanelView } from "@/session"
+import { transcriptDictionary } from "@/transcript"
+import { usageDictionary } from "@/usage"
 import { terminalCreatorPaneKind, terminalPaneKind } from "@/terminal"
-import { pageTabPaneKind, paneKindEntry, settingsPage, type FirstPartyEntries } from "@/shell"
+import { pageTabPaneKind, paneKindEntry, settingsPage, shellDictionary, type FirstPartyEntries } from "@/shell"
 
 export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, tasksPage, marketplacePage],
@@ -29,3 +34,16 @@ export const firstParty: FirstPartyEntries = {
   iconSkins: [],
   routes: [onboardingRoute, ...authRoutes],
 }
+
+export const firstPartyDictionaries: readonly Translations[] = [
+  errorDictionary,
+  shellDictionary,
+  railDictionary,
+  projectsDictionary,
+  transcriptDictionary,
+  notificationsDictionary,
+  settingsDictionary,
+  usageDictionary,
+  accountsDictionary,
+  reviewDictionary,
+]

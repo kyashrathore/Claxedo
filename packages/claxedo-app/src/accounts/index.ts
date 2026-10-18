@@ -5,9 +5,12 @@ import { useAccountsText } from "./i18n"
 export { harnesses } from "./model"
 export { useAccounts } from "./store"
 export { useSandboxKeys, type SandboxKeysLoad, type SandboxKeysStore, type SandboxListing } from "./sandbox-store"
-export { InlineSandboxKeyForm } from "./view/sandbox-key-form"
-export { AgentHarnessAccounts } from "./view/harness-accounts"
-export { createHarnessProviders, HarnessProvidersSection, type HarnessProviders } from "./view/harness-providers"
+export { createHarnessProviders, type HarnessProviders } from "./harness-providers-state"
+
+export const loadOnboardingAccountViews = () => Promise.all([import("./view/sandbox-key-form"), import("./view/harness-accounts"), import("./view/harness-providers")])
+export const InlineSandboxKeyForm = lazyView(() => import("./view/sandbox-key-form").then((module) => module.InlineSandboxKeyForm))
+export const AgentHarnessAccounts = lazyView(() => import("./view/harness-accounts").then((module) => module.AgentHarnessAccounts))
+export const HarnessProvidersSection = lazyView(() => import("./view/harness-providers").then((module) => module.HarnessProvidersSection))
 
 export const modelsSettingsSection: SettingsSection = {
   id: "models",
@@ -32,3 +35,4 @@ export const sandboxSettingsSection: SettingsSection = {
   order: 47,
   view: lazyView(() => import("./view/sandbox-section").then((module) => module.SandboxSection)),
 }
+export { accountsDictionary } from "./i18n"

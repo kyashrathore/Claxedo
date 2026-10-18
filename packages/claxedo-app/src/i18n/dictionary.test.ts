@@ -48,3 +48,39 @@ test("a duplicate English key keeps the first definition and is logged", () => {
   expect(dictionaries.resolve("en", "rail.new").text).toBe("New session")
   expect(error).toHaveBeenCalledTimes(1)
 })
+
+test("a locale held by a loader is pending until loaded, resolves to English meanwhile, then joins the built dictionary", async () => {
+  let loads = 0
+  const lazy = {
+    en: { "panel.files": "Files" },
+    fr: async () => {
+      loads += 1
+      return { default: { "panel.files": "Fichiers" } }
+    },
+  } satisfies Translations
+  const dictionaries = createDictionaries()
+  dictionaries.add(lazy)
+  expect(dictionaries.pending("fr")).toBe(true)
+  expect(dictionaries.pending("en")).toBe(false)
+  expect(dictionaries.resolve("fr", "panel.files")).toEqual({ text: "Files", found: false })
+  const [first, second] = await Promise.all([dictionaries.load("fr"), dictionaries.load("fr")])
+  expect([first, second, loads]).toEqual([true, true, 1])
+  expect(dictionaries.pending("fr")).toBe(false)
+  expect(dictionaries.resolve("fr", "panel.files")).toEqual({ text: "Fichiers", found: true })
+  expect(await dictionaries.load("fr")).toBe(false)
+})
+
+test("a domain removed while its locale loads contributes nothing when the load lands", async () => {
+  let release: (() => void) | undefined
+  const lazy = {
+    en: { "panel.files": "Files" },
+    fr: () => new Promise<{ default: { "panel.files": string } }>((resolve) => (release = () => resolve({ default: { "panel.files": "Fichiers" } }))),
+  } satisfies Translations
+  const dictionaries = createDictionaries()
+  dictionaries.add(lazy)
+  const loading = dictionaries.load("fr")
+  dictionaries.remove(lazy)
+  release!()
+  expect(await loading).toBe(false)
+  expect(dictionaries.resolve("fr", "panel.files")).toEqual({ text: "panel.files", found: false })
+})

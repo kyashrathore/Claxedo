@@ -1,20 +1,4 @@
 import type { Translations } from "@/i18n"
-import { dict as ar } from "./locales/ar"
-import { dict as br } from "./locales/br"
-import { dict as bs } from "./locales/bs"
-import { dict as da } from "./locales/da"
-import { dict as de } from "./locales/de"
-import { dict as es } from "./locales/es"
-import { dict as fr } from "./locales/fr"
-import { dict as ja } from "./locales/ja"
-import { dict as ko } from "./locales/ko"
-import { dict as no } from "./locales/no"
-import { dict as pl } from "./locales/pl"
-import { dict as ru } from "./locales/ru"
-import { dict as th } from "./locales/th"
-import { dict as tr } from "./locales/tr"
-import { dict as zh } from "./locales/zh"
-import { dict as zht } from "./locales/zht"
 
 const en = {
   "review.mode.uncommitted": "Uncommitted",
@@ -110,20 +94,20 @@ export type ReviewKey = keyof typeof en
 
 export const reviewDictionary = {
   en,
-  ar,
-  br,
-  bs,
-  da,
-  de,
-  es,
-  fr,
-  ja,
-  ko,
-  no,
-  pl,
-  ru,
-  th,
-  tr,
-  zh,
-  zht,
+  ar: () => import("./locales/ar"),
+  br: () => import("./locales/br"),
+  bs: () => import("./locales/bs"),
+  da: () => import("./locales/da"),
+  de: () => import("./locales/de"),
+  es: () => import("./locales/es"),
+  fr: () => import("./locales/fr"),
+  ja: () => import("./locales/ja"),
+  ko: () => import("./locales/ko"),
+  no: () => import("./locales/no"),
+  pl: () => import("./locales/pl"),
+  ru: () => import("./locales/ru"),
+  th: () => import("./locales/th"),
+  tr: () => import("./locales/tr"),
+  zh: () => import("./locales/zh"),
+  zht: () => import("./locales/zht"),
 } satisfies Translations<ReviewKey>

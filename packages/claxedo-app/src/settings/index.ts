@@ -34,3 +34,4 @@ export const settingsSections: readonly SettingsSection[] = [
   section("sounds", "settings.section.sounds", "app", 64, lazyView(() => import("./view/alerts").then((module) => module.SoundsSection))),
   section("keybindings", "settings.section.keybindings", "app", 70, lazyView(() => import("./view/keybindings").then((module) => module.KeybindingsSection))),
 ]
+export { settingsDictionary } from "./i18n"
