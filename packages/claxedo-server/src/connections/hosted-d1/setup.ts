@@ -149,19 +149,15 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
     if (denied) return c.json(denied.body, denied.status)
 
     const attempts = input.attempts ?? d1Attempts(input)
-    // `GET /attempts/:state` is served from the CALLER's partitions, so the
-    // attempt it names must belong to them. The kit's route cannot check this:
-    // it knows nothing about orgs. Without the check a signed caller holding
-    // any state token reads another tenant's attempt — and, for a device grant,
-    // POLLING IS WHAT ADVANCES IT, so the poll would drive a stranger's grant
-    // to completion. Same frozen owner/routing agreement `hostedCallback`
-    // requires, and the same 404 the kit answers for an unknown state, so a
-    // prober cannot tell "not yours" from "not there".
+    // The kit's `GET /attempts/:state` refuses an attempt whose owner is not
+    // one of the caller's partition keys, but a personal `user:` key is the
+    // same in every org the user belongs to. The routing frozen at start names
+    // the org, so an attempt begun under another org is refused here with the
+    // kit's own 404, and a prober cannot tell "not yours" from "not there".
     const attemptState = /^\/attempts\/([^/]+)$/.exec(subpath)?.[1]
     if (attemptState !== undefined) {
       const frozen = await attempts.ownership(decodeURIComponent(attemptState))
-      const owned = frozen?.owner === `user:${membership.userId}` || frozen?.owner === `org:${membership.orgId}`
-      if (!frozen || !owned || frozen.routing?.org_id !== membership.orgId) {
+      if (frozen?.routing?.org_id !== membership.orgId) {
         return c.json({ code: "attempt_not_found" }, 404)
       }
     }

@@ -21,7 +21,7 @@ export {
 } from "./ports/index.js"
 export { createConnectionsService, type ConnectionsService, type CapabilityHandle, type ConnectResult, type RepositoryListResult, type TokenResult } from "./service.js"
 export { createIntegrationsRoutes, type IntegrationsRouteOptions, type RouteGate } from "./routes.js"
-export { createAttempts, type Attempts, type AttemptRouting } from "./attempts.js"
+export { createAttempts, type AttemptOwnership, type Attempts, type AttemptRouting } from "./attempts.js"
 export { createTokenService, ConnectionTokenError, DefinitiveRefreshError } from "./tokens.js"
 export { createMemoryCredentialStore, createMemoryConnectionStore } from "./stores/memory.js"
 export {
