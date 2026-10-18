@@ -70,7 +70,7 @@ describe("long paragraphs", () => {
     transcriptLinkRunSource(transcriptLinkPrefixes.filter((prefix) => !prefix.startsWith("http"))),
     "i",
   )
-  const extension = markedTranscriptAutolink.extensions![0]!
+  const extension = markedTranscriptAutolink.extensions![0]
   const reference = new Marked({ extensions: [{ ...extension, start: (src: string) => unboundedStart.exec(src)?.index }] })
   const bounded = new Marked(markedTranscriptAutolink)
   const filler = (length: number) => "word ".repeat(Math.ceil(length / 5)).slice(0, length)
@@ -93,8 +93,8 @@ describe("long paragraphs", () => {
   }
 
   test("still links what the reference links", () => {
-    expect(bounded.parse(cases["a link past the scan limit"]!, { async: false })).toContain('href="file:///Users/dev/notes.md"')
-    expect(bounded.parse(cases["a link across the scan limit"]!, { async: false })).toContain('href="file:///Users/dev/notes.md"')
-    expect(bounded.parse(cases["no whitespace at all"]!, { async: false })).toContain('href="vscode://file/x')
+    expect(bounded.parse(cases["a link past the scan limit"], { async: false })).toContain('href="file:///Users/dev/notes.md"')
+    expect(bounded.parse(cases["a link across the scan limit"], { async: false })).toContain('href="file:///Users/dev/notes.md"')
+    expect(bounded.parse(cases["no whitespace at all"], { async: false })).toContain('href="vscode://file/x')
   })
 })
