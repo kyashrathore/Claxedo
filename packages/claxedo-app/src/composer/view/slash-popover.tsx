@@ -5,16 +5,8 @@ import { AtOptionRow } from "./at-option-row"
 import { SlashCommandRow } from "./slash-command-row"
 
 export type AtOption =
-  | { type: "agent"; name: string; display: string }
   | { type: "file"; path: string; display: string; recent?: boolean }
-  | {
-      type: "document"
-      documentId: string
-      display: string
-      originKind: "managed" | "repository"
-      placementKind: "local" | "hosted"
-      status: string
-    }
+  | { type: "mention"; mentionId: string; display: string; group: string }
 
 type SlashCommandFields = {
   id: string
@@ -36,8 +28,6 @@ export const promptSlashOptionId = (id: string) => `prompt-slash-option-${id}`
 
 type PromptPopoverProps = {
   popover: "at" | "slash" | null
-  documentPicker: boolean
-  documentNotice?: string
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
   atFailed?: string
@@ -77,7 +67,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         }}
         role="listbox"
         id={PROMPT_POPOVER_LISTBOX_ID}
-        aria-label={props.documentPicker ? "Documents" : props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")}
+        aria-label={props.t(props.popover === "at" ? "prompt.popover.atLabel" : "prompt.popover.slashLabel")}
         class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
                  overflow-auto no-scrollbar flex flex-col p-2 bg-surface-raised-stronger-non-alpha"
         onMouseDown={(e) => e.preventDefault()}
@@ -87,7 +77,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
             <PopoverFailure label={props.t("prompt.popover.filesFailed")} message={props.atFailed} />
             <Show
               when={props.atFlat.length > 0}
-              fallback={<div class="text-text-weak px-2 py-1">{props.documentPicker ? props.documentNotice ?? "No documents found." : props.t("prompt.popover.emptyResults")}</div>}
+              fallback={<div class="text-text-weak px-2 py-1">{props.t("prompt.popover.emptyResults")}</div>}
             >
               <For each={props.atFlat.slice(0, 10)}>
                 {(item) => {

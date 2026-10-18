@@ -1,4 +1,4 @@
-import { Show, type Accessor, type Component, type JSX } from "solid-js"
+import { type Accessor, type Component, type JSX } from "solid-js"
 import type { ComposerTextKey } from "../i18n"
 import { DockShellForm } from "@/ui"
 import { PromptDragOverlay } from "./drag-overlay"
@@ -13,7 +13,6 @@ type PromptDraggingType = "image" | "@mention" | null
 
 export type PromptPopoverBindings = {
   popover: PromptPopoverKind
-  documentPicker: boolean
   setSlashPopoverRef: (el: HTMLDivElement) => void
   atFlat: AtOption[]
   atFailed?: string
@@ -39,7 +38,6 @@ export type PromptInputFrameProps = PromptPopoverBindings &
     newSession: Accessor<boolean>
     collapsed: Accessor<boolean>
     draggingType: Accessor<PromptDraggingType>
-    documentNotice?: string
     handleRootFocusIn: VoidFunction
     handleSubmit: JSX.EventHandlerUnion<HTMLFormElement, SubmitEvent>
     t: (key: ComposerTextKey) => string
@@ -60,8 +58,6 @@ export const PromptInputFrame: Component<PromptInputFrameProps> = (props) => {
   >
     <PromptPopover
       popover={props.popover}
-      documentPicker={props.documentPicker}
-      documentNotice={props.documentNotice}
       setSlashPopoverRef={props.setSlashPopoverRef}
       atFlat={props.atFlat}
       atFailed={props.atFailed}
@@ -77,11 +73,6 @@ export const PromptInputFrame: Component<PromptInputFrameProps> = (props) => {
       commandKeybind={props.commandKeybind}
       t={props.t}
     />
-    <Show when={props.documentNotice}>
-      <div role="status" aria-live="polite" class="px-3 py-1 text-12-regular text-text-weak">
-        {props.documentNotice}
-      </div>
-    </Show>
     <ComposerNoticeRow notices={notices()} />
     <DockShellForm
       data-component={props.newSession() ? "session-new-composer" : "session-composer"}

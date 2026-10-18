@@ -653,10 +653,10 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
 - **Flow 61:** switch project, open the fixture page, and it names the new project. Red run: remove the `refreshMirror()` call.
 - **Checks:** app test (`src/plugins`), typecheck, check, e2e 61. No ratchet change.
 - Progress: done (app-plugin-host lane). A plugin page has a current project only when its route names one (`currentProjectId` reads the placement, else the page's `:projectId`), so the flow 61 fixture opens a second page, `/surface-fixture/projects/:projectId`, from a per-project Button; red run without `refreshMirror()` shows "No project". The app budget's "Web plugin frame" part (which counts its tests) rose to the measured 1337 and the total to 112850.
-- [ ] **S1. Composer document leftovers.**
+- [x] **S1. Composer document leftovers.**
 - Delete or rename per §2(g); `slash-popover` keeps only file and mention options.
 - **Checks:** app test (`src/composer`), typecheck, check (budget for Composer drops), e2e `06-composer.spec.ts`, `34-live-plugin-desktop.spec.ts`, `35-live-plugin-web.spec.ts` (plugin mentions).
-- Progress:
+- Progress: done (app-plugin-host lane). The `agent` AtOption had no producer and went with `document`; the mention row shows the source's group. Composer budget lowered to the measured 14031, total 112807. No new assertion: `/docs` was already filtered out of the slash list, so nothing a person sees changed.
 - [ ] **S2. Input events, `Image`, status glyphs.**
 - Implement §3.0 and S2 in the catalog, spec check, renderer, design guide and `ui_guide`.
 - **Tests:** plugin-api spec tests (collisions, Image URL rule, agent-only refusals); app `src/surface` tests (supplied fields, change fires after the write, Image refusals).
