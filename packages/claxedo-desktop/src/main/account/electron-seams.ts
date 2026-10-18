@@ -262,6 +262,7 @@ export type RefreshExchange = (input: {
   clientId: string
   refreshToken: string
   resource?: string
+  signal?: AbortSignal
 }) => Promise<RefreshOutcome>
 
 /**
@@ -293,6 +294,7 @@ export function refreshExchange(
           ...(input.resource ? { resource: input.resource } : {}),
         },
         timeoutMs,
+        input.signal,
       )
     } catch (error) {
       // Never reached an answer — an offline laptop, DNS, a dropped TLS

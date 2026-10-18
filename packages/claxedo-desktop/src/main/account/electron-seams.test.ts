@@ -109,6 +109,24 @@ describe("refreshExchange", () => {
     expect(!outcome.ok && outcome.detail).toContain("redirect (308)")
     expect(redirects).toEqual(["manual"])
   })
+
+  test("the caller's signal aborts the refresh grant's request", async () => {
+    let aborted = false
+    const controller = new AbortController()
+    const refresh = refreshExchange((_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          aborted = true
+          reject(new Error("account session ended"))
+        })
+      }), 5_000)
+
+    const pending = refresh({ ...REFRESH_INPUT, signal: controller.signal })
+    controller.abort(new Error("account session ended"))
+
+    await expect(pending).resolves.toMatchObject({ ok: false, reason: "unavailable" })
+    expect(aborted).toBe(true)
+  })
 })
 
 describe("nodeTimer", () => {

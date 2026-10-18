@@ -150,6 +150,17 @@ describe("descriptor-selected desktop native auth", () => {
     await expect(older).resolves.toMatchObject({ ok: false, reason: "cancelled" })
   })
 
+  test("hands the caller's signal to the refresh grant, so logout can end it", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+    const controller = new AbortController()
+
+    await h.auth.refresh(signed.credential, controller.signal)
+
+    expect(h.refreshes.map((input) => input.signal)).toEqual([controller.signal])
+  })
+
   test("revalidates descriptor expiry and immutable config before refresh and API use", async () => {
     const h = harness()
     const signed = await h.auth.signIn()

@@ -271,12 +271,19 @@ export function createAccountService(options: AccountServiceOptions) {
 
   const exchangeRefresh = async (held: StoredDesktopCredential): Promise<Credential> => {
     const startedIn = era
+    // Registered with the active requests so logout aborts the rotation before
+    // it revokes the held token: a successor minted after that revoke is a
+    // live refresh token nobody holds or can revoke.
+    const controller = new AbortController()
+    activeRequests.add(controller)
     let outcome: RefreshOutcome
     try {
-      outcome = await options.auth.refresh(held)
+      outcome = await options.auth.refresh(held, controller.signal)
     } catch (error) {
       options.onError?.("refresh", error)
       return { ok: false, detail: `could not renew the session: ${String(error)}` }
+    } finally {
+      activeRequests.delete(controller)
     }
     if (startedIn !== era || credential?.revision !== held.revision) return { ok: false, detail: "not signed in" }
     if (!outcome.ok) {

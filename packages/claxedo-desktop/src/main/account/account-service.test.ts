@@ -470,6 +470,49 @@ describe("bound desktop account lifecycle", () => {
     })
   })
 
+  test("logout aborts an in-flight refresh before it revokes the held token", async () => {
+    // A rotation that lands after the revoke mints a successor refresh token
+    // that nobody holds and the revoke never named.
+    const events: string[] = []
+    let markStarted!: () => void
+    const refreshStarted = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const h = harness({
+      store: memoryStore({ ...CREDENTIAL, tokens: { ...CREDENTIAL.tokens, expiresAt: 1_001 } }),
+      now: 1_000,
+      auth: authHarness({
+        refresh: (_credential, signal) => {
+          markStarted()
+          events.push("refresh")
+          return new Promise((resolve) => {
+            signal?.addEventListener(
+              "abort",
+              () => {
+                events.push("refresh aborted")
+                resolve({ ok: false, reason: "unavailable", detail: "refresh request failed: aborted" })
+              },
+              { once: true },
+            )
+          })
+        },
+        revoke: async () => {
+          events.push("revoke")
+          return { state: "confirmed" }
+        },
+      }),
+    })
+    await h.service.restore()
+
+    const operation = h.service.run("account.mode").catch((error: unknown) => error)
+    await refreshStarted
+    await h.service.signOut()
+
+    expect(events).toEqual(["refresh", "refresh aborted", "revoke"])
+    expect(String(await operation)).toContain("not signed in")
+    expect(h.store.held()).toBeUndefined()
+  })
+
   test("makes a durable pending record unusable before remote logout and surfaces uncertainty tokenlessly", async () => {
     let pendingDuringRevoke = false
     const store = memoryStore(CREDENTIAL)

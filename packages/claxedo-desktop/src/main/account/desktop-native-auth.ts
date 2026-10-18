@@ -27,13 +27,14 @@ export type DesktopNativeAuth = {
         detail: string
       }
   >
-  refresh(credential: BoundDesktopCredential): Promise<RefreshOutcome>
+  /** `signal` ends the refresh grant's request, so logout can stop a rotation it is about to revoke. */
+  refresh(credential: BoundDesktopCredential, signal?: AbortSignal): Promise<RefreshOutcome>
   revoke(credential: BoundDesktopCredential): Promise<RemoteRevocation>
 }
 
 type SelectedDesktopAdapter = {
   oauth: OAuthConfig
-  refresh(refreshToken: string): Promise<RefreshOutcome>
+  refresh(refreshToken: string, signal?: AbortSignal): Promise<RefreshOutcome>
   revoke(credential: BoundDesktopCredential): Promise<RemoteRevocation>
 }
 
@@ -192,12 +193,13 @@ export function createDesktopNativeAuth(input: {
         resource: descriptor.binding.resource,
         timeoutMs: AUTHORIZATION_REQUEST_LIFETIME_MS,
       },
-      refresh: (refreshToken) =>
+      refresh: (refreshToken, signal) =>
         input.refresh({
           tokenUrl: descriptor.tokenUrl,
           clientId: descriptor.binding.id,
           refreshToken,
           resource: descriptor.binding.resource,
+          ...(signal ? { signal } : {}),
         }),
       revoke: async (credential) => {
         if (descriptor.revocation.protocol !== "rfc7009") {
@@ -274,9 +276,9 @@ export function createDesktopNativeAuth(input: {
         },
       }
     },
-    async refresh(credential) {
+    async refresh(credential, signal) {
       const descriptor = await validate(credential)
-      return select(descriptor).refresh(credential.tokens.refreshToken)
+      return select(descriptor).refresh(credential.tokens.refreshToken, signal)
     },
     async revoke(credential) {
       try {
