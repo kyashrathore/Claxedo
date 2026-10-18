@@ -36,13 +36,6 @@ declare global {
   }
 }
 
-/**
- * Runs at document start, after installPaintedFrames. Every fact is stamped
- * with the time of the frame that painted it, once; `arm()` forgets the
- * interaction-scoped facts (sessions, pages, composer) so the next press can
- * earn them again, and takes the next trusted pointerdown or keydown as the
- * interaction's start.
- */
 export function installWebProbe() {
   const SCROLLER = '[data-slot="session-timeline-scroll"] > [data-scrollable]'
   const INTERACTION_SCOPED = /^(session-|settings$|marketplace$|composer:)/

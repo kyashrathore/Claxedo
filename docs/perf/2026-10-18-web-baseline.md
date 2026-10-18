@@ -108,6 +108,8 @@ The wait is the india-staging cold boot of a session at `8b2d1e949b`, 5,324 ms t
 | 29 | Marketplace from the rail: `marketplace-page` 58 kB + `claxedo-logo` chunks and `/api/claxedo/plugins` + `/sources`, 6 requests | 98 fast / 384 india | `packages/claxedo-app/src/marketplace/view/marketplace-page.tsx`, `src/server/marketplace.ts:23` | initial-js |
 | 30 | six workspace connections a minute per person and workspace: a seventh reload in a minute answers "Too many requests" and the app stops at the error card | a failed boot | `packages/claxedo-server/src/authority/provider-neutral-hosted-services.ts:94`, `src/routes/hosted/workspace.ts:205` | unowned |
 
+A product finding beside the ranking, unowned: the control plane allows six workspace connections a minute per person and workspace (`CLAXEDO_CONNECTION_RATE_LIMIT`, `packages/claxedo-server/src/authority/provider-neutral-hosted-services.ts:94`, enforced in `packages/claxedo-server/src/routes/hosted/workspace.ts:205`), and every boot and reload of a session route asks for one, so a person's seventh reload within a minute lands on the "Too many requests" card instead of the session; the rig met it on its fourth boot of a minute before its stack lifted the budget. The Worker's 600 requests a minute per client is wider than a boot's 33–41 requests but is the next ceiling a reloading person reaches.
+
 Not ranked, measured: the favicon is requested twice on a cold boot (15 kB each, uncompressed); the shell is 3.9 kB at `79cf281121` because `/*` still carries `no-transform`; return switches are 24–28 ms and need no lane; typing is under 10 ms at the 95th percentile.
 
 ## What the rig could not measure

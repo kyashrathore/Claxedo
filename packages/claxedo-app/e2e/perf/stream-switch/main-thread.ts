@@ -5,7 +5,6 @@ import type { createSourceMapper } from "../panel/trace"
 type Mapper = ReturnType<typeof createSourceMapper>
 type TraceFrame = { url: string; lineNumber: number; columnNumber: number; functionName?: string }
 
-/** The complete events of the busiest renderer main thread, in time order; a trace of several pages names several. */
 export function mainThreadEvents(events: readonly TraceEvent[]) {
   const mains = events.filter((event) => event.name === "thread_name" && (event.args as { name?: string } | undefined)?.name === "CrRendererMain")
   if (mains.length === 0) throw new Error("no renderer main thread")

@@ -48,7 +48,6 @@ function topOf(task: TraceEvent, onMain: readonly TraceEvent[], mapper: Mapper) 
   })
 }
 
-/** Sampled self time per script URL, so a module's top-level evaluation is attributed to its chunk. */
 export function profileSelfByUrl(profile: CpuProfile) {
   const byId = new Map(profile.nodes.map((node) => [node.id, node]))
   const totals = new Map<string, number>()
@@ -61,7 +60,6 @@ export function profileSelfByUrl(profile: CpuProfile) {
   return [...totals.entries()].map(([url, us]) => ({ url, ms: round(us / 1000) })).sort((a, b) => b.ms - a.ms)
 }
 
-/** Main-thread work between two monotonic trace times (µs), with every script's compile and evaluate cost in the window. */
 export function summarizeMainThread(events: readonly TraceEvent[], window: { fromUs: number; toUs: number }, mapper: Mapper = NO_MAPPER): MainThreadSummary {
   const onMain = mainThreadEvents(events).filter((event) => event.ts + (event.dur ?? 0) >= window.fromUs && event.ts <= window.toUs)
   const totals: Record<string, number> = {}

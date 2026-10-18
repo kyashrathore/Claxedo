@@ -3,7 +3,6 @@ import path from "node:path"
 import { PROFILE_NAMES, type ProfileName } from "./profiles"
 
 export type Options = {
-  /** `local` runs the signed e2e stack; anything else is an origin to measure with `--cookies`. */
   readonly target: string
   readonly cookies: string | undefined
   readonly profiles: readonly ProfileName[]

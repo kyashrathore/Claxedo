@@ -20,7 +20,6 @@ export type StepResult = {
   readonly cache: Cache
   readonly rep: number
   readonly reference: "navigation" | "input"
-  /** The step's headline: its first required mark, or the median key latency of a typing step. */
   readonly primary: { readonly name: string; readonly ms: number }
   readonly marks: Readonly<Record<string, number>>
   readonly lcp: ProbeState["lcp"]
@@ -29,7 +28,6 @@ export type StepResult = {
   readonly waterfall: Waterfall
   readonly lazyChunks: readonly WaterfallRow[]
   readonly mainThread: MainThreadSummary | undefined
-  /** Sampled self time by chunk, then the panel profile summary (top frames and app stacks). */
   readonly cpu: { readonly byChunk: readonly { readonly url: string; readonly ms: number }[]; readonly top: readonly string[] } | undefined
   readonly probeLongTasks: { readonly count: number; readonly tbtMs: number }
   readonly hostLoad: string
@@ -51,7 +49,7 @@ type Session = { context: BrowserContext; page: Page; cdp: CDPSession; recorder:
 
 const MARK_TIMEOUT_MS = 90_000
 const SETTLE_TIMEOUT_MS = 5_000
-const QUIET_MS = 500
+const QUIET_FRAMES = 30
 const TYPED = "Measuring how the composer keeps up"
 const SWITCHES = 4
 
@@ -92,6 +90,11 @@ function readProbe(page: Page) {
   })
 }
 
+async function paintedFrames(page: Page, count: number) {
+  const seen = await page.evaluate(() => window.__webPerf?.read().frames ?? 0)
+  await page.waitForFunction((target) => (window.__webPerf?.read().frames ?? 0) >= target, seen + count, { timeout: MARK_TIMEOUT_MS, polling: 50 })
+}
+
 async function waitForMark(page: Page, name: string, timeoutMs: number) {
   try {
     await page.waitForFunction((mark) => window.__webPerf?.read().marks.some((entry) => entry.name === mark) ?? false, name, { timeout: timeoutMs, polling: 50 })
@@ -122,7 +125,7 @@ async function measure(input: RunInput, session: Session, spec: Measure): Promis
     await spec.act()
     for (const name of spec.required) await waitForMark(page, name, MARK_TIMEOUT_MS)
     if (spec.settle) await waitForMark(page, spec.settle, SETTLE_TIMEOUT_MS)
-    await page.waitForTimeout(QUIET_MS)
+    await paintedFrames(page, QUIET_FRAMES)
   } finally {
     recording = await recorder.end()
   }
@@ -191,7 +194,6 @@ const sessionMarks = (id: string) => ({ required: [`session-text:${id}`], settle
 
 export type ScenarioRun = { readonly results: readonly StepResult[]; readonly failures: readonly string[] }
 
-/** Every scenario once for one profile and repetition: three contexts, the second carrying the warm chain. A failed step is recorded with a screenshot and the chain goes on. */
 export async function runScenarios(input: RunInput): Promise<ScenarioRun> {
   const { target } = input
   const [first, second] = target.sessions
@@ -231,7 +233,7 @@ export async function runScenarios(input: RunInput): Promise<ScenarioRun> {
       await pressByRole(page, () => page.locator('[data-component="prompt-input"][contenteditable="true"]').first())
       return measure(input, chain, { scenario: "open-session", step: "type", cache: "warm", reference: "input", required: [], settle: undefined, act: async () => {
         await page.keyboard.type(TYPED, { delay: 80 })
-        await page.waitForTimeout(QUIET_MS)
+        await page.waitForFunction((count) => (window.__webPerf?.read().keys.length ?? 0) >= count, TYPED.length, { timeout: MARK_TIMEOUT_MS, polling: 50 })
       } })
     })
     for (let index = 0; index < SWITCHES; index += 1) {

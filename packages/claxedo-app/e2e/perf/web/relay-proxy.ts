@@ -4,12 +4,6 @@ import { listenOnLoopback } from "../../../../harness/e2e/harness/ports"
 
 export type RelayProxy = { readonly url: string; close(): Promise<void> }
 
-/**
- * The relay origin the app reaches: a loopback front of the relay that holds
- * each request and upgrade for the profile's extra round trip, read per
- * request, since Chromium's emulation cannot delay one origin more than
- * another and the production relay is a Worker on its own origin.
- */
 export async function startRelayProxy(input: { port: number; relayPort: number; delayMs: () => number }): Promise<RelayProxy> {
   const target = new URL(`http://127.0.0.1:${input.relayPort}`)
   const held = (run: () => void) => {

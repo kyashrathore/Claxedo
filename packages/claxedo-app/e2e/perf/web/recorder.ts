@@ -50,7 +50,6 @@ export type NetworkRecord = {
 export type Recording = { readonly requests: readonly NetworkRecord[]; readonly traceEvents: readonly TraceEvent[]; readonly profile: CpuProfile | undefined }
 
 export type Recorder = {
-  /** Forgets finished requests; those still streaming keep updating. */
   begin(options: { trace: boolean; profile: boolean }): Promise<void>
   end(): Promise<Recording>
 }

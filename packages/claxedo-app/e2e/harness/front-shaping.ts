@@ -5,13 +5,6 @@ import path from "node:path"
 
 export type EncodedAsset = { readonly br?: Buffer; readonly gzip?: Buffer }
 
-/**
- * What the e2e front adds on top of serving `dist` as-is, so a measurement
- * sees the shape Cloudflare Pages and the control-plane Worker give the app:
- * `apiDelayMs` is read per request and added before a control-plane answer
- * is relayed (one extra round trip), `encoded` supplies the pre-compressed
- * bodies the front may send for an asset.
- */
 export type FrontShaping = {
   readonly apiDelayMs: () => number
   readonly encoded: (pathname: string) => EncodedAsset | undefined
@@ -26,13 +19,6 @@ function patternToRegExp(pattern: string) {
   return new RegExp(`^${escaped}$`)
 }
 
-/**
- * The dist's `public/_headers` as Cloudflare Pages reads it: every matching
- * block in file order adds its Cache-Control, a repeated header joins with a
- * comma, `! Cache-Control` detaches what earlier blocks set. Pages leaves a
- * `no-transform` response uncompressed; without the file every path gets the
- * publisher's default revalidation and is compressed.
- */
 export function pagesHeaders(distDir: string): (pathname: string) => PagesAnswer {
   const file = path.join(distDir, "_headers")
   const blocks: { readonly match: RegExp; detach: boolean; readonly values: string[] }[] = []

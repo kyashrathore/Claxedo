@@ -86,10 +86,6 @@ function initiatorUrl(record: NetworkRecord) {
   return record.initiator.stackTop?.url || record.initiator.url || undefined
 }
 
-/**
- * `originTs` is the monotonic second every `*Ms` counts from: the page's
- * time origin for a navigation, the trusted input for an interaction.
- */
 export function buildWaterfall(records: readonly NetworkRecord[], originTs: number): Waterfall {
   const ms = (ts: number) => round((ts - originTs) * 1000)
   const rows: WaterfallRow[] = []

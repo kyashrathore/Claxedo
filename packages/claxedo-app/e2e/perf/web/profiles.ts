@@ -2,13 +2,6 @@ export const PROFILE_NAMES = ["none", "fast", "india-staging"] as const
 
 export type ProfileName = (typeof PROFILE_NAMES)[number]
 
-/**
- * `Network.emulateNetworkConditions` adds `latencyMs` once per request before
- * its headers can arrive and caps throughput; it does not replay a handshake
- * per round trip. The front's own delays stack on top for the request classes
- * Chromium cannot tell apart: the API is one extra `apiDelayMs` on every
- * control-plane answer, so an API answer waits `latencyMs + apiDelayMs`.
- */
 export type Profile = {
   readonly name: ProfileName
   readonly latencyMs: number

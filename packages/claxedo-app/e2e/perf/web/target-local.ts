@@ -12,25 +12,11 @@ import type { Target } from "./target"
 
 const DIST_DIR = path.resolve(import.meta.dirname, "../../../dist-e2e-web-perf")
 
-/**
- * Production allows 600 requests a minute per client (the Worker's own fuse and
- * its shared rate-limit binding), 120 on control routes and 6 workspace
- * connections a minute per person and workspace; three repetitions boot the
- * app fifteen times a minute, which a person never does.
- */
 const UNLIMITED = 1_000_000
 const UNLIMITED_REQUESTS = { CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: String(UNLIMITED), CLAXEDO_CONTROL_PLANE_RATE_LIMIT: String(UNLIMITED), CLAXEDO_CONNECTION_RATE_LIMIT: String(UNLIMITED) }
 
 export type LocalTargetInput = { readonly seedTurns: number; readonly railSessions: number; readonly log: (line: string) => void }
 
-/**
- * The signed e2e stack with the app served the way Cloudflare Pages serves it
- * (pre-compressed, immutable hashed assets, revalidated shell) and the owner's
- * machine holding one project: two sessions of `seedTurns` scripted turns to
- * open and switch between, listed first, above `railSessions` one-turn
- * sessions that fill the rail. A title doubles as the scripted turns' script
- * name, which the agent reads up to the first space, so titles carry none.
- */
 export async function localTarget(input: LocalTargetInput): Promise<Target> {
   const started = Date.now()
   await prepareHarness()

@@ -54,7 +54,6 @@ export function groups(results: readonly StepResult[]) {
   return [...map.values()]
 }
 
-/** The run whose headline sits at the median, so every table about one run describes a typical one. */
 export function representative(group: readonly StepResult[]) {
   const sorted = [...group].filter((result) => Number.isFinite(result.primary.ms)).sort((a, b) => a.primary.ms - b.primary.ms)
   return sorted[Math.floor((sorted.length - 1) / 2)] ?? group[0]

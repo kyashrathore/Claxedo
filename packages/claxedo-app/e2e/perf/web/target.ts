@@ -28,10 +28,6 @@ function sameSite(value: string | undefined): Cookie["sameSite"] {
   return "Lax"
 }
 
-/**
- * A browser's exported cookies: Playwright's `storageState` file, or the array
- * a cookie-editor extension exports (`sameSite` as "lax" / "no_restriction").
- */
 export function readCookieFile(file: string, origin: string): Cookie[] {
   const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf8"))
   const list = Array.isArray(parsed) ? parsed : isRecord(parsed) && Array.isArray(parsed.cookies) ? parsed.cookies : undefined
@@ -51,10 +47,6 @@ export function describeCookies(cookies: readonly Cookie[]) {
   return cookies.map((cookie) => cookie.name).join(", ")
 }
 
-/**
- * The two most recent sessions the rail lists, found once untimed: the rail's
- * rows carry session ids, and pressing one gives the session's route.
- */
 export async function discoverSessions(browser: Browser, target: Pick<Target, "url" | "cookies">): Promise<SessionTarget[]> {
   const context = await browser.newContext({ ignoreHTTPSErrors: true })
   try {
