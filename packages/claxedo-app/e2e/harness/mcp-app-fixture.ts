@@ -11,7 +11,7 @@ const SHOW_APP: ScriptedMcpTool = {
   description: "Show the fixture forecast app",
   inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
   _meta: { ui: { resourceUri: MCP_APP_FIXTURE_URI } },
-  result: () => ({ content: [{ type: "text", text: MCP_APP_FIXTURE_FORECAST }] }),
+  result: () => ({ content: [{ type: "text", text: MCP_APP_FIXTURE_FORECAST }], structuredContent: { sky: "sunny" } }),
 }
 
 const RECORD_VISIT: ScriptedMcpTool = {

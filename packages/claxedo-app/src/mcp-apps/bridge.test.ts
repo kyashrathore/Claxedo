@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import { $RAW, createStore } from "solid-js/store"
+import { asRecord } from "@claxedo/helpers/guards"
 import { createBridge, type BridgeHost } from "./bridge"
 import { hostContext, type HostContext } from "./host-context"
 import { rpcResult, rpcError, RPC_INVALID_PARAMS, RPC_INVALID_REQUEST, RPC_METHOD_NOT_FOUND, type OutboundMessage, type RequestAnswer } from "./jsonrpc"
@@ -208,4 +210,16 @@ test("the bridge passes a refusal through as a JSON-RPC error", async () => {
   h.request(1, "ui/message", { role: "user", content: [{ type: "text", text: "hi" }] })
   await flush()
   expect(h.posted).toEqual([{ jsonrpc: "2.0", id: 1, error: { code: -32000, message: "no" } }])
+})
+
+test("the bridge posts plain data, never a store proxy the frame's postMessage cannot clone", async () => {
+  const [part] = createStore({ metadata: { structuredContent: { city: "Oslo", days: [1, 2] } } })
+  const h = harness({ replay: () => [{ method: "ui/notifications/tool-result", params: { content: [], structuredContent: part.metadata.structuredContent } }] })
+  h.request(1, "ui/initialize")
+  h.notify("ui/notifications/initialized")
+  await flush()
+  const replayed = h.posted.find((message) => "method" in message && message.method === "ui/notifications/tool-result")
+  const structured = replayed && "params" in replayed ? asRecord(replayed.params?.structuredContent) : undefined
+  expect(structured).toEqual({ city: "Oslo", days: [1, 2] })
+  expect(structured && $RAW in structured).toBe(false)
 })

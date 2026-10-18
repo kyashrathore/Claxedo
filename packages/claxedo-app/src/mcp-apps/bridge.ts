@@ -1,3 +1,4 @@
+import { unwrap } from "solid-js/store"
 import { machine } from "@/lib/machine"
 import { hostContextChanges, type HostContext } from "./host-context"
 import {
@@ -147,7 +148,7 @@ class AppFrameBridge implements Bridge {
   private post(message: OutboundMessage): void {
     if (this.isClosed()) return
     try {
-      this.input.post(message)
+      this.input.post(unwrap(message))
     } catch (error) {
       console.warn("mcp-apps: a message to the app frame was not delivered", { error })
     }
