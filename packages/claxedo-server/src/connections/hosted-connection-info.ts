@@ -1,6 +1,6 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority, type WorkspaceAuthority, type WorkspaceOpenResult, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceAuthority, type WorkspaceOpenResult } from "@claxedo/server-core/platform/auth/authority"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import {
   apiError,
@@ -11,15 +11,17 @@ import {
   relayRole,
   type WorkspaceRouteOptions,
 } from "../workspace/route-support"
-import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
+import { hostTunnelConnectionInfo, type OpenedWorkspace } from "./host-tunnel-connection"
 import {
   previousRuntimeAccessTokenError,
+  resolvedActor,
   runtimeTokenOrgId,
+  settledActor,
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
-import { resolveRuntimeActor, type RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { cloudRuntimeLifecycle } from "@claxedo/server-core/workspace/cloud-runtime-readiness"
-import { sandboxCheckpointUnusable, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxCheckpointUnusable, sandboxLeaseEndedUnderStart, sandboxRuntimeBootFailure, sandboxStartFailureReason, type SandboxManager, type SandboxTargetResult } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
@@ -30,23 +32,24 @@ type HostedConnectionDenial = CloudStartDenial
 
 type CloudConnectionIngress =
   | HostedConnectionDenial
-  | { tunnel: true }
-  | {
-      authority: WorkspaceAuthority
-      result: WorkspaceOpenResult
-      workspace: WorkspaceRecord
+  | { tunnel: OpenedWorkspace }
+  | (OpenedWorkspace & {
       hostManager: SandboxManager
       homeRegion: ClaxedoRegion
       relayUrl: string
-    }
+      target: SandboxTargetResult
+    })
 
 /**
- * Everything a cloud connection request shares BEFORE it decides whether to
- * spend: open authorization, the backing check, cloud-workspace admission and
- * relay/host-manager resolution. `sandboxManager.ensure` — the call that can
- * start billable compute — is deliberately NOT here: it is what separates the
- * connect path (`hostedConnectionInfo`, POST) from the read path
- * (`hostedConnectionStatus`, GET).
+ * Everything a connection request shares BEFORE it decides whether to spend:
+ * open authorization, the backing check, cloud-workspace admission and
+ * relay/host-manager resolution. The caller's actor and the sandbox lease are
+ * read in the open's own round, since both are keyed by ids the request
+ * carries, and neither leaves this Worker unless the open admits the caller.
+ * `sandboxManager.ensure` — the call that can start billable compute — is
+ * deliberately NOT here: it is what separates the connect path
+ * (`hostedConnectionInfo`, POST) from the read path (`hostedConnectionStatus`,
+ * GET).
  */
 async function cloudConnectionIngress(
   services: ControlPlaneServices | undefined,
@@ -55,11 +58,13 @@ async function cloudConnectionIngress(
   workspaceId: string,
 ): Promise<CloudConnectionIngress> {
   const authority = requireAuthority(services)
-  const result = await authority.openWorkspace(auth, { workspaceId })
+  const hostManager = services?.sandbox.sandboxManager
+  const actor = settledActor(authority, auth)
+  const [result, target] = await Promise.all([authority.openWorkspace(auth, { workspaceId }), hostManager?.target(workspaceId)])
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
   if (result.workspace?.backing === "local-worktree") {
-    return { tunnel: true } as const
+    return { tunnel: { authority, result, workspace: result.workspace, actor } } as const
   }
   if (result.workspace?.backing !== "cloud-vm") {
     return {
@@ -80,8 +85,7 @@ async function cloudConnectionIngress(
     const denied = await options.requireCloudWorkspaceEntitlement({ auth })
     if (denied) return { error: denied.body.error, status: denied.status } as const
   }
-  const hostManager = services?.sandbox.sandboxManager
-  if (!hostManager) {
+  if (!hostManager || !target) {
     return {
       error: apiError("sandbox_unavailable", "Cloud sandbox is not configured"),
       status: 503,
@@ -108,10 +112,8 @@ async function cloudConnectionIngress(
       homeRegion,
     },
   })
-  return { authority, result, workspace: result.workspace, hostManager, homeRegion, relayUrl }
+  return { authority, result, workspace: result.workspace, actor, hostManager, homeRegion, relayUrl, target }
 }
-
-type SettledActor = { actor: RuntimeActor } | { failed: unknown }
 
 /** A lease that ended under the start was somebody's decision, not a failure to show; any other step error is told as its reason. */
 function startFailure(error: string | undefined) {
@@ -119,24 +121,10 @@ function startFailure(error: string | undefined) {
 }
 
 /**
- * The caller's actor, read while the sandbox is asked and held until the
- * answer says a token is minted: a sandbox that is still provisioning never
- * fails on the actor read, and a start in flight is never abandoned by it.
- */
-function settledActor(authority: WorkspaceAuthority, auth: SignedControlPlaneAuth): Promise<SettledActor> {
-  return resolveRuntimeActor(authority, auth).then((actor) => ({ actor }), (failed: unknown) => ({ failed }))
-}
-
-function resolvedActor(settled: SettledActor): RuntimeActor {
-  if ("failed" in settled) throw settled.failed
-  return settled.actor
-}
-
-/**
  * The mint tail both paths share once a ready sandbox target exists. The
- * actor was resolved while the sandbox was asked, and the token's record and
- * its audit row are independent writes, so the tail costs the store two
- * round trips after the signature rather than four.
+ * actor was resolved beside the open, and the token's record and its audit
+ * row are independent writes, so the tail costs the store one round trip
+ * after the signature.
  */
 async function mintCloudConnection(
   services: ControlPlaneServices | undefined,
@@ -249,18 +237,14 @@ export async function hostedConnectionInfo(
   const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
   if ("error" in ingress) return ingress
   if ("tunnel" in ingress) {
-    return hostTunnelConnectionInfo(services, options, auth, workspaceId, previousJti)
+    return hostTunnelConnectionInfo(services, options, auth, workspaceId, ingress.tunnel, previousJti)
   }
-  const { authority, result, hostManager, homeRegion, relayUrl } = ingress
+  const { authority, result, homeRegion, relayUrl, target: current, actor } = ingress
   if (!options.sandboxStart) {
     return { error: apiError("sandbox_unavailable", "Cloud sandbox is not configured"), status: 503 } as const
   }
 
-  const current = await hostManager.target(workspaceId)
-  const [started, actor] = await Promise.all([
-    startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current, ...(retry ? { request: { retry } } : {}) }),
-    settledActor(authority, auth),
-  ])
+  const started = await startCloudWorkspace(services, options.sandboxStart, lease, { kind: "signed", auth }, { workspaceId, orgId: workspaceOrgId(result.workspace), homeRegion, current, ...(retry ? { request: { retry } } : {}) })
   if ("denied" in started) return started.denied
   if (started.status === "provisioning") {
     return {
@@ -316,7 +300,7 @@ export async function hostedConnectionInfo(
     homeRegion,
     relayUrl,
     target: started,
-    actor: resolvedActor(actor),
+    actor: resolvedActor(await actor),
     previousJti,
   })
 }
@@ -335,20 +319,22 @@ export async function hostedSessionHostConnection(
   input: { workspaceId: string; sessionId: string },
 ) {
   const { workspaceId, sessionId } = input
-  const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
+  const [ingress, placement] = await Promise.all([
+    cloudConnectionIngress(services, options, auth, workspaceId),
+    services?.sessionHosts?.readSessionHostPlacement({ workspaceId, sessionId }),
+  ])
   if ("error" in ingress) return ingress
-  const placement = "tunnel" in ingress ? undefined : await services?.sessionHosts?.readSessionHostPlacement({ workspaceId, sessionId })
   if ("tunnel" in ingress || !sessionHostAdmits(placement, { workspaceId, sessionId })) {
     return { error: apiError("session_host_unavailable", "This session is not served by its own host"), status: 409 } as const
   }
   if (!workspaceRoleAllowsWrite(ingress.result.role)) {
     return { error: apiError("workspace_authorization_denied", "Creating a session needs write access to the workspace"), status: 403 } as const
   }
-  const [orgId, actor] = await Promise.all([runtimeTokenOrgId(ingress.authority, auth, ingress.workspace), resolveRuntimeActor(ingress.authority, auth)])
+  const [orgId, actor] = await Promise.all([runtimeTokenOrgId(ingress.authority, auth, ingress.workspace), ingress.actor])
   return mintSessionHostConnection(ingress.authority, options, auth, {
     workspaceId,
     sessionId,
-    actor,
+    actor: resolvedActor(actor),
     orgId,
     homeRegion: ingress.homeRegion,
     relayUrl: ingress.relayUrl,
@@ -366,11 +352,11 @@ export async function hostedConnectionStatus(
   const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
   if ("error" in ingress) return ingress
   if ("tunnel" in ingress) {
-    return hostTunnelConnectionInfo(services, options, auth, workspaceId)
+    return hostTunnelConnectionInfo(services, options, auth, workspaceId, ingress.tunnel)
   }
-  const { authority, result, hostManager, homeRegion, relayUrl } = ingress
+  const { authority, result, homeRegion, relayUrl, target, actor } = ingress
 
-  const [running, target, actor] = await Promise.all([options.sandboxInFlight?.(workspaceId), hostManager.target(workspaceId), settledActor(authority, auth)])
+  const running = await options.sandboxInFlight?.(workspaceId)
   // A lease reads ready through the run that replaces its sandbox; the run,
   // not the runtime it is replacing, is what this read reports.
   if (running?.status === "provisioning") {
@@ -439,7 +425,7 @@ export async function hostedConnectionStatus(
     homeRegion,
     relayUrl,
     target,
-    actor: resolvedActor(actor),
+    actor: resolvedActor(await actor),
   })
 }
 
@@ -462,6 +448,7 @@ export async function hostedSessionConnection(
 ) {
   const { workspaceId, sessionId } = input
   const authority = requireAuthority(services)
+  const settled = settledActor(authority, auth)
   await authority.authorizeSessionRead(auth, { workspaceId, sessionId })
   const [owner, placement] = await Promise.all([
     authority.resolveWorkspaceOwner?.(workspaceId),
@@ -476,12 +463,15 @@ export async function hostedSessionConnection(
         if (error instanceof ControlPlaneAuthError && error.status === 403) return false
         throw error
       }),
-      resolveRuntimeActor(authority, auth),
+      settled,
     ])
-    return mintSessionHostConnection(authority, options, auth, { workspaceId, sessionId, actor, orgId: owner.orgId, homeRegion, relayUrl, role: writes ? "editor" : "viewer" })
+    return mintSessionHostConnection(authority, options, auth, { workspaceId, sessionId, actor: resolvedActor(actor), orgId: owner.orgId, homeRegion, relayUrl, role: writes ? "editor" : "viewer" })
   }
-  const [machine, actor] = await Promise.all([services?.relay.hostTunnelResolver?.(workspaceId), resolveRuntimeActor(authority, auth)])
-  const sandbox = machine?.active ? undefined : await services?.sandbox.sandboxManager?.target(workspaceId).catch(() => undefined)
+  const [machine, sandbox, actor] = await Promise.all([
+    services?.relay.hostTunnelResolver?.(workspaceId),
+    services?.sandbox.sandboxManager?.target(workspaceId).catch(() => undefined),
+    settled,
+  ])
   const target = machine?.active
     ? { backing: "local-worktree" as const, hostId: machine.hostId }
     : sandbox?.status === "ready"
@@ -494,9 +484,10 @@ export async function hostedSessionConnection(
   if (!relayUrl) {
     throw new ControlPlaneAuthError(503, "runtime_access_token_signer_unavailable", "Workspace Relay URL is not configured")
   }
+  const viewer = resolvedActor(actor)
   const token = await configuredRuntimeAccessTokenSigner(options)({
     principalKind: "user",
-    ...actor,
+    ...viewer,
     orgId: owner.orgId,
     workspaceId,
     hostId: target.hostId,
@@ -504,21 +495,23 @@ export async function hostedSessionConnection(
     role: "viewer",
     sessionId,
   })
-  await authority.recordRuntimeAccessToken(auth, {
-    jti: token.jti,
-    workspaceId,
-    hostId: target.hostId,
-    actorId: actor.actorId,
-    actorKind: actor.actorKind,
-    role: "viewer",
-    sessionId,
-    expiresAt: token.tokenExpiresAt,
-  })
-  await authority.auditAllow(auth, {
-    action: "runtime_access_token.minted",
-    workspaceId,
-    metadata: { jti: token.jti, hostId: target.hostId, expiresAt: token.tokenExpiresAt, sessionId },
-  })
+  await Promise.all([
+    authority.recordRuntimeAccessToken(auth, {
+      jti: token.jti,
+      workspaceId,
+      hostId: target.hostId,
+      actorId: viewer.actorId,
+      actorKind: viewer.actorKind,
+      role: "viewer",
+      sessionId,
+      expiresAt: token.tokenExpiresAt,
+    }),
+    authority.auditAllow(auth, {
+      action: "runtime_access_token.minted",
+      workspaceId,
+      metadata: { jti: token.jti, hostId: target.hostId, expiresAt: token.tokenExpiresAt, sessionId },
+    }),
+  ])
   return {
     connection: {
       backing: target.backing,

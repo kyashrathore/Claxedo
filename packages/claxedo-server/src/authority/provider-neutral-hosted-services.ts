@@ -25,6 +25,7 @@ import {
   runtimeAccessTokenAlgorithm,
   runtimeAccessTokenSigner,
 } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { CONNECTION_MINTS_PER_MINUTE } from "../platform/auth/rate-limit"
 import { workerTelemetry } from "../platform/auth/worker-telemetry"
 import { workerCredentials } from "../credentials/worker/index"
 import type { ControlPlaneCredentials, ControlPlaneServices, ControlPlaneTelemetry } from "./services"
@@ -91,7 +92,7 @@ export type HostedSafetyLimits = {
 
 function safetyLimits(env: HostedWorkerEnv): HostedSafetyLimits {
   return {
-    connectionRateLimit: positiveInteger(env, "CLAXEDO_CONNECTION_RATE_LIMIT", 6),
+    connectionRateLimit: positiveInteger(env, "CLAXEDO_CONNECTION_RATE_LIMIT", CONNECTION_MINTS_PER_MINUTE),
     connectionRateLimitWindowMs: positiveInteger(env, "CLAXEDO_CONNECTION_RATE_LIMIT_WINDOW_MS", 60_000),
     controlPlaneRateLimit: positiveInteger(env, "CLAXEDO_CONTROL_PLANE_RATE_LIMIT", 120),
     controlPlaneRateLimitWindowMs: positiveInteger(env, "CLAXEDO_CONTROL_PLANE_RATE_LIMIT_WINDOW_MS", 60_000),

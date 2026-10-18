@@ -1,5 +1,5 @@
 import { accountBinding } from "#account-binding"
-import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
+import { createMemo, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth } from "@/auth"
 import { I18nProvider, useI18n } from "@/i18n"
 import { ClockProvider } from "@/lib/clock"
@@ -23,13 +23,19 @@ function principalOf(auth: Auth): string | undefined {
 
 type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "onSignInRefused" | "relayLinks">
 
+function relayLinks(principal: string): Pick<ServerConfig, "relayLinks"> {
+  const storage = tabStorage()
+  if (!storage) return {}
+  const siblings = typeof BroadcastChannel === "function" ? new BroadcastChannel(`claxedo:relay-links:${principal}`) : undefined
+  if (siblings) onCleanup(() => siblings.close())
+  return { relayLinks: { scope: principal, storage, ...(siblings ? { siblings } : {}) } }
+}
+
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return {}
   const access = auth.controlPlane
-  const storage = tabStorage()
-  const relayLinks = storage ? { relayLinks: { scope: principal, storage } } : {}
-  if (access.kind === "port") return { account: access.run, accountEvents: access.events, ...relayLinks }
-  return { cookies: true, onSignInRefused: () => void auth.refresh(), ...relayLinks }
+  if (access.kind === "port") return { account: access.run, accountEvents: access.events, ...relayLinks(principal) }
+  return { cookies: true, onSignInRefused: () => void auth.refresh(), ...relayLinks(principal) }
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {

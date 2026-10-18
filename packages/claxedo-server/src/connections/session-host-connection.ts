@@ -16,14 +16,16 @@ export async function mintSessionHostConnection(
   const token = await configuredRuntimeAccessTokenSigner(options)({
     principalKind: "user", ...actor, orgId: input.orgId, workspaceId, hostId, role, sessionId,
   })
-  await authority.recordRuntimeAccessToken(auth, {
-    jti: token.jti, workspaceId, hostId, actorId: actor.actorId, actorKind: actor.actorKind, role, sessionId, expiresAt: token.tokenExpiresAt,
-  })
-  await authority.auditAllow(auth, {
-    action: "runtime_access_token.minted",
-    workspaceId,
-    metadata: { jti: token.jti, hostId, expiresAt: token.tokenExpiresAt, backing: "durable-object", sessionId },
-  })
+  await Promise.all([
+    authority.recordRuntimeAccessToken(auth, {
+      jti: token.jti, workspaceId, hostId, actorId: actor.actorId, actorKind: actor.actorKind, role, sessionId, expiresAt: token.tokenExpiresAt,
+    }),
+    authority.auditAllow(auth, {
+      action: "runtime_access_token.minted",
+      workspaceId,
+      metadata: { jti: token.jti, hostId, expiresAt: token.tokenExpiresAt, backing: "durable-object", sessionId },
+    }),
+  ])
   return {
     connection: {
       backing: "durable-object" as const,

@@ -127,13 +127,25 @@ export type ConnectionRateLimiter = {
   size?(): number
 }
 
+/**
+ * Runtime Access Token mints a person may take for one workspace in a minute.
+ * Normal use mints one link per browser tab for each workspace the rail shows
+ * and one per Durable-Object session a tab opens for the first time; a person
+ * pressing through sessions or opening tabs reaches 20–30 a minute, not more.
+ * A mint is a signature and one batched D1 write (the token row and its audit
+ * row), so 60 keeps the abuse bound at 120 rows a minute per person and
+ * workspace, half the 120 requests the control-plane limiter already admits
+ * on the same key.
+ */
+export const CONNECTION_MINTS_PER_MINUTE = 60
+
 export function createFixedWindowConnectionRateLimiter(options: {
   limit?: number
   windowMs?: number
   now?: () => number
 } = {}): ConnectionRateLimiter {
   const buckets = new Map<string, { count: number; resetAt: number; rejections?: number }>()
-  const limit = Math.max(1, options.limit ?? 6)
+  const limit = Math.max(1, options.limit ?? CONNECTION_MINTS_PER_MINUTE)
   const windowMs = Math.max(1, options.windowMs ?? 60_000)
   const now = options.now ?? Date.now
   let nextSweepAt = 0

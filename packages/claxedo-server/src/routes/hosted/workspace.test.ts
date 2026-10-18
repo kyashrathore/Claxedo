@@ -1059,9 +1059,13 @@ describe("hosted connection rate limiting (mint-only)", () => {
         retryAfterMs: 2_000,
       })),
     } as unknown as SandboxManager
-    const { app } = buildApp({ authority: cloudWorkspaceAuthority(), sandboxManager })
+    const { app } = buildApp({
+      authority: cloudWorkspaceAuthority(),
+      sandboxManager,
+      options: { connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 6, windowMs: 60_000 }) },
+    })
 
-    // Default mint limit is 6/min; a 2s-poll cold start must survive far past it.
+    // A 2s-poll cold start outlives a mint budget of 6 because a provisioning answer is refunded.
     for (let i = 0; i < 10; i++) {
       const res = await app.fetch(get("/ws_1/connection"))
       expect(res.status, `provisioning poll ${i + 1} must not be rate limited`).toBe(200)
