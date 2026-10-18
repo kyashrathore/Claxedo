@@ -9,7 +9,7 @@ import { reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 
 /** `relayUrl` is the relay origin the control plane hands out and the app may reach; it defaults to the port the relay listens on, and names a front of it otherwise. */
-export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean; relayPort?: number; relayUrl?: string; workerEnv?: Readonly<Record<string, string>> }
+export type HostedStackOptions = { apiOrigin?: string; appOrigin?: string; emailPassword?: boolean; relayPort?: number; relayUrl?: string; workerEnv?: Readonly<Record<string, string>>; requestLimit?: number }
 
 export const HOSTED_SANDBOX_TEST_TOKEN = "hosted-sandbox-test-token"
 
@@ -44,7 +44,7 @@ export async function startHostedStack(label: string, options: HostedStackOption
       relayUrl,
     })
     control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials,
-      apiOrigin: workerUrl, appOrigin: options.appOrigin ?? workerUrl, emailPassword: options.emailPassword, workerEnv: options.workerEnv })
+      apiOrigin: workerUrl, appOrigin: options.appOrigin ?? workerUrl, emailPassword: options.emailPassword, workerEnv: options.workerEnv, requestLimit: options.requestLimit })
     relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate, allowedOrigins: [options.appOrigin ?? workerUrl],
       modelUrl: model.url })
   } catch (error) {

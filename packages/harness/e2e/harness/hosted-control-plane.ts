@@ -16,6 +16,7 @@ type Input = {
   appOrigin: string
   emailPassword?: boolean
   workerEnv?: Readonly<Record<string, string>>
+  requestLimit?: number
 }
 
 /**
@@ -97,7 +98,7 @@ export async function startHostedControlPlane(input: Input) {
         key: credentials.key, sandboxOrigin: input.sandboxOrigin, gitUrl: input.gitUrl,
         relayUrl: input.relayUrl, signingPrivateKey: HOSTED_SIGNING_PRIVATE_KEY,
         signingPublicKey: HOSTED_SIGNING_PUBLIC_KEY,
-        apiOrigin: input.apiOrigin, appOrigin: input.appOrigin, emailPassword: input.emailPassword, workerEnv: input.workerEnv ?? {},
+        apiOrigin: input.apiOrigin, appOrigin: input.appOrigin, emailPassword: input.emailPassword, workerEnv: input.workerEnv ?? {}, requestLimit: input.requestLimit,
       }),
     },
   })

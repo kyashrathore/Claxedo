@@ -12,8 +12,14 @@ import type { Target } from "./target"
 
 const DIST_DIR = path.resolve(import.meta.dirname, "../../../dist-e2e-web-perf")
 
-/** Production allows 600 requests a minute per client, 120 on control routes and 6 workspace connections a minute per person and workspace; three repetitions boot the app fifteen times a minute, which a person never does. */
-const UNLIMITED_REQUESTS = { CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: "1000000", CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "1000000", CLAXEDO_CONNECTION_RATE_LIMIT: "1000000" }
+/**
+ * Production allows 600 requests a minute per client (the Worker's own fuse and
+ * its shared rate-limit binding), 120 on control routes and 6 workspace
+ * connections a minute per person and workspace; three repetitions boot the
+ * app fifteen times a minute, which a person never does.
+ */
+const UNLIMITED = 1_000_000
+const UNLIMITED_REQUESTS = { CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: String(UNLIMITED), CLAXEDO_CONTROL_PLANE_RATE_LIMIT: String(UNLIMITED), CLAXEDO_CONNECTION_RATE_LIMIT: String(UNLIMITED) }
 
 export type LocalTargetInput = { readonly seedTurns: number; readonly railSessions: number; readonly log: (line: string) => void }
 
@@ -42,6 +48,7 @@ export async function localTarget(input: LocalTargetInput): Promise<Target> {
     label: "web-perf", frontPort, relayPort, relayUrl: relay.url, distDir: build.distDir,
     shaping: { apiDelayMs: () => profile.apiDelayMs, encoded: bytes.encoded },
     workerEnv: UNLIMITED_REQUESTS,
+    requestLimit: UNLIMITED,
   }).catch(async (error: unknown) => {
     await relay.close()
     for (const port of ports) releasePort(port)

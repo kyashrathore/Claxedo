@@ -38,7 +38,7 @@ export type SignedStack = {
   close(): Promise<void>
 }
 
-export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; relayUrl?: string; distDir: string; shaping?: FrontShaping; workerEnv?: Readonly<Record<string, string>> }
+export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; relayUrl?: string; distDir: string; shaping?: FrontShaping; workerEnv?: Readonly<Record<string, string>>; requestLimit?: number }
 
 export function sessionCookie(url: string, account: Account) {
   const separator = account.person.cookie.indexOf("=")
@@ -53,7 +53,7 @@ export function signedOrigin(frontPort: number) {
 
 export async function startSignedStack(input: SignedStackInput): Promise<SignedStack> {
   const origin = signedOrigin(input.frontPort)
-  const hosted = await startHostedStack(safeLabel(input.label), { apiOrigin: origin, appOrigin: origin, emailPassword: true, relayPort: input.relayPort, relayUrl: input.relayUrl, workerEnv: input.workerEnv })
+  const hosted = await startHostedStack(safeLabel(input.label), { apiOrigin: origin, appOrigin: origin, emailPassword: true, relayPort: input.relayPort, relayUrl: input.relayUrl, workerEnv: input.workerEnv, requestLimit: input.requestLimit })
   let front: Awaited<ReturnType<typeof startHostedAppFront>> | undefined
   let local: Awaited<ReturnType<typeof startStack>> | undefined
   let machine: Awaited<ReturnType<typeof startHostedMachine>> | undefined
