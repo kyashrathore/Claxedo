@@ -97,6 +97,7 @@ export const SURFACE_GLYPHS: Readonly<Record<GlyphIconName, () => JSX.Element>> 
     </>
   ),
   play: () => <path d="M6.25 4.17v11.66L15.42 10z" />,
+  send: () => <path d="M17.5 2.5L9.17 10.83M17.5 2.5l-5.42 15-2.91-6.67-6.67-2.91z" />,
   shoppingCart: () => (
     <>
       <path d="M2.08 3.33h2.09l1.66 9.17h9.59l1.66-6.67H5" />

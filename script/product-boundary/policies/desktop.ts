@@ -725,10 +725,11 @@ export const desktopRenderer: Policy = {
   // the kit or the surface's own glyphs (`surface/view/surface-icon.tsx`,
   // `surface/view/surface-glyphs.tsx`) and the pure rules they draw from
   // (`surface/grid-columns.ts`, `surface/key-value.ts`, `surface/range-fill.ts`,
+  // `surface/tab-strip.ts`,
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
   // renderer. They add no package edge.
-  // 1480/36, no headroom.
-  ceilings: { modules: 1480, packages: 36 },
+  // 1481/36, no headroom.
+  ceilings: { modules: 1481, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -10,8 +10,8 @@ describe("surface icons", () => {
     expect(new Set(sources.filter((source) => source.kind === "glyph").map((source) => source.name)).size).toBe(SURFACE_ICON_NAMES.length - Object.keys(KIT_ICONS).length)
   })
 
-  test("draws the person, star, heart, calendar, home, mail and play names with their own glyphs", () => {
-    for (const name of ["person", "star", "starOff", "favorite", "favoriteOff", "calendarToday", "event", "home", "mail", "play"] as const) {
+  test("draws the person, star, heart, calendar, home, mail, play and send names with their own glyphs", () => {
+    for (const name of ["person", "star", "starOff", "favorite", "favoriteOff", "calendarToday", "event", "home", "mail", "play", "send"] as const) {
       expect(surfaceIconSource(name)).toEqual({ kind: "glyph", name })
     }
   })

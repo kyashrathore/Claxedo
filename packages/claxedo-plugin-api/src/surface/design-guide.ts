@@ -108,6 +108,9 @@ A view that repeats rows of one kind (a List with a ListItem template) repeats e
 | A bulk action on selected rows | Section \`actions\` | Only while something is selected (the producer adds and removes it) | \`default\` |
 
 - At most one visible text action per repeated row: its \`primaryAction\`. Everything else in \`actions\` carries an \`icon\`.
+- State is shown in the row (its icon, a meta Badge or \`selected\`); the hover action only changes it. A favourite row shows its star in \`meta\` or as its icon, not only on the hidden toggle.
+- Never show contradictory controls together (Start and Stop, Revert with nothing pending). Show only the one that applies: put it in a List bound to a list of zero or one items that the producer updates.
+- A Section header carries at most two actions, each a short verb phrase ("Add", "Export"). A longer label or a third action goes to a Footer.
 - A toggle shows its state through its icon: bind the Button's \`icon\` to the item (\`"icon": {"path": "favouriteIcon"}\` with \`star\` or \`starOff\`, \`favorite\` or \`favoriteOff\`, \`lock\` or \`lockOpen\`) and its label to the action it will take ("Add to favourites", "Remove from favourites").
 - Never a Link next to a Button in a row; a row's commands are Buttons.
 - The same action sits in the same place on every row: one template, one order, the destructive action last.
@@ -119,7 +122,9 @@ A view that repeats rows of one kind (a List with a ListItem template) repeats e
 
 Every layout must hold at phone width (about 360 px). The app reflows it; the spec only has to avoid fixed widths and long unbroken strings.
 
-- Grid columns collapse: 2–3 columns become one under 480 px, 4 become two, 5–6 become three then two.
+- Grid columns collapse by what they hold, measured on the Grid's own width: a Grid of only Stats keeps two columns on a phone; a Grid of Sections or Cards becomes one column under about 560 px; other Grids go from 2–3 columns to one under 480 px, from 4 to two under 560 px, and from 5–6 to three then two.
+- A Tabs strip wider than the screen scrolls sideways with faded edges, and the selected tab scrolls into view.
+- Code wraps its long lines inside a surface, so nothing is cut off.
 - A Table under 480 px stacks each row as a block of label and value pairs, so a Table never needs to scroll sideways. Keep it to about five columns; more belongs in a detail view.
 - The Footer's \`end\` group spans the full width with equal-width buttons, the primary on the right; the \`start\` group moves to its own row below.
 - Callout actions move under the text.

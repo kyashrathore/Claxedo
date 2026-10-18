@@ -22,7 +22,6 @@ export const KIT_ICONS = {
   refresh: "reset",
   rewind: "chevron-double-left",
   search: "magnifying-glass",
-  send: "arrow-up",
   settings: "settings-gear",
   share: "share",
   stop: "stop",

@@ -138,4 +138,11 @@ describe("SURFACE_DESIGN_GUIDE", () => {
       expect({ title: spec.title, problems }).toEqual({ title: spec.title, problems: [] })
     }
   })
+
+  test("every recipe's Section carries at most two header actions", () => {
+    for (const spec of checkedRecipes()) {
+      const crowded = spec.components.filter((component) => component.component === "Section" && (component.actions?.length ?? 0) > 2).map((component) => component.id)
+      expect({ title: spec.title, crowded }).toEqual({ title: spec.title, crowded: [] })
+    }
+  })
 })

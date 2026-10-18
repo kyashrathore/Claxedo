@@ -314,7 +314,7 @@
 
 @container surface-item (max-width: 419px) {
   [data-slot="surface-list-item-body"] {
-    align-items: center;
+    align-items: flex-start;
     row-gap: 0;
   }
 
@@ -327,8 +327,15 @@
     flex: 0 0 100%;
   }
 
-  [data-slot="surface-list-item-text"] > [data-slot="surface-meta"],
+  [data-slot="surface-list-item-text"] > [data-slot="surface-meta"] {
+    margin-top: 8px;
+  }
+
   [data-slot="surface-list-item-body"] > [data-slot="surface-actions"] {
+    margin-top: 2px;
+  }
+
+  [data-slot="surface-list-item-text"]:not(:has(> [data-slot="surface-meta"])) ~ [data-slot="surface-actions"] {
     margin-top: 6px;
   }
 
@@ -505,4 +512,14 @@
   p {
     margin: 0;
   }
+}
+
+[data-component="surface"] .ui-markdown pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-component="surface"] .ui-markdown pre code {
+  white-space: inherit;
 }
