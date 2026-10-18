@@ -694,6 +694,43 @@ describe("local composition — bootstrap behind the daemon capability", () => {
   })
 })
 
+describe("local composition — agent hooks behind the daemon capability", () => {
+  const hook = (route: string) => `http://localhost/api/wr/hook${route}?directory=${encodeURIComponent(dataDir)}`
+
+  test("refuses hook setup, status and terminal reads to a caller holding no capability", async () => {
+    const local = app({ daemon: testDaemon().daemon })
+    const refused = await Promise.all([
+      local.request(hook("/setup"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ port: 4444, force: true, wrappers: ["git"] }),
+      }),
+      local.request(hook("/setup/status")),
+      local.request(`${hook("/terminal-session")}&terminalId=pty_1`),
+      local.request(`${hook("/terminal-env")}&tabId=t&terminalId=pty_1&port=4444`),
+      local.request(hook("/agent-lifecycle")),
+      local.request(hook("")),
+    ])
+
+    expect(refused.map((response) => response.status)).toEqual([401, 401, 401, 401, 401, 401])
+    for (const response of refused) {
+      expect(await response.json()).toMatchObject({ error: { code: "daemon_capability_required" } })
+    }
+  })
+
+  test("lets a terminal's lifecycle report reach the runtime's own hook check", async () => {
+    const local = app({ daemon: testDaemon().daemon })
+
+    const response = await local.request(hook("/agent-lifecycle"), {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer not-a-hook-token" },
+      body: JSON.stringify({ tabId: "t", terminalId: "pty_1", eventType: "Busy" }),
+    })
+
+    expect(response.status).not.toBe(401)
+  })
+})
+
 describe("local composition — optional route contributions", () => {
   test("mounts no agent-plugin route unless the product explicitly contributes it", async () => {
     expect((await app().request("http://localhost/api/claxedo/agent-plugins")).status).toBe(404)

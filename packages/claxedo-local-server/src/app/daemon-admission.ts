@@ -142,11 +142,12 @@ export type DaemonAdmissionOptions = {
   /** Readiness probes: no user data, answered before anyone holds a capability. */
   isPublicProbe: (method: string, pathname: string) => boolean
   /**
-   * Paths a mount in THIS composition answers with a scoped credential check of
-   * its own. Exactly those paths: an exemption wider than the mount leaves a
-   * prefix ungated for whatever is registered under it next.
+   * Routes a mount in THIS composition answers with a scoped credential check
+   * of its own. Exactly those routes, method included: an exemption wider than
+   * the checked route leaves its siblings ungated for whatever is registered
+   * beside it next.
    */
-  hasOwnCredentialAuthority: (pathname: string) => boolean
+  hasOwnCredentialAuthority: (method: string, pathname: string) => boolean
   /** The canonical relay dispatcher's verdict on a replayed request. */
   relayReplay: (request: Request) => Promise<DelegatedAdmission | undefined>
 }
@@ -165,7 +166,7 @@ export function daemonAdmission(options: DaemonAdmissionOptions): MiddlewareHand
     const pathname = new URL(request.url).pathname
     if (options.isPublicProbe(c.req.method, pathname)) return next()
     if (daemonSecretMatches(c.req.header(DAEMON_CAPABILITY_HEADER), capability)) return next()
-    if (options.hasOwnCredentialAuthority(pathname)) return next()
+    if (options.hasOwnCredentialAuthority(c.req.method, pathname)) return next()
     const relayed = await options.relayReplay(request)
     if (relayed && "admit" in relayed) return next()
     if (relayed) return relayed.refuse
