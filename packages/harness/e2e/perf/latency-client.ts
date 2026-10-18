@@ -2,6 +2,8 @@ import { intervals, summarize, type Summary } from "./pipes"
 
 export type TimedFrame = { at: number; type: string | undefined; sessionId: string | undefined; messageId: string | undefined; data: Record<string, unknown> }
 
+const asError = (failure: unknown) => failure instanceof Error ? failure : new Error(typeof failure === "string" ? failure : "The event stream failed")
+
 export type TimedStream = {
   frames: TimedFrame[]
   opened: Promise<void>
@@ -62,10 +64,10 @@ export function timedStream(response: Promise<Response>): TimedStream {
     waitFor: (match, after, timeoutMs, label) => new Promise<TimedFrame>((resolve, reject) => {
       const found = frames.find((frame) => frame.at > after && match(frame))
       if (found) return resolve(found)
-      if (failed) return reject(failed instanceof Error ? failed : new Error(String(failed)))
+      if (failed) return reject(asError(failed))
       const timer = setTimeout(() => { done(); reject(new Error(`${label}: no frame within ${timeoutMs} ms; saw ${frames.slice(-8).map((frame) => frame.type).join(", ")}`)) }, timeoutMs)
       const waiter = (frame: TimedFrame) => { if (frame.at > after && match(frame)) { done(); resolve(frame) } }
-      const fail = (error: unknown) => { done(); reject(error instanceof Error ? error : new Error(String(error))) }
+      const fail = (error: unknown) => { done(); reject(asError(error)) }
       const done = () => { clearTimeout(timer); waiters.delete(waiter); failures.delete(fail) }
       waiters.add(waiter)
       failures.add(fail)

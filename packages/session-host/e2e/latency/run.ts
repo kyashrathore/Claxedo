@@ -195,7 +195,7 @@ const { values } = parseArgs({ options: {
   cadence: { type: "string", default: "25" },
   out: { type: "string" },
 } })
-const names = values.scenario!.split(",").map((name) => name.trim()).filter(Boolean)
+const names = values.scenario.split(",").map((name) => name.trim()).filter(Boolean)
 for (const name of names) if (!SCENARIOS[name]) throw new Error(`Unknown scenario ${name}; known: ${Object.keys(SCENARIOS).join(", ")}`)
 const modelPort = await reservePort()
 const model = await startScriptedModelServer({ port: modelPort, red: false })

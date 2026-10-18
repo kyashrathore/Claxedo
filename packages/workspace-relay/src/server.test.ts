@@ -8,13 +8,13 @@ import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-proto
 import { createCachedRevocationClient, createCachedTargetClient, runtimeAccessTokenRevocationDelayMs } from "./resolver-clients"
 import {
   authorizeWorkspaceRelayRequest,
-  disposeAuditSampler,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
   workspaceRelayTargetUrl,
   type WorkspaceRelayAuditEvent,
   type WorkspaceRelayOptions,
 } from "./server"
+import { disposeAuditSampler } from "./relay-audit"
 import { parseWorkspaceRelayTarget } from "./relay-target"
 
 /**
@@ -242,7 +242,7 @@ describe("workspace relay server", () => {
         order.push("target asked")
         return { workspaceId: claims.workspace_id, hostId: claims.host_id, baseUrl: "https://host.example.test", backing: "cloud-vm" as const }
       },
-      fetch: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
+      fetch: ((_url, _init) => Promise.resolve(new Response("ok"))) as typeof fetch,
     })
     const token = await relay.token()
     const bothAsked = async () => {
