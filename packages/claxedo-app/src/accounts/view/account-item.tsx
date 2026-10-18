@@ -1,6 +1,6 @@
 import { Show } from "solid-js"
 import { useI18n } from "@/i18n"
-import { ClaxedoIcon, RadioItem, requestConfirm, Switch, useDialog } from "@/ui"
+import { Checkbox, ClaxedoIcon, RadioItem, requestConfirm, Tooltip, useDialog } from "@/ui"
 import type { AccountWords, CloudConsent } from "../account-words"
 import { useAccountsText } from "../i18n"
 import { machineCheckKey, ORG_ACCOUNT_KEY, servedByList } from "../model"
@@ -33,32 +33,40 @@ function AccountLines(props: { readonly account: AccountWords }) {
         {props.account.kind}
         <Show when={props.account.detail}>{(detail) => <> · <span>{detail()}</span></>}</Show>
       </span>
-      <Show when={props.account.where}>{(text) => <span class="text-12-regular leading-4 text-text-weak">{text()}</span>}</Show>
+      <Show when={props.account.cloudNote}>{(text) => <span class="text-12-regular leading-4 text-text-weak">{text()}</span>}</Show>
     </span>
   )
 }
 
-function CloudConsentSwitch(props: { readonly account: AccountWords; readonly consent: CloudConsent; readonly accounts: Accounts }) {
+function CloudCheckbox(props: { readonly account: AccountWords; readonly consent: CloudConsent; readonly accounts: Accounts }) {
+  const t = useAccountsText()
+  const hint = () => t(!props.consent.deliverable ? "settings.providers.cloudConsent.unavailable" : props.consent.partial ? "settings.providers.cloudConsent.partial" : "settings.providers.cloudConsent.allowNote")
+  return (
+    <Tooltip value={hint()} placement="top" class="flex">
+      <Checkbox
+        class="pointer-coarse:min-h-11 pointer-coarse:justify-center"
+        label={t("settings.providers.agents.where.cloud")}
+        checked={props.consent.deliverable && props.consent.allowed && !props.consent.partial}
+        indeterminate={props.consent.deliverable && props.consent.partial}
+        disabled={!props.consent.deliverable || props.accounts.activity() !== undefined}
+        onChange={(allowed: boolean) => props.accounts.allowInCloud(props.account.key, props.account.ids, allowed)}
+      />
+    </Tooltip>
+  )
+}
+
+function WhereItWorks(props: { readonly account: AccountWords; readonly accounts: Accounts }) {
   const t = useAccountsText()
   const error = () => props.accounts.scopeErrors()[props.account.key]
   return (
-    <div class="ml-6 flex flex-col gap-1 rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-02)] px-3 py-2 text-12-regular leading-4 text-text-weak">
-      <Show when={props.consent.deliverable} fallback={<span>{t("settings.providers.cloudConsent.unavailable")}</span>}>
-        <div class="flex items-center justify-between gap-3">
-          <span class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-13-regular leading-5 text-text-base" aria-hidden="true">{t("settings.providers.cloudConsent.allow")}</span>
-            <span>{t(props.consent.partial ? "settings.providers.cloudConsent.partial" : "settings.providers.cloudConsent.allowNote")}</span>
-          </span>
-          <Switch
-            hideLabel
-            checked={props.consent.allowed}
-            disabled={props.accounts.activity() !== undefined}
-            onChange={(allowed) => props.accounts.allowInCloud(props.account.key, props.account.ids, allowed)}
-          >
-            {t("settings.providers.cloudConsent.allow")}
-          </Switch>
-        </div>
-      </Show>
+    <div class="flex flex-col items-end gap-1 text-12-regular text-text-weak">
+      <div class="flex flex-wrap items-center justify-end gap-x-5 gap-y-1">
+        <span class="inline-flex min-h-6 items-center gap-1.5 text-13-regular text-text-base">
+          <ClaxedoIcon name="check" size="small" class="icon-success-base" />
+          {t("settings.providers.agents.where.thisComputer")}
+        </span>
+        <Show when={props.account.cloudConsent}>{(consent) => <CloudCheckbox account={props.account} consent={consent()} accounts={props.accounts} />}</Show>
+      </div>
       <Show when={error()}>{(message) => <span role="alert" class="text-icon-warning-base">{message()}</span>}</Show>
     </div>
   )
@@ -116,7 +124,9 @@ export function AccountItem(props: { readonly account: AccountWords; readonly ro
           />
         </span>
       </div>
-      <Show when={accounts().onMachine() && account().cloudConsent}>{(consent) => <CloudConsentSwitch account={account()} consent={consent()} accounts={accounts()} />}</Show>
+      <Show when={account().worksHere}>
+        <WhereItWorks account={account()} accounts={accounts()} />
+      </Show>
     </div>
   )
 }

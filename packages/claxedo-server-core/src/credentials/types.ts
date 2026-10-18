@@ -68,6 +68,8 @@ export interface CredentialMetadata {
   source: CredentialSource
   label?: string | null
   account_id?: string | null
+  /** A pasted API key's vendor prefix and last four characters (`secretHint`); null for every other row and for keys saved before it was kept. */
+  secret_hint?: string | null
   /**
    * Opaque reference to the slot holding this row's secret: `local:<id>` in
    * the desktop backend, `d1:<id>` for the hosted envelope column (never
