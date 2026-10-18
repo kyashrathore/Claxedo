@@ -42,6 +42,17 @@ test("session reads: a machine session's first read lands while its open view is
   }
 })
 
+test("session reads: a machine session's first read is sent before its open view, so a runtime that answers in arrival order answers it first", async () => {
+  const server = fakeServer({
+    reachable: () => true,
+    machine: true,
+    runtime: (path) => (path === firstPath ? firstRead() : path === openPath ? openView() : Response.json([])),
+  })
+  const reads = startSessionReads(server.context, ref, shape)
+  await Promise.all([reads.first, reads.status, reads.requests])
+  expect(server.runtimeCalls).toEqual([firstPath, openPath])
+})
+
 test("session reads: a failed first read rejects the first read and the status it settles, and a failed open view rejects only its facts", async () => {
   const failure = new Error("unavailable")
   const failing = (failed: "first" | "open") =>

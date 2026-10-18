@@ -44,6 +44,7 @@ export const firstReadOf = (transcript: TranscriptPage): SessionFirstRead => ({
 export function transcriptServer(first: SessionFirstRead = firstReadOf(latest), pages: readonly TranscriptPage[] = [olderPage]) {
   const olderReads: string[] = []
   const reads = {
+    firstSent: Promise.resolve(undefined),
     first: Promise.resolve(first),
     runtime: Promise.resolve(undefined),
     status: Promise.resolve({ kind: "idle" }),
