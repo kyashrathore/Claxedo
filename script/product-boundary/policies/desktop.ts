@@ -751,8 +751,12 @@ export const desktopRenderer: Policy = {
   // callback it shares with the workbench's deferred unmount (owner: the
   // app's shell and platform code, `lib/prefetch.tsx`, `lib/after-paint.ts`).
   // They add no package edge.
-  // 1466/36, no headroom.
-  ceilings: { modules: 1466, packages: 36 },
+  // Transcript markdown turns an image, video or audio from another host into
+  // a link and drops other remote fetches while it sanitizes (owner: the
+  // app's transcript domain, `transcript/markdown-remote-media.ts`). It adds
+  // no package edge.
+  // 1467/36, no headroom.
+  ceilings: { modules: 1467, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
