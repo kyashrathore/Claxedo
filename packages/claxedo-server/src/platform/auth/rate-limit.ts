@@ -70,6 +70,8 @@
  * store enforces the ceiling, the local window shapes the burst.
  */
 
+import { timed } from "../http/server-timing"
+
 export type RateLimitResult = {
   allowed: true
 } | {
@@ -196,7 +198,7 @@ export function cloudflareRateLimitStore(
     periodSeconds,
     async check(key) {
       try {
-        const result = await binding.limit({ key })
+        const result = await timed("limit", () => binding.limit({ key }))
         return { allowed: result.success }
       } catch (err) {
         console.error("[claxedo-server] WARN  shared rate-limit store unavailable, failing open:", err)

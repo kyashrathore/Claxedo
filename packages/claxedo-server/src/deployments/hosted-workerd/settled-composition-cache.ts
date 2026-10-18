@@ -22,6 +22,8 @@
  * wedged by someone else's cancellation. A failed init is never cached.
  */
 
+import { mark } from "../../platform/http/server-timing"
+
 export function settledCompositionCache<Key extends object, Value>(
   build: (key: Key) => Value,
   ready: (value: Value) => Promise<unknown>,
@@ -30,6 +32,7 @@ export function settledCompositionCache<Key extends object, Value>(
   return (key) => {
     const cached = settled.get(key)
     if (cached) return cached.value
+    mark("compose")
     const value = build(key)
     ready(value).then(
       () => settled.set(key, { value }),

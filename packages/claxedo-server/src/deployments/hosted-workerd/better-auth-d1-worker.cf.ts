@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { timedD1 } from "../../platform/http/server-timing"
+import { timedD1, timedResponse } from "../../platform/http/server-timing"
 import type { ExecutionContext } from "hono"
 import {
   requestIsHttps,
@@ -228,45 +228,51 @@ export function createBetterAuthD1Worker(input: {
   })
 
   return {
-    async fetch(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
-      const cors = refusalCorsEntries(request, env)
-      try {
-        if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
-        const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env), emailSender: cloudflareAuthEmailSender(env) })
-        const url = new URL(request.url)
-        if (url.origin !== configured.public.apiOrigin)
-          throw new Error("observed request origin does not match BETTER_AUTH_URL")
-        if (authRoute(url.pathname)) {
-          const decision = await createPublicAuthRateLimiter(env, publicAuthRateLimiter).check({
-            key: `public-auth:${requestClientKeyFromHeaders(request.headers)}`,
-          })
-          if (!decision.allowed) return rateLimitedResponse(request, cors, decision.retryAfterMs)
-        }
-        // The deploy command polls this until it names the version it just
-        // deployed, so it answers before composition and reads no database.
-        if (url.pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
-          return withSecurityHeaders(
-            Response.json({
-              status: "ok",
-              platformVersionId: requiredSetting(env.CF_VERSION_METADATA?.id, "CF_VERSION_METADATA.id"),
-              platformVersionTag: env.CF_VERSION_METADATA?.tag || null,
-            }),
-            requestSecurityHeaderEntries(request),
-          )
-        }
-        const selected = composition(env)
-        if (authRoute(url.pathname)) {
-          return withApiResponseHeaders(await selected.authHandler(request), {
-            url: request.url,
-            header: (name) => request.headers.get(name) ?? undefined,
-          })
-        }
-        return await core.fetch(request, env, context)
-      } catch (error) {
-        console.error("[better-auth-d1] deployment is unavailable", error)
-        return unavailable(request, cors)
-      }
+    fetch(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
+      return timedResponse(request, () => respond(request, env, context))
     },
+  }
+
+  async function respond(request: Request, env: BetterAuthD1WorkerEnv, context?: ExecutionContext) {
+    const cors = refusalCorsEntries(request, env)
+    try {
+      if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
+      const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env), emailSender: cloudflareAuthEmailSender(env) })
+      const url = new URL(request.url)
+      if (url.origin !== configured.public.apiOrigin)
+        throw new Error("observed request origin does not match BETTER_AUTH_URL")
+      if (authRoute(url.pathname)) {
+        const decision = await createPublicAuthRateLimiter(env, publicAuthRateLimiter).check({
+          key: `public-auth:${requestClientKeyFromHeaders(request.headers)}`,
+        })
+        if (!decision.allowed) return rateLimitedResponse(request, cors, decision.retryAfterMs)
+      }
+      // The deploy command polls this until it names the version it just
+      // deployed, so it answers before composition and reads no database.
+      if (url.pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
+        return withSecurityHeaders(
+          Response.json({
+            status: "ok",
+            platformVersionId: requiredSetting(env.CF_VERSION_METADATA?.id, "CF_VERSION_METADATA.id"),
+            platformVersionTag: env.CF_VERSION_METADATA?.tag || null,
+          }),
+          requestSecurityHeaderEntries(request),
+        )
+      }
+      // The core composes for itself inside `core.fetch`; composing here as
+      // well built every cold core request's control plane twice, since the
+      // first instance is not reusable until its readiness reads settle.
+      if (authRoute(url.pathname)) {
+        return withApiResponseHeaders(await composition(env).authHandler(request), {
+          url: request.url,
+          header: (name) => request.headers.get(name) ?? undefined,
+        })
+      }
+      return await core.fetch(request, env, context)
+    } catch (error) {
+      console.error("[better-auth-d1] deployment is unavailable", error)
+      return unavailable(request, cors)
+    }
   }
 }
 
