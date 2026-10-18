@@ -58,7 +58,7 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   await openSettings(app, isMobile)
   await openSection(app, isMobile, "Models")
   const claude = app.getByRole("radiogroup", { name: "Claude Code" })
-  const claudeMachineLogin = claude.getByRole("radio", { name: /^Login on / })
+  const claudeMachineLogin = claude.getByRole("radio", { name: /^Claude Code login on / })
   const storedClaudeKey = (await credentials(stack.url)).some((row) => row.provider_id === "anthropic" && row.is_active)
   if (storedClaudeKey) {
     await expect(claudeMachineLogin).not.toBeChecked()
@@ -68,8 +68,10 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   }
   const section = harnessSection(app, "Cursor")
   const cursor = app.getByRole("radiogroup", { name: "Cursor" })
-  const machineLogin = cursor.getByRole("radio", { name: /^Login on / })
+  const machineLogin = cursor.getByRole("radio", { name: /^Cursor login on .+ CLI login · / })
   await expect(machineLogin).toBeChecked()
+  await expect(machineLogin).toHaveAccessibleName(/Works only on this computer$/)
+  await expect(cursor.getByText("This computer's login", { exact: true })).toHaveCount(0)
 
   const addKey = async (label: string) => {
     await section.getByRole("button", { name: "Add an account" }).click()
@@ -84,6 +86,11 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   const second = cursor.getByRole("radio", { name: /^Flow fifteen B/ })
   await addKey("Flow fifteen A")
   await expect(first).toBeChecked()
+  await expect(first).toHaveAccessibleName(/^Flow fifteen A API key · /)
+  await expect(cursor.getByText("Saved in Claxedo", { exact: true })).toBeVisible()
+  await expect(cursor.getByText("This computer's login", { exact: true })).toBeVisible()
+  await expect(row("Flow fifteen A").getByRole("switch", { name: "Allow in cloud workspaces", exact: true })).toBeVisible()
+  await expect(row("Flow fifteen A").getByText("Lets your cloud workspaces run on this account too.", { exact: true })).toBeVisible()
   await expect(machineLogin).toBeDisabled()
   await addKey("Flow fifteen B")
   await expect(second).not.toBeChecked()
@@ -180,6 +187,8 @@ test("15 settings: the operator adds an organization account from a harness's Ad
   const org = cursor.locator('[data-slot="account-row"][data-account="org"]')
   await expect(org).toContainText("Acme Cursor")
   await expect(org).toContainText("Organization account")
+  await expect(org.getByRole("radio")).toHaveAccessibleName(/^Acme Cursor API key · Organization account/)
+  await expect(cursor.getByText("Organization", { exact: true })).toBeVisible()
   await expect(app.getByText("Sandbox providers", { exact: true })).toHaveCount(1)
   await expect(app.getByText("Team accounts", { exact: true })).toHaveCount(0)
   const saved = (await accountSources(stack.url)).org.find((row) => row.label === "Acme Cursor")

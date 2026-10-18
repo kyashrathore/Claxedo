@@ -13,9 +13,9 @@ export function useAccountRows(harness: Accessor<Harness>, snapshot: Accessor<Ac
   const i18n = useI18n()
   const windowName = useWindowName()
   return createMemo((): AccountWords[] => {
-    const words = { t, windowName, machineName: accounts().machineName(), locale: i18n.intlTag() }
+    const words = { t, windowName, machineName: accounts().machineName(), onMachine: accounts().onMachine(), locale: i18n.intlTag() }
     const live = accounts().liveChecks()
-    const stored = harnessAccounts(harness(), snapshot().stored).map((row) => storedAccountWords(words, row, live[row.id]))
+    const stored = harnessAccounts(harness(), snapshot().stored).map((row) => storedAccountWords(words, harness(), row, live[row.id]))
     const login = machineLoginOf(harness(), snapshot())
     const chosen = selectedAccountKey(harness(), snapshot()) === ORG_ACCOUNT_KEY
     const org = orgAccountWords(words, harness(), snapshot(), chosen, access.can("accounts.manageOrg", snapshot().sources), live)

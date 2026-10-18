@@ -9,7 +9,7 @@ import { useModelSource, groupContext, modelKeyOf } from "../model-sources"
 import { readyPlacement, type ReadyPlacement, type SettingsPlacement } from "../settings-placement"
 import { harnessHasAccount, type Harness } from "../model"
 import type { Accounts } from "../store"
-import { CloudChoiceHint } from "./cloud-choice-hint"
+import { CloudChoiceHelp } from "./cloud-choice-help"
 import { AgentHarnessAccounts } from "./harness-accounts"
 import { createHarnessProviders, HarnessProvidersSection } from "./harness-providers"
 import { enabledCount, ModelsTab, PlacementNote, soleSelfGroup } from "./models-tab"
@@ -178,7 +178,7 @@ function HarnessWithTabs(props: SectionProps) {
         <HarnessTabs
           tab={props.tab}
           onTab={props.onTab}
-          accountsHint={<Show when={props.harness.cli}>{(cli) => <CloudChoiceHint harness={cli()} accounts={props.accounts} />}</Show>}
+          accountsHint={<Show when={props.harness.cli}>{(cli) => <CloudChoiceHelp harness={cli()} accounts={props.accounts} />}</Show>}
           actions={actions}
         />
         <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>

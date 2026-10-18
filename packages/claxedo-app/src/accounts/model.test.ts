@@ -2,7 +2,7 @@
 import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import { expect, test } from "bun:test"
 import type { Account } from "@/server"
-import { keyCheckWords, offersCloudChoice, orgAccountWords, storedAccountWords, type AccountWords } from "./account-words"
+import { cloudChoiceWords, groupAccounts, keyCheckWords, machineLoginWords, offersCloudChoice, orgAccountWords, storedAccountWords, type AccountWords } from "./account-words"
 import type { AccountsText } from "./i18n"
 import en from "./locales/en"
 import { harnessAccounts, harnesses, harnessesServedBy, harnessRunnable, machineCheckKey, MACHINE_LOGIN_KEY, ORG_ACCOUNT_KEY, organizationTarget, providerOwnKeys, replacedAccountLabel, selectedAccountKey, type AccountsSnapshot } from "./model"
@@ -62,7 +62,7 @@ test("accounts: each harness's machine login is checked under its own key", () =
 })
 
 test("accounts: the cloud account choice is explained only off a machine and only where two rows can be chosen", () => {
-  const row = (key: string, disabled = false): AccountWords => ({ key, ids: [key], label: key, refused: false, machine: false, disabled })
+  const row = (key: string, disabled = false): AccountWords => ({ key, ids: [key], group: "stored", label: key, kind: "API key", refused: false, disabled })
   expect(offersCloudChoice(true, [row("a"), row("b")])).toBe(true)
   expect(offersCloudChoice(true, [row("a"), row("b", true)])).toBe(false)
   expect(offersCloudChoice(false, [row("a"), row("b")])).toBe(false)
@@ -93,17 +93,17 @@ test("accounts: an account's cloud consent is shared when any of its bindings is
   ]
   const [merged] = harnessAccounts(claude, rows)
   expect(merged).toMatchObject({ ids: ["a", "b"], scope: "shared", partialCloudConsent: true })
-  expect(storedAccountWords(words, merged, undefined).cloudConsent).toEqual({ allowed: true, partial: true, deliverable: true })
+  expect(storedAccountWords(words, claude, merged, undefined).cloudConsent).toEqual({ allowed: true, partial: true, deliverable: true })
 
   const blocked = { local: true, cloud: false, reason: "no_destination" }
   const [local] = harnessAccounts(claude, [account("c", "claude-sdk", { accountId: "other", scope: "local", delivery: cloud }), account("d", "anthropic", { accountId: "other", scope: "local", delivery: blocked })])
   expect(local).toMatchObject({ scope: "local", partialCloudConsent: false, delivery: blocked })
-  expect(storedAccountWords(words, local, undefined).cloudConsent).toEqual({ allowed: false, partial: false, deliverable: false })
+  expect(storedAccountWords(words, claude, local, undefined).cloudConsent).toEqual({ allowed: false, partial: false, deliverable: false })
 
   const [unscoped] = harnessAccounts(claude, [account("e", "claude-sdk", { delivery: cloud })])
-  expect(storedAccountWords(words, unscoped, undefined).cloudConsent).toEqual({ allowed: false, partial: false, deliverable: false })
+  expect(storedAccountWords(words, claude, unscoped, undefined).cloudConsent).toEqual({ allowed: false, partial: false, deliverable: false })
   const [undelivered] = harnessAccounts(claude, [account("f", "claude-sdk", { scope: "local" })])
-  expect(storedAccountWords(words, undelivered, undefined).cloudConsent).toBeUndefined()
+  expect(storedAccountWords(words, claude, undelivered, undefined).cloudConsent).toBeUndefined()
 })
 
 test("accounts: where every session runs in the cloud, an account counts only if the server can deliver it there", () => {
@@ -134,12 +134,12 @@ test("accounts: an account the org's cloud provider cannot hand a harness says w
   const brokered = { local: true, cloud: true, cloudHarness: true }
   const refused = { local: true, cloud: true, cloudHarness: false }
   const [claudeKey] = harnessAccounts(claude, [account("a", "claude-sdk", { delivery: refused })])
-  expect(storedAccountWords(words, claudeKey, undefined).cloudNote).toBe("Works on your machines and through Pi in cloud workspaces")
+  expect(storedAccountWords(words, claude, claudeKey, undefined).where).toBe("Works on your machines and through Pi in cloud workspaces")
   const cursorHarness = harnesses.find((harness) => harness.id === "cursor")!
   const [cursorKey] = harnessAccounts(cursorHarness, [account("b", "cursor-sdk", { delivery: refused })])
-  expect(storedAccountWords(words, cursorKey, undefined).cloudNote).toBe("Works on your machines; your organization's cloud provider can't run it")
+  expect(storedAccountWords(words, cursorHarness, cursorKey, undefined).where).toBe("Works on your machines; your organization's cloud provider can't run it")
   const [usable] = harnessAccounts(claude, [account("c", "claude-sdk", { delivery: brokered })])
-  expect(storedAccountWords(words, usable, undefined).cloudNote).toBeUndefined()
+  expect(storedAccountWords(words, claude, usable, undefined).where).toBeUndefined()
 })
 
 test("accounts: a pasted login names the stored account it replaces, on the web any of the person's rows for the provider and on a machine only the token row", () => {
@@ -160,12 +160,12 @@ test("accounts: a rate-capped account says when its soonest window resets, is ma
     { window: "7d", usedPercent: 40, resetsAt: 3_600_000 * 50 },
   ] })
   const [merged] = harnessAccounts(claude, [row])
-  const said = storedAccountWords({ ...words, locale: "en", now: 0 }, merged, undefined)
+  const said = storedAccountWords({ ...words, locale: "en", now: 0 }, claude, merged, undefined)
   expect(said.detail).toBe("Rate limit reached · Resets in 3 hours · 5h 100% used · 7d 40% used")
   expect(said.alert).toBe("Rate limit reached · Resets in 3 hours")
   expect(said.refused).toBe(false)
   expect(harnessRunnable(claude, snapshot({ stored: [{ ...row, active: true }] }), {})).toBe(true)
-  const noReset = storedAccountWords({ ...words, now: 0 }, harnessAccounts(claude, [{ ...row, usage: [{ window: "5h", usedPercent: 100, resetsAt: null }] }])[0], undefined)
+  const noReset = storedAccountWords({ ...words, now: 0 }, claude, harnessAccounts(claude, [{ ...row, usage: [{ window: "5h", usedPercent: 100, resetsAt: null }] }])[0], undefined)
   expect(noReset.alert).toBe("Rate limit reached")
 })
 
@@ -186,9 +186,53 @@ test("a provider connected with a key of yours offers that key's Check, and one 
 })
 
 test("accounts: only a manager is offered to add an organization account, saved under the harness's vendor provider and replacing the vendor's current one", () => {
-  const cursor = harnesses.find((harness) => harness.id === "cursor")!
   const held = snapshot({ org: [account("org-anthropic", "anthropic", { label: "Acme Anthropic" })] })
   expect(organizationTarget(claude, held, false)).toBeUndefined()
   expect(organizationTarget(claude, held, true)).toEqual({ vendorProvider: "anthropic", replaces: "Acme Anthropic" })
   expect(organizationTarget(cursor, held, true)).toEqual({ vendorProvider: "cursor", replaces: undefined })
+})
+
+const cursor = harnesses.find((harness) => harness.id === "cursor")!
+
+test("accounts: the cloud choice explains which account the cloud uses and names only the harnesses that share the vendor's account", () => {
+  const words = cloudChoiceWords(t, cursor, "en")
+  expect(words).toEqual({
+    trigger: "How cloud workspaces choose a Cursor account",
+    title: "One Cursor account in cloud workspaces",
+    lines: ["Cloud workspaces use the Cursor account you chose most recently.", "Only Cursor uses it.", "Adding an account doesn't switch it; only choosing one does."],
+  })
+  expect(words.lines.join(" ")).not.toContain("Pi")
+  expect(cloudChoiceWords(t, claude, "en").lines[1]).toBe("Claude Code and Pi share it, so a choice here changes it for each of them.")
+})
+
+test("accounts: each row says its kind, and on a machine where it works, following its cloud consent", () => {
+  const cloud = { local: true, cloud: true }
+  const [shared] = harnessAccounts(claude, [account("a", "claude-sdk", { scope: "shared", delivery: cloud })])
+  const [local] = harnessAccounts(claude, [account("b", "claude-sdk", { kind: "oauth_token", scope: "local", delivery: cloud })])
+  const machine = { ...words, onMachine: true }
+  expect(storedAccountWords(machine, claude, shared, undefined)).toMatchObject({ group: "stored", kind: "API key", where: "Works on this computer and in cloud workspaces" })
+  expect(storedAccountWords(machine, claude, local, undefined)).toMatchObject({ kind: "Claude plan", where: "Works only on this computer" })
+  expect(storedAccountWords(words, claude, shared, undefined).where).toBeUndefined()
+  const codex = harnesses.find((harness) => harness.id === "codex")!
+  const [plan] = harnessAccounts(codex, [account("c", "codex-app-server", { kind: "oauth_token" })])
+  expect(storedAccountWords(words, codex, plan, undefined).kind).toBe("ChatGPT plan")
+  expect(orgAccountWords(words, claude, snapshot({ org: [account("org-1", "anthropic", { label: "Acme" })] }), false, false, {})).toMatchObject({ group: "org", kind: "API key", detail: "Organization account" })
+})
+
+test("accounts: this computer's login is titled by its harness and machine and says who is signed in or how to sign in", () => {
+  const named = { ...words, machineName: "vm", onMachine: true }
+  const signedIn = machineLoginWords(named, { harness: "claude", providerIds: claude.providerIds, state: "signed_in", email: "ada@example.com", plan: "Max" }, claude, snapshot())
+  expect(signedIn).toMatchObject({ group: "machine", label: "Claude Code login on vm", kind: "CLI login", detail: "Signed in as ada@example.com · Max plan", where: "Works only on this computer" })
+  const signedOut = machineLoginWords(named, { harness: "cursor", providerIds: cursor.providerIds, state: "signed_out" }, cursor, snapshot())
+  expect(signedOut).toMatchObject({ label: "Cursor login on vm", detail: "Not signed in — run cursor-agent login" })
+})
+
+test("accounts: rows are grouped saved, this computer's login, then organization, and only groups with rows appear", () => {
+  const row = (key: string, group: AccountWords["group"]): AccountWords => ({ key, ids: [], group, label: key, kind: "API key", refused: false, disabled: false })
+  expect(groupAccounts([row("org", "org"), row("a", "stored"), row("machine", "machine"), row("b", "stored")]).map((entry) => [entry.group, entry.rows.map((member) => member.key)])).toEqual([
+    ["stored", ["a", "b"]],
+    ["machine", ["machine"]],
+    ["org", ["org"]],
+  ])
+  expect(groupAccounts([row("a", "stored")]).map((entry) => entry.group)).toEqual(["stored"])
 })
