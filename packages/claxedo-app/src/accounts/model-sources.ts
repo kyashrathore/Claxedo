@@ -1,8 +1,9 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
+import { useQuery, type UseQueryResult } from "@tanstack/solid-query"
+import type { HarnessId } from "@claxedo/agent-runtime-contract"
 import { createProviderCatalog, harnessModelPickerProvider, modelGroupKey } from "@/composer"
-import { isCatalogHarnessId, type HarnessSelection } from "@/lib/harness-selection"
-import { toAppError, useServer, type HarnessOptionChoice, type ModelChoice } from "@/server"
+import { isCatalogHarnessId, nativeHarness, type HarnessSelection } from "@/lib/harness-selection"
+import { toAppError, useServer, type HarnessOptionChoice, type HarnessOptions, type ModelChoice } from "@/server"
 import { catalogProviders } from "./catalog-rules"
 import type { ReadyPlacement } from "./settings-placement"
 
@@ -53,15 +54,23 @@ export function harnessGroups(selection: HarnessSelection, models: readonly Harn
   }))
 }
 
-function useHarnessModels(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
-  const server = useServer()
-  const harness = selection.kind === "native" ? selection.harnessId : selection.connectionId
-  const query = useQuery(() => server.queries.harnesses.options(placement().placementId, harness))
+function queryModelSource(selection: HarnessSelection, query: UseQueryResult<HarnessOptions>): Accessor<ModelSource> {
   return createMemo((): ModelSource => {
     if (query.error) return { kind: "failed", reason: toAppError(query.error).message }
     if (query.isPending) return { kind: "loading" }
     return { kind: "ready", groups: harnessGroups(selection, query.data?.models?.choices ?? []) }
   })
+}
+
+function useHarnessModels(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
+  const server = useServer()
+  const harness = selection.kind === "native" ? selection.harnessId : selection.connectionId
+  return queryModelSource(selection, useQuery(() => server.queries.harnesses.options(placement().placementId, harness)))
+}
+
+export function useAccountModelSource(harness: HarnessId): Accessor<ModelSource> {
+  const server = useServer()
+  return queryModelSource(nativeHarness(harness), useQuery(() => server.queries.harnesses.catalogOptions(harness)))
 }
 
 function useCatalogModels(harness: string, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
@@ -101,7 +110,7 @@ function useCatalogModels(harness: string, placement: Accessor<ReadyPlacement>):
   })
 }
 
-export function useModelSource(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
+export function usePlacementModelSource(selection: HarnessSelection, placement: Accessor<ReadyPlacement>): Accessor<ModelSource> {
   if (selection.kind === "native" && isCatalogHarnessId(selection.harnessId)) return useCatalogModels(selection.harnessId, placement)
   return useHarnessModels(selection, placement)
 }

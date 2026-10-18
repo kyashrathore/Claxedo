@@ -116,18 +116,21 @@ export function PlacementNote(props: { readonly placement: SettingsPlacement }) 
   return <Note text={text()} />
 }
 
-function SourceNote(props: { readonly source: ModelSource; readonly harnessLabel: string; readonly workspace: string }) {
-  const t = useAccountsText()
-  const text = (): string | undefined => {
-    const source = props.source
-    if (source.kind === "loading") return `${t("common.loading")}${t("common.loading.ellipsis")}`
-    if (source.kind === "failed") return t("settings.models.harness.failed", { workspace: props.workspace, harness: props.harnessLabel, reason: source.reason })
-    return source.groups.length === 0 ? t("settings.models.harness.empty", { harness: props.harnessLabel, workspace: props.workspace }) : undefined
+function sourceNoteText(t: ReturnType<typeof useAccountsText>, source: ModelSource, harness: string, workspace: string | undefined): string | undefined {
+  if (source.kind === "loading") return `${t("common.loading")}${t("common.loading.ellipsis")}`
+  if (source.kind === "failed") {
+    return workspace ? t("settings.models.harness.failed", { workspace, harness, reason: source.reason }) : t("settings.models.account.failed", { harness, reason: source.reason })
   }
-  return <Note text={text()} />
+  if (source.groups.length > 0) return undefined
+  return workspace ? t("settings.models.harness.empty", { harness, workspace }) : t("settings.models.account.empty", { harness })
 }
 
-export function ModelsTab(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace: string }) {
+function SourceNote(props: { readonly source: ModelSource; readonly harnessLabel: string; readonly workspace?: string }) {
+  const t = useAccountsText()
+  return <Note text={sourceNoteText(t, props.source, props.harnessLabel, props.workspace)} />
+}
+
+export function ModelsTab(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace?: string }) {
   const t = useAccountsText()
   const [providerQuery, setProviderQuery] = createSignal("")
   const all = () => sourceGroups(props.source)
