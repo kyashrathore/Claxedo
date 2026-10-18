@@ -8,6 +8,7 @@ import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { createHostedCoreApp } from "./hosted-core-app"
+import { publicOriginRoute } from "../../../scripts/deploy/public-origin"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
@@ -1221,5 +1222,14 @@ describe("hosted-core adapter-native device login", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ device_code: "dev-1", user_code: "ABCD-EFGH" })
     expect(issuerFetch).toHaveBeenCalledWith("https://issuer.test/device/code", expect.objectContaining({ method: "POST" }))
+  })
+})
+
+describe("the public origin", () => {
+  test("forwards every path the control plane mounts, so a new mount cannot be lost behind the app's assets", () => {
+    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+    const mounted = [...new Set(app.routes.map((route) => route.path))].filter((path) => path !== "/*" && path !== "*")
+    expect(mounted.length).toBeGreaterThan(10)
+    expect(mounted.filter((path) => publicOriginRoute(path) !== "control-plane")).toEqual([])
   })
 })

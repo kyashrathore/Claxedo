@@ -59,7 +59,7 @@ export default {
       server.addEventListener("close", (event) => server.close(event.code, event.reason))
       return new Response(null, { status: 101, webSocket: client })
     }
-    return Response.json({ url: request.url, authorization: request.headers.get("authorization"), clientAcceptEncoding: request.cf?.clientAcceptEncoding ?? null })
+    return Response.json({ url: request.url, authorization: request.headers.get("authorization"), cookie: request.headers.get("cookie"), clientAcceptEncoding: request.cf?.clientAcceptEncoding ?? null })
   },
 }
 `
@@ -141,6 +141,10 @@ describe("the public origin's routes", () => {
     expect(publicOriginRoute("/internal/relay/target")).toBe("control-plane")
     expect(publicOriginRoute("/.well-known/jwks.json")).toBe("control-plane")
     expect(publicOriginRoute("/health")).toBe("control-plane")
+    expect(publicOriginRoute("/bindings/b_1/v1/messages")).toBe("control-plane")
+    expect(publicOriginRoute("/global/health")).toBe("control-plane")
+    expect(publicOriginRoute("/path")).toBe("control-plane")
+    expect(publicOriginRoute("/paths")).toBe("assets")
     expect(publicOriginRoute("/relay/workspaces/ws_1/session")).toBe("relay")
     expect(publicOriginRoute("/relay")).toBe("assets")
     expect(publicOriginRoute("/relayed")).toBe("assets")
@@ -158,10 +162,12 @@ describe("the control plane behind the public origin", () => {
     expect(response.headers.get("set-cookie")).toContain("__Secure-claxedo.session_token=minted")
   })
 
-  test("forwards a JSON body, the resolver's internal routes, the OAuth metadata and the health probe", async () => {
+  test("forwards a JSON body, the resolver's internal routes, the OAuth metadata, the health probe and a sandbox's brokered vendor call", async () => {
     const posted = await dispatch("/api/workspace/create", { method: "POST", headers: { "content-type": "application/json" }, body: "{\"name\":\"ws\"}" })
     expect(await posted.json()).toMatchObject({ method: "POST", body: "{\"name\":\"ws\"}" })
-    for (const pathname of ["/internal/relay/target?workspaceId=ws_1", "/.well-known/oauth-authorization-server", "/health"]) {
+    const brokered = await dispatch("/bindings/b_1/v1/messages", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer placeholder" }, body: "{\"model\":\"m\"}" })
+    expect(await brokered.json()).toMatchObject({ url: "https://app.test/bindings/b_1/v1/messages", method: "POST", body: "{\"model\":\"m\"}" })
+    for (const pathname of ["/internal/relay/target?workspaceId=ws_1", "/.well-known/oauth-authorization-server", "/health", "/global/health", "/path?directory=%2Fwork", "/bindings/b_1/repos/x/info/refs"]) {
       expect(await (await dispatch(pathname)).json()).toMatchObject({ url: `https://app.test${pathname}` })
     }
   })
@@ -183,9 +189,9 @@ describe("the control plane behind the public origin", () => {
 })
 
 describe("the relay behind the public origin", () => {
-  test("sees the path without the prefix, the bearer token and the edge's cf", async () => {
-    const response = await dispatch("/relay/workspaces/ws_1/api/wr/health?region=apac", { headers: { authorization: "Bearer rat", "accept-encoding": "gzip" } })
-    expect(await response.json()).toEqual({ url: "https://app.test/workspaces/ws_1/api/wr/health?region=apac", authorization: "Bearer rat", clientAcceptEncoding: "gzip" })
+  test("sees the path without the prefix, the bearer token and the edge's cf, never the browser's session cookie", async () => {
+    const response = await dispatch("/relay/workspaces/ws_1/api/wr/health?region=apac", { headers: { authorization: "Bearer rat", "accept-encoding": "gzip", cookie: "__Secure-claxedo.session_token=held" } })
+    expect(await response.json()).toEqual({ url: "https://app.test/workspaces/ws_1/api/wr/health?region=apac", authorization: "Bearer rat", cookie: null, clientAcceptEncoding: "gzip" })
   })
 
   test("passes a WebSocket upgrade through and the socket carries frames both ways", async () => {

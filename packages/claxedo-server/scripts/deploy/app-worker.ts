@@ -97,9 +97,16 @@ async function asset(request: EdgeRequest, env: AppWorkerEnv, url: URL): Promise
 }
 
 /** The request as the bound Worker receives it, on the same origin so the control plane's own origin check holds, with the edge's `cf`. */
-function forwarded(request: EdgeRequest, url: URL): Request {
-  const init: EdgeRequestInit = { method: request.method, headers: request.headers, body: request.body, redirect: "manual", cf: request.cf }
+function forwarded(request: EdgeRequest, url: URL, headers: Headers = request.headers): Request {
+  const init: EdgeRequestInit = { method: request.method, headers, body: request.body, redirect: "manual", cf: request.cf }
   return new Request(url, init)
+}
+
+/** The relay authenticates by bearer token or WebSocket subprotocol; the session cookie the browser sends along on the shared origin is not for it. */
+function withoutCookie(headers: Headers): Headers {
+  const stripped = new Headers(headers)
+  stripped.delete("cookie")
+  return stripped
 }
 
 /**
@@ -115,7 +122,7 @@ export default {
     if (route === "control-plane") return env.CONTROL_PLANE.fetch(forwarded(request, url))
     if (route === "relay") {
       url.pathname = url.pathname.slice(RELAY_PATH_PREFIX.length)
-      return env.RELAY.fetch(forwarded(request, url))
+      return env.RELAY.fetch(forwarded(request, url, withoutCookie(request.headers)))
     }
     return asset(request, env, url)
   },
