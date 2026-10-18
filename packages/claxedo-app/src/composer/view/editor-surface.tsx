@@ -1,5 +1,5 @@
 import type { Accessor, Component, JSX } from "solid-js"
-import { PROMPT_POPOVER_LISTBOX_ID, promptAtOptionId, promptSlashOptionId } from "./slash-popover"
+import { PROMPT_POPOVER_LISTBOX_ID, promptAtOptionId, promptSlashOptionId } from "./prompt-popover-ids"
 
 export type PromptInputMode = "normal" | "shell"
 export type PromptPopoverKind = "at" | "slash" | null

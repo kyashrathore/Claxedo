@@ -4,7 +4,7 @@ import type { ImagePart as ImageAttachmentPart, ImageNoteContextItem } from "../
 import type { AnnotationsChipProps } from "./annotations-chip"
 import { firstMarkNumber, type NumberedImageMark } from "../marks/marks"
 import { PromptContextItems } from "./context-items"
-import { PromptImageAttachments } from "./image-attachments"
+import { PromptImageAttachments } from "./on-demand-views"
 
 export type PromptContextItem = Parameters<typeof PromptContextItems>[0]["items"][number]
 
