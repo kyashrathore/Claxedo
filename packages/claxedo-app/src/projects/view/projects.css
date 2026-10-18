@@ -126,3 +126,60 @@
   font-size: var(--font-size-large);
   font-weight: var(--font-weight-medium);
 }
+
+.project-create-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  outline: 1px solid transparent;
+  background:
+    linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+  box-shadow: var(--v2-elevation-button-neutral);
+  color: var(--v2-text-text-base);
+  font: inherit;
+  font-size: var(--font-size-compact);
+  text-align: start;
+  cursor: pointer;
+}
+
+.project-create-folder:hover {
+  background:
+    linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+    linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+}
+
+.project-create-folder:focus-visible {
+  outline-color: var(--v2-border-border-focus);
+  box-shadow: none;
+}
+
+.project-create-folder-icon {
+  flex: none;
+  color: var(--v2-icon-icon-muted);
+}
+
+.project-create-folder-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-family-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-create-folder-path--empty {
+  font-family: inherit;
+  color: var(--v2-text-text-faint);
+}
+
+.project-create-folder-action {
+  flex: none;
+  color: var(--v2-text-text-muted);
+  font-weight: var(--font-weight-medium);
+}

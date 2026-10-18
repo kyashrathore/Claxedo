@@ -1,11 +1,12 @@
 import { Show, type JSX } from "solid-js"
 import { toAppError, type ProjectSource } from "@/server"
-import { Button, ClaxedoIcon as Icon, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
+import { Button, ClaxedoIcon as Icon, Field, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { draftProjectName, pastedRepositoryHint } from "../project-source"
 import { ConnectCodeHost } from "./project-create-connect"
 import { createProjectCreateDraft, type ProjectCreateDraft, type RepositoryChoice } from "./project-create-draft"
-import { AccountSelect, FIELD_BOX, RepositoryList } from "./project-create-repository"
+import { AccountSelect, RepositoryList } from "./project-create-repository"
+import "./projects.css"
 
 export type ProjectCreateFormProps = {
   readonly folderMachine?: string
@@ -18,22 +19,16 @@ export type ProjectCreateFormProps = {
 function FolderField(props: { machine: string; folder: string; onChoose: () => void }) {
   const t = useProjectsText()
   return (
-    <div class="flex flex-col gap-1.5">
-      <span class="text-[length:var(--font-size-intermediate)] font-medium text-text-weak">{t("projects.create.folder.label", { machine: props.machine })}</span>
-      <button
-        type="button"
-        aria-label={t("projects.create.folder.choose")}
-        title={props.folder || undefined}
-        class={`${FIELD_BOX} flex w-full min-w-0 items-center gap-2 text-left transition-colors hover:border-border-interactive-base focus-visible:border-border-interactive-base focus-visible:outline-none`}
-        onClick={() => props.onChoose()}
-      >
-        <Icon name="folder" size="small" class="shrink-0 text-icon-weak-base" />
-        <span class="min-w-0 flex-1 truncate font-mono text-13-regular" classList={{ "text-text-strong": !!props.folder, "text-text-weak": !props.folder }}>
+    <Field>
+      <Field.Label>{t("projects.create.folder.label", { machine: props.machine })}</Field.Label>
+      <button type="button" aria-label={t("projects.create.folder.choose")} title={props.folder || undefined} class="project-create-folder" onClick={() => props.onChoose()}>
+        <Icon name="folder" size="small" class="project-create-folder-icon" />
+        <span class="project-create-folder-path" classList={{ "project-create-folder-path--empty": !props.folder }}>
           {props.folder || t("projects.create.folder.placeholder")}
         </span>
-        <span class="shrink-0 text-12-medium text-text-weak">{props.folder ? t("projects.create.folder.change") : t("projects.add.folder.browse")}</span>
+        <span class="project-create-folder-action">{props.folder ? t("projects.create.folder.change") : t("projects.add.folder.browse")}</span>
       </button>
-    </div>
+    </Field>
   )
 }
 
