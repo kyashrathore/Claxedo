@@ -1,4 +1,4 @@
-import type { Browser, CDPSession, Page } from "@playwright/test"
+import type { Browser, CDPSession, Page, Request } from "@playwright/test"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { acpScriptToken } from "../../../../harness/e2e/harness/acp/script"
@@ -81,10 +81,14 @@ async function openPage(input: RunInput) {
     if (message.type() === "error") console.log(`[console error] ${message.text().slice(0, 300)}`)
   })
   page.on("requestfailed", (request) => console.log(`[request failed] ${request.url().slice(0, 160)} ${request.failure()?.errorText ?? ""}`))
+  const pending = new Set<Request>()
+  page.on("request", (request) => pending.add(request))
+  page.on("requestfinished", (request) => pending.delete(request))
+  page.on("requestfailed", (request) => pending.delete(request))
   await page.goto(new URL("/favicon-v3.svg", input.originUrl).toString())
   const cdp = await context.newCDPSession(page)
   if (input.throttle > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: input.throttle })
-  return { context, page, cdp }
+  return { context, page, cdp, pending }
 }
 
 async function railRow(page: Page, session: SessionTarget) {
@@ -132,7 +136,7 @@ async function stream(input: RunInput, page: Page, cdp: CDPSession) {
 }
 
 export async function runOnce(input: RunInput, scenarios: readonly string[]): Promise<ScenarioRow[]> {
-  const { context, page, cdp } = await openPage(input)
+  const { context, page, cdp, pending } = await openPage(input)
   const rows: ScenarioRow[] = []
   const long = (key: string) => {
     const session = input.fixture.long[key]
@@ -151,6 +155,7 @@ export async function runOnce(input: RunInput, scenarios: readonly string[]): Pr
     return rows
   } catch (error) {
     await page.screenshot({ path: path.join(input.out, `failed-${input.variant}-${input.run}.png`) })
+    console.log(`[unanswered] ${[...pending].map((request) => `${request.method()} ${new URL(request.url()).pathname}`).join(" | ")}`)
     throw error
   } finally {
     await context.close()
