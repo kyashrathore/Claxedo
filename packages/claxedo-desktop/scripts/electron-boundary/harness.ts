@@ -283,7 +283,7 @@ async function main() {
       daemonOrigin: daemon.origin,
       capability: CAPABILITY,
       // The real registry the IPC boundary trusts, asked the same way `main/index` asks it.
-      isBridgeCarryingWebContents: (id) => mainIpcCallerGuard().check({ senderId: id, isMainFrame: true }).allowed,
+      isBridgeCarryingWebContents: (id) => mainIpcCallerGuard().trusts(id),
       // The real rule, with no development origin: a packaged desktop trusts one file.
       isTrustedDocumentUrl: (url) => isTrustedRendererDocumentUrl(url, { packagedIndexUrl }),
     },
