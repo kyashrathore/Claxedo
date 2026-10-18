@@ -1,0 +1,254 @@
+From 46046c1509d2c1677e6a46c77a016917c3692975 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:30:54 +0000
+Subject: [PATCH] A session switch re-runs only the two rail rows whose
+ selection changes, since each row asks a selector over the shown session
+ instead of comparing the shown id itself, and the session list's order keeps
+ its identity until a row joins, leaves or moves, so the first read's row no
+ longer regroups every project's rows in the task that paints the destination,
+ and a first visit's seen mark neither regroups them nor rebuilds every
+ mounted timeline's session rows; the app's line budget is the measured
+ 107,819.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ packages/claxedo-app/src/rail/README.md       |  2 +-
+ .../src/rail/view/activity-view.tsx           |  2 +-
+ .../src/rail/view/project-block.tsx           |  4 +-
+ .../src/rail/view/project-rows.tsx            |  4 +-
+ .../src/rail/view/project-tree.tsx            |  2 +-
+ .../src/rail/view/row-navigation.ts           | 11 ++--
+ packages/claxedo-app/src/session/README.md    |  2 +-
+ .../src/session/list/order.test.ts            | 51 +++++++++++++++++++
+ .../claxedo-app/src/session/list/store.ts     |  6 +--
+ .../src/session/list/visible-rows.ts          |  7 +++
+ 10 files changed, 75 insertions(+), 16 deletions(-)
+ create mode 100644 packages/claxedo-app/src/session/list/order.test.ts
+
+diff --git a/packages/claxedo-app/src/rail/README.md b/packages/claxedo-app/src/rail/README.md
+index 9c0d1b55..6d72999e 100644
+--- a/packages/claxedo-app/src/rail/README.md
++++ b/packages/claxedo-app/src/rail/README.md
+@@ -13,7 +13,7 @@ Owns: the main sidebar's content (`MainSidebar`), ported from today's app's rail
+ - **Title marquee** (`SessionTitle` in `session-row.tsx`): a hovered title that overflows scrolls to its end; it is measured only on hover, and reduced motion keeps the ellipsis.
+ - **Keyboard**: the up and down arrows move focus between session rows (`moveRowFocus`); a row is one tab stop until it is engaged.
+ - **Paging**: a project shows 5 rows, and "Load more" shows 5 more, asking the store for its next page when the loaded rows run out. The store pages the whole list, so there is no per-project total.
+-- **Selection**: the active project, session and terminal rows are the ones the focused pane shows (`workbench.selectors.shownContent()`), while the route names a workspace. During a switch the pane keeps the previous session until the next one is laid out, and the rail changes with it in the same frame.
++- **Selection**: the active project, session and terminal rows are the ones the focused pane shows (`workbench.selectors.shownContent()`), while the route names a workspace. During a switch the pane keeps the previous session until the next one is laid out, and the rail changes with it in the same frame. Each row asks `isActiveSession(id)`, a selector over the shown session, so a switch re-runs only the row that loses the selection and the row that gains it.
+ - **Navigation status** (`model.ts`): `permission` (the session waits on you) and `error` (a failed turn you have not seen) draw a blue dot, `done` (a finished turn you have not seen, and a terminal whose agent ran since you last looked) a grey dot, `interrupted` (a turn lost on runtime restart) a still blue attention dot, `working` (also pending and retrying) a ring spinner, `background` (a session running in background, per `sessionActivity` from `src/session`) a still ring around a dot that pulses, and `idle` nothing, in the glyph column before the title. A session's unseen outcome is derived from its row (`unseenOutcome` from `src/session`: its last turn ended after the reader's seen mark, and it is not running, waiting or working in background); a finished or failed session you have seen, and a cancelled turn, draw nothing.
+ - **Age**: `createdAt` as a compact age ("<1m", "2h", "3d"), refreshed by the app's one age clock (`useAgeClock()` from `src/lib/clock.tsx`) at the instant the label's text changes and never while the page is hidden; the palette's session ages and the accounts' checked ages read the same clock.
+ - **Engagement** (`hover-engagement.ts`): a row's Settle button and a project header's actions mount only while the pointer or the keyboard is on them (keyboard focus is `:focus-visible`: the focus a click leaves on a row keeps nothing mounted once the pointer leaves, so only the selected row looks selected), so the accessibility tree holds one "New Session" button and one Settle button at a time. With a coarse pointer a row's Settle button is always shown at the end of its title line, with the 44 px hit area of `src/ui/touch.css`.
+diff --git a/packages/claxedo-app/src/rail/view/activity-view.tsx b/packages/claxedo-app/src/rail/view/activity-view.tsx
+index 72f1499d..f07dd763 100644
+--- a/packages/claxedo-app/src/rail/view/activity-view.tsx
++++ b/packages/claxedo-app/src/rail/view/activity-view.tsx
+@@ -66,7 +66,7 @@ export function ActivityView(props: { readonly filter: ActivityFilter }): JSX.El
+                 marker={navigation.markerOf(row().ref.placementId)}
+                 projectLabel={projectNames().get(row().ref.projectId) ?? ""}
+                 caption={projectNames().get(row().ref.projectId)}
+-                active={navigation.activeSessionId() === sessionId}
++                active={navigation.isActiveSession(sessionId)}
+                 onActivate={navigation.open}
+                 onRename={actions.onRename}
+                 onToggleSettled={actions.onToggleSettled}
+diff --git a/packages/claxedo-app/src/rail/view/project-block.tsx b/packages/claxedo-app/src/rail/view/project-block.tsx
+index 5111e302..9b864551 100644
+--- a/packages/claxedo-app/src/rail/view/project-block.tsx
++++ b/packages/claxedo-app/src/rail/view/project-block.tsx
+@@ -18,7 +18,7 @@ export type ProjectBlockProps = SessionRowMenuActions & {
+   readonly section: ProjectSection
+   readonly sessionIds: readonly SessionId[]
+   readonly active: boolean
+-  readonly activeSessionId: string | undefined
++  readonly isActiveSession: (sessionId: SessionId) => boolean
+   readonly activeTerminalId: string | undefined
+   readonly list: SessionList
+   readonly onSelect: (section: ProjectSection) => void
+@@ -67,7 +67,7 @@ function ProjectSessions(
+         terminals={props.terminals}
+         sessionIds={props.paging.shown()}
+         list={props.list}
+-        activeSessionId={props.activeSessionId}
++        isActiveSession={props.isActiveSession}
+         activeTerminalId={props.activeTerminalId}
+         markerOf={props.markerOf}
+         prepareDrag={props.prepareDrag}
+diff --git a/packages/claxedo-app/src/rail/view/project-rows.tsx b/packages/claxedo-app/src/rail/view/project-rows.tsx
+index 529dd5fd..b9bd791d 100644
+--- a/packages/claxedo-app/src/rail/view/project-rows.tsx
++++ b/packages/claxedo-app/src/rail/view/project-rows.tsx
+@@ -12,7 +12,7 @@ export type ProjectRowsProps = SessionRowMenuActions & {
+   readonly terminals: readonly TerminalItem[]
+   readonly sessionIds: readonly SessionId[]
+   readonly list: SessionList
+-  readonly activeSessionId: string | undefined
++  readonly isActiveSession: (sessionId: SessionId) => boolean
+   readonly activeTerminalId: string | undefined
+   readonly onActivate: (row: SessionRowView) => void
+   readonly markerOf: (placementId: PlacementId) => SessionMarker | undefined
+@@ -51,7 +51,7 @@ function SessionRows(props: ProjectRowsProps): JSX.Element {
+               row={session()}
+               marker={props.markerOf(session().ref.placementId)}
+               projectLabel={props.projectLabel}
+-              active={props.activeSessionId === sessionId}
++              active={props.isActiveSession(sessionId)}
+               onActivate={props.onActivate}
+               onRename={props.onRename}
+               onToggleSettled={props.onToggleSettled}
+diff --git a/packages/claxedo-app/src/rail/view/project-tree.tsx b/packages/claxedo-app/src/rail/view/project-tree.tsx
+index f7b22b57..6161f4e5 100644
+--- a/packages/claxedo-app/src/rail/view/project-tree.tsx
++++ b/packages/claxedo-app/src/rail/view/project-tree.tsx
+@@ -64,7 +64,7 @@ export function ProjectTree(): JSX.Element {
+                     section={current()}
+                     sessionIds={sessionIdsOf(current())}
+                     active={!!current().projectId && current().projectId === activeProjectId()}
+-                    activeSessionId={navigation.activeSessionId()}
++                    isActiveSession={navigation.isActiveSession}
+                     activeTerminalId={activeTerminalId()}
+                     list={stores.list}
+                     onSelect={select}
+diff --git a/packages/claxedo-app/src/rail/view/row-navigation.ts b/packages/claxedo-app/src/rail/view/row-navigation.ts
+index a91a6281..5650cf22 100644
+--- a/packages/claxedo-app/src/rail/view/row-navigation.ts
++++ b/packages/claxedo-app/src/rail/view/row-navigation.ts
+@@ -1,4 +1,4 @@
+-import { createMemo } from "solid-js"
++import { createMemo, createSelector } from "solid-js"
+ import { useQuery } from "@tanstack/solid-query"
+ import { useServer, type PlacementId } from "@/server"
+ import type { SessionRowView } from "@/session"
+@@ -17,12 +17,13 @@ export function createRowNavigation() {
+     const content = routing.placementId() ? workbench.selectors.shownContent() : null
+     return content ? workbench.routeOf(content) : undefined
+   })
++  const activeSessionId = createMemo(() => {
++    const pane = shown()
++    return pane?.kind === "session" ? pane.sessionId : undefined
++  })
+   return {
+     shown,
+-    activeSessionId: () => {
+-      const pane = shown()
+-      return pane?.kind === "session" ? pane.sessionId : undefined
+-    },
++    isActiveSession: createSelector<string | undefined, string>(activeSessionId),
+     open: (row: SessionRowView) => routing.navigate(sessionLinkPath(row.ref, server.placements.byId(row.ref.placementId))),
+     markerOf: (placementId: PlacementId) => sessionMarker(server.placements.byId(placementId), machines.data ?? []),
+     prepareDrag: (row: RailRow) =>
+diff --git a/packages/claxedo-app/src/session/README.md b/packages/claxedo-app/src/session/README.md
+index 47da059a..5d3dc24e 100644
+--- a/packages/claxedo-app/src/session/README.md
++++ b/packages/claxedo-app/src/session/README.md
+@@ -23,7 +23,7 @@ Order is flat and is the server's `human_turn_desc`: `lastHumanTurnAt` descendin
+ | Concept | Home |
+ | --- | --- |
+ | Session rows, tombstones, pending entries, the fetch window and page failure per project and for Activity, and status per session | `list/` (`model.ts`, `rows.ts`, `statuses.ts`, `transition.ts`, `visible-rows.ts`, `reads.ts` for the first read, `loadMore` and re-reads, `store.ts`) |
+-| Per-row reads: `order()` is the visible rows' refs in order, derived from the entries and fetch windows alone, so a status never re-orders anything; `view(id)`, `rowOf(id)` and `statusOf(id)` re-run a reader only when that session's row view, row or status changes. Each keeps one signal per key being read, fed by one computation over the list's state (`list/keyed-reads.ts`); a status event re-runs a constant number of store computations and then only that session's readers. There is no whole-list accessor: a consumer that needs every row walks `order()` and reads `view(id)` | `list/store.ts`, `list/visible-rows.ts`, `list/keyed-reads.ts` |
++| Per-row reads: `order()` is the visible rows' refs in order, derived from the entries, the fetch windows and the readers' settle marks, so a status never re-orders anything, and it keeps its identity until a row joins, leaves or moves (`sameOrder`), so a row read or a seen mark re-runs none of its consumers; `view(id)`, `rowOf(id)` and `statusOf(id)` re-run a reader only when that session's row view, row or status changes. Each keeps one signal per key being read, fed by one computation over the list's state (`list/keyed-reads.ts`); a status event re-runs a constant number of store computations and then only that session's readers. There is no whole-list accessor: a consumer that needs every row walks `order()` and reads `view(id)` | `list/store.ts`, `list/visible-rows.ts`, `list/keyed-reads.ts` |
+ | Agent requests (permissions and questions), their reply machine, and each session's last requests read: the session's own read and the list's bulk read both answer it, and the one sent last wins, so a failure shows until a read sent after it succeeds; an accepted permission reply records `permission_decided` (allow, deny or a harness option, and the tool's kind from `productToolKind`) | `requests/` |
+ | One session's transcript, todos, diff, goal, older pages, the optimistic user message and the queue | `transcript/` (`context.ts` holds one session's state; `events.ts`, `snapshot.ts`, `older.ts`, `send.ts`, `queue.ts` and `goal.ts` change it; `store.ts` composes the view) |
+ | The subagents a session delegated to: from the session read on open and on a stream gap, then `subagentUpdated` events, merged by `subagentKey` with a revision per field (only a newer admitted `runRevision` reopens a terminal child; an older run's result cannot settle it; the child session and provider are set once; tool-call edges are only added) | `transcript/subagents.ts`, `transcript/subagent-merge.ts` |
+diff --git a/packages/claxedo-app/src/session/list/order.test.ts b/packages/claxedo-app/src/session/list/order.test.ts
+new file mode 100644
+index 00000000..51a69f52
+--- /dev/null
++++ b/packages/claxedo-app/src/session/list/order.test.ts
+@@ -0,0 +1,51 @@
++/// <reference types="bun" />
++import { expect, test } from "bun:test"
++import { createRoot } from "solid-js"
++import { placementId, projectId, sessionId, type Placement, type Server, type SessionRow } from "@/server"
++import type { RequestsInternal } from "../requests/store"
++import { createSessionList } from "./store"
++
++const PLACEMENT = { id: placementId("ws_alpha"), projectId: projectId("prj_alpha"), kind: "cloud", reachable: true, onThisMachine: false } as unknown as Placement
++const row = (id: string, lastHumanTurnAt: number): SessionRow => ({ ref: { projectId: projectId("prj_alpha"), placementId: placementId("ws_alpha"), sessionId: sessionId(id) }, title: id, createdAt: 1, updatedAt: 1, lastHumanTurnAt })
++
++const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
++
++function liveList(rows: readonly SessionRow[]) {
++  const server = {
++    placements: { list: () => [PLACEMENT], load: async () => [PLACEMENT], byId: () => PLACEMENT },
++    sessions: { list: async () => ({ rows, statuses: new Map(), readers: new Map(), nextAfter: undefined }) },
++  } as unknown as Server
++  const requests = { openBySession: () => new Map() } as unknown as RequestsInternal
++  return createSessionList(server, requests, { showSettled: () => false, activityShown: () => false })
++}
++
++test("re-reading a row that keeps its place keeps the order the rail and timelines hold, while the row's view takes the new title", async () => {
++  await createRoot(async (dispose) => {
++    const older = row("ses_older", 10)
++    const newer = row("ses_newer", 20)
++    const list = liveList([newer, older])
++    list.start()
++    await settled()
++    const before = list.order()
++    expect(before.map((ref) => ref.sessionId)).toEqual([newer.ref.sessionId, older.ref.sessionId])
++    list.readRow({ ...older, ref: { ...older.ref }, title: "renamed" })
++    expect(list.order()).toBe(before)
++    expect(list.view(older.ref.sessionId)?.title).toBe("renamed")
++    dispose()
++  })
++})
++
++test("re-reading a row that moves ahead gives the list a new order", async () => {
++  await createRoot(async (dispose) => {
++    const older = row("ses_older", 10)
++    const newer = row("ses_newer", 20)
++    const list = liveList([newer, older])
++    list.start()
++    await settled()
++    const before = list.order()
++    list.readRow({ ...older, lastHumanTurnAt: 30 })
++    expect(list.order()).not.toBe(before)
++    expect(list.order().map((ref) => ref.sessionId)).toEqual([older.ref.sessionId, newer.ref.sessionId])
++    dispose()
++  })
++})
+diff --git a/packages/claxedo-app/src/session/list/store.ts b/packages/claxedo-app/src/session/list/store.ts
+index e43280da..8473de2c 100644
+--- a/packages/claxedo-app/src/session/list/store.ts
++++ b/packages/claxedo-app/src/session/list/store.ts
+@@ -25,7 +25,7 @@ import { createKeyedReads } from "./keyed-reads"
+ import { createListReads, type ListReads } from "./reads"
+ import { createTurnEndReads, type TurnEndNotice } from "./turn-end-reads"
+ import { listTransition } from "./transition"
+-import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
++import { createRowViewCache, rowViews, sameOrder, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
+ import { shownReader } from "./readers"
+ import { pendingTitle } from "./pending-title"
+ import { writeReader } from "./reader-writes"
+@@ -134,8 +134,8 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal,
+   const backgroundWork = createMemo(() => state().backgroundWork)
+   const readers = createMemo(() => state().readers)
+   const orderData = () => ({ entries: entries(), windows: windows(), readers: readers() })
+-  const order = createMemo(() => visibleOrder(orderData(), showSettled(), "projects"))
+-  const activityOrder = createMemo(() => (windows().has(ACTIVITY_WINDOW) ? visibleOrder(orderData(), showSettled(), ACTIVITY_WINDOW) : []))
++  const order = createMemo(() => visibleOrder(orderData(), showSettled(), "projects"), undefined, { equals: sameOrder })
++  const activityOrder = createMemo(() => (windows().has(ACTIVITY_WINDOW) ? visibleOrder(orderData(), showSettled(), ACTIVITY_WINDOW) : []), undefined, { equals: sameOrder })
+   const shown = createMemo(() => [...order(), ...activityOrder()])
+   const views = createMemo(() => rowViews({ order: shown(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork(), readers: readers() }, openRequests: requests.openBySession(), cache }))
+   const entryOf = createKeyedReads(entries)
+diff --git a/packages/claxedo-app/src/session/list/visible-rows.ts b/packages/claxedo-app/src/session/list/visible-rows.ts
+index 3cc05b18..6143a066 100644
+--- a/packages/claxedo-app/src/session/list/visible-rows.ts
++++ b/packages/claxedo-app/src/session/list/visible-rows.ts
+@@ -50,6 +50,13 @@ export function visibleOrder(data: OrderData, showSettled: boolean, view: ListVi
+   return shown.sort((a, b) => compareOrder(a.key, b.key)).map(({ entry }) => entry.row.ref)
+ }
+ 
++export function sameOrder(previous: readonly SessionLocation[], next: readonly SessionLocation[]): boolean {
++  return previous.length === next.length && previous.every((ref, index) => {
++    const other = next[index]
++    return other !== undefined && ref.sessionId === other.sessionId && ref.projectId === other.projectId && ref.placementId === other.placementId
++  })
++}
++
+ function cachedView(
+   hit: CachedView | undefined,
+   entry: ConfirmedEntry | PendingEntry,
+-- 
+2.43.0
+

@@ -1,0 +1,68 @@
+From 9b01ba92b7acd4349f9e4463c2f267dfba50bea3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:31:29 +0000
+Subject: [PATCH] The desktop daemon starts reading its own OS creation
+ identity when its entry begins evaluating instead of once its listener is up,
+ so on macOS the sysctl and ps runs that read costs overlap the daemon's boot
+ work rather than sitting between the listening callback and the ready message
+ the renderer waits on, while it stays the process's first identity read with
+ no kill timer and a failed read still ends the daemon with the identity exit
+ code.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ packages/claxedo-desktop/src/server/entry.ts | 23 +++++++++++++-------
+ 1 file changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/packages/claxedo-desktop/src/server/entry.ts b/packages/claxedo-desktop/src/server/entry.ts
+index 8c6157b9..5492b09b 100644
+--- a/packages/claxedo-desktop/src/server/entry.ts
++++ b/packages/claxedo-desktop/src/server/entry.ts
+@@ -34,6 +34,17 @@ import path from "node:path"
+ // data directory during `predev` and `prebuild`.
+ const startup = claxedoServerStartup(process.env)
+ 
++// This process's OS creation identity, published with the discovery record
++// before main is told the port. Read now, beside the boot work below, because
++// on macOS it costs a `sysctl` and a `ps` run and nothing else waits for them
++// until the listener is up. The first read in this process decides whether the
++// boot-time probe every later read shares has a kill timer: this one has none,
++// and main's ready deadline bounds a slow boot. A failure is reported where it
++// is awaited; observed here, it cannot end the process before that as an
++// unhandled rejection.
++const identity = readCreationIdentity(process.pid, { probeTimeout: false })
++identity.catch(() => undefined)
++
+ const agentPlugins = createLocalAgentPluginsComposition()
+ // The Marketplace switch decides both halves at once: no Tasks tools for a
+ // session, and no grant left answering for one that still holds a handle.
+@@ -91,9 +102,10 @@ const ownership = createDaemonOwnershipPublisher({
+   onError: (error) => console.error("publishing the daemon ownership snapshot failed", error),
+ })
+ /**
+- * This process's OS creation identity, read once the listener is up. A launcher
+- * that has to signal this daemon after the app restarted compares it before it
+- * sends anything, so it is published rather than left for a pid probe to guess.
++ * The creation identity this process published with its discovery record. A
++ * launcher that has to signal this daemon after the app restarted compares it
++ * before it sends anything, so it is published rather than left for a pid probe
++ * to guess.
+  */
+ let creation: CreationIdentity | undefined
+ const server = startLocalServer({
+@@ -175,11 +187,6 @@ process.once("SIGINT", () => exit("SIGINT"))
+ process.once("exit", (code) => log.info("daemon exited", { code, pid: process.pid }))
+ 
+ void server.ready.then(async () => {
+-  // Begun ahead of start(), whose launch reconciliation probes identities too:
+-  // the first read in this process decides whether the boot-time probe every
+-  // later read shares has a kill timer. This one has none; main's ready
+-  // deadline is what bounds a slow boot.
+-  const identity = readCreationIdentity(process.pid, { probeTimeout: false })
+   // Before this port is announced to anyone: start() is what closes machine
+   // admission for the launch reconciliation, and a listener that is reachable
+   // before that hold exists admits work over launches nothing has accounted
+-- 
+2.43.0
+

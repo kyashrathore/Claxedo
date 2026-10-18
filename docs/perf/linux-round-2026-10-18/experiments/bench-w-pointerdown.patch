@@ -1,0 +1,186 @@
+From 42299c5e9e44b8cef69f152a1989199119d79c90 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:25:02 +0000
+Subject: [PATCH] A primary mouse or pen press on a rail session row that is
+ not the one shown opens that session's store, so the outline, row and first
+ two screens of rows are already on the wire while the release is still to
+ come and the click's mount of the session screen and composer runs beside the
+ read instead of ahead of it, since the read's first fetch otherwise waits
+ behind every microtask of that mount; a touch press opens nothing because it
+ often starts a scroll, activation stays on click, and the app's line budget
+ is the measured 107,777.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ packages/claxedo-app/src/rail/README.md             |  2 +-
+ .../claxedo-app/src/rail/view/activity-view.tsx     |  1 +
+ .../claxedo-app/src/rail/view/navigation-row.tsx    |  4 ++++
+ .../claxedo-app/src/rail/view/project-block.tsx     |  2 ++
+ packages/claxedo-app/src/rail/view/project-rows.tsx |  2 ++
+ packages/claxedo-app/src/rail/view/project-tree.tsx |  1 +
+ .../claxedo-app/src/rail/view/row-navigation.ts     | 13 +++++++++----
+ packages/claxedo-app/src/rail/view/session-row.tsx  |  2 ++
+ 8 files changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/packages/claxedo-app/src/rail/README.md b/packages/claxedo-app/src/rail/README.md
+index 9c0d1b55..ab66c741 100644
+--- a/packages/claxedo-app/src/rail/README.md
++++ b/packages/claxedo-app/src/rail/README.md
+@@ -24,7 +24,7 @@ Owns: the main sidebar's content (`MainSidebar`), ported from today's app's rail
+ - **Loading** (`SessionRowsLoading`): a window still on its first read shows skeleton rows of its view's row shape (one line in Projects, two in Activity) after the placeholder delay, with the kit's `SkeletonBar`; rows already listed are never replaced by it.
+ - **Empty** (`SessionListNotice` `empty`): a project whose pages are read and list nothing says "No active sessions. Show settled lists them all." while Show settled is off, since settled sessions are then not fetched, and "No sessions yet." while it is on; a project whose first page is still being read shows the skeleton rows instead. A rail with no project says "No projects yet."
+ - **Dragging a row** (session or terminal) onto the workbench opens or splits it there, as today: the row is a `navigation-row` drag source whose content is opened unfocused when the drag starts (`workbench.open(kind, state, false)`); released back over the rail, it just opens.
+-- **Opening a session** pushes today's URL: `/s/<id>` for a session on this machine's folders and worktrees, `/w/<ws>/session/<id>` for a cloud or another machine's workspace, so Back returns.
++- **Opening a session** pushes today's URL: `/s/<id>` for a session on this machine's folders and worktrees, `/w/<ws>/session/<id>` for a cloud or another machine's workspace, so Back returns. A primary mouse or pen press on a row that is not shown opens the session's store (`useSessionStores().open`, `press` in `row-navigation.ts`), so its read is on the wire while the release is still to come and the click's mount runs beside it; a touch press does not, since it often starts a scroll.
+ - **Row actions** (`createSessionActions`, `createRowNavigation`, shared by both views): Settle on hover, or "Return to active" on a settled row shown under Show settled (`list.settle`; the row's `settled` and `canSettle` come from `src/session`), and a context menu (right-click or double-click) with Copy session link, Rename and Settle or Return. A settled row leaves both views at once unless Show settled is on. Archive and Delete are not row actions; an agent deletes a session with `session_delete`. Their outcome reaches the row through the session list store.
+ 
+ ## Flows
+diff --git a/packages/claxedo-app/src/rail/view/activity-view.tsx b/packages/claxedo-app/src/rail/view/activity-view.tsx
+index 72f1499d..f83e3ac9 100644
+--- a/packages/claxedo-app/src/rail/view/activity-view.tsx
++++ b/packages/claxedo-app/src/rail/view/activity-view.tsx
+@@ -68,6 +68,7 @@ export function ActivityView(props: { readonly filter: ActivityFilter }): JSX.El
+                 caption={projectNames().get(row().ref.projectId)}
+                 active={navigation.activeSessionId() === sessionId}
+                 onActivate={navigation.open}
++                onPress={navigation.press}
+                 onRename={actions.onRename}
+                 onToggleSettled={actions.onToggleSettled}
+                 prepareDrag={() => navigation.prepareDrag({ kind: "session", key: sessionRowKey(sessionId), session: row() })}
+diff --git a/packages/claxedo-app/src/rail/view/navigation-row.tsx b/packages/claxedo-app/src/rail/view/navigation-row.tsx
+index 578ac82f..042acda6 100644
+--- a/packages/claxedo-app/src/rail/view/navigation-row.tsx
++++ b/packages/claxedo-app/src/rail/view/navigation-row.tsx
+@@ -13,6 +13,7 @@ export type NavigationRowProps = {
+   readonly label: string
+   readonly active: boolean
+   readonly onActivate: () => void
++  readonly onPress?: () => void
+   readonly onContextMenu?: (event: MouseEvent) => void
+   readonly engagement: HoverEngagement
+   readonly prepareDrag?: () => string | undefined
+@@ -52,6 +53,9 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
+         aria-current={props.active ? "page" : undefined}
+         data-slot="navigation-row-activate"
+         class="ui-navigation-row-activate absolute inset-0 rounded-[inherit] outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
++        onPointerDown={(event) => {
++          if (event.button === 0 && event.pointerType !== "touch") props.onPress?.()
++        }}
+         onClick={() => props.onActivate()}
+       />
+       {props.children}
+diff --git a/packages/claxedo-app/src/rail/view/project-block.tsx b/packages/claxedo-app/src/rail/view/project-block.tsx
+index 5111e302..896f546b 100644
+--- a/packages/claxedo-app/src/rail/view/project-block.tsx
++++ b/packages/claxedo-app/src/rail/view/project-block.tsx
+@@ -24,6 +24,7 @@ export type ProjectBlockProps = SessionRowMenuActions & {
+   readonly onSelect: (section: ProjectSection) => void
+   readonly onNewTerminal: (section: ProjectSection) => void
+   readonly onActivate: (row: SessionRowView) => void
++  readonly onPress: (row: SessionRowView) => void
+   readonly markerOf: (placementId: PlacementId) => SessionMarker | undefined
+   readonly prepareDrag: (row: RailRow) => string | undefined
+ }
+@@ -73,6 +74,7 @@ function ProjectSessions(
+         prepareDrag={props.prepareDrag}
+         projectLabel={props.section.label}
+         onActivate={props.onActivate}
++        onPress={props.onPress}
+         onRename={props.onRename}
+         onToggleSettled={props.onToggleSettled}
+       />
+diff --git a/packages/claxedo-app/src/rail/view/project-rows.tsx b/packages/claxedo-app/src/rail/view/project-rows.tsx
+index 529dd5fd..ddb7f4f5 100644
+--- a/packages/claxedo-app/src/rail/view/project-rows.tsx
++++ b/packages/claxedo-app/src/rail/view/project-rows.tsx
+@@ -15,6 +15,7 @@ export type ProjectRowsProps = SessionRowMenuActions & {
+   readonly activeSessionId: string | undefined
+   readonly activeTerminalId: string | undefined
+   readonly onActivate: (row: SessionRowView) => void
++  readonly onPress: (row: SessionRowView) => void
+   readonly markerOf: (placementId: PlacementId) => SessionMarker | undefined
+   readonly projectLabel: string
+   readonly prepareDrag: (row: RailRow) => string | undefined
+@@ -53,6 +54,7 @@ function SessionRows(props: ProjectRowsProps): JSX.Element {
+               projectLabel={props.projectLabel}
+               active={props.activeSessionId === sessionId}
+               onActivate={props.onActivate}
++              onPress={props.onPress}
+               onRename={props.onRename}
+               onToggleSettled={props.onToggleSettled}
+               prepareDrag={() => props.prepareDrag({ kind: "session", key: sessionRowKey(sessionId), session: session() })}
+diff --git a/packages/claxedo-app/src/rail/view/project-tree.tsx b/packages/claxedo-app/src/rail/view/project-tree.tsx
+index f7b22b57..8b073650 100644
+--- a/packages/claxedo-app/src/rail/view/project-tree.tsx
++++ b/packages/claxedo-app/src/rail/view/project-tree.tsx
+@@ -70,6 +70,7 @@ export function ProjectTree(): JSX.Element {
+                     onSelect={select}
+                     onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}
+                     onActivate={navigation.open}
++                    onPress={navigation.press}
+                     markerOf={navigation.markerOf}
+                     prepareDrag={navigation.prepareDrag}
+                     onRename={actions.onRename}
+diff --git a/packages/claxedo-app/src/rail/view/row-navigation.ts b/packages/claxedo-app/src/rail/view/row-navigation.ts
+index a91a6281..62400d89 100644
+--- a/packages/claxedo-app/src/rail/view/row-navigation.ts
++++ b/packages/claxedo-app/src/rail/view/row-navigation.ts
+@@ -1,7 +1,7 @@
+ import { createMemo } from "solid-js"
+ import { useQuery } from "@tanstack/solid-query"
+ import { useServer, type PlacementId } from "@/server"
+-import type { SessionRowView } from "@/session"
++import { useSessionStores, type SessionRowView } from "@/session"
+ import { sessionLinkPath, useShellRoute } from "@/shell"
+ import { terminalPaneKind } from "@/terminal"
+ import { useWorkbench } from "@/workbench"
+@@ -11,17 +11,22 @@ import { sessionMarker } from "../session-marker"
+ export function createRowNavigation() {
+   const server = useServer()
+   const routing = useShellRoute()
++  const stores = useSessionStores()
+   const workbench = useWorkbench()
+   const machines = useQuery(() => server.queries.machines.list())
+   const shown = createMemo(() => {
+     const content = routing.placementId() ? workbench.selectors.shownContent() : null
+     return content ? workbench.routeOf(content) : undefined
+   })
++  const activeSessionId = () => {
++    const pane = shown()
++    return pane?.kind === "session" ? pane.sessionId : undefined
++  }
+   return {
+     shown,
+-    activeSessionId: () => {
+-      const pane = shown()
+-      return pane?.kind === "session" ? pane.sessionId : undefined
++    activeSessionId,
++    press: (row: SessionRowView) => {
++      if (row.ref.sessionId !== activeSessionId()) stores.open(row.ref)
+     },
+     open: (row: SessionRowView) => routing.navigate(sessionLinkPath(row.ref, server.placements.byId(row.ref.placementId))),
+     markerOf: (placementId: PlacementId) => sessionMarker(server.placements.byId(placementId), machines.data ?? []),
+diff --git a/packages/claxedo-app/src/rail/view/session-row.tsx b/packages/claxedo-app/src/rail/view/session-row.tsx
+index 8517b83a..50037053 100644
+--- a/packages/claxedo-app/src/rail/view/session-row.tsx
++++ b/packages/claxedo-app/src/rail/view/session-row.tsx
+@@ -18,6 +18,7 @@ export type SessionRowProps = SessionRowMenuActions & {
+   readonly caption?: string
+   readonly active: boolean
+   readonly onActivate: (row: SessionRowView) => void
++  readonly onPress: (row: SessionRowView) => void
+   readonly prepareDrag?: () => string | undefined
+ }
+ 
+@@ -87,6 +88,7 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
+       label={props.row.title}
+       active={props.active}
+       onActivate={() => props.onActivate(props.row)}
++      onPress={() => props.onPress(props.row)}
+       onContextMenu={openMenu}
+       engagement={engagement}
+       prepareDrag={props.prepareDrag}
+-- 
+2.43.0
+
