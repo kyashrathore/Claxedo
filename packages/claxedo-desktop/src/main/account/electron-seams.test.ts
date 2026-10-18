@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { tokenExchange } from "./electron-seams"
+import { refreshExchange, tokenExchange } from "./electron-seams"
 import { printedAlone } from "../test-support/printed-alone"
 
 describe("tokenExchange", () => {
@@ -76,6 +76,38 @@ describe("tokenExchange", () => {
     controller.abort(new Error("sign-in cancelled"))
     await expect(pending).rejects.toThrow("sign-in cancelled")
     expect(attempts).toBe(1)
+  })
+
+  test("never follows a redirect, which would resend the code and verifier to its target", async () => {
+    const redirects: Array<RequestRedirect | undefined> = []
+    const exchange = tokenExchange(async (_url, init) => {
+      redirects.push(init?.redirect)
+      return new Response(null, { status: 307, headers: { location: "https://elsewhere.example/token" } })
+    })
+
+    await expect(exchange(EXCHANGE_INPUT)).rejects.toThrow("redirect (307)")
+    expect(redirects).toEqual(["manual"])
+  })
+})
+
+describe("refreshExchange", () => {
+  const REFRESH_INPUT = {
+    tokenUrl: "https://core.example/api/auth/oauth2/token",
+    clientId: "desktop_1",
+    refreshToken: "rt_1",
+  }
+
+  test("a redirect is an unavailable deployment, never followed and never a revoked grant", async () => {
+    const redirects: Array<RequestRedirect | undefined> = []
+    const refresh = refreshExchange(async (_url, init) => {
+      redirects.push(init?.redirect)
+      return new Response(null, { status: 308, headers: { location: "https://elsewhere.example/token" } })
+    })
+
+    const outcome = await refresh(REFRESH_INPUT)
+    expect(outcome).toMatchObject({ ok: false, reason: "unavailable" })
+    expect(!outcome.ok && outcome.detail).toContain("redirect (308)")
+    expect(redirects).toEqual(["manual"])
   })
 })
 

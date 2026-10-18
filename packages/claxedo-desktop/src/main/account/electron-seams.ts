@@ -178,17 +178,26 @@ async function postToTokenEndpoint(
   timeoutMs: number,
   parentSignal?: AbortSignal,
 ) {
-  return fetchWithDeadline(
+  // Manual: fetch re-sends the body on a 307/308, so following one would hand
+  // the code and verifier, or the refresh token, to whatever the redirect
+  // names. `opaqueredirect` is the browser fetch's shape of the same answer.
+  const response = await fetchWithDeadline(
     fetchImpl,
     tokenUrl,
     {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
       body: new URLSearchParams(form).toString(),
+      redirect: "manual",
     },
     timeoutMs,
     { parentSignal },
   )
+  if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    void response.body?.cancel().catch(() => undefined)
+    throw new Error(`token endpoint answered with a redirect (${response.status}), which is never followed`)
+  }
+  return response
 }
 
 /**

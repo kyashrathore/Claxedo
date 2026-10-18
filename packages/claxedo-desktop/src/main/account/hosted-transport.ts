@@ -27,7 +27,7 @@ import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/reade
 
 export type BoundedFetch = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+  init: { method: string; headers: Record<string, string>; body?: string; redirect?: RequestRedirect; signal?: AbortSignal },
 ) => Promise<Response>
 
 export class DeadlineExceededError extends Error {
@@ -39,7 +39,7 @@ export class DeadlineExceededError extends Error {
 export async function fetchWithDeadline(
   fetchImpl: BoundedFetch,
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: string },
+  init: { method: string; headers: Record<string, string>; body?: string; redirect?: RequestRedirect },
   deadlineMs: number,
   options: {
     parentSignal?: AbortSignal
