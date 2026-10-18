@@ -1,0 +1,94 @@
+From ff8d5651c007aa9e9cbe6b63e0acd592d8e6ef59 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:57:50 +0000
+Subject: [PATCH] The message-navigation rail mounts in the task after the
+ session's first revealed frame paints instead of in the reveal's own task,
+ through the workbench's afterNextPaint, so a first visit or a return to a
+ session with more than ten turns no longer builds one rail item per outline
+ turn (20 on the benchmark's 1 MiB sessions, 80 on the 8 MiB ones) before its
+ rows can paint, while the gutter the rail needs is still decided before that
+ paint, and the line budget is the measured 107,771.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../claxedo-app/src/session/view/timeline/README.md  |  2 +-
+ .../src/session/view/timeline/message-nav-layout.ts  | 12 +++++++++++-
+ .../src/session/view/timeline/message-timeline.tsx   |  4 ++--
+ packages/claxedo-app/src/workbench/index.ts          |  1 +
+ 4 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/packages/claxedo-app/src/session/view/timeline/README.md b/packages/claxedo-app/src/session/view/timeline/README.md
+index 1a343b14..3c86ca7f 100644
+--- a/packages/claxedo-app/src/session/view/timeline/README.md
++++ b/packages/claxedo-app/src/session/view/timeline/README.md
+@@ -118,7 +118,7 @@ The row builder is `Timeline.constructMessageRows` (`message-timeline.data.ts`);
+ 
+ ## Why the rail and gutter work this way
+ 
+-- The rail shows once the transcript has more than ten turns (`messageNavVisible`) and the pane fits the column plus a 60 px gutter on each side (`messageNavFits`). It mounts after the first reveal, in the frame its gutter first shows, so it appears with the rows that brought it.
++- The rail shows once the transcript has more than ten turns (`messageNavVisible`) and the pane fits the column plus a 60 px gutter on each side (`messageNavFits`). It mounts in the task after the first reveal's frame paints (`createMessageNavMount`, through the workbench's `afterNextPaint`), so building one item per turn of the outline is not part of the switch's first frame; the gutter it needs is decided before that frame paints (below), so the rows paint in their final place and the rail joins them one frame later.
+ - The compact rail reaches 48 px into the pane (`left-3` plus its 36 px width); the gutter reserves 60 px so every row, including a wide table or diagram, has 12 px after it. The gutter pads both sides, so the column keeps its width and centre and the transcript does not shift.
+ - The gutter is keyed off `data-session-timeline-nav-gutter` on the timeline root (`timeline-viewport.css`), set from the same memo that mounts the rail, never a `:has()` on the rail's own element. A `:has()` makes its subject a Blink invalidation anchor, and the timeline is the most mutated subtree in the app; no `:has()` may have an ancestor of the timeline as its subject.
+ - The gutter is decided before first paint by the ResizeObserver alone (`createMessageNavRoom`): its first callback runs after the frame's layout and before that frame paints, and a flip after paint would shift the whole column and restart every pending paint-stability wait. A width read when the timeline mounts would force the new pane's whole layout inside the switch task.
+diff --git a/packages/claxedo-app/src/session/view/timeline/message-nav-layout.ts b/packages/claxedo-app/src/session/view/timeline/message-nav-layout.ts
+index 5295fe89..3d3a6d6c 100644
+--- a/packages/claxedo-app/src/session/view/timeline/message-nav-layout.ts
++++ b/packages/claxedo-app/src/session/view/timeline/message-nav-layout.ts
+@@ -1,5 +1,6 @@
+-import { createSignal, onCleanup, type Accessor } from "solid-js"
++import { createEffect, createMemo, createSignal, onCleanup, untrack, type Accessor } from "solid-js"
+ import { createResizeObserver } from "@solid-primitives/resize-observer"
++import { afterNextPaint } from "@/workbench"
+ 
+ const WIDE_VIEWPORT_MIN_WIDTH = 1536
+ const COMPACT_NAV_SAFE_GUTTER = 60
+@@ -22,3 +23,12 @@ export function createMessageNavRoom(root: Accessor<HTMLElement | undefined>) {
+   onCleanup(() => window.removeEventListener("resize", update))
+   return hasRoom
+ }
++
++export function createMessageNavMount(input: { active: Accessor<boolean>; revealed: Accessor<boolean>; gutterVisible: Accessor<boolean> }) {
++  const [revealPainted, setRevealPainted] = createSignal(false)
++  createEffect(() => {
++    if (!input.revealed() || untrack(revealPainted)) return
++    onCleanup(afterNextPaint(() => setRevealPainted(true)))
++  })
++  return createMemo<boolean>((mounted) => mounted || (input.active() && revealPainted() && input.gutterVisible()), false)
++}
+diff --git a/packages/claxedo-app/src/session/view/timeline/message-timeline.tsx b/packages/claxedo-app/src/session/view/timeline/message-timeline.tsx
+index 0ce46594..e2e4edf9 100644
+--- a/packages/claxedo-app/src/session/view/timeline/message-timeline.tsx
++++ b/packages/claxedo-app/src/session/view/timeline/message-timeline.tsx
+@@ -91,7 +91,7 @@ import {
+   resolveTimelinePath as resolveTimelineFilePath,
+ } from "./timeline-file-paths"
+ import { createTimelineLinkOpen } from "./timeline-link-open"
+-import { createMessageNavRoom } from "./message-nav-layout"
++import { createMessageNavMount, createMessageNavRoom } from "./message-nav-layout"
+ import { messageNavPreview, messageNavVisible } from "./message-nav-preview"
+ import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
+ import type { MessageTimelineProps } from "./message-timeline-props"
+@@ -510,7 +510,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
+   const [renderOverscan, setRenderOverscan] = createSignal(1)
+   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
+   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
+-  const messageNavMountReady = createMemo<boolean>((mounted) => mounted || (props.active() && initialRevealReady() && messageNavGutterVisible()), false)
++  const messageNavMountReady = createMessageNavMount({ active: props.active, revealed: initialRevealReady, gutterVisible: messageNavGutterVisible })
+   holdPaneReveal(() => !initialRevealReady())
+   let initialRowsScheduled = initialRowCount > 0
+   let cancelFirstFoldReveal: (() => void) | undefined
+diff --git a/packages/claxedo-app/src/workbench/index.ts b/packages/claxedo-app/src/workbench/index.ts
+index 261bdb33..21776282 100644
+--- a/packages/claxedo-app/src/workbench/index.ts
++++ b/packages/claxedo-app/src/workbench/index.ts
+@@ -2,5 +2,6 @@ export type { WorkbenchStore } from "./store"
+ export { createWorkbenchStore } from "./store"
+ export { WorkbenchProvider, useWorkbench } from "./provider"
+ export { holdPaneReveal } from "./pane-context"
++export { afterNextPaint } from "./view/deferred-unmount"
+ export { useDragSource } from "./drag/drag-source"
+ export { Workbench } from "./view/workbench"
+-- 
+2.43.0
+

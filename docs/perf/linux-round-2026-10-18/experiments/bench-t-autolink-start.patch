@@ -1,0 +1,121 @@
+From 4f867d37fe6425b665c06c40168920cf6d6d684a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:26:11 +0000
+Subject: [PATCH] The transcript autolink's start search stops 1,024 characters
+ into the rest of a paragraph and cuts the text before a whitespace run
+ instead of scanning the whole remainder on every inline step, so lexing a 131
+ KB single-paragraph reply (the benchmark's long rows) scans about 1 MB
+ instead of 71 MB and takes about 6 ms instead of 55 ms in V8, with tokens
+ identical to the unbounded search for links, emails and hard breaks at and
+ past the cut.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../ui/src/context/marked-autolink.test.ts    | 36 ++++++++++++++++++-
+ packages/ui/src/context/marked.tsx            | 32 +++++++++++++++--
+ 2 files changed, 64 insertions(+), 4 deletions(-)
+
+diff --git a/packages/ui/src/context/marked-autolink.test.ts b/packages/ui/src/context/marked-autolink.test.ts
+index 8460b5b7..bde351b9 100644
+--- a/packages/ui/src/context/marked-autolink.test.ts
++++ b/packages/ui/src/context/marked-autolink.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, test } from "bun:test"
+ import { Marked } from "marked"
+-import { markedTranscriptAutolink, transcriptLinkPrefixes } from "./marked"
++import { markedTranscriptAutolink, transcriptLinkPrefixes, transcriptLinkRunSource } from "./marked"
+ 
+ const parser = new Marked(markedTranscriptAutolink, {
+   renderer: {
+@@ -64,3 +64,37 @@ describe("prose autolinking", () => {
+     expect(parse("visit www.example.com today")).toContain('href="http://www.example.com"')
+   })
+ })
++
++describe("long paragraphs", () => {
++  const unboundedStart = new RegExp(
++    transcriptLinkRunSource(transcriptLinkPrefixes.filter((prefix) => !prefix.startsWith("http"))),
++    "i",
++  )
++  const extension = markedTranscriptAutolink.extensions![0]!
++  const reference = new Marked({ extensions: [{ ...extension, start: (src: string) => unboundedStart.exec(src)?.index }] })
++  const bounded = new Marked(markedTranscriptAutolink)
++  const filler = (length: number) => "word ".repeat(Math.ceil(length / 5)).slice(0, length)
++
++  const cases: Record<string, string> = {
++    "soft line breaks": Array.from({ length: 400 }, (_, index) => `line fixture_${index} status=${index % 5}`).join("\n"),
++    "a link past the scan limit": `${filler(5_000)} see file:///Users/dev/notes.md now ${filler(3_000)}`,
++    "a link across the scan limit": `${filler(1_020)}file:///Users/dev/notes.md ${filler(2_000)}`,
++    "a link after a long word": `${filler(40)} ${"x".repeat(3_000)}mailto:dev@example.com ${filler(2_000)}`,
++    "an email at the scan limit": `${filler(1_018)}dev.ops@example.com ${filler(2_000)}`,
++    "a hard break at the scan limit": `${filler(1_022)}  \n${filler(2_000)}`,
++    "a url and emphasis late in the paragraph": `${filler(4_000)} *open* https://example.com/a_b and __bold__ ${filler(900)}`,
++    "no whitespace at all": `${"y".repeat(2_500)}vscode://file/x${"z".repeat(2_500)}`,
++  }
++
++  for (const [name, markdown] of Object.entries(cases)) {
++    test(`lexes ${name} as an unbounded search does`, () => {
++      expect(bounded.lexer(markdown)).toEqual(reference.lexer(markdown))
++    })
++  }
++
++  test("still links what the reference links", () => {
++    expect(bounded.parse(cases["a link past the scan limit"]!, { async: false })).toContain('href="file:///Users/dev/notes.md"')
++    expect(bounded.parse(cases["a link across the scan limit"]!, { async: false })).toContain('href="file:///Users/dev/notes.md"')
++    expect(bounded.parse(cases["no whitespace at all"]!, { async: false })).toContain('href="vscode://file/x')
++  })
++})
+diff --git a/packages/ui/src/context/marked.tsx b/packages/ui/src/context/marked.tsx
+index 1ab73372..31af4881 100644
+--- a/packages/ui/src/context/marked.tsx
++++ b/packages/ui/src/context/marked.tsx
+@@ -123,6 +123,34 @@ const autolinkRule = new RegExp(`^${autolinkSource}`, "i")
+ const autolinkStart = new RegExp(autolinkSource, "i")
+ const autolinkTrailing = /[),.;:!?]+$/
+ 
++// marked calls `start` once per inline text step with the whole rest of the
++// paragraph, so an unbounded search is quadratic: a 131 KB paragraph scanned
++// 71 MB in 1,087 calls (55 ms in V8). The search stops after this many
++// characters and cuts the text before a whitespace run instead, where no link,
++// email or hard break can straddle the cut and marked merges the two text
++// tokens back into one.
++const autolinkScanLimit = 1024
++const longestAutolinkMatchStart = Math.max(...transcriptLinkPrefixes.map((prefix) => prefix.length)) + 1
++
++function isAsciiSpace(code: number) {
++  return code === 32 || (code >= 9 && code <= 13)
++}
++
++function whitespaceRunStartBefore(src: string, limit: number) {
++  for (let index = limit; index > 0; index--) {
++    if (isAsciiSpace(src.charCodeAt(index)) && !isAsciiSpace(src.charCodeAt(index - 1))) return index
++  }
++  return undefined
++}
++
++function autolinkStartIndex(src: string) {
++  const window = autolinkScanLimit + longestAutolinkMatchStart
++  if (src.length <= window) return autolinkStart.exec(src)?.index
++  const found = autolinkStart.exec(src.slice(0, window))
++  if (found && found.index < autolinkScanLimit) return found.index
++  return whitespaceRunStartBefore(src, autolinkScanLimit) ?? autolinkStart.exec(src)?.index
++}
++
+ /**
+  * Emits marked's own `link` token rather than a token of its own, so the anchor
+  * comes out of the same renderer as `[text](url)` and GFM's autolink, and the
+@@ -133,9 +161,7 @@ export const markedTranscriptAutolink: MarkedExtension = {
+     {
+       name: "transcriptAutolink",
+       level: "inline",
+-      start(src) {
+-        return autolinkStart.exec(src)?.index
+-      },
++      start: autolinkStartIndex,
+       tokenizer(src) {
+         // Matches the guard marked puts on its own url rule: a link label is
+         // inline-tokenized with `inLink` set, and nesting an anchor is invalid.
+-- 
+2.43.0
+

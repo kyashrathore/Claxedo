@@ -1,0 +1,95 @@
+From 0bcb86faf11edb478879ff1368c04303a48cdf26 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:35:09 +0000
+Subject: [PATCH] The desktop's renderer processes run V8 with
+ --optimize-for-size, so the window's and webview guests' heaps are sized and
+ collected for memory rather than throughput while main and the daemon keep
+ their own V8 flags; the Chromium switches main appends before ready move out
+ of index.ts into main/chromium-switches.ts, and the desktop main closure
+ ceiling records that one module.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../src/main/chromium-switches.test.ts        | 21 +++++++++++++++++++
+ .../src/main/chromium-switches.ts             | 17 +++++++++++++++
+ packages/claxedo-desktop/src/main/index.ts    |  4 ++--
+ 3 files changed, 40 insertions(+), 2 deletions(-)
+ create mode 100644 packages/claxedo-desktop/src/main/chromium-switches.test.ts
+ create mode 100644 packages/claxedo-desktop/src/main/chromium-switches.ts
+
+diff --git a/packages/claxedo-desktop/src/main/chromium-switches.test.ts b/packages/claxedo-desktop/src/main/chromium-switches.test.ts
+new file mode 100644
+index 00000000..e68954ce
+--- /dev/null
++++ b/packages/claxedo-desktop/src/main/chromium-switches.test.ts
+@@ -0,0 +1,21 @@
++import { describe, expect, test } from "bun:test"
++import { applyChromiumSwitches } from "./chromium-switches"
++
++function switchesFor(packaged: boolean) {
++  const appended: [string, string | undefined][] = []
++  applyChromiumSwitches({ appendSwitch: (name, value) => void appended.push([name, value]) }, { packaged })
++  return appended
++}
++
++describe("applyChromiumSwitches", () => {
++  test("a packaged app bypasses proxies for loopback and runs its renderers' V8 for size", () => {
++    expect(switchesFor(true)).toEqual([
++      ["proxy-bypass-list", "<-loopback>"],
++      ["js-flags", "--optimize-for-size"],
++    ])
++  })
++
++  test("a development app also disables the HTTP cache", () => {
++    expect(switchesFor(false)).toContainEqual(["disable-http-cache", undefined])
++  })
++})
+diff --git a/packages/claxedo-desktop/src/main/chromium-switches.ts b/packages/claxedo-desktop/src/main/chromium-switches.ts
+new file mode 100644
+index 00000000..c7496df8
+--- /dev/null
++++ b/packages/claxedo-desktop/src/main/chromium-switches.ts
+@@ -0,0 +1,17 @@
++type CommandLine = { appendSwitch: (name: string, value?: string) => void }
++
++/**
++ * Must run before the app is ready: Chromium reads these when it starts its
++ * child processes.
++ *
++ * `js-flags` reaches the renderer processes (the window and webview guests),
++ * not this one, whose V8 is already running, and not the daemon, a Node-mode
++ * child with its own V8 flags (`server-runtime-policy.ts`).
++ * `--optimize-for-size` makes V8 size its heaps and collect for memory rather
++ * than throughput.
++ */
++export function applyChromiumSwitches(commandLine: CommandLine, options: { packaged: boolean }) {
++  commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
++  commandLine.appendSwitch("js-flags", "--optimize-for-size")
++  if (!options.packaged) commandLine.appendSwitch("disable-http-cache")
++}
+diff --git a/packages/claxedo-desktop/src/main/index.ts b/packages/claxedo-desktop/src/main/index.ts
+index 51898778..0e796784 100644
+--- a/packages/claxedo-desktop/src/main/index.ts
++++ b/packages/claxedo-desktop/src/main/index.ts
+@@ -41,6 +41,7 @@ void reportInstall(telemetryClient, {
+ 
+ import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"
+ import { ensureAgentPath } from "./agent-path"
++import { applyChromiumSwitches } from "./chromium-switches"
+ import { checkAppExists, resolveAppPath, wslPath } from "./apps"
+ import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
+ import type { BrowserRegistry } from "./browser/registry"
+@@ -179,8 +180,7 @@ setupApp()
+ function setupApp() {
+   ensureLoopbackNoProxy()
+   ensureAgentPath()
+-  app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
+-  if (!IS_PACKAGED) app.commandLine.appendSwitch("disable-http-cache")
++  applyChromiumSwitches(app.commandLine, { packaged: IS_PACKAGED })
+   process.once("SIGINT", () => void lifecycle.requestExit("stop", () => app.quit()))
+   process.once("SIGTERM", () => void lifecycle.requestExit("stop", () => app.quit()))
+ 
+-- 
+2.43.0
+
