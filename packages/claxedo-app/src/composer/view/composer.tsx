@@ -18,6 +18,7 @@ import { createPromptPopoverBindings } from "./popover-bindings"
 import { createPromptContextBindings } from "./context-bindings"
 import { createPromptImageMarkBindings } from "./image-mark-bindings"
 import { usePanel } from "@/panel"
+import { warmOnDemandViews } from "./on-demand-views"
 
 export function Composer(props: ComposerProps) {
   const composer = createComposer(props)
@@ -41,6 +42,7 @@ export function Composer(props: ComposerProps) {
   const popoverBindings = createPromptPopoverBindings({ composer, popover, keybind: commands.keybind })
   const contextBindings = createPromptContextBindings({ composer, mode, fileItems, quoteItems, panel })
   const imageMarkBindings = createPromptImageMarkBindings({ composer, dialog })
+  warmOnDemandViews()
 
   return (
     <ComposerNoticeProvider channel={notices}>

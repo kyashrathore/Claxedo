@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { pluginManifestSchema, type PluginBackend, type PluginManifest } from "@claxedo/plugin-api/manifest"
+import type { PluginBackend, PluginManifest } from "@claxedo/plugin-api/manifest"
+import { pluginManifestSchema } from "@claxedo/plugin-api/manifest-schema"
 
 export type PluginBackendActivation = Readonly<{
   orgId: string

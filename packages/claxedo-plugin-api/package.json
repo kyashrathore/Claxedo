@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "sideEffects": false,
   "description": "The Claxedo plugin contract: the package.json manifest, the PluginApi a plugin activates against, and definePlugin",
   "license": "MIT",
   "repository": {
@@ -26,6 +27,11 @@
       "types": "./src/manifest.ts",
       "development": "./src/manifest.ts",
       "default": "./src/manifest.ts"
+    },
+    "./manifest-schema": {
+      "types": "./src/manifest-schema.ts",
+      "development": "./src/manifest-schema.ts",
+      "default": "./src/manifest-schema.ts"
     },
     "./runtime": {
       "types": "./src/runtime.ts",

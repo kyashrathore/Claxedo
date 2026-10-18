@@ -2,7 +2,6 @@ import { A, useSearchParams } from "@solidjs/router"
 import { createUniqueId, For, Match, Show, Switch, type JSX } from "solid-js"
 import { projectId, type Project } from "@/server"
 import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote } from "@/settings"
-import type { SettingsSection } from "@/shell"
 import { ClaxedoIcon as Icon, ProjectAvatar } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { sourceLabel } from "../project-source"
@@ -75,7 +74,7 @@ function ProjectsList(): JSX.Element {
   )
 }
 
-function ProjectsSettings(): JSX.Element {
+export function ProjectsSettings(): JSX.Element {
   const [params] = useSearchParams<{ project?: string }>()
   return (
     <Show when={params.project} keyed fallback={<ProjectsList />}>
@@ -84,10 +83,3 @@ function ProjectsSettings(): JSX.Element {
   )
 }
 
-export const projectsSettingsSection: SettingsSection = {
-  id: "projects",
-  title: () => useProjectsText()("projects.title"),
-  group: "workspace",
-  order: 10,
-  view: ProjectsSettings,
-}

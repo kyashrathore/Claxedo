@@ -8,7 +8,7 @@
  * and routing requires assignment AND acked set AND a live lease. There is no
  * per-workspace challenge or signature — that grain is retired.
  *
- * `GET /:id/connection` is shared with the local server (`hostTunnelConnectionInfo`).
+ * `GET /:id/connection` reads a machine-placed workspace's link through `hostTunnelConnectionInfo` and a cloud one's through `hostedConnectionStatus`.
  */
 
 import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/placement-reachability"

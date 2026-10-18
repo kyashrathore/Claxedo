@@ -1,5 +1,5 @@
 import { isRecord } from "@claxedo/helpers/guards"
-import { pluginManifestSchema } from "@claxedo/plugin-api"
+import type { PluginManifest } from "@claxedo/plugin-api"
 import { ServerError } from "../errors"
 import type { LivePlugin, LivePluginStatus } from "../live-plugin-types"
 
@@ -28,14 +28,19 @@ function statusOrThrow(value: unknown, label: string): LivePluginStatus {
   throw new ServerError({ class: "internal", message: `${label} has an unknown status` })
 }
 
-function manifestOrThrow(value: unknown, label: string) {
-  if (value === null) return null
-  const parsed = pluginManifestSchema.safeParse(value)
-  if (parsed.success) return parsed.data
-  throw new ServerError({ class: "internal", message: `${label} carries an invalid manifest: ${parsed.error.issues.map((issue) => issue.message).join("; ")}` })
+type ReadManifest = (value: unknown, label: string) => PluginManifest | null
+
+async function manifestReader(): Promise<ReadManifest> {
+  const { pluginManifestSchema } = await import("@claxedo/plugin-api/manifest-schema")
+  return (value, label) => {
+    if (value === null) return null
+    const parsed = pluginManifestSchema.safeParse(value)
+    if (parsed.success) return parsed.data
+    throw new ServerError({ class: "internal", message: `${label} carries an invalid manifest: ${parsed.error.issues.map((issue) => issue.message).join("; ")}` })
+  }
 }
 
-function livePlugin(value: unknown, index: number): LivePlugin {
+function livePlugin(value: unknown, index: number, readManifest: ReadManifest): LivePlugin {
   const row = recordOrThrow(value, `Live plugin ${index}`)
   const label = `Live plugin ${typeof row.id === "string" ? row.id : index}`
   return {
@@ -45,15 +50,16 @@ function livePlugin(value: unknown, index: number): LivePlugin {
     directory: textOrThrow(row.directory, `${label} folder`),
     status: statusOrThrow(row.status, label),
     hash: nullableTextOrThrow(row.hash, `${label} hash`),
-    manifest: manifestOrThrow(row.manifest, label),
+    manifest: readManifest(row.manifest, label),
     builtAt: nullableTextOrThrow(row.builtAt, `${label} build time`),
     lastError: nullableTextOrThrow(row.lastError, `${label} error`),
   }
 }
 
-export function parseLivePlugins(body: unknown): readonly LivePlugin[] {
+export async function parseLivePlugins(body: unknown): Promise<readonly LivePlugin[]> {
   const plugins = recordOrThrow(body, "The live plugin list").plugins
   if (!Array.isArray(plugins)) throw new ServerError({ class: "internal", message: "The live plugin list has no plugins" })
-  return plugins.map(livePlugin)
+  const readManifest = await manifestReader()
+  return plugins.map((value, index) => livePlugin(value, index, readManifest))
 }
 

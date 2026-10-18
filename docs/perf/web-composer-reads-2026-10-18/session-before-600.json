@@ -1,0 +1,153 @@
+{
+  "delayMs": 600,
+  "projects": 3,
+  "chipAt": 1779,
+  "chipLog": [
+    {
+      "t": 715,
+      "text": "Connecting | polling | submit=false | /"
+    },
+    {
+      "t": 1404,
+      "text": "Scripted ACP default | ready | submit=false | /"
+    }
+  ],
+  "requests": [
+    {
+      "url": "/api/claxedo/auth/descriptor",
+      "origin": "app",
+      "start": 682.64990234375,
+      "end": 1298.28590234375,
+      "bytes": 595,
+      "decoded": 1661
+    },
+    {
+      "url": "/api/claxedo/bootstrap",
+      "origin": "app",
+      "start": 682.74609375,
+      "end": 1297.4440937499999,
+      "bytes": 152,
+      "decoded": 163
+    },
+    {
+      "url": "/api/workspace/shared-sessions",
+      "origin": "app",
+      "start": 682.72998046875,
+      "end": 1300.20498046875,
+      "bytes": 51,
+      "decoded": 15
+    },
+    {
+      "url": "/api/workspace?host=provisioner",
+      "origin": "app",
+      "start": 682.967041015625,
+      "end": 1304.012041015625,
+      "bytes": 547,
+      "decoded": 1957
+    },
+    {
+      "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      "origin": "app",
+      "start": 683.04296875,
+      "end": 1307.5959687499999,
+      "bytes": 627,
+      "decoded": 2083
+    },
+    {
+      "url": "/api/auth/get-session",
+      "origin": "app",
+      "start": 683.02783203125,
+      "end": 1308.00783203125,
+      "bytes": 415,
+      "decoded": 624
+    },
+    {
+      "url": "/api/claxedo/remote-access/devices",
+      "origin": "app",
+      "start": 1320.06591796875,
+      "end": 1947.7629179687501,
+      "bytes": 308,
+      "decoded": 349
+    },
+    {
+      "url": "/api/claxedo/agent-config/connections",
+      "origin": "app",
+      "start": 1320.114013671875,
+      "end": 1952.459013671875,
+      "bytes": 239,
+      "decoded": 383
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/pty",
+      "origin": "127.0.0.1:48702",
+      "start": 1320.970947265625,
+      "end": 1972.385947265625,
+      "bytes": 37,
+      "decoded": 2
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/pty",
+      "origin": "127.0.0.1:48702",
+      "start": 1320.92919921875,
+      "end": 1975.14319921875,
+      "bytes": 37,
+      "decoded": 2
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/pty",
+      "origin": "127.0.0.1:48702",
+      "start": 1321.19287109375,
+      "end": 1989.90987109375,
+      "bytes": 37,
+      "decoded": 2
+    },
+    {
+      "url": "/workspaces/<uuid>/session/ses_…/outline?rows=33&cols=94&reasoning=1&shell=0&edit=0",
+      "origin": "127.0.0.1:48702",
+      "start": 1323.73486328125,
+      "end": 2000.64986328125,
+      "bytes": 828,
+      "decoded": 2308
+    },
+    {
+      "url": "/workspaces/<uuid>/session/ses_…?view=open",
+      "origin": "127.0.0.1:48702",
+      "start": 1323.80029296875,
+      "end": 2014.5652929687499,
+      "bytes": 177,
+      "decoded": 263
+    },
+    {
+      "url": "/workspaces/<uuid>/session/ses_…/queue",
+      "origin": "127.0.0.1:48702",
+      "start": 1323.836181640625,
+      "end": 2020.693181640625,
+      "bytes": 37,
+      "decoded": 2
+    },
+    {
+      "url": "/workspaces/<uuid>/session/ses_…/outline?rows=33&cols=94&reasoning=1&shell=0&edit=0",
+      "origin": "127.0.0.1:48702",
+      "start": 2007.658935546875,
+      "end": 2643.110935546875,
+      "bytes": 828,
+      "decoded": 2308
+    },
+    {
+      "url": "/workspaces/<uuid>/session/ses_…?view=open",
+      "origin": "127.0.0.1:48702",
+      "start": 2008.490966796875,
+      "end": 2668.900966796875,
+      "bytes": 177,
+      "decoded": 263
+    },
+    {
+      "url": "/workspaces/<uuid>/session/ses_…/config-options?connectionId=scripted-acp",
+      "origin": "127.0.0.1:48702",
+      "start": 2007.633056640625,
+      "end": 2887.157056640625,
+      "bytes": 50,
+      "decoded": 14
+    }
+  ]
+}

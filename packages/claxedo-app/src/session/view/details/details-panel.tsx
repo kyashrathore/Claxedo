@@ -1,12 +1,12 @@
 import { createMemo, Show, type JSX } from "solid-js"
 import { sessionId, useServer } from "@/server"
 import { useSessionStores } from "@/session"
-import type { PanelView, PanelViewProps } from "@/shell"
+import type { PanelViewProps } from "@/shell"
 import { BackgroundCard } from "./background-card"
 import { EnvironmentCard } from "./environment-card"
 import { useDetailsText } from "./i18n"
 
-function SessionDetailsPanel(props: PanelViewProps): JSX.Element {
+export function SessionDetailsPanel(props: PanelViewProps): JSX.Element {
   const t = useDetailsText()
   const server = useServer()
   const stores = useSessionStores()
@@ -28,5 +28,3 @@ function SessionDetailsPanel(props: PanelViewProps): JSX.Element {
     </div>
   )
 }
-
-export const sessionDetailsPanelView: PanelView = { kind: "context", view: SessionDetailsPanel }

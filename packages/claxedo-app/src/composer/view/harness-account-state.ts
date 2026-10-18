@@ -17,12 +17,12 @@ function providerCatalogHarness(harness: HarnessType | undefined): string | unde
   return harness?.kind === "native" && PROVIDER_CATALOG_HARNESSES.has(harness.harnessId) ? harness.harnessId : undefined
 }
 
-export function createHarnessAccountState(server: Server, harness: Accessor<HarnessType | undefined>): Accessor<HarnessAccountState> {
+export function createHarnessAccountState(server: Server, harness: Accessor<HarnessType | undefined>, needed: Accessor<boolean>): Accessor<HarnessAccountState> {
   const catalog = useQuery(() => ({
     ...server.queries.providerCatalogs.catalog(providerCatalogHarness(harness()) ?? "pi"),
-    enabled: providerCatalogHarness(harness()) !== undefined,
+    enabled: providerCatalogHarness(harness()) !== undefined && needed(),
   }))
-  const effective = useQuery(() => ({ ...server.queries.accounts.effective(), enabled: accountHarnessId(harness()) !== undefined }))
+  const effective = useQuery(() => ({ ...server.queries.accounts.effective(), enabled: accountHarnessId(harness()) !== undefined && needed() }))
   return createMemo((): HarnessAccountState => {
     if (providerCatalogHarness(harness())) {
       if (!catalog.data) return "unknown"

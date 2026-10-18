@@ -60,14 +60,10 @@ export {
   PluginManifestError,
   PluginStatusHooksRefusedError,
   pluginBackendRouteAllowed,
-  pluginBackendSchema,
-  pluginManifestSchema,
   pluginOperationAllowed,
-  pluginPackageSchema,
   pluginRouteAllowed,
-  pluginServerAccessSchema,
-  readPluginManifest,
 } from "./manifest"
+export { pluginBackendSchema, pluginManifestSchema, pluginPackageSchema, pluginServerAccessSchema, readPluginManifest } from "./manifest-schema"
 export type { PluginBackend, PluginCapability, PluginManifest, PluginServerAccess } from "./manifest"
 export { isPluginId, PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 export { isPluginRuntimeModule, PLUGIN_RUNTIME_GLOBAL, PLUGIN_RUNTIME_MODULES } from "./runtime"

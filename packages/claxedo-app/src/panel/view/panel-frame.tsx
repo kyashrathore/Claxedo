@@ -1,10 +1,11 @@
-import { type JSX, type ParentProps } from "solid-js"
+import { onMount, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useServer } from "@/server"
 import { SidePanel, SidePanelArea } from "@/ui"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
-import { PanelBody } from "./panel-body"
+import { nextIdleSlice } from "@/lib/idle"
+import { loadPanelBody, PanelBody } from "./panel-body-lazy"
 import { PanelHeader } from "./panel-header"
 import { createWorkspaceResize } from "./resize-handle"
 import { maxPanelWidth, PANEL_MIN_WIDTH } from "../width"
@@ -18,6 +19,11 @@ function WorkspacePanel(): JSX.Element {
     return placementId ? (server.placements.byId(placementId)?.path ?? "") : ""
   }
   const resize = createWorkspaceResize(() => undefined)
+  onMount(() => {
+    void (panel.open() ? loadPanelBody() : nextIdleSlice().then(loadPanelBody)).catch((error: unknown) =>
+      console.warn("The panel views could not be fetched ahead; they load when the panel opens", { error }),
+    )
+  })
   return (
     <SidePanel
       open={panel.open()}

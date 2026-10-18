@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import type { StatusHookTemplate } from "./status-hooks"
 import { readStatusHookTemplates } from "./status-hooks"
-import { PluginManifestError, PluginStatusHooksRefusedError, pluginManifestSchema, readPluginManifest } from "./manifest"
+import { PluginManifestError, PluginStatusHooksRefusedError } from "./manifest"
+import { pluginManifestSchema, readPluginManifest } from "./manifest-schema"
 
 const manifest = { id: "status-hooks", name: "Status hooks", version: "1.0.0", app: "./app.ts" }
 const template: StatusHookTemplate = {

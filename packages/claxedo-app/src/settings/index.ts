@@ -18,7 +18,7 @@ const section = (id: string, key: SettingsKey, group: SettingsSection["group"], 
 export type { Preferences } from "./preferences"
 export { terminalFontFamily } from "./fonts"
 export { PreferencesProvider, usePreferences } from "./preferences"
-export { MachineConnectSteps, useConnectMachine } from "./view/machines"
+export { MachineConnectSteps, useConnectMachine } from "./view/machine-connect"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsNote, SettingsRow } from "./view/section"
 
 export const settingsSections: readonly SettingsSection[] = [

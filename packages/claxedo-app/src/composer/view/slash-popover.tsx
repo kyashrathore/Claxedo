@@ -3,6 +3,7 @@ import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { ComposerTextKey } from "../i18n"
 import { AtOptionRow } from "./at-option-row"
 import { SlashCommandRow } from "./slash-command-row"
+import { PROMPT_POPOVER_LISTBOX_ID, promptAtOptionId, promptSlashOptionId } from "./prompt-popover-ids"
 
 export type AtOption =
   | { type: "agent"; name: string; display: string }
@@ -29,10 +30,6 @@ export type SlashCommand =
   | (SlashCommandFields & { type: "builtin" })
   | (SlashCommandFields & { type: "custom" } & ({ origin: "saved"; content: string } | { origin: "transport" }))
 
-export const PROMPT_POPOVER_LISTBOX_ID = "prompt-popover-listbox"
-
-export const promptAtOptionId = (key: string) => `prompt-at-option-${key}`
-export const promptSlashOptionId = (id: string) => `prompt-slash-option-${id}`
 
 type PromptPopoverProps = {
   popover: "at" | "slash" | null

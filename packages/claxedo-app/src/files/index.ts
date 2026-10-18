@@ -6,4 +6,5 @@ export { useRootListingPrefetch } from "./tree-source"
 export { parentPath } from "./path"
 export { isMarkdownPath, isMediaPath } from "./preview"
 export const FileTab = lazyView(() => import("./view/file-tab").then((module) => module.FileTab))
-export { FilesNavigator } from "./view/files-navigator"
+export const loadFilesNavigator = () => import("./view/files-navigator")
+export const FilesNavigator = lazyView(() => loadFilesNavigator().then((module) => module.FilesNavigator))

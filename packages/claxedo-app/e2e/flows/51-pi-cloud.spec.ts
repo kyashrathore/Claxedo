@@ -96,7 +96,7 @@ test("51 Pi started from the composer on a cloud workspace runs in its own sessi
   await host.call("DELETE", `/session/${sessionId}`)
   await expect.poll(async () => (await listedSessions(signedCloud, workspace)).map((row) => row.sessionId)).not.toContain(sessionId)
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
-  await expect(page.getByRole("navigation", { name: UI.rail }).getByText("No sessions match the current view.")).toBeVisible()
+  await expect(page.getByRole("navigation", { name: UI.rail }).getByText("No active sessions. Show settled lists them all.")).toBeVisible()
 })
 
 test("51 a cloud Pi session opens by its URL, and a Codex session on the same workspace runs on the workspace machine", async ({ signedCloud, page, isMobile }) => {
@@ -168,7 +168,12 @@ test("51 a Pi draft on an asleep cloud workspace lists the account's models, nev
   const workspace = await makeCloudWorkspace(signedCloud, "asleep")
   await signedCloud.signIn(page, signedCloud.owner)
   const connections: string[] = []
-  page.on("request", (request) => { if (new URL(request.url()).pathname === `/api/workspace/${workspace.id}/connection`) connections.push(request.url()) })
+  const catalogs: string[] = []
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === `/api/workspace/${workspace.id}/connection`) connections.push(request.url())
+    if (url.pathname === "/api/claxedo/agent-config/providers") catalogs.push(request.url())
+  })
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
   await page.getByRole("button", { name: /^Select harness and model/ }).click()
   const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })
@@ -183,6 +188,20 @@ test("51 a Pi draft on an asleep cloud workspace lists the account's models, nev
   await expect(page.getByText(/This workspace is asleep/)).toHaveCount(0)
   if (testInfo.repeatEachIndex === 0) await page.screenshot({ path: testInfo.outputPath("pi-draft-asleep.png") })
   expect(connections, "a draft's models never wake or reach the workspace").toEqual([])
+  expect(catalogs, "a Pi draft whose options name models never reads Pi's provider catalog").toEqual([])
+})
+
+test("51 a Pi draft on a cloud workspace without an account says Pi is not set up", async ({ signedCloud, page }) => {
+  test.setTimeout(180_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "accountless")
+  await signedCloud.signIn(page, signedCloud.owner)
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
+  await page.getByRole("button", { name: /^Select harness and model/ }).click()
+  const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })
+  await showHarnesses(picker)
+  await page.getByRole("button", { name: "Pi", exact: true }).click()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("status", { name: /Pi is not set up/ })).toBeVisible()
 })
 
 test("51 a terminal on a cloud workspace beside a cloud Pi session, which another host serves, runs a typed command through the relay", async ({ signedCloud, page, isMobile }, testInfo) => {

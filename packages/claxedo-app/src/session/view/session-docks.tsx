@@ -1,6 +1,5 @@
-import { createMemo, createSignal, Match, Show, Switch, untrack } from "solid-js"
+import { createMemo, createSignal, Match, Show, Switch } from "solid-js"
 import { useErrorCopy } from "@/i18n"
-import { persistedSignal, preferenceKey, tabStorage } from "@/lib/persisted"
 import type { SessionControls } from "@/access"
 import type { AgentRequest, AgentRequestReply, AppError } from "@/server"
 import type { SessionView } from "@/session"
@@ -12,7 +11,8 @@ import { QuestionDock } from "./docks/question-dock"
 import { GoalDock } from "./docks/goal-dock"
 import { InterruptedDock } from "./docks/interrupted-dock"
 import { SessionTodoDock } from "./docks/todo-dock"
-import { goalActions, todoDockOpen } from "./docks/model"
+import { goalActions } from "./docks/model"
+import type { TodoDock } from "./docks/todo-dock-state"
 import { useSessionScreenText } from "./text"
 import "./docks/docks.css"
 
@@ -79,7 +79,7 @@ function RuntimeMissingDock(props: { readonly view: SessionView }) {
   )
 }
 
-export function SessionDocks(props: { readonly view: SessionView; readonly controls: SessionControls; readonly todo: ReturnType<typeof createTodoDock> }) {
+export function SessionDocks(props: { readonly view: SessionView; readonly controls: SessionControls; readonly todo: TodoDock }) {
   const request = createMemo(() => props.view.requests()[0])
   return (
     <>
@@ -101,24 +101,7 @@ export function SessionDocks(props: { readonly view: SessionView; readonly contr
   )
 }
 
-const readCollapsed = (value: unknown) => (typeof value === "boolean" ? value : undefined)
-
-export function createTodoDock(view: () => SessionView) {
-  const key = preferenceKey("session", untrack(() => view().ref.sessionId), "todo-collapsed")
-  const [collapsed, setCollapsed] = persistedSignal(key, false, readCollapsed, tabStorage())
-  const open = () => {
-    const list = view().todos()
-    const done = list.length > 0 && list.every((todo) => todo.status === "completed" || todo.status === "cancelled")
-    return todoDockOpen({ count: list.length, done })
-  }
-  return {
-    open,
-    collapsed,
-    toggle: () => setCollapsed((value) => !value),
-  }
-}
-
-function TodoDockSlot(props: { readonly view: SessionView; readonly dock: ReturnType<typeof createTodoDock> }) {
+function TodoDockSlot(props: { readonly view: SessionView; readonly dock: TodoDock }) {
   const t = useSessionScreenText()
   return (
     <SessionTodoDock
