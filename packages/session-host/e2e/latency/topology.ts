@@ -26,9 +26,11 @@ export type Links = {
   cpMs: number
   /** The session's object (enam) to the model vendor. */
   vendorMs: number
+  /** The session's object (enam) to the relay Worker's JWKS endpoint at the edge nearest it, when the object verifies relay host tokens against that JWKS. */
+  doRelayMs: number
 }
 
-export const STAGING_LINKS: Links = { clientEdgeMs: 50, roomDoMs: 110, doCpMs: 5, cpMs: 50, vendorMs: 10 }
+export const STAGING_LINKS: Links = { clientEdgeMs: 50, roomDoMs: 110, doCpMs: 5, cpMs: 50, vendorMs: 10, doRelayMs: 10 }
 
 export type Scripts = { relay: string; sessionHost: string }
 
@@ -54,7 +56,15 @@ export class SessionDO {
 export default { fetch() { return new Response("not found", { status: 404 }) } }
 `
 
-export type PipeRecord = { path: string; arrivedAt: number; answeredAt?: number; chunks: Array<{ at: number; text: string }> }
+export type PipeRecord = {
+  path: string
+  arrivedAt: number
+  answeredAt?: number
+  status?: number
+  /** The object's own `Server-Timing` (`host-start`, `host-serve`) on its answer. */
+  serverTiming?: string
+  chunks: Array<{ at: number; text: string }>
+}
 
 export type TopologyInput = {
   scripts: Scripts
@@ -64,6 +74,12 @@ export type TopologyInput = {
   vendor: { url: string; secret: string }
   /** The relay's target and revocation cache TTLs; absent, the relay's 10 s defaults. */
   relayCacheTtlMs?: number
+  /**
+   * How the object verifies relay host tokens: `pem` is the key in its env,
+   * `jwks` is staging's `WORKSPACE_RUNTIME_RELAY_JWKS_URL`, the relay Worker's
+   * key set fetched over `doRelayMs` on the object's first verification.
+   */
+  relayHostKey?: "pem" | "jwks"
   /** The keys and control plane of an earlier boot, so a rebooted workerd finds the session it registered and the leases it held. */
   world?: World
 }
@@ -141,10 +157,27 @@ export async function bootTopology(input: TopologyInput) {
     const namespace = await sessionHost()
     const upstream = await namespace.get(namespace.idFromName(root)).fetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }) } as never) as unknown as Response
     record.answeredAt = performance.now()
+    record.status = upstream.status
+    record.serverTiming = upstream.headers.get("server-timing") ?? undefined
     const decoder = new TextDecoder()
     const tap: ChunkTap = (chunk, at) => { record.chunks.push({ at, text: decoder.decode(chunk, { stream: true }) }) }
     return await delayedResponse(upstream, links.roomDoMs, tap)
   }
+  const jwksCalls: number[] = []
+  /** The object's outbound fetches: the relay's JWKS over `doRelayMs` each way, everything else (the vendor) as is. */
+  const sessionHostOutbound = async (request: Request) => {
+    if (new URL(request.url).pathname !== "/.well-known/jwks.json") {
+      const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer()
+      return fetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }), redirect: "manual" })
+    }
+    jwksCalls.push(performance.now())
+    await sleep(links.doRelayMs)
+    const response = await mf.dispatchFetch(request.url) as unknown as Response
+    const body = await response.text()
+    await sleep(links.doRelayMs)
+    return new Response(body, { status: response.status, headers: { "content-type": "application/json" } })
+  }
+  const relayHostKey = input.relayHostKey ?? "pem"
   miniflare = new Miniflare({
     durableObjectsPersist: input.persist,
     handleRuntimeStdio: (stdout: Readable, err: Readable) => {
@@ -184,11 +217,15 @@ export async function bootTopology(input: TopologyInput) {
         serviceBindings: { CONTROL_PLANE: controlPlaneLink as never },
         bindings: {
           WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: AUTHORITY_URL,
-          WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(signing.relayHost.publicKey),
+          ...(relayHostKey === "jwks"
+            ? { WORKSPACE_RUNTIME_RELAY_JWKS_URL: "https://relay.test/.well-known/jwks.json" }
+            : { WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(signing.relayHost.publicKey) }),
         },
+        ...(relayHostKey === "jwks" ? { outboundService: sessionHostOutbound as never } : {}),
       },
     ],
   })
+  const mf = miniflare
   await miniflare.ready
   const rat = await mintRuntimeAccessToken({
     principalKind: "user", actorId: OWNER, userId: OWNER, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,
@@ -198,13 +235,13 @@ export async function bootTopology(input: TopologyInput) {
     principalKind: "user", actorId: OWNER, userId: OWNER, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,
     hostId: sessionHostId(input.root), role: "editor", sessionId: input.root, backing: "durable-object", parentJti: `rat_${crypto.randomUUID()}`,
   }, signing.relayHost.privateKey, "EdDSA")
-  const mf = miniflare
   return {
     root: input.root,
     world,
     controlPlane,
     cpCalls,
     resolverCalls,
+    jwksCalls,
     pipe,
     stderr: () => stderr.join(""),
     /** The browser's view: the edge link, then the relay at the edge. */

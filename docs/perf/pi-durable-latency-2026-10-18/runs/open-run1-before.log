@@ -1,0 +1,47 @@
+
+  object: events@334->636 outline@334->639 queue@334->639 ses_latency_open@334->639
+  control plane: session-authorize:read@634 session-authorize:read@635 session-authorize:read@635 session-authorize:read@635; resolver: target@58.4 revocation@58.5; jwks: 545 545 545 545
+open-cold open 1: outline headers 800 body 800 queue 801 open 802 stream 802 (host-start 0.0 host-serve 94.0)
+open-cold open 2: outline headers 794 body 794 queue 795 open 795 stream 795 (host-start 0.0 host-serve 92.0)
+open-cold open 3: outline headers 791 body 791 queue 791 open 791 stream 791 (host-start 0.0 host-serve 92.0)
+open-cold open 4: outline headers 796 body 796 queue 792 open 796 stream 796 (host-start 0.0 host-serve 91.0)
+open-cold open 5: outline headers 793 body 793 queue 793 open 793 stream 793 (host-start 0.0 host-serve 93.0)
+open-cold open 6: outline headers 801 body 801 queue 801 open 801 stream 801 (host-start 0.0 host-serve 93.0)
+  object: events@53.6->252 outline@54.3->253 queue@54.4->254 ses_latency_open@54.4->254
+  control plane: session-authorize:read@251 session-authorize:read@252 session-authorize:read@252 session-authorize:read@252; resolver: ; jwks: 
+open-warm open 1: outline headers 415 body 415 queue 416 open 416 stream 416 (host-start 0.0 host-serve 63.0)
+open-warm open 2: outline headers 414 body 414 queue 414 open 414 stream 414 (host-start 0.0 host-serve 65.0)
+open-warm open 3: outline headers 414 body 414 queue 415 open 416 stream 416 (host-start 0.0 host-serve 63.0)
+open-warm open 4: outline headers 418 body 418 queue 418 open 418 stream 418 (host-start 0.0 host-serve 61.0)
+open-warm open 5: outline headers 415 body 415 queue 415 open 415 stream 415 (host-start 0.0 host-serve 63.0)
+open-warm open 6: outline headers 414 body 414 queue 414 open 414 stream 414 (host-start 0.0 host-serve 63.0)
+== open-cold (open; cold object and room; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10,"doRelayMs":10}; relay host key over JWKS)
+press -> room sent outline p50    331  mean    331  p95    334  sd   1.5  n 6
+press -> object answered   p50    634  mean    634  p95    640  sd   4.2  n 6
+press -> outline headers   p50    796  mean    796  p95    801  sd   3.8  n 6
+press -> outline body      p50    796  mean    796  p95    801  sd   3.8  n 6
+press -> queue body        p50    795  mean    796  p95    801  sd   4.2  n 6
+press -> open view body    p50    796  mean    796  p95    802  sd   4.0  n 6
+press -> stream open       p50    796  mean    796  p95    802  sd   4.0  n 6
+object host-start          p50    0.0  mean    0.0  p95    0.0  sd   0.0  n 6
+object host-serve          p50   93.0  mean   92.5  p95   94.0  sd   1.0  n 6
+press -> first cp answer   p50    629  mean    629  p95    636  sd   4.3  n 6
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":25,"session-authorize:write":1,"session-authorize:turn_acquire":1,"turn-delivery":1,"session-rows":2,"session-authorize:usage_report":1,"session-authorize:turn_release":1}
+relay resolver calls {"/internal/relay/target":7,"/internal/relay/revocation":7}
+relay JWKS fetches by the object 25
+
+== open-warm (open; warm object and room; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10,"doRelayMs":10}; relay host key over JWKS)
+press -> room sent outline p50   54.3  mean   53.8  p95   55.1  sd   1.0  n 6
+press -> object answered   p50    253  mean    253  p95    255  sd   0.9  n 6
+press -> outline headers   p50    415  mean    415  p95    418  sd   1.5  n 6
+press -> outline body      p50    415  mean    415  p95    418  sd   1.5  n 6
+press -> queue body        p50    415  mean    415  p95    418  sd   1.5  n 6
+press -> open view body    p50    416  mean    416  p95    418  sd   1.5  n 6
+press -> stream open       p50    416  mean    416  p95    418  sd   1.5  n 6
+object host-start          p50    0.0  mean    0.0  p95    0.0  sd   0.0  n 6
+object host-serve          p50   63.0  mean   63.0  p95   65.0  sd   1.2  n 6
+press -> first cp answer   p50    251  mean    251  p95    253  sd   1.1  n 6
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":32,"session-authorize:write":1,"session-authorize:turn_acquire":1,"turn-delivery":1,"session-rows":2,"session-authorize:usage_report":1,"session-authorize:turn_release":1}
+relay resolver calls {"/internal/relay/target":2,"/internal/relay/revocation":2}
+relay JWKS fetches by the object 5
+

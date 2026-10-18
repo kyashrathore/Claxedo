@@ -49,6 +49,13 @@ export function summarize(values: readonly number[]): Summary | undefined {
   return { n: sorted.length, mean, p50: at(0.5), p95: at(0.95), min: sorted[0], max: sorted[sorted.length - 1], sd }
 }
 
+/** How many times each name occurs: the calls of a scenario by path, the lookups by route. */
+export function count(names: readonly string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const name of names) counts[name] = (counts[name] ?? 0) + 1
+  return counts
+}
+
 export function intervals(times: readonly number[]): number[] {
   return times.slice(1).map((time, index) => time - times[index])
 }

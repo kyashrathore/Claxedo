@@ -37,7 +37,7 @@ Regions on the path: browser (IN) ⇄ edge (BOM/SIN) ⇄ room (apac) ⇄ object 
 
 ## The rig
 
-`packages/session-host/e2e/latency/` boots one workerd (Miniflare) with the real relay Worker and room, a "pipe" Durable Object standing where the relay's `SESSION_HOST` binding points, a Node service behind it that holds every request `roomDoMs` and every response chunk `roomDoMs` on the way back (and stamps each chunk as it leaves the object), the real session-host Worker with the control plane stand-in from its tests behind `doCpMs + cpMs`, and the relay's resolver behind `2·roomDoMs + cpMs`. The client in Node sleeps `clientEdgeMs` before each request and delays every response chunk by `clientEdgeMs`. The vendor is the harness e2e scripted model server behind a proxy (`packages/harness/e2e/perf/vendor-proxy.ts`) that adds `vendorMs` each way and stamps each chunk the vendor emits. Links default to staging as seen from India: `clientEdgeMs 50, roomDoMs 110, doCpMs 5, cpMs 50, vendorMs 10`; the vendor answers its first token after 600 ms and then 40 chunks every 25 ms. All clocks are one Node `performance.now()`.
+`packages/session-host/e2e/latency/` boots one workerd (Miniflare) with the real relay Worker and room, a "pipe" Durable Object standing where the relay's `SESSION_HOST` binding points, a Node service behind it that holds every request `roomDoMs` and every response chunk `roomDoMs` on the way back (and stamps each chunk as it leaves the object), the real session-host Worker with the control plane stand-in from its tests behind `doCpMs + cpMs`, and the relay's resolver behind `2·roomDoMs + cpMs`. The client in Node sleeps `clientEdgeMs` before each request and delays every response chunk by `clientEdgeMs`. The vendor is the harness e2e scripted model server behind a proxy (`packages/harness/e2e/perf/vendor-proxy.ts`) that adds `vendorMs` each way and stamps each chunk the vendor emits. Links default to staging as seen from India: `clientEdgeMs 50, roomDoMs 110, doCpMs 5, cpMs 50, vendorMs 10, doRelayMs 10`; the vendor answers its first token after 600 ms and then 40 chunks every 25 ms. `doRelayMs` is the object's link to the relay Worker's `/.well-known/jwks.json`, which the open scenarios make the object verify relay host tokens against (`relayHostKey: "jwks"`, staging's `WORKSPACE_RUNTIME_RELAY_JWKS_URL`); the turn scenarios keep the key in the object's env. All clocks are one Node `performance.now()`.
 
 The local comparison (`packages/harness/e2e/perf/pi-local-latency.ts`) boots the real local daemon from the harness e2e stack with the same scripted vendor behind the same proxy, at 120 ms each way (a laptop in India to a US vendor), and the same client.
 
@@ -47,6 +47,12 @@ bun packages/harness/e2e/perf/pi-local-latency.ts --turns 6 --out docs/perf/pi-d
 ```
 
 Scenarios: `relay-warm` is staging as it is, with 1 s between turns; `relay-cold-cache` sets the relay's cache TTLs to 1 ms so every request pays the resolver; `direct` sends the same requests to the object over one 160 ms link with no relay; `cold-object` restarts workerd before every turn, so the object starts from storage; `cp-slow` is the control plane at 400 ms per request, which is what staging's 0.7-2.3 s per request from India implies once the 320 ms of link is taken off; `no-links` is every link at 0, the pure compute of the path.
+
+The open scenarios (`e2e/latency/open.ts`) press a rail row instead of sending: after one turn has put text in the transcript, `open-cold` restarts workerd before every press, so the relay room and the object both start from nothing, and `open-warm` presses again on the same topology; `open-cold-cp-slow` is `open-cold` with the control plane at 400 ms. A press is what the web app sends at once (`session-reads.ts`, `placement-streams.ts`): `GET /session/:id/outline` at the reader's viewport, `GET /session/:id/queue`, `GET /session/:id?view=open` and the `/api/wr/events` stream, and the outline's body is the first transcript text on screen. Each read is timed to its headers and its body, the object's `Server-Timing` is read off it, and the room's send and the object's answer, the control-plane calls, the resolver lookups and the object's JWKS fetches are listed per press.
+
+```sh
+bun run --cwd packages/session-host perf:latency -- --scenario open-cold,open-warm --turns 6
+```
 
 ## The per-hop budget, press to first delta on screen (p50, ms after the press)
 
@@ -115,3 +121,65 @@ From India, signed in, a Pi session on a cloud workspace, DevTools network panel
 ## Not verified here
 
 Real link latencies (the rig injects the 50/110/5/10 ms one-way figures above), staging's control-plane time per request (`cpMs`; both 50 and 400 are run), the room's actual colo for an Indian opener (assumed on the browser-to-object path), the hibernation behaviour of a real object between visits (workerd neither hibernates nor evicts; the cold start is a restart from storage), and the browser's own frame timing (the rig's client is Node; the app commits deltas on `requestAnimationFrame`, so add up to 16 ms).
+
+## Opening a session: the press to the first transcript text
+
+Measured on staging on 2026-10-18 (signed in, from India, a rail row of a Pi session; ms after the press): the connection read answered at 982, the three runtime reads left at 983-984 and answered at 4,290 (outline, queue) and 4,489 (open view), with `host-start` and `host-serve=1117` on each; the first text was on screen at 4,492. So 3.3 s between the connection read and the text, of which the object reports 1.1 s serving.
+
+### The live path of a press
+
+G. The web app, on the press: `startSessionReads` (`packages/claxedo-app/src/server/session-reads.ts`) issues the outline (`GET /session/:id/outline?rows&cols&reasoning&shell&edit`), the open view (`GET /session/:id?view=open`) and, from `session-queue.ts`, the queue, through `relay.fetch`, with the Runtime Access Token the connection read answered; `placement-streams.ts` opens `/api/wr/events?sessionID=` beside them. Four requests, one RAT.
+
+H. The relay. The gateway (edge, SIN) verifies the RAT's signature against `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` (a key import per isolate, then ~1 ms a request) to trust the placement inputs, and calls the workspace's room in `apac`. A room that is not in memory loads its isolate and imports its keys (`workspaceRelayDurableObjectOptions`, PEM: no fetch) and then, for the first request, pays `rat-verify` (local), and `rat-active` and `target-resolve` together: two `GET`s to the control plane in IAD, 220 ms of link plus the plane's time (a D1 read each: the token's revocation row and `readSessionHostPlacement`). The three reads and the stream share those lookups (`createCachedRevocationClient` and `createCachedTargetClient` share a lookup in flight), the minted Relay Host Token (`relayHostTokenFor`'s promise entry) and the RAT's claims. Then `forwardSessionHostHttp` → `SESSION_HOST.getByName(root, { locationHint: "enam" })`, 110 ms away.
+
+I. The object, cold. workerd loads the session-host isolate (the bundle with pi-ai, pi-durable, hono and session-core) and runs the constructor, then the first request's `lifecycle.start()`: the Agents SDK's `blockConcurrencyWhile` holds the other three at the door while `PiHarness.onStart` opens pi-durable's store, `Harness.open`, `SessionDO.boot` (`composeSessionHost`: the runtime store's schema check and journal replay, `recoverBusySessions`, the stored lease if any, `resumeDurableRuns`, `harness.inspect`), `pi.root`, `pi.resume` and `recoverQueuedPrompts`. All of it is synchronous SQLite in the rig, 12 ms between the constructor and the first `serve` (probed), so `host-start` reads 0: `Date.now()` "returns the time of the last I/O" and "does not advance during code execution" ([Cloudflare: security model](https://developers.cloudflare.com/workers/reference/security-model/)), and the isolate load precedes `fetch()` altogether. On a sampled relay trace the object's cold start is `session-host-fetch` − `host-serve` − 2 × the room-object link.
+
+J. `host-serve`. `createRelayHostAuthMiddleware` verifies the RHT. Staging's object does so against the relay's published key set (`WORKSPACE_RUNTIME_RELAY_JWKS_URL`, `sessionHostVariables` in `user-cloudflare-config.ts`), which jose fetches on the first verification, and on Workers jose shares no fetch in flight, so each of the concurrent first requests fetched it. Then `sessionOperationGuard` → `remoteWorkspaceSessionAccessPolicy.authorize` → `POST /session-authorize {action: "read"}` over the `CONTROL_PLANE` binding (enam → IAD), one per read, three identical ones at once, each on the plane: the RHT verified against `CLAXEDO_RELAY_HOST_VERIFY_PEM`, `runtimeAccessTokenActive` (D1), `readSessionHostPlacement` (D1), `authorizeRuntimeSession` (D1); the stream's is a fourth with `stream: true`. Then the read itself, from the store in memory. The reads answer together because they waited on the same things.
+
+### The cold open, decomposed (rig, staging links, p50 of 6)
+
+| leg | ms after the press | region |
+|---|---:|---|
+| client → edge | 50 | IN → SIN |
+| room loads, both lookups leave | 58 | apac |
+| lookups answered (2 × 110 + 50), RHT minted, request leaves the room | 331 | apac ⇄ IAD |
+| request reaches the object (+110) | ~441 | enam |
+| isolate loaded, constructor and start done, the key set fetch leaves | 545 | enam → relay edge |
+| `/session-authorize` leaves (verify, routing) | ~575 | enam → IAD |
+| `/session-authorize` answered (2 × 5 + 50) | 629 | |
+| object answers all four | 634 | |
+| outline headers and body at the client (+110 +50) | 796 | |
+
+Warm (object and room in memory, caches holding): room sends at 54, object answers at 253 (`host-serve` 63: one authorize round and the read), client at 415. The difference between a cold and a warm open in the rig, 381 ms, is the room's lookups (270 + 10 of room load) and the object's isolate load with its key set fetch (~100 + 20).
+
+Staging's 3,307 ms is the same shape with staging's numbers: the room's lookups cost the plane's time per `GET` (hundreds of ms each, concurrent) on top of 220 ms of link, the object's isolate load on Cloudflare is larger than workerd's on a Mac, the key set fetch is a real round trip to the relay's edge, and `host-serve=1117` is one `/session-authorize` at staging's plane speed (three concurrent) plus that fetch. Nothing in the object's own start is on that scale.
+
+### Experiments
+
+Kept:
+- **One `/session-authorize` for identical calls in flight** (`remoteWorkspaceSessionAccessPolicy`, `packages/session-core/src/remote-session-authority.ts`): a call whose endpoint, credential and body equal one still unanswered awaits that answer; the entry leaves the moment the answer lands, so no decision is reused across requests, and a caller with its own abort signal keeps its own request. A press makes 2 authority calls (the three reads' one, the stream's) instead of 4. Test: "identical calls in flight share one request, and the next identical call asks the plane again". In the rig the wall time did not move (the three were concurrent already; p50 796 → 800 cold, 415 → 414 warm, within the ±5 ms between runs); on staging it is two fewer D1-backed calls per open, and a wall win only where the plane serializes them, which is for the staging trace below to say.
+- **The relay's key set fetched once, from the object's start** (`SessionDO.verificationKey`, `boot`, `packages/session-host/src/session-do.ts`): the fetch leaves from inside the Lifecycle's startup callback, since `blockConcurrencyWhile` holds "all events that were not explicitly initiated as part of the callback itself" ([Cloudflare: Durable Object state](https://developers.cloudflare.com/durable-objects/api/state/)) and a fetch started before it deadlocked the start (the rig's `open-cold` answered 500 "waited for too long"); the host is composed over a resolver that awaits the key, so the start goes on while the set is on its way; every verification then finds it loaded. One fetch per cold start instead of one per concurrent first request (4 → 1 in `open-cold`). Test: "fetches the relay's published key set once per start, before its concurrent first reads are verified, never once per read" (`session-do.node-test.ts`, 4 against 2 before). Wall time unchanged in the rig: the start it overlaps is 12 ms of synchronous work.
+
+Measured and not taken:
+- **Answering reads before Pi's `Harness.open` and `boot()`**: the whole start is 12 ms of synchronous SQLite in the rig (probed from the constructor to the first `serve`), and on Cloudflare it is the same local work; the isolate load before it is not ours to reorder. Serving a read before `recoverBusySessions` and `resumeDurableRuns` would also show a status the start is about to correct. Not worth a second start path.
+- **Deriving a `session-do:` host's target from the signed claims in the room**: the plane's `sandboxRelayTargetLookup` reads `readSessionHostPlacement` for it, and the lookup already leaves with the revocation check, so skipping it saves load and no wall time.
+- **Prefetching the key set at the constructor or at `fetch()` before the start**: deadlocks, above.
+
+Owned elsewhere, with the numbers this rig puts on them:
+- The plane's time per `/session-authorize`, `/internal/relay/revocation` and `/internal/relay/target` (lane `perf/d1-signed-reads`): the only legs of the 3.3 s that are not links or an isolate load.
+- The object's isolate load (lane `perf/worker-cold-start`): ~100 ms in workerd on this Mac, more on Cloudflare; the session-host bundle carries pi-ai's every provider.
+- The three reads as one request (lane `perf/web-session-chunks` / the app): with the authority call shared they cost the object one round each way and one authorize; the queue and the open view could ride the outline.
+- The room's placement for a workspace whose sessions live on their objects: a room in `enam` is 110 ms from the edge and ~5 from the object, the same 115 as today's `apac` room is on the way, but its lookups to IAD are ~10 ms instead of 220, so a cold room and every 10 s revocation expiry cost ~210 ms less; the same room then puts +220 ms on every browser request to a machine in `apac` (files, terminals). Rooms never move, so this is a ruling, not a lane.
+- `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` for the session host: the plane verifies the same tokens with `CLAXEDO_RELAY_HOST_VERIFY_PEM`, so a rotation already needs a plane deploy; a PEM on the session-host Worker ends the fetch (deploy config, `sessionHostVariables`).
+
+### What to measure on staging after the deploy
+
+Set `CLAXEDO_RELAY_TRACE_FORCE_SECRET` on the relay and send `x-claxedo-relay-trace: <secret>` on the press's reads (a DevTools header override, or `curl` with the RAT from the connection read, the three URLs at once). The sampled `Server-Timing` carries the room's `relay-auth` (`rat-verify`, `rat-active`, `target-resolve`, `rht-mint` or `rht-cache`), `session-host-fetch`, `relay-room-total`, the gateway's `relay-gateway-route` and `relay-gateway-do-fetch`, and the object's `host-start` and `host-serve`:
+1. A cold open (a session untouched for 70-140 s, after which "the Durable Object will be evicted entirely from memory", [Cloudflare: lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)): `rat-active` and `target-resolve` are the plane's time plus 220; `session-host-fetch` − `host-serve` − 220 is the object's cold start; `host-serve` is one `/session-authorize` round, no longer that plus a key set fetch.
+2. The plane's logs for the press: 2 `session-authorize` rows (one `read`, one `read` with `stream`), not 4; the relay's `/.well-known/jwks.json` hit once per object start.
+3. A warm open 1 s later: `host-serve` ≈ one authorize round; `relay-auth` ≈ 1 ms.
+4. Whether three concurrent authorizes were slower than one: compare `host-serve` before and after the deploy on cold opens of the same session.
+
+### Not verified here
+
+The object's real link to the relay's JWKS endpoint (`doRelayMs 10` assumed), Cloudflare's isolate load for the session-host bundle, staging's time per control-plane and resolver call, and whether the plane serializes identical concurrent authorizes.

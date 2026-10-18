@@ -5,8 +5,9 @@ import { parseArgs } from "node:util"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
 import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
 import { measureTurn, summarizeTurns, timedStream, type TurnTimes } from "../../../harness/e2e/perf/latency-client"
-import { intervals, ms, sleep, summarize, summaryRow, type Summary } from "../../../harness/e2e/perf/pipes"
+import { count, intervals, ms, sleep, summarize, summaryRow, type Summary } from "../../../harness/e2e/perf/pipes"
 import { startVendorProxy, type VendorProxy } from "../../../harness/e2e/perf/vendor-proxy"
+import { OPEN_SCENARIOS, reportOpen, runOpenScenario, type OpenResult } from "./open"
 import { bootTopology, bundleScripts, STAGING_LINKS, type Links, type Scripts, type Topology } from "./topology"
 
 const MODEL = { providerID: "pi", modelID: "openai/gpt-4.1" }
@@ -21,7 +22,7 @@ const SCENARIOS: Record<string, Scenario> = {
   "direct": { name: "direct", links: STAGING_LINKS, path: "direct", pauseMs: 1_000 },
   "cold-object": { name: "cold-object", links: STAGING_LINKS, path: "relay", coldObject: true, pauseMs: 1_000 },
   "cp-slow": { name: "cp-slow", links: { ...STAGING_LINKS, cpMs: 400 }, path: "relay", pauseMs: 1_000 },
-  "no-links": { name: "no-links", links: { clientEdgeMs: 0, roomDoMs: 0, doCpMs: 0, cpMs: 0, vendorMs: 0 }, path: "relay", pauseMs: 1_000 },
+  "no-links": { name: "no-links", links: { clientEdgeMs: 0, roomDoMs: 0, doCpMs: 0, cpMs: 0, vendorMs: 0, doRelayMs: 0 }, path: "relay", pauseMs: 1_000 },
 }
 
 type HopTimes = TurnTimes & {
@@ -52,12 +53,6 @@ type ScenarioResult = {
   cpCalls: Record<string, number>
   resolverCalls: Record<string, number>
   streamOpen: Summary | undefined
-}
-
-function count(paths: readonly string[]): Record<string, number> {
-  const counts: Record<string, number> = {}
-  for (const name of paths) counts[name] = (counts[name] ?? 0) + 1
-  return counts
 }
 
 function deltasInChunks(chunks: ReadonlyArray<{ at: number; text: string }>, after: number, before: number): number[] {
@@ -192,19 +187,22 @@ const { values } = parseArgs({ options: {
   out: { type: "string" },
 } })
 const names = values.scenario.split(",").map((name) => name.trim()).filter(Boolean)
-for (const name of names) if (!SCENARIOS[name]) throw new Error(`Unknown scenario ${name}; known: ${Object.keys(SCENARIOS).join(", ")}`)
+for (const name of names) if (!SCENARIOS[name] && !OPEN_SCENARIOS[name]) throw new Error(`Unknown scenario ${name}; known: ${[...Object.keys(SCENARIOS), ...Object.keys(OPEN_SCENARIOS)].join(", ")}`)
 const modelPort = await reservePort()
 const model = await startScriptedModelServer({ port: modelPort, red: false })
 model.setReplyDelayMs(Number(values.ttft))
 model.setTextStreamPacing({ chunks: Number(values.chunks), delayMs: Number(values.cadence) })
 const scripts = await bundleScripts()
-const results: ScenarioResult[] = []
+const results: Array<ScenarioResult | OpenResult> = []
+const isOpen = (result: ScenarioResult | OpenResult): result is OpenResult => "opens" in result
 try {
   for (const name of names) {
-    const scenario = SCENARIOS[name]
+    const scenario = SCENARIOS[name] ?? OPEN_SCENARIOS[name]
     const vendor = await startVendorProxy({ targetPort: modelPort, oneWayMs: scenario.links.vendorMs })
     try {
-      results.push(await runScenario(scenario, { scripts, model, vendor, turns: Number(values.turns) }))
+      results.push(OPEN_SCENARIOS[name]
+        ? await runOpenScenario(OPEN_SCENARIOS[name], { scripts, model, vendor, opens: Number(values.turns) })
+        : await runScenario(SCENARIOS[name], { scripts, model, vendor, turns: Number(values.turns) }))
     } finally {
       await vendor.close()
     }
@@ -213,7 +211,7 @@ try {
   await model.close()
   releasePort(modelPort)
 }
-for (const result of results) console.log(`${report(result)}\n`)
+for (const result of results) console.log(`${isOpen(result) ? reportOpen(result) : report(result)}\n`)
 if (values.out) {
   await mkdir(values.out, { recursive: true })
   const file = path.join(values.out, `${names.join("+")}-${new Date().toISOString().replaceAll(":", "-")}.json`)
