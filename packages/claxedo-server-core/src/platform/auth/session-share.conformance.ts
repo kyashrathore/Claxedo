@@ -134,7 +134,7 @@ export async function exerciseSessionShareLevelConformance(
   invariant(
     await refusesWith(
       () => grantShare(creator.auth, { sessionId, workspaceId, ...outsider.target }),
-      "session_share_target_outside_organization",
+      "session_share_target_not_found",
     ),
     "a share was offered to someone outside the organization",
   )

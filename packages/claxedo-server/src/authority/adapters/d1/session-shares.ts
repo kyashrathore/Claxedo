@@ -41,11 +41,11 @@ export class D1SessionShares {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const session = await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
     const target = await this.resolveShareRecipient(args)
-    if (!target) throw sessionShareError("session_share_target_not_found")
-    const actor = await this.activeHumanActorForUser(target)
-    if (!actor) throw sessionShareError("session_share_target_not_found")
-    if (!(await may(this.deps.database, { userId: target }, "member", { kind: "org", orgId: session.org_id }))) {
-      throw sessionShareError("session_share_target_outside_organization")
+    // Someone outside the organization gets the answer an unknown id gets, so
+    // a caller cannot probe which user ids and subjects exist.
+    if (!target || !(await this.activeHumanActorForUser(target))
+      || !(await may(this.deps.database, { userId: target }, "member", { kind: "org", orgId: session.org_id }))) {
+      throw sessionShareError("session_share_target_not_found")
     }
     const existing = await this.activeShareForTarget(sessionId, target)
     if (existing) {
@@ -302,38 +302,44 @@ export class D1SessionShares {
     return { can_manage_shares: true, grants: grants.results }
   }
 
-  /** The active user a share names, by user id, token identifier or provider subject. */
+  /**
+   * The active user a share names, by user id, token identifier or provider
+   * subject. A bare subject is unique only within its issuer, so a subject
+   * two issuers' users share names nobody.
+   */
   private async resolveShareRecipient(args: SessionShareRecipient, allowMissing = false): Promise<string | undefined> {
     if (shareSelectorCount(args) !== 1) throw sessionShareError("session_share_target_required")
     const value = requireText((args.grantedToTokenIdentifier ?? args.grantedToSubject ?? args.grantedToUserId)!, "share user target")
-    const user = args.grantedToUserId
+    const users = args.grantedToUserId
       ? await this.deps.database
           .prepare(`select user_id from users where user_id = ? and state = 'active'`)
           .bind(value)
-          .first<{ user_id: string }>()
+          .all<{ user_id: string }>()
       : args.grantedToTokenIdentifier
         ? await this.deps.database
             .prepare(
               `
-            select ai.user_id from auth_identities ai
+            select distinct ai.user_id from auth_identities ai
             join users u on u.user_id = ai.user_id and u.state = 'active'
             where ai.issuer || '|' || ai.subject = ? and ai.unlinked_at is null
+            limit 2
           `,
             )
             .bind(value)
-            .first<{ user_id: string }>()
+            .all<{ user_id: string }>()
         : await this.deps.database
             .prepare(
               `
-            select ai.user_id from auth_identities ai
+            select distinct ai.user_id from auth_identities ai
             join users u on u.user_id = ai.user_id and u.state = 'active'
             where ai.subject = ? and ai.unlinked_at is null
-            order by ai.linked_at, ai.adapter, ai.issuer limit 1
+            limit 2
           `,
             )
             .bind(value)
-            .first<{ user_id: string }>()
-    if (!user) {
+            .all<{ user_id: string }>()
+    const [user, ...others] = users.results
+    if (!user || others.length > 0) {
       if (allowMissing) return undefined
       throw sessionShareError("session_share_target_not_found")
     }

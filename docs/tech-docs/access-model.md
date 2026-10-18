@@ -234,9 +234,11 @@ token beyond its one session. The owner's active actors, their agents
 included, act through workspace ownership, and a share is the only way
 anyone else reaches a session. Only the owner may add or revoke shares (`session_share_admin_required`
 otherwise), and a share may be offered only to a member of the session's
-organization (`session_share_target_outside_organization`). Listing a
-session's shares answers a session the control plane never registered only
-to its workspace's owner, with an empty list; to anyone else it, another
+organization; anyone else gets the `session_share_target_not_found` an
+unknown person gets, so the refusal does not reveal who has an account, and a
+bare provider subject that more than one issuer's users share names nobody.
+Listing a session's shares answers a session the control plane never
+registered only to its workspace's owner, with an empty list; to anyone else it, another
 person's session and an unknown workspace are the same refusal.
 
 The runtime names which class a write is (`sessionAccessWriteClass` in

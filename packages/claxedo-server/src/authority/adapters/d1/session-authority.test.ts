@@ -81,12 +81,12 @@ async function setup() {
   }
 }
 
-function identity(subject: string): AuthIdentity {
-  return { adapter: "better-auth", issuer: "https://auth.example.test", subject }
+function identity(subject: string, issuer = "https://auth.example.test"): AuthIdentity {
+  return { adapter: "better-auth", issuer, subject }
 }
 
-async function signed(authority: D1WorkspaceAuthority, subject: string): Promise<SignedControlPlaneAuth> {
-  const applicationIdentity = identity(subject)
+async function signed(authority: D1WorkspaceAuthority, subject: string, issuer?: string): Promise<SignedControlPlaneAuth> {
+  const applicationIdentity = identity(subject, issuer)
   const result = await new D1ApplicationIdentityAuthority(authority.accessContext(), { kind: "claxedo-hosted" }).ensureApplicationIdentity(applicationIdentity)
   if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
   const principal: ControlPlanePrincipal = {
@@ -349,6 +349,37 @@ describe("D1 private multiplayer session authority", () => {
       organizationAdministratorRefusedWithoutAGrant: true,
       offerRefusedOutsideTheOrganization: true,
     })
+  })
+
+  test("a share offered to someone outside the organization is refused exactly as one offered to nobody", async () => {
+    const input = await setup()
+    const { alice, outsider } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_probe", sessionId: "ses_probe" })
+    const refusal = (target: Record<string, string>) =>
+      input.sessions.grantSessionShare(alice, { sessionId: "ses_probe", workspaceId: "ws_main", ...target })
+        .then(() => undefined, (error: { code?: string; status?: number }) => ({ code: error.code, status: error.status }))
+
+    const outside = await refusal({ grantedToUserId: outsider.principal!.userId })
+    expect(outside).toEqual({ code: "session_share_target_not_found", status: 404 })
+    expect(await refusal({ grantedToUserId: "usr_does_not_exist" })).toEqual(outside)
+    expect(await refusal({ grantedToTokenIdentifier: outsider.user.tokenIdentifier })).toEqual(outside)
+    expect(await refusal({ grantedToTokenIdentifier: "https://auth.example.test|nobody" })).toEqual(outside)
+  })
+
+  test("a bare subject two issuers' users share names nobody, while issuer and subject together name one", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const member = await signed(input.workspace, "shared-subject")
+    const stranger = await signed(input.workspace, "shared-subject", "https://other-issuer.example.test")
+    expect(stranger.principal!.userId).not.toBe(member.principal!.userId)
+    await inviteOrgMember(input.database, alice, { orgId: "org_acme", userPublicId: member.principal!.userId, role: "member" })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_subject", sessionId: "ses_subject" })
+    const share = { sessionId: "ses_subject", workspaceId: "ws_main" }
+
+    await expect(input.sessions.grantSessionShare(alice, { ...share, grantedToSubject: "shared-subject" }))
+      .rejects.toMatchObject({ code: "session_share_target_not_found" })
+    await expect(input.sessions.grantSessionShare(alice, { ...share, grantedToTokenIdentifier: member.user.tokenIdentifier }))
+      .resolves.toMatchObject({ recipientUserId: member.principal!.userId })
   })
 
   test("satisfies the provider-neutral session-share runtime-token conformance surface", async () => {
