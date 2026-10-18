@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname } from "node:path"
 import { resolveAccountBindingSelection, type AccountBindingId } from "./vite.account-binding"
-import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
+import { webDocumentPlugin } from "./vite.web-document"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
 const shikiThemesDist = normalizePath(
@@ -81,7 +81,7 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
+    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webDocumentPlugin(env.VITE_CLAXEDO_SERVER_URL)],
     publicDir: "public",
     server: {
       host: "0.0.0.0",

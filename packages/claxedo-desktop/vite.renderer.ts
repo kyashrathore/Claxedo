@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import type { ConfigEnv, UserConfig } from "vite"
 import type { PluginOption } from "vite"
 import { cloudConfig } from "../claxedo-app/vite.cloud.config"
-import { WEB_CONTENT_SECURITY_POLICY_PLUGIN } from "../claxedo-app/vite.content-security-policy"
+import { WEB_DOCUMENT_PLUGIN } from "../claxedo-app/vite.web-document"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
@@ -22,8 +22,8 @@ function appAliases(config: UserConfig) {
   ]
 }
 
-function isWebContentSecurityPolicy(plugin: PluginOption) {
-  return typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === WEB_CONTENT_SECURITY_POLICY_PLUGIN
+function isWebDocument(plugin: PluginOption) {
+  return typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === WEB_DOCUMENT_PLUGIN
 }
 
 function localServerUrl() {
@@ -38,7 +38,7 @@ export function createElectronRenderer(env: ConfigEnv): UserConfig {
     base: "./",
     publicDir: normalize(path.join(appDir, "public")),
     plugins: [
-      ...(app.plugins ?? []).filter((plugin) => !isWebContentSecurityPolicy(plugin)),
+      ...(app.plugins ?? []).filter((plugin) => !isWebDocument(plugin)),
       desktopRendererBoundaryManifestPlugin(desktopDir),
     ],
     server: {

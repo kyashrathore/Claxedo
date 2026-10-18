@@ -37,7 +37,7 @@
   # old browsers.
   X-Frame-Options: SAMEORIGIN
   # The fetch directives are enforced by the build's <meta http-equiv> policy
-  # (vite.content-security-policy.ts), which names the exact server and relay
+  # (vite.web-document.ts), which names the exact server and relay
   # origins. A meta policy cannot carry frame-ancestors, so it stays here.
   Content-Security-Policy: frame-ancestors 'self'
 
