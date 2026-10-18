@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { after, afterEach, before, describe, it } from "node:test"
-import { generateKeyPair } from "jose"
+import { exportJWK, generateKeyPair } from "jose"
 import type { PluginProjection, RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import { ORG_ACCOUNT_UNAVAILABLE, type ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import { asRecord, asString } from "@claxedo/helpers/guards"
@@ -15,7 +15,7 @@ import { startScriptedModelServer, type ScriptedModelServer } from "../../harnes
 import { eventually } from "../../harness/e2e/harness/eventually"
 import { releasePort, reservePort } from "../../harness/e2e/harness/ports"
 import { controlPlaneStandIn, OWNER } from "./test-support/control-plane"
-import { bundleSessionHostWorker, sessionHostClient, startSessionHostWorker } from "./test-support/session-host-worker"
+import { bundleSessionHostWorker, sessionHostClient, startSessionHostWorker, type RelayKeySet } from "./test-support/session-host-worker"
 import { startWorkspaceMachine } from "./test-support/workspace-machine"
 
 const SECRET = "pi-session-host-secret"
@@ -119,8 +119,20 @@ void describe("SessionDO under workerd with PiHarness", () => {
   const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key", revision: 3 }
   const openai = (secret: string) => ({ openai: { delivery: "direct" as const, baseUrl: model.url, apiPath: "/v1", secret, authKind: "api-key" as const, account: OPENAI_ACCOUNT } })
 
-  async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>>; refused?: Record<string, Record<string, ProviderUnavailable>> } = {}) {
+  async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>>; refused?: Record<string, Record<string, ProviderUnavailable>>; relayKeySet?: boolean } = {}) {
     const creator = options.creator ?? OWNER
+    let keySetFetches = 0
+    const keySet: RelayKeySet = {
+      url: "https://relay.test/.well-known/jwks.json",
+      fetch: async (request) => {
+        if (new URL(request.url).pathname === "/.well-known/jwks.json") {
+          keySetFetches += 1
+          return Response.json({ keys: [{ ...await exportJWK(relayHost.publicKey), alg: "EdDSA", use: "sig" }] })
+        }
+        const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer()
+        return fetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }), redirect: "manual" })
+      },
+    }
     const controlPlane = controlPlaneStandIn({
       root, relayHostKey: relayHost.publicKey, runtimeAccessKey: runtimeAccess.privateKey,
       accounts: () => options.accounts ?? { [OWNER]: openai(SECRET) }, ...(options.refused ? { refused: () => options.refused! } : {}), plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
@@ -129,7 +141,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     })
     if (options.leaseTtlMs) controlPlane.control.leaseTtlMs = options.leaseTtlMs
     const boot = async () => {
-      const worker = await startSessionHostWorker({ script, persist, relayHostKey: relayHost.publicKey, controlPlane: controlPlane.fetch })
+      const worker = await startSessionHostWorker({ script, persist, relayHostKey: options.relayKeySet ? keySet : relayHost.publicKey, controlPlane: controlPlane.fetch })
       running.push(worker)
       return worker
     }
@@ -166,7 +178,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
         return database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%'").all().map((row) => String(row.name))
       } finally { database.close() }
     }
-    return { json, as, controlPlane, prompt, messages, settled, crash, tables, sqlite }
+    return { json, as, controlPlane, prompt, messages, settled, crash, tables, sqlite, keySetFetches: () => keySetFetches }
   }
 
   async function pidFrom(file: string) {
@@ -311,6 +323,24 @@ void describe("SessionDO under workerd with PiHarness", () => {
         host.controlPlane.calls.rows.some((publication) => publication.rows.some((row) => readField(row.lastTurn, "status") === "failed")) ? true : undefined, 30_000)
     } finally { restore() }
     assert.deepEqual(host.controlPlane.calls.refusals, [])
+  })
+
+  void it("fetches the relay's published key set once per start, before its concurrent first reads are verified, never once per read", { timeout: 120_000 }, async () => {
+    const root = "ses_key_set"
+    const host = await session(root, { relayKeySet: true })
+    await host.prompt("msg_key_set", "Reply with exactly this one token: PIKEYSET")
+    await host.settled("PIKEYSET")
+    assert.equal(host.keySetFetches(), 1)
+    await host.crash()
+    const [outline, queue, open] = await Promise.all([
+      host.json<{ session: { id: string } }>(`/session/${root}/outline?rows=40&cols=120&reasoning=0&shell=0&edit=0`),
+      host.json<unknown[]>(`/session/${root}/queue`),
+      host.json<{ status: unknown }>(`/session/${root}?view=open`),
+    ])
+    assert.equal(outline.session.id, root)
+    assert.deepEqual(queue, [])
+    assert.ok("status" in open)
+    assert.equal(host.keySetFetches(), 2)
   })
 
   void it("keeps delivered model options after an idle object restart without requesting another secret delivery", { timeout: 120_000 }, async () => {

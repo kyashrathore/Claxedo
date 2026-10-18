@@ -188,6 +188,8 @@ export type LoadRelayHostVerificationKeyEnv = {
   WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM?: string | undefined
 }
 
+export type RelayHostVerificationKey = CryptoKey | ReturnType<typeof createRemoteJWKSet>
+
 /**
  * `WORKSPACE_RUNTIME_RELAY_JWKS_URL` wins over
  * `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM`: a remote key set lets the relay
@@ -199,7 +201,7 @@ export type LoadRelayHostVerificationKeyEnv = {
  */
 export async function loadRelayHostVerificationKeyOrJwks(
   env: LoadRelayHostVerificationKeyEnv,
-): Promise<RelayKey> {
+): Promise<RelayHostVerificationKey> {
   const jwksUrl = trimToUndefined(env.WORKSPACE_RUNTIME_RELAY_JWKS_URL)
   if (jwksUrl) {
     return createRemoteJWKSet(new URL(jwksUrl))

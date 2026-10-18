@@ -4,7 +4,7 @@ import type { TurnExecutionAccess } from "@claxedo/harness/contract"
 import {
   errorBody, remoteWorkspaceSessionAccessPolicy, RuntimeStoreSchemaMismatchError, type SessionAccessPolicy,
 } from "@claxedo/session-core"
-import { createRelayHostAuthMiddleware, loadRelayHostVerificationKeyOrJwks, type RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
+import { createRelayHostAuthMiddleware, loadRelayHostVerificationKeyOrJwks, type RelayHostAuthOptions, type RelayHostVerificationKey } from "@claxedo/session-core/relay-host"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable"
@@ -60,7 +60,12 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
   private readonly placement: DurablePiPlacement
   private readonly lifecycle: Lifecycle
   private readonly controlPlane: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-  private key: Promise<RelayHostAuthOptions["key"]> | undefined
+  private key: Promise<RelayHostVerificationKey> | undefined
+  /** Verifies against the key once it is loaded, so the host is composed, and the start goes on, while the key set is still on its way. */
+  private readonly verifier: RelayHostAuthOptions["key"] = async (header, token) => {
+    const key = await this.verificationKey()
+    return typeof key === "function" ? key(header, token) : key
+  }
   private hosting: Promise<SessionHost> | undefined
   private erasing = false
   private erased = false
@@ -149,7 +154,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     if (claimed && !unstarted) return (await this.host()).app.fetch(request)
     const workspaceId = claimed ?? request.headers.get("x-workspace-id")
     if (!workspaceId) return Response.json(errorBody("relay_workspace_required", "Relay request workspace header is required"), { status: 400 })
-    const gate = new Hono().use("*", createRelayHostAuthMiddleware({ key: await this.verificationKey(), workspaceId, hostId: sessionHostId(this.root) }))
+    const gate = new Hono().use("*", createRelayHostAuthMiddleware({ key: this.verifier, workspaceId, hostId: sessionHostId(this.root) }))
     if (!unstarted) {
       return gate.all("*", async (c) => {
         this.meta.claimWorkspace(workspaceId)
@@ -167,14 +172,25 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
       .fetch(request)
   }
 
+  /**
+   * A key set the relay publishes is fetched by jose on the first
+   * verification, and on Workers jose shares no fetch in flight, so a cold
+   * object's concurrent first requests each fetched it, one after the start.
+   * The one fetch leaves from the start instead and the key is held back
+   * until it landed, so every verification finds the set loaded. A fetch that
+   * fails here is made again by the verification.
+   */
   private verificationKey() {
-    this.key ??= loadRelayHostVerificationKeyOrJwks(this.env)
+    this.key ??= loadRelayHostVerificationKeyOrJwks(this.env).then(async (key) => {
+      if (typeof key === "function") await key.reload().catch(() => undefined)
+      return key
+    })
     return this.key
   }
 
   private host(): Promise<SessionHost> {
-    const hosting = this.hosting ?? this.verificationKey().then((key) => composeSessionHost({
-      root: this.root, workspaceId: this.meta.workspaceId()!, storage: this.ctx.storage, key, policy: this.policy,
+    const hosting = this.hosting ?? Promise.resolve().then(() => composeSessionHost({
+      root: this.root, workspaceId: this.meta.workspaceId()!, storage: this.ctx.storage, key: this.verifier, policy: this.policy,
       placement: this.placement, held: () => this.turns.held(this.root),
       authorityUrl: this.env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL, controlPlane: this.controlPlane,
       onTurnOutcome: (observed) => {
@@ -208,7 +224,14 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     return access
   }
 
+  /**
+   * Runs inside the Lifecycle's `blockConcurrencyWhile`, which delivers during
+   * the start only the events the callback itself started, so the key set's
+   * fetch leaves from here: started before the start, its answer would be held
+   * until the start ends.
+   */
   private async boot(): Promise<void> {
+    void this.verificationKey()
     if (!this.meta.workspaceId()) return
     const host = await this.host()
     host.store.recoverBusySessions()
