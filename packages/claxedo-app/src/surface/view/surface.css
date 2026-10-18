@@ -146,7 +146,32 @@
 }
 
 [data-slot="surface-progress"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
+
+  [data-slot="progress-header"] {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--v2-text-text-muted);
+  }
+
+  [data-slot="progress-track"] {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--v2-border-border-muted);
+  }
+
+  [data-slot="progress-fill"] {
+    width: var(--kb-progress-fill-width);
+    height: 100%;
+    border-radius: inherit;
+    background: var(--v2-text-text-accent);
+  }
 }
 
 [data-slot="surface-spinner"] {

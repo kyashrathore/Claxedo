@@ -29,7 +29,7 @@ export function toolCallDecision(reader: AppReader, name: string, tool: McpAppTo
 }
 
 function argumentsPreview(args: Readonly<Record<string, unknown>>): string {
-  const text = JSON.stringify(args, null, 2)
+  const text = JSON.stringify(args)
   return text.length > ARGUMENTS_PREVIEW_CHARS ? `${text.slice(0, ARGUMENTS_PREVIEW_CHARS)}…` : text
 }
 
