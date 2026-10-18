@@ -219,7 +219,11 @@ export async function runScenarios(input: RunInput): Promise<ScenarioRun> {
     }
   }
   const root = await coldStep("cold-root", `${target.url}/`, true, { required: ["rail"] })
-  await root.context.close()
+  try {
+    await attempt("first-session/press", root.page, () => measure(input, root, { scenario: "first-session", step: "press", cache: "warm", reference: "input", ...sessionMarks(first.id), act: () => pressRailRow(root.page, first.id) }))
+  } finally {
+    await root.context.close()
+  }
 
   const chain = await coldStep("cold-session", first.url, true, sessionMarks(first.id))
   const { page } = chain
