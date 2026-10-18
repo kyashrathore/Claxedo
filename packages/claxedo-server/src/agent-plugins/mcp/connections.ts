@@ -80,6 +80,7 @@ function discovery(input: HostedMcpOAuthConfiguration, server: RetainedServer, s
     resourceUrl: server.server.url,
     fetch: input.fetch,
     resolve: input.resolve,
+    loopback: false,
     ...(selectedIssuer ? { selectedIssuer } : {}),
     ...(input.preRegistered ? { preRegistered: input.preRegistered } : {}),
     ...(input.clientIdMetadataDocumentUrl ? { clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl } : {}),
@@ -98,7 +99,7 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
 }>): HostedDynamicConnectionIntegrations {
   const authentication = hostedMcpCatalogAuthentication(input.oauth)
   // Retained endpoints must pass address validation again when credentials are sent.
-  const tokenFetch = createSafeEndpointFetch(input.oauth.fetch, input.oauth.resolve)
+  const tokenFetch = createSafeEndpointFetch(input.oauth.fetch, input.oauth.resolve, { loopback: false })
   return async (context) => {
     // Built-in integrations (GitHub's device grant) settle through their own
     // declaration; decoding their attempt or fields as MCP OAuth fails them.

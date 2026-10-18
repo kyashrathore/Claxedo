@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
+import { createSafeEndpointFetch } from "./discovery"
 import { forwardMcpGatewayRequest, McpGatewayError } from "./gateway"
 
 describe("MCP transport gateway", () => {
@@ -65,6 +66,16 @@ describe("MCP transport gateway", () => {
     })).rejects.toMatchObject({ code: "upstream-redirect" } satisfies Partial<McpGatewayError>)
     expect(calls).toHaveLength(1)
     expect(calls[0]?.[1]?.redirect).toBe("manual")
+  })
+
+  test("answers upstream-unreachable when the injected fetch refuses the destination", async () => {
+    await expect(forwardMcpGatewayRequest({
+      request: new Request("https://gateway.example/mcp", { method: "POST", body: "{}" }),
+      resource: "https://127.0.0.1/mcp",
+      token: "upstream-token",
+      tokenType: "bearer",
+      fetch: createSafeEndpointFetch(async () => new Response("{}"), async () => ["93.184.216.34"], { loopback: false }),
+    })).rejects.toMatchObject({ code: "upstream-unreachable" } satisfies Partial<McpGatewayError>)
   })
 
   test("rejects unsafe resources and methods before token-bearing fetch", async () => {
