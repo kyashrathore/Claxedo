@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test"
-import { expect, test, UI, type SignedStack } from "../harness"
+import { expect, storeOwnerKey, test, UI, type SignedStack } from "../harness"
 import { hostedFetch, inviteHostedPerson } from "../../../harness/e2e/harness/hosted-auth"
-import { chooseSettings, openSection } from "./15-settings.navigation"
+import { chooseSettings, harnessSection, openSection } from "./15-settings.navigation"
 
 async function colleague(signed: SignedStack, name: string) {
   const person = await signed.signUp(name)
@@ -156,4 +156,15 @@ test("53 settings on the web: a member chooses the organization account but neit
   await expect(drawer.getByRole("radio", { name: /^For the organization/ })).toHaveCount(0)
   await drawer.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(drawer).toHaveCount(0)
+})
+
+test("53 settings on the web: Claude Code's Models tab lists the account's models from the hosted plane and says nothing of a computer, its folders or its CLI", async ({ signed, page, isMobile }) => {
+  await storeOwnerKey(signed, "claude-sdk", "sk-ant-api03-owner")
+  await signed.signIn(page, signed.owner)
+  await openSettings(page, isMobile)
+  await openSection(page, isMobile, "Models")
+  const claude = harnessSection(page, "Claude Code")
+  await claude.getByRole("tab", { name: "Models" }).click()
+  for (const model of ["Opus", "Sonnet", "Haiku"]) await expect(claude.getByRole("switch", { name: model, exact: true })).toBeVisible()
+  await expect(claude, "the web's Models tab says nothing that applies only to a desktop").not.toHaveText(/this computer|this machine|Login on|installed|folder|\bCLI\b/i)
 })

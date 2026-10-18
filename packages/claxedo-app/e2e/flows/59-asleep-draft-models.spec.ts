@@ -5,13 +5,18 @@ async function bootsServed(signed: SignedStack) {
   return (await signed.hosted.telemetryEvents()).filter((entry) => entry.event === "workspace_ready" || entry.event === "workspace_woken").length
 }
 
-test("59 a draft on an asleep cloud workspace and Settings → Models list Claude Code's models, the draft keeps the one picked, and neither wakes the workspace", async ({ signedCloud, page }) => {
+test("59 a draft on an asleep cloud workspace and Settings → Models list Claude Code's models, the draft keeps the one picked, Settings reads no workspace, and neither wakes the workspace", async ({ signedCloud, page }) => {
   await storeOwnerKey(signedCloud, "claude-sdk", "sk-ant-api03-owner")
   const workspace = await makeCloudWorkspace(signedCloud, "main")
   await chooseOrgSandboxProvider(signedCloud, "boat", { api_key: "bx-e2e" })
   await signedCloud.signIn(page, signedCloud.owner)
   const starts: string[] = []
-  page.on("request", (request) => { if (new URL(request.url()).pathname === `/api/workspace/${workspace.id}/connection`) starts.push(request.method()) })
+  const modelReads: string[] = []
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === `/api/workspace/${workspace.id}/connection`) starts.push(request.method())
+    if (url.pathname === "/api/claxedo/agent-config/harness/options" || url.pathname === "/api/claxedo/credentials/harness-models") modelReads.push(`${url.pathname}${url.search}`)
+  })
 
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
   await expect(page.getByText("This workspace is asleep. It wakes when you send a message.", { exact: true })).toBeVisible()
@@ -32,11 +37,13 @@ test("59 a draft on an asleep cloud workspace and Settings → Models list Claud
 
   const forwarded = signedCloud.controlPlaneRequests().length
   const boots = await bootsServed(signedCloud)
+  const draftReads = modelReads.length
   await page.goto(`${signedCloud.url}/settings/models`)
   const claude = harnessSection(page, "Claude Code")
   await claude.getByRole("tab", { name: "Models" }).click()
   for (const model of ["Opus", "Sonnet", "Haiku"]) await expect(claude.getByRole("switch", { name: model, exact: true })).toBeVisible()
   await expect(claude.getByText(/couldn't list|can't list/)).toHaveCount(0)
+  expect(modelReads.slice(draftReads), "Settings reads Claude Code's models with no workspace").toEqual(["/api/claxedo/credentials/harness-models?nativeHarness=claude"])
   expect(starts.filter((method) => method === "POST"), "Settings → Models starts no workspace").toEqual([])
   expect(signedCloud.controlPlaneRequests().slice(forwarded).filter((request) => request === `POST /api/workspace/${workspace.id}/connection`)).toEqual([])
   expect(await bootsServed(signedCloud), "the server started no workspace").toBe(boots)

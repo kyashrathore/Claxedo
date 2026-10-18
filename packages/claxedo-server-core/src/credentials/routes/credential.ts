@@ -1,8 +1,8 @@
 /**
- * Credential management routes.
- *
- * Provides a dedicated API surface for listing, creating, and deleting
- * managed credentials. Used by the UI settings panels.
+ * Credential management routes, served by the daemon and the hosted plane
+ * alike: listing, creating, choosing and deleting managed credentials, and the
+ * model list of the account a native CLI harness runs on (`/harness-models`,
+ * which names no workspace and starts no CLI). Used by the UI settings panels.
  */
 
 import { ACCOUNT_SCOPES, ACCOUNT_SOURCES } from "@claxedo/account-contract/vocabulary"
@@ -53,6 +53,7 @@ import {
   type SandboxDriverKeys,
 } from "./sandbox-driver-keys"
 import { isOrgAccount, OrgAccountWriteRefusedError, orgAccountRefusal, orgSourceRefusal } from "./org-accounts"
+import { harnessModelsResponse } from "./harness-models"
 
 const log = Log.create({ service: "credential-routes" })
 
@@ -449,6 +450,13 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       const manages = rows.some(isOrgAccount) && await managesOrgAccounts(c.req.raw)
       return c.json({ scope, credentials: rows.map((row) => isOrgAccount(row) && !manages ? withoutVendorError(redact(row)) : redact(row)) })
     })
+    .get("/harness-models", (c) => harnessModelsResponse(c, {
+      store: credentials,
+      org: org(c.req.raw),
+      person: actor(c.req.raw),
+      machineLogin: !!credentials.machineLogins && localOperators.has(c.req.raw),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    }))
     .get("/account-sources", async (c) => {
       const [selections, orgRows, manages] = await Promise.all([
         credentials.accountSelections(org(c.req.raw)),

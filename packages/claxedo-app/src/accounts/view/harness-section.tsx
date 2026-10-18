@@ -1,12 +1,12 @@
 import { ProviderIcon } from "@/ui"
-import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
+import { createMemo, createSignal, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
 import { createProviderCatalog, useModelVisibility } from "@/composer"
 import type { HarnessSelection } from "@/lib/harness-selection"
 import { SettingsEmpty, SettingsListSkeleton } from "@/settings"
 import { useServer } from "@/server"
 import { useAccountsText } from "../i18n"
-import { useModelSource, groupContext, modelKeyOf } from "../model-sources"
-import { readyPlacement, type ReadyPlacement, type SettingsPlacement } from "../settings-placement"
+import { groupContext, modelKeyOf, useAccountModelSource, usePlacementModelSource, type ModelSource } from "../model-sources"
+import { readyPlacement, type SettingsPlacement } from "../settings-placement"
 import { harnessHasAccount, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { CloudChoiceHelp } from "./cloud-choice-help"
@@ -69,10 +69,10 @@ function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts
   )
 }
 
-function HarnessModels(props: { readonly harness: ModelsHarness; readonly placement: ReadyPlacement }) {
+function HarnessModels(props: { readonly harness: ModelsHarness; readonly read: () => Accessor<ModelSource>; readonly workspace?: string }) {
   const t = useAccountsText()
+  const source = props.read()
   const visibility = useModelVisibility()
-  const source = useModelSource(props.harness.selection, () => props.placement)
   const count = createMemo(() => enabledCount(source(), (item, group) => visibility.visible(modelKeyOf(item), groupContext(group, item))))
   return (
     <>
@@ -88,8 +88,23 @@ function HarnessModels(props: { readonly harness: ModelsHarness; readonly placem
           </Show>
         </div>
       </Show>
-      <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} workspace={props.placement.label} />
+      <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} {...(props.workspace ? { workspace: props.workspace } : {})} />
     </>
+  )
+}
+
+function HarnessModelsTab(props: { readonly harness: ModelsHarness; readonly placement: SettingsPlacement }) {
+  return (
+    <Show
+      when={props.harness.cli}
+      fallback={
+        <Show when={readyPlacement(props.placement)} fallback={<PlacementNote placement={props.placement} />}>
+          {(placement) => <HarnessModels harness={props.harness} read={() => usePlacementModelSource(props.harness.selection, placement)} workspace={placement().label} />}
+        </Show>
+      }
+    >
+      {(cli) => <HarnessModels harness={props.harness} read={() => useAccountModelSource(cli().id)} />}
+    </Show>
   )
 }
 
@@ -182,9 +197,7 @@ function HarnessWithTabs(props: SectionProps) {
           actions={actions}
         />
         <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>
-          <Show when={readyPlacement(props.placement)} fallback={<PlacementNote placement={props.placement} />}>
-            {(placement) => <HarnessModels harness={props.harness} placement={placement()} />}
-          </Show>
+          <HarnessModelsTab harness={props.harness} placement={props.placement} />
         </Show>
       </div>
     </section>

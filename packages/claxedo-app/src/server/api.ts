@@ -3,7 +3,7 @@ import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
-import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
+import type { HarnessId, RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { Account, AccountsApi, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
 import type { CloudCreateInput, CloudStopOutcome, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
@@ -215,6 +215,7 @@ export type ServerQueries = {
   readonly providerCatalogs: ProviderCatalogQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
+    readonly catalogOptions: (harness: HarnessId) => FetchQuery<HarnessOptions>
     readonly commands: (placementId: PlacementId, harness: string) => FetchQuery<readonly RuntimeCommand[]>
     readonly stopsBackgroundTasks: (ref: SessionLocation) => FetchQuery<boolean>
   }
