@@ -54,9 +54,9 @@ function loginRedirect() {
   }
 }
 
-async function acceptInvitation(flow: InvitationFlow) {
+async function acceptInvitation(accept: () => Promise<unknown>) {
   try {
-    await flow.accept()
+    await accept()
   } catch (cause) {
     console.error("Organization invitation acceptance failed", toAppError(cause).class)
   }
@@ -104,7 +104,7 @@ function createLoginController(token?: string) {
   createEffect(
     on(auth.state, (state) => {
       if (state.kind !== "signedIn") return
-      if (invitation) void acceptInvitation(invitation)
+      if (invitation) void acceptInvitation(invitation.resume)
       else redirect.finish()
     }),
   )
@@ -120,7 +120,7 @@ function createLoginController(token?: string) {
     continueWith: (method?: BrowserAuthMethod) => login.continueWith(method),
     joined: () => invitation?.state().kind === "joined",
     accept: () => {
-      if (invitation) void acceptInvitation(invitation)
+      if (invitation) void acceptInvitation(invitation.accept)
     },
     busy: () =>
       auth.state().kind === "signingIn" || ["authenticating", "accepting"].includes(invitation?.state().kind ?? "idle"),

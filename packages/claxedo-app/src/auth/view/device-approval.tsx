@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from "@solidjs/router"
 import { createResource, createSignal, For, Show } from "solid-js"
+import { deploymentClientName } from "../oauth-consent"
 import { DEVICE_CODE_MISSING, readDeviceAuthorization, submitDeviceDecision, type DeviceAuthorizationRequest } from "../device-authorization"
 import { appUrl } from "../origins"
 import { useAuth } from "../provider"
@@ -68,14 +69,14 @@ export function DeviceApprovalPage() {
           fallback={
             <>
               <h1 class="auth-title">Connect this device?</h1>
-              <p class="auth-subtitle">
-                Approve only if you started this sign-in yourself, and only when the code below matches the one the device is showing.
+              <p class="auth-subtitle" data-testid="device-warning">
+                Approving gives that device full access to your Claxedo account. Approve only if you just started this sign-in yourself on a computer you control; if someone sent you this link, deny it.
               </p>
               <p class="auth-code" data-testid="device-user-code">{userCode() ?? "--------"}</p>
               <Show when={grant()}>
                 {(request) => (
                   <div class="auth-panel">
-                    <p>{request().clientId ?? "An unnamed application"}</p>
+                    <p data-testid="device-client">{deploymentClientName(request().clientId) ?? request().clientId ?? "An unnamed application"}</p>
                     <Show when={request().scopes.length > 0}>
                       <p class="auth-kicker">Requested permissions</p>
                       <ul class="auth-list"><For each={request().scopes}>{(scope) => <li>{scope}</li>}</For></ul>
