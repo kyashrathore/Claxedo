@@ -6,14 +6,13 @@ import { createWorkspaceRelayDirectory } from "./directory"
 import {
   createWorkspaceRelayDurableObjectRoom,
   createWorkspaceRelayDurableObjectGateway,
-  setWorkspaceRelayAppOrigins,
-  setWorkspaceRelayAllowedOrigins,
   type WorkspaceRelayDurableObjectConnectWebSocket,
   workspaceRelayDurableObjectRoomName,
   workspaceRelayDurableObjectWorkspaceId,
   type WorkspaceRelaySocketAttachment,
   type WorkspaceRelayDurableObjectNamespace,
 } from "./cloudflare"
+import { setWorkspaceRelayAllowedOrigins, setWorkspaceRelayAppOrigins } from "./relay-cors"
 import {
   createCachedHostGenerationClient,
   type HostGenerationLookup,

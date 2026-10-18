@@ -1,5 +1,6 @@
 export * from "./auth"
 export * from "./cloudflare"
+export * from "./relay-cors"
 export * from "./cors-origins"
 export * from "./directory"
 export * from "./relay-location"
