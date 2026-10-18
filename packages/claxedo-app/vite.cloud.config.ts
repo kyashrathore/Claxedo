@@ -133,6 +133,13 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
     worker: {
       format: "es",
       plugins: () => [claxedoWorkspaceSource(), solidPlugin()],
+      // A worker build does not inherit the page build's `generatedCode:
+      // "es2015"`. Without it the markdown worker's shiki grammars and themes
+      // render `var` where @pierre/diffs' copies in the page build render
+      // `const`, so each lands twice under two hashes (336 chunks, 8.6 MB raw)
+      // and a reader who meets a language in a code block and in a diff
+      // fetches its grammar twice.
+      rollupOptions: { output: { generatedCode: "es2015" } },
     },
     optimizeDeps: {
       exclude: ["@pierre/diffs", "@pierre/theming"],
