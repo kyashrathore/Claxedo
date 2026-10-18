@@ -10,14 +10,42 @@
   border-radius: 0;
 }
 
+[data-component="dialog-v2"] .ui-dialog-container.form-dialog {
+  --dialog-v2-fit-max-height: min(calc(100dvh - 32px), 600px);
+}
+
 .form-surface-body {
-  padding: 0 16px;
+  padding: 4px 16px;
+  border-block: 1px solid transparent;
+  animation: form-surface-scroll-edges linear both;
+  animation-timeline: scroll(self);
+}
+
+@keyframes form-surface-scroll-edges {
+  0% {
+    border-block-start-color: transparent;
+    border-block-end-color: var(--v2-border-border-base);
+  }
+  2%,
+  98% {
+    border-block-start-color: var(--v2-border-border-base);
+    border-block-end-color: var(--v2-border-border-base);
+  }
+  100% {
+    border-block-start-color: var(--v2-border-border-base);
+    border-block-end-color: transparent;
+  }
 }
 
 .form-surface-fields {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.form-surface-fields .ui-select-v2-root,
+.form-surface-fields .ui-select-v2:not([data-appearance="inline"]) {
+  width: 100%;
 }
 
 .form-surface-error {

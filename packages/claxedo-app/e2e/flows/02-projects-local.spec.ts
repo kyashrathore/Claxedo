@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Page } from "@playwright/test"
-import { expect, gitFolder, sendPrompt, servingMachineName, sessionRoute, test, UI, type Stack } from "../harness"
+import { expect, expectFieldRingUnclipped, expectFooterAtDialogInset, gitFolder, sendPrompt, servingMachineName, sessionRoute, test, UI, type Stack } from "../harness"
 
 type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null; available?: boolean }
 
@@ -35,6 +35,7 @@ async function createFolderProject(app: Page, typed: string, folder: string) {
   await openCreatePanel(app)
   const create = createDialog(app)
   await expect(create.getByRole("button", { name: "Create project", exact: true })).toBeDisabled()
+  await expectFieldRingUnclipped(create.getByRole("textbox", { name: "Name (optional)" }))
   await create.getByRole("button", { name: "Choose folder" }).click()
   const dialog = app.getByRole("dialog", { name: "New Project" })
   await dialog.getByRole("textbox", { name: "Search folders" }).fill(typed)
@@ -49,6 +50,8 @@ async function cloneProject(app: Page, url: string, name: string) {
   await openCreatePanel(app)
   const create = createDialog(app)
   await create.getByRole("button", { name: "Repository", exact: true }).click()
+  await expectFieldRingUnclipped(create.getByRole("textbox", { name: "Repository URL" }))
+  await expectFieldRingUnclipped(create.getByRole("textbox", { name: "Name (optional)" }))
   await create.getByRole("textbox", { name: "Repository URL" }).fill(url)
   await create.getByRole("button", { name: "Create project", exact: true }).click()
   await expect(create).toHaveCount(0)
@@ -95,6 +98,7 @@ async function removeProject(stack: Stack, app: Page, id: string, name: string) 
     await app.getByRole("button", { name: "Remove", exact: true }).click()
     const remove = confirm.getByRole("button", { name: "Remove", exact: true })
     await expect(remove).toHaveAttribute("data-variant", "danger")
+    await expectFooterAtDialogInset(confirm, remove)
     await remove.click()
     await expect(app).toHaveURL(/\/settings\/projects$/)
     await expect(app.getByRole("region", { name: "Projects" }).getByRole("link", { name, exact: true })).toHaveCount(0)

@@ -1,5 +1,5 @@
 import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
-import { expect, test } from "../harness"
+import { expect, expectFooterAtDialogInset, test } from "../harness"
 import { saveOrgAccount } from "../harness/saved-org-account"
 
 test("15 settings: the local operator removes a saved organization account, cancellation preserves it, and the machine login stays protected", async ({ stack, app, isMobile }) => {
@@ -30,6 +30,7 @@ test("15 settings: the local operator removes a saved organization account, canc
   const confirm = app.getByRole("dialog").filter({ hasText: "Remove Saved Claude account?" })
   await remove.click()
   await expect(confirm.getByText("Used by Claude Code and Pi", { exact: true })).toBeVisible()
+  await expectFooterAtDialogInset(confirm, confirm.getByRole("button", { name: "Remove", exact: true }))
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(confirm).toHaveCount(0)
