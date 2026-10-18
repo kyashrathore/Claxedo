@@ -8,6 +8,32 @@ import { openIn, type OpenInEffects } from "./open-in"
 const platform = process.platform
 const deps = { platform, resolveAppPath: async () => null }
 
+// Each is a plain non-executable file whose OS handler runs code: WSH
+// scripts, shortcuts, registry and console files on Windows, Terminal and
+// location files on macOS, launchers on Linux.
+const LAUNCHING_DOCUMENTS = [
+  "notes.js",
+  "notes.jse",
+  "notes.vbe",
+  "notes.wsh",
+  "shortcut.lnk",
+  "shortcut.url",
+  "shortcut.pif",
+  "panel.cpl",
+  "console.msc",
+  "import.reg",
+  "app.appref-ms",
+  "library.library-ms",
+  "setting.settingcontent-ms",
+  "session.terminal",
+  "location.fileloc",
+  "location.webloc",
+  "location.inetloc",
+  "launcher.desktop",
+  "SHOUTING.JS",
+]
+const LAUNCHING_BUNDLES = ["Automator.workflow", "Pane.prefPane"]
+
 let root = ""
 const at = (name: string) => path.join(root, name)
 
@@ -20,6 +46,8 @@ beforeAll(() => {
   writeFileSync(at("tool"), "#!/bin/sh\necho pwned\n")
   chmodSync(at("tool"), 0o755)
   writeFileSync(at("plain"), "#!/bin/sh\necho pwned\n", { mode: 0o644 })
+  for (const name of LAUNCHING_DOCUMENTS) writeFileSync(at(name), "launch\n", { mode: 0o644 })
+  for (const name of LAUNCHING_BUNDLES) mkdirSync(at(name))
   mkdirSync(at("Evil.app"))
   symlinkSync(at("run.command"), at("link-to-script"))
   symlinkSync(at("run.command"), at("decoy.md"))
@@ -69,7 +97,16 @@ describe("open-path without an app", () => {
   // An execute bit exists only on POSIX; on Windows the extension set is the
   // whole test, so an extensionless file there is a document.
   const byExecuteBit = platform === "win32" ? [] : ["tool", "link-to-tool"]
-  test.each(["run.command", "run.ps1", "link-to-script", "decoy.md", "Evil.app", ...byExecuteBit])(
+  test.each([
+    "run.command",
+    "run.ps1",
+    "link-to-script",
+    "decoy.md",
+    "Evil.app",
+    ...LAUNCHING_DOCUMENTS,
+    ...LAUNCHING_BUNDLES,
+    ...byExecuteBit,
+  ])(
     "%s asks the user first and opens nothing when they decline",
     async (name) => {
       const { calls, effects } = recorder(false)
