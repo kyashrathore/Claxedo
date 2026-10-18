@@ -197,10 +197,13 @@ test("12 a warm return to a session read open, with every fold, group and row op
   await expect(app.getByText("Warm reply 4.6.")).toBeVisible()
   const timeline = app.locator(`[data-session-id="${session.id}"][data-testid="session-page-root"]`)
   const scroller = timeline.locator('[data-slot="session-timeline-scroll"] [data-scrollable]').first()
-  await scroller.evaluate(async (element) => {
-    element.scrollTo({ top: 0 })
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-  })
+  const box = (await scroller.boundingBox())!
+  await app.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(async () => {
+    await app.mouse.wheel(0, -3000)
+    await expect(timeline).toContainText("Warm turn 1")
+  }).toPass()
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0)
   await expectNothingAnimating(app)
   const openShown = async (buttons: ReturnType<Page["getByRole"]>, reads: boolean) => {
     const closed = buttons.and(app.locator('[aria-expanded="false"]'))
@@ -233,7 +236,8 @@ test("12 a warm return to a session read open, with every fold, group and row op
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   })
   await expectNothingAnimating(app)
-  const left = await scroller.evaluate((element) => ({ scrollTop: element.scrollTop, opened: element.querySelectorAll('[aria-expanded="true"]').length }))
+  const left = { scrollTop: await scroller.evaluate((element) => element.scrollTop), opened: (await stillnessAfter(app, 0)).frames.at(-1)!.opened }
+  expect(left.opened, "folds, groups and rows open on screen where the reader left").toBeGreaterThan(0)
   expect(left.scrollTop).toBeGreaterThan(0)
 
   const rail = app.getByRole("navigation", { name: UI.rail })
@@ -243,7 +247,7 @@ test("12 a warm return to a session read open, with every fold, group and row op
   await rail.getByRole("button", { name: "Warm", exact: true }).click()
   const still = sinceFirstReady(await stillnessAfter(app, IDLE_MS), from)
   expect(Math.abs(still.first.scrollTop - left.scrollTop), "scrollTop in the return's first frame against where the reader left it").toBeLessThanOrEqual(1)
-  expect(still.first.opened, "opened folds, groups and rows in the return's first frame").toBe(left.opened)
+  expect(still.first.opened, "opened folds, groups and rows on screen in the return's first frame").toBe(left.opened)
   expect(still.readsSince, "session reads of the return").toEqual([])
   expect(still.scrolls, "scroll events after the return's first frame").toBe(0)
   expect(still.scrollHeightDelta, "scrollHeight change after the return's first frame").toBe(0)

@@ -45,6 +45,13 @@ function installStillness({ sessionId, marker, scroller: inner }: { readonly ses
     if (kind) state.reads.push({ at: performance.now(), kind, path: `${url.pathname}${url.search}` })
     return send(input, init)
   }
+  const openedInView = (element: HTMLElement) => {
+    const view = element.getBoundingClientRect()
+    return [...element.querySelectorAll('[aria-expanded="true"]')].filter((opened) => {
+      const box = opened.getBoundingClientRect()
+      return box.bottom > view.top && box.top < view.bottom
+    }).length
+  }
   const timeline = `[data-session-id="${CSS.escape(sessionId)}"] [data-session-timeline-root]`
   const describe = (element: Element) => [element.tagName.toLowerCase(), ...["data-component", "data-slot"].map((name) => element.getAttribute(name)).filter(Boolean)].join(" ")
   new MutationObserver((records) => {
@@ -64,7 +71,7 @@ function installStillness({ sessionId, marker, scroller: inner }: { readonly ses
       element.addEventListener("scroll", () => state.scrolls.push({ at: performance.now(), scrollTop: element.scrollTop, framesBefore: state.frames.length }), { passive: true })
     }
     ready ||= !!element && (element.textContent ?? "").includes(marker)
-    if (element) state.frames.push({ at: performance.now(), scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, ready, opened: element.querySelectorAll('[aria-expanded="true"]').length })
+    if (element) state.frames.push({ at: performance.now(), scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, ready, opened: openedInView(element) })
     requestAnimationFrame(sample)
   }
   requestAnimationFrame(sample)

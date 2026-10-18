@@ -156,14 +156,14 @@ test("06 a Claude session created on an explicit model id keeps that model acros
   await app.goto(`${stack.url}${sessionRoute(workspace.id, haiku.id)}`)
   expect((await options).ok()).toBe(true)
   await expect(trigger).toHaveAttribute("data-ready-for-submit", "true")
-  await expect(trigger.locator('[data-slot="composer-control-label"]')).toHaveText("Haiku")
+  await expect(trigger.locator('[data-slot="composer-control-label"]')).toHaveText("Haiku 4.5")
 
   await rail.getByRole("button", { name: "Elsewhere", exact: true }).click()
   await expect(pane(other.id)).toBeVisible()
   await rail.getByRole("button", { name: "Explicit model", exact: true }).click()
   await expect(pane(haiku.id)).toBeVisible()
   await expect(trigger).toHaveAttribute("data-ready-for-submit", "true")
-  await expect(trigger.locator('[data-slot="composer-control-label"]')).toHaveText("Haiku")
+  await expect(trigger.locator('[data-slot="composer-control-label"]')).toHaveText("Haiku 4.5")
 
   await sendPrompt(app, "Reply with exactly this one token: HKU")
   const sent = () => stack.scripted.requests.filter((request) => request.prompt.includes("HKU")).map((request) => request.model)
