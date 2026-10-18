@@ -113,6 +113,7 @@ const OPEN_CODE_GLYPHS = [
   "providers",
   "models",
   "arrow-undo-down",
+  "bullet-list",
 ] as const satisfies readonly OpenCodeGlyphName[]
 
 const OPEN_CODE_ALIASES = {
