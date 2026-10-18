@@ -3,6 +3,7 @@ import path from "node:path"
 import type { DistBytes } from "./bytes"
 import type { StepResult } from "./scenarios"
 import type { WaterfallRow } from "./waterfall"
+import { median } from "./numbers"
 
 export type RunMeta = {
   readonly label: string
@@ -17,13 +18,6 @@ export type RunMeta = {
 }
 
 const MARK_COLUMNS = ["fcp", "shell", "rail", "session-text", "session-fold", "session-two-screens", "session-settled", "composer", "login", "marketplace", "settings"] as const
-
-function median(values: readonly number[]) {
-  const finite = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b)
-  if (finite.length === 0) return undefined
-  const middle = Math.floor(finite.length / 2)
-  return finite.length % 2 === 1 ? finite[middle] : ((finite[middle - 1] ?? 0) + (finite[middle] ?? 0)) / 2
-}
 
 function fmt(value: number | undefined, digits = 0) {
   return value === undefined || !Number.isFinite(value) ? "—" : value.toFixed(digits)

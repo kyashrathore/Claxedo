@@ -1,5 +1,6 @@
 import { traceText, type TraceEvent } from "../../harness/trace-events"
 import { profileFrameLabel, profileTree, type createSourceMapper, type CpuProfile } from "../panel/trace"
+import { mapTraceFrame } from "../stream-switch/main-thread"
 
 export type Mapper = ReturnType<typeof createSourceMapper>
 
@@ -30,8 +31,7 @@ function stackOf(event: TraceEvent): StackFrame[] {
 }
 
 function frameLabel(frame: StackFrame, mapper: Mapper) {
-  const file = fileOf(frame.url)
-  return `${frame.functionName || "(anon)"} ${mapper.map(file, frame.lineNumber ?? 0, frame.columnNumber ?? 0)}`
+  return `${frame.functionName || "(anon)"} ${mapTraceFrame(mapper, { url: frame.url ?? "", lineNumber: frame.lineNumber ?? 0, columnNumber: frame.columnNumber ?? 0 })}`
 }
 
 export function jsFrameAt(event: TraceEvent, script: TraceEvent, samples: { at: number[]; node: number[] }, profile: CpuProfile, mapper: Mapper) {

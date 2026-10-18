@@ -1,19 +1,13 @@
 import type { Attribution, Phase } from "./analyze"
 import type { ScenarioRow } from "./scenarios"
+import { median } from "../web/numbers"
 
 const PHASE_FIELDS = ["busyMs", "cpuMs", "tbtMs", "longTasks", "longestMs", "scriptMs", "compileMs", "styleN", "styleMs", "styleElements", "layoutN", "layoutMs", "forcedN", "forcedMs", "paintMs", "gcMs"] as const satisfies readonly (keyof Phase)[]
 const TAIL_FIELDS = ["busyMs", "cpuMs", "tbtMs", "longTasks", "longestMs", "forcedN", "styleMs", "layoutMs"] as const satisfies readonly (keyof Phase)[]
 const CENSUS_FIELDS = ["railRows", "timelineRows", "elements", "removed", "attributes", "text"] as const
 
-export function median(values: readonly number[]) {
-  const sorted = [...values].sort((a, b) => a - b)
-  if (sorted.length === 0) return Number.NaN
-  const middle = sorted.length >> 1
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
-}
-
-function format(value: number) {
-  if (!Number.isFinite(value)) return "-"
+function format(value: number | undefined) {
+  if (value === undefined) return "-"
   return Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(1)
 }
 
