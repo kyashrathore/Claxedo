@@ -115,7 +115,7 @@ export async function userDeployedBetterAuthApp(
   app.all("/api/auth/*", (c) => composed.authHandler(c.req.raw))
   app.all("*", (c) => core.fetch(c.req.raw))
 
-  const request = (pathname: string, init?: RequestInit) => app.request(new URL(pathname, USER_DEPLOYED_API).toString(), init)
+  const request = async (pathname: string, init?: RequestInit) => await app.request(new URL(pathname, USER_DEPLOYED_API).toString(), init)
   const json = (body: unknown, headers: Record<string, string> = {}) =>
     ({ method: "POST", headers: { "content-type": "application/json", origin: USER_DEPLOYED_APP, ...headers }, body: JSON.stringify(body) })
   return {
