@@ -38,7 +38,8 @@ function localeChunk(id: string): string | undefined {
 
 const vendorChunks: Record<string, readonly string[]> = {
   "vendor-solid": ["solid-js"],
-  "vendor-ui": ["@kobalte", "@floating-ui", "@corvu", "@solid-primitives", "@solidjs", "solid-prevent-scroll", "solid-presence", "solid-list", "solid-sonner", "motion", "framer-motion", "motion-dom", "motion-utils"],
+  "vendor-ui": ["@kobalte", "@floating-ui", "@corvu", "@solid-primitives", "@solidjs", "solid-prevent-scroll", "solid-presence", "solid-list", "motion", "framer-motion", "motion-dom", "motion-utils"],
+  "vendor-toast": ["solid-sonner"],
   "vendor-query": ["@tanstack"],
   "vendor-markdown": ["marked", "dompurify", "morphdom", "hast-util-to-html", "property-information", "character-entities-html4", "character-entities-legacy", "stringify-entities", "remend", "comma-separated-tokens", "space-separated-tokens", "html-void-elements", "ccount", "zwitch"],
 }
@@ -139,6 +140,12 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
     build: {
       target: "esnext",
       outDir: "dist",
+      // Two-pass terser writes the web entry graph 32,838 bytes raw and 21,197
+      // brotli smaller than esbuild (1,973,766 against 2,006,604 raw) for a build
+      // that takes 23 s instead of 13 s; the desktop renderer keeps esbuild in
+      // vite.renderer.ts.
+      minify: "terser",
+      terserOptions: { compress: { passes: 2 } },
       // PostHog Error Tracking symbolication (deploy-claxedo-app.yml).
       // "hidden" writes *.map files next to each chunk without adding a
       // `//# sourceMappingURL` comment to the bundle, so nothing shipped to
