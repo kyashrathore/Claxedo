@@ -178,6 +178,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
       method: "PATCH", body: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } },
     })
     assert.equal(response.status, 409)
+    assert.match(response.headers.get("server-timing") ?? "", /^host-start;dur=\d+, host-serve;dur=\d+$/, "every answer of the object names how long its start and its serving took")
     assert.deepEqual(await response.json(), { error: {
       code: "workspace_harness_hosted_elsewhere",
       message: "Claude Code runs in the workspace's runtime on a cloud workspace, not in this session's host. Start a new Claude Code session to use it here.",

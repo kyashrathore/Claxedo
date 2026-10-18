@@ -314,22 +314,22 @@ describe("workspace relay Cloudflare Durable Object gateway", () => {
     expect(routed[0]?.options?.locationHint).toBe("apac")
   })
 
-  test("appends gateway timing only when the room emitted sampled server-timing", async () => {
-    const namespace: WorkspaceRelayDurableObjectNamespace = {
+  test("appends gateway timing only behind the room's sampled marker; an upstream's own server-timing rides through unmarked and untouched", async () => {
+    const roomAnswering = (headers: Record<string, string>): WorkspaceRelayDurableObjectNamespace => ({
       idFromName: (name) => name,
-      get: () => ({
-        fetch: async () => new Response("room-ok", {
-          headers: { "server-timing": "relay-room;dur=1.5" },
-        }),
-      }),
-    }
-    const gateway = createWorkspaceRelayDurableObjectGateway({ namespace })
-    const res = await gateway.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health"))
+      get: () => ({ fetch: async () => new Response("room-ok", { headers }) }),
+    })
+    const sampled = await createWorkspaceRelayDurableObjectGateway({ namespace: roomAnswering({ "server-timing": "relay-room;dur=1.5", "x-claxedo-relay-sampled": "1" }) })
+      .fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health"))
+    expect(sampled.status).toBe(200)
+    expect(sampled.headers.get("server-timing")).toContain("relay-room;dur=1.5")
+    expect(sampled.headers.get("server-timing")).toContain("relay-gateway-route;dur=")
+    expect(sampled.headers.get("server-timing")).toContain("relay-gateway;dur=")
+    expect(sampled.headers.get("x-claxedo-relay-sampled")).toBeNull()
 
-    expect(res.status).toBe(200)
-    expect(res.headers.get("server-timing")).toContain("relay-room;dur=1.5")
-    expect(res.headers.get("server-timing")).toContain("relay-gateway-route;dur=")
-    expect(res.headers.get("server-timing")).toContain("relay-gateway;dur=")
+    const hostTimed = await createWorkspaceRelayDurableObjectGateway({ namespace: roomAnswering({ "server-timing": "host-start;dur=120, host-serve;dur=9" }) })
+      .fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health"))
+    expect(hostTimed.headers.get("server-timing")).toBe("host-start;dur=120, host-serve;dur=9")
   })
 
   test("uses deployment relay location hint for Durable Object routing", async () => {
@@ -2369,6 +2369,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
     expect(res.headers.get("access-control-allow-credentials")).toBeNull()
     expect(res.headers.get("content-type")).toBe("text/plain")
+    // The relay owns what a browser may read off a relayed response, and lets
+    // the app attribute the response's timing to its own origin.
+    expect(res.headers.get("access-control-expose-headers")).toBe("X-Event-Cursor, X-Next-Cursor, X-Max-Event-Ordinal, Server-Timing, X-Claxedo-Trace-Id, X-Claxedo-Relay-Location-Hint")
+    expect(res.headers.get("timing-allow-origin")).toBe("https://app.claxedo.com")
 
     const noOrigin = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {

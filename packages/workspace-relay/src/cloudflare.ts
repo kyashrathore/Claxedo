@@ -338,6 +338,18 @@ const HIBERNATED_REVOCATION_ALARM_INTERVAL_MS_DEFAULT = 30_000
 const HOST_GENERATION_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
 const TRACE_FORCE_HEADER = "x-claxedo-relay-trace"
+/**
+ * Set by a room on a sampled trace's response and consumed by the gateway: the
+ * gateway appends its own phases only behind this marker, never behind an
+ * upstream's `server-timing`, which a session host answers on every response.
+ */
+const TRACE_SAMPLED_RESPONSE_HEADER = "x-claxedo-relay-sampled"
+/**
+ * What a browser may read off a relayed response beyond the CORS-safelisted
+ * names: the runtime's read position and page cursors, the relay's trace and
+ * placement, and the timing that `timing-allow-origin` lets it attribute.
+ */
+const RELAY_EXPOSED_RESPONSE_HEADERS = "X-Event-Cursor, X-Next-Cursor, X-Max-Event-Ordinal, Server-Timing, X-Claxedo-Trace-Id, X-Claxedo-Relay-Location-Hint"
 
 type HostTunnelSocket = {
   hostId: string
@@ -474,6 +486,7 @@ function withTraceHeaders(response: Response, trace: RelayTrace) {
   if (timing) {
     const existing = headers.get("server-timing")
     headers.set("server-timing", existing ? `${existing}, ${timing}` : timing)
+    headers.set(TRACE_SAMPLED_RESPONSE_HEADER, "1")
   }
   return new Response(response.body, {
     status: response.status,
@@ -864,7 +877,9 @@ function corsHeaders(request: Request): Record<string, string> | undefined {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
     "access-control-allow-headers": RELAY_ALLOWED_REQUEST_HEADERS,
+    "access-control-expose-headers": RELAY_EXPOSED_RESPONSE_HEADERS,
     "access-control-max-age": "86400",
+    "timing-allow-origin": origin,
     vary: "Origin",
   }
 }
@@ -1019,11 +1034,13 @@ export function createWorkspaceRelayDurableObjectGateway(
       })
       const gatewayFinishedAt = performance.now()
       // Only append gateway phase timings when the room decided this trace was
-      // sampled (signalled by the room having emitted its own server-timing).
-      // The sampling decision lives in the room, cannot be forced by client
-      // headers, and keeps timing internals off ordinary production responses.
-      const roomTiming = tracedResponse.headers.get("server-timing")
-      if (roomTiming) {
+      // sampled. The sampling decision lives in the room, cannot be forced by
+      // client headers, and keeps timing internals off ordinary production
+      // responses; a session host's own `server-timing` rides through unmarked.
+      const sampled = tracedResponse.headers.get(TRACE_SAMPLED_RESPONSE_HEADER) === "1"
+      tracedResponse.headers.delete(TRACE_SAMPLED_RESPONSE_HEADER)
+      const roomTiming = tracedResponse.headers.get("server-timing") ?? ""
+      if (sampled) {
         const gatewayTiming = [
           `relay-gateway-route;dur=${roundedMs(routeFinishedAt - gatewayStartedAt)}`,
           `relay-gateway-do-fetch;dur=${roundedMs(fetchFinishedAt - routeFinishedAt)}`,
@@ -2256,7 +2273,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       trace && (trace.routeKind = "host-tunnel-http")
       return forwardHostTunnelHttp(request, authorized.request, trace)
     }
-    if (isSessionHostTarget(authorized.request.target)) return forwardSessionHostHttp(options.sessionHost, request, authorized.request)
+    if (isSessionHostTarget(authorized.request.target)) {
+      trace && (trace.routeKind = "session-host-http")
+      return traceSpan(trace, "session-host-fetch", () => forwardSessionHostHttp(options.sessionHost, request, authorized.request))
+    }
     trace && (trace.routeKind = "cloud-http")
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), options.forwardTimeoutMs ?? 30_000)

@@ -67,6 +67,8 @@ export type SessionRoutesOptions = {
   readAttachment?: AttachmentReader
   sessionStarts?: AgentSessionStarts
   eventHub?: RuntimeEventHub
+  /** The runtime's event feed position, which every read answers so a reader can tell whether its stream covers the read. */
+  eventCursor?: () => string
   sessionAccessPolicy?: SessionAccessPolicy
   beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
   /** The harness a draft read runs on: what the request named, or this host's default. */
@@ -351,6 +353,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
     },
     beforeSessionOperation: (_c, input) => options.beforeSessionOperation?.(input),
     sessionAccessPolicy: options.sessionAccessPolicy,
+    ...(options.eventCursor ? { eventCursor: options.eventCursor } : {}),
     heldTurnLeases,
     sessionStarts: options.sessionStarts,
     listSessions: options.listSessions ? (c, directory) => options.listSessions!(c, requiredDirectory(directory)) : undefined,

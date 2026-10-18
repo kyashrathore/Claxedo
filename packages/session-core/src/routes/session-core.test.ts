@@ -509,6 +509,26 @@ describe("createSessionRoutes message paging", () => {
     expect(unsupported.status).toBe(501)
   })
 
+  test("a read answers the event feed position of its arrival, so a reader can tell whether its stream covers it; a refused read and a write answer none", async () => {
+    let at = 0
+    const outline: TurnOutline = { turns: [], complete: true }
+    const app = readRoutes({
+      eventCursor: () => `feed_1.${at}`,
+      getTurnOutline: (_c, _directory, sessionId) => {
+        at += 1
+        return sessionId === "session-1" ? outline : undefined
+      },
+    })
+
+    at = 4
+    const served = await app.request("http://localhost/session/session-1/outline")
+    expect(served.status).toBe(200)
+    expect(served.headers.get("X-Event-Cursor"), "the position when the request arrived, not when its answer was built").toBe("feed_1.4")
+    expect((await app.request("http://localhost/session/session-1?view=open")).headers.get("X-Event-Cursor")).toBe("feed_1.5")
+    expect((await app.request("http://localhost/session/session-2/outline")).headers.get("X-Event-Cursor")).toBeNull()
+    expect((await app.request("http://localhost/session/session-1", { method: "PATCH", body: "{}", headers: { "content-type": "application/json" } })).headers.get("X-Event-Cursor")).toBeNull()
+  })
+
   const pagedTurn = (index: number): AgentMessage[] => {
     const user = `user-${index}`
     const worked = `assistant-${index}-a`

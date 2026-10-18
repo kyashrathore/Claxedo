@@ -9,6 +9,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import {
   connectionIdForHarness,
+  EVENT_CURSOR_HEADER,
   parseRecoveryRequest,
   RecoveryContractError,
   sameSessionHarness,
@@ -522,6 +523,11 @@ export function createSessionRoutes(opts: Opts) {
   app.onError((err, c) => {
     if (!isRequestBodyTooLarge(err) && !(err instanceof HTTPException) && !isAgentRuntimeTurnConflictError(err)) console.error(err)
     return requestErrorResponse(err, c)
+  })
+  app.use("*", async (c, next) => {
+    const cursor = c.req.method === "GET" ? opts.eventCursor?.() : undefined
+    await next()
+    if (cursor && c.res.ok) c.res.headers.set(EVENT_CURSOR_HEADER, cursor)
   })
   const identityChanges = sessionIdentityChanges()
   const withSessionChange = identityChanges.run

@@ -116,11 +116,14 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     let failure: unknown
     const started = await this.lifecycle.start().then(() => true, (error: unknown) => { failure = error; return false })
     const startedAt = Date.now()
-    const response = started ? await this.lifecycle.fetch(request) : await this.unstarted(request, failure)
-    const ms = Date.now() - arrivedAt
+    const answered = started ? await this.lifecycle.fetch(request) : await this.unstarted(request, failure)
+    const servedAt = Date.now()
+    const ms = servedAt - arrivedAt
     if (ms >= SLOW_REQUEST_MS) {
-      console.warn("Slow session host request", { method: request.method, path: new URL(request.url).pathname, status: response.status, ms, startMs: startedAt - arrivedAt })
+      console.warn("Slow session host request", { method: request.method, path: new URL(request.url).pathname, status: answered.status, ms, startMs: startedAt - arrivedAt })
     }
+    const response = new Response(answered.body, answered)
+    response.headers.set("Server-Timing", `host-start;dur=${startedAt - arrivedAt}, host-serve;dur=${servedAt - startedAt}`)
     return response
   }
 
