@@ -1,0 +1,13 @@
+{
+  "name": "claxedo-plugin-release-train",
+  "version": "0.1.0",
+  "type": "module",
+  "claxedo": {
+    "id": "release-train",
+    "name": "Release train",
+    "version": "0.1.0",
+    "app": "./src/app.ts",
+    "requires": [],
+    "server": { "routes": [], "operations": [] }
+  }
+}

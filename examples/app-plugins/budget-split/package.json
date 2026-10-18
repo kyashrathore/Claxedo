@@ -1,0 +1,13 @@
+{
+  "name": "claxedo-plugin-budget-split",
+  "version": "0.1.0",
+  "type": "module",
+  "claxedo": {
+    "id": "budget-split",
+    "name": "Trip budget",
+    "version": "0.1.0",
+    "app": "./src/app.ts",
+    "requires": [],
+    "server": { "routes": [], "operations": [] }
+  }
+}

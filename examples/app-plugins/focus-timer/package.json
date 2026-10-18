@@ -1,0 +1,13 @@
+{
+  "name": "claxedo-plugin-focus-timer",
+  "version": "0.1.0",
+  "type": "module",
+  "claxedo": {
+    "id": "focus-timer",
+    "name": "Focus timer",
+    "version": "0.1.0",
+    "app": "./src/app.ts",
+    "requires": [],
+    "server": { "routes": [], "operations": [] }
+  }
+}

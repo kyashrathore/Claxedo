@@ -1,0 +1,13 @@
+{
+  "name": "claxedo-plugin-workbench-monitor",
+  "version": "0.1.0",
+  "type": "module",
+  "claxedo": {
+    "id": "workbench-monitor",
+    "name": "Workbench monitor",
+    "version": "0.1.0",
+    "app": "./src/app.ts",
+    "requires": [],
+    "server": { "routes": [], "operations": [] }
+  }
+}
