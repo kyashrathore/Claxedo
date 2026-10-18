@@ -59,7 +59,7 @@ function enclosedByScript(event: TraceEvent, scripts: readonly TraceEvent[]) {
   let high = scripts.length - 1
   while (low <= high) {
     const middle = (low + high) >> 1
-    const candidate = scripts[middle]!
+    const candidate = scripts[middle]
     if (candidate.ts > event.ts) high = middle - 1
     else if (end(candidate) < event.ts) low = middle + 1
     else return candidate
@@ -142,9 +142,9 @@ function selfIn(profile: CpuProfile, samples: Samples, mapper: Mapper, from: num
   const { byId } = profileTree(profile)
   const rows: { where: string; us: number }[] = []
   for (let index = 0; index < samples.at.length; index += 1) {
-    const at = samples.at[index]!
+    const at = samples.at[index]
     if (at < from || at >= to) continue
-    const frame = byId.get(samples.node[index]!)?.callFrame
+    const frame = byId.get(samples.node[index])?.callFrame
     if (!frame || IDLE.has(frame.functionName)) continue
     rows.push({ where: profileFrameLabel(mapper, frame), us: samples.delta[index] ?? 0 })
   }

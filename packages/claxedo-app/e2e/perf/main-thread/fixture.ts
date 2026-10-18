@@ -4,7 +4,7 @@ import { git } from "../../../../harness/e2e/harness/git"
 import type { Workspace } from "../../../../harness/e2e/harness/workspaces"
 import type { ClaxedoApi } from "../../harness/api"
 import type { Stack } from "../../harness/stack"
-import { acpScriptToken } from "../../../../harness/e2e/harness/acp/script"
+import { acpScriptToken, type AcpScript } from "../../../../harness/e2e/harness/acp/script"
 import { seedScriptedSession } from "../seed"
 import { seedTurnScript } from "../stream-script"
 import { seedCorpusSession } from "./corpus-seed"
@@ -36,7 +36,7 @@ async function withValues(workspace: Workspace) {
 
 export async function seedFixture(stack: Stack, api: ClaxedoApi, input: FixtureInput): Promise<Fixture> {
   const workspace = await withValues(await stack.daemon.makeWorkspace("main-thread", "Main thread"))
-  const writeScript = stack.acp.write
+  const writeScript = (name: string, script: AcpScript) => stack.acp.write(name, script)
   const directory = workspace.directory
   const seedShort = (title: string, turns: number) => seedScriptedSession({ api, directory, writeScript, title, turns })
   for (let index = 0; index < input.railSessions; index += 1) await seedShort(`rail-${index}`, 1)
@@ -47,8 +47,9 @@ export async function seedFixture(stack: Stack, api: ClaxedoApi, input: FixtureI
   for (const mib of input.longMiB) {
     const started = Date.now()
     const seeded = await seedCorpusSession({ api, directory, writeScript, title: `long-${mib}mib`, targetBytes: (mib * MIB) / MESSAGE_BYTES_PER_FIXTURE_BYTE, endText: longEndText(mib) })
-    long[`${mib}m`] = await target(api, directory, seeded.sessionId)
-    console.log(`[main-thread] seeded ${mib} MiB session: ${seeded.turns} turns, ${long[`${mib}m`]!.bytes} message bytes in ${Date.now() - started} ms`)
+    const session = await target(api, directory, seeded.sessionId)
+    long[`${mib}m`] = session
+    console.log(`[main-thread] seeded ${mib} MiB session: ${seeded.turns} turns, ${session.bytes} message bytes in ${Date.now() - started} ms`)
   }
   return { workspace, railSessions: input.railSessions, long, shorts }
 }

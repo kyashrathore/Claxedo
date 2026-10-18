@@ -5,6 +5,7 @@ import { enclosingFunction, functionName, unwrap, walk } from "./lib/tree"
 
 const timerOwners: Readonly<Record<string, string>> = {
   "src/lib/age-clock.ts": "the app's one age clock: one timeout at the next instant a visible age label changes, none while the page is hidden",
+  "src/server/stream.ts": "the event stream's stall watchdog: one timeout per open attempt that, firing before the stream has been silent for the stall timeout, waits out the rest of it instead of being re-armed on every frame",
   "src/lib/second-ticker.ts": "the clock's ref-counted 1 s tick, running only while a running tool's elapsed time or a retry countdown reads it",
 }
 const pacingOwners: Readonly<Record<string, string>> = {

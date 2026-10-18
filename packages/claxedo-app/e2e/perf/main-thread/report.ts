@@ -9,7 +9,7 @@ export function median(values: readonly number[]) {
   const sorted = [...values].sort((a, b) => a - b)
   if (sorted.length === 0) return Number.NaN
   const middle = sorted.length >> 1
-  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
 }
 
 function format(value: number) {
