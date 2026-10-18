@@ -1,4 +1,4 @@
-import { createMemo, For, Match, Show, Switch } from "solid-js"
+import { createMemo, createUniqueId, For, Match, Show, Switch } from "solid-js"
 import { Checkbox, RadioGroup, RadioItem, Select } from "@/ui"
 import { boundTextList, createBoundValue } from "../binding"
 import type { SurfaceNodeProps } from "../model"
@@ -80,15 +80,23 @@ export function ChoicePickerView(props: SurfaceNodeProps<"ChoicePicker">) {
   const label = () => (props.def.label === undefined ? undefined : read.text(props.def.label, props.scope))
   const displayStyle = () => props.def.displayStyle ?? "checkbox"
   const exclusive = () => props.def.variant !== "multipleSelection"
+  const labelId = createUniqueId()
+  const ownLabel = () => (exclusive() && displayStyle() === "checkbox" ? undefined : label())
   return (
-    <fieldset data-slot="surface-choice">
-      <Show when={!(exclusive() && displayStyle() === "checkbox") && label()}>{(text) => <legend data-slot="surface-input-label">{text()}</legend>}</Show>
+    <div data-slot="surface-choice" role="group" aria-labelledby={ownLabel() ? labelId : undefined}>
+      <Show when={ownLabel()}>
+        {(text) => (
+          <span id={labelId} data-slot="surface-input-label">
+            {text()}
+          </span>
+        )}
+      </Show>
       <Show
         when={!exclusive()}
         fallback={<ExclusiveChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={field.set} />}
       >
         <MultipleChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={field.set} />
       </Show>
-    </fieldset>
+    </div>
   )
 }

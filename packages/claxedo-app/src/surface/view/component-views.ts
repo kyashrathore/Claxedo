@@ -5,9 +5,12 @@ import { ButtonView } from "./button-view"
 import { ChoicePickerView } from "./choice-picker-view"
 import { CardView, CollapsibleView, TabsView } from "./container-views"
 import { CheckBoxView, SwitchView, TextFieldView } from "./field-views"
-import { ColumnView, DividerView, SurfaceListView, RowView } from "./layout-views"
+import { ColumnView, DividerView, GridView, SurfaceListView, RowView } from "./layout-views"
+import { ListItemView } from "./list-item-view"
+import { HeaderView, SectionView } from "./page-views"
 import { DateTimeInputView, SliderView } from "./range-views"
 import { DiffStatView, EmptyStateView, ProgressView, SpinnerView } from "./status-views"
+import { CalloutView, KeyValueView, StatView } from "./summary-views"
 import { TableView } from "./table-view"
 import { BadgeView, CodeView, IconView, LinkView, MarkdownView, TextView } from "./text-views"
 
@@ -39,4 +42,11 @@ export const SURFACE_VIEWS: SurfaceViews = {
   Table: TableView,
   DiffStat: DiffStatView,
   EmptyState: EmptyStateView,
+  Header: HeaderView,
+  Section: SectionView,
+  Stat: StatView,
+  Grid: GridView,
+  ListItem: ListItemView,
+  Callout: CalloutView,
+  KeyValue: KeyValueView,
 }

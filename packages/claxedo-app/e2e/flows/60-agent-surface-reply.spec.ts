@@ -8,8 +8,10 @@ const TOKEN = "SURFACESHOWN"
 const RELEASE_SURFACE = {
   title: TITLE,
   components: [
-    { id: "root", component: "Column", children: ["heading", "releases", "name", "approve"] },
-    { id: "heading", component: "Text", text: "Pending releases", variant: "h2" },
+    { id: "root", component: "Column", children: ["heading", "services", "name", "approve"] },
+    { id: "heading", component: "Header", title: "Pending releases", icon: "upload", badges: ["count"] },
+    { id: "count", component: "Badge", text: "2 services", variant: "warning" },
+    { id: "services", component: "Section", title: "Services", child: "releases" },
     { id: "releases", component: "Table", columns: [{ key: "service", title: "Service" }, { key: "version", title: "Version" }], rows: { path: "/rows" } },
     { id: "name", component: "TextField", label: "Release name", value: { path: "/name" } },
     { id: "approve", component: "Button", child: "approve-label", variant: "primary", action: { event: { name: "approveRelease", context: { name: { path: "/name" } } } } },
@@ -26,7 +28,8 @@ async function expectSurfacePainted(app: Page) {
   const surface = app.locator('[data-component="surface"][data-source="agent"]')
   await expect(surface).toBeVisible()
   await expect(surface.getByRole("heading", { name: "Pending releases" })).toBeVisible()
-  const table = surface.getByRole("table")
+  await expect(surface.getByText("2 services", { exact: true })).toBeVisible()
+  const table = surface.getByRole("region", { name: "Services" }).getByRole("table")
   await expect(table.getByRole("columnheader")).toHaveText(["Service", "Version"])
   await expect(table.getByRole("row").filter({ has: app.getByRole("cell") })).toHaveText([/api\s*1\.4\.0/, /web\s*2\.0\.1/])
   await expect(surface.locator('[data-slot="surface-source"]')).toBeVisible()

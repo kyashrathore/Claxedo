@@ -20,6 +20,9 @@ const dynamicBoolean = z.union([z.boolean(), dataBindingSchema]).meta({ id: "Dyn
 const dynamicStringList = z.union([z.array(z.string()), dataBindingSchema]).meta({ id: "DynamicStringList" })
 const dynamicValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.json()), dataBindingSchema]).meta({ id: "DynamicValue" })
 const componentId = z.string().min(1).max(256).meta({ id: "ComponentId" })
+const componentIdList = z.array(componentId).meta({ id: "ComponentIdList" })
+const iconName = z.enum(SURFACE_ICON_NAMES).meta({ id: "IconName" })
+const keyValueItem = z.object({ label: dynamicString, value: dynamicString }).strict().meta({ id: "KeyValueItem" })
 const childList = z.union([
   z.array(componentId),
   z.object({ componentId, path: z.string().max(1024) }).strict(),
@@ -42,6 +45,9 @@ function catalogComponent<Name extends string, Shape extends z.ZodRawShape>(name
   return z.object({ ...common, component: z.literal(name), ...shape }).strict()
 }
 
+export const SURFACE_BADGE_TONES = ["neutral", "accent", "success", "warning", "danger"] as const
+const badgeTone = z.enum(SURFACE_BADGE_TONES).meta({ id: "BadgeTone" })
+
 const justify = z.enum(["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"]).meta({ id: "Justify" })
 const align = z.enum(["start", "center", "end", "stretch"]).meta({ id: "Align" })
 
@@ -49,8 +55,8 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
   catalogComponent("Text", { text: dynamicString, variant: z.enum(["h1", "h2", "h3", "h4", "h5", "caption", "body"]).optional() }),
   catalogComponent("Markdown", { text: dynamicString }),
   catalogComponent("Code", { text: dynamicString, language: z.string().max(64).optional() }),
-  catalogComponent("Icon", { name: z.union([z.enum(SURFACE_ICON_NAMES), dataBindingSchema]) }),
-  catalogComponent("Badge", { text: dynamicString, variant: z.enum(["neutral", "accent"]).optional() }),
+  catalogComponent("Icon", { name: z.union([iconName, dataBindingSchema]) }),
+  catalogComponent("Badge", { text: dynamicString, variant: z.union([badgeTone, dataBindingSchema]).optional() }),
   catalogComponent("Link", { text: dynamicString, url: dynamicString }),
   catalogComponent("Row", { children: childList, justify: justify.optional(), align: align.optional() }),
   catalogComponent("Column", { children: childList, justify: justify.optional(), align: align.optional() }),
@@ -59,7 +65,12 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
   catalogComponent("Tabs", { tabs: z.array(z.object({ title: dynamicString, child: componentId }).strict()).min(1) }),
   catalogComponent("Collapsible", { title: dynamicString, child: componentId, open: z.boolean().optional() }),
   catalogComponent("Divider", { axis: z.enum(["horizontal", "vertical"]).optional() }),
-  catalogComponent("Button", { child: componentId, variant: z.enum(["default", "primary", "borderless"]).optional(), action: surfaceActionSchema }),
+  catalogComponent("Button", {
+    child: componentId,
+    variant: z.enum(["default", "primary", "borderless"]).optional(),
+    icon: iconName.optional(),
+    action: surfaceActionSchema,
+  }),
   catalogComponent("TextField", {
     label: dynamicString,
     value: dynamicString.optional(),
@@ -92,6 +103,38 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
   }),
   catalogComponent("DiffStat", { additions: dynamicNumber, deletions: dynamicNumber }),
   catalogComponent("EmptyState", { title: dynamicString, description: dynamicString.optional() }),
+  catalogComponent("Header", {
+    title: dynamicString,
+    subtitle: dynamicString.optional(),
+    icon: iconName.optional(),
+    badges: componentIdList.optional(),
+    actions: componentIdList.optional(),
+  }),
+  catalogComponent("Section", {
+    title: dynamicString.optional(),
+    description: dynamicString.optional(),
+    actions: componentIdList.optional(),
+    child: componentId,
+    variant: z.enum(["card", "plain"]).optional(),
+  }),
+  catalogComponent("Stat", {
+    label: dynamicString,
+    value: dynamicString,
+    delta: dynamicString.optional(),
+    tone: z.enum(["neutral", "positive", "negative", "warning"]).optional(),
+    caption: dynamicString.optional(),
+  }),
+  catalogComponent("Grid", { children: childList, columns: z.number().int().min(1).max(6).optional(), gap: z.enum(["small", "medium", "large"]).optional() }),
+  catalogComponent("ListItem", {
+    title: dynamicString,
+    subtitle: dynamicString.optional(),
+    icon: z.union([iconName, dataBindingSchema]).optional(),
+    meta: componentIdList.optional(),
+    actions: componentIdList.optional(),
+    selected: dynamicBoolean.optional(),
+  }),
+  catalogComponent("Callout", { tone: z.enum(["info", "success", "warning", "danger"]), title: dynamicString, text: dynamicString.optional() }),
+  catalogComponent("KeyValue", { items: z.union([z.array(keyValueItem), dataBindingSchema]) }),
 ])
 
 export type SurfaceComponent = z.infer<typeof surfaceComponentSchema>

@@ -55,3 +55,15 @@ export function SurfaceChildren(props: { readonly list: SurfaceChildList; readon
     </Switch>
   )
 }
+
+export type SurfaceGroupSlot = "surface-actions" | "surface-badges" | "surface-meta"
+
+export function SurfaceGroup(props: { readonly ids: string[] | undefined; readonly scope: DataPath; readonly slot: SurfaceGroupSlot }) {
+  return (
+    <Show when={props.ids !== undefined && props.ids.length > 0}>
+      <div data-slot={props.slot}>
+        <SurfaceChildren list={props.ids ?? []} scope={props.scope} weighted={false} />
+      </div>
+    </Show>
+  )
+}

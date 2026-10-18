@@ -6,6 +6,9 @@ import { surfaceState, type Surface, type SurfaceSource, type SurfaceState } fro
 import { SurfaceNode } from "./surface-node"
 import { SurfaceRuntimeProvider, type SurfaceRuntime } from "./surface-runtime"
 import "./surface.css"
+import "./surface-layout.css"
+import "./surface-fields.css"
+import "./surface-display.css"
 
 export type SurfaceViewProps = {
   readonly surface: Surface

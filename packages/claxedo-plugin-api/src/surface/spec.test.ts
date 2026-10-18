@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { checkSurfaceSpec, surfaceMessageSchema, surfaceSpecMessages, SURFACE_CATALOG_ID } from "./index"
+import { checkSurfaceSpec, componentReferences, surfaceComponentSchema, surfaceMessageSchema, surfaceSpecMessages, SURFACE_CATALOG_ID } from "./index"
 
 const form = {
   title: "Deploy settings",
@@ -63,6 +63,74 @@ describe("checkSurfaceSpec", () => {
       const check = checkSurfaceSpec({ title: component, components: [{ id: "root", component, url: "https://example.com/a" }] })
       expect(check.ok).toBe(false)
     }
+  })
+})
+
+const overview = {
+  title: "Deploy overview",
+  components: [
+    { id: "root", component: "Column", children: ["header", "kpis", "details", "people"] },
+    { id: "header", component: "Header", title: "api", subtitle: "Production", icon: "upload", badges: ["live"], actions: ["redeploy"] },
+    { id: "live", component: "Badge", text: "Live", variant: "success" },
+    { id: "redeploy", component: "Button", child: "redeploy-label", icon: "refresh", action: { event: { name: "redeploy" } } },
+    { id: "redeploy-label", component: "Text", text: "Redeploy" },
+    { id: "kpis", component: "Grid", columns: 4, gap: "small", children: ["latency"] },
+    { id: "latency", component: "Stat", label: "p95", value: "182 ms", delta: "-12%", tone: "positive" },
+    { id: "details", component: "Section", title: "Details", actions: ["redeploy"], child: "facts", variant: "plain" },
+    { id: "facts", component: "KeyValue", items: [{ label: "Region", value: { path: "/region" } }] },
+    { id: "people", component: "List", children: { componentId: "person", path: "/people" } },
+    { id: "person", component: "ListItem", title: { path: "name" }, icon: { path: "icon" }, meta: ["live"], actions: ["redeploy"], selected: { path: "on" } },
+  ],
+  data: { region: "eu-west", people: [{ name: "Ana", icon: "person", on: true }] },
+}
+
+describe("the layout and display components", () => {
+  test("accept a complete overview", () => {
+    expect(checkSurfaceSpec(overview).ok).toBe(true)
+  })
+
+  test("name every child id the new containers reference", () => {
+    const byId = (id: string) => surfaceComponentSchema.parse(overview.components.find((component) => component.id === id))
+    expect(componentReferences(byId("header"))).toEqual([{ path: "/badges/0", id: "live" }, { path: "/actions/0", id: "redeploy" }])
+    expect(componentReferences(byId("details"))).toEqual([{ path: "/child", id: "facts" }, { path: "/actions/0", id: "redeploy" }])
+    expect(componentReferences(byId("person"))).toEqual([{ path: "/meta/0", id: "live" }, { path: "/actions/0", id: "redeploy" }])
+    expect(componentReferences(byId("kpis"))).toEqual([{ path: "/children/0", id: "latency" }])
+    expect(componentReferences(surfaceComponentSchema.parse({ id: "g", component: "Grid", children: { componentId: "cell", path: "/cells" } }))).toEqual([
+      { path: "/children/componentId", id: "cell" },
+    ])
+  })
+
+  test("refuse a dangling badge, action, meta and section child", () => {
+    const check = checkSurfaceSpec({
+      title: "Dangling",
+      components: [
+        { id: "root", component: "Section", child: "gone", actions: ["nope"] },
+        { id: "head", component: "Header", title: "T", badges: ["missing"] },
+        { id: "row", component: "ListItem", title: "R", meta: ["absent"] },
+      ],
+    })
+    expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual(["/components/0/child", "/components/0/actions/0", "/components/1/badges/0", "/components/2/meta/0"])
+  })
+
+  test("refuse a Section that contains itself", () => {
+    const check = checkSurfaceSpec({ title: "Loop", components: [{ id: "root", component: "Section", child: "root" }] })
+    expect(check.ok ? [] : check.issues).toContainEqual({ path: "/components/0", message: "root contains itself" })
+  })
+
+  test("refuse an unknown tone, an out-of-range column count and an unknown icon", () => {
+    const invalid = [
+      { id: "root", component: "Stat", label: "L", value: "1", tone: "great" },
+      { id: "root", component: "Callout", tone: "neutral", title: "T" },
+      { id: "root", component: "Badge", text: "B", variant: "info" },
+      { id: "root", component: "Grid", children: [], columns: 7 },
+      { id: "root", component: "Grid", children: [], columns: 0 },
+      { id: "root", component: "Grid", children: [], columns: 2.5 },
+      { id: "root", component: "Grid", children: [], gap: "huge" },
+      { id: "root", component: "Section", child: "x", variant: "raised" },
+      { id: "root", component: "Header", title: "T", icon: "rocket" },
+      { id: "root", component: "KeyValue", items: [{ label: "L" }] },
+    ]
+    for (const component of invalid) expect(checkSurfaceSpec({ title: "Invalid", components: [component] }).ok).toBe(false)
   })
 })
 

@@ -714,9 +714,16 @@ export const desktopRenderer: Policy = {
   // surface page on both platforms (`plugins/surface-page/`,
   // `plugins/frame/host-surfaces.ts`), and the MCP App frame host with its
   // bridge and the session calls behind it (`mcp-apps/`,
-  // `server/mcp-apps.ts`, `ui/theme-tokens.ts`). They add no package edge.
-  // 1464/36, no headroom.
-  ceilings: { modules: 1464, packages: 36 },
+  // `server/mcp-apps.ts`, `ui/theme-tokens.ts`). The renderer's page and
+  // summary primitives and their stylesheets (`surface/view/page-views.tsx`,
+  // `surface/view/summary-views.tsx`, `surface/view/list-item-view.tsx`,
+  // `surface/view/surface-layout.css`, `surface/view/surface-fields.css`,
+  // `surface/view/surface-display.css`) and the pure rules they draw from
+  // (`surface/grid-columns.ts`, `surface/key-value.ts`,
+  // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
+  // renderer. They add no package edge.
+  // 1474/36, no headroom.
+  ceilings: { modules: 1474, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { SURFACE_CATALOG_ID, surfaceComponentSchema, type SurfaceComponent } from "./catalog"
+import { SURFACE_CATALOG_ID, surfaceComponentSchema, type SurfaceChildList, type SurfaceComponent } from "./catalog"
 import { SURFACE_MAX_COMPONENTS, SURFACE_PROTOCOL_VERSION, type SurfaceMessage } from "./messages"
 
 export const SURFACE_ROOT_ID = "root"
@@ -24,7 +24,17 @@ function pointerOf(path: readonly PropertyKey[]): string {
   return path.map((key) => `/${String(key).replaceAll("~", "~0").replaceAll("/", "~1")}`).join("")
 }
 
-export function componentReferences(component: SurfaceComponent): readonly { readonly path: string; readonly id: string }[] {
+type ComponentReference = { readonly path: string; readonly id: string }
+
+function listReferences(path: string, ids: readonly string[] | undefined): ComponentReference[] {
+  return (ids ?? []).map((id, index) => ({ path: `${path}/${index}`, id }))
+}
+
+function childListReferences(children: SurfaceChildList): ComponentReference[] {
+  return Array.isArray(children) ? listReferences("/children", children) : [{ path: "/children/componentId", id: children.componentId }]
+}
+
+export function componentReferences(component: SurfaceComponent): readonly ComponentReference[] {
   switch (component.component) {
     case "Card":
     case "Button":
@@ -33,11 +43,16 @@ export function componentReferences(component: SurfaceComponent): readonly { rea
     case "Row":
     case "Column":
     case "List":
-      return Array.isArray(component.children)
-        ? component.children.map((id, index) => ({ path: `/children/${index}`, id }))
-        : [{ path: "/children/componentId", id: component.children.componentId }]
+    case "Grid":
+      return childListReferences(component.children)
     case "Tabs":
       return component.tabs.map((tab, index) => ({ path: `/tabs/${index}/child`, id: tab.child }))
+    case "Header":
+      return [...listReferences("/badges", component.badges), ...listReferences("/actions", component.actions)]
+    case "Section":
+      return [{ path: "/child", id: component.child }, ...listReferences("/actions", component.actions)]
+    case "ListItem":
+      return [...listReferences("/meta", component.meta), ...listReferences("/actions", component.actions)]
     default:
       return []
   }

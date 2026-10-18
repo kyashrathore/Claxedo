@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js"
+import { gridColumns } from "../grid-columns"
 import type { SurfaceNodeProps } from "../model"
 import { SurfaceChildren } from "./surface-children"
 
@@ -36,7 +37,7 @@ export function RowView(props: SurfaceNodeProps<"Row">) {
 
 export function ColumnView(props: SurfaceNodeProps<"Column">) {
   return (
-    <div data-slot="surface-flex" data-direction="column" style={flexStyle(props.def.justify, props.def.align)}>
+    <div data-slot="surface-flex" data-direction="column" data-align={props.def.align ?? "stretch"} style={flexStyle(props.def.justify, props.def.align)}>
       <SurfaceChildren list={props.def.children} scope={props.scope} weighted />
     </div>
   )
@@ -44,8 +45,23 @@ export function ColumnView(props: SurfaceNodeProps<"Column">) {
 
 export function SurfaceListView(props: SurfaceNodeProps<"List">) {
   return (
-    <div data-slot="surface-flex" data-direction={props.def.direction === "horizontal" ? "row" : "column"} style={flexStyle(undefined, props.def.align)}>
+    <div
+      data-slot="surface-flex"
+      data-direction={props.def.direction === "horizontal" ? "row" : "column"}
+      data-align={props.def.align ?? "stretch"}
+      style={flexStyle(undefined, props.def.align)}
+    >
       <SurfaceChildren list={props.def.children} scope={props.scope} weighted={false} />
+    </div>
+  )
+}
+
+export function GridView(props: SurfaceNodeProps<"Grid">) {
+  return (
+    <div data-slot="surface-grid-frame">
+      <div data-slot="surface-grid" data-columns={gridColumns(props.def.columns)} data-gap={props.def.gap ?? "medium"}>
+        <SurfaceChildren list={props.def.children} scope={props.scope} weighted={false} />
+      </div>
     </div>
   )
 }
