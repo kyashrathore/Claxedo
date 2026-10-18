@@ -1,13 +1,30 @@
-import { Toaster, toast, type ToasterProps } from "solid-sonner"
+import type { ToasterProps } from "solid-sonner"
 import { isRTL } from "@kobalte/core/i18n"
 import type { ComponentProps, JSX } from "solid-js"
-import { createContext, onCleanup, onMount, splitProps, useContext } from "solid-js"
+import { createContext, lazy, onCleanup, onMount, splitProps, useContext } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useI18n } from "../../context/i18n"
 import "./button-v2.css"
 import "./toast-v2.css"
 
 export interface ToastV2RegionProps extends ToasterProps {}
+
+type Sonner = typeof import("solid-sonner")
+
+let sonnerLoad: Promise<Sonner> | undefined
+let sonner: Sonner | undefined
+
+function loadSonner(): Promise<Sonner> {
+  sonnerLoad ??= import("solid-sonner").then((module) => (sonner = module))
+  return sonnerLoad
+}
+
+function withSonner(run: (module: Sonner) => void): void {
+  if (sonner) run(sonner)
+  else void loadSonner().then(run)
+}
+
+const Toaster = lazy(() => loadSonner().then((module) => ({ default: module.Toaster })))
 
 function ToastV2Region(props: ToastV2RegionProps) {
   const i18n = useI18n()
@@ -149,12 +166,14 @@ let toastV2Id = 0
 export const toasterV2 = {
   show(render: (props: { toastId: number }) => JSX.Element, options?: { duration?: number; persistent?: boolean }) {
     const toastId = --toastV2Id
-    toast.custom((id) => render({ toastId: Number(id) }), {
-      id: toastId,
-      className: "toast-v2",
-      duration: options?.persistent ? Number.POSITIVE_INFINITY : options?.duration,
-      unstyled: true,
-    })
+    withSonner(({ toast }) =>
+      toast.custom((id) => render({ toastId: Number(id) }), {
+        id: toastId,
+        className: "toast-v2",
+        duration: options?.persistent ? Number.POSITIVE_INFINITY : options?.duration,
+        unstyled: true,
+      }),
+    )
     return toastId
   },
   dismiss(toastId?: number) {
@@ -164,7 +183,8 @@ export const toasterV2 = {
     } else {
       releaseToastV2(activeToastV2ById.get(toastId))
     }
-    return toast.dismiss(toastId)
+    withSonner(({ toast }) => toast.dismiss(toastId))
+    return toastId
   },
 }
 
@@ -205,7 +225,7 @@ export function showToastV2(options: ToastV2Options | string) {
     actions: opts.actions?.map((action) => [action.label, action.variant]),
   })
   const active = activeToastV2ByKey.get(key)
-  const toasts = toast.getToasts()
+  const toasts = sonner ? sonner.toast.getToasts() : [...activeToastV2ById.values()]
 
   if (active && toasts.at(-1)?.id === active.id) {
     active.options = opts
@@ -227,7 +247,7 @@ export function showToastV2(options: ToastV2Options | string) {
 
 function publishToastV2(entry: ActiveToastV2) {
   const release = () => releaseToastV2(entry)
-  toast(entry.options.title ?? "", {
+  withSonner(({ toast }) => toast(entry.options.title ?? "", {
     id: entry.id,
     description: entry.options.description,
     icon: entry.options.icon ?? severityIcon(entry.options.variant),
@@ -239,7 +259,7 @@ function publishToastV2(entry: ActiveToastV2) {
     unstyled: true,
     onDismiss: release,
     onAutoClose: release,
-  })
+  }))
 }
 
 function createToastV2Actions(entry: ActiveToastV2) {
