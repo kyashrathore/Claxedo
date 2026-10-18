@@ -213,20 +213,22 @@ describe("workspace relay server", () => {
     }
   })
 
-  test("default CORS policy still allows product and localhost origins", async () => {
+  test("default CORS policy allows the product origins and no loopback page", async () => {
     const relay = await harness({
       fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
     })
 
-    for (const origin of ["https://app.claxedo.com", "https://claxedo.com", "http://localhost:4444"]) {
+    const allowed = async (origin: string) => {
       const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
         headers: {
           authorization: `Bearer ${await relay.token()}`,
           origin,
         },
       })
-      expect(res.headers.get("access-control-allow-origin")).toBe(origin)
+      return res.headers.get("access-control-allow-origin")
     }
+    for (const origin of ["https://app.claxedo.com", "https://claxedo.com"]) expect(await allowed(origin)).toBe(origin)
+    for (const origin of ["http://localhost:4444", "http://127.0.0.1:4444"]) expect(await allowed(origin)).toBeNull()
   })
 
   test("the revocation check and the target lookup leave together, and a revoked token is denied before its target is read", async () => {
@@ -616,13 +618,13 @@ describe("workspace relay server", () => {
     const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", {
       headers: {
         authorization: `Bearer ${await relay.token()}`,
-        origin: "http://localhost:4482",
+        origin: "https://app.claxedo.com",
       },
     })
 
     expect(res.status).toBe(200)
-    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
-    expect(res.headers.get("access-control-allow-origin")?.split(",")).toEqual(["http://localhost:4482"])
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
+    expect(res.headers.get("access-control-allow-origin")?.split(",")).toEqual(["https://app.claxedo.com"])
     expect(res.headers.get("access-control-allow-headers")).toContain("X-OpenCode-Directory")
     expect(res.headers.get("access-control-allow-headers")).toContain("X-Claxedo-Runner")
     expect(res.headers.get("access-control-allow-headers")).toContain("Last-Event-ID")
@@ -922,12 +924,12 @@ describe("workspace relay server", () => {
     const res = await relay.room.request("http://relay.test/workspaces/ws_1/api/slow", {
       headers: {
         authorization: `Bearer ${await relay.token()}`,
-        origin: "http://localhost:4482",
+        origin: "https://app.claxedo.com",
       },
     })
 
     expect(res.status).toBe(504)
-    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
     await expect(res.json()).resolves.toEqual({
       error: {
         code: "upstream_timeout",
