@@ -190,6 +190,7 @@ export type SessionFirstRead = {
 }
 
 export type SessionReads = {
+  readonly firstSent: Promise<unknown>
   readonly first: Promise<SessionFirstRead>
   readonly runtime: Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined>
   readonly status: Promise<SessionStatus>

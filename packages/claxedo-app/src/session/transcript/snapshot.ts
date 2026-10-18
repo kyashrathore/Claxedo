@@ -41,6 +41,7 @@ function landSide<T>(context: TranscriptContext, what: string, read: Promise<T>,
 
 function landSides(context: TranscriptContext, reads: SessionReads, sentAt: number): void {
   const { ref, deps } = context
+  void Promise.allSettled([reads.firstSent]).then(() => context.queue.reread())
   reads.runtime.then(
     () => context.setRuntimeMissing(false),
     (cause) => context.setRuntimeMissing(isSessionMissing(cause)),
@@ -103,9 +104,6 @@ async function readOnce(context: TranscriptContext, held?: HeldSessionReads): Pr
 export function rereadWhenAsleep(context: TranscriptContext): void {
   const asleep = () => isStoppedCloud(context.server.placements.byId(context.ref.placementId))
   createEffect(on(asleep, (now, before) => {
-    if (now && before === false) {
-      void readSnapshot(context)
-      void context.queue.reread()
-    }
+    if (now && before === false) void readSnapshot(context)
   }))
 }

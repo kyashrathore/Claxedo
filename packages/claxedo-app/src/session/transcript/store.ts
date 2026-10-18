@@ -99,7 +99,6 @@ export function createSessionTranscript(server: Server, ref: SessionLocation, de
   onCleanup(server.attachPlacement(ref))
   rereadWhenAsleep(context)
   void readSnapshot(context, seed)
-  void context.queue.reread()
   return {
     ...sessionView(context),
     retained: () => retainedSession(context),
@@ -107,9 +106,6 @@ export function createSessionTranscript(server: Server, ref: SessionLocation, de
       applyServerEvent(context, event)
       if (event.type === "statusChanged") void settleEndedTurn(context, event.status)
     },
-    gap: () => {
-      void readSnapshot(context)
-      void context.queue.reread()
-    },
+    gap: () => void readSnapshot(context),
   }
 }
