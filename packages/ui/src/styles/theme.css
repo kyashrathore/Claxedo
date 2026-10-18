@@ -12,7 +12,6 @@
    * pixel values into Tailwind classes or component CSS. Themes may tune the
    * scale and weights without chasing individual surfaces.
    */
-  --font-size-minuscule: 7px;
   --font-size-micro: 9px;
   --font-size-2x-small: 10px;
   --font-size-x-small: 11px;
@@ -27,36 +26,19 @@
   --font-size-x-large: 20px;
   --font-size-2x-large: 24px;
   --font-size-3x-large: 28px;
-  --font-size-document-heading: 30px;
-  --font-size-4x-large: 32px;
-  --font-size-display: 40px;
-  --font-size-rich-heading-one: 1.15rem;
-  --font-size-rich-heading-two: 1.05rem;
-  --font-size-rich-heading-three: 0.95rem;
   --font-size-inline-code: 0.8em;
-  --font-size-document-code: 0.9em;
   --font-size-relative: 1em;
   --font-size-relative-small: 80%;
   --font-size-relative-smaller: 75%;
-  --font-size-hero: clamp(32px, 4vw, 56px);
   --font-weight-body: 400;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
-  --menu-item-font-size: var(--font-size-small);
-  --menu-item-font-weight: var(--font-weight-medium);
-  --menu-item-line-height: var(--line-height-large);
-  --menu-group-font-size: var(--font-size-x-small);
-  --menu-group-font-weight: var(--font-weight-medium);
-  --menu-group-line-height: var(--line-height-large);
   --line-height-none: 1;
-  --line-height-denser: 1.1;
   --line-height-display: 1.15;
-  --line-height-short: 1.18;
   --line-height-heading: 1.2;
   --line-height-tight: 1.25;
-  --line-height-compact: 1.3;
   --line-height-compact-relaxed: 1.35;
   --line-height-snug: 1.375;
   --line-height-prose-tight: 1.4;
@@ -65,19 +47,14 @@
   --line-height-large: 150%;
   --line-height-prose: 1.55;
   --line-height-relaxed: 1.6;
-  --line-height-more-relaxed: 1.625;
   --line-height-x-large: 180%;
-  --line-height-2x-large: 200%;
   --line-height-12: 12px;
   --line-height-15: 15px;
   --line-height-16: 16px;
   --line-height-18: 18px;
   --line-height-19: 19px;
   --line-height-20: 20px;
-  --line-height-code: 1.1rem;
   --line-height-24: 24px;
-  --line-height-28: 28px;
-  --line-height-32: 32px;
   --letter-spacing-normal: 0;
   --letter-spacing-ui: -0.04px;
   --letter-spacing-micro-wide: 0.05px;
@@ -91,53 +68,26 @@
   --letter-spacing-tight: -0.1599999964237213;
   --letter-spacing-tightest: -0.3199999928474426;
   --letter-spacing-wide: 0.01em;
-  --letter-spacing-badge: 0.03em;
-  --letter-spacing-caption: 0.04em;
   --letter-spacing-wider: 0.05em;
   --letter-spacing-section: 0.08em;
   --letter-spacing-widest: 0.1em;
-  --letter-spacing-label: 0.06em;
-  --letter-spacing-code: 0.2em;
-  --letter-spacing-eyebrow: 0.16em;
-  --paragraph-spacing-base: 0;
 
   --spacing: 0.25rem;
 
-  --breakpoint-sm: 40rem;
-  --breakpoint-md: 48rem;
-  --breakpoint-lg: 64rem;
-  --breakpoint-xl: 80rem;
-  --breakpoint-2xl: 96rem;
-
-  --container-3xs: 16rem;
-  --container-2xs: 18rem;
-  --container-xs: 20rem;
   --container-sm: 24rem;
-  --container-md: 28rem;
-  --container-lg: 32rem;
   --container-xl: 36rem;
-  --container-2xl: 42rem;
-  --container-3xl: 48rem;
-  --container-4xl: 56rem;
   --container-5xl: 64rem;
-  --container-6xl: 72rem;
-  --container-7xl: 80rem;
 
-  --radius-2xs: 1px;
   --radius-xs: 0.125rem;
   --radius-3: 3px;
   --radius-sm: 0.25rem;
   --radius-5: 5px;
   --radius-md: 0.375rem;
-  --radius-7: 7px;
   --radius-lg: 0.5rem;
   --radius-9: 9px;
   --radius-xl: 0.625rem;
   --radius-2xl: 0.75rem;
   --radius-3xl: 0.875rem;
-  --radius-15: 15px;
-  --radius-4xl: 1rem;
-  --radius-5xl: 1.125rem;
   --radius-pill: 9999px;
 
   --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.18);
@@ -153,26 +103,10 @@
     0 16px 48px -6px light-dark(hsl(0 0% 0% / 0.05), hsl(0 0% 0% / 0.15)),
     0 6px 12px -2px light-dark(hsl(0 0% 0% / 0.025), hsl(0 0% 0% / 0.1)),
     0 1px 2.5px light-dark(hsl(0 0% 0% / 0.025), hsl(0 0% 0% / 0.1));
-  --shadow-highlight-subtle: inset 0 0 0 1px rgb(255 255 255 / 8%);
-  --shadow-highlight: inset 0 0 0 1px rgb(255 255 255 / 12%);
-  --overlay-scrim: rgb(0 0 0 / 50%);
   --overlay-scrim-soft: color-mix(in oklab, black 48%, transparent);
-  --overlay-scrim-strong: color-mix(in srgb, black 55%, transparent);
   --scrollbar-thumb: rgb(128 128 128 / 30%);
-  --terminal-scrollbar: rgb(0 0 0 / 24%);
-  --terminal-scrollbar-hover: rgb(0 0 0 / 36%);
-  --terminal-scrollbar-active: rgb(0 0 0 / 44%);
-  --terminal-scrollbar-dark: rgb(255 255 255 / 16%);
-  --terminal-scrollbar-dark-hover: rgb(255 255 255 / 28%);
-  --terminal-scrollbar-dark-active: rgb(255 255 255 / 36%);
-  --surface-light-wash: rgb(255 255 255 / 4%);
-  --media-control-surface: rgb(0 0 0 / 45%);
-  --media-control-surface-hover: rgb(0 0 0 / 60%);
-  --media-control-text: var(--white);
   --shadow-backdrop-strong: 0 24px 80px color-mix(in oklab, black 46%, transparent);
   --shadow-backdrop-soft: 0 10px 30px color-mix(in oklab, black 24%, transparent);
-  --shadow-floating-strong: 0 16px 36px rgb(0 0 0 / 24%);
-  --shadow-drag-preview: 0 8px 24px rgb(0 0 0 / 40%);
   --shadow-image-preview:
     0 15px 45px 0 rgb(19 16 16 / 35%), 0 3.35px 10.051px 0 rgb(19 16 16 / 25%),
     0 0.998px 2.993px 0 rgb(19 16 16 / 20%);
@@ -198,9 +132,6 @@
     0 0 0 1px var(--border-weak-selected, rgba(0, 112, 255, 0.22)), 0 1px 2px -1px rgba(19, 16, 16, 0.04),
     0 1px 2px 0 rgba(19, 16, 16, 0.06), 0 1px 3px 0 rgba(19, 16, 16, 0.08);
   --shadow-xs-border-critical-base: 0 0 0 1px var(--border-critical-selected, #fc543a);
-  --shadow-xs-border-critical-focus:
-    0 0 0 3px var(--border-critical-weak, rgba(251, 34, 0, 0.18)), 0 0 0 1px var(--border-critical-selected, #fc543a),
-    0 1px 2px -1px rgba(19, 16, 16, 0.25), 0 1px 2px 0 rgba(19, 16, 16, 0.08), 0 1px 3px 0 rgba(19, 16, 16, 0.12);
   --shadow-lg-border-base:
     0 0 0 1px var(--border-weak-base, rgba(0, 0, 0, 0.07)), 0 36px 80px 0 rgba(0, 0, 0, 0.03),
     0 13.141px 29.201px 0 rgba(0, 0, 0, 0.04), 0 6.38px 14.177px 0 rgba(0, 0, 0, 0.05),
@@ -219,8 +150,6 @@
   --surface-base-hover: rgba(0, 0, 0, 0.059);
   --surface-base-active: rgba(0, 0, 0, 0.051);
   --surface-base-interactive-active: rgba(3, 76, 255, 0.09);
-  --base2: rgba(0, 0, 0, 0.034);
-  --base3: rgba(0, 0, 0, 0.034);
   --surface-inset-base: rgba(0, 0, 0, 0.034);
   --surface-inset-base-hover: rgba(0, 0, 0, 0.055);
   --surface-inset-strong: rgba(0, 0, 0, 0.09);
@@ -237,7 +166,6 @@
   --surface-weak: rgba(0, 0, 0, 0.051);
   --surface-weaker: rgba(0, 0, 0, 0.071);
   --surface-strong: #ffffff;
-  --surface-stronger-non-alpha: var(--surface-raised-stronger-non-alpha);
   --surface-raised-stronger-non-alpha: #ffffff;
   --surface-brand-base: #dcde8d;
   --surface-brand-hover: #d0d283;
@@ -335,11 +263,6 @@
   --border-weak-disabled: rgba(0, 0, 0, 0.118);
   --border-weak-focus: rgba(0, 0, 0, 0.151);
   --border-weaker-base: #f0f0f0;
-  --border-weaker-hover: rgba(0, 0, 0, 0.075);
-  --border-weaker-active: rgba(0, 0, 0, 0.118);
-  --border-weaker-selected: rgba(3, 76, 255, 0.16);
-  --border-weaker-disabled: rgba(0, 0, 0, 0.034);
-  --border-weaker-focus: rgba(0, 0, 0, 0.118);
   --border-interactive-base: #a3c1fd;
   --border-interactive-hover: #7ea9ff;
   --border-interactive-active: #034cff;
@@ -379,7 +302,6 @@
   --icon-strong-disabled: #c7c7c7;
   --icon-strong-focus: #020202;
   --icon-brand-base: #171717;
-  --icon-provider-claude-base: #d97757;
   --icon-interactive-base: #034cff;
   --icon-success-base: #7add71;
   --icon-success-hover: #4cc944;
@@ -491,8 +413,6 @@
     --surface-base-hover: rgba(255, 255, 255, 0.039);
     --surface-base-active: rgba(255, 255, 255, 0.059);
     --surface-base-interactive-active: rgba(3, 76, 255, 0.125);
-    --base2: rgba(255, 255, 255, 0.034);
-    --base3: rgba(255, 255, 255, 0.034);
     --surface-inset-base: rgba(0, 0, 0, 0.5);
     --surface-inset-base-hover: rgba(0, 0, 0, 0.5);
     --surface-inset-strong: rgba(0, 0, 0, 0.8);
@@ -509,7 +429,6 @@
     --surface-weak: rgba(255, 255, 255, 0.078);
     --surface-weaker: rgba(255, 255, 255, 0.102);
     --surface-strong: rgba(255, 255, 255, 0.169);
-    --surface-stronger-non-alpha: var(--surface-raised-stronger-non-alpha);
     --surface-raised-stronger-non-alpha: #1c1c1c;
     --surface-brand-base: #fab283;
     --surface-brand-hover: #eda779;
@@ -607,11 +526,6 @@
     --border-weak-disabled: rgba(255, 255, 255, 0.138);
     --border-weak-focus: rgba(255, 255, 255, 0.266);
     --border-weaker-base: #202020;
-    --border-weaker-hover: rgba(255, 255, 255, 0.084);
-    --border-weaker-active: rgba(255, 255, 255, 0.138);
-    --border-weaker-selected: rgba(3, 76, 255, 0.32);
-    --border-weaker-disabled: rgba(255, 255, 255, 0.034);
-    --border-weaker-focus: rgba(255, 255, 255, 0.138);
     --border-interactive-base: #a3c1fd;
     --border-interactive-hover: #7ea9ff;
     --border-interactive-active: #034cff;
@@ -651,7 +565,6 @@
     --icon-strong-disabled: #3e3e3e;
     --icon-strong-focus: #fdfcfc;
     --icon-brand-base: #ffffff;
-    --icon-provider-claude-base: #d97757;
     --icon-interactive-base: #034cff;
     --icon-success-base: #12c905;
     --icon-success-hover: #35c02d;
