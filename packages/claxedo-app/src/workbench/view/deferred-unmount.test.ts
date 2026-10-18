@@ -1,7 +1,8 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import { createDeferredUnmount, type AfterPaint } from "./deferred-unmount"
+import type { AfterPaint } from "@/lib/after-paint"
+import { createDeferredUnmount } from "./deferred-unmount"
 
 function paints() {
   const queued: Array<() => void> = []

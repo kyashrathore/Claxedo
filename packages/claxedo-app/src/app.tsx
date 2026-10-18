@@ -3,6 +3,7 @@ import { createMemo, onCleanup, Show, type JSX, type ParentProps } from "solid-j
 import { AuthProvider, useAuth, type Auth } from "@/auth"
 import { I18nProvider, useI18n } from "@/i18n"
 import { ClockProvider } from "@/lib/clock"
+import { PrefetchProvider } from "@/lib/prefetch"
 import { tabStorage } from "@/lib/persisted"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
@@ -88,7 +89,9 @@ export function App(props: AppProps): JSX.Element {
                   <SignedServer serverUrl={props.serverUrl}>
                     <LocaleReady>
                       <Alerts>
-                        <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                        <PrefetchProvider>
+                          <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                        </PrefetchProvider>
                       </Alerts>
                     </LocaleReady>
                   </SignedServer>
