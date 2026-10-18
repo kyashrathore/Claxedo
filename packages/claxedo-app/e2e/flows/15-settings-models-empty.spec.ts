@@ -8,7 +8,7 @@ async function listedProject(url: string, id: string) {
   return ((await response.json()) as { readonly projects: readonly { readonly id: string; readonly available: boolean }[] }).projects.find((project) => project.id === id)
 }
 
-test("15 settings: a project whose folder is gone names itself and its folder in a connection's Models tab, while Claude Code still lists its models", async ({ stack, app }) => {
+test("15 settings: a project whose folder is gone names itself and its folder in a connection's Models tab, while Claude Code, Pi and OpenCode still list their models", async ({ stack, app }) => {
   const workspace = await stack.daemon.makeWorkspace("gone", "Gone")
   await fs.rm(workspace.directory, { recursive: true, force: true })
   expect(await listedProject(stack.url, workspace.projectId)).toMatchObject({ available: false })
@@ -22,6 +22,13 @@ test("15 settings: a project whose folder is gone names itself and its folder in
   await claude.getByRole("tab", { name: "Models" }).click()
   await expect(claude.getByRole("switch", { name: "Sonnet", exact: true })).toBeVisible()
   await expect(claude.getByText(/can't list|couldn't list/)).toHaveCount(0)
+  const pi = harnessSection(app, "Pi")
+  await pi.getByRole("tab", { name: "Models" }).click()
+  await expect(pi.getByRole("region", { name: "Anthropic", exact: true }).getByRole("switch").first()).toBeVisible()
+  const opencode = harnessSection(app, "OpenCode")
+  await opencode.getByRole("tab", { name: "Models" }).click()
+  await expect(opencode.getByRole("region", { name: "Scripted anthropic", exact: true }).getByRole("switch", { name: "Scripted", exact: true })).toBeVisible()
+  for (const section of [pi, opencode]) await expect(section.getByText(/can't list|couldn't list/)).toHaveCount(0)
 })
 
 test("15 settings: a workspace that cannot list a connection's models names itself and the failure", async ({ stack, app, isMobile }) => {

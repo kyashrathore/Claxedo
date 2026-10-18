@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { piLaunchCatalog } from "@claxedo/harness/pi-catalog"
+import { openCodeBundledModels } from "@claxedo/harness/opencode-models"
 
 const engineSync = vi.hoisted(() => ({ calls: [] as unknown[][], fail: undefined as Error | undefined }))
 vi.mock("../fanout", () => ({
@@ -185,6 +186,20 @@ describe("the OpenCode catalog's forms", () => {
     expect(missing.status).toBe(404)
     expect(missing.body.error.code).toBe("provider_catalog_provider_not_found")
     expect((await catalog("&view=tiny")).status).toBe(400)
+  })
+})
+
+describe("the OpenCode catalog with no workspace", () => {
+  test("lists the bundled models of each vendor the person holds a key for, with no workspace to ask", async () => {
+    const response = await app.request("/providers?nativeHarness=opencode&view=summary", { headers: { authorization: "Bearer org_a" } })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.connected).toEqual(["openai"])
+    const openai = body.all.find((provider: { id: string }) => provider.id === "openai")
+    expect(openai.source).toBe("api")
+    expect(Object.keys(openai.models)).toEqual(openCodeBundledModels(["openai"]).map((model) => model.id))
+    expect(body.all.find((provider: { id: string }) => provider.id === "anthropic").models).toEqual({})
+    expect(JSON.stringify(body)).not.toContain("test-key")
   })
 })
 

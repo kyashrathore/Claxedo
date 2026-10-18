@@ -1,7 +1,7 @@
 import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, piProviderSpending, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { isRefusal } from "@/lib/account-health"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
-import type { Account, AccountSources, AccountVerdict, MachineLogin, ProviderSource } from "@/server"
+import type { Account, AccountSources, AccountVerdict, CatalogProvider, HarnessOptionChoice, MachineLogin, ProviderSource } from "@/server"
 
 export { isRefusal, isUnavailable } from "@/lib/account-health"
 
@@ -231,4 +231,8 @@ export function harnessRunnable(harness: Harness, snapshot: AccountsSnapshot, li
   if (row === undefined || (snapshot.cloudOnly && row.delivery?.cloud !== true)) return false
   const verdict = storedCheck(row, live[row.id])?.verdict
   return !(verdict !== undefined && isRefusal(verdict))
+}
+
+export function piModelChoices(connected: readonly CatalogProvider[]): HarnessOptionChoice[] {
+  return connected.flatMap((provider) => Object.values(provider.models).map((model) => ({ id: `${provider.id}/${model.id}`, name: model.name })))
 }
