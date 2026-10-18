@@ -152,14 +152,23 @@ async function readerProjectIds(database: D1Database, who: AuthorizationPrincipa
   return result.results.map((row) => row.project_id)
 }
 
-/** Each project's first page in one D1 batch, every statement the one `readD1SessionPage` reads for that project. */
-export async function readD1ProjectSessionPages(database: D1Database, page: SessionListKeysetPage, who: AuthorizationPrincipal, access: BoundSql, now: number): Promise<ProjectSessionPage[]> {
-  const projectIds = await readerProjectIds(database, who)
-  if (projectIds.length === 0) return []
-  const results = await database.batch<SessionPageRow>(
-    projectIds.map((projectId) => sessionPageStatement(database, { ...page, projectId }, access, who.userId, now)),
-  )
-  return projectIds.map((projectId, index) => ({ projectId, sessions: (results[index]?.results ?? []).map(pageRowJson) }))
+/**
+ * Each project's first page in one D1 batch, every statement the one
+ * `readD1SessionPage` reads for that project, read beside the principal's
+ * verification (`namedPrincipal`); the read rule decides every row.
+ */
+export async function readD1ProjectSessionPages(database: D1Database, deploymentId: string, auth: SignedControlPlaneAuth, page: SessionListKeysetPage, now: number): Promise<ProjectSessionPage[]> {
+  const who = namedPrincipal(auth)
+  const access = maySql(who, "read", { kind: "session", alias: "s" })
+  const [, pages] = await Promise.all([requireHuman(database, deploymentId, auth), (async () => {
+    const projectIds = await readerProjectIds(database, who)
+    if (projectIds.length === 0) return []
+    const results = await database.batch<SessionPageRow>(
+      projectIds.map((projectId) => sessionPageStatement(database, { ...page, projectId }, access, who.userId, now)),
+    )
+    return projectIds.map((projectId, index) => ({ projectId, sessions: (results[index]?.results ?? []).map(pageRowJson) }))
+  })()])
+  return pages
 }
 
 function backgroundWorkJson(row: SessionPageRow) {

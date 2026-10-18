@@ -38,7 +38,7 @@ import {
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { maySql, type AuthorizationPrincipal, type SessionAction, type WorkspaceAction } from "./authorization"
-import { namedPrincipal, requireHuman } from "./access-context"
+import { requireHuman } from "./access-context"
 import {
   D1SessionAuthorityError,
   MAX_SNAPSHOT_BYTES,
@@ -848,14 +848,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }), who.userId, this.now())
   }
 
-  /** The pages are read beside the principal's verification (`namedPrincipal`); the read rule decides every row. */
   async listProjectSessionPages(auth: SignedControlPlaneAuth, page: SessionListKeysetPage) {
-    const who = namedPrincipal(auth)
-    const [, pages] = await Promise.all([
-      this.requirePrincipal(auth),
-      readD1ProjectSessionPages(this.database, page, who, maySql(who, "read", { kind: "session", alias: "s" }), this.now()),
-    ])
-    return pages
+    return await readD1ProjectSessionPages(this.database, this.options.deploymentId, auth, page, this.now())
   }
 
   async listOwnerSessionPage(owner: { userId: string; actorId: string }, query: SessionPageQuery) {

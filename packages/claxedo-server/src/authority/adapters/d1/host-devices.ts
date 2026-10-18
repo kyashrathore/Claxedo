@@ -1,6 +1,8 @@
 import type { D1Database } from "@cloudflare/workers-types"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { HostDevice } from "@claxedo/server-core/platform/auth/host-devices"
 import { parseJson } from "@claxedo/server-core/platform/json/index"
+import { namedPrincipal, requireHuman } from "./access-context"
 
 type DeviceRow = Omit<HostDevice, "display_name" | "state" | "workspace_ids" | "acked_workspace_ids"> & {
   workspace_id: string | null
@@ -22,9 +24,13 @@ function storedStringList(raw: string): string[] {
   }
 }
 
-/** Every unrevoked enrollment of the owner's, one device each, with the workspaces assigned to its machine. */
-export async function listHostDevices(database: D1Database, actorId: string, now: number): Promise<HostDevice[]> {
-  const rows = await database.prepare(`
+/**
+ * Every unrevoked enrollment of the owner's, one device each, with the
+ * workspaces assigned to its machine, read beside the principal's
+ * verification keyed by the actor the auth names (`namedPrincipal`).
+ */
+export async function listHostDevices(database: D1Database, deploymentId: string, auth: SignedControlPlaneAuth, now: number): Promise<HostDevice[]> {
+  const [, rows] = await Promise.all([requireHuman(database, deploymentId, auth), database.prepare(`
     select enrollment.enrollment_id, enrollment.host_id, enrollment.display_name, enrollment.last_seen_at,
       enrollment.expires_at, enrollment.paused_at, assignment.workspace_id,
       coalesce(enrollment.acked_workspace_ids, '[]') as acked_workspace_ids
@@ -33,7 +39,7 @@ export async function listHostDevices(database: D1Database, actorId: string, now
       and assignment.owner_actor_id = enrollment.owner_actor_id
     where enrollment.owner_actor_id = ? and enrollment.revoked_at is null
     order by enrollment.last_seen_at desc, enrollment.enrollment_id, assignment.workspace_id
-  `).bind(actorId).all<DeviceRow>()
+  `).bind(namedPrincipal(auth).actorId).all<DeviceRow>()])
   const devices = new Map<string, HostDevice>()
   for (const row of rows.results ?? []) {
     const device = devices.get(row.enrollment_id) ?? {
