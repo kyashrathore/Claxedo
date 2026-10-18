@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto"
 import { accountHolderOf, holderAccountSources, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
-import { HARNESS_NEEDS_BROKERING, ORG_ACCOUNT_UNAVAILABLE, type BindingAccount, type CredentialSnapshot, type ProviderBindingSource, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
-import { destinationAuthMode, builtInProviderDestination, builtInProviderDestinationShape, type ProviderDestination } from "./built-in-destinations"
+import { HARNESS_NEEDS_BROKERING, ORG_ACCOUNT_UNAVAILABLE, type BindingAccount, type CredentialSnapshot, type ProviderBindingSource, type ProviderDirect, type ProviderProjection, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { destinationAuthMode, builtInProviderDestination, builtInProviderDestinationShape, builtInProviderRow, type ProviderDestination } from "./built-in-destinations"
+import { credentialUnavailableReason } from "./health"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { isSubscriptionKind } from "./secret-material"
 import { deliveredDirect, hostedBrokerServes } from "./reach"
@@ -325,14 +326,11 @@ function byMostRecentMark<T extends { credential: CredentialMetadata }>(rows: re
     || left.credential.id.localeCompare(right.credential.id))
 }
 
-/**
- * Which stored account, at which revision, each vendor host of one person's
- * runtime is delivered, read from the rows alone. Two equal identities deliver
- * the same accounts, so a credential write that leaves it unchanged has
- * nothing to hand a running sandbox.
- */
-export async function deliveredAccountsIdentity(input: Pick<DeliveryWalk, "owner" | "machineOwnerUserId" | "selections" | "selected">): Promise<string> {
-  const walked = await walkDeliverableAccounts({
+type RowsAlone = Pick<DeliveryWalk, "owner" | "machineOwnerUserId" | "selections" | "selected">
+
+/** The walk over the rows alone: each destination from its row's shape, and no secret read. */
+function walkRowsAlone(input: RowsAlone): Promise<WalkedAccount[]> {
+  return walkDeliverableAccounts({
     ...input,
     readSecret: async () => "unread",
     destination: ({ providerId, kind }) => {
@@ -340,9 +338,59 @@ export async function deliveredAccountsIdentity(input: Pick<DeliveryWalk, "owner
       return shape ? { ...shape, value: "" } : undefined
     },
   }, () => undefined)
+}
+
+/**
+ * Which stored account, at which revision, each vendor host of one person's
+ * runtime is delivered, read from the rows alone. Two equal identities deliver
+ * the same accounts, so a credential write that leaves it unchanged has
+ * nothing to hand a running sandbox.
+ */
+export async function deliveredAccountsIdentity(input: RowsAlone): Promise<string> {
+  const walked = await walkRowsAlone(input)
   return walked.flatMap((row) => "refused" in row ? [] : [[row.credential.provider_id, row.credential.id, String(row.credential.revision)].join(FIELD_SEPARATOR)])
     .toSorted()
     .join(DIGEST_SEPARATOR)
+}
+
+function spentProjection(row: WalkedAccount): { owner: string | null; providerId: string; projection: ProviderProjection } {
+  if ("refused" in row) {
+    const refused = row.refused.projection
+    return { owner: row.refused.userId, providerId: row.refused.providerId, projection: { unavailable: true, reason: "reason" in refused ? refused.reason : "unavailable" } }
+  }
+  const { credential, destination } = row
+  return {
+    owner: credential.owner ?? null,
+    providerId: credential.provider_id,
+    projection: { baseUrl: destination.origin, placeholder: "", authMode: destinationAuthMode(destination), account: deliveredAccount(credential) },
+  }
+}
+
+/**
+ * The accounts one person's runtime spends, read from the rows alone: the
+ * same walk and selection as `nativeProviderAuth`, each account as the binding
+ * its vendor takes with no placeholder in it, for an answer that depends only
+ * on which account runs.
+ */
+export async function spentAccounts(input: RowsAlone): Promise<CredentialSnapshot<ProviderProjection>> {
+  const holder = accountHolderOf(input.owner, input.machineOwnerUserId)
+  const accounts = selectedAccounts<ProviderProjection>({
+    machineOwnerUserId: input.machineOwnerUserId,
+    rows: (await walkRowsAlone(input)).map(spentProjection),
+    selections: { [holder]: holderAccountSources(input.selections, holder, input.machineOwnerUserId) },
+    missingOrgAccount: () => ({ unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE }),
+  })
+  return { machineOwnerUserId: holder, accounts }
+}
+
+/** The organization's stored accounts a runtime can be delivered, each with the reason it cannot be spent now, if any. */
+export function deliverableRows(rows: readonly CredentialMetadata[]): NativeCredentialSelection[] {
+  return rows
+    .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token") && !!builtInProviderRow(credential.provider_id))
+    .map((credential) => {
+      const unavailable = credentialUnavailableReason(credential)
+      return { credential, ...(unavailable ? { unavailable } : {}) }
+    })
 }
 
 /** The marked accounts whose secret could not be read this time. */

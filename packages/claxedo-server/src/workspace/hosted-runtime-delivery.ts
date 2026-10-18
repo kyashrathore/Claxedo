@@ -5,15 +5,13 @@ import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-confi
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
 import { composeRuntimeConfigSnapshot, type AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/runtime-snapshot"
 import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
-import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
-import { credentialUnavailableReason } from "@claxedo/server-core/credentials/health"
 import {
+  deliverableRows,
   deliveredAccountsIdentity,
   nativeProviderAuth,
   nativeProviderDeliveriesFromRepository,
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
-import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { projectEnvironment } from "@claxedo/server-core/projects/environment"
 import { RUNTIME_LEASE_ENV_PATH, workspaceRuntimeProjectEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
@@ -91,16 +89,6 @@ async function supervisorClient(
 export type HostedRuntimeHooks = {
   prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   pluginRuntime?: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<AgentPluginRuntimeContribution>
-}
-
-/** The organization's stored accounts a sandbox can be delivered, each with the reason it cannot be spent now, if any. */
-function deliverableRows(rows: readonly CredentialMetadata[]) {
-  return rows
-    .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token") && !!builtInProviderRow(credential.provider_id))
-    .map((credential) => {
-      const unavailable = credentialUnavailableReason(credential)
-      return { credential, ...(unavailable ? { unavailable } : {}) }
-    })
 }
 
 export function createHostedRuntimeDelivery(input: {
