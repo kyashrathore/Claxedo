@@ -16,25 +16,11 @@
 
 .form-surface-body {
   padding: 4px 16px;
-  border-block: 1px solid transparent;
-  animation: form-surface-scroll-edges linear both;
-  animation-timeline: scroll(self);
-}
-
-@keyframes form-surface-scroll-edges {
-  0% {
-    border-block-start-color: transparent;
-    border-block-end-color: var(--v2-border-border-base);
-  }
-  2%,
-  98% {
-    border-block-start-color: var(--v2-border-border-base);
-    border-block-end-color: var(--v2-border-border-base);
-  }
-  100% {
-    border-block-start-color: var(--v2-border-border-base);
-    border-block-end-color: transparent;
-  }
+  background:
+    linear-gradient(var(--v2-background-bg-layer-01) 50%, transparent) top / 100% 8px no-repeat local,
+    linear-gradient(transparent, var(--v2-background-bg-layer-01) 50%) bottom / 100% 8px no-repeat local,
+    linear-gradient(var(--v2-border-border-base), var(--v2-border-border-base)) top / 100% 1px no-repeat scroll,
+    linear-gradient(var(--v2-border-border-base), var(--v2-border-border-base)) bottom / 100% 1px no-repeat scroll;
 }
 
 .form-surface-fields {
