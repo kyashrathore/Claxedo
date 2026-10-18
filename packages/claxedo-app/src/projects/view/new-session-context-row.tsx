@@ -10,7 +10,7 @@ import type { WhereCreation } from "../draft-where"
 import { useBranchChip } from "./branch-chip"
 import { useWhereChip } from "./where-chip"
 import { SessionContextRow, type ContextChip, type ContextChipAvatar } from "./context-row"
-import { DialogCreateProject } from "./create-project-dialog"
+import { DialogCreateProject } from "./project-create-lazy"
 import { sourceLabel } from "../project-source"
 
 function projectDetail(project: Project): string | undefined {
