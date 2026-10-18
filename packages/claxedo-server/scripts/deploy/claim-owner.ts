@@ -97,14 +97,14 @@ export function verifyOwnerClaimOutput(output: string) {
 }
 
 export function signedInSubjectSql(email: string) {
-  return `select "id" from "user" where lower("email") = lower(${literal(email)});`
+  return `select "id" from "user" where lower("email") = lower(${literal(email)}) and "emailVerified" = 1;`
 }
 
 export function signedInSubject(output: string, email: string, appOrigin: string) {
   const rows = d1Rows(output, "signed-in account lookup")
   const id = rows[0]?.id
   if (rows.length !== 1 || typeof id !== "string" || !id) {
-    throw new Error(`no account signed in as ${email}; sign in at ${appOrigin} first`)
+    throw new Error(`no account with the verified email ${email}; sign in at ${appOrigin} and verify that email first`)
   }
   return id
 }

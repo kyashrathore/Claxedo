@@ -2,6 +2,8 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { Miniflare } from "miniflare"
 import { afterEach, describe, expect, test } from "vitest"
+import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 
 import {
   userDeployedOwnerBootstrapClaimHash,
@@ -111,8 +113,33 @@ describe("claim-owner", () => {
     expect(signedInSubjectSql("O'Brien@example.com")).toContain(`lower('O''Brien@example.com')`)
     expect(signedInSubject(d1Output([{ id: "user_123" }]), "me@example.com", "https://app.example.com")).toBe("user_123")
     expect(() => signedInSubject(d1Output([]), "me@example.com", "https://app.example.com")).toThrow(
-      /sign in at https:\/\/app.example.com first/,
+      /sign in at https:\/\/app.example.com and verify that email first/,
     )
+  })
+
+  test("binds only to an account whose email is verified, so a pre-registered unverified address never becomes owner", async () => {
+    const instance = new Miniflare({
+      modules: true,
+      script: "export default { fetch() { return new Response('ok') } }",
+      compatibilityDate: "2025-05-01",
+      d1Databases: ["AUTH_DB"],
+    })
+    active.push(instance)
+    const auth = await instance.getD1Database("AUTH_DB")
+    const schema = await readFile(fileURLToPath(new URL("../../migrations/auth/0001_better_auth.sql", import.meta.url)), "utf8")
+    const userTable = schema.replace(/^\s*--.*$/gm, "").split(/;\s*\n/).find((statement) => statement.trim().startsWith(`create table "user"`))
+    if (!userTable) throw new Error("the auth migration defines no user table")
+    await auth.prepare(userTable).run()
+    const insert = (id: string, email: string, verified: number) => auth
+      .prepare(`insert into "user" ("id", "name", "email", "emailVerified", "createdAt", "updatedAt") values (?, ?, ?, ?, 0, 0)`)
+      .bind(id, id, email, verified).run()
+    await insert("attacker", "operator@example.com", 0)
+    await insert("operator", "Owner@example.com", 1)
+    const lookup = async (email: string) =>
+      signedInSubject(d1Output((await auth.prepare(signedInSubjectSql(email)).all()).results), email, "https://app.example.com")
+
+    await expect(lookup("operator@example.com")).rejects.toThrow(/verify that email first/)
+    await expect(lookup("owner@example.com")).resolves.toBe("operator")
   })
 
   test("prints a redemption that posts the claim header to the bootstrap-owner route with the session", () => {

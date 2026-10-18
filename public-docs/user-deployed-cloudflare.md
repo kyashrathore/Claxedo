@@ -106,9 +106,10 @@ Sign in at `https://app.example.com` with GitHub, then make that account the own
 bun run deploy:user-cloudflare:claim-owner -- --email you@example.com
 ```
 
-The command registers a one-hour, one-use owner claim bound to that account and prints one line to paste into the
-developer console of the app tab you signed in with. The line answers `200` once you own the deployment; reload
-the app. Invite your team from there.
+The command binds only to an account whose email is verified, so a password account someone registered with your
+address and never verified cannot become the owner. It registers a one-hour, one-use owner claim bound to that
+account and prints one line to paste into the developer console of the app tab you signed in with. The line answers
+`200` once you own the deployment; reload the app. Invite your team from there.
 
 ## Upgrade
 
