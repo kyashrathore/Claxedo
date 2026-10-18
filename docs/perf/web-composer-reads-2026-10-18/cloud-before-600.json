@@ -1,0 +1,93 @@
+{
+  "delayMs": 600,
+  "projects": 3,
+  "chipAt": 971,
+  "chipLog": [
+    {
+      "t": 713,
+      "text": "GPT-4.1 | ready | submit=true | pi/openai/gpt-4.1"
+    }
+  ],
+  "requests": [
+    {
+      "url": "/api/claxedo/auth/descriptor",
+      "origin": "app",
+      "start": 675.698974609375,
+      "end": 1297.357974609375,
+      "bytes": 595,
+      "decoded": 1661
+    },
+    {
+      "url": "/api/workspace/shared-sessions",
+      "origin": "app",
+      "start": 675.783203125,
+      "end": 1302.872203125,
+      "bytes": 51,
+      "decoded": 15
+    },
+    {
+      "url": "/api/claxedo/bootstrap",
+      "origin": "app",
+      "start": 675.81982421875,
+      "end": 1304.22482421875,
+      "bytes": 152,
+      "decoded": 163
+    },
+    {
+      "url": "/api/workspace?host=provisioner",
+      "origin": "app",
+      "start": 675.90283203125,
+      "end": 1310.52983203125,
+      "bytes": 294,
+      "decoded": 409
+    },
+    {
+      "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      "origin": "app",
+      "start": 675.952880859375,
+      "end": 1312.414880859375,
+      "bytes": 151,
+      "decoded": 138
+    },
+    {
+      "url": "/api/auth/get-session",
+      "origin": "app",
+      "start": 675.987060546875,
+      "end": 1311.873060546875,
+      "bytes": 413,
+      "decoded": 624
+    },
+    {
+      "url": "/api/claxedo/remote-access/devices",
+      "origin": "app",
+      "start": 1313.89404296875,
+      "end": 1931.77904296875,
+      "bytes": 224,
+      "decoded": 233
+    },
+    {
+      "url": "/api/claxedo/agent-config/connections",
+      "origin": "app",
+      "start": 1315.313720703125,
+      "end": 1933.930720703125,
+      "bytes": 239,
+      "decoded": 383
+    },
+    {
+      "url": "/api/claxedo/agent-config/providers?nativeHarness=pi&view=summary",
+      "origin": "app",
+      "start": 1315.31396484375,
+      "end": 1935.01896484375,
+      "bytes": 6822,
+      "decoded": 45075
+    },
+    {
+      "url": "/api/claxedo/agent-config/harness/options?nativeHarness=pi&workspaceId=ws_mvdp9oel_xgyem2mjvkv9marf&model=openai%2Fgpt-4.1",
+      "origin": "app",
+      "start": 1315.39208984375,
+      "end": 1937.24508984375,
+      "bytes": 559,
+      "decoded": 3082
+    }
+  ]
+}

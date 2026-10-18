@@ -1,10 +1,10 @@
 {
   "delayMs": 600,
   "projects": 3,
-  "chipAt": 990,
+  "chipAt": 976,
   "chipLog": [
     {
-      "t": 728,
+      "t": 714,
       "text": "GPT-4.1 | ready | submit=true | pi/openai/gpt-4.1"
     }
   ],
@@ -12,72 +12,72 @@
     {
       "url": "/api/claxedo/bootstrap",
       "origin": "app",
-      "start": 675.47509765625,
-      "end": 1290.48809765625,
+      "start": 669.244140625,
+      "end": 1281.283140625,
       "bytes": 152,
       "decoded": 163
     },
     {
       "url": "/api/claxedo/auth/descriptor",
       "origin": "app",
-      "start": 675.3759765625,
-      "end": 1292.0669765625,
+      "start": 669.156005859375,
+      "end": 1282.769005859375,
       "bytes": 595,
       "decoded": 1661
     },
     {
       "url": "/api/workspace/shared-sessions",
       "origin": "app",
-      "start": 675.453857421875,
-      "end": 1293.837857421875,
+      "start": 669.229248046875,
+      "end": 1284.6362480468752,
       "bytes": 51,
       "decoded": 15
     },
     {
       "url": "/api/workspace?host=provisioner",
       "origin": "app",
-      "start": 675.52294921875,
-      "end": 1305.13794921875,
-      "bytes": 296,
+      "start": 669.27490234375,
+      "end": 1295.21190234375,
+      "bytes": 295,
       "decoded": 409
     },
     {
       "url": "/api/claxedo/remote-access/devices",
       "origin": "app",
-      "start": 675.65380859375,
-      "end": 1310.93280859375,
-      "bytes": 228,
+      "start": 669.300048828125,
+      "end": 1299.990048828125,
+      "bytes": 229,
       "decoded": 233
     },
     {
       "url": "/api/claxedo/agent-config/connections",
       "origin": "app",
-      "start": 675.77001953125,
-      "end": 1314.11401953125,
+      "start": 671.495849609375,
+      "end": 1306.109849609375,
       "bytes": 239,
       "decoded": 383
     },
     {
       "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
       "origin": "app",
-      "start": 677.865966796875,
-      "end": 1318.8019667968751,
-      "bytes": 151,
+      "start": 671.5400390625,
+      "end": 1308.3500390625,
+      "bytes": 152,
       "decoded": 138
     },
     {
       "url": "/api/auth/get-session",
       "origin": "app",
-      "start": 677.830810546875,
-      "end": 1319.6128105468752,
-      "bytes": 414,
+      "start": 671.5,
+      "end": 1307.635,
+      "bytes": 413,
       "decoded": 624
     },
     {
-      "url": "/api/claxedo/agent-config/harness/options?nativeHarness=pi&workspaceId=ws_mvdp31h1_v6261vp5d0yf5tc6&model=openai%2Fgpt-4.1",
+      "url": "/api/claxedo/agent-config/harness/options?nativeHarness=pi&workspaceId=ws_mvdpu2c7_48kz34qgecf1fmjp&model=openai%2Fgpt-4.1",
       "origin": "app",
-      "start": 1331.07080078125,
-      "end": 1941.74380078125,
+      "start": 1314.72900390625,
+      "end": 1923.6740039062502,
       "bytes": 559,
       "decoded": 3082
     }
