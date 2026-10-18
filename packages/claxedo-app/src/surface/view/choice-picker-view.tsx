@@ -1,5 +1,5 @@
 import { createMemo, For, Match, Show, Switch } from "solid-js"
-import { Checkbox, RadioGroup, RadioItem, SegmentedControl, SegmentedControlItem, Select } from "@/ui"
+import { Checkbox, RadioGroup, RadioItem, Select } from "@/ui"
 import { boundTextList, createBoundValue } from "../binding"
 import type { SurfaceNodeProps } from "../model"
 import { useSurfaceReader, useSurfaceRuntime } from "./surface-runtime"
@@ -14,6 +14,20 @@ type ChoiceProps = {
   readonly selected: readonly string[]
   readonly displayStyle: DisplayStyle
   readonly onChange: (values: string[]) => void
+}
+
+function ChipToggles(props: { readonly label: string | undefined; readonly choices: readonly Choice[]; readonly isOn: (value: string) => boolean; readonly onToggle: (value: string) => void }) {
+  return (
+    <div data-slot="surface-chips" role="group" aria-label={props.label}>
+      <For each={props.choices}>
+        {(choice) => (
+          <button type="button" data-slot="surface-chip" aria-pressed={props.isOn(choice.value)} onClick={() => props.onToggle(choice.value)}>
+            {choice.label}
+          </button>
+        )}
+      </For>
+    </div>
+  )
 }
 
 function ExclusiveChoice(props: ChoiceProps) {
@@ -31,9 +45,7 @@ function ExclusiveChoice(props: ChoiceProps) {
         />
       </Match>
       <Match when={props.displayStyle === "chips"}>
-        <SegmentedControl aria-label={props.label} value={current() ?? null} onChange={(value) => props.onChange(value === null ? [] : [value])}>
-          <For each={props.choices}>{(choice) => <SegmentedControlItem value={choice.value}>{choice.label}</SegmentedControlItem>}</For>
-        </SegmentedControl>
+        <ChipToggles label={props.label} choices={props.choices} isOn={(value) => current() === value} onToggle={(value) => props.onChange([value])} />
       </Match>
       <Match when={props.displayStyle === "checkbox"}>
         <RadioGroup label={props.label} value={current() ?? ""} onChange={(value) => props.onChange([value])}>
@@ -55,15 +67,7 @@ function MultipleChoice(props: ChoiceProps) {
         <For each={props.choices}>{(choice) => <Checkbox label={choice.label} checked={isOn(choice.value)} onChange={(on: boolean) => toggle(choice.value, on)} />}</For>
       }
     >
-      <div data-slot="surface-chips">
-        <For each={props.choices}>
-          {(choice) => (
-            <button type="button" data-slot="surface-chip" aria-pressed={isOn(choice.value)} onClick={() => toggle(choice.value, !isOn(choice.value))}>
-              {choice.label}
-            </button>
-          )}
-        </For>
-      </div>
+      <ChipToggles label={props.label} choices={props.choices} isOn={isOn} onToggle={(value) => toggle(value, !isOn(value))} />
     </Show>
   )
 }
@@ -75,13 +79,14 @@ export function ChoicePickerView(props: SurfaceNodeProps<"ChoicePicker">) {
   const choices = createMemo(() => props.def.options.map((option) => ({ value: option.value, label: read.text(option.label, props.scope) })))
   const label = () => (props.def.label === undefined ? undefined : read.text(props.def.label, props.scope))
   const displayStyle = () => props.def.displayStyle ?? "checkbox"
+  const exclusive = () => props.def.variant !== "multipleSelection"
   return (
     <fieldset data-slot="surface-choice">
+      <Show when={!(exclusive() && displayStyle() === "checkbox") && label()}>{(text) => <legend data-slot="surface-input-label">{text()}</legend>}</Show>
       <Show
-        when={props.def.variant === "multipleSelection"}
+        when={!exclusive()}
         fallback={<ExclusiveChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={field.set} />}
       >
-        <Show when={label()}>{(text) => <legend data-slot="surface-input-label">{text()}</legend>}</Show>
         <MultipleChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={field.set} />
       </Show>
     </fieldset>

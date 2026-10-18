@@ -22,7 +22,7 @@ export function TextFieldView(props: SurfaceNodeProps<"TextField">) {
   return (
     <Branch>
       <Match when={props.def.variant === "longText"}>
-        <Field invalid={invalid()}>
+        <Field data-slot="surface-long-text" invalid={invalid()}>
           <Field.Label>{label()}</Field.Label>
           <Textarea invalid={invalid()} value={field.value()} onInput={(event) => field.set(event.currentTarget.value)} />
         </Field>

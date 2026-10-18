@@ -140,7 +140,8 @@
   cursor: pointer;
 
   &[aria-pressed="true"] {
-    border-color: var(--v2-border-border-strong);
+    border-color: var(--v2-text-text-accent);
+    color: var(--v2-text-text-accent);
     background: var(--v2-background-bg-button-neutral);
   }
 }
@@ -216,5 +217,13 @@
   thead th {
     color: var(--v2-text-text-muted);
     font-size: var(--v2-font-size-xs);
+  }
+}
+
+[data-slot="surface-long-text"] {
+  width: 100%;
+
+  [data-component="textarea-v2"] {
+    width: 100%;
   }
 }
