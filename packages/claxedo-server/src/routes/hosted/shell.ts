@@ -35,7 +35,7 @@ import {
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import type { ControlPlaneServices } from "../../authority/services"
-import { openHarnessTarget, type HostedHarnessProbe } from "./harness-runtime"
+import { openHarnessTarget, type HostedHarnessProbe } from "../../workspace/harness-runtime"
 import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/methods"

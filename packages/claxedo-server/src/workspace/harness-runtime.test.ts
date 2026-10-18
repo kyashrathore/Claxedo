@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServices } from "../authority/services"
 import { hostedHarnessRuntimeStatus, hostedRuntimeProviderCatalog } from "./harness-runtime"
 
 afterEach(() => vi.unstubAllGlobals())

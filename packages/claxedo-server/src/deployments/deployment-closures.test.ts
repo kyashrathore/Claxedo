@@ -143,7 +143,7 @@ const ENTRIES = [
   // (`deployments/hosted-shared/hosted-draft-catalogs.ts`).
   // Every entry reads a workspace runtime's harness health and OpenCode
   // catalog over the relay, with the runtime's identity beside them under one
-  // token, from the shell routes' own module (`routes/hosted/harness-runtime.ts`).
+  // token, from the shell routes' own module (`workspace/harness-runtime.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 175, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the

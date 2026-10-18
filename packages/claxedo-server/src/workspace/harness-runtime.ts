@@ -6,10 +6,10 @@ import { runtimeProviderCatalog } from "@claxedo/server-core/credentials/runtime
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import { asRecord, asString } from "@claxedo/helpers/guards"
-import type { ControlPlaneServices } from "../../authority/services"
-import { resolveWorkspaceRuntimeTarget, WorkspaceRuntimeTargetError } from "../../authority/runtime-target"
-import { relayRole } from "../../authority/pulled-session"
-import { createRelayRuntimeClient, decodeRelayRuntimeJson } from "../../workspace/relay-runtime-client"
+import type { ControlPlaneServices } from "../authority/services"
+import { resolveWorkspaceRuntimeTarget, WorkspaceRuntimeTargetError } from "../authority/runtime-target"
+import { relayRole } from "../authority/pulled-session"
+import { createRelayRuntimeClient, decodeRelayRuntimeJson } from "./relay-runtime-client"
 
 /** `/api/wr/health`'s shape, trimmed to the fields the harness probe reports. */
 export type HostedHarnessProbe = {

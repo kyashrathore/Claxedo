@@ -210,7 +210,7 @@ export const serverWorkerd: Policy = {
   // core app. It adds no package edge: the harness was already in the Worker.
   // +1 module (owner: the hosted shell routes): a workspace runtime's harness
   // health and OpenCode catalog, read over the relay with the runtime's
-  // identity beside them under one token (`routes/hosted/harness-runtime.ts`),
+  // identity beside them under one token (`workspace/harness-runtime.ts`),
   // split from `routes/hosted/shell.ts`. It adds no package edge.
   // 175/22, no headroom.
   ceilings: { modules: 175, packages: 22 },

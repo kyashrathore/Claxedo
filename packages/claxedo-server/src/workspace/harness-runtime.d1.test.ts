@@ -1,8 +1,8 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { countD1Rounds, type D1Rounds } from "../../test-support/d1-rounds"
-import { hostedCoreD1App } from "../../test-support/hosted-core-d1-app"
+import { countD1Rounds, type D1Rounds } from "../test-support/d1-rounds"
+import { hostedCoreD1App } from "../test-support/hosted-core-d1-app"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
-import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
+import { recordRelayRuntimeToken } from "../authority/relay-token-record"
 
 const disposers: Array<() => Promise<void>> = []
 
