@@ -8,13 +8,18 @@ export function ServerProvider(props: ParentProps<{ readonly server: ServerHandl
   const visible = () => {
     if (document.visibilityState === "visible") void server.retryConnection()
   }
+  const leave = (event: PageTransitionEvent) => {
+    if (!event.persisted) server.closeStreams()
+  }
   window.addEventListener("online", server.retryConnection)
   window.addEventListener("focus", server.retryConnection)
   document.addEventListener("visibilitychange", visible)
+  window.addEventListener("pagehide", leave)
   onCleanup(() => {
     window.removeEventListener("online", server.retryConnection)
     window.removeEventListener("focus", server.retryConnection)
     document.removeEventListener("visibilitychange", visible)
+    window.removeEventListener("pagehide", leave)
     server.dispose()
   })
   return (

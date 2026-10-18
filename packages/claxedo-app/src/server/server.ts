@@ -63,6 +63,7 @@ function createQueryClient() {
 export type ServerHandle = Server & {
   readonly config: ServerConfig
   readonly ready: Promise<void>
+  readonly closeStreams: () => void
   readonly dispose: () => void
 }
 
@@ -140,6 +141,10 @@ export function createServer(config: ServerConfig): ServerHandle {
   const projection = createSessionProjection(workspaces, account)
   const stopProjecting = intake.subscribe(projection.observe)
   const placementStreams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: intake.frame, onGap: intake.gap })
+  const closeStreams = () => {
+    placementStreams.close()
+    streams.close()
+  }
   return {
     config,
     connection,
@@ -153,10 +158,10 @@ export function createServer(config: ServerConfig): ServerHandle {
     queries,
     retryConnection: retryConnections(startup, placementStreams),
     ready: startup.ready,
+    closeStreams,
     dispose: () => {
       stopProjecting()
-      placementStreams.close()
-      streams.close()
+      closeStreams()
       intake.dispose()
       workspaces.dispose()
       queryClient.clear()
