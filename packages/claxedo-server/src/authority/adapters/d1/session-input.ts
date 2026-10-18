@@ -3,7 +3,7 @@ import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-import type { ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { PrivateSessionRuntimePrincipal, ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { RegistrationRow, WorkspaceAccessRow } from "./session-rows"
 
 export type CanonicalMessage = {
@@ -100,6 +100,20 @@ export function canonicalMessages(input: unknown[]): CanonicalMessage[] {
       turnId: optionalText(row?.turnId, "message.turnId") ?? null,
     }
   })
+}
+
+/** The actor id of a runtime principal whose kinds agree: a user acts as a human, a service as an agent. */
+export function runtimeActorId(input: PrivateSessionRuntimePrincipal) {
+  const actorId = requireText(input.actorId, "actorId")
+  if (
+    (input.principalKind !== "user" && input.principalKind !== "service") ||
+    (input.actorKind !== "human" && input.actorKind !== "agent") ||
+    (input.principalKind === "user" && input.actorKind !== "human") ||
+    (input.principalKind === "service" && input.actorKind !== "agent")
+  ) {
+    throw new D1SessionAuthorityError("invalid_input", "Canonical runtime principal kind is required")
+  }
+  return actorId
 }
 
 export function optionalOrdinal(value: number | undefined) {

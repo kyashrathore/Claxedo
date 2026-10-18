@@ -208,17 +208,15 @@ async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<v
 }
 
 function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "cloudWorkspaces" | "accountProjectIds" | "accountKnows"> {
+  const linkedList = <T,>(pick: (catalog: LinkedCatalog) => readonly T[]) => async () => {
+    if (!signed) return []
+    await load()
+    const catalog = linked()
+    return catalog ? pick(catalog) : []
+  }
   return {
-    accountProjects: async () => {
-      if (!signed) return []
-      await load()
-      return linked()?.projects ?? []
-    },
-    cloudWorkspaces: async () => {
-      if (!signed) return []
-      await load()
-      return linked()?.cloud ?? []
-    },
+    accountProjects: linkedList((catalog) => catalog.projects),
+    cloudWorkspaces: linkedList((catalog) => catalog.cloud),
     accountProjectIds: (projectId) => linked()?.accountProjectIds(projectId) ?? [],
     accountKnows: (workspaceId) => linked()?.knowsWorkspace(workspaceId) ?? false,
   }

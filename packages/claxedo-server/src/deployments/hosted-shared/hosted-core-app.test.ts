@@ -1078,6 +1078,25 @@ describe("hosted-core session-list", () => {
     }
   })
 
+  test("reads the first page of every project the reader holds in one request", async () => {
+    const listProjectSessionPages = vi.fn(async () => [
+      { projectId: "prj_1", sessions: [{ session_id: "ses_1", workspace_id: "ws_1", project_id: "prj_1", created_at: 1, updated_at: 1 }] },
+    ])
+    const response = await core({ listProjectSessionPages }).request(
+      "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      { headers: signed },
+    )
+    expect(response.status).toBe(200)
+    expect(listProjectSessionPages).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "signed" }),
+      { sort: "human_turn_desc", archived: "active", settled: "active", limit: 6 },
+    )
+    expect(await response.json()).toEqual({
+      view: { scope: "projects", sort: "human_turn_desc", limit: 5 },
+      pages: [{ projectId: "prj_1", items: [expect.objectContaining({ sessionRef: "workspace:ws_1:session:ses_1" })] }],
+    })
+  })
+
   test("refuses an unsigned caller with JSON, not a rendered 404", async () => {
     const response = await core({}).request("/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1")
     expect(response.status).toBe(401)

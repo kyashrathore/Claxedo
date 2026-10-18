@@ -144,11 +144,9 @@ export type SettledFilter = "active" | "all"
 
 export type SessionListScope = { readonly projectId: ProjectId } | { readonly every: true; readonly sessionId?: SessionId }
 
-export type SessionListInput = SessionListScope & { readonly after?: string; readonly limit: number; readonly settled: SettledFilter }
+export type SessionPageQuery = { readonly limit: number; readonly settled: SettledFilter }
 
-export type SessionFirstPagesInput = { readonly limit: number; readonly settled: SettledFilter }
-
-export type SessionFirstPages = { readonly page: (projectId: ProjectId) => Promise<SessionPage> }
+export type SessionListInput = SessionListScope & SessionPageQuery & { readonly after?: string }
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]

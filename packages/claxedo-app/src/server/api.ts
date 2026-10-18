@@ -75,10 +75,9 @@ import type {
   QueuedPromptControl,
   SessionCreateInput,
   SessionGoal,
-  SessionFirstPages,
-  SessionFirstPagesInput,
   SessionListInput,
   SessionPage,
+  SessionPageQuery,
   SessionReader,
   SessionReads,
   SessionLocation,
@@ -86,13 +85,14 @@ import type {
   TranscriptPage,
   TranscriptPart,
 } from "./types"
+import type { SessionFirstPages } from "./session-list"
 import type { BackgroundTaskStop } from "./status-types"
 import type { AccountSpendReport, AccountSpendRequest, MachineTime, UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
-  readonly firstPages: (input: SessionFirstPagesInput) => SessionFirstPages
+  readonly firstPages: (input: SessionPageQuery) => SessionFirstPages
   readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
   readonly settle: (ref: SessionLocation, write: { readonly settled: true; readonly through: number } | { readonly settled: false }) => Promise<SessionReader>
   readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads

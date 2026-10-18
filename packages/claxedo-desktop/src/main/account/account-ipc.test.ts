@@ -616,6 +616,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "session.messages",
     "session.outline",
     "session.page",
+    "session.pages",
     "session.part",
     "session.projection.checkpoint",
     "session.projection.register",
@@ -646,7 +647,6 @@ test("the renderer-visible operation set stays pinned", async () => {
     "workspace.connection.refresh",
     "workspace.create",
     "workspace.lifecycle",
-    "workspace.list.machine",
     "workspace.list.provisioner",
     "workspace.resolve",
   ] as const satisfies readonly HostedOperationName[]

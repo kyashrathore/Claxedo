@@ -51,6 +51,7 @@ import {
   optionalText,
   positiveFence,
   requireText,
+  runtimeActorId,
   visibilityRows,
 } from "./session-input"
 import { D1SessionShares } from "./session-shares"
@@ -1430,15 +1431,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 
   private async requireRuntimeActor(input: RuntimeSessionActor): Promise<Principal> {
-    const actorId = requireText(input.actorId, "actorId")
-    if (
-      (input.principalKind !== "user" && input.principalKind !== "service") ||
-      (input.actorKind !== "human" && input.actorKind !== "agent") ||
-      (input.principalKind === "user" && input.actorKind !== "human") ||
-      (input.principalKind === "service" && input.actorKind !== "agent")
-    ) {
-      throw new D1SessionAuthorityError("invalid_input", "Canonical runtime principal kind is required")
-    }
+    const actorId = runtimeActorId(input)
     const row = await this.database
       .prepare(
         `

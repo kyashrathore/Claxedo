@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import { placementId, projectId, sessionId, type Placement, type ProjectId, type Server, type SessionFirstPagesInput, type SessionListInput, type SessionRow } from "@/server"
+import { placementId, projectId, sessionId, type Placement, type ProjectId, type Server, type SessionPageQuery, type SessionListInput, type SessionRow } from "@/server"
 import type { RequestsInternal } from "../requests/store"
 import { createSessionList } from "./store"
 
@@ -26,7 +26,7 @@ function world() {
   }
   const server = {
     placements: { list: placements, load: async () => placements(), byId: (id: string) => placements().find((candidate) => candidate.id === id) },
-    sessions: { list, firstPages: (input: SessionFirstPagesInput) => ({ page: (projectId: ProjectId) => list({ ...input, projectId }) }) },
+    sessions: { list, firstPages: (input: SessionPageQuery) => ({ page: (projectId: ProjectId) => list({ ...input, projectId }) }) },
   } as unknown as Server
   const requests = { openBySession: () => new Map() } as unknown as RequestsInternal
   return { server, requests, asked, rows, setPlacements, placements, failLists: () => (failing = true) }
