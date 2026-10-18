@@ -67,39 +67,6 @@ describe("remote workspace session authority", () => {
     expect(await host()).toMatchObject({ allowed: false, status: 503 })
   })
 
-  test("an allowed read stands for the same credential and session until its TTL, a write or another session or credential asks anew, and a denial is not kept", async () => {
-    const asked: Array<{ authorization: string | null; action?: string; sessionId?: string }> = []
-    let allowed = true
-    const policy = remoteWorkspaceSessionAccessPolicy({
-      url: "https://control.test/api/runtime-authority/session-authorize",
-      readDecisionTtlMs: 50,
-      fetch: async (_url, init) => {
-        const sent = sentJson(init) as { action?: string; sessionId?: string }
-        asked.push({ authorization: new Headers(init?.headers).get("authorization"), action: sent.action, sessionId: sent.sessionId })
-        return allowed ? Response.json({ allowed: true }) : Response.json({ error: { code: "session_private" } }, { status: 403 })
-      },
-    })
-    const read = (overrides: Partial<Parameters<typeof policy.authorize>[0]> = {}) => policy.authorize({ ...input, operation: "message_read", ...overrides })
-
-    expect((await Promise.all([read(), read(), read({ operation: "session_meta_read" })])).map((decision) => decision.allowed)).toEqual([true, true, true])
-    expect(asked, "three reads of one session under one credential ask once").toHaveLength(1)
-    await policy.authorize({ ...input, operation: "prompt" })
-    await read({ sessionId: "ses_other" })
-    await read({ credential: "Bearer another-rht" })
-    expect(asked.map((call) => `${call.action} ${call.sessionId} ${call.authorization}`)).toEqual([
-      "read ses_private Bearer signed-rht",
-      "write ses_private Bearer signed-rht",
-      "read ses_other Bearer signed-rht",
-      "read ses_private Bearer another-rht",
-    ])
-    await new Promise((resolve) => setTimeout(resolve, 60))
-    allowed = false
-    expect((await read()).allowed).toBe(false)
-    expect((await read()).allowed).toBe(false)
-    expect(asked.filter((call) => call.action === "read" && call.sessionId === "ses_private" && call.authorization === "Bearer signed-rht"), "the expired answer and each denial ask the authority").toHaveLength(3)
-    expect((await policy.authorize({ ...input, credential: undefined, operation: "message_read" })).allowed).toBe(false)
-  })
-
   test("forwards only the opaque proof, session id, action and the write's class", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     const policy = remoteWorkspaceSessionAccessPolicy({

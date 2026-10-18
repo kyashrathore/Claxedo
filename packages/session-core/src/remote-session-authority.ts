@@ -73,17 +73,9 @@ export function remoteWorkspaceSessionAccessPolicy(
     requireActor?: boolean
     adoptRefusedSession?: AdoptRefusedSession
     log?: AuthorityLog
-    /**
-     * How long an allowed read answer stands for the same credential and
-     * session; 10 s unless set, 0 asks the authority on every read. A relay
-     * replays one host token per reader for 30 s and accepts a revocation lag
-     * of 10 s on it, so a read within that window asks nothing it could learn.
-     */
-    readDecisionTtlMs?: number
   } = {},
 ) {
   const log = options.log ?? consoleAuthorityLog
-  const allowedReads = allowedReadDecisions(options.readDecisionTtlMs ?? READ_DECISION_TTL_MS_DEFAULT)
   const authorityUrl = () => (typeof options.url === "function" ? options.url() : options.url)?.trim()
   /**
    * POST one authority action and let `decode` name its SUCCESS shape.
@@ -142,9 +134,7 @@ export function remoteWorkspaceSessionAccessPolicy(
     const writeClass = sessionAccessWriteClass(input)
     const action = writeClass ? "write" : "read"
     const classified = writeClass ? { writeClass } : undefined
-    const decision = action === "read"
-      ? await allowedReads.through(input, () => request(input, action, decodeAllowed))
-      : await request(input, action, decodeAllowed, classified)
+    const decision = await request(input, action, decodeAllowed, classified)
     const adoptRefused = options.adoptRefusedSession
     if (decision.allowed || !adoptRefused) return decision
     return adoptRefused(input, {
@@ -238,35 +228,6 @@ export function remoteWorkspaceSessionAccessPolicy(
   policy.completeRegistrationCompensation = (input) =>
     request(input, "compensation_complete", decodeAllowed, { reason: input.reason })
   return policy
-}
-
-const READ_DECISION_TTL_MS_DEFAULT = 10_000
-
-/**
- * Allowed read decisions by credential and session, each standing for the TTL;
- * a denial is never kept, and concurrent misses share one authority call.
- */
-function allowedReadDecisions(ttlMs: number) {
-  const kept = new Map<string, { decision: Promise<SessionAccessDecision>; expiresAt: number }>()
-  return {
-    through: (input: AuthorityRequestInput, ask: () => Promise<SessionAccessDecision>): Promise<SessionAccessDecision> => {
-      if (ttlMs <= 0 || !input.credential) return ask()
-      const key = `${input.credential}\u0000${input.sessionId}`
-      const now = Date.now()
-      const current = kept.get(key)
-      if (current && current.expiresAt > now) return current.decision
-      for (const [name, entry] of kept) if (entry.expiresAt <= now) kept.delete(name)
-      const decision = ask().then((answer) => {
-        if (!answer.allowed && kept.get(key)?.decision === decision) kept.delete(key)
-        return answer
-      }, (error: unknown) => {
-        if (kept.get(key)?.decision === decision) kept.delete(key)
-        throw error
-      })
-      kept.set(key, { decision, expiresAt: now + ttlMs })
-      return decision
-    },
-  }
 }
 
 /**
