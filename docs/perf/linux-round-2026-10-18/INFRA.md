@@ -17,8 +17,8 @@ bun run --cwd packages/claxedo-desktop package:linux -- --dir --publish never
 - **First build** (main checkout, pre-merge `abfff0c3`): 3 min 31 s. It needed no fixes to the environment or the product.
 - **Baseline build** of the merged HEAD `24980400`, in the fresh worktree `/home/user/bench/wt/control`: 260 s. That includes `bun install --frozen-lockfile` (about 10 s) and is done through `repack.sh`.
 - **Baseline executable:** `/home/user/bench/apps/control-24980400/claxedo` (provenance in `benchmark-build.txt` beside it).
-- `packages/claxedo-desktop/dist/linux-unpacked` in the main checkout is the stale pre-merge build. Don't measure it.
-- I removed `packages/claxedo-desktop/resources/mermaid/`. It was my build's output of the native Mermaid helper, which the pele merge removed.
+- The desktop package's `dist/linux-unpacked` build in the main checkout is the stale pre-merge build. Don't measure it.
+- I removed the desktop package's `resources/mermaid` build output of the native Mermaid helper, which the pele merge removed.
 
 ## 2. `/home/user/bench/repack.sh`
 
@@ -36,7 +36,7 @@ repack.sh <worktree> <output-dir> --renderer-only <base-app-dir>    # renderer o
 
 **`--renderer-only` mode:**
 - Runs `build:packages`.
-- Runs `electron-vite build` with only the renderer section of the worktree's own `electron.vite.config.ts`. A temporary `packages/claxedo-desktop/.benchmark-renderer-only.config.ts` is written and removed afterwards; its source is `tools/renderer-only.config.ts`.
+- Runs `electron-vite build` with only the renderer section of the worktree's own `electron.vite.config.ts`. It writes a temporary config beside the desktop package's `electron.vite.config.ts` from `tools/renderer-only.config.ts` and removes it afterwards.
 - Copies `<base-app-dir>` and swaps `out/renderer` inside `resources/app.asar` (`tools/replace-renderer.mjs`, @electron/asar). The 91 files that are unpacked in the base stay unpacked.
 - Use it only when main, preload and the server bundle are identical to the base's commit. Mostly that means changes under `packages/claxedo-app` or `packages/ui`.
 - Every output gets `benchmark-build.txt`: the worktree, commit, uncommitted file count with diff sha256, mode, and build time.
