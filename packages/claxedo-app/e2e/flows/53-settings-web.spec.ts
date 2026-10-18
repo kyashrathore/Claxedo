@@ -82,6 +82,16 @@ test("53 settings on the web: the signed-in person's organization, usage limits,
   await expect(integrations.getByRole("button", { name: /^(Connect…|Add another…)$/ }).first()).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
+  await integrations.locator('[data-integration="github"]').getByRole("button", { name: /^(Connect…|Add another…)$/ }).click()
+  const connect = page.getByRole("dialog", { name: "Connect GitHub" })
+  await expect(connect.getByText("Lets agents clone your repositories into cloud workspaces and read the issues you give them.", { exact: true })).toBeVisible()
+  await expect(connect.getByRole("tablist")).toHaveCount(0)
+  await expect(connect.getByLabel("Fine-grained personal access token")).toBeVisible()
+  await expect(connect.getByRole("button", { name: "Connect", exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("connect-github.png") })
+  await connect.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(connect).toHaveCount(0)
+
   await openSection(page, isMobile, "Projects")
   await page.getByRole("link", { name: /Settings project/ }).click()
   const settings = page.getByTestId("settings-page")
