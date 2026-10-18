@@ -1,17 +1,22 @@
 import { isPiLaunchProvider, PI_DEFAULT_MODELS, PI_LAUNCH_PROVIDERS, type PiLaunchProvider } from "@claxedo/agent-runtime-contract"
-import { getSupportedThinkingLevels, type Api, type Model, type ModelThinkingLevel, type Provider } from "@earendil-works/pi-ai"
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic"
-import { googleProvider } from "@earendil-works/pi-ai/providers/google"
-import { groqProvider } from "@earendil-works/pi-ai/providers/groq"
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai"
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
-import { xaiProvider } from "@earendil-works/pi-ai/providers/xai"
+import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai"
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models"
+import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models"
+import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models"
+import { GROQ_MODELS } from "@earendil-works/pi-ai/providers/groq.models"
+import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-codex.models"
+import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models"
+import { OPENROUTER_MODELS } from "@earendil-works/pi-ai/providers/openrouter.models"
+import { XAI_MODELS } from "@earendil-works/pi-ai/providers/xai.models"
 import { configOptionsPreview, modelAndEffortOptions } from "../../contract"
 
-export const PI_BUILT_IN_PROVIDERS: Record<PiLaunchProvider, () => Provider> = {
-  "openai-codex": openaiCodexProvider, anthropic: anthropicProvider, openai: openaiProvider, openrouter: openrouterProvider,
-  google: googleProvider, groq: groqProvider, xai: xaiProvider,
+// The control plane Worker serves this catalog. Pi's provider modules carry
+// their API clients, which reach each vendor SDK, so the catalog reads the
+// providers' chat model tables: what a built-in provider's `getModels()`
+// answers before any model is fetched.
+const PI_LAUNCH_MODELS: Record<PiLaunchProvider, Readonly<Record<string, Model<Api>>>> = {
+  "openai-codex": OPENAI_CODEX_MODELS, anthropic: ANTHROPIC_MODELS, openai: OPENAI_MODELS, openrouter: OPENROUTER_MODELS,
+  google: GOOGLE_MODELS, groq: GROQ_MODELS, xai: XAI_MODELS,
 }
 
 export type PiCatalogModel = { id: string; name: string; efforts: ModelThinkingLevel[] }
@@ -22,7 +27,7 @@ export function piCatalogModel(provider: string, model: Model<Api>): PiCatalogMo
 
 export function piLaunchCatalog(providers: readonly string[]): PiCatalogModel[] {
   return providers.filter(isPiLaunchProvider).flatMap((provider) =>
-    PI_BUILT_IN_PROVIDERS[provider]().getModels().map((model) => piCatalogModel(provider, model)))
+    Object.values(PI_LAUNCH_MODELS[provider]).map((model) => piCatalogModel(provider, model)))
 }
 
 export function piDefaultModel(models: readonly PiCatalogModel[]): PiCatalogModel | undefined {

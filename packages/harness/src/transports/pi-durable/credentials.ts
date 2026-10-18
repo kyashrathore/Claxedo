@@ -1,12 +1,23 @@
 import { createKeyedSerializer } from "@claxedo/helpers"
-import { isPiLaunchProvider, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs,
+import { isPiLaunchProvider, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PiLaunchProvider,
   type ProviderDirect, type ProviderProjection, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import { createModels, type AuthContext, type Credential, type CredentialStore, type MutableModels, type OAuthCredential,
-  type ProviderAuth } from "@earendil-works/pi-ai"
+  type Provider, type ProviderAuth } from "@earendil-works/pi-ai"
+import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic"
+import { googleProvider } from "@earendil-works/pi-ai/providers/google"
+import { groqProvider } from "@earendil-works/pi-ai/providers/groq"
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai"
+import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
+import { xaiProvider } from "@earendil-works/pi-ai/providers/xai"
 import type { CustomProviderDefinition, ResolvedCredentials } from "../../contract"
 import { customPiProvider } from "./custom-providers"
 import { piConfiguration, piCredentialExpired } from "./errors"
-import { PI_BUILT_IN_PROVIDERS } from "./launch-catalog"
+
+const PI_BUILT_IN_PROVIDERS: Record<PiLaunchProvider, () => Provider> = {
+  "openai-codex": openaiCodexProvider, anthropic: anthropicProvider, openai: openaiProvider, openrouter: openrouterProvider,
+  google: googleProvider, groq: groqProvider, xai: xaiProvider,
+}
 
 const NO_AMBIENT_AUTH: AuthContext = { env: async () => undefined, fileExists: async () => false }
 
