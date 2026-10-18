@@ -4,7 +4,6 @@ import type { ClaxedoFetch } from "./contract"
 import { ClaxedoMcpClientError, createClaxedoMcpClient } from "./index"
 import {
   controlPlaneWorkspaceRow,
-  workspaceListHostRows,
   type ControlPlaneWorkspaceRow,
 } from "./control-plane-workspaces.fixture"
 
@@ -77,7 +76,7 @@ function hostedFixture(input: { now: () => number; ttlMs?: number; relayUrl?: st
         controlPlaneWorkspaceRow({ workspace_id: "ws-laptop", backing: "local-worktree", remote_directory: "/home/me/app", host_online: false, role: "editor" }),
         { backing: "cloud-vm" } as ControlPlaneWorkspaceRow,
       ]
-      return Response.json({ workspaces: workspaceListHostRows(rows, new URL(call.path, "http://control.local").searchParams.get("host")) })
+      return Response.json({ workspaces: rows })
     }
     return Response.json({ error: { code: "not_found", message: `no route ${call.path}` } }, { status: 404 })
   })
@@ -312,7 +311,7 @@ describe("server()", () => {
 })
 
 describe("workspaces()", () => {
-  test("names the machine each row runs on, asking each host once and keying by id", async () => {
+  test("names the machine each row runs on from the one list the control plane answers, keying by id", async () => {
     const fixture = hostedFixture({ now: () => 0 })
     const client = createClaxedoMcpClient({ deployment: "hosted", controlPlane: { fetch: fixture.controlPlane.fetch } })
     await expect(client.workspaces()).resolves.toEqual([
@@ -320,7 +319,7 @@ describe("workspaces()", () => {
       { id: "ws-mac", host: "machine", name: "Mac", directory: "/Users/me/app", machineOnline: true },
       { id: "ws-laptop", host: "machine", directory: "/home/me/app", machineOnline: false },
     ])
-    expect(fixture.controlPlane.calls.map((call) => call.path)).toEqual(["/api/workspace?host=provisioner", "/api/workspace?host=machine"])
+    expect(fixture.controlPlane.calls.map((call) => call.path)).toEqual(["/api/workspace?host=provisioner"])
   })
 
   test("needs an account credential and surfaces the control plane's refusal", async () => {

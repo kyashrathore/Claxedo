@@ -40,7 +40,7 @@ test("a control-plane answer refusing the sign-in (401) is reported to the auth 
   const refusals: string[] = []
   const transport = createTransport({ serverUrl: "https://cp.test", cookies: true, onSignInRefused: () => refusals.push("refused") })
   fetcher.mockResolvedValueOnce(Response.json({ error: { code: "missing_bearer_token", message: "Signed auth is required" } }, { status: 401 }))
-  await expect(transport.json("/api/workspace?host=machine")).rejects.toMatchObject({ status: 401, class: "auth" })
+  await expect(transport.json("/api/workspace?host=provisioner")).rejects.toMatchObject({ status: 401, class: "auth" })
   expect(refusals).toEqual(["refused"])
   for (const status of [200, 403, 404, 500]) {
     fetcher.mockResolvedValueOnce(Response.json({}, { status }))

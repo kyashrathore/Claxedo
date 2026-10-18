@@ -55,9 +55,9 @@ describe("HOSTED_OPERATIONS", () => {
 
   test("lists the account's workspaces with the host fixed in the path", () => {
     // `GET /api/workspace` with no `host` answers `{ workspaces: [] }`
-    // unconditionally, and `host=provisioner` is every workspace the account
-    // may open (`host=machine` is its machine-placed subset), so the one read
-    // the catalog needs is pinned here.
+    // unconditionally, and `host=provisioner`, the one host the route answers
+    // for, is every workspace the account may open, so the read the catalog
+    // needs is pinned here.
     expect(resolveHostedOperation("workspace.list.provisioner")).toEqual({
       method: "GET",
       path: "/api/workspace?host=provisioner",

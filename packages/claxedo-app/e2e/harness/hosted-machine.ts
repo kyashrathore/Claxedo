@@ -63,10 +63,10 @@ export async function startHostedMachine(hosted: HostedStack, local: Stack, owne
         const body = await response.text()
         answer = `${response.status} ${body}`
         if (response.ok && (JSON.parse(body) as { runtimeAccessToken?: string }).runtimeAccessToken) {
-          const catalog = await hostedFetch(hosted, "/api/workspace?host=machine", {}, owner)
+          const catalog = await hostedFetch(hosted, "/api/workspace?host=provisioner", {}, owner)
           if (!catalog.ok) throw new Error(`Hosted machine catalog failed: ${catalog.status} ${await catalog.text()}`)
-          const rows = await catalog.json() as { workspaces: Array<{ workspace_id: string; project_id: string }> }
-          const row = rows.workspaces.find((row) => row.workspace_id === workspace.id)
+          const rows = await catalog.json() as { workspaces: Array<{ workspace_id: string; project_id: string; backing?: string }> }
+          const row = rows.workspaces.find((row) => row.workspace_id === workspace.id && row.backing === "local-worktree")
           if (!row) throw new Error(`Registered folder ${workspace.id} is absent from D1`)
           return { ...workspace, projectId: row.project_id }
         }
