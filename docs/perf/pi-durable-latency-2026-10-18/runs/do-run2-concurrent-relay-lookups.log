@@ -1,0 +1,106 @@
+  control plane: session-authorize:write@247 session-authorize:turn_acquire@317 turn-delivery@391 session-rows@637 session-authorize:usage_report@2091 session-rows@2092 session-authorize:turn_release@2158
+relay-warm turn 1: accepted 490 first delta 1325 (object 1161, vendor 1043) idle 2202
+relay-warm turn 2: accepted 490 first delta 1315 (object 1150, vendor 1033) idle 2170
+relay-warm turn 3: accepted 507 first delta 1327 (object 1146, vendor 1028) idle 2208
+relay-warm turn 4: accepted 796 first delta 1595 (object 1432, vendor 1312) idle 2465
+relay-warm turn 5: accepted 471 first delta 1278 (object 1116, vendor 1001) idle 2148
+relay-warm turn 6: accepted 468 first delta 1279 (object 1114, vendor 994) idle 2121
+  control plane: session-authorize:write@508 session-authorize:turn_acquire@571 turn-delivery@642 session-rows@888 session-authorize:usage_report@2314 session-rows@2314 session-authorize:turn_release@2379
+relay-cold-cache turn 1: accepted 741 first delta 1557 (object 1394, vendor 1276) idle 2426
+relay-cold-cache turn 2: accepted 750 first delta 1553 (object 1390, vendor 1274) idle 2442
+relay-cold-cache turn 3: accepted 747 first delta 1552 (object 1386, vendor 1268) idle 2422
+relay-cold-cache turn 4: accepted 743 first delta 1545 (object 1381, vendor 1265) idle 2412
+relay-cold-cache turn 5: accepted 743 first delta 1554 (object 1390, vendor 1268) idle 2419
+relay-cold-cache turn 6: accepted 741 first delta 1540 (object 1376, vendor 1261) idle 2398
+  control plane: session-authorize:write@240 session-authorize:turn_acquire@304 turn-delivery@374 session-rows@619 session-authorize:usage_report@2024 session-rows@2025 session-authorize:turn_release@2089
+cold-object turn 1: accepted 472 first delta 1287 (object 1124, vendor 1007) idle 2134
+cold-object turn 2: accepted 538 first delta 1367 (object 1203, vendor 1082) idle 2204
+cold-object turn 3: accepted 470 first delta 1282 (object 1118, vendor 1003) idle 2125
+cold-object turn 4: accepted 472 first delta 1287 (object 1123, vendor 1007) idle 2130
+cold-object turn 5: accepted 467 first delta 1283 (object 1119, vendor 1002) idle 2129
+cold-object turn 6: accepted 472 first delta 1289 (object 1126, vendor 1009) idle 2123
+  control plane: session-authorize:write@588 session-authorize:turn_acquire@1003 turn-delivery@1425 session-rows@1667
+cp-slow turn 1: accepted 1172 first delta 2337 (object 2175, vendor 2060) idle 3297
+cp-slow turn 2: accepted 1167 first delta 2315 (object 2153, vendor 2037) idle 3257
+cp-slow turn 3: accepted 1789 first delta 2941 (object 2777, vendor 2660) idle 3873
+cp-slow turn 4: accepted 1159 first delta 2308 (object 2145, vendor 2031) idle 3234
+cp-slow turn 5: accepted 1163 first delta 2310 (object 2147, vendor 2032) idle 3244
+cp-slow turn 6: accepted 1781 first delta 2924 (object 2762, vendor 2648) idle 3858
+== relay-warm (relay; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10})
+press -> accepted          p50    490  mean    537  p95    796  sd   116  n 6
+press -> room sent prompt  p50   55.9  mean    106  p95    341  sd   105  n 6
+press -> object answered   p50    327  mean    372  p95    626  sd   114  n 6
+press -> vendor request    p50    413  mean    451  p95    697  sd   111  n 6
+press -> vendor first byte p50   1033  mean   1068  p95   1312  sd   110  n 6
+press -> object first delta p50   1150  mean   1187  p95   1432  sd   111  n 6
+press -> client first delta p50   1325  mean   1353  p95   1595  sd   110  n 6
+inter-delta at vendor      p50   26.7  mean   22.5  p95   29.1  sd  10.2  n 252
+inter-delta at object      p50    107  mean    107  p95    121  sd   7.8  n 48
+inter-delta at client      p50    106  mean    107  p95    119  sd  10.7  n 48
+jitter (sd) at object      p50    3.8  mean    5.6  p95   16.9  sd   5.1  n 6
+jitter (sd) at client      p50    4.3  mean    7.3  p95   24.1  sd   7.6  n 6
+last delta -> idle         p50   11.1  mean   10.7  p95   11.8  sd   1.2  n 6
+press -> idle              p50   2202  mean   2219  p95   2465  sd   114  n 6
+event stream open          p50    435  mean    435  p95    435  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":4,"session-authorize:write":6,"session-authorize:turn_acquire":6,"turn-delivery":6,"session-rows":13,"session-authorize:usage_report":6,"session-authorize:turn_release":6}
+relay resolver calls {"/internal/relay/target":1,"/internal/relay/revocation":2}
+
+== relay-cold-cache (relay; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10}; relay cache 1 ms)
+press -> accepted          p50    743  mean    744  p95    750  sd   3.2  n 6
+press -> room sent prompt  p50    328  mean    327  p95    328  sd   1.2  n 6
+press -> object answered   p50    582  mean    582  p95    587  sd   3.0  n 6
+press -> vendor request    p50    654  mean    654  p95    662  sd   4.4  n 6
+press -> vendor first byte p50   1268  mean   1269  p95   1276  sd   5.2  n 6
+press -> object first delta p50   1390  mean   1386  p95   1394  sd   6.1  n 6
+press -> client first delta p50   1553  mean   1550  p95   1557  sd   5.8  n 6
+inter-delta at vendor      p50   26.4  mean   22.2  p95   27.7  sd   9.9  n 258
+inter-delta at object      p50    106  mean   95.5  p95    110  sd  29.6  n 54
+inter-delta at client      p50    106  mean   95.4  p95    110  sd  29.7  n 54
+jitter (sd) at object      p50   30.2  mean   29.6  p95   31.1  sd   1.7  n 6
+jitter (sd) at client      p50   30.9  mean   29.7  p95   31.6  sd   1.8  n 6
+last delta -> idle         p50   10.7  mean   11.0  p95   14.5  sd   1.7  n 6
+press -> idle              p50   2422  mean   2420  p95   2442  sd  13.2  n 6
+event stream open          p50    678  mean    678  p95    678  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":5,"session-authorize:write":6,"session-authorize:turn_acquire":6,"turn-delivery":6,"session-rows":13,"session-authorize:usage_report":6,"session-authorize:turn_release":6}
+relay resolver calls {"/internal/relay/target":1,"/internal/relay/revocation":8}
+
+== cold-object (relay; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10}; fresh object per turn)
+press -> accepted          p50    472  mean    482  p95    538  sd  25.2  n 6
+press -> room sent prompt  p50   54.1  mean   55.1  p95   61.5  sd   2.9  n 6
+press -> object answered   p50    310  mean    320  p95    377  sd  25.1  n 6
+press -> vendor request    p50    394  mean    404  p95    464  sd  27.2  n 6
+press -> vendor first byte p50   1007  mean   1018  p95   1082  sd  28.6  n 6
+press -> object first delta p50   1124  mean   1135  p95   1203  sd  30.2  n 6
+press -> client first delta p50   1287  mean   1299  p95   1367  sd  30.6  n 6
+inter-delta at vendor      p50   26.1  mean   22.0  p95   27.6  sd   9.9  n 252
+inter-delta at object      p50    104  mean    104  p95    110  sd   7.0  n 48
+inter-delta at client      p50    104  mean    104  p95    111  sd   7.3  n 48
+jitter (sd) at object      p50    3.7  mean    5.4  p95   15.3  sd   4.5  n 6
+jitter (sd) at client      p50    5.0  mean    5.9  p95   14.8  sd   4.3  n 6
+last delta -> idle         p50   10.3  mean   10.2  p95   11.6  sd   1.1  n 6
+press -> idle              p50   2130  mean   2141  p95   2204  sd  28.6  n 6
+event stream open          p50    761  mean    713  p95    814  sd   140  n 6
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":6,"session-authorize:write":6,"session-authorize:turn_acquire":6,"turn-delivery":6,"session-rows":12,"session-authorize:usage_report":6,"session-authorize:turn_release":6}
+relay resolver calls {"/internal/relay/target":6,"/internal/relay/revocation":6}
+
+== cp-slow (relay; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":400,"vendorMs":10})
+press -> accepted          p50   1172  mean   1372  p95   1789  sd   292  n 6
+press -> room sent prompt  p50   53.8  mean    260  p95    676  sd   293  n 6
+press -> object answered   p50   1011  mean   1210  p95   1628  sd   292  n 6
+press -> vendor request    p50   1446  mean   1631  p95   2046  sd   290  n 6
+press -> vendor first byte p50   2060  mean   2245  p95   2660  sd   290  n 6
+press -> object first delta p50   2175  mean   2360  p95   2777  sd   290  n 6
+press -> client first delta p50   2337  mean   2522  p95   2941  sd   290  n 6
+inter-delta at vendor      p50   26.0  mean   22.3  p95   27.5  sd   9.5  n 276
+inter-delta at object      p50    104  mean    103  p95    108  sd   4.7  n 54
+inter-delta at client      p50    104  mean    103  p95    109  sd   5.3  n 54
+jitter (sd) at object      p50    4.8  mean    4.5  p95    5.5  sd   0.9  n 6
+jitter (sd) at client      p50    5.3  mean    5.1  p95    6.5  sd   1.0  n 6
+last delta -> idle         p50   10.2  mean   10.1  p95   10.5  sd   0.3  n 6
+press -> idle              p50   3297  mean   3461  p95   3873  sd   287  n 6
+event stream open          p50    750  mean    750  p95    750  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":6,"session-authorize:write":6,"session-authorize:turn_acquire":6,"turn-delivery":6,"session-rows":12,"session-authorize:usage_report":5,"session-authorize:turn_release":5}
+relay resolver calls {"/internal/relay/target":1,"/internal/relay/revocation":3}
+
+wrote /private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/f07b4ac1-8a7c-4f32-8af7-877e6dd4e80b/scratchpad/runs/relay-warm+relay-cold-cache+cold-object+cp-slow-2026-10-18T08-56-32.542Z.json
+exit 0

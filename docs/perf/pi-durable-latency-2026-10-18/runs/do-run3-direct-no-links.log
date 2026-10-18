@@ -1,0 +1,54 @@
+  control plane: session-authorize:write@237 session-authorize:turn_acquire@303 turn-delivery@373 session-rows@622 session-authorize:usage_report@2144 session-rows@2144 session-authorize:turn_release@2211
+direct turn 1: accepted 471 first delta 1289 (object -, vendor 1011) idle 2244
+direct turn 2: accepted 467 first delta 1275 (object -, vendor 988) idle 2252
+direct turn 3: accepted 463 first delta 1278 (object -, vendor 1003) idle 2246
+direct turn 4: accepted 470 first delta 1274 (object -, vendor 995) idle 2227
+direct turn 5: accepted 577 first delta 1396 (object -, vendor 1116) idle 2381
+direct turn 6: accepted 551 first delta 1370 (object -, vendor 1095) idle 2341
+  control plane: session-authorize:write@51.5 session-authorize:turn_acquire@63.5 turn-delivery@87.5 session-rows@324 session-authorize:usage_report@1709 session-rows@1710 session-authorize:turn_release@1716
+no-links turn 1: accepted 89.9 first delta 859 (object 852, vendor 741) idle 1720
+no-links turn 2: accepted 113 first delta 837 (object 830, vendor 724) idle 1681
+no-links turn 3: accepted 31.1 first delta 752 (object 745, vendor 638) idle 1571
+no-links turn 4: accepted 24.7 first delta 744 (object 737, vendor 633) idle 1580
+no-links turn 5: accepted 35.6 first delta 770 (object 758, vendor 642) idle 1585
+no-links turn 6: accepted 32.8 first delta 762 (object 752, vendor 642) idle 1614
+== direct (direct; links {"clientEdgeMs":50,"roomDoMs":110,"doCpMs":5,"cpMs":50,"vendorMs":10})
+press -> accepted          p50    471  mean    500  p95    577  sd  46.2  n 6
+press -> room sent prompt  -
+press -> object answered   -
+press -> vendor request    p50    395  mean    419  p95    499  sd  49.7  n 6
+press -> vendor first byte p50   1011  mean   1035  p95   1116  sd  51.0  n 6
+press -> object first delta -
+press -> client first delta p50   1289  mean   1314  p95   1396  sd  49.7  n 6
+inter-delta at vendor      p50   26.2  mean   22.6  p95   28.4  sd   9.8  n 276
+inter-delta at object      -
+inter-delta at client      p50    106  mean    107  p95    115  sd   6.3  n 54
+jitter (sd) at object      p50    0.0  mean    0.0  p95    0.0  sd   0.0  n 6
+jitter (sd) at client      p50    5.0  mean    5.4  p95   10.4  sd   3.0  n 6
+last delta -> idle         p50    7.9  mean    8.0  p95   14.8  sd   3.4  n 6
+press -> idle              p50   2252  mean   2282  p95   2381  sd  57.8  n 6
+event stream open          p50    402  mean    402  p95    402  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":4,"session-authorize:write":6,"session-authorize:turn_acquire":6,"turn-delivery":6,"session-rows":13,"session-authorize:usage_report":6,"session-authorize:turn_release":6}
+relay resolver calls {}
+
+== no-links (relay; links {"clientEdgeMs":0,"roomDoMs":0,"doCpMs":0,"cpMs":0,"vendorMs":0})
+press -> accepted          p50   35.6  mean   54.5  p95    113  sd  34.0  n 6
+press -> room sent prompt  p50    5.1  mean    7.1  p95   16.4  sd   4.8  n 6
+press -> object answered   p50   32.1  mean   49.8  p95    107  sd  32.7  n 6
+press -> vendor request    p50   38.3  mean   65.5  p95    132  sd  43.4  n 6
+press -> vendor first byte p50    642  mean    670  p95    741  sd  44.6  n 6
+press -> object first delta p50    758  mean    779  p95    852  sd  44.6  n 6
+press -> client first delta p50    770  mean    787  p95    859  sd  44.2  n 6
+inter-delta at vendor      p50   25.9  mean   22.0  p95   28.0  sd  10.0  n 252
+inter-delta at object      p50    105  mean    104  p95    119  sd  10.0  n 48
+inter-delta at client      p50    105  mean    103  p95    119  sd   9.9  n 48
+jitter (sd) at object      p50    9.2  mean    8.8  p95   15.3  sd   4.5  n 6
+jitter (sd) at client      p50    9.7  mean    8.9  p95   14.2  sd   3.9  n 6
+last delta -> idle         p50   10.2  mean   10.2  p95   11.7  sd   1.0  n 6
+press -> idle              p50   1614  mean   1625  p95   1720  sd  56.1  n 6
+event stream open          p50   52.9  mean   52.9  p95   52.9  sd   0.0  n 1
+control-plane calls {"session-authorize:start":1,"session-authorize:register":1,"session-authorize:read":4,"session-authorize:write":6,"session-authorize:turn_acquire":6,"turn-delivery":6,"session-rows":12,"session-authorize:usage_report":6,"session-authorize:turn_release":6}
+relay resolver calls {"/internal/relay/target":1,"/internal/relay/revocation":2}
+
+wrote /Users/yashvardhansingh/test/claxedo-lanes/pi-durable-latency/docs/perf/pi-durable-latency-2026-10-18/runs/direct+no-links-2026-10-18T09-55-39.911Z.json
+exit 0

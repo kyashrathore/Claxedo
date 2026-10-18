@@ -31,6 +31,8 @@ type HopTimes = TurnTimes & {
   vendorFirstByte?: number
   vendorDeltas: number[]
   objectDeltas: number[]
+  /** The control-plane calls the object made during the turn, by action, as milliseconds after the press when each was answered. */
+  controlPlane: Array<{ action: string; at: number; ms: number }>
 }
 
 type ScenarioResult = {
@@ -49,6 +51,7 @@ type ScenarioResult = {
   }
   cpCalls: Record<string, number>
   resolverCalls: Record<string, number>
+  streamOpen: Summary | undefined
 }
 
 function count(paths: readonly string[]): Record<string, number> {
@@ -76,26 +79,33 @@ async function createSession(topology: Topology, send: Topology["relay"]) {
 
 async function runScenario(scenario: Scenario, input: { scripts: Scripts; model: ScriptedModelServer; vendor: VendorProxy; turns: number }): Promise<ScenarioResult> {
   const persist = await mkdtemp(path.join(tmpdir(), "pi-latency-do-"))
-  const boot = () => bootTopology({ scripts: input.scripts, persist, root: "ses_latency", links: scenario.links, vendor: { url: input.vendor.url, secret: SECRET },
-    ...(scenario.relayCacheTtlMs === undefined ? {} : { relayCacheTtlMs: scenario.relayCacheTtlMs }) })
+  const boot = (world?: Topology["world"]) => bootTopology({ scripts: input.scripts, persist, root: "ses_latency", links: scenario.links, vendor: { url: input.vendor.url, secret: SECRET },
+    ...(scenario.relayCacheTtlMs === undefined ? {} : { relayCacheTtlMs: scenario.relayCacheTtlMs }), ...(world ? { world } : {}) })
   let topology = await boot()
   const send = () => scenario.path === "relay" ? topology.relay : topology.direct
   const turns: HopTimes[] = []
   const cpCalls: string[] = []
   const resolverCalls: string[] = []
+  /** How long each event stream took to open, from the press to its first bytes; on a fresh object this holds the object's start. */
+  const streamOpens: number[] = []
   try {
     await createSession(topology, send())
-    let stream = timedStream(send()(`/api/wr/events?sessionID=${topology.root}`))
-    await stream.opened
+    const openStream = async () => {
+      const startedAt = performance.now()
+      const opened = timedStream(send()(`/api/wr/events?sessionID=${topology.root}`))
+      await opened.opened
+      streamOpens.push(performance.now() - startedAt)
+      return opened
+    }
+    let stream = await openStream()
     for (let index = 0; index < input.turns; index++) {
       if (scenario.coldObject && index > 0) {
         stream.close()
         cpCalls.push(...topology.cpCalls.map((call) => call.path))
         resolverCalls.push(...topology.resolverCalls.map((call) => call.path))
         await topology.dispose()
-        topology = await boot()
-        stream = timedStream(send()(`/api/wr/events?sessionID=${topology.root}`))
-        await stream.opened
+        topology = await boot(topology.world)
+        stream = await openStream()
       }
       await sleep(scenario.pauseMs)
       const marker = `LAT${scenario.name.replaceAll("-", "").toUpperCase()}${index}`
@@ -116,7 +126,9 @@ async function runScenario(scenario: Scenario, input: { scripts: Scripts; model:
         ...(vendor ? { vendorRequest: vendor.arrivedAt - pressedAt, ...(vendor.firstByteAt ? { vendorFirstByte: vendor.firstByteAt - pressedAt } : {}) } : {}),
         vendorDeltas: vendor ? vendor.chunks.map((at) => at - pressedAt) : [],
         objectDeltas,
+        controlPlane: topology.cpCalls.filter((call) => call.at > pressedAt && call.at <= pressedAt + turn.idle + 500).map((call) => ({ action: call.path, at: call.at + call.ms - pressedAt, ms: call.ms })),
       })
+      if (index === 0) process.stderr.write(`  control plane: ${turns[0].controlPlane.map((call) => `${call.action}@${ms(call.at)}`).join(" ")}\n`)
       process.stderr.write(`${scenario.name} turn ${index + 1}: accepted ${ms(turn.accepted)} first delta ${ms(turn.firstDelta)} (object ${ms(objectDeltas[0])}, vendor ${ms(vendor?.firstByteAt === undefined ? undefined : vendor.firstByteAt - pressedAt)}) idle ${ms(turn.idle)}\n`)
     }
     stream.close()
@@ -143,6 +155,7 @@ async function runScenario(scenario: Scenario, input: { scripts: Scripts; model:
     },
     cpCalls: count(cpCalls),
     resolverCalls: count(resolverCalls),
+    streamOpen: summarize(streamOpens),
   }
 }
 
@@ -168,6 +181,7 @@ function report(result: ScenarioResult): string {
     row("jitter (sd) at client", summary.clientJitter),
     row("last delta -> idle", summary.lastDeltaToIdle),
     row("press -> idle", summary.idle),
+    row("event stream open", result.streamOpen),
     `control-plane calls ${JSON.stringify(result.cpCalls)}`,
     `relay resolver calls ${JSON.stringify(result.resolverCalls)}`,
   ].join("\n")

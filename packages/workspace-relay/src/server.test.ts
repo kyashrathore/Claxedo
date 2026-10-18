@@ -44,6 +44,7 @@ function relayBacking(input: { backing?: "cloud-vm" | "local-worktree" }) {
 async function harness(
   input: Partial<Pick<WorkspaceRelayDurableObjectRoomOptions,
     | "isRuntimeAccessTokenActive"
+    | "resolveTarget"
     | "audit"
     | "fetch"
     | "directory"
@@ -64,12 +65,12 @@ async function harness(
     runtimeAccessKey: runtime.publicKey,
     relayHostSigningKey: relayHost.privateKey,
     relayHostAlgorithm: "EdDSA",
-    resolveTarget: (claims) => ({
+    resolveTarget: input.resolveTarget ?? ((claims) => ({
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
       baseUrl: "https://host.example.test",
       ...relayBacking(input),
-    }),
+    })),
     audit: (event) => {
       auditEvents.push(event)
       return input.audit?.(event)
@@ -226,6 +227,41 @@ describe("workspace relay server", () => {
       })
       expect(res.headers.get("access-control-allow-origin")).toBe(origin)
     }
+  })
+
+  test("the revocation check and the target lookup leave together, and a revoked token is denied before its target is read", async () => {
+    const order: string[] = []
+    let releaseRevocation: () => void = () => {}
+    let active = true
+    const relay = await harness({
+      isRuntimeAccessTokenActive: () => new Promise((resolve) => {
+        order.push("revocation asked")
+        releaseRevocation = () => resolve(active ? { active: true } : { active: false, code: "runtime_access_token_revoked", reason: "revoked" })
+      }),
+      resolveTarget: (claims) => {
+        order.push("target asked")
+        return { workspaceId: claims.workspace_id, hostId: claims.host_id, baseUrl: "https://host.example.test", backing: "cloud-vm" as const }
+      },
+      fetch: (() => Promise.resolve(new Response("ok"))) as typeof fetch,
+    })
+    const token = await relay.token()
+    const bothAsked = async () => {
+      const deadline = Date.now() + 2_000
+      while (order.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    const admitted = relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", { headers: { authorization: `Bearer ${token}` } })
+    await bothAsked()
+    expect([...order].sort(), "the target is asked for while the revocation answer is still out").toEqual(["revocation asked", "target asked"])
+    releaseRevocation()
+    expect((await admitted).status).toBe(200)
+    active = false
+    order.length = 0
+    const denied = relay.room.request("http://relay.test/workspaces/ws_1/api/wr/health", { headers: { authorization: `Bearer ${token}` } })
+    await bothAsked()
+    releaseRevocation()
+    const response = await denied
+    expect(response.status).toBe(401)
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe("runtime_access_token_revoked")
   })
 
   test("reuses cached Relay Host Tokens while preserving revocation checks", async () => {
@@ -2014,6 +2050,21 @@ describe("cached target lookups", () => {
     expect(lookups).toBe(2)
     await lookup({ ...args, routingId: "r2" })
     expect(lookups, "a replaced sandbox's routing id is another key").toBe(3)
+  })
+
+  test("a session's own Durable Object is remembered past the cloud TTL and for the Runtime Access Token's longest life", async () => {
+    let clockNow = 1_000_000
+    let lookups = 0
+    const object = { workspaceId: "ws_1", hostId: "session-do:ses_1", baseUrl: "", backing: "durable-object" as const }
+    const lookup = createCachedTargetClient(async () => { lookups++; return object }, { ttlMs: 10_000, now: () => clockNow })
+    const args = { workspaceId: "ws_1", hostId: "session-do:ses_1" }
+    expect(await lookup(args)).toEqual(object)
+    clockNow += 30 * 60_000 - 1
+    expect(await lookup(args)).toEqual(object)
+    expect(lookups).toBe(1)
+    clockNow += 1
+    expect(await lookup(args)).toEqual(object)
+    expect(lookups).toBe(2)
   })
 
   test("a workspace still starting is asked about on every request, and a failed lookup is not remembered", async () => {

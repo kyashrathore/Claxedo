@@ -95,6 +95,13 @@ export type TargetLookup = (args: TargetLookupArgs) => Promise<WorkspaceRelayTar
 const RESOLVER_CACHE_MAX_ENTRIES = 8192
 const REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
 const TARGET_CACHE_TTL_MS_DEFAULT = 10_000
+/**
+ * A session's own Durable Object is named by its host id and never moves, so
+ * its target cannot change while a Runtime Access Token reaches it; it is kept
+ * for the token's longest life, the 30 minutes `mintRuntimeAccessToken` gives
+ * one. Revocation is still asked about on its own cadence.
+ */
+const DURABLE_OBJECT_TARGET_CACHE_TTL_MS_DEFAULT = 30 * 60_000
 export function pruneExpiringCache<T extends { expiresAt: number }>(cache: Map<string, T>, now: number, maxEntries: number) {
   for (const [key, entry] of cache) {
     if (entry.expiresAt <= now) cache.delete(key)
@@ -225,16 +232,19 @@ export function createCachedHostGenerationClient(
     }
   }
 }
-export type CachedTargetOptions = { ttlMs?: number; now?: () => number }
+export type CachedTargetOptions = { ttlMs?: number; durableObjectTtlMs?: number; now?: () => number }
 /**
  * Wraps the target lookup with a small in-memory cache keyed by workspace,
  * host and routing id. Only a resolved target is cached: a workspace whose
  * sandbox is still starting answers nothing, and must be seen the moment it
- * is ready. Concurrent misses share one lookup. A target that stopped keeps
- * answering for at most the TTL, the same lag the revocation cache allows.
+ * is ready. Concurrent misses share one lookup. A cloud or host-tunnel target
+ * that stopped keeps answering for at most `ttlMs`, the same lag the
+ * revocation cache allows; a session's own Durable Object for
+ * `durableObjectTtlMs`.
  */
 export function createCachedTargetClient(inner: TargetLookup, options: CachedTargetOptions = {}): TargetLookup {
   const ttlMs = options.ttlMs ?? TARGET_CACHE_TTL_MS_DEFAULT
+  const durableObjectTtlMs = options.durableObjectTtlMs ?? DURABLE_OBJECT_TARGET_CACHE_TTL_MS_DEFAULT
   const now = options.now ?? Date.now
   const cache = new Map<string, { expiresAt: number; promise?: Promise<WorkspaceRelayTarget | undefined>; target?: WorkspaceRelayTarget }>()
   return async (args) => {
@@ -248,7 +258,7 @@ export function createCachedTargetClient(inner: TargetLookup, options: CachedTar
     const promise = inner(args)
       .then((target) => {
         pruneExpiringCache(cache, now(), RESOLVER_CACHE_MAX_ENTRIES)
-        if (target) cache.set(key, { target, expiresAt: now() + ttlMs })
+        if (target) cache.set(key, { target, expiresAt: now() + (target.backing === "durable-object" ? durableObjectTtlMs : ttlMs) })
         else cache.delete(key)
         return target
       })

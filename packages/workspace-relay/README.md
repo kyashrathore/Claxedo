@@ -32,14 +32,18 @@ on a new acquisition, including after lease deletion. The resolver requires the
 signed identity to match the current ready lease; otherwise it returns 401
 `runtime_access_token_invalid`. The app renews through connection POST once.
 
-Target lookups only coalesce while in flight, keyed by workspace, host and routing
-identity. Completed answers are never retained. Each subsequent lookup checks
-current authority, even when a newer identity has already been served. A request
-already resolving or forwarding when the lease changes can finish with its
-previous snapshot; established streams are not disconnected by this fence. The
-runtime receives a relay-host token, so it does not independently fence the
-original routing identity. This costs a control-plane lookup per request rather
-than allowing a stale positive-cache window. The relay does not retry upstream failures.
+Target lookups are keyed by workspace, host and routing identity. A resolved
+cloud or host-tunnel target is kept for `CLAXEDO_RELAY_TARGET_CACHE_TTL_MS`
+(10 s), the same lag the revocation cache allows; a workspace still starting is
+asked about on every request. A `durable-object` target is kept for 30 minutes,
+the longest life of a Runtime Access Token, because the host id names the
+session's object and the object never moves; revocation is still asked about
+on its own cadence. The revocation check and the target lookup go out together,
+since each needs only the token's claims. A request already resolving or
+forwarding when the lease changes can finish with its previous snapshot;
+established streams are not disconnected by this fence. The runtime receives a
+relay-host token, so it does not independently fence the original routing
+identity. The relay does not retry upstream failures.
 
 ### Revocation And Active Checks
 

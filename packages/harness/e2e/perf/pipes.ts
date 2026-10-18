@@ -31,8 +31,11 @@ export function delayedBody(body: ReadableStream<Uint8Array> | null, ms: number,
   })
 }
 
-export function delayedResponse(response: Response, ms: number, tap?: ChunkTap): Response {
-  return new Response(delayedBody(response.body, ms, tap), { status: response.status, statusText: response.statusText, headers: response.headers })
+/** The response after the link: its headers `ms` later, and each body chunk `ms` after the chunk arrived. */
+export async function delayedResponse(response: Response, ms: number, tap?: ChunkTap): Promise<Response> {
+  const body = delayedBody(response.body, ms, tap)
+  await sleep(ms)
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers })
 }
 
 export type Summary = { n: number; mean: number; p50: number; p95: number; min: number; max: number; sd: number }

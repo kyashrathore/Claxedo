@@ -745,6 +745,14 @@ export async function authorizeWorkspaceRelayRequest(
     const claims = await span("rat-verify", async () =>
       await cachedRuntimeAccessTokenClaims(options, token, workspaceId)
     )
+    // The revocation check and the target lookup each need only the claims,
+    // and each is a round trip from the room to the control plane when its
+    // cache has lapsed, so both go out at once. The revocation answer is
+    // judged first, so a revoked token is denied before its target is looked
+    // at; a lookup that fails for a token denied on revocation or scope is
+    // never read and must not surface as an unhandled rejection.
+    const targetLookup = span("target-resolve", async () => await options.resolveTarget(claims))
+    targetLookup.catch(() => undefined)
     const active = await span("rat-active", async (): Promise<RuntimeAccessTokenActiveResult> => {
       return await options.isRuntimeAccessTokenActive?.(claims) ?? { active: true }
     })
@@ -775,7 +783,7 @@ export async function authorizeWorkspaceRelayRequest(
         }),
       }
     }
-    const target = await span("target-resolve", async () => await options.resolveTarget(claims))
+    const target = await targetLookup
     if (
       !target
       || target.workspaceId !== claims.workspace_id

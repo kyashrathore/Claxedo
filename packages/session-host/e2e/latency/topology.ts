@@ -64,7 +64,11 @@ export type TopologyInput = {
   vendor: { url: string; secret: string }
   /** The relay's target and revocation cache TTLs; absent, the relay's 10 s defaults. */
   relayCacheTtlMs?: number
+  /** The keys and control plane of an earlier boot, so a rebooted workerd finds the session it registered and the leases it held. */
+  world?: World
 }
+
+export type World = { signing: Keys; controlPlane: ReturnType<typeof controlPlaneStandIn> }
 
 export type Topology = Awaited<ReturnType<typeof bootTopology>>
 
@@ -89,23 +93,26 @@ function account(vendor: { url: string; secret: string }): Record<string, Provid
  */
 export async function bootTopology(input: TopologyInput) {
   const { links } = input
-  const signing = await keys()
+  const signing = input.world?.signing ?? await keys()
   const resolverCalls: Array<{ path: string; at: number }> = []
   const pipe: PipeRecord[] = []
   const stderr: string[] = []
-  const controlPlane = controlPlaneStandIn({
+  const controlPlane = input.world?.controlPlane ?? controlPlaneStandIn({
     root: input.root, relayHostKey: signing.relayHost.publicKey, runtimeAccessKey: signing.runtimeAccess.privateKey,
     accounts: () => ({ [OWNER]: account(input.vendor) }), plugins: () => ({ harnessLaunch: {}, mcp: {} }),
     machine: () => ({ relayUrl: "http://127.0.0.1:1", directory: "/workspace" }),
     workspaceSessions: () => [], sessionHost: () => () => { throw new Error("The latency rig has no first-party MCP") },
   })
+  const world: World = { signing, controlPlane }
   const cpCalls: Array<{ path: string; at: number; ms: number }> = []
   const controlPlaneLink = async (request: Request) => {
     const at = performance.now()
+    const body = await request.text()
+    const action = (JSON.parse(body || "{}") as { action?: unknown }).action
     await sleep(links.doCpMs + links.cpMs)
-    const response = await controlPlane.fetch(request)
+    const response = await controlPlane.fetch(new Request(request.url, { method: request.method, headers: request.headers, body }))
     await sleep(links.doCpMs)
-    cpCalls.push({ path: new URL(request.url).pathname, at, ms: performance.now() - at })
+    cpCalls.push({ path: `${new URL(request.url).pathname.split("/").pop()}${typeof action === "string" ? `:${action}` : ""}`, at, ms: performance.now() - at })
     return response
   }
   const resolver = async (request: Request) => {
@@ -136,7 +143,7 @@ export async function bootTopology(input: TopologyInput) {
     record.answeredAt = performance.now()
     const decoder = new TextDecoder()
     const tap: ChunkTap = (chunk, at) => { record.chunks.push({ at, text: decoder.decode(chunk, { stream: true }) }) }
-    return delayedResponse(upstream, links.roomDoMs, tap)
+    return await delayedResponse(upstream, links.roomDoMs, tap)
   }
   miniflare = new Miniflare({
     durableObjectsPersist: input.persist,
@@ -194,6 +201,7 @@ export async function bootTopology(input: TopologyInput) {
   const mf = miniflare
   return {
     root: input.root,
+    world,
     controlPlane,
     cpCalls,
     resolverCalls,
@@ -206,7 +214,7 @@ export async function bootTopology(input: TopologyInput) {
       headers.set("authorization", `Bearer ${rat}`)
       if (init.body !== undefined) headers.set("content-type", "application/json")
       const response = await mf.dispatchFetch(`https://relay.test/workspaces/${WORKSPACE_ID}${path}`, { ...init, headers } as never) as unknown as Response
-      return delayedResponse(response, links.clientEdgeMs)
+      return await delayedResponse(response, links.clientEdgeMs)
     },
     /** The same object over one link from the browser, with no relay in between: what a direct path would cost. */
     direct: async (path: string, init: RequestInit = {}): Promise<Response> => {
@@ -219,7 +227,7 @@ export async function bootTopology(input: TopologyInput) {
       if (init.body !== undefined) headers.set("content-type", "application/json")
       const namespace = await sessionHost()
       const response = await namespace.get(namespace.idFromName(input.root)).fetch(`https://session-host.invalid${path}`, { ...init, headers: Object.fromEntries(headers) } as never) as unknown as Response
-      return delayedResponse(response, oneWay)
+      return await delayedResponse(response, oneWay)
     },
     dispose: () => mf.dispose(),
   }
