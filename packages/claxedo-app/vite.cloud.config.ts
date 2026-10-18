@@ -149,13 +149,11 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
       // vite.renderer.ts.
       minify: "terser",
       terserOptions: { compress: { passes: 2 } },
-      // PostHog Error Tracking symbolication (deploy-claxedo-app.yml).
       // "hidden" writes *.map files next to each chunk without adding a
-      // `//# sourceMappingURL` comment to the bundle, so nothing shipped to
-      // Cloudflare Pages ever points at a map file, while the maps still
-      // exist on disk for the deploy workflow's `posthog-cli sourcemap
-      // inject`/`upload` step to find before it deletes every *.map from
-      // the publish directory.
+      // `//# sourceMappingURL` comment to the bundle, so nothing the app
+      // Worker serves points at a map file; the deploy deletes every *.map
+      // from the publish directory (prepareBrowserArtifactsForWorkers) and
+      // the desktop release uploads its own maps to PostHog.
       sourcemap: "hidden",
       rollupOptions: {
         input: {
