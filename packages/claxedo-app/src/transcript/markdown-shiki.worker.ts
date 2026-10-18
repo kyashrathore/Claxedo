@@ -1,7 +1,8 @@
 /// <reference lib="webworker" />
 
 import { ShikiStreamTokenizer } from "@shikijs/stream"
-import { createHighlighter, getTokenStyleObject, stringifyTokenStyle, type ThemedToken } from "shiki"
+import { createHighlighterCore, getTokenStyleObject, stringifyTokenStyle, type ThemedToken } from "shiki/core"
+import { createOnigurumaEngine } from "shiki/engine/oniguruma"
 import { codeThemeName } from "./code-theme-name"
 import { highlightGrammar, resolveHighlightLanguage } from "./markdown-shiki-language"
 import type { MarkdownToken, MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol"
@@ -14,7 +15,7 @@ type Stream = {
 }
 
 const streams = new Map<string, Stream>()
-let highlighter: ReturnType<typeof createHighlighter> | undefined
+let highlighter: ReturnType<typeof createHighlighterCore> | undefined
 const queue = createLatestWorkerQueue<Extract<MarkdownWorkerRequest, { type: "highlight" }>>({
   run: highlight,
   supersede: (request) => post({ type: "superseded", id: request.id, key: request.key }),
@@ -23,7 +24,7 @@ const queue = createLatestWorkerQueue<Extract<MarkdownWorkerRequest, { type: "hi
 
 self.onmessage = (event: MessageEvent<MarkdownWorkerRequest>) => {
   if (event.data.type === "init") {
-    highlighter ??= createHighlighter({ themes: [event.data.theme], langs: [] })
+    highlighter ??= createHighlighterCore({ themes: [event.data.theme], langs: [], engine: createOnigurumaEngine(import("shiki/wasm")) })
     return
   }
   if (event.data.type === "dispose") {

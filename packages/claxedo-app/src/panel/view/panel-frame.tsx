@@ -4,7 +4,7 @@ import { useServer } from "@/server"
 import { SidePanel, SidePanelArea } from "@/ui"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
-import { nextIdleSlice } from "@/lib/idle"
+import { prefetchWhenSettled } from "@/lib/prefetch"
 import { loadPanelBody, PanelBody } from "./panel-body-lazy"
 import { PanelHeader } from "./panel-header"
 import { createWorkspaceResize } from "./resize-handle"
@@ -19,11 +19,9 @@ function WorkspacePanel(): JSX.Element {
     return placementId ? (server.placements.byId(placementId)?.path ?? "") : ""
   }
   const resize = createWorkspaceResize(() => undefined)
-  onMount(() => {
-    void (panel.open() ? loadPanelBody() : nextIdleSlice().then(loadPanelBody)).catch((error: unknown) =>
-      console.warn("The panel views could not be fetched ahead; they load when the panel opens", { error }),
-    )
-  })
+  const prefetchFailure = "The panel views could not be fetched ahead; they load when the panel opens"
+  if (panel.open()) onMount(() => void loadPanelBody().catch((error: unknown) => console.warn(prefetchFailure, { error })))
+  else prefetchWhenSettled(loadPanelBody, prefetchFailure)
   return (
     <SidePanel
       open={panel.open()}

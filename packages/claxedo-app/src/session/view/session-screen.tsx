@@ -1,7 +1,7 @@
-import { createEffect, createMemo, createSignal, Match, on, onMount, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
 import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
 import { useElapsed } from "@/lib/delay"
-import { nextIdleSlice } from "@/lib/idle"
+import { holdPrefetch, prefetchWhenSettled } from "@/lib/prefetch"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { useErrorCopy } from "@/i18n"
 import { sessionId, useServer, type SessionLocation } from "@/server"
@@ -213,6 +213,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   commitDeltasWhileShown(view)
   markSeenWhileShown(view, () => props.active && !props.readOnly, stores.list)
   holdPaneReveal(() => view().state().kind === "loading" && !placeholderDue())
+  holdPrefetch(() => view().state().kind === "loading")
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined
@@ -256,10 +257,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
 }
 
 export function SessionScreen(props: PaneProps<SessionLocation>) {
-  onMount(() => {
-    void nextIdleSlice()
-      .then(() => Promise.all([loadCodeViews(), loadSessionDocks()]))
-      .catch((error: unknown) => console.warn("The code views and docks could not be fetched ahead; they load when first shown", { error }))
-  })
+  prefetchWhenSettled(() => Promise.all([loadCodeViews(), loadSessionDocks()]), "The code views and docks could not be fetched ahead; they load when first shown")
   return <SessionSurface sessionRef={props.state} active={props.active} />
 }
