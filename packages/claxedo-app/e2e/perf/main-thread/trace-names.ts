@@ -7,6 +7,10 @@ type StackFrame = { functionName?: string; url?: string; lineNumber?: number; co
 
 const COMPILE = new Set(["v8.compile", "v8.compileModule", "v8.evaluateModule", "EvaluateScript", "CompileScript", "v8.parseOnBackground", "v8.compileEval", "CacheScript"])
 
+export function tidyWhere(where: string) {
+  return where.replace(/\S*node_modules\/\.bun\/[^/\s]+\/node_modules\//g, "").replace(/\S*?\/packages\//g, "packages/")
+}
+
 export function isScriptCompile(event: TraceEvent) {
   return COMPILE.has(event.name)
 }

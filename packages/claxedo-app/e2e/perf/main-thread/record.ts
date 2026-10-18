@@ -21,7 +21,6 @@ const CATEGORIES = [
   "devtools.timeline",
   "disabled-by-default-devtools.timeline",
   "disabled-by-default-devtools.timeline.frame",
-  "disabled-by-default-devtools.timeline.stack",
   "v8.execute",
   "blink.user_timing",
   "loading",

@@ -21,7 +21,7 @@ const load = () => os.loadavg().map((value) => value.toFixed(2)).join(" ")
 function line(row: ScenarioRow) {
   const ready = row.analysis.ready
   const tail = row.analysis.tail
-  return `[${row.variant} #${row.run}] ${row.scenario}: ready ${row.readyMs.toFixed(0)}${row.railReadyMs === undefined ? "" : ` rail ${row.railReadyMs.toFixed(0)}`} busy ${ready.busyMs.toFixed(0)} tbt ${ready.tbtMs.toFixed(0)} long ${ready.longTasks}/${ready.longestMs.toFixed(0)} style ${ready.styleN}/${ready.styleMs.toFixed(0)} layout ${ready.layoutN}/${ready.layoutMs.toFixed(0)} forced ${ready.forcedN} paint ${ready.paintMs.toFixed(0)} | tail busy ${tail.busyMs.toFixed(0)} tbt ${tail.tbtMs.toFixed(0)} long ${tail.longTasks}`
+  return `[${row.variant} #${row.run}] ${row.scenario}: ready ${row.readyMs.toFixed(0)}${row.railReadyMs === undefined ? "" : ` rail ${row.railReadyMs.toFixed(0)}`} busy ${ready.busyMs.toFixed(0)} cpu ${ready.cpuMs.toFixed(0)} tbt ${ready.tbtMs.toFixed(0)} long ${ready.longTasks}/${ready.longestMs.toFixed(0)} style ${ready.styleN}/${ready.styleMs.toFixed(0)} layout ${ready.layoutN}/${ready.layoutMs.toFixed(0)} forced ${ready.forcedN} paint ${ready.paintMs.toFixed(0)} | tail busy ${tail.busyMs.toFixed(0)} tbt ${tail.tbtMs.toFixed(0)} long ${tail.longTasks}`
 }
 
 async function main() {

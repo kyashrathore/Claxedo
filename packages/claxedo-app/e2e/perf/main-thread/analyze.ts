@@ -1,12 +1,13 @@
 import type { TraceEvent } from "../../harness/trace-events"
 import { profileFrameLabel, profileTree, type CpuProfile } from "../panel/trace"
-import { compileFile, isScriptCompile, jsFrameAt, type Mapper } from "./trace-names"
+import { compileFile, isScriptCompile, jsFrameAt, tidyWhere, type Mapper } from "./trace-names"
 
 export type Window = { start: number; ready: number; end: number }
 
 export type Phase = {
   ms: number
   busyMs: number
+  cpuMs: number
   tbtMs: number
   longTasks: number
   longestMs: number
@@ -93,6 +94,7 @@ function phase(main: readonly TraceEvent[], tasksOf: readonly TraceEvent[], from
   return {
     ms: (to - from) / 1000,
     busyMs: tasks.reduce((total, task) => total + (task.dur ?? 0), 0) / 1000,
+    cpuMs: tasks.reduce((total, task) => total + ((task as { tdur?: number }).tdur ?? 0), 0) / 1000,
     tbtMs: tasks.reduce((total, task) => total + Math.max(0, (task.dur ?? 0) - LONG_TASK_US), 0) / 1000,
     longTasks: tasks.filter((task) => (task.dur ?? 0) > LONG_TASK_US).length,
     longestMs: tasks.reduce((longest, task) => Math.max(longest, task.dur ?? 0), 0) / 1000,
@@ -113,10 +115,11 @@ function phase(main: readonly TraceEvent[], tasksOf: readonly TraceEvent[], from
 function group(rows: readonly { where: string; us: number }[], limit: number): Attribution[] {
   const out = new Map<string, Attribution>()
   for (const row of rows) {
-    const current = out.get(row.where) ?? { where: row.where, n: 0, ms: 0 }
+    const where = tidyWhere(row.where)
+    const current = out.get(where) ?? { where, n: 0, ms: 0 }
     current.n += 1
     current.ms += row.us / 1000
-    out.set(row.where, current)
+    out.set(where, current)
   }
   return [...out.values()].sort((a, b) => b.ms - a.ms).slice(0, limit)
 }

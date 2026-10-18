@@ -77,31 +77,52 @@ async function openPage(input: RunInput) {
   await context.addInitScript({ path: PROBE })
   const page = await context.newPage()
   page.on("pageerror", (error) => console.log(`[page error] ${error.message}`))
+  page.on("console", (message) => {
+    if (message.type() === "error") console.log(`[console error] ${message.text().slice(0, 300)}`)
+  })
+  page.on("requestfailed", (request) => console.log(`[request failed] ${request.url().slice(0, 160)} ${request.failure()?.errorText ?? ""}`))
   await page.goto(new URL("/favicon-v3.svg", input.originUrl).toString())
   const cdp = await context.newCDPSession(page)
   if (input.throttle > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: input.throttle })
   return { context, page, cdp }
 }
 
-async function clickRow(input: RunInput, page: Page, cdp: CDPSession, session: SessionTarget, scenario: string) {
+async function railRow(page: Page, session: SessionTarget) {
   const locator = page.locator(`[data-slot="session-navigation-row"][data-session-id="${session.id}"]`).first()
   for (let more = 0; more < 20 && (await locator.count()) === 0; more += 1) {
     await page.getByRole("button", { name: "Load more" }).first().click()
     await dwell(300)
   }
   await locator.scrollIntoViewIfNeeded()
+  const box = await locator.boundingBox()
+  if (!box) throw new Error(`no rail row for ${session.id}`)
+  const point = { x: box.x + Math.min(box.width / 2, 120), y: box.y + box.height / 2 }
+  await page.mouse.move(point.x, point.y)
   await dwell(300)
   await quiet(page)
-  const box = await locator.boundingBox()
-  if (!box) throw new Error(`no rail row for ${scenario}`)
+  return point
+}
+
+async function clickRow(input: RunInput, page: Page, cdp: CDPSession, session: SessionTarget, scenario: string) {
+  const point = await railRow(page, session)
   const end = await startCapture(cdp)
   await arm(page, sessionTarget(session, "pointerdown"))
-  await page.mouse.click(box.x + Math.min(box.width / 2, 120), box.y + box.height / 2)
+  await page.mouse.click(point.x, point.y)
   return row(input, scenario, await end(page))
+}
+
+async function show(page: Page, session: SessionTarget) {
+  const shown = await page.locator(`section[data-component="session-screen"][data-session-id="${session.id}"]`).isVisible()
+  if (shown) return
+  const point = await railRow(page, session)
+  await page.mouse.click(point.x, point.y)
+  await page.locator(`section[data-component="session-screen"][data-session-id="${session.id}"]`).waitFor({ state: "visible" })
+  await quiet(page)
 }
 
 async function stream(input: RunInput, page: Page, cdp: CDPSession) {
   const { api, stack, fixture, short } = input
+  await show(page, short)
   const script = `stream-${input.variant}-${input.run}`
   await stack.acp.write(script, streamScript(fixture.workspace.directory))
   const end = await startCapture(cdp)

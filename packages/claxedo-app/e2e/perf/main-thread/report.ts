@@ -1,8 +1,8 @@
 import type { Attribution, Phase } from "./analyze"
 import type { ScenarioRow } from "./scenarios"
 
-const PHASE_FIELDS = ["busyMs", "tbtMs", "longTasks", "longestMs", "scriptMs", "compileMs", "styleN", "styleMs", "styleElements", "layoutN", "layoutMs", "forcedN", "forcedMs", "paintMs", "gcMs"] as const satisfies readonly (keyof Phase)[]
-const TAIL_FIELDS = ["busyMs", "tbtMs", "longTasks", "longestMs", "forcedN", "styleMs", "layoutMs"] as const satisfies readonly (keyof Phase)[]
+const PHASE_FIELDS = ["busyMs", "cpuMs", "tbtMs", "longTasks", "longestMs", "scriptMs", "compileMs", "styleN", "styleMs", "styleElements", "layoutN", "layoutMs", "forcedN", "forcedMs", "paintMs", "gcMs"] as const satisfies readonly (keyof Phase)[]
+const TAIL_FIELDS = ["busyMs", "cpuMs", "tbtMs", "longTasks", "longestMs", "forcedN", "styleMs", "layoutMs"] as const satisfies readonly (keyof Phase)[]
 const CENSUS_FIELDS = ["railRows", "timelineRows", "elements", "removed", "attributes", "text"] as const
 
 export function median(values: readonly number[]) {

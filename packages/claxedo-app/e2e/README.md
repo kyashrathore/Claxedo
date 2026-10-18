@@ -65,6 +65,16 @@ The local stack lifts the control plane's request budgets (the Worker's 600 requ
 
 `--out` receives `<label>-summary.json` (every step), `<label>-summary.md` (medians per step and profile, the representative run's waterfall, main thread and lazy chunks, and for a local target every dist asset's raw/gzip/brotli size with the initial chunks' bytes by source) and one `.trace.json` per step.
 
+## Performance: main-thread cost per flow
+
+```sh
+CLAXEDO_E2E_PORT_RANGE=48500-48579 bun run e2e:perf-main-thread -- --variants=base:/tmp/base-dist:48590,app::48591 --runs=5 --throttle=4 --out=/tmp/main-thread
+```
+
+Where `e2e:perf-web` follows what a person waits on, network included, over short sessions, this rig follows the main thread through long transcripts and a streaming turn. One stack seeds 36 one-turn sessions for the rail, one three-turn session per run and long sessions replayed from the transcript lab fixture (`--long=1,8` sizes them by the messages the server sends, in MiB). Each run opens a fresh Chromium context at 1440×900, device scale 2, with the CPU slowed `--throttle` times, boots into its own short session, then runs `--scenarios` in order (default `open:1m,open:8m,return:1m,return:short,stream`): `open` and `return` hover the session's rail row, then press it; `stream` shows the run's short session and streams the report from `stream-script.ts` into it. Each flow is traced from the press (from navigation for `boot`) to the first painted frame showing the session's latest turn with its composer editable, then until the DOM has been still for a second. A task whose time is all spent answering DevTools is left out.
+
+For the window up to that frame and for the tail after it, the report gives median task time, total blocking time, long tasks, script, compile, style recalcs, layouts, forced style and layout, paint and garbage collection, and per variant the self time, the forced style and layout with the code that forced them, compile and evaluate per chunk and the longest tasks with their self time. `--census` adds one run per variant that counts the elements, rail rows and timeline rows each flow creates. `--keep-traces` writes the first run of each variant's traces and CPU profiles; `MT_TRACE_EXTRA` adds trace categories, such as `disabled-by-default-devtools.timeline.stack` for the stacks that forced a layout or `disabled-by-default-blink.debug` for CSS selector statistics, both of which slow the page they trace.
+
 ## Writing a flow
 
 One spec per user flow, named `e2e/flows/NN-flow-name.spec.ts`, where `NN` is the flow number from the plan. The spec imports everything from `../harness`:
