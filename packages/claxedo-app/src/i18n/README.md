@@ -8,7 +8,7 @@ Owns: the locale (one persisted preference), the locale manifest, and the dictio
 import { useTranslator, type Translations } from "@/i18n"
 ```
 
-Each domain keeps its strings in `src/<domain>/i18n.ts`, one dictionary per language, English required, the other sixteen optional. A locale's strings are either inline or a loader, `() => import("./locales/de")`, whose module's default export is the strings:
+Each domain keeps its strings in `src/<domain>/i18n.ts` (or `i18n/en.ts` with an `i18n/index.ts` beside it), one dictionary per language, English required, the other sixteen optional. A locale's strings are either inline or a loader, `() => import("./locales/de")`, whose module's default export is the strings:
 
 ```ts
 export const dictionary = {
@@ -17,7 +17,7 @@ export const dictionary = {
 } satisfies Translations<"rail.newSession" | "rail.search">
 ```
 
-The web build groups every `src/*/locales/<code>.ts` and `src/i18n/errors/<code>.ts` into one `locale-<code>` chunk (`vite.cloud.config.ts`), so a visitor downloads English with the app and exactly one other locale, theirs, in one request. A domain whose strings are a few lines keeps them inline.
+The web build groups every `locales/<code>.ts` under `src/` and `src/i18n/errors/<code>.ts` into one `locale-<code>` chunk (`vite.cloud.config.ts`), so a visitor downloads English with the app and exactly one other locale, theirs, in one request. A domain whose strings are a few lines keeps them inline.
 
 A change to an English string's meaning removes that key from every other locale in the same change, so English shows until the string is translated again, and no locale keeps saying what the English no longer says.
 

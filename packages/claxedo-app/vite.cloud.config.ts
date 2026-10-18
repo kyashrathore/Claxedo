@@ -29,7 +29,7 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
   }
 }
 
-const localeFile = /\/src\/(?:[^/]+\/locales|i18n\/errors)\/([a-z]+)\.ts$/
+const localeFile = /\/src\/(?:(?:[^/]+\/)+locales|i18n\/errors)\/([a-z]+)\.ts$/
 
 function localeChunk(id: string): string | undefined {
   const match = localeFile.exec(normalizePath(id))
