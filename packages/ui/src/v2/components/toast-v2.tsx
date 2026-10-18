@@ -1,7 +1,7 @@
 import type { ToasterProps } from "solid-sonner"
 import { isRTL } from "@kobalte/core/i18n"
 import type { ComponentProps, JSX } from "solid-js"
-import { createContext, lazy, onCleanup, onMount, splitProps, useContext } from "solid-js"
+import { createContext, createSignal, lazy, onCleanup, onMount, Show, splitProps, useContext } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useI18n } from "../../context/i18n"
 import "./button-v2.css"
@@ -26,11 +26,20 @@ function withSonner(run: (module: Sonner) => void): void {
 
 const Toaster = lazy(() => loadSonner().then((module) => ({ default: module.Toaster })))
 
+const IDLE_MOUNT_TIMEOUT_MS = 250
+
+function afterIdle(run: () => void): void {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: IDLE_MOUNT_TIMEOUT_MS })
+  else setTimeout(run, 0)
+}
+
 function ToastV2Region(props: ToastV2RegionProps) {
   const i18n = useI18n()
   const [local, rest] = splitProps(props, ["class", "className", "style", "toastOptions", "swipeDirections"])
+  const [idle, setIdle] = createSignal(false)
   let host!: HTMLDivElement
   onMount(() => {
+    afterIdle(() => setIdle(true))
     const sync = () => {
       host.querySelectorAll<HTMLElement>(".toast-v2").forEach((element) => {
         const hidden = element.dataset.visible === "false"
@@ -46,23 +55,25 @@ function ToastV2Region(props: ToastV2RegionProps) {
   })
   return (
     <Portal ref={host}>
-      <Toaster
-        position={isRTL(i18n.locale()) ? "bottom-left" : "bottom-right"}
-        offset={isRTL(i18n.locale()) ? { left: 32, bottom: 48 } : { right: 32, bottom: 48 }}
-        mobileOffset={16}
-        gap={12}
-        duration={5000}
-        swipeDirections={["bottom"]}
-        className={["toast-v2-region", local.className, local.class].filter(Boolean).join(" ")}
-        style={{ "--width": "320px", ...local.style } as JSX.CSSProperties}
-        toastOptions={{
-          ...local.toastOptions,
-          unstyled: true,
-          closeButton: true,
-          closeButtonAriaLabel: local.toastOptions?.closeButtonAriaLabel ?? i18n.t("ui.common.dismiss"),
-        }}
-        {...rest}
-      />
+      <Show when={idle()}>
+        <Toaster
+          position={isRTL(i18n.locale()) ? "bottom-left" : "bottom-right"}
+          offset={isRTL(i18n.locale()) ? { left: 32, bottom: 48 } : { right: 32, bottom: 48 }}
+          mobileOffset={16}
+          gap={12}
+          duration={5000}
+          swipeDirections={["bottom"]}
+          className={["toast-v2-region", local.className, local.class].filter(Boolean).join(" ")}
+          style={{ "--width": "320px", ...local.style } as JSX.CSSProperties}
+          toastOptions={{
+            ...local.toastOptions,
+            unstyled: true,
+            closeButton: true,
+            closeButtonAriaLabel: local.toastOptions?.closeButtonAriaLabel ?? i18n.t("ui.common.dismiss"),
+          }}
+          {...rest}
+        />
+      </Show>
     </Portal>
   )
 }
@@ -247,19 +258,21 @@ export function showToastV2(options: ToastV2Options | string) {
 
 function publishToastV2(entry: ActiveToastV2) {
   const release = () => releaseToastV2(entry)
-  withSonner(({ toast }) => toast(entry.options.title ?? "", {
-    id: entry.id,
-    description: entry.options.description,
-    icon: entry.options.icon ?? severityIcon(entry.options.variant),
-    action: entry.actions,
-    closeButton: true,
-    duration: entry.options.persistent ? Number.POSITIVE_INFINITY : entry.options.duration,
-    className: `toast-v2 toast-v2--${entry.options.variant ?? "default"}`,
-    testId: `toast-v2-${entry.id}`,
-    unstyled: true,
-    onDismiss: release,
-    onAutoClose: release,
-  }))
+  withSonner(({ toast }) =>
+    toast(entry.options.title ?? "", {
+      id: entry.id,
+      description: entry.options.description,
+      icon: entry.options.icon ?? severityIcon(entry.options.variant),
+      action: entry.actions,
+      closeButton: true,
+      duration: entry.options.persistent ? Number.POSITIVE_INFINITY : entry.options.duration,
+      className: `toast-v2 toast-v2--${entry.options.variant ?? "default"}`,
+      testId: `toast-v2-${entry.id}`,
+      unstyled: true,
+      onDismiss: release,
+      onAutoClose: release,
+    }),
+  )
 }
 
 function createToastV2Actions(entry: ActiveToastV2) {
