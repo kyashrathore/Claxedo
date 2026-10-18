@@ -48,6 +48,7 @@ import {
   type EnvelopeAdmin,
 } from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { secretHint } from "@claxedo/server-core/credentials/pasted-key"
 import { storedCredentialKind } from "@claxedo/server-core/credentials/secret-material"
 import { parseUsageWindows, serializeUsageWindows } from "@claxedo/server-core/credentials/usage-windows"
 import { fanoutEligible, fanoutEligibleAuth } from "@claxedo/server-core/credentials/account-kinds"
@@ -80,7 +81,7 @@ export type HostedCredentialStoreInput = {
 }
 
 const METADATA_COLUMNS =
-  "id, owner, org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, activated_at, usage_windows, usage_at, created_at, updated_at"
+  "id, owner, org_id, provider_id, kind, source, label, account_id, secret_hint, status, health, expires_at, last_validated_at, last_error, revision, activated_at, usage_windows, usage_at, created_at, updated_at"
 
 /** Default-off feature flag for the hosted credential surface. */
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
@@ -247,11 +248,11 @@ export function hostedOrgCredentials(
     const kind = storedCredentialKind(input)
     const mark = await savedMark({ owner, provider_id: input.provider_id, kind }, id, timestamp)
     const guard = administeredGuard(input)
-    const values = "?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?"
+    const values = "?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?"
     const row = await database
       .prepare(
         `insert into hosted_provider_credentials (
-           id, owner, org_id, provider_id, kind, source, label, account_id, status, health,
+           id, owner, org_id, provider_id, kind, source, label, account_id, secret_hint, status, health,
            expires_at, last_validated_at, last_error, secret_envelope, revision, activated_at, created_at, updated_at
           ) ${guard ? `select ${values} where ${guard.sql}` : `values (${values})`}
          on conflict (org_id, id) do update set
@@ -259,6 +260,7 @@ export function hostedOrgCredentials(
            source = excluded.source,
            label = excluded.label,
            account_id = excluded.account_id,
+           secret_hint = excluded.secret_hint,
            status = 'available',
            health = null,
            expires_at = excluded.expires_at,
@@ -282,6 +284,7 @@ export function hostedOrgCredentials(
         input.source,
         input.label ?? null,
         input.account_id ?? null,
+        secretHint(input) ?? null,
         input.expires_at ?? null,
         await cipher.seal(id, input.secret),
         mark,
@@ -580,6 +583,7 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
     source: enumColumn(row, "source", CREDENTIAL_SOURCES),
     label: nullableTextColumn(row, "label"),
     account_id: nullableTextColumn(row, "account_id"),
+    secret_hint: nullableTextColumn(row, "secret_hint"),
     secure_ref: hostedCredentialSlotRef(requiredTextColumn(row, "id")),
     status: enumColumn(row, "status", CREDENTIAL_STATUSES),
     health: column(row, "health") === null ? null : enumColumn(row, "health", CREDENTIAL_HEALTHS),

@@ -5,7 +5,6 @@ import type { AccountsKey, AccountsText } from "./i18n"
 import {
   accountIdentity,
   accountLabel,
-  accountReach,
   harnessesServedBy,
   servedByList,
   isRefusal,
@@ -17,7 +16,6 @@ import {
   partialMachineLogin,
   storedCheck,
   strandedBinding,
-  type AccountReach,
   type AccountsSnapshot,
   type Harness,
   type HarnessAccount,
@@ -43,11 +41,12 @@ export type AccountWords = {
   readonly kind: string
   readonly detail?: string
   readonly note?: string
-  readonly where?: string
+  readonly cloudNote?: string
   readonly alert?: string
   readonly checkedAt?: number
   readonly refused: boolean
   readonly identity?: string
+  readonly worksHere: boolean
   readonly cloudConsent?: CloudConsent
   readonly disabled: boolean
 }
@@ -66,11 +65,6 @@ export const VERDICT_KEY = {
   expired: "settings.providers.live.expired",
   unknown: "settings.providers.live.unknown",
 } as const satisfies Record<AccountVerdict, AccountsKey>
-
-const REACH_KEY = {
-  "local-and-cloud": "settings.providers.agents.reach.localAndCloud",
-  "local-only": "settings.providers.agents.reach.localOnly",
-} as const satisfies Record<AccountReach, AccountsKey>
 
 const MACHINE_REACH: Readonly<Record<string, readonly AccountsKey[]>> = {
   cursor: ["settings.providers.agents.machineCursorAcp", "settings.providers.agents.machineCursorSdkKey"],
@@ -112,19 +106,20 @@ function kindWord(t: AccountsText, harness: Harness, credentialKind: string) {
   return t(PLAN_CREDENTIAL_KINDS.has(credentialKind) ? PLAN_KIND[harness.id] : "settings.providers.agents.kind.apiKey")
 }
 
-function whereWords(words: Words, row: HarnessAccount | undefined, reach: AccountReach | undefined) {
-  if (row?.delivery?.cloudHarness === false) return { where: words.t(piProviderSpending(row.providerId) ? "settings.providers.agents.cloudThroughPi" : "settings.providers.agents.cloudMachinesOnly") }
-  return words.onMachine && reach !== undefined ? { where: words.t(REACH_KEY[reach]) } : {}
+const CLOUD_NOTE = {
+  web: { pi: "settings.providers.agents.cloudThroughPi", refused: "settings.providers.agents.cloudMachinesOnly" },
+  machine: { pi: "settings.providers.agents.cloudOnlyThroughPi", refused: "settings.providers.agents.cloudProviderRefuses" },
+} as const satisfies Record<string, Record<"pi" | "refused", AccountsKey>>
+
+function cloudNoteOf(words: Words, row: HarnessAccount) {
+  if (row.delivery?.cloudHarness !== false) return {}
+  const notes = CLOUD_NOTE[words.onMachine ? "machine" : "web"]
+  return { cloudNote: words.t(piProviderSpending(row.providerId) ? notes.pi : notes.refused) }
 }
 
 function cloudConsentOf(row: HarnessAccount): CloudConsent | undefined {
   if (row.delivery === undefined) return undefined
   return { allowed: row.scope === "shared", partial: row.partialCloudConsent, deliverable: row.delivery.cloud && row.scope !== undefined }
-}
-
-function storedReach(row: HarnessAccount, consent: CloudConsent | undefined): AccountReach | undefined {
-  if (consent?.deliverable) return consent.allowed ? "local-and-cloud" : "local-only"
-  return accountReach(row.delivery)
 }
 
 export function storedAccountWords(words: Words, harness: Harness, row: HarnessAccount, live: LiveCheck | undefined): AccountWords {
@@ -147,8 +142,9 @@ export function storedAccountWords(words: Words, harness: Harness, row: HarnessA
     ...(check === undefined ? {} : { checkedAt: check.at }),
     refused: check?.verdict !== undefined && isRefusal(check.verdict),
     ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
-    ...whereWords(words, row, storedReach(row, cloudConsent)),
-    ...(cloudConsent === undefined ? {} : { cloudConsent }),
+    ...cloudNoteOf(words, row),
+    worksHere: words.onMachine === true,
+    ...(cloudConsent === undefined || !words.onMachine ? {} : { cloudConsent }),
     disabled: false,
   }
 }
@@ -160,7 +156,7 @@ export function orgAccountWords(words: Words, harness: Harness, snapshot: Accoun
   if (row === undefined) {
     if (!chosen) return undefined
     const unavailable = t("settings.providers.accountSource.unavailable", { name: harness.vendor })
-    return { key: ORG_ACCOUNT_KEY, ids: [], group: "org", label: t("settings.providers.accountSource.org"), kind, detail: unavailable, alert: unavailable, refused: false, disabled: true }
+    return { key: ORG_ACCOUNT_KEY, ids: [], group: "org", label: t("settings.providers.accountSource.org"), kind, detail: unavailable, alert: unavailable, refused: false, worksHere: false, disabled: true }
   }
   const check = storedCheck(row, live[row.id])
   const alert = check?.verdict !== undefined && isUnavailable(check.verdict) ? verdictWords(words, check).join(" · ") : undefined
@@ -174,7 +170,8 @@ export function orgAccountWords(words: Words, harness: Harness, snapshot: Accoun
     ...(alert === undefined ? {} : { alert }),
     ...(check === undefined ? {} : { checkedAt: check.at }),
     refused: check?.verdict !== undefined && isRefusal(check.verdict),
-    ...whereWords(words, row, accountReach(row.delivery)),
+    ...cloudNoteOf(words, row),
+    worksHere: false,
     disabled: false,
   }
 }
@@ -222,7 +219,7 @@ export function machineLoginWords(words: Words, login: MachineLogin, harness: Ha
     ...(login.usageAt === undefined ? {} : { checkedAt: login.usageAt }),
     ...(note === "" ? {} : { note }),
     refused: false,
-    ...whereWords(words, undefined, accountReach(undefined)),
+    worksHere: login.state === "signed_in",
     disabled: login.state === "absent" || stranded,
   }
 }

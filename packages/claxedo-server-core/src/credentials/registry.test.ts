@@ -243,6 +243,18 @@ describe("credential registry", () => {
     await expect(ownSecret("second-paste-test")).resolves.toBe("sk-first-aaaa")
   })
 
+  test("a pasted key keeps its vendor prefix and last four as its hint, and pasting it again stays one row", async () => {
+    const secret = "key_hint_abcdefghijklmnopqrst"
+    const first = await putCredential({ owner: "local", provider_id: "hint-paste-test", kind: "api_key", source: "managed", secret })
+    const again = await putCredential({ owner: "local", provider_id: "hint-paste-test", kind: "api_key", source: "managed", secret })
+
+    expect(first.secret_hint).toBe("key_…qrst")
+    expect(again.id).toBe(first.id)
+    expect(again.account_id).toBe(first.account_id)
+    expect(listCredentials().filter((c) => c.provider_id === "hint-paste-test")).toEqual([expect.objectContaining({ secret_hint: "key_…qrst" })])
+    expect(JSON.stringify(listCredentials())).not.toContain("hint_abcdefghijklmnop")
+  })
+
   test("a connection secret keeps its single row per provider rather than gaining a fingerprint", async () => {
     const first = await putCredential({ owner: "local",
       provider_id: "integration:notion",

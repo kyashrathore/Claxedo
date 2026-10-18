@@ -365,6 +365,16 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(0)
   })
 
+  test("a pasted key's row keeps only its vendor prefix and last four as its hint", async () => {
+    const credentials = store(freshOrg("hint"))
+    const meta = await credentials.putCredential({ ...write, owner: "person-1", provider_id: "cursor-sdk", secret: "key_hosted_abcdefghijklmnop" })
+    expect(meta.secret_hint).toBe("key_…mnop")
+    expect(await credentials.listCredentials()).toEqual([expect.objectContaining({ id: meta.id, secret_hint: "key_…mnop" })])
+    expect(JSON.stringify(await credentials.listCredentials())).not.toContain("hosted_abcdefghijkl")
+    const connection = await credentials.putCredential({ ...write, provider_id: "integration:conn-hint", secret: "sk-hosted-secret-0042" })
+    expect(connection.secret_hint).toBeNull()
+  })
+
   test("the kind argument narrows reads and deletes to the kind the caller named", async () => {
     const credentials = store(freshOrg("kind"))
     await credentials.putCredential({ ...write, provider_id: "openai", kind: "oauth_token", secret: "t" })

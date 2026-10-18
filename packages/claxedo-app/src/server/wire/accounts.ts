@@ -2,7 +2,7 @@ import { isAccountScope, isAccountSource, type AccountScope, type AccountSource 
 import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import type { QuotaWindow } from "@claxedo/usage-contract"
-import type { Account, AccountCheck, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, MachineLoginState } from "../account-types"
+import type { Account, AccountCheck, KeyHint, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, MachineLoginState } from "../account-types"
 
 function texts(value: unknown) {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : undefined
@@ -33,6 +33,11 @@ function definedFields<T extends object>(fields: T): Partial<T> {
   return defined
 }
 
+export function keyHintFromWire(value: unknown): KeyHint | undefined {
+  const hint = typeof value === "string" ? /^([a-z_-]{0,7})…(.{4})$/.exec(value) : null
+  return hint ? { prefix: hint[1] ?? "", tail: hint[2] ?? "" } : undefined
+}
+
 export function accountScopeFromWire(value: unknown): AccountScope | undefined {
   return isAccountScope(value) ? value : undefined
 }
@@ -54,6 +59,7 @@ export function accountFromWire(value: unknown): Account | undefined {
       scope: accountScopeFromWire(row.scope),
       label: asString(row.label),
       accountId: asString(row.account_id),
+      keyHint: keyHintFromWire(row.secret_hint),
       activatedAt: asFiniteNumber(row.activated_at),
       status: asString(row.status),
       health: asString(row.health),
