@@ -6,8 +6,8 @@ export async function settle() {
   for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
 }
 
-export function openBody(): Response {
-  return new Response(new ReadableStream<Uint8Array>({ start: () => undefined }), { headers: { "content-type": "text/event-stream" } })
+export function openBody(since?: string): Response {
+  return new Response(new ReadableStream<Uint8Array>({ start: () => undefined }), { headers: { "content-type": "text/event-stream", ...(since ? { "X-Event-Cursor": since } : {}) } })
 }
 
 export const placement = placementId("ws_shared")

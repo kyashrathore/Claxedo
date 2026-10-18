@@ -1,5 +1,7 @@
+import { EVENT_CURSOR_HEADER } from "@claxedo/agent-runtime-contract"
 import type { HostedAccount } from "./account"
-import { isSessionMissing } from "./errors"
+import { isSessionMissing, responseError } from "./errors"
+import type { SnapshotCoverage, SnapshotDatum } from "./snapshot-coverage"
 import type { Transport, RuntimeRoute } from "./transport"
 import type { StatusOwner } from "./status"
 import type { SessionLocation } from "./types"
@@ -10,7 +12,22 @@ export type SessionContext = {
   readonly transport: Transport
   readonly workspaces: Workspaces
   readonly status: StatusOwner
+  readonly coverage: SnapshotCoverage
   readonly account?: HostedAccount
+}
+
+export async function readSnapshotDatum(context: SessionContext, route: RuntimeRoute, path: string, ref: SessionLocation, datum: SnapshotDatum, what: string): Promise<unknown> {
+  const read = context.coverage.reading(ref, datum)
+  try {
+    const response = await context.transport.runtime(route, path)
+    if (!response.ok) throw await responseError(response, what)
+    const body: unknown = response.status === 204 ? undefined : await response.json()
+    read.landed(response.headers.get(EVENT_CURSOR_HEADER))
+    return body
+  } catch (error) {
+    read.failed()
+    throw error
+  }
 }
 
 export function sessionEndpoint(ref: Pick<SessionLocation, "sessionId">, suffix = "") {

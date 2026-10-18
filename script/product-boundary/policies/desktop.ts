@@ -722,8 +722,11 @@ export const desktopRenderer: Policy = {
   // `i18n/locale-loads.ts`; the app's accounts domain,
   // `accounts/harness-providers-state.tsx`,
   // `accounts/catalog-account-sources.ts`). They add no package edge.
-  // 1416/36, no headroom.
-  ceilings: { modules: 1416, packages: 36 },
+  // Whether a session's live stream covers its snapshot reads, decided by
+  // event feed position (owner: the app's server domain,
+  // `server/snapshot-coverage.ts`). It adds no package edge.
+  // 1417/36, no headroom.
+  ceilings: { modules: 1417, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

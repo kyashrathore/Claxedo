@@ -11,14 +11,27 @@ async function settle() {
   for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
 }
 
-function eventBody(frames: readonly string[]): Response {
+function eventBody(frames: readonly string[], headers: Record<string, string> = {}): Response {
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame))
     },
   })
-  return new Response(body, { headers: { "content-type": "text/event-stream" } })
+  return new Response(body, { headers: { "content-type": "text/event-stream", ...headers } })
 }
+
+test("a connected stream names the event feed position it starts after, read off the stream's response", async () => {
+  const states: unknown[] = []
+  const stream = openEventStream({
+    open: async () => eventBody(['id: 1\ndata: {"type":"heartbeat"}\n\n'], { "X-Event-Cursor": "feed_1.41" }),
+    onFrame: () => undefined,
+    onGap: () => undefined,
+    onState: (state) => states.push(state),
+  })
+  await settle()
+  expect(states[0]).toEqual({ kind: "connected", since: "feed_1.41" })
+  stream.close()
+})
 
 test("the stream keeps reconnecting past many failed attempts and re-reads the gap once it is back", async () => {
   jest.useFakeTimers()

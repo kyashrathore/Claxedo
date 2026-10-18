@@ -9,6 +9,7 @@ import { readTurn } from "./turn"
 import { listFirstPages, listSessions } from "./session-list"
 import { sendReaderWrite } from "./session-reader"
 import { sessionEndpoint, type SessionContext } from "./session-context"
+import type { SnapshotCoverage } from "./snapshot-coverage"
 import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
@@ -117,8 +118,8 @@ async function patchSession(context: SessionContext, ref: SessionLocation, patch
   await context.transport.runtimeJson(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 
-export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection, telemetry: ProductTelemetry, account?: HostedAccount): SessionsApi {
-  const context: SessionContext = { transport, workspaces, status, ...(account ? { account } : {}) }
+export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, coverage: SnapshotCoverage, wakes: WorkspaceWakes, projection: SessionProjection, telemetry: ProductTelemetry, account?: HostedAccount): SessionsApi {
+  const context: SessionContext = { transport, workspaces, status, coverage, ...(account ? { account } : {}) }
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
