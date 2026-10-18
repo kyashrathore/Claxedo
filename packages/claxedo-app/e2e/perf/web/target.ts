@@ -3,17 +3,28 @@ import fs from "node:fs"
 import { isRecord } from "@claxedo/helpers/guards"
 import { readBoolean, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { DistBytes } from "./bytes"
+import type { AcpScript } from "../../../../harness/e2e/harness/acp/script"
 import type { Profile } from "./profiles"
 
 export type Cookie = Parameters<BrowserContext["addCookies"]>[0][number]
 
 export type SessionTarget = { readonly id: string; readonly url: string }
 
+export type LongSession = SessionTarget & { readonly label: string; readonly messageBytes: number }
+
+export type StreamTarget = {
+  readonly directory: string
+  readonly sessions: readonly SessionTarget[]
+  readonly prompt: (sessionId: string, scriptName: string, script: AcpScript) => Promise<void>
+}
+
 export type Target = {
   readonly kind: "local" | "url"
   readonly url: string
   readonly cookies: readonly Cookie[]
   readonly sessions: readonly SessionTarget[]
+  readonly long: readonly LongSession[]
+  readonly stream: StreamTarget | undefined
   readonly distDir: string | undefined
   readonly bytes: DistBytes | undefined
   readonly description: string
@@ -77,6 +88,8 @@ export async function urlTarget(input: { url: string; cookieFile: string }): Pro
     kind: "url",
     url,
     cookies,
+    long: [],
+    stream: undefined,
     distDir: undefined,
     bytes: undefined,
     description: `${url} with cookies ${describeCookies(cookies)} from ${input.cookieFile}`,

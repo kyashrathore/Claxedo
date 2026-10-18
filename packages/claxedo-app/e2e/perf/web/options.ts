@@ -12,6 +12,10 @@ export type Options = {
   readonly label: string
   readonly seedTurns: number
   readonly railSessions: number
+  readonly longMiB: readonly number[]
+  readonly stream: boolean
+  readonly census: boolean
+  readonly stacks: boolean
 }
 
 const LOCAL_PROFILES: readonly ProfileName[] = ["fast", "india-staging"]
@@ -27,6 +31,7 @@ export function readOptions(argv: readonly string[]): Options {
     if (!isProfileName(name)) throw new Error(`unknown profile ${name}; the profiles are ${PROFILE_NAMES.join(", ")}`)
     return name
   })
+  if (target !== "local" && (value("long") || argv.includes("--stream"))) throw new Error("--long and --stream seed their sessions, so they need the local target")
   if (target !== "local" && !value("cookies")) throw new Error("--target=<url> needs --cookies=<file> with the browser's exported cookies for that origin")
   return {
     target,
@@ -38,5 +43,9 @@ export function readOptions(argv: readonly string[]): Options {
     label: value("label") ?? "run",
     seedTurns: Number(value("seed-turns") ?? "12"),
     railSessions: Number(value("rail-sessions") ?? "8"),
+    longMiB: value("long")?.split(",").map(Number) ?? [],
+    stream: argv.includes("--stream"),
+    census: argv.includes("--census"),
+    stacks: argv.includes("--stacks"),
   }
 }

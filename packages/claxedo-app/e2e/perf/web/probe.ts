@@ -28,11 +28,15 @@ export type ProbeState = {
   readonly inputs: readonly { readonly at: number; readonly kind: string }[]
   readonly keys: readonly { readonly at: number; readonly latencyMs: number }[]
   readonly frames: number
+  readonly census: ProbeCensus | undefined
 }
+
+export type ProbeCensus = { readonly railRows: number; readonly timelineRows: number; readonly elements: number; readonly removed: number; readonly attributes: number; readonly text: number }
 
 declare global {
   interface Window {
-    __webPerf?: { read: () => ProbeState; arm: () => void }
+    __webPerf?: { read: () => ProbeState; arm: () => void; pause: () => void; resume: () => void }
+    __webPerfCensus?: boolean
   }
 }
 
@@ -126,7 +130,28 @@ export function installWebProbe() {
   }
   const paintedFrames = window.__claxedoPaintedFrames
   if (!paintedFrames) throw new Error("installPaintedFrames has not run in this page")
-  paintedFrames({ sample, painted })
+  let stopFrames = paintedFrames({ sample, painted })
+  const census = window.__webPerfCensus ? { railRows: 0, timelineRows: 0, elements: 0, removed: 0, attributes: 0, text: 0 } : undefined
+  const countIn = (node: Element, selector: string) => (node.matches(selector) ? 1 : 0) + node.querySelectorAll(selector).length
+  const countMutations = (records: readonly MutationRecord[]) => {
+    if (!census) return
+    for (const record of records) {
+      if (record.type === "attributes") census.attributes += 1
+      else if (record.type === "characterData") census.text += 1
+      else {
+        census.removed += record.removedNodes.length
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) census.text += 1
+          else {
+            census.elements += 1 + node.getElementsByTagName("*").length
+            census.railRows += countIn(node, '[data-slot="session-navigation-row"]')
+            census.timelineRows += countIn(node, "[data-timeline-row]")
+          }
+        }
+      }
+    }
+  }
+  if (census) new MutationObserver(countMutations).observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
   const onInput = (event: Event) => {
     if (!event.isTrusted || !state.armed) return
     state.armed = false
@@ -164,6 +189,7 @@ export function installWebProbe() {
         timeOrigin: performance.timeOrigin,
         navigation: entry ? { fetchStart: entry.fetchStart, requestStart: entry.requestStart, responseStart: entry.responseStart, responseEnd: entry.responseEnd, domContentLoaded: entry.domContentLoadedEventEnd, loadEventEnd: entry.loadEventEnd, transferSize: entry.transferSize } : undefined,
         marks: [...state.marks], lcp: state.lcp, railRows: state.railRows, longTasks: [...state.longTasks], loafs: [...state.loafs], inputs: [...state.inputs], keys: [...state.keys], frames: state.frames,
+        census: census ? { ...census } : undefined,
       }
     },
     arm: () => {
@@ -171,6 +197,12 @@ export function installWebProbe() {
       state.marks = state.marks.filter((entry) => !INTERACTION_SCOPED.test(entry.name))
       state.signatures.clear()
       state.pendingKeys = []
+      if (census) Object.assign(census, { railRows: 0, timelineRows: 0, elements: 0, removed: 0, attributes: 0, text: 0 })
+    },
+    pause: () => stopFrames(),
+    resume: () => {
+      stopFrames()
+      stopFrames = paintedFrames({ sample, painted })
     },
   }
 }

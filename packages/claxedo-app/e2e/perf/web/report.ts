@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { DistBytes } from "./bytes"
-import type { StepResult } from "./scenarios"
+import type { StepResult } from "./steps"
 import type { WaterfallRow } from "./waterfall"
 import { median } from "./numbers"
 
@@ -64,10 +64,14 @@ function readinessTable(results: readonly StepResult[]) {
       fmt(med((result) => result.lcp?.at)),
       fmt(med((result) => result.waterfall.requests)), kb(med((result) => result.waterfall.transferBytes)), fmt(med((result) => result.waterfall.waves)),
       fmt(med((result) => result.mainThread?.busyMs)), fmt(med((result) => result.mainThread?.tbtMs)), fmt(med((result) => result.mainThread?.longTasks.length)),
+      `${fmt(med((result) => result.mainThread?.render.styleRecalcs))} / ${fmt(med((result) => result.mainThread?.render.styleMs), 1)}`,
+      `${fmt(med((result) => result.mainThread?.render.layouts))} / ${fmt(med((result) => result.mainThread?.render.layoutMs), 1)}`,
+      `${fmt(med((result) => result.mainThread?.render.forcedN))} / ${fmt(med((result) => result.mainThread?.render.forcedMs), 1)}`,
+      fmt(med((result) => (result.mainThread?.totals.Paint ?? 0) + (result.mainThread?.totals.PrePaint ?? 0) + (result.mainThread?.totals.Layerize ?? 0) + (result.mainThread?.totals.Commit ?? 0))),
       first.keys ? `${fmt(med((result) => result.keys?.p50), 1)} / ${fmt(med((result) => result.keys?.p95), 1)} / ${fmt(med((result) => result.keys?.max), 1)}` : "—",
     ]
   })
-  return table(["scenario", "profile", "cache", "n", "headline ms", ...MARK_COLUMNS, "lcp", "requests", "kB", "waves", "busy ms", "TBT ms", "long tasks", "key p50/p95/max"], rows)
+  return table(["scenario", "profile", "cache", "n", "headline ms", ...MARK_COLUMNS, "lcp", "requests", "kB", "waves", "busy ms", "TBT ms", "long tasks", "style n / ms", "layout n / ms", "forced n / ms", "paint ms", "key p50/p95/max"], rows)
 }
 
 function waterfallRows(rows: readonly WaterfallRow[]) {
@@ -86,9 +90,20 @@ function mainThreadSection(result: StepResult) {
   const totals = Object.entries(main.totals).sort((a, b) => b[1] - a[1]).map(([name, ms]) => `${name} ${ms.toFixed(0)}`).join(", ")
   const scripts = table(["script", "compile ms", "evaluate ms", "streamed compile ms"], main.scripts.slice(0, 20).map((script) => [script.url, fmt(script.compileMs, 1), fmt(script.evaluateMs, 1), fmt(script.streamedCompileMs, 1)]))
   const sheets = main.styleSheets.length ? table(["stylesheet", "parse ms"], main.styleSheets.slice(0, 8).map((sheet) => [sheet.url, fmt(sheet.parseMs, 1)])) : ""
+  const forced = main.render.forced.length ? table(["forced style or layout ← the code that forced it", "n", "ms"], main.render.forced.map((entry) => [entry.where.replace(/\|/g, "\\|"), String(entry.n), fmt(entry.ms, 1)])) : "_no forced style or layout_"
   const tasks = table(["start", "ms", "top of the task"], main.longTasks.slice(0, 12).map((task) => [fmt(task.startMs), fmt(task.durMs), task.top.join("<br>").replace(/\|/g, "\\|")]))
   const cpu = result.cpu ? [table(["chunk", "sampled self ms"], result.cpu.byChunk.map((chunk) => [chunk.url, fmt(chunk.ms, 1)])), "", ...result.cpu.top.map((line) => `- ${line.replace(/\|/g, "\\|")}`)] : []
-  return [`Window ${main.windowMs.toFixed(0)} ms, main thread busy ${main.busyMs.toFixed(0)} ms, TBT ${main.tbtMs.toFixed(0)} ms, ${main.longTasks.length} long tasks.`, "", `Totals (ms): ${totals}`, "", scripts, "", sheets, "", tasks, "", ...cpu].join("\n")
+  return [`Window ${main.windowMs.toFixed(0)} ms, main thread busy ${main.busyMs.toFixed(0)} ms, TBT ${main.tbtMs.toFixed(0)} ms, ${main.longTasks.length} long tasks.`, "", `Totals (ms): ${totals}`, "", scripts, "", sheets, "", forced, "", tasks, "", ...cpu].join("\n")
+}
+
+const CENSUS_FIELDS = ["elements", "removed", "attributes", "text", "railRows", "timelineRows"] as const
+
+function censusSection(results: readonly StepResult[]) {
+  const rows = groups(results).filter((group) => group.some((result) => result.census)).map((group) => [
+    `${group[0].scenario}/${group[0].step}`, group[0].profile,
+    ...CENSUS_FIELDS.map((field) => fmt(median(group.map((result) => result.census?.[field] ?? Number.NaN)))),
+  ])
+  return rows.length ? table(["step", "profile", "elements added", "nodes removed", "attribute writes", "text writes", "rail rows created", "timeline rows created"], rows) : undefined
 }
 
 function bytesSection(bytes: DistBytes) {
@@ -124,10 +139,12 @@ export function renderMarkdown(meta: RunMeta, results: readonly StepResult[], by
     "## Readiness", "", readinessTable(results), "",
     "## Lazy chunks by step (representative run)", "", lazyChunkSection(results), "",
   ]
-  for (const group of groups(results).filter((group) => group[0].reference === "navigation" || group[0].scenario === "open-session" && group[0].step === "press")) {
+  for (const group of groups(results).filter((group) => group[0].reference === "navigation" || group[0].reference === "prompt" || group[0].scenario === "open-session" && group[0].step === "press" || group[0].scenario === "open-long")) {
     const rep = representative(group)
     sections.push(`## Waterfall: ${rep.scenario}/${rep.step}, ${rep.profile}, rep ${rep.rep}`, "", `${rep.waterfall.requests} requests, ${kb(rep.waterfall.transferBytes)} kB transferred for ${kb(rep.waterfall.decodedBytes)} kB decoded, ${rep.waterfall.waves} dependency waves, last response at ${fmt(rep.waterfall.lastEndMs)} ms.`, "", waterfallRows(rep.waterfall.rows), "", `### Main thread: ${rep.scenario}/${rep.step}, ${rep.profile}`, "", mainThreadSection(rep), "")
   }
+  const census = censusSection(results)
+  if (census) sections.push("## Mutation census (median per step)", "", census, "")
   if (bytes) sections.push("## Bytes", "", bytesSection(bytes), "")
   return sections.join("\n")
 }

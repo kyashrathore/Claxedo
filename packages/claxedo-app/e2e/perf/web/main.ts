@@ -5,7 +5,8 @@ import path from "node:path"
 import { readOptions } from "./options"
 import { PROFILES, describeProfile } from "./profiles"
 import { writeReport } from "./report"
-import { hostLoad, runScenarios, type StepResult } from "./scenarios"
+import { runScenarios } from "./scenarios"
+import { hostLoad, type StepResult } from "./steps"
 import { discoverSessions, urlTarget, type Target } from "./target"
 import { localTarget } from "./target-local"
 
@@ -23,7 +24,7 @@ async function main() {
   const browser = await chromium.launch({ channel: "chromium" })
   let target: Target | undefined
   try {
-    if (options.target === "local") target = await localTarget({ seedTurns: options.seedTurns, railSessions: options.railSessions, log })
+    if (options.target === "local") target = await localTarget({ seedTurns: options.seedTurns, railSessions: options.railSessions, longMiB: options.longMiB, streamSessions: options.stream ? options.reps * options.profiles.length : 0, log })
     else {
       const partial = await urlTarget({ url: options.target, cookieFile: options.cookies ?? "" })
       target = { ...partial, sessions: await discoverSessions(browser, partial) }
@@ -32,10 +33,10 @@ async function main() {
     const results: StepResult[] = []
     const failures: string[] = []
     for (let rep = 0; rep < options.reps; rep += 1) {
-      for (const name of options.profiles) {
+      for (const [profileIndex, name] of options.profiles.entries()) {
         const profile = PROFILES[name]
         target.useProfile(profile)
-        const run = await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, log })
+        const run = await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, stacks: options.stacks, census: options.census, log }, rep * options.profiles.length + profileIndex)
         results.push(...run.results)
         failures.push(...run.failures)
       }

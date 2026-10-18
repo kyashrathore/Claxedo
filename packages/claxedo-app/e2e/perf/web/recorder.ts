@@ -54,11 +54,12 @@ export type Recorder = {
   end(): Promise<Recording>
 }
 
+const STACK_CATEGORY = "disabled-by-default-devtools.timeline.stack"
+
 const TRACE_CATEGORIES = [
   "devtools.timeline",
   "disabled-by-default-devtools.timeline",
   "disabled-by-default-devtools.timeline.frame",
-  "disabled-by-default-devtools.timeline.stack",
   "disabled-by-default-v8.compile",
   "v8",
   "v8.execute",
@@ -72,7 +73,7 @@ function header(headers: Record<string, string>, name: string) {
   return key === undefined ? undefined : headers[key]
 }
 
-export async function startRecorder(cdp: CDPSession): Promise<Recorder> {
+export async function startRecorder(cdp: CDPSession, options: { readonly stacks: boolean }): Promise<Recorder> {
   const requests = new Map<string, NetworkRecord>()
   let traceChunks: TraceEvent[] = []
   let tracing = false
@@ -173,7 +174,7 @@ export async function startRecorder(cdp: CDPSession): Promise<Recorder> {
       }
       if (trace) {
         tracing = true
-        await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: TRACE_CATEGORIES, recordMode: "recordContinuously" } })
+        await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: options.stacks ? [...TRACE_CATEGORIES, STACK_CATEGORY] : TRACE_CATEGORIES, recordMode: "recordContinuously" } })
       }
     },
     end: async () => {

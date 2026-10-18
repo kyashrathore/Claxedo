@@ -1,6 +1,7 @@
 import { traceText, type TraceEvent } from "../../harness/trace-events"
 import { describeTraceEvent, type CpuProfile, type Mapper } from "../panel/trace"
 import { mainThreadEvents } from "../stream-switch/main-thread"
+import { renderWork, type RenderWork } from "./forced-layout"
 import { round } from "./numbers"
 
 export type LongTask = { readonly startMs: number; readonly durMs: number; readonly top: readonly string[] }
@@ -15,6 +16,7 @@ export type MainThreadSummary = {
   readonly longTasks: readonly LongTask[]
   readonly scripts: readonly ScriptCost[]
   readonly styleSheets: readonly { readonly url: string; readonly parseMs: number }[]
+  readonly render: RenderWork
 }
 
 const TOTALS = ["RunTask", "FunctionCall", "EvaluateScript", "v8.evaluateModule", "v8.compile", "V8.CompileCode", "ParseHTML", "ParseAuthorStyleSheet", "UpdateLayoutTree", "Layout", "PrePaint", "Paint", "Layerize", "Commit", "RunMicrotasks", "TimerFire", "EventDispatch", "HitTest", "ResourceReceivedData", "XHRReadyStateChange"]
@@ -57,8 +59,9 @@ export function profileSelfByUrl(profile: CpuProfile) {
   return [...totals.entries()].map(([url, us]) => ({ url, ms: round(us / 1000) })).sort((a, b) => b.ms - a.ms)
 }
 
-export function summarizeMainThread(events: readonly TraceEvent[], window: { fromUs: number; toUs: number }, mapper: Mapper = NO_MAPPER): MainThreadSummary {
-  const onMain = mainThreadEvents(events).filter((event) => event.ts + (event.dur ?? 0) >= window.fromUs && event.ts <= window.toUs)
+export function summarizeMainThread(events: readonly TraceEvent[], window: { fromUs: number; toUs: number }, mapper: Mapper = NO_MAPPER, profile?: CpuProfile): MainThreadSummary {
+  const main = mainThreadEvents(events)
+  const onMain = main.filter((event) => event.ts + (event.dur ?? 0) >= window.fromUs && event.ts <= window.toUs)
   const totals: Record<string, number> = {}
   const add = (name: string, us: number) => (totals[name] = round((totals[name] ?? 0) + us / 1000))
   const scripts = new Map<string, { compileMs: number; evaluateMs: number; streamedCompileMs: number }>()
@@ -86,7 +89,7 @@ export function summarizeMainThread(events: readonly TraceEvent[], window: { fro
       styleSheets.set(sheet, round((styleSheets.get(sheet) ?? 0) + dur / 1000))
     }
   }
-  const mainTid = mainThreadEvents(events)[0]?.tid
+  const mainTid = main[0]?.tid
   for (const event of events) {
     if (event.tid === mainTid || event.ph !== "X" || !COMPILE.test(event.name) || event.ts < window.fromUs || event.ts > window.toUs) continue
     const url = scriptUrl(event)
@@ -100,5 +103,6 @@ export function summarizeMainThread(events: readonly TraceEvent[], window: { fro
     longTasks: longTasks.sort((a, b) => b.durMs - a.durMs),
     scripts: [...scripts.entries()].map(([url, cost]) => ({ url: url.split("/").pop() ?? url, ...cost })).sort((a, b) => b.compileMs + b.evaluateMs - a.compileMs - a.evaluateMs),
     styleSheets: [...styleSheets.entries()].map(([url, parseMs]) => ({ url: url.split("/").pop() ?? url, parseMs })).sort((a, b) => b.parseMs - a.parseMs),
+    render: renderWork(main, window, mapper, profile),
   }
 }
