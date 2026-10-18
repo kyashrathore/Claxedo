@@ -63,10 +63,9 @@ describe("the certified hosted Worker bundle contract", () => {
   })
 
   test("the aliased entry substitutes the same named exports as zod/v4", async () => {
-    const zod: unknown = await import(zodAliasTarget(HOSTED_WORKER_BUNDLE_CONTRACT))
+    const substituted = (await import(zodAliasTarget(HOSTED_WORKER_BUNDLE_CONTRACT))) as Record<string, unknown>
     const aliased = Object.keys(zodV4).filter((name) => name !== "default")
     expect(aliased.length).toBeGreaterThan(100)
-    const substituted = zod as unknown as Record<string, unknown>
     const original = zodV4 as unknown as Record<string, unknown>
     expect(aliased.filter((name) => substituted[name] !== original[name])).toEqual([])
   })
