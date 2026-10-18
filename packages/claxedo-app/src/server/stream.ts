@@ -33,6 +33,7 @@ type StreamRun = {
   attempt: AbortController | undefined
   reconnectTimer: ReturnType<typeof setTimeout> | undefined
   watchdog: ReturnType<typeof setTimeout> | undefined
+  heardAt: number
 }
 
 const RECONNECT_BASE_MS = 250
@@ -64,9 +65,18 @@ function send(run: StreamRun, event: ConnectionEvent) {
   run.options.onState?.(run.connection.state())
 }
 
+function watchSilence(run: StreamRun, afterMs: number) {
+  run.watchdog = setTimeout(() => {
+    const silentMs = Date.now() - run.heardAt
+    if (silentMs < EVENT_STREAM_STALL_TIMEOUT_MS) return watchSilence(run, EVENT_STREAM_STALL_TIMEOUT_MS - silentMs)
+    run.attempt?.abort(new ServerError({ class: "network", message: "No heartbeat within the timeout" }))
+  }, afterMs)
+}
+
 function armWatchdog(run: StreamRun) {
   if (run.watchdog) clearTimeout(run.watchdog)
-  run.watchdog = setTimeout(() => run.attempt?.abort(new ServerError({ class: "network", message: "No heartbeat within the timeout" })), EVENT_STREAM_STALL_TIMEOUT_MS)
+  run.heardAt = Date.now()
+  watchSilence(run, EVENT_STREAM_STALL_TIMEOUT_MS)
 }
 
 function parsedFrame(data: string): unknown {
@@ -80,7 +90,7 @@ function parsedFrame(data: string): unknown {
 
 function deliver(run: StreamRun, message: EventSourceMessage) {
   if (message.id) run.cursor = message.id
-  armWatchdog(run)
+  run.heardAt = Date.now()
   const frame = parsedFrame(message.data)
   if (frame === undefined) return
   const signal = streamSignalOf(frame)
@@ -185,6 +195,7 @@ export function openEventStream(options: StreamOptions): Stream {
     attempt: undefined,
     reconnectTimer: undefined,
     watchdog: undefined,
+    heardAt: 0,
   }
   void openStreamAttempt(run)
   return { state: run.connection.state, cursor: () => run.cursor, retry: () => retry(run), close: () => close(run) }
