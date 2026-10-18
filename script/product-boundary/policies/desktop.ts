@@ -716,8 +716,14 @@ export const desktopRenderer: Policy = {
   // Sandbox usage's By provider table and its project and provider grouping
   // (owner: the app's usage domain, `usage/sandbox-groups.ts`,
   // `usage/view/sandbox-provider-table.tsx`). They add no package edge.
-  // 1410/36, no headroom.
-  ceilings: { modules: 1410, packages: 36 },
+  // The lazy doors the web entry chunk needs (owner: the app's transcript
+  // domain, `transcript/code-view-lazy.tsx`, `transcript/source-diff.tsx`,
+  // `transcript/diff-source.ts`; the app's i18n domain,
+  // `i18n/locale-loads.ts`; the app's accounts domain,
+  // `accounts/harness-providers-state.tsx`,
+  // `accounts/catalog-account-sources.ts`). They add no package edge.
+  // 1416/36, no headroom.
+  ceilings: { modules: 1416, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
