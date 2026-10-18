@@ -45,6 +45,11 @@ If you retry any of these, say so in the work: the same idea has now been tried 
 | Native Comrak / `mmdr` / packaged `mermaid-rs-renderer` as idle-memory work | Valid SVGs and HTML. No idle-footprint delta. +disk. Child exits. Web still uses Marked and Mermaid.js. | You are moving **interactive** diagram/Markdown cost, and you accept the packaged helper on desktop only. |
 | Pierre's default 1,000 px nested-diff buffer | 48,704 Chromium nodes on an expanded inline edit. 240 px + token limit: 29k nodes, faster completion. | Do not restore the 1,000 px default to "match upstream." |
 | Browser-lane pass as packaged transcript acceptance | V18 passed frames and failed manual Electron. The browser lane has no Electron compositor, native input, or restored-state remount. | Packaged Electron with a restored long transcript is the acceptance lane for timeline behavior. |
+| Renderer `js-flags=--optimize-for-size` (2026-10-18 Linux round) | Returns 82 → 97 ms (1 MiB) and 88 → 120 ms (8 MiB) against four pooled controls; RSS not lower. | A memory gate that outweighs switch time. |
+| `NetworkServiceInProcess2` (in-process network service) | About −30 MiB family RSS in one run; switch and start rows inside control drift. Gives up the network process's isolation. | Isolation is explicitly traded for memory by the owner. |
+| Synchronous `gc()` removal at daemon listen, early creation-identity read, lazy `electron-updater`, the local reader's 5 s renewal timer, a one-screen or viewport-only cold page | Every row within the ±10–20% drift measured between control runs at n=4 starts / 2 walks. | Measured at higher repetitions with a named row the mechanism reaches. |
+| Rail mount after the reveal frame, keyed rail-row selection, projection cache across remounts | No row moved beyond control drift. | The benchmark gains a row these mechanisms reach (long transcripts with a rail, many visible rows). |
+| Folded user prompt rendered as a 10-line prefix | Long-rows first visit 207 → 169 ms; overlaps zero first-view overscan, which reached the same row without hiding text from screen readers and find-in-page. Not merged. | Zero overscan is reverted, or scrolling through long prompts becomes a gate. |
 
 Lazy-load remote sandbox drivers **was** measured in the idle-memory campaign (−22 MiB native footprint) and was not re-tested against peak RSS. Suspend idle host metrics (10 s / 20 s / 60 s periodics) was never varied as an experiment; too rare per switch, they do sit in the quiescent-CPU window. Hidden terminals still repaint; skipping them needs a "became visible" signal the workbench does not emit on a tab swap.
 
@@ -71,6 +76,8 @@ Each of these is a retracted number, not a style preference.
 17. Native physical footprint, summed RSS, and Activity Monitor are different units. The same change can win in one and lose in another. Never merge them into one claim.
 18. A headless browser-lane pass is not packaged-Electron acceptance for transcript, compositor, or restored-state behavior.
 19. Bundle-byte reduction does not identify a long `v8.evaluateModule` task. Attribute the task, then cut that graph.
+20. A build made by swapping only the renderer into a packaged app's `app.asar` measured 90 MiB more family RSS than a full package of the same commit. Compare RSS only between builds made the same way.
+21. On a shared 4-core host, two control runs of the same build differed by up to 20% on a row with n=4. Pool several controls, and confirm a candidate at higher repetitions before calling it.
 
 Packaged desktop benchmarks are serial. Parallel runs on one machine do not speed them up; they invalidate them. Headless server-side probes (catalogue slope, import RSS, unit suites) can shard.
 
