@@ -2,10 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { createServer, request as httpsRequest } from "node:https"
 import { X509Certificate, createHash } from "node:crypto"
 import fs from "node:fs/promises"
+import path from "node:path"
 import { appBundleFile } from "../../../harness/e2e/harness/local-app-bundle"
 import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 import type { HostedStack } from "../../../harness/e2e/harness/hosted-flow"
-import { respondShaped, type FrontShaping } from "./front-shaping"
+import { pagesHeaders, respondShaped, type FrontShaping } from "./front-shaping"
 import type { TlsFront } from "./tls-front"
 
 export async function startHostedAppFront(input: { port: number; distDir: string; hosted: HostedStack; shaping?: FrontShaping }): Promise<TlsFront & { controlPlaneRequests(): readonly string[] }> {
@@ -13,6 +14,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
   const worker = new URL(input.hosted.workerOrigin)
   const tls = { cert: certificate, key: await fs.readFile(input.hosted.credentials.key) }
   const forwarded: string[] = []
+  const answerFor = pagesHeaders(input.distDir)
   const serve = async (request: IncomingMessage, response: ServerResponse) => {
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
     if (/^\/(api|auth|internal|\.well-known)(\/|$)/.test(pathname) || pathname === "/health") {
@@ -33,7 +35,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     }
     const asset = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
     if (!asset) { response.writeHead(404).end(); return }
-    if (input.shaping) return respondShaped(request, response, pathname, asset, input.shaping)
+    if (input.shaping) return respondShaped(request, response, path.extname(pathname) ? pathname : "/index.html", asset, answerFor(path.extname(pathname) ? pathname : "/index.html"), input.shaping)
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
   const servers = [createServer(tls, serve), createServer(tls, serve)]
