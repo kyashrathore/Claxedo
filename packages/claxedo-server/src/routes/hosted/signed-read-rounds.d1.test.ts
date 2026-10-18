@@ -55,19 +55,27 @@ async function signedReader(workspace = true) {
 
 /**
  * Every read the onboarding wizard makes pays one Worker-to-database hop per
- * serial D1 round, after the two auth-database rounds that verified the cookie.
- * The principal row is the one round every signed route shares; the route's
- * own read follows it and nothing else does.
+ * serial D1 round, after the auth-database rounds that verified the cookie.
+ * The principal row is the one round every signed route shares, and each
+ * catalog read runs beside it keyed by the principal the auth names: the
+ * workspace list with each machine row's `host_online` in the same statement,
+ * the shared sessions from the caller's share grants, the rail's first pages
+ * (the projects the caller may open, then one batch of pages) and the
+ * caller's machines.
  */
-test("the catalog reads the first run makes answer in two serial control-plane rounds", async () => {
+test("the catalog reads the first run makes answer in one serial control-plane round beside the principal", async () => {
   const { rounds } = await signedReader()
   const measured = {
     workspaces: await rounds("GET", "/api/workspace?host=provisioner"),
     sharedSessions: await rounds("GET", "/api/workspace/shared-sessions"),
+    sessionPages: await rounds("GET", "/api/control/session-list?scope=projects"),
+    devices: await rounds("GET", "/api/claxedo/remote-access/devices"),
   }
   expect(measured).toEqual({
-    workspaces: { rounds: 2, statements: 2 },
-    sharedSessions: { rounds: 2, statements: 2 },
+    workspaces: { rounds: 1, statements: 2 },
+    sharedSessions: { rounds: 1, statements: 2 },
+    sessionPages: { rounds: 2, statements: 3 },
+    devices: { rounds: 1, statements: 2 },
   })
 })
 

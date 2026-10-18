@@ -9,6 +9,8 @@ export type D1Rounds = {
   /** The statements in order, each with the round it ran in, for reading a chain the count alone does not explain. */
   trace(): readonly { round: number; sql: string }[]
   reset(): void
+  /** Another database counted into the same chain, for a request that reads two: the auth database and the control plane. */
+  also(database: D1Database): D1Database
 }
 
 /**
@@ -27,7 +29,7 @@ export function countD1Rounds(database: D1Database, hopMs = 80): D1Rounds {
   let rounds = 0
   let statements = 0
   let trace: { round: number; sql: string }[] = []
-  const counted = observedD1(database, async (sql, run) => {
+  const counted = (target: D1Database) => observedD1(target, async (sql, run) => {
     if (inFlight === 0) rounds += 1
     statements += sql.length
     trace.push(...sql.map((text) => ({ round: rounds, sql: text.replace(/\s+/g, " ").trim().slice(0, 90) })))
@@ -40,7 +42,7 @@ export function countD1Rounds(database: D1Database, hopMs = 80): D1Rounds {
     }
   })
   return {
-    database: counted,
+    database: counted(database),
     rounds: () => rounds,
     statements: () => statements,
     trace: () => trace,
@@ -49,5 +51,6 @@ export function countD1Rounds(database: D1Database, hopMs = 80): D1Rounds {
       statements = 0
       trace = []
     },
+    also: counted,
   }
 }

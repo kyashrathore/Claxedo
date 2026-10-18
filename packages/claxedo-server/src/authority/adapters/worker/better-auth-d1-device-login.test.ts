@@ -1,24 +1,13 @@
 import { createHash, randomBytes } from "node:crypto"
-import { fileURLToPath } from "node:url"
-import { readFile } from "node:fs/promises"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
-import { Hono } from "hono"
-import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import { Miniflare } from "miniflare"
-import type { D1Database } from "@cloudflare/workers-types"
-import type { AuthEmailMessage } from "../../../platform/auth/better-auth-configuration"
-import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
-import { createHostedCoreApp } from "../../../deployments/hosted-shared/hosted-core-app"
-import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../http/idempotency"
 import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID, BETTER_AUTH_NATIVE_SCOPES } from "../../../platform/auth/better-auth-d1-foundation"
-import {
-  betterAuthIntrospectionClientSecretCiphertext,
-  betterAuthNativeClientProvisioningStatements,
-} from "../../../platform/auth/better-auth-native-clients"
 import { DEVICE_GRANT, deviceGrant } from "../../../test-support/device-grant"
-import { miniflareControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
-import { generateCanonicalOwnerClaim, ownerClaimMutationSql, ownerClaimProvisioning } from "../../../../scripts/deploy/claim-owner"
-import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
+import {
+  USER_DEPLOYED_API as API,
+  USER_DEPLOYED_APP as APP,
+  userDeployedBetterAuthApp,
+  type UserDeployedBetterAuthApp,
+} from "../../../test-support/user-deployed-better-auth-app"
 
 /**
  * `claxedo login` against the Better Auth + D1 composition the Worker serves:
@@ -27,120 +16,28 @@ import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
  * exchange, and that access token spent on a signed control-plane route.
  */
 
-const API = "https://api.example.test"
-const APP = "https://app.example.test"
 const CONTROL_PLANE_RESOURCE = `${API}/control-plane`
 const MCP_RESOURCE = `${API}/api/claxedo/mcp`
-const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
-const BETTER_AUTH_SECRET = "better-auth-secret-that-is-at-least-thirty-two-bytes"
-const INTROSPECTION_SECRET = "introspection-secret-that-is-also-at-least-thirty-two-bytes"
 
-let instance: Miniflare
-let disposeControlPlane: () => Promise<void>
-let controlPlaneDatabase: D1Database
-let authDatabase: D1Database
-let app: Hono
-let descriptor: ReturnType<typeof composeBetterAuthD1UserDeployedControlPlane>["options"]["authentication"]["descriptor"]
-const mail: AuthEmailMessage[] = []
-
-async function migrateAuth(database: D1Database) {
-  for (const name of AUTH_MIGRATIONS) {
-    const sql = (await readFile(fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)), "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of sql.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) await database.prepare(statement).run()
-  }
-}
+let rig: UserDeployedBetterAuthApp
 
 beforeAll(async () => {
-  instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2025-05-01", d1Databases: ["AUTH_DB"] })
-  authDatabase = await instance.getD1Database("AUTH_DB")
-  await migrateAuth(authDatabase)
-  const ciphertext = await betterAuthIntrospectionClientSecretCiphertext(BETTER_AUTH_SECRET, INTROSPECTION_SECRET)
-  for (const sql of betterAuthNativeClientProvisioningStatements(API, ciphertext)) await authDatabase.prepare(sql).run()
-  const controlPlane = await miniflareControlPlaneDatabase()
-  const keys = await generateKeyPair("EdDSA", { extractable: true })
-  disposeControlPlane = () => controlPlane.dispose()
-  controlPlaneDatabase = controlPlane.database
-  const composed = composeBetterAuthD1UserDeployedControlPlane({
-    env: {
-      CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
-      CLAXEDO_PRODUCT_POSTURE: "user-deployed",
-      CLAXEDO_SANDBOX_POSTURE: "control-plane-only",
-      CLAXEDO_DEPLOYMENT_ID: "deployment-1",
-      CLAXEDO_DEPLOYMENT_MODE: "hosted",
-      CLAXEDO_AUTH_METHODS: "email-password",
-      CLAXEDO_AUTH_CONFIGURATION_ID: "sha256:auth-configuration",
-      BETTER_AUTH_URL: API,
-      CLAXEDO_APP_ORIGIN: APP,
-      BETTER_AUTH_SECRET,
-      CLAXEDO_AUTH_INTROSPECTION_SECRET: INTROSPECTION_SECRET,
-      CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.example.test",
-      CLAXEDO_RELAY_RESOLVER_TOKEN: "relay-resolver-secret",
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(keys.privateKey),
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(keys.publicKey),
-    },
-    emailSender: { send: async (message) => { mail.push(message) } },
-    authDatabase,
-    controlPlaneDatabase: controlPlane.database,
-    descriptorExpiresAt: Date.now() + 3_600_000,
-    product: { kind: "user-deployed", organization: { id: "org_deployment", name: "Deployment" }, ownerBootstrap: "one-use-claim" },
-  })
-  await composed.authReady
-  descriptor = composed.options.authentication.descriptor
-  const core = createHostedCoreApp(composed.plane, {
-    ...composed.options,
-    idempotency: createIdempotencyCoordinator(memoryIdempotencyStore()),
-    liveSyncRoom: { idFromName: (name: string) => name, get: () => ({ fetch: async () => new Response(null, { status: 503 }) }) },
-    sharedRateLimitStore: { periodSeconds: 60, check: async () => ({ allowed: true }) },
-  })
-  let requests = 0
-  app = new Hono()
-  // The Cloudflare edge stamps every request with its client address, and Better Auth budgets each address.
-  app.use((c, next) => {
-    ++requests
-    if (!c.req.raw.headers.has("cf-connecting-ip")) {
-      c.req.raw.headers.set("cf-connecting-ip", `10.0.${Math.floor(requests / 250)}.${requests % 250}`)
-    }
-    return next()
-  })
-  app.all("/api/auth/*", (c) => composed.authHandler(c.req.raw))
-  app.all("*", (c) => core.fetch(c.req.raw))
+  rig = await userDeployedBetterAuthApp()
 }, 60_000)
 
 afterAll(async () => {
-  await instance?.dispose()
-  await disposeControlPlane?.()
+  await rig?.dispose()
 })
 
-const request = (pathname: string, init?: RequestInit) => app.request(new URL(pathname, API).toString(), init)
-const grant = () => deviceGrant(app, API)
+const request = (pathname: string, init?: RequestInit) => rig.request(pathname, init)
+const grant = () => deviceGrant(rig.app, API)
 const form = (body: Record<string, string>) =>
   ({ method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body).toString() })
 const json = (body: unknown, headers: Record<string, string> = {}) =>
   ({ method: "POST", headers: { "content-type": "application/json", origin: APP, ...headers }, body: JSON.stringify(body) })
 const enrollments = (token: string) => request("/api/claxedo/host/enrollments", { headers: { authorization: `Bearer ${token}` } })
-
-/** A verified person's session cookie plus the app origin a browser sends with it. */
-async function signIn(email: string) {
-  const password = "correct-horse-battery-staple"
-  expect((await request("/api/auth/sign-up/email", json({ email, password, name: email }))).status).toBe(200)
-  const verification = mail.findLast((message) => message.recipient === email)?.actionUrl
-  if (!verification) throw new Error(`no verification mail for ${email}`)
-  expect([200, 302]).toContain((await app.request(verification)).status)
-  const signedIn = await request("/api/auth/sign-in/email", json({ email, password }))
-  const cookie = /__Secure-claxedo\.session_token=[^;]+/.exec(signedIn.headers.get("set-cookie") ?? "")?.[0]
-  if (!cookie) throw new Error(`sign-in set no session cookie: ${signedIn.status} ${await signedIn.text()}`)
-  return { cookie, origin: APP }
-}
-
-/** The deployer's `claim-owner` step: register a one-use claim for the signed-in account and redeem it. */
-async function claimOwnership(person: { cookie: string; origin: string }) {
-  const session = await request("/api/auth/get-session", { headers: person })
-  const subject = ((await session.json()) as { user: { id: string } }).user.id
-  const claim = generateCanonicalOwnerClaim()
-  await controlPlaneDatabase.prepare(ownerClaimMutationSql(await ownerClaimProvisioning({ deploymentId: "deployment-1", apiOrigin: API, subject, claim }))).run()
-  const redeemed = await request("/api/claxedo/auth/bootstrap-owner", json({}, { ...person, [USER_DEPLOYED_OWNER_CLAIM_HEADER]: claim }))
-  expect(redeemed.status, await redeemed.clone().text()).toBe(200)
-}
+const signIn = (email: string) => rig.signIn(email)
+const claimOwnership = (person: { cookie: string; origin: string }) => rig.claimOwnership(person)
 
 type McpTokens = { access_token: string; refresh_token: string; clientId: string }
 
@@ -180,7 +77,7 @@ const refreshMcp = (tokens: McpTokens) => request("/api/auth/oauth2/token", form
 }))
 
 async function oauthTokenRows(clientId: string) {
-  const count = async (table: string) => (await authDatabase
+  const count = async (table: string) => (await rig.authDatabase
     .prepare(`select count(*) as rows from "${table}" where "clientId" = ?`).bind(clientId).first<{ rows: number }>())?.rows
   return { access: await count("oauthAccessToken"), refresh: await count("oauthRefreshToken") }
 }
@@ -323,7 +220,7 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     expect(await anonymous.json()).toMatchObject({ error_description: "client_id is required" })
     const impostor = await request("/api/auth/device/code", json({ client_id: "someone-else", scope: "openid", resource: CONTROL_PLANE_RESOURCE }))
     expect(impostor.status).not.toBe(200)
-    expect(descriptor.native.cli).toMatchObject({
+    expect(rig.descriptor.native.cli).toMatchObject({
       flow: "device-authorization", clientId: BETTER_AUTH_CLI_CLIENT_ID, resource: CONTROL_PLANE_RESOURCE, scopes: BETTER_AUTH_NATIVE_SCOPES,
     })
   })
