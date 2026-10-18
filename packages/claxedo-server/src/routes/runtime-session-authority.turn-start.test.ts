@@ -8,11 +8,13 @@ import { DIRECTORY, WORKSPACE_ID, sessionHostPlane, type SessionHostPlane } from
 
 let plane: SessionHostPlane
 let rounds: D1Rounds
+/** Each secret opened, with how many D1 statements had run by then. */
+let opened: Array<{ credentialId: string; statements: number }> = []
 const ROOT = "ses_pi_start"
 const OTHER = "ses_pi_other"
 const PLUGINS = { harnessLaunch: { pi: { generation: "g1", execution: { mode: "default" }, pluginRoots: [], mcpServers: [], notApplied: [] } }, mcp: {} }
-const ROUNDS = 4
-const STATEMENTS = 13
+const ROUNDS = 5
+const STATEMENTS = 14
 
 beforeAll(async () => {
   plane = await sessionHostPlane({
@@ -21,6 +23,17 @@ beforeAll(async () => {
       rounds = countD1Rounds(database)
       return rounds.database
     },
+    credentials: (store) => ({
+      ...store,
+      openSealedCredentialSecret: async (sealed, org) => {
+        opened.push({ credentialId: sealed.credentialId, statements: rounds.statements() })
+        return await store.openSealedCredentialSecret!(sealed, org)
+      },
+      resolveCredentialSecretById: async (id, org) => {
+        opened.push({ credentialId: id, statements: rounds.statements() })
+        return await store.resolveCredentialSecretById!(id, org)
+      },
+    }),
   })
   const accounts = plane.credentials(plane.orgId)
   await accounts.putCredential({ owner: plane.owner.principal!.userId, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-owner" })
@@ -33,8 +46,8 @@ afterAll(async () => {
   await plane.close()
 })
 
-const hostProof = (who: SessionHostPlane["owner"], jti: string, sessionId = ROOT) =>
-  plane.relayProof(who, { hostId: sessionHostId(sessionId), backing: "durable-object", sessionId, jti })
+const hostProof = (who: SessionHostPlane["owner"], jti: string, sessionId = ROOT, role: "editor" | "viewer" = "editor") =>
+  plane.relayProof(who, { hostId: sessionHostId(sessionId), backing: "durable-object", sessionId, jti, role })
 const acquire = (proof: string, turnId: string, sessionId = ROOT, body: Record<string, unknown> = { writeClass: "agent_turn" }) =>
   plane.post("/session-authorize", { action: "turn_acquire", sessionId, turnId, ...body }, proof)
 const release = (proof: string, lease: { turnId: string; leaseId: string; fencingToken: number }) =>
@@ -45,10 +58,12 @@ describe("a session host's turn starts on one control-plane request", () => {
   test("the owner's acquisition answers the lease and the turn's delivery, the same one /turn-delivery answers for that lease", async () => {
     const proof = await hostProof(plane.owner, "rat_owner_start")
     rounds.reset()
+    opened = []
     const answer = await acquire(proof, "turn_owner_1")
     expect(answer.status, await answer.clone().text()).toBe(200)
     const body = await answer.json() as Record<string, unknown>
     const chain = { rounds: rounds.rounds(), statements: rounds.statements(), trace: rounds.trace().map((entry) => `${entry.round}: ${entry.sql}`) }
+    const openedByAcquire = [...opened]
     const again = await plane.post("/turn-delivery", { turnLease: body.leaseId })
     expect((await release(proof, body as never)).status).toBe(200)
     expect(body).toMatchObject({ turnId: "turn_owner_1", fencingToken: expect.any(Number) })
@@ -68,8 +83,31 @@ describe("a session host's turn starts on one control-plane request", () => {
 
     // The serial D1 depth of the one request, against the 22 of the three it
     // replaced on 5a5f335a99: 3 for the write, 8 for the acquisition, 11 for
-    // the delivery.
+    // the delivery. The holder's sealed secret is read beside the lease and
+    // opened only once the lease is written.
     expect(chain, chain.trace.join("\n")).toMatchObject({ rounds: ROUNDS, statements: STATEMENTS })
+    const inserted = chain.trace.findIndex((line) => line.includes("insert into session_turn_leases"))
+    expect(inserted, chain.trace.join("\n")).toBeGreaterThanOrEqual(0)
+    expect(openedByAcquire.length).toBe(1)
+    expect(openedByAcquire[0].statements, chain.trace.join("\n")).toBeGreaterThan(inserted + 1)
+  })
+
+  test("a follow grantee's own token, a viewer's, acquires no turn: the store refuses the write as it would write the lease, and no account is opened for them", async () => {
+    const memberId = plane.member.principal!.userId
+    await plane.store.grantSessionShare!(plane.owner, { sessionId: ROOT, workspaceId: WORKSPACE_ID, grantedToUserId: memberId, level: "follow" })
+    const proof = await hostProof(plane.member, "rat_member_viewer", ROOT, "viewer")
+    rounds.reset()
+    opened = []
+    const refused = await acquire(proof, "turn_viewer")
+    const trace = rounds.trace().map((entry) => entry.sql)
+    expect(refused.status).toBe(403)
+    const body = await refused.json() as Record<string, unknown>
+    expect(body).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(body.delivery).toBeUndefined()
+    expect(await leaseRows()).toEqual([])
+    expect(trace.some((sql) => sql.includes("as owns from sessions")), trace.join("\n")).toBe(true)
+    expect(opened).toEqual([])
+    await plane.store.revokeSessionShare!(plane.owner, { sessionId: ROOT, workspaceId: WORKSPACE_ID, grantedToUserId: memberId })
   })
 
   test("a send grantee's turn is admitted and spends the creator's accounts; a stranger's, a follow grantee's and a revoked token's are refused before any lease is taken", async () => {

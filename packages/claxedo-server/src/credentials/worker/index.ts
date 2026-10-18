@@ -176,12 +176,16 @@ export function hostedOrgCredentials(
     return row ? requiredTextColumn(row, "id") : undefined
   }
 
-  const openSecret = async (id: string, statusScope: string) => {
+  const sealedSecret = async (id: string, statusScope: string) => {
     const row = await database
-      .prepare(`select secret_envelope from hosted_provider_credentials where org_id = ? and id = ?${statusScope}`)
+      .prepare(`select secret_envelope, revision from hosted_provider_credentials where org_id = ? and id = ?${statusScope}`)
       .bind(org, id)
       .first()
-    return row ? cipher.open(id, requiredTextColumn(row, "secret_envelope")) : null
+    return row ? { credentialId: id, revision: Number(row.revision), sealed: requiredTextColumn(row, "secret_envelope") } : null
+  }
+  const openSecret = async (id: string, statusScope: string) => {
+    const sealed = await sealedSecret(id, statusScope)
+    return sealed ? cipher.open(id, sealed.sealed) : null
   }
 
   const readCredential = async (id: string) => {
@@ -353,6 +357,8 @@ export function hostedOrgCredentials(
     },
     // Verification retries must be able to re-check a prior failed result.
     resolveCredentialSecretById: (id) => openSecret(id, ""),
+    sealedCredentialSecret: (id) => sealedSecret(id, ""),
+    openSealedCredentialSecret: (sealed) => cipher.open(sealed.credentialId, sealed.sealed),
     putCredential: async (input: CredentialWrite) => {
       const found = await existingId(input.owner, input.provider_id)
       const inserted = await upsert(input, found ?? crypto.randomUUID())

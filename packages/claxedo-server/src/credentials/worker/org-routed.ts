@@ -46,6 +46,12 @@ export function orgRoutedCredentials(
     getCredentialByProvider: (providerId, read, org) => at(org).getCredentialByProvider(providerId, read, org),
     getCredential: async (id, org) => await at(org).getCredential?.(id, org),
     resolveCredentialSecretById: async (id, org) => (await at(org).resolveCredentialSecretById?.(id, org)) ?? null,
+    sealedCredentialSecret: async (id, org) => (await at(org).sealedCredentialSecret?.(id, org)) ?? null,
+    openSealedCredentialSecret: async (sealed, org) => {
+      const store = at(org)
+      if (!store.openSealedCredentialSecret) throw new Error("A hosted credential store opens its own sealed secrets")
+      return await store.openSealedCredentialSecret(sealed, org)
+    },
     putCredential: (input, org) => write(org, (store) => store.putCredential(input, org)),
     deleteCredential: (id, org, administeredBy) => write(org, (store) => store.deleteCredential(id, org, administeredBy)),
     deleteCredentialsByProvider: (providerId, kind, org) => write(org, (store) => store.deleteCredentialsByProvider(providerId, kind, org)),

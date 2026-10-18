@@ -9,7 +9,7 @@ import { runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/run
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
-import type { ControlPlaneServices } from "../authority/services"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
@@ -38,6 +38,8 @@ export async function sessionHostPlane(input: {
   toolGroups?: readonly string[]
   /** Wraps the control plane's database before anything is built over it, as a round counter does. */
   database?: (database: D1Database) => D1Database
+  /** Wraps each organization's credential store as the routes receive it, as a spy on its secrets does. */
+  credentials?: (store: ControlPlaneCredentials) => ControlPlaneCredentials
 } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
@@ -57,7 +59,10 @@ export async function sessionHostPlane(input: {
   await store.usersMe(outsider)
   await store.createCloudWorkspace(owner, { workspaceId: WORKSPACE_ID, displayName: "Cloud", remoteDirectory: DIRECTORY })
   await fixture.addMember(owner, member, orgId)
-  const credentials = (org: string) => hostedOrgCredentials(org, { database: fixture.database, env })
+  const credentials = (org: string) => {
+    const store = hostedOrgCredentials(org, { database: fixture.database, env })
+    return input.credentials ? input.credentials(store) : store
+  }
   let target: SandboxTargetResult = { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "acquiring", retryAfterMs: 1_500 }
   let startAnswer: SandboxStartAnswer = { status: "provisioning", epoch: 1, retryAfterMs: 2_000, homeRegion: "us-east" }
   let entitlement: Awaited<ReturnType<CloudWorkspaceEntitlementGate>>
@@ -113,14 +118,14 @@ export async function sessionHostPlane(input: {
   })
 
   /** Records the Runtime Access Token a client holds, then the Relay Host Token the relay derives from it for one request. */
-  async function relayProof(who: SignedControlPlaneAuth, input: { hostId: string; backing: RelayBacking; sessionId?: string; jti: string }) {
+  async function relayProof(who: SignedControlPlaneAuth, input: { hostId: string; backing: RelayBacking; sessionId?: string; jti: string; role?: "editor" | "viewer" }) {
     await store.recordRuntimeAccessToken(who, {
       jti: input.jti,
       workspaceId: WORKSPACE_ID,
       hostId: input.hostId,
       actorId: who.principal!.actorId,
       actorKind: "human",
-      role: "editor",
+      role: input.role ?? "editor",
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       expiresAt: Date.now() + 10 * 60_000,
     })
@@ -131,7 +136,7 @@ export async function sessionHostPlane(input: {
       orgId,
       workspaceId: WORKSPACE_ID,
       hostId: input.hostId,
-      role: "editor",
+      role: input.role ?? "editor",
       backing: input.backing,
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       jti: `rht_${input.jti}`,

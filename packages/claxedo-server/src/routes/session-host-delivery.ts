@@ -16,7 +16,7 @@ import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 import { sessionHostMachineAccess, type SessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
 import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import { createCredentialRefusals, type CredentialRefusals } from "../credentials/credential-refusals"
-import { ownerDirectDelivery, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
+import { openDirectAccounts, PI_DIRECT_PROVIDERS, selectDirectAccounts, type SelectedDirectAccounts } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
 import type { OwnerMachineStart } from "../workspace/cloud-workspace-start"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
@@ -53,10 +53,9 @@ export type TurnDeliveryRefusal = { code: "turn_delivery_denied"; status: 403 } 
 /** Whose turn a delivery is: the workspace's owner, and the person whose accounts it spends (the session's creator, else that owner). */
 export type TurnDeliveryHolder = { owner: WorkspaceOwnerIdentity; holder: string }
 
-/** What `readTurnDelivery` gathered for a turn, bound to a lease by `assembleTurnDelivery`. */
+/** What `readTurnDelivery` gathered for a turn, with no secret opened; `assembleTurnDelivery` opens them once the lease is granted. */
 export type TurnDeliveryReads = TurnDeliveryHolder & {
-  direct: Awaited<ReturnType<typeof ownerDirectDelivery>>["direct"]
-  refused: Awaited<ReturnType<typeof ownerDirectDelivery>>["refused"]
+  accounts: SelectedDirectAccounts
   plugins: RuntimeConfigSnapshotPlugins
 }
 
@@ -71,11 +70,12 @@ export function turnDeliveryHolder(
 }
 
 /**
- * The reads a session host's turn delivery is made of: the holder's provider
- * accounts as direct secrets and the workspace's plugins. Neither depends on
- * the turn's lease, so a turn being acquired reads them beside the lease it
- * is taking; a plugin read that fails refuses the delivery rather than hand
- * the host a turn with none.
+ * The reads a session host's turn delivery is made of: the rows naming the
+ * holder's provider accounts and the workspace's plugins, none of them a
+ * secret. Neither depends on the turn's lease, so a turn being acquired reads
+ * them beside the lease it is taking and a caller the lease then refuses has
+ * caused no secret to be opened; a plugin read that fails refuses the
+ * delivery rather than hand the host a turn with none.
  */
 export async function readTurnDelivery(
   input: Pick<SessionHostDeliveryOptions, "credentials" | "plugins">,
@@ -83,30 +83,31 @@ export async function readTurnDelivery(
   named: TurnDeliveryHolder,
 ): Promise<TurnDeliveryReads | TurnDeliveryRefusal> {
   const [accounts, plugins] = await Promise.all([
-    ownerDirectDelivery(input.credentials(named.owner.orgId), named.holder, { providers: PI_DIRECT_PROVIDERS }),
+    selectDirectAccounts(input.credentials(named.owner.orgId), PI_DIRECT_PROVIDERS),
     input.plugins ? input.plugins(workspaceId).then((plugins) => ({ plugins }), (error: unknown) => ({ error })) : { plugins: { harnessLaunch: {}, mcp: {} } },
   ])
   if ("error" in plugins) {
     console.error(`[session-host-delivery] the plugins of ${workspaceId} were not applied:`, plugins.error instanceof Error ? plugins.error.message : String(plugins.error))
     return { code: "agent_plugins_unavailable", status: 502 }
   }
-  return { ...named, ...accounts, plugins: plugins.plugins }
+  return { ...named, accounts, plugins: plugins.plugins }
 }
 
 /**
- * The delivery for one lease: it lives no longer than the lease or the
- * shortest-lived account in it, and carries the first-party MCP server, under
- * a bearer of the same life, only for the workspace owner driving their own
- * session.
+ * The delivery for one granted lease: the holder's accounts opened as the
+ * secrets themselves, living no longer than the lease or the shortest-lived
+ * account among them, and the first-party MCP server, under a bearer of the
+ * same life, only for the workspace owner driving their own session.
  */
 export async function assembleTurnDelivery(
-  input: Pick<SessionHostDeliveryOptions, "sessionMcp">,
+  input: Pick<SessionHostDeliveryOptions, "credentials" | "sessionMcp">,
   reads: TurnDeliveryReads,
   turn: { actorId: string; workspaceId: string; sessionId: string; expiresAt: number },
   placement: SessionHostPlacement,
   origin: string,
 ): Promise<TurnDelivery> {
-  const { owner, holder, direct, refused, plugins } = reads
+  const { owner, holder, plugins } = reads
+  const { direct, refused } = await openDirectAccounts(input.credentials(owner.orgId), holder, reads.accounts, { providers: PI_DIRECT_PROVIDERS })
   const expiresAt = Math.min(turn.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt]))
   const firstPartyMcp = holder === owner.userId && turn.actorId === owner.actorId
     ? await input.sessionMcp?.issue({ origin, owner, workspaceId: turn.workspaceId, sessionId: turn.sessionId, expiresAt })
