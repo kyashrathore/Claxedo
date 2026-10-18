@@ -10,10 +10,6 @@ import { OPENROUTER_MODELS } from "@earendil-works/pi-ai/providers/openrouter.mo
 import { XAI_MODELS } from "@earendil-works/pi-ai/providers/xai.models"
 import { configOptionsPreview, modelAndEffortOptions } from "../../contract"
 
-// The control plane Worker serves this catalog. Pi's provider modules carry
-// their API clients, which reach each vendor SDK, so the catalog reads the
-// providers' chat model tables: what a built-in provider's `getModels()`
-// answers before any model is fetched.
 const PI_LAUNCH_MODELS: Record<PiLaunchProvider, Readonly<Record<string, Model<Api>>>> = {
   "openai-codex": OPENAI_CODEX_MODELS, anthropic: ANTHROPIC_MODELS, openai: OPENAI_MODELS, openrouter: OPENROUTER_MODELS,
   google: GOOGLE_MODELS, groq: GROQ_MODELS, xai: XAI_MODELS,
