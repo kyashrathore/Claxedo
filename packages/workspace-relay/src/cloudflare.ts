@@ -309,19 +309,21 @@ const TUNNEL_RESPONSE_BODY_MAX_BYTES_DEFAULT = 16 * 1024 * 1024
 const SLOW_CONSUMER_HIGH_WATER_MARK_BYTES_DEFAULT = 8 * 1024 * 1024
 const SLOW_CONSUMER_TIMEOUT_MS_DEFAULT = 30_000
 // Frames a client may send while the upstream WebSocket is still connecting.
-//
-// Overflow CLOSES the socket rather than dropping frames, deliberately: this
-// queue carries an ordered byte stream (terminal input, PTY data), so shedding
-// entries would hand the far end a corrupted stream with no error anywhere —
-// strictly worse than a clean, diagnosable close. Sized for the interactive
-// case, where a human never has 64 unacknowledged frames in flight during the
-// few milliseconds before upstream connects.
-const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 64
-// Bytes are the resource this queue actually consumes, and 64 tiny frames is
-// not a memory problem. Admitting on either bound lets a legitimate burst of
-// small frames through while still capping real memory, so the close above is
-// reserved for traffic genuinely too large to hold.
+// Crossing either this or the byte bound closes the socket. Overflow CLOSES
+// rather than dropping frames, deliberately: this queue carries an ordered
+// byte stream (terminal input, PTY data), so shedding entries would hand the
+// far end a corrupted stream with no error anywhere — strictly worse than a
+// clean, diagnosable close. Far above any interactive burst: a client that
+// pipelines keystroke-sized frames faster than the upstream opens must not
+// lose the socket to that startup race, and a cap of 64 did exactly that.
+// Mirrors `DEFAULT_WS_PRE_OPEN_QUEUE_MAX_FRAMES` on the host leg
+// (workspace-runtime/src/workspace-relay-host-tunnel.ts), which queues the
+// same stream during the same connect window.
+const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 8_192
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
+// Charged per queued frame on top of its payload, so the byte bound also
+// counts the entries an empty frame would otherwise add for free.
+const UPSTREAM_WS_PRE_OPEN_QUEUE_FRAME_OVERHEAD_BYTES = 64
 const WORKSPACE_TARGET_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 // Consecutive resolver-unreachable answers tolerated before an established
 // connection is closed. 3 × the 30 s watcher interval survives ~90 s of resolver
@@ -592,10 +594,10 @@ function base64ToBytes(input: string) {
   return Uint8Array.from(atob(input), (char) => char.charCodeAt(0))
 }
 
-/** Byte size of a frame awaiting the upstream socket, for the pre-open bound. */
+/** What a frame awaiting the upstream socket costs the pre-open byte bound. */
 function preOpenFrameBytes(input: string | ArrayBuffer | Uint8Array) {
-  if (typeof input === "string") return new TextEncoder().encode(input).byteLength
-  return input.byteLength
+  const payload = typeof input === "string" ? new TextEncoder().encode(input).byteLength : input.byteLength
+  return payload + UPSTREAM_WS_PRE_OPEN_QUEUE_FRAME_OVERHEAD_BYTES
 }
 
 type BlobLike = { arrayBuffer: () => Promise<ArrayBuffer> }
@@ -2045,14 +2047,10 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     }
     const deliverClientFrame = orderedFrameDelivery((payload) => {
       if (!upstreamOpen) {
-        // Admit on EITHER bound — see the constants. A burst of small frames
-        // while the upstream is still connecting costs almost nothing to hold,
-        // and this queue carries an ordered stream, so shedding entries would
-        // corrupt it silently. Only genuinely large buffered traffic closes.
         const frameBytes = preOpenFrameBytes(payload)
         if (
           queue.length >= (options.upstreamWebSocketPreOpenQueueMaxFrames ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT)
-          && queuedBytes + frameBytes > (options.upstreamWebSocketPreOpenQueueMaxBytes ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT)
+          || queuedBytes + frameBytes > (options.upstreamWebSocketPreOpenQueueMaxBytes ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT)
         ) {
           closeSocket(pair.server, 1011, "Upstream WebSocket queue limit exceeded")
           cleanupClient({ code: 1011, reason: "Upstream WebSocket queue limit exceeded" })

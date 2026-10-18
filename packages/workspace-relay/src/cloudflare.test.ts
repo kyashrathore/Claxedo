@@ -2579,16 +2579,12 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(harness.room.drain.pendingCount()).toBe(0)
   })
 
-  test("closes the upstream socket and clears the client when the pre-open queue overflows", async () => {
+  async function preOpenClient(bounds: { upstreamWebSocketPreOpenQueueMaxFrames?: number; upstreamWebSocketPreOpenQueueMaxBytes?: number }) {
     const upstream = new FakeSocket()
     upstream.readyState = 0
     const harness = await roomHarness({
       connectWebSocket: () => upstream,
-      upstreamWebSocketPreOpenQueueMaxFrames: 1,
-      // Both bounds must be exceeded to close, so the byte bound has to be tiny
-      // here too — otherwise these small frames are admitted (which is the
-      // point of the byte bound) and the client is not closed.
-      upstreamWebSocketPreOpenQueueMaxBytes: 1,
+      ...bounds,
       createServerSocket: () => new SilentCloseSocket(),
     })
     const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
@@ -2598,20 +2594,55 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(res.status).toBe(101)
-    const clientSocket = harness.socket(0)
+    return { harness, upstream, client: harness.socket(0) }
+  }
 
-    clientSocket.message("frame-1")
-    clientSocket.message("frame-2")
+  const QUEUE_LIMIT = { code: 1011, reason: "Upstream WebSocket queue limit exceeded" }
 
-    expect(clientSocket.closed).toEqual({
-      code: 1011,
-      reason: "Upstream WebSocket queue limit exceeded",
-    })
-    expect(upstream.closed).toEqual({
-      code: 1011,
-      reason: "Upstream WebSocket queue limit exceeded",
-    })
+  test("closes the upstream socket and clears the client when the pre-open queue reaches its frame bound, however small the frames", async () => {
+    const { harness, upstream, client } = await preOpenClient({ upstreamWebSocketPreOpenQueueMaxFrames: 2 })
+
+    client.message("")
+    client.message("")
+    expect(client.closed).toBeUndefined()
+    client.message("")
+
+    expect(client.closed).toEqual(QUEUE_LIMIT)
+    expect(upstream.closed).toEqual(QUEUE_LIMIT)
     expect(harness.room.state()).toMatchObject({ clientCount: 0 })
+  })
+
+  test("charges every queued frame an overhead, so empty frames reach the byte bound", async () => {
+    const { client } = await preOpenClient({
+      upstreamWebSocketPreOpenQueueMaxFrames: 1_000_000,
+      upstreamWebSocketPreOpenQueueMaxBytes: 3 * 64,
+    })
+
+    for (let index = 0; index < 3; index += 1) client.message("")
+    expect(client.closed).toBeUndefined()
+    client.message("")
+
+    expect(client.closed).toEqual(QUEUE_LIMIT)
+  })
+
+  test("closes on the byte bound alone when the frames are few but large", async () => {
+    const { client } = await preOpenClient({ upstreamWebSocketPreOpenQueueMaxBytes: 1024 })
+
+    client.message("x".repeat(2048))
+
+    expect(client.closed).toEqual(QUEUE_LIMIT)
+  })
+
+  test("keeps a burst of keystroke-sized frames under the default bounds and delivers it in order once upstream opens", async () => {
+    const { upstream, client } = await preOpenClient({})
+    const frames = Array.from({ length: 200 }, (_, index) => `key-${index}`)
+
+    for (const frame of frames) client.message(frame)
+    expect(client.closed).toBeUndefined()
+    upstream.readyState = 1
+    upstream.dispatch("open")
+
+    expect(upstream.sent).toEqual(frames)
   })
 
   /**
