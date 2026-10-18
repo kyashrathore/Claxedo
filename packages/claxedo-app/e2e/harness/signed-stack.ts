@@ -8,6 +8,7 @@ import { hostedRuntimeTransport, seedOrgSandboxKey, type HostedStack } from "../
 import type { HttpTransport } from "../../../harness/e2e/harness/transport"
 import type { Workspace } from "../../../harness/e2e/harness/workspaces"
 import type { TlsTrust } from "./tls-front"
+import type { FrontShaping } from "./front-shaping"
 import { startHostedAppFront } from "./hosted-app-front"
 import { signUpHostedEmail } from "./hosted-email"
 import { startHostedMachine } from "./hosted-machine"
@@ -37,7 +38,7 @@ export type SignedStack = {
   close(): Promise<void>
 }
 
-export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; distDir: string }
+export type SignedStackInput = StackInput & { frontPort: number; relayPort: number; distDir: string; shaping?: FrontShaping }
 
 export function sessionCookie(url: string, account: Account) {
   const separator = account.person.cookie.indexOf("=")
@@ -57,7 +58,7 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
   let local: Awaited<ReturnType<typeof startStack>> | undefined
   let machine: Awaited<ReturnType<typeof startHostedMachine>> | undefined
   try {
-    front = await startHostedAppFront({ port: input.frontPort, distDir: input.distDir, hosted })
+    front = await startHostedAppFront({ port: input.frontPort, distDir: input.distDir, hosted, shaping: input.shaping })
     local = await startStack({ ...input, daemonEnv: { ...input.daemonEnv, NODE_EXTRA_CA_CERTS: hosted.certificate } })
     const workspaces = new Map<string, Workspace>()
     const connectionCache = new Map<string, { runtimeAccessToken: string; tokenExpiresAt: number }>()

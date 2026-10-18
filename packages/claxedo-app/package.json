@@ -15,7 +15,8 @@
     "test": "bun test --conditions browser src e2e/harness ./vite.web-document.test.ts",
     "check": "bun scripts/checks/run.ts",
     "e2e": "bun ./e2e/run.ts",
-    "e2e:perf-stream": "bun ./e2e/perf/run.ts"
+    "e2e:perf-stream": "bun ./e2e/perf/run.ts stream.ts",
+    "e2e:perf-web": "bun ./e2e/perf/run.ts web/main.ts"
   },
   "license": "MIT",
   "devDependencies": {

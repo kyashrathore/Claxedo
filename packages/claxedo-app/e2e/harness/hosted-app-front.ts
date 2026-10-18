@@ -5,9 +5,10 @@ import fs from "node:fs/promises"
 import { appBundleFile } from "../../../harness/e2e/harness/local-app-bundle"
 import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 import type { HostedStack } from "../../../harness/e2e/harness/hosted-flow"
+import { respondShaped, type FrontShaping } from "./front-shaping"
 import type { TlsFront } from "./tls-front"
 
-export async function startHostedAppFront(input: { port: number; distDir: string; hosted: HostedStack }): Promise<TlsFront & { controlPlaneRequests(): readonly string[] }> {
+export async function startHostedAppFront(input: { port: number; distDir: string; hosted: HostedStack; shaping?: FrontShaping }): Promise<TlsFront & { controlPlaneRequests(): readonly string[] }> {
   const certificate = await fs.readFile(input.hosted.certificate)
   const worker = new URL(input.hosted.workerOrigin)
   const tls = { cert: certificate, key: await fs.readFile(input.hosted.credentials.key) }
@@ -16,17 +17,23 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
     if (/^\/(api|auth|internal|\.well-known)(\/|$)/.test(pathname) || pathname === "/health") {
       forwarded.push(`${request.method} ${pathname}`)
-      const upstream = httpsRequest({ hostname: worker.hostname, port: worker.port, method: request.method,
-        path: request.url, headers: request.headers, ca: certificate, agent: false }, (reply) => {
-        response.writeHead(reply.statusCode ?? 502, reply.headers)
-        reply.pipe(response)
-      })
-      upstream.on("error", (error) => response.headersSent ? response.destroy(error) : response.writeHead(502).end(error.message))
-      request.pipe(upstream)
+      const relay = () => {
+        const upstream = httpsRequest({ hostname: worker.hostname, port: worker.port, method: request.method,
+          path: request.url, headers: request.headers, ca: certificate, agent: false }, (reply) => {
+          response.writeHead(reply.statusCode ?? 502, reply.headers)
+          reply.pipe(response)
+        })
+        upstream.on("error", (error) => response.headersSent ? response.destroy(error) : response.writeHead(502).end(error.message))
+        request.pipe(upstream)
+      }
+      const delay = input.shaping?.apiDelayMs() ?? 0
+      if (delay > 0) setTimeout(relay, delay)
+      else relay()
       return
     }
     const asset = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
     if (!asset) { response.writeHead(404).end(); return }
+    if (input.shaping) return respondShaped(request, response, pathname, asset, input.shaping)
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
   const servers = [createServer(tls, serve), createServer(tls, serve)]
