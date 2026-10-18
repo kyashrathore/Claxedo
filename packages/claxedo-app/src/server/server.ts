@@ -31,7 +31,7 @@ import { createSessionProjection, type SessionProjection } from "./session-proje
 import { createSessionsApi } from "./sessions"
 import type { SnapshotCoverage } from "./snapshot-coverage"
 import { createStatusOwner, type StatusOwner } from "./status"
-import { createEventStreams } from "./streams"
+import { createEventStreams, type EventStreams } from "./streams"
 import { createStartup } from "./startup"
 import { createProductTelemetry } from "./telemetry"
 import { createTerminalsApi } from "./terminals"
@@ -124,6 +124,32 @@ function createServerQueries(queryClient: QueryClient, transport: Transport, wor
   return queries
 }
 
+type ScopeOwners = {
+  readonly streams: Pick<EventStreams, "close">
+  readonly placementStreams: Pick<PlacementStreams, "close">
+  readonly stopProjecting: () => void
+  readonly intake: Pick<EventIntake, "dispose">
+  readonly workspaces: Pick<Workspaces, "dispose">
+  readonly queryClient: QueryClient
+}
+
+function scopeTeardown(owners: ScopeOwners): Pick<ServerHandle, "closeStreams" | "dispose"> {
+  const closeStreams = () => {
+    owners.placementStreams.close()
+    owners.streams.close()
+  }
+  return {
+    closeStreams,
+    dispose: () => {
+      owners.stopProjecting()
+      closeStreams()
+      owners.intake.dispose()
+      owners.workspaces.dispose()
+      owners.queryClient.clear()
+    },
+  }
+}
+
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
@@ -141,10 +167,6 @@ export function createServer(config: ServerConfig): ServerHandle {
   const projection = createSessionProjection(workspaces, account)
   const stopProjecting = intake.subscribe(projection.observe)
   const placementStreams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: intake.frame, onGap: intake.gap })
-  const closeStreams = () => {
-    placementStreams.close()
-    streams.close()
-  }
   return {
     config,
     connection,
@@ -158,13 +180,6 @@ export function createServer(config: ServerConfig): ServerHandle {
     queries,
     retryConnection: retryConnections(startup, placementStreams),
     ready: startup.ready,
-    closeStreams,
-    dispose: () => {
-      stopProjecting()
-      closeStreams()
-      intake.dispose()
-      workspaces.dispose()
-      queryClient.clear()
-    },
+    ...scopeTeardown({ streams, placementStreams, stopProjecting, intake, workspaces, queryClient }),
   }
 }
