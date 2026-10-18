@@ -52,7 +52,11 @@ export function createModelAvailability(input: ModelAvailabilityInput) {
     return !input.harness() || managedDefaultModel() || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
   })
   const modelLoadingOrSwitching = createMemo(() => modelLoading() || input.switching())
-  return { isError, isStale, modelLoading, hasModelOptions, modelsAnswered, managedDefaultModel, modelOptionsFailed, modelDisabled, modelLoadingOrSwitching }
+  const answeredNoModel = createMemo(() => {
+    const answered = input.harness() && isCatalogHarness(input.harness()) ? input.catalog.providers.resolved() : modelsAnswered()
+    return answered && !modelLoadingOrSwitching() && !hasModelOptions()
+  })
+  return { isError, isStale, modelLoading, hasModelOptions, modelsAnswered, answeredNoModel, managedDefaultModel, modelOptionsFailed, modelDisabled, modelLoadingOrSwitching }
 }
 
 export type ModelAvailability = ReturnType<typeof createModelAvailability>

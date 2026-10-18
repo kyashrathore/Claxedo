@@ -91,7 +91,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     modelNames,
   })
   const style = createTriggerStyle(() => props.triggerStyle)
-  const account = createHarnessAccountState(server, harness)
+  const account = createHarnessAccountState(server, harness, availability.answeredNoModel)
   const unavailableHere = createUnavailableHere({ selection, harness, harnessLabel: optionList.label, adopt: harnessSwitch.adopt })
   const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, runtime, account, placementId, openProviders, unavailableHere })
   const { notice, modelError } = createSelectorNotice({

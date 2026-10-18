@@ -1,0 +1,133 @@
+{
+  "delayMs": 600,
+  "projects": 3,
+  "chipAt": 2248,
+  "chipLog": [
+    {
+      "t": 697,
+      "text": "Select a harness | unresolved | submit=false | /"
+    },
+    {
+      "t": 1348,
+      "text": "Loading models | ready | submit=false | /"
+    },
+    {
+      "t": 1967,
+      "text": "Claude Opus 5.5 | ready | submit=true | pi/anthropic/claude-opus-5-5"
+    }
+  ],
+  "requests": [
+    {
+      "url": "/api/claxedo/auth/descriptor",
+      "origin": "app",
+      "start": 662.3798828125,
+      "end": 1274.6948828125,
+      "bytes": 595,
+      "decoded": 1661
+    },
+    {
+      "url": "/api/claxedo/bootstrap",
+      "origin": "app",
+      "start": 662.47802734375,
+      "end": 1278.22802734375,
+      "bytes": 152,
+      "decoded": 163
+    },
+    {
+      "url": "/api/workspace?host=provisioner",
+      "origin": "app",
+      "start": 666.038818359375,
+      "end": 1282.3908183593749,
+      "bytes": 550,
+      "decoded": 1957
+    },
+    {
+      "url": "/api/control/session-list?scope=projects&limit=5&sort=human_turn_desc&settled=active",
+      "origin": "app",
+      "start": 666.14794921875,
+      "end": 1286.19894921875,
+      "bytes": 623,
+      "decoded": 2060
+    },
+    {
+      "url": "/api/workspace/shared-sessions",
+      "origin": "app",
+      "start": 662.451904296875,
+      "end": 1285.376904296875,
+      "bytes": 51,
+      "decoded": 15
+    },
+    {
+      "url": "/api/auth/get-session",
+      "origin": "app",
+      "start": 666.122802734375,
+      "end": 1287.830802734375,
+      "bytes": 415,
+      "decoded": 624
+    },
+    {
+      "url": "/api/claxedo/remote-access/devices",
+      "origin": "app",
+      "start": 1295.455078125,
+      "end": 1912.877078125,
+      "bytes": 312,
+      "decoded": 349
+    },
+    {
+      "url": "/api/claxedo/agent-config/connections",
+      "origin": "app",
+      "start": 1295.48193359375,
+      "end": 1914.52793359375,
+      "bytes": 239,
+      "decoded": 383
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/pty",
+      "origin": "127.0.0.1:48702",
+      "start": 1298.51513671875,
+      "end": 1927.9451367187498,
+      "bytes": 37,
+      "decoded": 2
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/pty",
+      "origin": "127.0.0.1:48702",
+      "start": 1298.614013671875,
+      "end": 1928.388013671875,
+      "bytes": 37,
+      "decoded": 2
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/pty",
+      "origin": "127.0.0.1:48702",
+      "start": 1298.6689453125,
+      "end": 1928.5029453124998,
+      "bytes": 37,
+      "decoded": 2
+    },
+    {
+      "url": "/api/claxedo/agent-config/harness?workspaceId=<uuid>",
+      "origin": "app",
+      "start": 1298.373779296875,
+      "end": 1950.980779296875,
+      "bytes": 175,
+      "decoded": 273
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/git/status",
+      "origin": "127.0.0.1:48702",
+      "start": 1298.698974609375,
+      "end": 1956.740974609375,
+      "bytes": 85,
+      "decoded": 64
+    },
+    {
+      "url": "/workspaces/<uuid>/api/wr/harness-config-options?nativeHarness=pi",
+      "origin": "127.0.0.1:48702",
+      "start": 1952.579833984375,
+      "end": 2562.652833984375,
+      "bytes": 802,
+      "decoded": 4649
+    }
+  ]
+}
