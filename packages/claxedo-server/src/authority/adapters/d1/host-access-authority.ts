@@ -26,7 +26,7 @@ import {
   activeGuard, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
 } from "./authorization"
 import { d1BatchAssertionFailed, d1ConstraintFailure, d1UniqueFailureOn } from "../../../platform/db/d1-constraint"
-import { requireHuman } from "./access-context"
+import { namedPrincipal, requireHuman } from "./access-context"
 import { D1HostAccessAuthorityError } from "./host-access-errors"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
@@ -450,8 +450,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     }
   }
 
+  /** The machines are read beside the principal's verification (`namedPrincipal`), keyed by the actor it names. */
   async listHostDevices(auth: SignedControlPlaneAuth) {
-    return await listHostDevices(this.database, (await this.requirePrincipal(auth)).actorId, this.now())
+    const [, devices] = await Promise.all([this.requirePrincipal(auth), listHostDevices(this.database, namedPrincipal(auth).actorId, this.now())])
+    return devices
   }
 
   async createHostEnrollmentRequest(auth: SignedControlPlaneAuth, args: { hostId: string }) {

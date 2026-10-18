@@ -162,6 +162,14 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
          */
         ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
       },
+      /**
+       * Better Auth's `findSession` asks its adapter for the session joined to
+       * its user, but the adapter factory passes that join through only under
+       * this flag and otherwise reads the user in a second query after the
+       * session: two serial database rounds per cookie verification where the
+       * Kysely adapter's left join on `user.id` is one statement.
+       */
+      database: { joins: true },
       useSecureCookies: true,
       disableCSRFCheck: false,
       disableOriginCheck: false,

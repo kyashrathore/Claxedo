@@ -7,7 +7,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { ProjectSessionPage, SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionListKeysetPage } from "@claxedo/server-core/session/navigation-list"
 import { sessionOrderSql, unsettledSql } from "@claxedo/server-core/session/navigation-order"
-import { requireHuman } from "./access-context"
+import { namedPrincipal, requireHuman } from "./access-context"
 import { maySql, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import type { D1ActorProfile } from "./workspace-authority"
 import type { SessionHostPlacement } from "../../session-hosts"
@@ -325,29 +325,40 @@ export function decodeMessagePageCursor(sessionId: string, input: string) {
   }
 }
 
+/**
+ * The sessions shared to the caller, from the caller's live share grants
+ * (`session_share_grants_by_user`) rather than every session the deployment
+ * holds; the read rule still decides each row, and the read runs beside the
+ * principal's verification (`namedPrincipal`).
+ */
 export async function listD1SharedSessions(
   database: D1Database,
   deploymentId: string,
   profile: D1ActorProfile | undefined,
   auth: SignedControlPlaneAuth,
 ): Promise<SharedSession[]> {
-  const who = await requireHuman(database, deploymentId, auth)
+  const who = namedPrincipal(auth)
   const reads = maySql(who, "read", { kind: "session", alias: "s" })
   const sends = maySql(who, "send", { kind: "session", alias: "s" })
   const issuer = auth.principal!.identity.issuer
-  const rows = await database.prepare(`
+  const [, rows] = await Promise.all([
+    requireHuman(database, deploymentId, auth),
+    database.prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title,
         case when ${sends.sql} then 'send' else 'follow' end as level,
         (select owner.subject from auth_identities owner
           where owner.user_id = w.owner_user_id and owner.unlinked_at is null
             and owner.adapter = 'better-auth' and owner.issuer = ?
           order by owner.linked_at, owner.subject limit 1) as owner_subject
-      from sessions s
+      from session_share_grants grant_row
+      join sessions s on s.session_id = grant_row.session_id
       join workspaces w on w.workspace_id = s.workspace_id
-      where w.owner_user_id <> ? and ${reads.sql}
+      where grant_row.target_user_id = ? and grant_row.revoked_at is null
+        and w.owner_user_id <> ? and ${reads.sql}
       order by s.updated_at desc, s.session_id
-    `).bind(...sends.bind, issuer, who.userId, ...reads.bind)
-    .all<Omit<SharedSession, "owner_name"> & { owner_subject: string | null }>()
+    `).bind(...sends.bind, issuer, who.userId, who.userId, ...reads.bind)
+      .all<Omit<SharedSession, "owner_name"> & { owner_subject: string | null }>(),
+  ])
   const names = new Map<string, Promise<string | null>>()
   const nameOf = (subject: string) => {
     let name = names.get(subject)

@@ -15,7 +15,7 @@ import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repositor
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 import { activeGuard, batchUnder, may, mayGuard, maySql, orgMemberSql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
-import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
+import { namedPrincipal, ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { D1WorkspaceAuthorityError, guardedBatch } from "./workspace-authority-error"
 import { workspaceCreationStatements } from "./workspace-creation"
@@ -317,34 +317,19 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return { allowed: true, role: "owner" as const, workspace: workspaceJson(row) }
   }
 
+  /**
+   * The list is read beside the principal's verification, keyed by the user
+   * the auth names: the open rule names no actor, and the verification refuses
+   * a principal whose identity row names another user, so the rows either
+   * join a verified principal or are discarded with the refusal.
+   */
   async listWorkspaces(auth: SignedControlPlaneAuth) {
-    const who = await this.requirePrincipal(auth)
-    const rows = await this.openableWorkspaces(who)
-    const online = await this.workspacesWithServingHost(
-      rows.filter((row) => row.backing === "local-worktree").map((row) => row.workspace_id),
-    )
+    const [, rows] = await Promise.all([this.requirePrincipal(auth), this.openableWorkspaces(namedPrincipal(auth))])
     return rows.map((row) => ({
       ...workspaceJson(row),
       role: "owner" as const,
-      ...(row.backing === "local-worktree" ? { host_online: online.has(row.workspace_id) } : {}),
+      ...(row.backing === "local-worktree" ? { host_online: row.host_online === 1 } : {}),
     }))
-  }
-
-  /** Of these workspaces, the ones a live enrollment currently serves. */
-  private async workspacesWithServingHost(workspaceIds: string[]) {
-    if (workspaceIds.length === 0) return new Set<string>()
-    const result = await this.database
-      .prepare(`
-      select distinct assignment.workspace_id
-      from host_workspace_assignments assignment
-      inner join host_enrollments enrollment on enrollment.host_id = assignment.host_id
-        and enrollment.owner_actor_id = assignment.owner_actor_id
-      where assignment.workspace_id in (${workspaceIds.map(() => "?").join(", ")})
-        and ${HOST_SERVING_WORKSPACE_SQL}
-    `)
-      .bind(...workspaceIds, this.now())
-      .all<{ workspace_id: string }>()
-    return new Set(result.results.map((row) => row.workspace_id))
   }
 
   /** Explicit-org creation seam used by new hosted organization routes. */
@@ -572,13 +557,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   private async openableWorkspace(who: AuthorizationPrincipal, workspaceId: string) {
-    const query = openableWorkspacesSql(who, "w.workspace_id = ?")
-    return await this.database.prepare(query.sql).bind(...query.bind, workspaceId).first<WorkspaceAccessRow>()
+    const query = openableWorkspacesSql(who, "w.workspace_id = ?", this.now())
+    return await this.database.prepare(query.sql).bind(...query.bind, workspaceId).first<OpenableWorkspaceRow>()
   }
 
   private async openableWorkspaces(who: AuthorizationPrincipal) {
-    const query = openableWorkspacesSql(who, "1 = 1")
-    return (await this.database.prepare(query.sql).bind(...query.bind).all<WorkspaceAccessRow>()).results
+    const query = openableWorkspacesSql(who, "1 = 1", this.now())
+    return (await this.database.prepare(query.sql).bind(...query.bind).all<OpenableWorkspaceRow>()).results
   }
 
   private assertOrganizationAllowed(orgId: string) {
@@ -602,22 +587,31 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 }
 
-/** The workspaces `who` may open matching `predicate` over `w`, with the machine each is placed on; `predicate`'s own values bind last. */
-function openableWorkspacesSql(who: AuthorizationPrincipal, predicate: string) {
+/** A workspace row with whether the machine it is placed on serves it now: 1 under `HOST_SERVING_WORKSPACE_SQL`, else 0. */
+type OpenableWorkspaceRow = WorkspaceAccessRow & { host_online: 0 | 1 }
+
+/**
+ * The workspaces `who` may open matching `predicate` over `w`, each with the
+ * machine it is placed on and whether that machine serves it now
+ * (`host_online`, the `HOST_SERVING_WORKSPACE_SQL` predicate over the joined
+ * assignment and enrollment); `predicate`'s own values bind last.
+ */
+function openableWorkspacesSql(who: AuthorizationPrincipal, predicate: string, now: number) {
   const opens = maySql(who, "open", { kind: "workspace", alias: "w" })
   return {
     sql: `
-      select w.*, assignment_enrollment.enrollment_id as host_enrollment_id
+      select w.*, enrollment.enrollment_id as host_enrollment_id,
+        case when enrollment.enrollment_id is not null and ${HOST_SERVING_WORKSPACE_SQL} then 1 else 0 end as host_online
       from workspaces w
       left join host_workspace_assignments assignment
         on assignment.workspace_id = w.workspace_id
-      left join host_enrollments assignment_enrollment
-        on assignment_enrollment.host_id = assignment.host_id
-        and assignment_enrollment.owner_actor_id = assignment.owner_actor_id
+      left join host_enrollments enrollment
+        on enrollment.host_id = assignment.host_id
+        and enrollment.owner_actor_id = assignment.owner_actor_id
       where ${opens.sql} and ${predicate}
       order by w.created_at, w.workspace_id
     `,
-    bind: opens.bind,
+    bind: [now, ...opens.bind],
   }
 }
 
