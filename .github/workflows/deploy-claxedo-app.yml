@@ -70,6 +70,14 @@ jobs:
           VITE_CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
         run: bun run build
 
+      # The shell carries the control plane's bootstrap and auth descriptor, so
+      # a browser boots without asking the API for either.
+      - name: Publish the control plane's deployment into the app shell
+        working-directory: packages/claxedo-app
+        env:
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+        run: bun scripts/publish-deployment.ts "${CONTROL_PLANE_URL%/}" dist
+
       # A source-map upload token is optional config: its absence must
       # degrade to "no upload, deploy still green," never a failed step.
       # secrets.* is not usable directly in `if:`, hence the bridge through

@@ -6,6 +6,7 @@ import type { PlacementsApi } from "./api"
 import { ServerError, toAppError } from "./errors"
 import { placementId, sessionId as asSessionId, type PlacementId, type ProjectId } from "./ids"
 import { mergedCatalog } from "./merged-catalog"
+import { publishedDeployment } from "./published-deployment"
 import { queryKeys } from "./query-keys"
 import { createSharedSessions, type SharedSessions } from "./shared-sessions"
 import type { RuntimeRoute, Transport } from "./transport"
@@ -231,7 +232,8 @@ async function invalidatePlacementReads(queryClient: QueryClient, serverUrl: str
 
 function catalogReads(transport: Transport, queryClient: QueryClient, accountPlacements: AccountPlacements | undefined) {
   const key = queryKeys.bootstrap(transport.serverUrl)
-  const read = async () => bootstrapCatalog(await transport.json(BOOTSTRAP_PATH))
+  const published = publishedDeployment(transport.serverUrl)
+  const read = async () => bootstrapCatalog(published ? published.bootstrap : await transport.json(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const merged = mergedCatalog(queryClient, transport.serverUrl, reread, accountPlacements)
   const loadFor = async (purpose: CatalogPurpose) =>

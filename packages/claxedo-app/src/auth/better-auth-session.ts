@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js"
+import { publishedDeployment } from "@/server"
 import {
   assertBrowserAuthDescriptorBinding,
   browserAuthUnavailable,
@@ -28,8 +29,8 @@ export function createBetterAuthSession(input: { request?: DescriptorRequest; cr
     if (!connection) throw new Error("Better Auth browser adapter is not initialized")
     return connection
   }
-  const loadDescriptor = (origins: Origins) =>
-    loadBrowserAuthDescriptor({ selectedAdapter: "better-auth", ...origins, ...(input.request ? { request: input.request } : {}) })
+  const loadDescriptor = (origins: Origins, published?: unknown) =>
+    loadBrowserAuthDescriptor({ selectedAdapter: "better-auth", ...origins, published, ...(input.request ? { request: input.request } : {}) })
   const readSession = (client: BetterAuthBrowserClient) => clientResult("session refresh", client.getSession())
   return {
     state: { descriptor, user, loading, unavailable },
@@ -85,7 +86,8 @@ export async function initializeSession(session: BetterAuthSession, deployment: 
   session.set.loading(true)
   const { client } = session.connect(origins)
   try {
-    const [live, initial] = await Promise.all([session.loadDescriptor(origins), session.readSession(client)])
+    const published = publishedDeployment(origins.apiOrigin)?.authDescriptor
+    const [live, initial] = await Promise.all([session.loadDescriptor(origins, published), session.readSession(client)])
     session.set.descriptor(live)
     adoptSession(session, initial)
     session.set.unavailable(null)

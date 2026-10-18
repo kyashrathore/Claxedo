@@ -84,10 +84,20 @@ export async function browserArtifactBuildId(directory: string) {
   return `sha256:${digest.digest("hex")}`
 }
 
-/** Build the Better Auth browser app against the deployment's API and relay origins, which its CSP names, and stamp it with its build identity. */
+/** Build the Better Auth browser app against the deployment's API and relay origins, which its CSP names. */
 export async function buildBrowserApp(apiOrigin: string, relayOrigin: string) {
   await runBun(["run", "build"], { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin, CLAXEDO_RELAY_ORIGINS: relayOrigin })
   await prepareBrowserArtifactsForWorkers(BROWSER_DIRECTORY)
+}
+
+/**
+ * Write the deployed Worker's bootstrap and auth descriptor into the built
+ * shell, so a browser boots without asking the API for either, and stamp the
+ * result with its build identity. It reads the Worker that now serves the API,
+ * so it runs after that Worker's deploy and before the app's.
+ */
+export async function publishBrowserApp(apiOrigin: string) {
+  await runBun(["scripts/publish-deployment.ts", apiOrigin, BROWSER_DIRECTORY], process.env)
   const browserBuildId = await browserArtifactBuildId(BROWSER_DIRECTORY)
   await writeFile(
     path.join(BROWSER_DIRECTORY, BROWSER_BUILD_ATTESTATION),

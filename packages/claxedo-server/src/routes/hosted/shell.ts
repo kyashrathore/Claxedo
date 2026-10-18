@@ -375,9 +375,11 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
       }))
-    // Public and the same for every caller: the app reads it before its first
-    // render, while nobody is signed in yet. Projects and placements come from
-    // the account catalog (`/api/workspace`), never from here.
+    // Public and the same for every caller, which is why a hosted deploy writes
+    // this answer and the descriptor's into the web app's shell
+    // (packages/claxedo-app/published-deployment.ts): nothing per caller may
+    // be added here. Projects and placements come from the account catalog
+    // (`/api/workspace`), never from here.
     .get("/api/claxedo/bootstrap", (c) => {
       c.header("Cache-Control", "no-store")
       return c.json({

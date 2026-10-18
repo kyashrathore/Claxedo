@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
-import { BROWSER_BUILD_ATTESTATION, BROWSER_DIRECTORY, buildBrowserApp } from "./browser-app"
+import { BROWSER_BUILD_ATTESTATION, BROWSER_DIRECTORY, buildBrowserApp, publishBrowserApp } from "./browser-app"
 import { d1RegionReport, ensureD1Database, prepareD1Databases } from "./d1-databases"
 import { waitForProbe, type ProbeOptions } from "./release-probe"
 import { stageWorkerControlPlaneMigrations } from "./staged-control-plane-migrations"
@@ -103,6 +103,7 @@ export function deployPlan(
     "Steps: find or create both D1 databases -> apply their migrations -> provision the native OAuth clients",
     "       -> build the app -> wrangler deploy the Worker with its secrets -> wait for /health to name the new version",
     "       -> wrangler deploy the session-host Worker, which binds the Worker as CONTROL_PLANE",
+    "       -> write the Worker's bootstrap and auth descriptor into the app shell",
     "       -> wrangler deploy the app assets -> wait for the app to serve the new build",
   ].join("\n")
 }
@@ -230,7 +231,7 @@ async function main() {
     const missing = missingSecrets(deployment, provided, await secretsAlreadyOnWorker(deployment.workerName))
     if (missing.length > 0) throw new Error(`set these secrets in the environment and run again: ${missing.join(", ")}`)
 
-    const browserBuildId = await buildBrowserApp(deployment.apiOrigin, deployment.relayUrl)
+    await buildBrowserApp(deployment.apiOrigin, deployment.relayUrl)
 
     const secretsFile = path.join(temporary, "secrets.json")
     await writeFile(secretsFile, JSON.stringify(provided), { mode: 0o600 })
@@ -260,6 +261,9 @@ async function main() {
 
     await runWrangler([...sessionHostArgs, "--keep-vars=false"])
     console.log(`✓ Session host deployed: ${deployment.sessionHostWorkerName}`)
+
+    const browserBuildId = await publishBrowserApp(deployment.apiOrigin)
+    console.log(`✓ App shell carries ${deployment.apiOrigin}'s bootstrap and auth descriptor`)
 
     const appConfig = path.join(temporary, "app-wrangler.toml")
     await writeFile(appConfig, renderAppWranglerConfig({ appWorkerName: deployment.appWorkerName, browserDirectory: BROWSER_DIRECTORY }))

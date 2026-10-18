@@ -4,8 +4,11 @@ import { X509Certificate, createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { appBundleFile } from "../../../harness/e2e/harness/local-app-bundle"
+import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
 import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 import type { HostedStack } from "../../../harness/e2e/harness/hosted-flow"
+import { publishDeployment, readPublishedDeployment } from "../../published-deployment"
+import type { PublishedDeployment } from "../../src/server/published-deployment"
 import { pagesHeaders, respondShaped, type FrontShaping } from "./front-shaping"
 import type { TlsFront } from "./tls-front"
 
@@ -15,6 +18,12 @@ export async function startHostedAppFront(input: { port: number; distDir: string
   const tls = { cert: certificate, key: await fs.readFile(input.hosted.credentials.key) }
   const forwarded: string[] = []
   const answerFor = pagesHeaders(input.distDir)
+  let deployment: PublishedDeployment | undefined
+  const published = async (asset: Response, pathname: string) => {
+    if (path.extname(pathname) && pathname !== "/index.html") return asset
+    if (!deployment) throw new Error("the app front served its shell before it read the deployment")
+    return new Response(publishDeployment(await asset.text(), deployment), { status: asset.status, headers: asset.headers })
+  }
   const serve = async (request: IncomingMessage, response: ServerResponse) => {
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
     if (/^\/(api|auth|internal|\.well-known)(\/|$)/.test(pathname) || pathname === "/health") {
@@ -33,8 +42,9 @@ export async function startHostedAppFront(input: { port: number; distDir: string
       else relay()
       return
     }
-    const asset = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
-    if (!asset) { response.writeHead(404).end(); return }
+    const bundled = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
+    if (!bundled) { response.writeHead(404).end(); return }
+    const asset = await published(bundled, pathname)
     if (input.shaping) return respondShaped(request, response, path.extname(pathname) ? pathname : "/index.html", asset, answerFor(path.extname(pathname) ? pathname : "/index.html"), input.shaping)
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
@@ -44,6 +54,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     servers[1].once("error", reject)
     servers[1].listen(input.port, "::1", resolve)
   })
+  deployment = await readPublishedDeployment(input.hosted.workerUrl, (url) => hostedFetch(input.hosted, new URL(url).pathname))
   const spki = new X509Certificate(certificate).publicKey.export({ type: "spki", format: "der" })
   return {
     url: input.hosted.workerUrl,

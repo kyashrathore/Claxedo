@@ -44,3 +44,4 @@ export { ServerProvider } from "./provider"
 
 
 export { piProviderAccountIds } from "./wire/accounts"
+export { PUBLISHED_DEPLOYMENT_ELEMENT_ID, publishedDeployment } from "./published-deployment"

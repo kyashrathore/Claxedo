@@ -1,4 +1,5 @@
 import type { AuthAdapterDescriptor, BrowserAuthDescriptor as BrowserCredentialDescriptor, InteractiveAuthMethod } from "@claxedo/account-contract/auth"
+import { isFiniteNumber, isRecord } from "@claxedo/helpers/guards"
 import type { Accessor } from "solid-js"
 import { exactHttps, readCookieContract, readLiveBrowserAuthDescriptor } from "./browser-auth-descriptor"
 import type { AuthUser } from "./display-user"
@@ -81,15 +82,21 @@ function parseDescriptor(value: unknown, input: { selectedAdapter: BrowserAuthAd
   return { ...descriptor, browser: { ...descriptor.browser, cookie } }
 }
 
+function unexpired(published: unknown): boolean {
+  return isRecord(published) && isFiniteNumber(published.expiresAt) && published.expiresAt > Date.now()
+}
+
 export async function loadBrowserAuthDescriptor(input: {
   selectedAdapter: BrowserAuthAdapterId
   apiOrigin: string
   appOrigin: string
+  published?: unknown
   request?: DescriptorRequest
 }): Promise<BrowserAuthDescriptor> {
   if (!exactHttps(input.apiOrigin, true) || !exactHttps(input.appOrigin, true)) {
     throw new BrowserAuthConfigurationError("browser auth requires exact HTTPS API and app origins")
   }
+  if (unexpired(input.published)) return parseDescriptor(input.published, input)
   const response = await (input.request ?? fetch)(`${input.apiOrigin}/api/claxedo/auth/descriptor`, {
     credentials: "include",
     headers: { accept: "application/json" },
