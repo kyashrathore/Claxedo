@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "customConditions": ["development"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun", "node"],
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": false,
+    "paths": {
+      "agent-app-benchmark/driver-sdk": ["../../../node_modules/agent-app-benchmark/src/driver-sdk.d.ts"]
+    }
+  },
+  "include": ["src"]
+}
