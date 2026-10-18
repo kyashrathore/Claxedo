@@ -43,7 +43,6 @@ function lostTurnResponse(sessionId: string, lease?: ActiveSessionTurnLease) {
 export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response> {
   const id = routeParam(c, "id")
   const directory = await opts.resolveDirectory(c, { sessionId: id })
-  const runtime = await opts.runtime(c)
   let body = parseSessionPromptBody(await boundedJsonBody(c))
   const prepare = async () => {
     if (!await readSession(opts, c, directory, id)) return c.json(errorBody("session_not_found", "Session not found"), 404)
@@ -54,7 +53,7 @@ export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response>
     const refused = await sessionOperationGuard(opts, c, id, "prompt") ?? await prepare()
     if (refused) return refused
     const messageID = body.messageID ?? `msg_${crypto.randomUUID()}`
-    const delivered = await admitQueuedDelivery(opts, c, runtime, { sessionId: id, body: { ...body, messageID, delivery: body.delivery } })
+    const delivered = await admitQueuedDelivery(opts, c, await opts.runtime(c), { sessionId: id, body: { ...body, messageID, delivery: body.delivery } })
     if ("refused" in delivered) return delivered.refused
     if ("queued" in delivered) return c.json({ delivery: "queue", messageID }, 202)
     if (delivered.steered.ok) return c.json({ delivery: "steer", messageID })
@@ -67,7 +66,7 @@ export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response>
     directory,
     sessionId: id,
     turnId: body.messageID,
-    onLost: () => containLostTurn({ runtime: runtime.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
+    onLost: async () => containLostTurn({ runtime: (await opts.runtime(c)).recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
   })
   if (turnAdmission.rejected) return turnAdmission.rejected
   const lease = turnAdmission.lease
@@ -76,6 +75,7 @@ export async function sessionMessageRoute(opts: Opts, c: Ctx): Promise<Response>
     await lease?.release().catch(() => undefined)
     return refused
   }
+  const runtime = await opts.runtime(c)
   const activeTurn = opts.createActiveTurnScope
     ? turnScope(opts.createActiveTurnScope({ c, directory, sessionId: id }), lease)
     : undefined

@@ -46,14 +46,15 @@ type HostAuthorityAction = "host_read" | "host_admin"
  * call's status, so 503 is the authority being away and 401/403/409 is its
  * verdict.
  */
-export type AdoptRefusedSession = (
+export type AdoptRefusedSession = <Admitted>(
   input: SessionAuthorityInput,
   refusal: {
-    denial: Exclude<SessionAccessDecision, { allowed: true }>
+    denial: AuthorityDenial
     adopt: (time: RuntimeSessionTime) => Promise<SessionAccessDecision>
-    reauthorize: () => Promise<SessionAccessDecision>
+    /** The question that was refused, asked again: a read or write, or the turn's acquisition. */
+    reauthorize: () => Promise<Admitted | AuthorityDenial>
   },
-) => Promise<SessionAccessDecision>
+) => Promise<Admitted | AuthorityDenial>
 
 export function remoteWorkspaceSessionAccessPolicy(
   options: {
@@ -131,18 +132,29 @@ export function remoteWorkspaceSessionAccessPolicy(
       return denied(503, "session_authority_unavailable")
     }
   }
-  const authorize = async (input: SessionAuthorityInput): Promise<SessionAccessDecision> => {
-    const writeClass = sessionAccessWriteClass(input)
-    const action = writeClass ? "write" : "read"
-    const classified = writeClass ? { writeClass } : undefined
-    const decision = await request(input, action, decodeAllowed, classified)
+  /**
+   * A session the authority has no row for is refused with the same 403 as
+   * one the caller may not reach; the composition's `adoptRefusedSession`
+   * decides whether to claim it and ask again.
+   */
+  const adoptable = async <Admitted extends { allowed: true }>(
+    input: SessionAuthorityInput,
+    ask: () => Promise<Admitted | AuthorityDenial>,
+  ): Promise<Admitted | AuthorityDenial> => {
+    const decision = await ask()
     const adoptRefused = options.adoptRefusedSession
-    if (decision.allowed || !adoptRefused) return decision
+    if (decision.allowed || decision.status !== 403 || !adoptRefused) return decision
     return adoptRefused(input, {
       denial: decision,
       adopt: (time) => request({ ...input, sessionTime: time }, "adopt", decodeAllowed),
-      reauthorize: () => request(input, action, decodeAllowed, classified),
+      reauthorize: ask,
     })
+  }
+  const authorize = (input: SessionAuthorityInput): Promise<SessionAccessDecision> => {
+    const writeClass = sessionAccessWriteClass(input)
+    const action = writeClass ? "write" : "read"
+    const classified = writeClass ? { writeClass } : undefined
+    return adoptable(input, () => request(input, action, decodeAllowed, classified))
   }
   const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: options.requireActor ?? true,
@@ -160,10 +172,10 @@ export function remoteWorkspaceSessionAccessPolicy(
       // A grant was minted while a credential proved the class; a bearer
       // names it here, and the authority decides it with the lease.
       acquireTurn: (input) =>
-        request(input, "turn_acquire", decodeTurnLease, {
+        adoptable(input, () => request(input, "turn_acquire", decodeTurnLease, {
           turnId: input.turnId,
           ...(input.grant ? { grant: input.grant } : { writeClass: sessionAccessWriteClass(input) }),
-        }),
+        })),
       renewTurn: (input) =>
         request(input, "turn_renew", decodeTurnLease, {
           turnId: input.turnId,

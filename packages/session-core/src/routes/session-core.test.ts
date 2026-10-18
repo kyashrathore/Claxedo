@@ -2484,6 +2484,32 @@ describe("a share level reaches the runtime as the authority's answer to a write
     ])
   })
 
+  test("a resend of a message id the session already answered is the policy's answer first: once the grantee is refused, the stored 204 is not theirs", async () => {
+    let admitted = true
+    const { actions, app, h } = await sharedRoutes({
+      authorizeWrite: async () => admitted ? { allowed: true } : { allowed: false, status: 403, code: "workspace_authorization_denied", message: "denied" },
+    })
+    await post(app, "/session/session_shared/permissions/perm_1", { response: "once" })
+    await post(app, "/question/question_1/reply", { answers: [["yes"]] })
+    await h.runtime.turns.whenIdle("session_shared")
+    actions.length = 0
+    const first = await post(app, "/session/session_shared/prompt_async", { messageID: "msg_joined", parts: [{ type: "text", text: "hi" }] })
+    expect(first.status).toBe(204)
+    await h.runtime.turns.whenIdle("session_shared")
+    const joined = await post(app, "/session/session_shared/prompt_async", { messageID: "msg_joined", parts: [{ type: "text", text: "hi" }] })
+    expect(joined.status).toBe(204)
+
+    admitted = false
+    const refused = await post(app, "/session/session_shared/prompt_async", { messageID: "msg_joined", parts: [{ type: "text", text: "hi" }] })
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(actions).toEqual([
+      { operation: "prompt", write: true, turn: true },
+      { operation: "prompt", write: true },
+      { operation: "prompt", write: true },
+    ])
+  })
+
   test("a send grantee reaches the harness on all three", async () => {
     const { app, h, prompted, answered } = await sharedRoutes({
       authorizeWrite: async () => ({ allowed: true }),

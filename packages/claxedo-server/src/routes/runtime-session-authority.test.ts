@@ -415,13 +415,14 @@ describe("runtime private-session authority oracle", () => {
     expect(acquiredBody.leaseId).not.toBe("turn_lease_1")
     const turnPrincipal = { principalKind: "user", actorId: "actor_1", actorKind: "human", sessionId: "ses_private", workspaceId: "ws_1" }
     expect(acquireSessionTurn).toHaveBeenCalledWith({ ...turnPrincipal, turnId: "msg_1" })
-    expect(authorizeRuntimeSession).toHaveBeenCalledWith({ ...turnPrincipal, action: "write", writeClass: "agent_turn" })
+    // The turn authority decides the write as it writes the lease; the route asks nobody else.
+    expect(authorizeRuntimeSession).not.toHaveBeenCalled()
 
-    authorizeRuntimeSession.mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "denied"))
+    acquireSessionTurn.mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "denied"))
     const unwritable = await request(target, token, { sessionId: "ses_private", action: "turn_acquire", turnId: "msg_1b", writeClass: "agent_turn" })
     expect(unwritable.status).toBe(403)
     expect(await unwritable.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
-    expect(acquireSessionTurn).toHaveBeenCalledTimes(1)
+    expect(authorizeRuntimeSession).not.toHaveBeenCalled()
 
     expect((await request(target, undefined, {
       sessionId: "ses_private",

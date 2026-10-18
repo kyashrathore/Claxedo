@@ -204,7 +204,7 @@ describe("/turn-delivery", () => {
     expect((await plane.post("/turn-delivery", { turnLease: leaseId })).status).toBe(200)
   })
 
-  test("a machine that cannot apply the owner's plugins fails the turn with a typed answer", async () => {
+  test("a machine that cannot apply the owner's plugins fails the turn with a typed answer, and an acquisition it fails releases the lease it took", async () => {
     const root = "ses_pi_plugins_unapplied"
     const proof = await plane.createHostedSession(root)
     const lease = await plane.acquire(proof, root, "turn_plugins_unapplied")
@@ -213,9 +213,14 @@ describe("/turn-delivery", () => {
       const answer = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
       expect(answer.status).toBe(502)
       expect(await answer.json()).toEqual({ error: { code: "agent_plugins_unavailable" } })
+      await release(proof, root, lease)
+      const refused = await plane.post("/session-authorize", { action: "turn_acquire", sessionId: root, turnId: "turn_plugins_refused", writeClass: "agent_turn" }, proof)
+      expect(refused.status).toBe(502)
+      expect(await plane.database.prepare("select turn_id from session_turn_leases where session_id = ? and released_at is null").bind(root).all().then((rows) => rows.results)).toEqual([])
     } finally {
       pluginFailure = undefined
     }
+    expect((await plane.acquire(proof, root, "turn_plugins_after")).delivery).toBeDefined()
   })
 
   test("refuses an expired, forged or malformed lease", async () => {

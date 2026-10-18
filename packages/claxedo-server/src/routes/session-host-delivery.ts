@@ -50,40 +50,47 @@ const machineNotRunning = (error: unknown) => error instanceof WorkspaceRuntimeT
 
 export type TurnDeliveryRefusal = { code: "turn_delivery_denied"; status: 403 } | { code: "agent_plugins_unavailable"; status: 502 }
 
+/** Whose turn a delivery is: the workspace's owner, and the person whose accounts it spends (the session's creator, else that owner). */
+export type TurnDeliveryHolder = { owner: WorkspaceOwnerIdentity; holder: string }
+
 /** What `readTurnDelivery` gathered for a turn, bound to a lease by `assembleTurnDelivery`. */
-export type TurnDeliveryReads = {
-  owner: WorkspaceOwnerIdentity
-  /** The person whose accounts the turn spends: the session's creator, else the workspace's owner. */
-  holder: string
+export type TurnDeliveryReads = TurnDeliveryHolder & {
   direct: Awaited<ReturnType<typeof ownerDirectDelivery>>["direct"]
   refused: Awaited<ReturnType<typeof ownerDirectDelivery>>["refused"]
   plugins: RuntimeConfigSnapshotPlugins
 }
 
+/** Decided from the placement and the owner alone, before any lease is taken: a turn no owner answers for, or on a session the plane has no row for, gets no delivery. */
+export function turnDeliveryHolder(
+  turn: { orgId: string },
+  placement: SessionHostPlacement,
+  owner: WorkspaceOwnerIdentity | undefined,
+): TurnDeliveryHolder | TurnDeliveryRefusal {
+  if (!owner || owner.orgId !== turn.orgId || !placement.session) return { code: "turn_delivery_denied", status: 403 }
+  return { owner, holder: placement.session.creatorUserId ?? owner.userId }
+}
+
 /**
- * The reads a session host's turn delivery is made of: the workspace's owner
- * and the holder's provider accounts as direct secrets, and the workspace's
- * plugins. None depends on the turn's lease, so a turn being acquired reads
- * them beside the lease it is taking; a plugin read that fails refuses the
- * delivery rather than hand the host a turn with none.
+ * The reads a session host's turn delivery is made of: the holder's provider
+ * accounts as direct secrets and the workspace's plugins. Neither depends on
+ * the turn's lease, so a turn being acquired reads them beside the lease it
+ * is taking; a plugin read that fails refuses the delivery rather than hand
+ * the host a turn with none.
  */
 export async function readTurnDelivery(
   input: Pick<SessionHostDeliveryOptions, "credentials" | "plugins">,
-  turn: { workspaceId: string; orgId: string },
-  placement: SessionHostPlacement,
-  owner: WorkspaceOwnerIdentity | undefined,
+  workspaceId: string,
+  named: TurnDeliveryHolder,
 ): Promise<TurnDeliveryReads | TurnDeliveryRefusal> {
-  if (!owner || owner.orgId !== turn.orgId || !placement.session) return { code: "turn_delivery_denied", status: 403 }
-  const holder = placement.session.creatorUserId ?? owner.userId
   const [accounts, plugins] = await Promise.all([
-    ownerDirectDelivery(input.credentials(owner.orgId), holder, { providers: PI_DIRECT_PROVIDERS }),
-    input.plugins ? input.plugins(turn.workspaceId).then((plugins) => ({ plugins }), (error: unknown) => ({ error })) : { plugins: { harnessLaunch: {}, mcp: {} } },
+    ownerDirectDelivery(input.credentials(named.owner.orgId), named.holder, { providers: PI_DIRECT_PROVIDERS }),
+    input.plugins ? input.plugins(workspaceId).then((plugins) => ({ plugins }), (error: unknown) => ({ error })) : { plugins: { harnessLaunch: {}, mcp: {} } },
   ])
   if ("error" in plugins) {
-    console.error(`[session-host-delivery] the plugins of ${turn.workspaceId} were not applied:`, plugins.error instanceof Error ? plugins.error.message : String(plugins.error))
+    console.error(`[session-host-delivery] the plugins of ${workspaceId} were not applied:`, plugins.error instanceof Error ? plugins.error.message : String(plugins.error))
     return { code: "agent_plugins_unavailable", status: 502 }
   }
-  return { owner, holder, ...accounts, plugins: plugins.plugins }
+  return { ...named, ...accounts, plugins: plugins.plugins }
 }
 
 /**
@@ -250,7 +257,9 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const admitted = await liveTurn(c)
       if (admitted instanceof Response) return admitted
       const { claims, placement } = admitted
-      const reads = await readTurnDelivery(input, claims, placement, await input.resolveWorkspaceOwner(claims.workspaceId))
+      const named = turnDeliveryHolder(claims, placement, await input.resolveWorkspaceOwner(claims.workspaceId))
+      if ("code" in named) return c.json({ error: { code: named.code } }, named.status)
+      const reads = await readTurnDelivery(input, claims.workspaceId, named)
       if ("code" in reads) return c.json({ error: { code: reads.code } }, reads.status)
       return c.json(await assembleTurnDelivery(input, reads, claims, placement, new URL(c.req.url).origin))
     })

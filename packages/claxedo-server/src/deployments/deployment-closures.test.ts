@@ -154,8 +154,9 @@ const ENTRIES = [
   // and shows the consent screen for every desktop authorization
   // (`platform/auth/desktop-consent-policy.ts`).
   // Every entry admits a session host's turn on one `/session-authorize`
-  // request, which authorizes the actor's `agent_turn` write, takes the lease
-  // and hands the host its delivery (`session/runtime-turn-admission.ts`).
+  // request, which takes the lease, where the turn authority decides the
+  // actor's `agent_turn` write, and hands the host its delivery
+  // (`session/runtime-turn-admission.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 180, packages: 22 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the

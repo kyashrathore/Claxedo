@@ -13,7 +13,8 @@ import {
   type TurnLeaseClaims,
 } from "./runtime-session-proofs"
 import type { SessionAuthorityRequest } from "./runtime-authority-request"
-import { assembleTurnDelivery, readTurnDelivery } from "../routes/session-host-delivery"
+import type { TurnDelivery } from "@claxedo/harness/contract"
+import { assembleTurnDelivery, readTurnDelivery, turnDeliveryHolder, type TurnDeliveryHolder } from "../routes/session-host-delivery"
 import type { RuntimeSessionAuthorityOptions } from "../routes/runtime-session-authority"
 
 export type TurnAdmissionInput = {
@@ -46,16 +47,19 @@ export function createTurnAdmission(input: TurnAdmissionInput) {
   )
 
   /**
-   * One request admits a turn. The proof's chain, the actor's `agent_turn`
-   * write on the session, the host the session is placed in and the owner
-   * whose accounts it spends are read together, since each needs only the
-   * proof, and refused in the order the separate questions were: the host,
-   * the chain, then the write. The lease is then taken and, for a session
-   * served by its own host, the turn's delivery is read beside it, so the
-   * host asks for nothing more before it calls the model. A deferred grant
-   * proved the write when it was minted and the store proves it again as it
-   * redeems the grant; a bearer names the class and the authority decides it
-   * here.
+   * One request admits a turn. The proof's chain, the host the session is
+   * placed in and the owner whose accounts it spends are read together, since
+   * each needs only the proof, and refused in the order the separate
+   * questions were: the host, then the chain. Whether the actor may send an
+   * agent turn on the session is the turn authority's own decision, made in
+   * the statement that writes the lease, so no earlier read can be overtaken
+   * by a revocation; a deferred grant proved it when it was minted and is
+   * proved again as it is redeemed. For a session served by its own host the
+   * turn's delivery is read beside the lease, so the host asks for nothing
+   * more before it calls the model: every refusal the request can decide is
+   * decided before the lease is taken, and one it cannot, a plugin read that
+   * fails or a delivery that cannot be assembled, releases the lease it took
+   * and hands out no credential.
    */
   async function acquireTurn(
     context: Context,
@@ -68,39 +72,51 @@ export function createTurnAdmission(input: TurnAdmissionInput) {
     const principal = sessionLeasePrincipal(claims)
     if (claims.transport === "embedded") return embeddedTurnRefusal(context)
     const host = proofHost(claims)
-    const delivers = options.sessionHostDelivery !== undefined && host !== undefined && host === sessionHostId(sessionId)
-    const wantsOwner = delivers || options.turnCredentials !== undefined
-    const resolveOwner = (workspaceId: string) => options.sessionHostDelivery
-      ? options.sessionHostDelivery.resolveWorkspaceOwner(workspaceId)
+    const delivering = options.sessionHostDelivery !== undefined && host !== undefined && host === sessionHostId(sessionId)
+      ? options.sessionHostDelivery
+      : undefined
+    const wantsOwner = delivering !== undefined || options.turnCredentials !== undefined
+    const resolveOwner = (workspaceId: string) => delivering
+      ? delivering.resolveWorkspaceOwner(workspaceId)
       : options.authority.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined)
-    const [placed, denial, written, owner] = await Promise.all([
+    const [placed, denial, owner] = await Promise.all([
       placement,
       rechecked ? undefined : input.proofDenial(claims),
-      request.writeClass === undefined
-        ? undefined
-        : options.authority.authorizeRuntimeSession({ ...principal, sessionId, workspaceId: claims.workspaceId, action: "write", writeClass: request.writeClass })
-          .then(() => undefined, (error: unknown) => ({ error })),
-      wantsOwner ? resolveOwner(claims.workspaceId).catch(() => undefined) : undefined,
+      wantsOwner ? resolveOwner(claims.workspaceId) : undefined,
     ])
     if (input.sessionHostMismatch(claims, placed)) return input.sessionHostRefusal(context)
     if (denial) return context.json({ error: denial }, 401)
-    if (written) throw written.error
     if (!options.turnAuthority) return turnAuthorityUnavailable(context)
     const subject = await connectionTurnOwner(options.turnCredentials, async () => owner, claims.workspaceId)
-    if (delivers && (!placed || !sessionHostAdmits(placed, { workspaceId: claims.workspaceId, sessionId }))) {
-      return context.json({ error: { code: "turn_delivery_denied" } }, 403)
+    const turn = { ...principal, sessionId, workspaceId: claims.workspaceId, turnId }
+    let holder: TurnDeliveryHolder | undefined
+    if (delivering) {
+      if (!placed || !sessionHostAdmits(placed, { workspaceId: claims.workspaceId, sessionId })) return context.json({ error: { code: "turn_delivery_denied" } }, 403)
+      const named = turnDeliveryHolder({ orgId: claims.orgId }, placed, owner)
+      if ("code" in named) return context.json({ error: { code: named.code } }, named.status)
+      holder = named
     }
-    const delivery = delivers && placed && options.sessionHostDelivery
-      ? readTurnDelivery(options.sessionHostDelivery, { workspaceId: claims.workspaceId, orgId: claims.orgId }, placed, owner)
-      : undefined
-    delivery?.catch(() => undefined)
+    const reads = delivering && holder ? readTurnDelivery(delivering, claims.workspaceId, holder) : undefined
+    reads?.catch(() => undefined)
     const acquired = await options.turnAuthority.acquireSessionTurn({
-      ...principal,
-      sessionId,
-      workspaceId: claims.workspaceId,
-      turnId,
+      ...turn,
       ...(claims.transport === "deferred-grant" ? { grantId: claims.grantId } : {}),
     })
+    const release = () => options.turnAuthority!.releaseSessionTurn({ ...turn, leaseId: acquired.leaseId, fencingToken: acquired.fencingToken }).catch(() => undefined)
+    let delivered: TurnDelivery | undefined
+    try {
+      const read = await reads
+      if (read && "code" in read) {
+        await release()
+        return context.json({ error: { code: read.code } }, read.status)
+      }
+      delivered = read && delivering && placed
+        ? await assembleTurnDelivery(delivering, read, { actorId: claims.actorId, workspaceId: claims.workspaceId, sessionId, expiresAt: acquired.expiresAt }, placed, new URL(context.req.url).origin)
+        : undefined
+    } catch (error) {
+      await release()
+      throw error
+    }
     const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
       ...claims,
       action: "write",
@@ -117,11 +133,6 @@ export function createTurnAdmission(input: TurnAdmissionInput) {
       subject,
       orgId: claims.orgId,
     })
-    const reads = await delivery
-    if (reads && "code" in reads) return context.json({ error: { code: reads.code } }, reads.status)
-    const delivered = reads && placed && options.sessionHostDelivery
-      ? await assembleTurnDelivery(options.sessionHostDelivery, reads, { actorId: claims.actorId, workspaceId: claims.workspaceId, sessionId, expiresAt: acquired.expiresAt }, placed, new URL(context.req.url).origin)
-      : undefined
     return context.json({
       ...acquired,
       leaseId: proof.lease,

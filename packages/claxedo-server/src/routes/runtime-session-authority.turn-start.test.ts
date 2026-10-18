@@ -12,7 +12,7 @@ const ROOT = "ses_pi_start"
 const OTHER = "ses_pi_other"
 const PLUGINS = { harnessLaunch: { pi: { generation: "g1", execution: { mode: "default" }, pluginRoots: [], mcpServers: [], notApplied: [] } }, mcp: {} }
 const ROUNDS = 4
-const STATEMENTS = 15
+const STATEMENTS = 13
 
 beforeAll(async () => {
   plane = await sessionHostPlane({
