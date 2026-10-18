@@ -2,7 +2,6 @@ import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import {
   InternalRelayResolverRoutes,
-  type LocalRelayTargetExists,
   type RelayTargetLookup,
 } from "./internal-relay"
 
@@ -12,7 +11,6 @@ function buildApp(opts: {
   revocationLookup: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
   resolverToken?: string
   targetLookup?: RelayTargetLookup
-  localTargetExists?: LocalRelayTargetExists
 }) {
   const app = new Hono()
   app.route("/", InternalRelayResolverRoutes({
@@ -58,40 +56,35 @@ describe("InternalRelayResolverRoutes /internal/relay/revocation", () => {
     expect(called).toBe(1)
   })
 
-  test("allows loopback resolver calls when no resolver token is configured", async () => {
-    const app = buildApp({
-      resolverToken: "",
-      revocationLookup: async () => ({ active: true }),
-    })
-
-    const res = await app.fetch(
-      new Request("http://127.0.0.1/internal/relay/revocation?jti=jti_1&workspaceId=ws_1&hostId=host_1"),
-    )
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ active: true })
+  test("refuses to compose without a resolver token, so no caller is admitted by address alone", () => {
+    for (const resolverToken of ["", "   "]) {
+      expect(() => InternalRelayResolverRoutes({ resolverToken, revocationLookup: async () => ({ active: true }) }))
+        .toThrow("Internal relay resolver routes require a resolver token")
+    }
   })
 
-  test("allows loopback revocation checks for local workspace targets missing from signed token storage", async () => {
-    const app = buildApp({
-      resolverToken: "",
-      localTargetExists: async () => true,
-      revocationLookup: async () => ({
-        active: false,
-        code: "runtime_access_token_workspace_not_found",
-        reason: "Runtime Access Token workspace was not found",
-      }),
-    })
-
-    const res = await app.fetch(
-      new Request("http://127.0.0.1/internal/relay/revocation?jti=jti_1&workspaceId=ws_1&hostId=host_1"),
-    )
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ active: true })
+  test("a loopback caller without the bearer is refused", async () => {
+    const app = buildApp({ revocationLookup: async () => ({ active: true }) })
+    const res = await app.fetch(new Request("http://127.0.0.1/internal/relay/revocation?jti=jti_1&workspaceId=ws_1&hostId=host_1"))
+    expect(res.status).toBe(401)
   })
 
-  test("keeps signed resolver revocation checks fail-closed when token storage is missing the workspace", async () => {
+  test("answers a failed lookup with a fixed reason, never the error's own message", async () => {
     const app = buildApp({
-      localTargetExists: async () => true,
+      revocationLookup: async () => {
+        throw new Error("D1_ERROR: no such table: runtime_access_tokens at /srv/claxedo/db.sql")
+      },
+    })
+    const res = await app.fetch(authedRequest("/internal/relay/revocation?jti=jti_1&workspaceId=ws_1&hostId=host_1"))
+    expect(await res.json()).toEqual({
+      active: false,
+      code: "runtime_access_token_lookup_failed",
+      reason: "Runtime Access Token lookup failed",
+    })
+  })
+
+  test("keeps revocation checks fail-closed when token storage is missing the workspace", async () => {
+    const app = buildApp({
       revocationLookup: async () => ({
         active: false,
         code: "runtime_access_token_workspace_not_found",
