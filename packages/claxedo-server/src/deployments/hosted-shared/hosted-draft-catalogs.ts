@@ -6,7 +6,8 @@ import type { HostedControlPlane } from "../../authority/hosted-services"
 import { hostedMachineHarnessLaunch } from "../../credentials/worker/native-launch"
 import { hostedOpenCodeCredentials } from "../../credentials/worker/opencode"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
-import { hostedDraftCredentials, hostedRuntimeProviderCatalog } from "../../routes/hosted/shell"
+import { hostedDraftCredentials } from "../../routes/hosted/shell"
+import { hostedRuntimeProviderCatalog } from "../../routes/hosted/harness-runtime"
 
 export function hostedDraftCatalogs(plane: HostedControlPlane, input: {
   draftCredentials?: (workspaceId: string) => Promise<CredentialSnapshot | undefined>

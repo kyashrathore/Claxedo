@@ -20,7 +20,8 @@
  *      just the route's response shaping) fails a test here too.
  */
 import { describe, expect, test, vi } from "vitest"
-import { HostedShellRoutes, hostedHarnessRuntimeStatus, type HostedHarnessProbe } from "./shell"
+import { HostedShellRoutes } from "./shell"
+import { hostedHarnessRuntimeStatus, type HostedHarnessProbe } from "./harness-runtime"
 import type { ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"

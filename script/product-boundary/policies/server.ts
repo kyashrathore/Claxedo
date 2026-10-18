@@ -208,8 +208,12 @@ export const serverWorkerd: Policy = {
   // joins (draft accounts, OpenCode, Pi) are wired from their own module
   // (`deployments/hosted-shared/hosted-draft-catalogs.ts`), split from the
   // core app. It adds no package edge: the harness was already in the Worker.
-  // 174/22, no headroom.
-  ceilings: { modules: 174, packages: 22 },
+  // +1 module (owner: the hosted shell routes): a workspace runtime's harness
+  // health and OpenCode catalog, read over the relay with the runtime's
+  // identity beside them under one token (`routes/hosted/harness-runtime.ts`),
+  // split from `routes/hosted/shell.ts`. It adds no package edge.
+  // 175/22, no headroom.
+  ceilings: { modules: 175, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

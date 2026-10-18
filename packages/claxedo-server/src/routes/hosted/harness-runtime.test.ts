@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import { hostedRuntimeProviderCatalog } from "./shell"
+import { hostedHarnessRuntimeStatus, hostedRuntimeProviderCatalog } from "./harness-runtime"
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -48,7 +48,6 @@ test("workspace access refusal and mismatched runtime identity never disclose mo
   expect(w.fetch).not.toHaveBeenCalled()
   w.fetch.mockResolvedValueOnce(Response.json({ workspaceId: "ws_other" }))
   await expect(w.read(auth, "ws_a")).rejects.toThrow("identity does not match")
-  expect(w.fetch).toHaveBeenCalledTimes(1)
 })
 
 test("provider discovery does not hide runtime failures or malformed catalog responses", async () => {
@@ -57,4 +56,61 @@ test("provider discovery does not hide runtime failures or malformed catalog res
   await expect(w.read(auth, "ws_a")).rejects.toThrow("runtime failed")
   w.fetch.mockResolvedValueOnce(Response.json({ workspaceId: "ws_a" })).mockResolvedValueOnce(Response.json([{ id: "incomplete" }]))
   await expect(w.read(auth, "ws_a")).rejects.toThrow()
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+function pausedWorld() {
+  const events: string[] = []
+  const gates = new Map<string, ReturnType<typeof deferred<void>>>()
+  const step = async <T>(name: string, value: T) => {
+    events.push(`${name}:start`)
+    const gate = deferred<void>()
+    gates.set(name, gate)
+    await gate.promise
+    events.push(`${name}:end`)
+    return value
+  }
+  const health = { ok: true, status: "ready", harness: { kind: "native", harnessId: "pi" }, model: "anthropic/claude" }
+  const fetch = vi.fn(async (url: string) => Response.json(await step(new URL(url).pathname.endsWith("/global/health") ? "identity" : "health", url.endsWith("/global/health") ? { workspaceId: "ws_a" } : health)))
+  vi.stubGlobal("fetch", fetch)
+  const mint = vi.fn(async () => ({ token: "runtime-token" }))
+  const services = {
+    authority: {
+      openWorkspace: async () => await step("open", { role: "owner", workspace: { backing: "local-worktree", org_id: "org_a" } }),
+      activeWorkspaceHost: async () => await step("host", { active: true, host_id: "host_a" }),
+      usersMe: async () => await step("actor", { actor_id: "actor_a", actor_kind: "human" }),
+    },
+    relay: { provider: { mintRuntimeAccessToken: mint, getRelayEndpoint: async () => "https://relay.test" } },
+  } as unknown as ControlPlaneServices
+  const release = async (...names: string[]) => {
+    await vi.waitFor(() => expect(names.every((name) => gates.has(name))).toBe(true))
+    for (const name of names) gates.get(name)?.resolve()
+  }
+  return { status: hostedHarnessRuntimeStatus(services), events, release, mint, health }
+}
+
+test("a machine workspace's harness status resolves its host and actor together and reads identity and health together under one token", async () => {
+  const w = pausedWorld()
+  const probe = w.status(auth, { workspaceId: "ws_a" })
+  await w.release("open")
+  await w.release("host", "actor")
+  await w.release("identity", "health")
+  expect(await probe).toEqual({ ok: true, status: "ready", harness: { kind: "native", harnessId: "pi" }, model: "anthropic/claude" })
+  expect(w.events).toEqual(["open:start", "open:end", "host:start", "actor:start", "host:end", "actor:end", "identity:start", "health:start", "identity:end", "health:end"])
+  expect(w.mint).toHaveBeenCalledTimes(1)
+})
+
+test("a harness status whose runtime answers for another workspace reports the mismatch, not the health it read", async () => {
+  const w = pausedWorld()
+  vi.mocked(fetch).mockImplementationOnce(async () => Response.json({ workspaceId: "ws_other" }))
+  const probe = w.status(auth, { workspaceId: "ws_a" })
+  await w.release("open")
+  await w.release("host", "actor")
+  await w.release("health")
+  expect(await probe).toEqual({ ok: false, status: "error", error: "Workspace runtime identity does not match requested workspace" })
 })
