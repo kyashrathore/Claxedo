@@ -1,6 +1,6 @@
 import { Show, type JSX } from "solid-js"
 import { SidePanelTab } from "./side-panel-tab"
-import { ClaxedoIcon } from "./claxedo-icon"
+import { ClaxedoIcon, type ClaxedoIconName } from "./claxedo-icon"
 
 const CONTROL_CLASS =
   "relative flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base pointer-coarse:size-11"
@@ -76,6 +76,7 @@ function SidePanelControls(props: SidePanelControlsProps): JSX.Element {
 export function SidePanelToggle(props: {
   readonly open: boolean
   readonly label: string
+  readonly icon?: ClaxedoIconName
   readonly testId?: string
   readonly onToggle: () => void
   readonly onPointerDown?: JSX.EventHandler<HTMLButtonElement, PointerEvent>
@@ -92,7 +93,7 @@ export function SidePanelToggle(props: {
       onPointerDown={props.onPointerDown}
       onClick={() => props.onToggle()}
     >
-      <ClaxedoIcon name={props.open ? "layout-right-full" : "layout-right-partial"} size="small" />
+      <ClaxedoIcon name={props.icon ?? (props.open ? "layout-right-full" : "layout-right-partial")} size="small" />
     </button>
   )
 }

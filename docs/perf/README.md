@@ -7,6 +7,7 @@ In August 2026 we tried to make Claxedo feel light. The product is a coding-agen
 This is not the experiment log. Hundreds of agents ran packaged builds, ablations, and false wins. Most of that work was thrown away. What follows is what actually changed, and what we learned about making a workbench like this cheaper to hold.
 
 Agents looking for what we already tried — and should not try again without a new reason — should read [AGENTS.md](./AGENTS.md).
+The web app's measured baseline at dev `8b2d1e949b`, every cost ranked with its owner and lane, is [2026-10-18-web-baseline.md](./2026-10-18-web-baseline.md); `bun run e2e:perf-web` reproduces it.
 The account-port bench is the `desktop/account-port` entry in the performance-tools catalog; the write-up of its numbers was retired with the other one-off perf notes.
 
 ## The weight was not one thing
@@ -32,6 +33,8 @@ We cut the session-kit fan-out so the eager composer no longer pulled Pierre and
 A hash-safe `modulepreload` of the four boot chunks removed about a second of serial discovery at 40 ms RTT. KaTeX CSS and its font faces left the render-blocking stylesheet for the lazy math chunk.
 
 The eager main chunk went from 2,585 kB (748 kB gzip) to about 940 kB (286 kB gzip). CSS dropped from 475 kB to 417 kB.
+
+Diagrams draw with pele instead of mermaid.js, on the web and on the desktop, which no longer packages a native Mermaid helper. A first flowchart fetches about 53 kB gzip of renderer instead of 219 kB, a diagram renders in 0.2–3.1 ms instead of one 17–168 ms task (Chromium, 1x CPU, 26 diagrams), and the web build ships 2.7 MB (0.67 MB gzip) less JavaScript.
 
 The remaining eager cost is real product: session UI, Kobalte, the API client, the English fallback dictionary, and the icon record used to build a sprite at runtime.
 

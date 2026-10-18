@@ -14,23 +14,23 @@ const parts: readonly Part[] = [
   { name: "Composer", budget: 14074, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs", budget: 1542, folders: ["src/browser"] },
-  { name: "Shell and platform", budget: 7372, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
+  { name: "Shell and platform", budget: 7771, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4362, folders: ["src/terminal"] },
-  { name: "Settings and accounts", budget: 5320, folders: ["src/settings", "src/accounts"] },
+  { name: "Settings and accounts", budget: 5362, folders: ["src/settings", "src/accounts"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
-  { name: "Review and files", budget: 4397, folders: ["src/review", "src/files"] },
-  { name: "Projects and cloud", budget: 3472, folders: ["src/projects", "src/cloud"] },
-  { name: "Onboarding and usage", budget: 3124, folders: ["src/onboarding", "src/usage"] },
+  { name: "Review and files", budget: 4398, folders: ["src/review", "src/files"] },
+  { name: "Projects and cloud", budget: 3473, folders: ["src/projects", "src/cloud"] },
+  { name: "Onboarding and usage", budget: 3323, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host", budget: 2099, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 917, folders: ["src/plugins/frame"] },
   { name: "Marketplace", budget: 2294, folders: ["src/marketplace"] },
   { name: "Tasks", budget: 5110, folders: ["src/tasks"] },
-  { name: "Notifications", budget: 183, folders: ["src/notifications"] },
+  { name: "Notifications", budget: 184, folders: ["src/notifications"] },
   { name: "Workspace panel", budget: 1903, folders: ["src/panel"] },
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 107990
+const totalBudget = 109506
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))

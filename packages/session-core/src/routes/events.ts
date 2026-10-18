@@ -1,7 +1,7 @@
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, type SseReplayBuffer } from "@claxedo/helpers/sse"
 import { isRetainedPresentationEvent } from "../projection/presentation-events"
-import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
+import { EVENT_CURSOR_HEADER, EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import type { AgentEventEnvelope, AgentSessionStarts, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
 import { errorBody } from "./error-body"
@@ -172,6 +172,8 @@ export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
   /** The workspace this runtime serves: a control frame naming another is not its own, and naming it admits its registered worktrees. */
   workspaceId?: string
   eventHub: RuntimeEventHub
+  /** The runtime's event feed position, answered as `X-Event-Cursor` on the stream's response: the position every frame it carries comes after. */
+  eventCursor?: () => string
   bus: Pick<RuntimeBus, "subscribe">
   placement: Pick<SessionPlacement, "canonicalDirectory" | "containsDirectory" | "registeredDirectories">
   /** The cwd a live pty was created under; a pty's later frames name only its id. */
@@ -534,8 +536,10 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     } else if (scope.grant === "workspace") {
       delivery.holdHost?.(principal, { lease: scope.lease, expiresAt: scope.expiresAt })
     }
+    const since = options.eventCursor?.()
     const opened = source.open(principal)
     await opened.ready
+    if (since) c.header(EVENT_CURSOR_HEADER, since)
     return streamWorkspaceEventFrames(c, opened)
   }
   handler.close = () => source.close()

@@ -53,10 +53,10 @@ async function signedReader(workspace = true) {
 }
 
 /**
- * Every read the onboarding wizard makes pays one cross-region hop per
- * serial D1 round on a Worker placed away from its database (staging: Worker in
- * LHR, D1 in ENAM, ~80 ms a hop). The principal row is the one round every
- * signed route shares; the route's own read follows it and nothing else does.
+ * Every read the onboarding wizard makes pays one Worker-to-database hop per
+ * serial D1 round, after the two auth-database rounds that verified the cookie.
+ * The principal row is the one round every signed route shares; the route's
+ * own read follows it and nothing else does.
  */
 test("the catalog reads the first run makes answer in two serial control-plane rounds", async () => {
   const { rounds } = await signedReader()
@@ -84,12 +84,12 @@ test("a connect to a live sandbox pays four control-plane rounds", async () => {
 /**
  * Settings → Models reads the person's accounts, the ones in use and their
  * account sources at once, and the Add dialog reads the sign-in methods, so the
- * deepest of those chains is the time the page waits. Every one pays the
- * principal row and the organization resolution first; the accounts' own reads
- * follow them one at a time (list, then the organization's sandbox driver for
- * the reach of each row), while the account sources read the selections, the
- * organization's rows and whether the caller manages them at once. The sign-in
- * methods are a table in the Worker and read nothing.
+ * deepest of those chains is the time the page waits. Every one pays one round
+ * for the principal row and the caller's organizations together; the accounts'
+ * own reads follow it one at a time (list, then the organization's sandbox
+ * driver for the reach of each row), while the account sources read the
+ * selections, the organization's rows and whether the caller manages them at
+ * once. The sign-in methods are a table in the Worker and read nothing.
  */
 test("the account reads Settings → Models makes answer in few serial control-plane rounds", async () => {
   const { app, alice, traced } = await signedReader(false)
@@ -102,9 +102,9 @@ test("the account reads Settings → Models makes answer in few serial control-p
     signInMethods: await traced("GET", "/api/claxedo/agent-config/providers/auth?nativeHarness=claude"),
   }
   expect(Object.fromEntries(Object.entries(measured).map(([route, { rounds, statements }]) => [route, { rounds, statements }]))).toEqual({
-    accounts: { rounds: 4, statements: 4 },
-    effective: { rounds: 4, statements: 4 },
-    sources: { rounds: 3, statements: 6 },
+    accounts: { rounds: 3, statements: 4 },
+    effective: { rounds: 3, statements: 4 },
+    sources: { rounds: 2, statements: 6 },
     signInMethods: { rounds: 0, statements: 0 },
   })
 })

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { openCodeIconNames } from "./icon"
 import { readFileSync } from "node:fs"
 import { UI_CODEX_ICON_ALIASES, UI_CODEX_ICON_TRANSFORMS } from "./codex-icon-map"
+import { PROCESS_ICON_GLYPHS } from "./process-icon-map"
 
 /**
  * There are two copies of the Codex alias table: this one, serving the shared
@@ -59,12 +60,22 @@ describe("every referenced glyph is renderable", () => {
     expect(missing).toEqual([])
   })
 
+  const extractedAliases = [
+    ...Object.entries(UI_CODEX_ICON_ALIASES),
+    ...Object.entries(appAliases),
+    ...Object.entries(PROCESS_ICON_GLYPHS.codex),
+  ].filter(([, glyph]) => !glyph.startsWith("codex-custom-"))
+
   test("every extracted alias exists in the sprite", () => {
-    const missing = Object.entries(UI_CODEX_ICON_ALIASES)
-      .filter(([, glyph]) => !(glyph as string).startsWith("codex-custom-"))
-      .filter(([, glyph]) => !spriteSymbols.has(glyph as string))
+    const missing = extractedAliases
+      .filter(([, glyph]) => !spriteSymbols.has(glyph))
       .map(([name, glyph]) => `${name} -> ${glyph}`)
     expect(missing).toEqual([])
+  })
+
+  test("the sprite ships only glyphs an alias names", () => {
+    const named = new Set(extractedAliases.map(([, glyph]) => glyph))
+    expect([...spriteSymbols].filter((glyph) => !named.has(glyph))).toEqual([])
   })
 })
 

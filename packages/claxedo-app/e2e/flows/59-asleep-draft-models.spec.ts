@@ -19,7 +19,6 @@ test("59 a draft on an asleep cloud workspace and Settings → Models list Claud
   })
 
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
-  await expect(page.getByText("This workspace is asleep. It wakes when you send a message.", { exact: true })).toBeVisible()
   const trigger = page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
   await trigger.click()
   const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })

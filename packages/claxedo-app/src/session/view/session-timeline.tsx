@@ -9,7 +9,7 @@ import { MessageTimeline, type SessionErrorClass, type TimelineHost, type Timeli
 import type { QueuedMessages } from "./timeline/model"
 import type { TimelineScroll } from "./timeline-scroll"
 import { sessionHarnessLabel } from "./session-harness-label"
-import { subagentViews } from "./subagent-views"
+import { runsInBackground, subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
 import "./transcript-kit.css"
 
@@ -36,7 +36,7 @@ export function SessionTimeline(props: {
   const current = () => props.navTurns.find((turn) => turn.id === props.scroll.selected())
   const t = useSessionScreenText()
   const labels = { subagent: t("sessionScreen.subagent.label"), task: t("sessionScreen.subagent.task") }
-  const backgroundRunning = createMemo(() => props.view.subagents().some((entry) => entry.mode === "background" && (entry.status === "running" || entry.status === "pending")))
+  const backgroundRunning = createMemo(() => props.view.subagents().some(runsInBackground))
   const stops = useQuery(() => ({ ...server.queries.harnesses.stopsBackgroundTasks(props.view.ref), enabled: !props.follow && backgroundRunning() }))
   const resolveSubagents = (parentSessionId: string, toolCallId?: string) =>
     parentSessionId === props.view.ref.sessionId

@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import { createParser, type EventSourceMessage } from "eventsource-parser"
-import { EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-runtime-contract"
+import { EVENT_CURSOR_HEADER, EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-runtime-contract"
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"
@@ -23,7 +23,7 @@ export type Stream = {
   readonly close: () => void
 }
 
-type ConnectionEvent = { readonly type: "opened" } | { readonly type: "dropped" } | { readonly type: "refused"; readonly reason: string }
+type ConnectionEvent = { readonly type: "opened"; readonly since?: string } | { readonly type: "dropped" } | { readonly type: "refused"; readonly reason: string }
 
 type StreamRun = {
   readonly options: StreamOptions
@@ -46,7 +46,7 @@ function reconnectDelayMs(attempt: number, random: () => number = Math.random) {
 function connectionTransition(state: ConnectionState, event: ConnectionEvent): ConnectionState {
   switch (event.type) {
     case "opened":
-      return { kind: "connected" }
+      return { kind: "connected", ...(event.since ? { since: event.since } : {}) }
     case "dropped": {
       const attempt = state.kind === "reconnecting" ? state.attempt + 1 : 1
       const afterLive = state.kind === "connected" || (state.kind === "reconnecting" && state.afterLive)
@@ -126,7 +126,7 @@ async function openResponse(run: StreamRun, controller: AbortController) {
   const response = await run.options.open({ headers, signal: controller.signal })
   if (!response.ok) throw await responseError(response, "Event stream")
   if (!response.body) throw new ServerError({ class: "internal", message: "The event stream answered without a body" })
-  return response.body
+  return { body: response.body, since: response.headers.get(EVENT_CURSOR_HEADER) ?? undefined }
 }
 
 async function openStreamAttempt(run: StreamRun) {
@@ -134,8 +134,8 @@ async function openStreamAttempt(run: StreamRun) {
   const controller = new AbortController()
   run.attempt = controller
   try {
-    const body = await openResponse(run, controller)
-    send(run, { type: "opened" })
+    const { body, since } = await openResponse(run, controller)
+    send(run, { type: "opened", ...(since ? { since } : {}) })
     armWatchdog(run)
     await readBody(run, body)
     scheduleReconnect(run)

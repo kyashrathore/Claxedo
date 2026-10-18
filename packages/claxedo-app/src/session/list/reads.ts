@@ -1,6 +1,6 @@
 import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { machine, type Machine } from "@/lib/machine"
-import { toAppError, type Server, type SessionListScope, type SessionLocation, type SettledFilter } from "@/server"
+import { toAppError, type Server, type SessionFirstPages, type SessionListScope, type SessionLocation, type SettledFilter } from "@/server"
 import {
   ACTIVITY_WINDOW,
   NO_FOLLOW_UP,
@@ -41,10 +41,16 @@ type PageTarget = { readonly windowKey: WindowKey; readonly after?: string }
 
 const listScopeOf = (windowKey: WindowKey): SessionListScope => (windowKey === ACTIVITY_WINDOW ? { every: true } : { projectId: windowKey })
 
-async function readSessionListPage(context: ReadContext, target: PageTarget): Promise<FetchedPage> {
+async function readSessionListPage(context: ReadContext, target: PageTarget, first: SessionFirstPages | undefined): Promise<FetchedPage> {
   const limit = target.windowKey === ACTIVITY_WINDOW ? ACTIVITY_PAGE_SIZE : PROJECT_PAGE_SIZE
-  const page = await context.server.sessions.list({ ...listScopeOf(target.windowKey), after: target.after, limit, settled: context.settled() })
+  const page = first && target.after === undefined && target.windowKey !== ACTIVITY_WINDOW
+    ? await first.page(target.windowKey)
+    : await context.server.sessions.list({ ...listScopeOf(target.windowKey), after: target.after, limit, settled: context.settled() })
   return { windowKey: target.windowKey, rows: page.rows, statuses: page.statuses, readers: page.readers, nextAfter: page.nextAfter, degraded: page.degraded === true }
+}
+
+function startFirstPages(context: ReadContext): SessionFirstPages {
+  return context.server.sessions.firstPages({ limit: PROJECT_PAGE_SIZE, settled: context.settled() })
 }
 
 async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
@@ -54,10 +60,10 @@ async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
   return windowKeys.map((windowKey) => ({ windowKey }))
 }
 
-async function readWindow(context: ReadContext, targets: readonly PageTarget[]): Promise<FetchedWindow> {
+async function readWindow(context: ReadContext, targets: readonly PageTarget[], first?: SessionFirstPages): Promise<FetchedWindow> {
   const sentAt = Date.now()
   const read = await Promise.all(targets.map((target) =>
-    readSessionListPage(context, target).then(
+    readSessionListPage(context, target, first).then(
       (page): FetchedPage | FailedPage => page,
       (cause): FetchedPage | FailedPage => ({ windowKey: target.windowKey, error: toAppError(cause) }),
     )))
@@ -90,7 +96,8 @@ async function fetchFirst(context: ReadContext): Promise<void> {
   const { send } = context.list
   send({ type: "fetchStarted" })
   try {
-    send({ type: "fetched", window: await readWindow(context, await firstPageTargets(context)) })
+    const first = startFirstPages(context)
+    send({ type: "fetched", window: await readWindow(context, await firstPageTargets(context), first) })
   } catch (cause) {
     send({ type: "fetchFailed", error: toAppError(cause) })
   }
@@ -127,7 +134,8 @@ async function rereadList(context: ReadContext, mode: RereadMode): Promise<void>
   if (kind !== "live" && kind !== "failed") return
   send({ type: "rereadStarted" })
   try {
-    send({ type: "rereadFetched", window: await readWindow(context, await firstPageTargets(context)), mode })
+    const first = startFirstPages(context)
+    send({ type: "rereadFetched", window: await readWindow(context, await firstPageTargets(context), first), mode })
   } catch (cause) {
     send({ type: "rereadFailed", error: toAppError(cause) })
   }

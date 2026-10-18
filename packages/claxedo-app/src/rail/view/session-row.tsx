@@ -18,6 +18,7 @@ export type SessionRowProps = SessionRowMenuActions & {
   readonly caption?: string
   readonly active: boolean
   readonly onActivate: (row: SessionRowView) => void
+  readonly onPress: (row: SessionRowView) => void
   readonly prepareDrag?: () => string | undefined
 }
 
@@ -87,6 +88,7 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
       label={props.row.title}
       active={props.active}
       onActivate={() => props.onActivate(props.row)}
+      onPress={() => props.onPress(props.row)}
       onContextMenu={openMenu}
       engagement={engagement}
       prepareDrag={props.prepareDrag}

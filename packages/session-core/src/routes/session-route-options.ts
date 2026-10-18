@@ -55,6 +55,8 @@ type Ctx = SessionRouteContext
 
 export type SessionRouteOptions = {
   sessionStarts?: AgentSessionStarts
+  /** The runtime's event feed position when a request arrives; a read answers it as `X-Event-Cursor`. */
+  eventCursor?: () => string
   /** The one runtime host of this workspace, built on first use. */
   runtime: (c: Ctx) => Promise<AgentRuntime>
   /** The harness a draft read runs on when the request names none. */

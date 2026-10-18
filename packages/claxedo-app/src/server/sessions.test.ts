@@ -7,6 +7,7 @@ import { placementId, projectId, sessionId } from "./ids"
 import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { RESERVATION_HEADER } from "./session-reservation"
 import { createSessionsApi } from "./sessions"
+import { createSnapshotCoverage } from "./snapshot-coverage"
 import type { ProductEvent } from "@claxedo/account-contract/product-events"
 import type { ProductTelemetry } from "./telemetry"
 import { createStatusOwner, type StatusOwner } from "./status"
@@ -46,7 +47,7 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
   const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createSnapshotCoverage(() => undefined), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
 
   const refusal = await sessions.create({ placementId: placementId("ws_cloud") }).then(
     () => undefined,
@@ -99,7 +100,7 @@ test("sessions: a first send resent after its create failed creates under the dr
   const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createSnapshotCoverage(() => undefined), createWorkspaceWakes(transport, workspaces, () => () => undefined), createSessionProjection(workspaces, account), telemetry, account)
   let held: SessionReservation | undefined
   const reservation = { held: () => held, hold: (next: SessionReservation) => { held = next } }
   const send = (messageId: string, text: string) => ({ placementId: placementId("ws_cloud"), reservation, prompt: { clientRequestId: messageId, messageId, text, attachments: [] } })
@@ -149,7 +150,7 @@ function sendFixture(answers: Array<unknown>, stopsOnRefresh: boolean) {
       return false
     },
   } as unknown as WorkspaceWakes
-  const sessions = createSessionsApi(transport, workspaces, {} as StatusOwner, wakes, {} as SessionProjection, telemetry)
+  const sessions = createSessionsApi(transport, workspaces, {} as StatusOwner, createSnapshotCoverage(() => undefined), wakes, {} as SessionProjection, telemetry)
   const send = () => sessions.prompt({ projectId: projectId("proj_1"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_1") },
     { clientRequestId: "req_1", messageId: "msg_1", text: "hello", attachments: [] })
   return { sent, bodies, woke, send, settled: () => settled }

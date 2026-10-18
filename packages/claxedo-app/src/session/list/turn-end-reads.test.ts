@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { machine } from "@/lib/machine"
-import { placementId, projectId, sessionId, type Server, type SessionListInput, type SessionRow } from "@/server"
+import { placementId, projectId, sessionId, type ProjectId, type Server, type SessionPageQuery, type SessionListInput, type SessionRow } from "@/server"
 import { ACTIVITY_WINDOW, initialListState, type FetchedWindow, type ListState } from "./model"
 import { createListReads } from "./reads"
 import { listTransition } from "./transition"
@@ -65,9 +65,10 @@ test("a turn end's row read while the list re-reads waits for the re-read, so a 
 
 test("showing Activity again reads no further page once its window is open", async () => {
   const reads: SessionListInput[] = []
+  const listPage = async (input: SessionListInput) => (reads.push(input), { rows: [], statuses: new Map(), readers: new Map(), nextAfter: "more" })
   const server = {
     placements: { load: async () => [{ projectId: ALPHA }] },
-    sessions: { list: async (input: SessionListInput) => (reads.push(input), { rows: [], statuses: new Map(), readers: new Map(), nextAfter: "more" }) },
+    sessions: { list: listPage, firstPages: (input: SessionPageQuery) => ({ page: (projectId: ProjectId) => listPage({ ...input, projectId }) }) },
   } as unknown as Server
   const list = machine<ListState, Parameters<typeof listTransition>[1]>(initialListState, listTransition)
   const listReads = createListReads(server, list, { settled: () => "active", activityShown: () => true })

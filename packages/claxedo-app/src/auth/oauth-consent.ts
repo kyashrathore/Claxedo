@@ -23,7 +23,40 @@ export const MCP_CONSENT_SCOPES = [
 
 export const MCP_CONSENT_DEFAULTS = ["claxedo:read", "claxedo:act"] as const
 
-const DEPLOYMENT_REGISTERED_CLIENT_IDS: readonly string[] = ["claxedo-cli", "claxedo-desktop"]
+const DEPLOYMENT_CLIENT_NAMES: ReadonlyMap<string, string> = new Map([
+  ["claxedo-cli", "Claxedo CLI"],
+  ["claxedo-desktop", "Claxedo Desktop"],
+])
+
+export function deploymentClientName(clientId: string | undefined): string | undefined {
+  return clientId === undefined ? undefined : DEPLOYMENT_CLIENT_NAMES.get(clientId)
+}
+
+export type ConsentRequester =
+  | { kind: "deployment"; name: string }
+  | { kind: "unverified"; clientId: string; declaredName?: string; redirectHost?: string }
+
+function redirectHost(search: string) {
+  const redirect = new URLSearchParams(search).get("redirect_uri")
+  if (!redirect || !URL.canParse(redirect)) return undefined
+  return new URL(redirect).host || undefined
+}
+
+export function consentRequester(search: string, clientId: string | undefined, declaredName: string | undefined): ConsentRequester {
+  const deploymentName = deploymentClientName(clientId)
+  if (deploymentName !== undefined) return { kind: "deployment", name: deploymentName }
+  const host = redirectHost(search)
+  return {
+    kind: "unverified",
+    clientId: clientId ?? "",
+    ...(declaredName ? { declaredName } : {}),
+    ...(host ? { redirectHost: host } : {}),
+  }
+}
+
+export function consentDefaults(requester: ConsentRequester): readonly string[] {
+  return requester.kind === "deployment" ? MCP_CONSENT_DEFAULTS : []
+}
 
 export async function readOAuthConsentClient(clientId: string): Promise<OAuthConsentClient> {
   const url = new URL("/api/auth/oauth2/public-client", apiOrigin())
@@ -74,7 +107,7 @@ export function offeredMcpScopes(scopes: readonly string[], clientId: string | u
   return MCP_CONSENT_SCOPES.filter((entry) => {
     if (!requested.has(entry.scope)) return false
     if (entry.scope !== "claxedo:admin") return true
-    return clientId !== undefined && DEPLOYMENT_REGISTERED_CLIENT_IDS.includes(clientId)
+    return deploymentClientName(clientId) !== undefined
   })
 }
 

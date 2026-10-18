@@ -241,7 +241,7 @@ function getDirectory(path: string | undefined) {
   const data = useData()
   return relativizeProjectPath(_getDirectory(path), data.directory)
 }
-import { resolveFileDiff } from "./session-diff"
+import { SourceDiff } from "./code-view-lazy"
 
 export type ToolInfo = {
   icon: IconProps["name"]
@@ -1633,7 +1633,6 @@ ToolRegistry.register({
   name: "edit",
   render(props) {
     const i18n = useTranscriptI18n()
-    const fileComponent = useFileComponent()
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
     const path = createMemo(() => props.metadata?.filediff?.file || props.input.filePath || "")
     const filename = () => getFilename(props.input.filePath ?? "")
@@ -1656,27 +1655,9 @@ ToolRegistry.register({
       },
     )
 
-    const fileCompProps = createMemo(() => {
-      try {
-        const source = diffSource()
-        if (source) {
-          const fileDiff = resolveFileDiff(source)
-          if (fileDiff) return { fileDiff, hunkSeparators: fileDiff.isPartial ? "simple" : "line-info-basic" }
-        }
-      } catch (error) {
-        console.warn("An edit's diff could not be resolved; its before and after show instead", { error })
-      }
-
-      return {
-        before: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.before || props.input.oldString || "",
-        },
-        after: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.after || props.input.newString || "",
-        },
-      }
+    const fallback = () => ({
+      before: { name: path(), contents: props.metadata?.filediff?.before || props.input.oldString || "" },
+      after: { name: path(), contents: props.metadata?.filediff?.after || props.input.newString || "" },
     })
 
     return (
@@ -1726,13 +1707,13 @@ ToolRegistry.register({
               >
                 <FrameDeferred
                   content={() => (
-                    <Dynamic
-                      component={fileComponent}
-                      mode="diff"
+                    <SourceDiff
+                      source={diffSource()}
+                      fallback={fallback()}
+                      lineInfoSeparators
                       virtualize={props.virtualizeDiff}
                       tokenizeMaxLength={props.virtualizeDiff ? 120 : undefined}
                       onRendered={props.onContentRendered}
-                      {...fileCompProps()}
                     />
                   )}
                 />
@@ -1810,7 +1791,6 @@ ToolRegistry.register({
   name: "apply_patch",
   render(props) {
     const i18n = useTranscriptI18n()
-    const fileComponent = useFileComponent()
     const files = createMemo(() => patchFiles(props.metadata.files, props.bodyPending))
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
     const single = createMemo(() => {
@@ -1920,12 +1900,10 @@ ToolRegistry.register({
                                 data-virtualized={props.virtualizeDiff ? "true" : undefined}
                                 style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
                               >
-                                <Dynamic
-                                  component={fileComponent}
-                                  mode="diff"
+                                <SourceDiff
+                                  source={file.view.source}
+                                  lineInfoSeparators
                                   virtualize={props.virtualizeDiff}
-                                  fileDiff={file.view.fileDiff}
-                                  hunkSeparators={file.view.fileDiff.isPartial ? "simple" : "line-info-basic"}
                                   onRendered={props.onContentRendered}
                                 />
                               </div>
@@ -2001,13 +1979,7 @@ ToolRegistry.register({
                 data-virtualized={props.virtualizeDiff ? "true" : undefined}
                 style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
               >
-                <Dynamic
-                  component={fileComponent}
-                  mode="diff"
-                  virtualize={props.virtualizeDiff}
-                  fileDiff={single()!.view.fileDiff}
-                  onRendered={props.onContentRendered}
-                />
+                <SourceDiff source={single()!.view.source} virtualize={props.virtualizeDiff} onRendered={props.onContentRendered} />
               </div>
             </ToolFileAccordion>
           </BasicTool>

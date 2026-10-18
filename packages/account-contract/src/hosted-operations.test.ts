@@ -42,7 +42,7 @@ describe("decodeHostedResult", () => {
     expect(() => decodeHostedResult("account.mode", [])).toThrow(/expected an object/)
     expect(() => decodeHostedResult("workspace.list.provisioner", [])).toThrow(/expected an object/)
     expect(() => decodeHostedResult("workspace.list.provisioner", {})).toThrow(/expected an array "workspaces"/)
-    expect(() => decodeHostedResult("workspace.list.machine", {})).toThrow(/expected an array "workspaces"/)
+    expect(() => decodeHostedResult("session.pages", {})).toThrow(/expected an array "pages"/)
   })
 
   test("rejects an empty string in a required field, not just a missing one", () => {
@@ -60,8 +60,8 @@ describe("decodeHostedResult", () => {
     expect(decodeHostedResult("workspace.list.provisioner", { workspaces: [{ id: "ws_1" }] })).toEqual({
       workspaces: [{ id: "ws_1" }],
     })
-    expect(decodeHostedResult("workspace.list.machine", { workspaces: [{ id: "ws_2" }] })).toEqual({
-      workspaces: [{ id: "ws_2" }],
+    expect(decodeHostedResult("session.pages", { pages: [{ projectId: "prj_1", items: [] }] })).toEqual({
+      pages: [{ projectId: "prj_1", items: [] }],
     })
   })
 
@@ -202,7 +202,7 @@ describe("isSafeOperation", () => {
     for (const safe of [
       "account.mode",
       "workspace.list.provisioner",
-      "workspace.list.machine",
+      "session.pages",
       "workspace.checkpoints.list",
       "agentPlugins.skill",
       "agentPlugins.skill.project",

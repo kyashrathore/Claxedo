@@ -3,7 +3,7 @@ const PLAN_SECTION_PREFIX = "plan:"
 
 export type ReviewWorkspaceTab =
   | { id: "review"; kind: "review" }
-  | { id: "context"; kind: "context"; sessionId: string }
+  | { id: "context"; kind: "context" }
   | { id: string; kind: "file"; tabId: string }
   | { id: "browser"; kind: "browser"; browserId: string; url?: string; navigationVersion?: number }
   | {
@@ -19,7 +19,7 @@ export type ReviewWorkspaceTab =
 export type WorkspacePanelNavigator = "files" | "changes"
 
 export const REVIEW_TAB_ID = "review"
-const CONTEXT_TAB_ID = "context"
+export const CONTEXT_TAB_ID = "context"
 const BROWSER_TAB_ID = "browser"
 export const REVIEW_TAB: ReviewWorkspaceTab = { id: REVIEW_TAB_ID, kind: "review" }
 
@@ -122,27 +122,11 @@ export function reviewWorkspaceTabsForSession(input: {
   })
 }
 
-export function openContextWorkspaceTab(input: { tabs: readonly ReviewWorkspaceTab[]; sessionId: string }) {
-  const contextTab = {
-    id: CONTEXT_TAB_ID,
-    kind: "context",
-    sessionId: input.sessionId,
-  } satisfies ReviewWorkspaceTab
-  const index = input.tabs.findIndex((tab) => tab.kind === "context")
-  if (index === -1) {
-    return {
-      tabs: [...input.tabs, contextTab],
-      activeTabId: CONTEXT_TAB_ID,
-      added: true,
-      contextIndex: undefined,
-    }
-  }
-  return {
-    tabs: input.tabs.map((tab, tabIndex) => (tabIndex === index ? contextTab : tab)),
-    activeTabId: CONTEXT_TAB_ID,
-    added: false,
-    contextIndex: index,
-  }
+const CONTEXT_TAB: ReviewWorkspaceTab = { id: CONTEXT_TAB_ID, kind: "context" }
+
+export function openContextWorkspaceTab(input: { tabs: readonly ReviewWorkspaceTab[] }) {
+  const tabs = input.tabs.some((tab) => tab.kind === "context") ? input.tabs : [...input.tabs, CONTEXT_TAB]
+  return { tabs, activeTabId: CONTEXT_TAB_ID }
 }
 
 export function openBrowserWorkspaceTab(input: {

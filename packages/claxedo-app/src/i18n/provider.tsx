@@ -1,4 +1,4 @@
-import { createContext, createEffect, createMemo, useContext, type Accessor, type JSX } from "solid-js"
+import { createContext, createEffect, createMemo, createSignal, useContext, type Accessor, type JSX } from "solid-js"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
 import type { TemplateParams, Translations } from "./dictionary"
 import { createTranslationRegistry, type Translate } from "./translations"
@@ -9,6 +9,7 @@ export type I18n = {
   readonly setLocale: (next: Locale) => void
   readonly locales: readonly LocaleEntry[]
   readonly intlTag: Accessor<string>
+  readonly ready: Accessor<boolean>
   readonly t: Translate
   readonly add: (domain: Translations) => () => void
 }
@@ -20,13 +21,22 @@ function browserLanguages(): readonly string[] {
   return navigator.languages?.length ? navigator.languages : [navigator.language]
 }
 
-export function I18nProvider(props: { readonly locale?: Locale; readonly children: JSX.Element }): JSX.Element {
+export type I18nProviderProps = {
+  readonly locale?: Locale
+  readonly dictionaries?: readonly Translations[]
+  readonly children: JSX.Element
+}
+
+export function I18nProvider(props: I18nProviderProps): JSX.Element {
   const [locale, setLocale] = persistedSignal<Locale>(
     preferenceKey("locale"),
     props.locale ?? detectLocale(browserLanguages()),
     (value) => (isLocale(value) ? value : undefined),
   )
   const translations = createTranslationRegistry(locale)
+  for (const dictionary of props.dictionaries ?? []) translations.add(dictionary)
+  const [ready, setReady] = createSignal(!translations.pending(locale()))
+  if (!ready()) void translations.load(locale()).then(() => setReady(true))
   const intlTag = createMemo(() => localeEntry(locale()).intlTag)
 
   createEffect(() => {
@@ -36,9 +46,10 @@ export function I18nProvider(props: { readonly locale?: Locale; readonly childre
 
   const value: I18n = {
     locale,
-    setLocale: (next) => setLocale(next),
+    setLocale: (next) => void translations.load(next).then(() => setLocale(next)),
     locales: LOCALES,
     intlTag,
+    ready,
     t: translations.t,
     add: translations.add,
   }

@@ -1,0 +1,115 @@
+From 2ca93d484cfb0bb3b692ea09a69ccd733053b58c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 17 Oct 2026 21:30:59 +0000
+Subject: [PATCH] A completed markdown body keeps its projection (blocks and
+ their tokens) in a module cache keyed by its cache key while its text is
+ unchanged, capped at 1024 entries and 4 MB of text, so a session return
+ remounts a 131 KB reply from the block cache without lexing it again (about
+ 55 ms in V8 with today's autolink start search, about 5 ms without it), and
+ the line budget is the measured 107,785.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01QtZVtcNTgBwKhSN8i2v1w2
+---
+ .../checks/data/module-state-exceptions.ts    |  1 +
+ packages/claxedo-app/src/transcript/README.md |  1 +
+ .../src/transcript/markdown-stream.test.ts    | 10 ++++++++++
+ .../src/transcript/markdown-stream.ts         | 19 +++++++++++++++++--
+ .../claxedo-app/src/transcript/markdown.tsx   |  2 +-
+ 5 files changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/packages/claxedo-app/scripts/checks/data/module-state-exceptions.ts b/packages/claxedo-app/scripts/checks/data/module-state-exceptions.ts
+index fdcefd2e..b7c804cf 100644
+--- a/packages/claxedo-app/scripts/checks/data/module-state-exceptions.ts
++++ b/packages/claxedo-app/scripts/checks/data/module-state-exceptions.ts
+@@ -31,6 +31,7 @@ export const moduleStateExceptions: readonly ModuleStateException[] = [
+   { file: `${transcript}/markdown-cache.tsx`, binding: "cache", reason: protectedCache, cap: "4096 entries and 8 MB (markdownCacheLimits)" },
+   { file: `${transcript}/markdown-cache.tsx`, binding: "mermaidCache", reason: protectedCache, cap: "256 entries and 2 MB (mermaidSvgCacheLimits)" },
+   { file: `${transcript}/markdown-code-cache.ts`, binding: "cache", reason: protectedCache, cap: "4096 entries and 8 MB (codeHighlightCacheLimits)" },
++  { file: `${transcript}/markdown-stream.ts`, binding: "completedProjections", reason: protectedCache, cap: "1024 entries and 4 MB of text (completedProjectionLimits)" },
+   { file: `${transcript}/markdown-shiki.worker.ts`, binding: "streams", reason: "worker-side highlight streams by key", cap: "deleted on dispose and completion" },
+   { file: `${transcript}/markdown-shiki.worker.ts`, binding: "highlighter", reason: "the worker's one lazily created shiki highlighter" },
+   { file: `${transcript}/markdown-worker.ts`, binding: "worker", reason: "the one markdown worker" },
+diff --git a/packages/claxedo-app/src/transcript/README.md b/packages/claxedo-app/src/transcript/README.md
+index abc871f8..08567fb4 100644
+--- a/packages/claxedo-app/src/transcript/README.md
++++ b/packages/claxedo-app/src/transcript/README.md
+@@ -81,6 +81,7 @@ A logic change here is its own slice, proven by the transcript corpus (flow 30,
+ - Code fences name shiki grammars; anything shiki does not bundle falls back to plain `text`, which has no grammar to load (`bundledLanguages` has no `text`, and asking shiki to load nothing throws in the worker).
+ - A code block inside prose (a fence in a list or a quote, an indented block) is highlighted like a top-level fence (`markdown-code-tokens.ts`): its `<pre>` gets the code frame when the block is decorated, and the worker's tokens become the same token spans, painted from the highlight cache before the block commits or once the worker answers. A separate main-thread highlight in the async parse would add the frame after the first paint and grow each such block 24 px.
+ - Completed code-block highlights live in a module-scope cache keyed by theme, language, source length and a 32-bit FNV-1a checksum, verified against the stored source so a collision is a miss. The worker round trip costs about 50 ms per session switch, and a per-component cache would re-pay it on every remount. The code theme tokenizes into CSS variables, so light and dark restyle cached tokens. Only completed blocks are cached and only on success (fallback tokens for a failed worker are never pinned). `codeHighlightCacheLimits` caps it at about 8 MB of UTF-16 text (source, tokens and styles; roughly twice that resident) with 4096 entries as a backstop. 256 entries / 2 MB thrashed on a sweep across the open sessions (`OPEN_SESSION_LIMIT`, 8, in `src/session/store/open-sessions.ts`). An entry larger than the whole budget is skipped.
++- A completed body's projection (its blocks and their tokens) is cached by its cache key while its text is unchanged: about 4 MB of text with 1024 entries. A remount otherwise lexes the whole body again before its block cache can answer, and the block cache needs the projection's raw blocks to verify a hit.
+ - Parsed markdown blocks are cached the same way: about 8 MB with 4096 entries (typical blocks run 1–3 KB). About 200 entries thrashed on every multi-session sweep, and a tighter entry cap thrashed at about 25 blocks per session visit. A remount that misses parses the block synchronously for its first paint.
+ - Markdown has its own DOMPurify instance, with its config set once through `setConfig`. A config passed on each call is re-parsed into fresh allow-lists every time, which took about a quarter of the sanitize time for a streaming reply's open block.
+ - Sanitized markdown keeps the same link schemes the transcript's linkifier recognizes (`transcriptLinkUriPattern`), so a target the app can route survives instead of reaching the page with no href; `data:` images pass through DOMPurify's `DATA_URI_TAGS` rule rather than the scheme pattern.
+diff --git a/packages/claxedo-app/src/transcript/markdown-stream.test.ts b/packages/claxedo-app/src/transcript/markdown-stream.test.ts
+index f94f727e..a7a358c4 100644
+--- a/packages/claxedo-app/src/transcript/markdown-stream.test.ts
++++ b/packages/claxedo-app/src/transcript/markdown-stream.test.ts
+@@ -65,3 +65,13 @@ test("while a list streams its live tail draws no nested list or heading its set
+     }
+   }
+ })
++
++test("a remounted completed body reuses its projection only while its text is unchanged", () => {
++  const first = project(undefined, texts[0]!, false, "part-remount")
++  expect(project(undefined, texts[0]!, false, "part-remount")).toBe(first)
++  const edited = project(undefined, `${texts[0]!} edited`, false, "part-remount")
++  expect(edited).not.toBe(first)
++  expect(edited.text).toBe(`${texts[0]!} edited`)
++  expect(project(undefined, texts[0]!, false)).not.toBe(project(undefined, texts[0]!, false))
++  expect(project(undefined, texts[0]!, true, "part-remount")).not.toBe(project(undefined, texts[0]!, true, "part-remount"))
++})
+diff --git a/packages/claxedo-app/src/transcript/markdown-stream.ts b/packages/claxedo-app/src/transcript/markdown-stream.ts
+index 1f253c86..630b5005 100644
+--- a/packages/claxedo-app/src/transcript/markdown-stream.ts
++++ b/packages/claxedo-app/src/transcript/markdown-stream.ts
+@@ -1,6 +1,7 @@
+ import { Marked, type Token } from "marked"
+ import remend from "remend"
+ import { transcriptMarkdownExtensions } from "@/ui/utils"
++import { createByteBoundedCache } from "./byte-bounded-cache"
+ 
+ export type Block = {
+   raw: string
+@@ -180,8 +181,22 @@ function extend(previous: Projection, text: string): Block[] {
+   return [...previous.blocks.slice(0, -1), ...stream(text.slice(start), true)]
+ }
+ 
+-export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
+-  if (!live || !previous || !text.startsWith(previous.text)) return { text, blocks: stream(text, live) }
++const completedProjectionLimits = { entries: 1024, bytes: 4_000_000 }
++
++const completedProjections = createByteBoundedCache<string, Projection>(completedProjectionLimits, (_key, value) => value.text.length)
++
++function projectCompleted(cacheKey: string | undefined, text: string): Projection {
++  if (cacheKey === undefined) return { text, blocks: stream(text, false) }
++  const cached = completedProjections.get(cacheKey)
++  if (cached?.text === text) return cached
++  const projection = { text, blocks: stream(text, false) }
++  completedProjections.set(cacheKey, projection)
++  return projection
++}
++
++export function project(previous: Projection | undefined, text: string, live: boolean, cacheKey?: string): Projection {
++  if (!live) return projectCompleted(cacheKey, text)
++  if (!previous || !text.startsWith(previous.text)) return { text, blocks: stream(text, live) }
+   const tail = previous.blocks.at(-1)
+   const suffix = text.slice(previous.text.length)
+   if (!suffix) return { text, blocks: stream(text, live) }
+diff --git a/packages/claxedo-app/src/transcript/markdown.tsx b/packages/claxedo-app/src/transcript/markdown.tsx
+index 7d6186ab..13a16c3a 100644
+--- a/packages/claxedo-app/src/transcript/markdown.tsx
++++ b/packages/claxedo-app/src/transcript/markdown.tsx
+@@ -499,7 +499,7 @@ export function Markdown(
+     if (liveBlock?.key !== key || liveBlock.raw !== block.raw) liveBlock = syncBlock(owner, local.cacheKey, index, block)
+     return liveBlock
+   }
+-  const projection = createMemo<Projection | undefined>((previous) => project(previous, local.text, local.streaming ?? false), undefined)
++  const projection = createMemo<Projection | undefined>((previous) => project(previous, local.text, local.streaming ?? false, local.cacheKey), undefined)
+   const initial = initialResult(local.text, local.cacheKey, projection()!, owner)
+   const [html] = createResource(
+     () => {
+-- 
+2.43.0
+

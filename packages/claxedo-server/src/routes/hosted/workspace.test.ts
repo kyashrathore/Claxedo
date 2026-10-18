@@ -1182,17 +1182,15 @@ describe("hosted connection rate limiting (mint-only)", () => {
 })
 
 describe("hosted workspace list (GET /api/workspace)", () => {
-  test("signed host=machine returns only the caller's machine-placed workspaces", async () => {
+  test("a host other than the provisioner is refused before the authority is asked", async () => {
     const { app, authority } = buildApp({})
     const res = await app.fetch(get("/?host=machine"))
-    expect(res.status).toBe(200)
-    const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
-    expect(json.workspaces).toEqual([{ workspace_id: "ws_user", backing: "local-worktree", reachable: false }])
-    expect(authority!.usersMe).not.toHaveBeenCalled()
-    expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "workspace_host_invalid" } })
+    expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
 
-  test("signed host=provisioner returns the full list (no machine-placement filter)", async () => {
+  test("signed host=provisioner returns the full list, machine-placed rows included", async () => {
     const { app, authority } = buildApp({})
     const res = await app.fetch(get("/?host=provisioner"))
     expect(res.status).toBe(200)
@@ -1252,7 +1250,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
 
   test("a list request with no credential is 401 missing_bearer_token with or without a host and never touches the authority", async () => {
     const { app, authority } = buildApp({})
-    for (const url of ["http://cp.test/", "http://cp.test/?host=machine"]) {
+    for (const url of ["http://cp.test/", "http://cp.test/?host=provisioner"]) {
       const res = await app.fetch(new Request(url))
       expect(res.status).toBe(401)
       expect(await res.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
@@ -1260,9 +1258,9 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
 
-  test("host=machine with no bearer token fails closed (signed required)", async () => {
+  test("host=provisioner with no bearer token fails closed (signed required)", async () => {
     const { app, authority } = buildApp({})
-    const res = await app.fetch(new Request("http://cp.test/?host=machine"))
+    const res = await app.fetch(new Request("http://cp.test/?host=provisioner"))
     expect(res.status).toBe(401)
     expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
@@ -1273,8 +1271,8 @@ describe("hosted workspace list (GET /api/workspace)", () => {
         controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1, windowMs: 60_000 }),
       },
     })
-    expect((await app.fetch(get("/?host=machine"))).status).toBe(200)
-    const limited = await app.fetch(get("/?host=machine"))
+    expect((await app.fetch(get("/?host=provisioner"))).status).toBe(200)
+    const limited = await app.fetch(get("/?host=provisioner"))
     expect(limited.status).toBe(429)
     expect(await limited.json()).toMatchObject({ error: { code: "control_plane_rate_limited" } })
     // The rate-limited request did not reach the workspace listing.

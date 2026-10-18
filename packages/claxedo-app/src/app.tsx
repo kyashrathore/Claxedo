@@ -1,7 +1,7 @@
 import { accountBinding } from "#account-binding"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth } from "@/auth"
-import { I18nProvider } from "@/i18n"
+import { I18nProvider, useI18n } from "@/i18n"
 import { ClockProvider } from "@/lib/clock"
 import { tabStorage } from "@/lib/persisted"
 import { ProjectListProvider } from "@/projects"
@@ -11,7 +11,7 @@ import { SessionStoresProvider } from "@/session"
 import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
-import { firstParty } from "./registry"
+import { firstParty, firstPartyDictionaries } from "./registry"
 import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
@@ -50,6 +50,11 @@ function Alerts(props: ParentProps): JSX.Element {
   return <AttentionAlerts preferences={preferences.alerts}>{props.children}</AttentionAlerts>
 }
 
+function LocaleReady(props: ParentProps): JSX.Element {
+  const i18n = useI18n()
+  return <Show when={i18n.ready()}>{props.children}</Show>
+}
+
 function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.Element {
   const auth = useAuth()
   const principal = createMemo(() => principalOf(auth))
@@ -69,15 +74,17 @@ export function App(props: AppProps): JSX.Element {
   return (
     <AuthProvider binding={accountBinding}>
       <ShellRegistriesContext.Provider value={registries}>
-        <I18nProvider>
+        <I18nProvider dictionaries={firstPartyDictionaries}>
           <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
             <PreferencesProvider>
               <ClockProvider>
                 <ShellRouter router={props.router}>
                   <SignedServer serverUrl={props.serverUrl}>
-                    <Alerts>
-                      <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
-                    </Alerts>
+                    <LocaleReady>
+                      <Alerts>
+                        <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                      </Alerts>
+                    </LocaleReady>
                   </SignedServer>
                 </ShellRouter>
               </ClockProvider>

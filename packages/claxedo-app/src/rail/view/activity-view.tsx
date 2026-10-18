@@ -68,6 +68,7 @@ export function ActivityView(props: { readonly filter: ActivityFilter }): JSX.El
                 caption={projectNames().get(row().ref.projectId)}
                 active={navigation.activeSessionId() === sessionId}
                 onActivate={navigation.open}
+                onPress={navigation.press}
                 onRename={actions.onRename}
                 onToggleSettled={actions.onToggleSettled}
                 prepareDrag={() => navigation.prepareDrag({ kind: "session", key: sessionRowKey(sessionId), session: row() })}

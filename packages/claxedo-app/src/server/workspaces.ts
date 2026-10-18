@@ -9,6 +9,7 @@ import { mergedCatalog } from "./merged-catalog"
 import { queryKeys } from "./query-keys"
 import { createSharedSessions, type SharedSessions } from "./shared-sessions"
 import type { RuntimeRoute, Transport } from "./transport"
+import type { CloudWorkspace } from "./cloud-types"
 import type { AppError, Project, SessionLocation } from "./types"
 import { isStoppedCloud } from "./placement-runtime"
 import { workspaceStopped } from "./wire/connection"
@@ -38,6 +39,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list" | "complete" | "ope
   readonly boot: () => Promise<BootstrapCatalog>
   readonly refresh: () => Promise<void>
   readonly accountProjects: () => Promise<readonly Project[]>
+  readonly cloudWorkspaces: () => Promise<readonly CloudWorkspace[]>
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
   readonly accountKnows: (workspaceId: string) => boolean
   readonly dispose: () => void
@@ -205,13 +207,16 @@ async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<v
   return read.value
 }
 
-function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds" | "accountKnows"> {
+function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "cloudWorkspaces" | "accountProjectIds" | "accountKnows"> {
+  const linkedList = <T,>(pick: (catalog: LinkedCatalog) => readonly T[]) => async () => {
+    if (!signed) return []
+    await load()
+    const catalog = linked()
+    return catalog ? pick(catalog) : []
+  }
   return {
-    accountProjects: async () => {
-      if (!signed) return []
-      await load()
-      return linked()?.projects ?? []
-    },
+    accountProjects: linkedList((catalog) => catalog.projects),
+    cloudWorkspaces: linkedList((catalog) => catalog.cloud),
     accountProjectIds: (projectId) => linked()?.accountProjectIds(projectId) ?? [],
     accountKnows: (workspaceId) => linked()?.knowsWorkspace(workspaceId) ?? false,
   }

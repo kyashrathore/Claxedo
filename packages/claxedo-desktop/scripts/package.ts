@@ -34,7 +34,6 @@ const targetArch = extra.includes("--arm64")
 const pack = Bun.spawn({
   cmd: ["bun", "run", "build"],
   cwd: root,
-  env: { ...Bun.env, CLAXEDO_REQUIRE_NATIVE_MERMAID: "1" },
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
@@ -65,5 +64,5 @@ if (failures.length > 0) {
   console.error(`[package] packaging invariant violated:\n${failures.join("\n")}`)
   process.exit(1)
 }
-console.log("[package] packaging invariants hold (bundled output, native modules, and Mermaid renderer)")
+console.log("[package] packaging invariants hold (bundled output and native modules)")
 process.exit(0)

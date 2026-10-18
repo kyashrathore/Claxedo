@@ -212,32 +212,6 @@ export function verifyPackageContents(
     } catch (error) {
       failures.push(`${archive}: ${String(error)}`)
     }
-    const mermaidDir = path.join(path.dirname(archive), "mermaid")
-    const binaries = [
-      path.join(mermaidDir, "claxedo-mermaid-renderer"),
-      path.join(mermaidDir, "claxedo-mermaid-renderer.exe"),
-    ].filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isFile())
-    if (binaries.length !== 1) {
-      failures.push(`${archive}: expected one packaged Mermaid renderer in ${mermaidDir}`)
-      continue
-    }
-    if (!binaries[0].endsWith(".exe") && (fs.statSync(binaries[0]).mode & 0o111) === 0) {
-      failures.push(`${archive}: packaged Mermaid renderer is not executable: ${binaries[0]}`)
-      continue
-    }
-    // Cross-packaging creates binaries the host cannot execute (for example a
-    // win32 .exe produced on macOS, or an x64 helper on arm64). Presence and
-    // permissions remain packaging invariants; the functional smoke belongs to
-    // a host with the same OS and architecture as the target.
-    if (!canSmokePackagedBinary(target)) continue
-    const mermaid = spawnSync(binaries[0], ["mermaid"], {
-      input: JSON.stringify({ source: "flowchart LR\nA --> B", theme: { primaryColor: "#123456" } }),
-      encoding: "utf8",
-    })
-    const svg = mermaid.stdout
-    if (mermaid.status !== 0 || !svg.startsWith("<svg") || !svg.includes("#123456")) {
-      failures.push(`${archive}: packaged Mermaid renderer failed its Mermaid smoke`)
-    }
   }
   for (const archive of asars) {
     // The launch gate child is spawned by its unpacked path and resolves its

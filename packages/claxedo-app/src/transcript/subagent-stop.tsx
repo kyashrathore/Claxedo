@@ -1,18 +1,17 @@
 import { createSignal, Match, Switch } from "solid-js"
-import { useData } from "./data"
+import type { SubagentStopAnswer } from "./data"
 import { useTranscriptI18n } from "./i18n"
 
 type StopState = { kind: "idle" } | { kind: "stopping" } | { kind: "refused"; message: string }
 
-export function SubagentStopControl(props: { parentSessionId: string; call: string; name: string }) {
-  const data = useData()
+export function SubagentStopControl(props: { stop: () => Promise<SubagentStopAnswer>; name: string }) {
   const i18n = useTranscriptI18n()
   const [state, setState] = createSignal<StopState>({ kind: "idle" })
   const stop = async (event: MouseEvent) => {
     event.stopPropagation()
-    if (!data.stopBackgroundTask || state().kind === "stopping") return
+    if (state().kind === "stopping") return
     setState({ kind: "stopping" })
-    const answer = await data.stopBackgroundTask(props.parentSessionId, props.call)
+    const answer = await props.stop()
       .catch((error: unknown) => ({ ok: false as const, message: error instanceof Error ? error.message : String(error) }))
     if (!answer.ok) setState({ kind: "refused", message: answer.message })
   }

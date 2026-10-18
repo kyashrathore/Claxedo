@@ -1277,6 +1277,56 @@ describe("D1 session list pages", () => {
   })
 })
 
+describe("D1 project session pages", () => {
+  test("lists the first page of every project the reader may open a workspace in, each as the project's own page, and nothing of a colleague's workspace or a stranger's project", async () => {
+    const input = await setup()
+    const { alice, admin, workspace } = await sharedWorkspace(input)
+    const second = await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_second",
+      orgId: "org_acme",
+      displayName: "second",
+      repoUrl: "https://github.com/acme/second.git",
+      backing: "cloud-vm",
+    })
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_colleague",
+      orgId: "org_acme",
+      displayName: "colleague",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "local-worktree",
+    })
+    const stranger = await signed(input.workspace, "stranger")
+    await input.workspace.createHostedOrganization(stranger, { name: "Elsewhere", orgId: "org_elsewhere" })
+    await input.workspace.createWorkspace(stranger, {
+      workspaceId: "ws_theirs",
+      orgId: "org_elsewhere",
+      displayName: "theirs",
+      repoUrl: "https://github.com/elsewhere/theirs.git",
+      backing: "cloud-vm",
+    })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a1", sessionId: "ses_a1" })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a2", sessionId: "ses_a2" })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_b1", sessionId: "ses_b1", workspaceId: "ws_second" })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_c1", sessionId: "ses_c1", workspaceId: "ws_colleague" })
+    await reserveAndRegister(input.sessions, stranger, { operationId: "op_t1", sessionId: "ses_t1", workspaceId: "ws_theirs" })
+    const page = { sort: "human_turn_desc" as const, archived: "active" as const, settled: "all" as const, limit: 6 }
+    const mainProject = workspace.project_id
+
+    const pages = await input.sessions.listProjectSessionPages(alice, page)
+    expect(pages.map((entry) => [entry.projectId, entry.sessions.map((session) => session.session_id).toSorted()])).toEqual([
+      [mainProject, ["ses_a1", "ses_a2"]],
+      [second.project_id, ["ses_b1"]],
+    ])
+    for (const entry of pages) {
+      expect(entry.sessions).toEqual(await input.sessions.listSessionPage(alice, { ...page, projectId: entry.projectId }))
+    }
+    expect((await input.sessions.listProjectSessionPages(admin, page)).map((entry) => [entry.projectId, entry.sessions.map((session) => session.session_id)]))
+      .toEqual([[mainProject, ["ses_c1"]]])
+    expect((await input.sessions.listProjectSessionPages(stranger, page)).map((entry) => entry.sessions.map((session) => session.session_id)))
+      .toEqual([["ses_t1"]])
+  })
+})
+
 describe("D1 latest views", () => {
   test("satisfies the provider-neutral latest-view conformance surface", async () => {
     const input = await setup()

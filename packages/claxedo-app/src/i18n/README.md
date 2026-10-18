@@ -8,14 +8,16 @@ Owns: the locale (one persisted preference), the locale manifest, and the dictio
 import { useTranslator, type Translations } from "@/i18n"
 ```
 
-Each domain keeps its strings in `src/<domain>/i18n.ts`, one dictionary per language, English required, the other sixteen optional:
+Each domain keeps its strings in `src/<domain>/i18n.ts`, one dictionary per language, English required, the other sixteen optional. A locale's strings are either inline or a loader, `() => import("./locales/de")`, whose module's default export is the strings:
 
 ```ts
 export const dictionary = {
   en: { "rail.newSession": "New session", "rail.search": "Search sessions" },
-  de: { "rail.newSession": "Neue Sitzung" },
+  de: () => import("./locales/de"),
 } satisfies Translations<"rail.newSession" | "rail.search">
 ```
+
+The web build groups every `src/*/locales/<code>.ts` and `src/i18n/errors/<code>.ts` into one `locale-<code>` chunk (`vite.cloud.config.ts`), so a visitor downloads English with the app and exactly one other locale, theirs, in one request. A domain whose strings are a few lines keeps them inline.
 
 A change to an English string's meaning removes that key from every other locale in the same change, so English shows until the string is translated again, and no locale keeps saying what the English no longer says.
 
@@ -28,11 +30,11 @@ const t = useTranslator(dictionary)
 <button>{t("rail.newSession")}</button>
 ```
 
-`useTranslator` registers the dictionary with the provider the first time a component of that domain mounts, so nothing else lists dictionaries. Plugins register the same way through the plugin host.
+`useTranslator` registers the dictionary with the provider the first time a component of that domain mounts. The first-party dictionaries are also listed once, in `src/registry.ts` (`firstPartyDictionaries`), so `I18nProvider` can load the current locale's strings for all of them before the shell renders; a plugin dictionary registers at run time through the plugin host and loads its locale when it is added.
 
-Lookup order: the current locale, then English, then the key itself. A locale's dictionary is built the first time it is read, and a domain registered later folds into the built ones. A translation re-runs when the locale changes or a domain is removed, and, only while its key falls back, when a domain is added, so mounting a new domain never re-runs the labels already on screen. Templates use `{{name}}`: `t("rail.rows", { count: 3 })`.
+Lookup order: the current locale, then English, then the key itself. A locale's dictionary is built the first time it is read, and a domain registered later folds into the built ones. A translation re-runs when the locale changes or a domain is removed, and, only while its key falls back, when a domain is added or a lazily loaded locale lands, so mounting a new domain never re-runs the labels already on screen. Templates use `{{name}}`: `t("rail.rows", { count: 3 })`.
 
-`useI18n()` gives the locale itself: `locale()`, `setLocale(code)`, `locales` (code, `intlTag` for `Intl`, native label), `intlTag()`, and the untyped `t`.
+`useI18n()` gives the locale itself: `locale()`, `setLocale(code)`, `locales` (code, `intlTag` for `Intl`, native label), `intlTag()`, `ready()`, and the untyped `t`. `ready()` is false only while the first-party strings of the starting locale are still loading; `src/app.tsx` renders the shell once it is true, so a non-English visitor never sees English labels flash. `setLocale(code)` loads that locale's strings first and switches once they are in, for the same reason. A locale whose chunk fails to load is logged and leaves English showing for the keys it covers.
 
 ## Locale
 

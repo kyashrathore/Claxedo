@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs"
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { brotliDecompressSync } from "node:zlib"
 
 import { describe, expect, test } from "vitest"
 
@@ -238,6 +239,31 @@ describe("browser app artifact", () => {
       await prepareBrowserArtifactsForWorkers(directory)
       expect((await readdir(directory)).sort()).toEqual(["assets", "index.html"])
       expect(await readdir(path.join(directory, "assets"))).toEqual(["app.js"])
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("stores a Brotli copy beside each hashed script, style and sprite it makes smaller", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "claxedo-worker-browser-"))
+    try {
+      const sources = {
+        "main-abc.js": `export const source = "${"x".repeat(4096)}"`,
+        "main-abc.css": `:root { --source: "${"x".repeat(4096)}" }`,
+        "icons/sprite-abc.svg": `<svg xmlns="http://www.w3.org/2000/svg"><title>${"x".repeat(4096)}</title></svg>`,
+      }
+      await mkdir(path.join(directory, "assets", "icons"), { recursive: true })
+      for (const [name, source] of Object.entries(sources)) await writeFile(path.join(directory, "assets", name), source)
+      await writeFile(path.join(directory, "assets", "tiny-abc.js"), "1")
+      await writeFile(path.join(directory, "assets", "font-abc.woff2"), "x".repeat(4096))
+      await writeFile(path.join(directory, "sw.js"), `self.source = "${"x".repeat(4096)}"`)
+      await prepareBrowserArtifactsForWorkers(directory)
+      expect((await readdir(path.join(directory, "assets"), { recursive: true })).filter((name) => name.endsWith(".br")).sort())
+        .toEqual(["icons/sprite-abc.svg.br", "main-abc.css.br", "main-abc.js.br"])
+      expect(await readdir(directory)).not.toContain("sw.js.br")
+      for (const [name, source] of Object.entries(sources)) {
+        expect(brotliDecompressSync(await readFile(path.join(directory, "assets", `${name}.br`))).toString()).toBe(source)
+      }
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

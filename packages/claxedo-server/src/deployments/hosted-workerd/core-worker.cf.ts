@@ -28,6 +28,7 @@ import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "..
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { workerErrorCapture } from "../../platform/auth/worker-telemetry"
 import { d1TransientFailure } from "../../platform/db/d1-constraint"
+import { timedAuthentication } from "../../platform/http/server-timing"
 import {
   cloudflareRateLimitStore,
   type CloudflareRateLimitBinding,
@@ -145,6 +146,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
     })
     const app = createHostedCoreApp(selected.plane, {
       ...selected.options,
+      authentication: timedAuthentication(selected.options.authentication),
       documents,
       idempotency: createIdempotencyCoordinator(d1ProjectionCommandIdempotency(controlPlaneDatabase)),
       liveSyncRoom,

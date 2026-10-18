@@ -123,9 +123,6 @@
   --color-surface-base-hover: var(--overlay-surface-hover);
   --color-surface-base-active: var(--overlay-surface-hover);
   --color-surface-inset-base: var(--overlay-surface-input);
-  --color-surface-inset-base-hover: var(--overlay-surface-hover);
-  --color-surface-inset-strong: var(--overlay-surface-input);
-  --color-surface-inset-strong-hover: var(--overlay-surface-hover);
   --color-surface-raised-base: var(--overlay-surface);
   --color-surface-raised-base-hover: var(--overlay-surface-hover);
   --color-surface-raised-base-active: var(--overlay-surface-hover);
@@ -133,7 +130,6 @@
   --color-border-base: var(--overlay-border);
   --color-border-weak-base: var(--overlay-border);
   --color-border-weaker-base: var(--overlay-border);
-  --color-text-stronger: var(--overlay-text);
   --color-text-strong: var(--overlay-text);
   --color-text-base: var(--overlay-text);
   --color-text-weak: var(--overlay-text-muted);
@@ -313,16 +309,9 @@
 html[data-theme="codex"] {
   --font-family-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --font-family-text:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --v2-font-family-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   font-family: var(--font-family-sans);
   --font-weight-body: 400;
   --font-weight-regular: 400;
-  --menu-item-font-size: var(--font-size-base);
-  --menu-item-font-weight: var(--font-weight-body);
-  --menu-item-line-height: var(--line-height-large);
   --sidebar-row-height: 30px;
   --sidebar-row-radius: var(--radius-xl);
   --sidebar-row-font-size: var(--font-size-base);
@@ -340,7 +329,6 @@ html[data-theme="codex"] {
   -webkit-font-smoothing: antialiased;
 
   --radius-overlay: 10px;
-  --elevation-shadow-raised: 0 2px 4px -1px light-dark(#00000014, #00000033);
 
   --elevation-stroke: 0 0 0 0.5px color-mix(in oklab, var(--text-strong) 12%, transparent);
   --elevation-prominent: var(--elevation-stroke), 0 3px 7.5px #0000000a, 0 0 20px #0000000d;

@@ -55,9 +55,9 @@ export function AccountSpendSection(props: { readonly days: UsageDays }): JSX.El
   const choices = (): readonly Choice<AccountSpendScope>[] => spendScopes(managesTeamKeys()).map((value) => ({ value, label: SCOPE_WORDS[value] }))
   const read = useAccountSpend(() => props.days, scope)
   return (
-    <section class="usage-breakdown" aria-labelledby={titleId}>
-      <div class="usage-breakdown-head">
-        <h3 id={titleId} class="usage-group-title">{t("usage.accounts")}</h3>
+    <section class="usage-section" aria-labelledby={titleId}>
+      <div class="usage-section-head">
+        <h3 id={titleId} class="usage-section-title">{t("usage.accounts")}</h3>
         <Show when={choices().length > 1}>
           <Choices label={t("usage.accounts.scope")} choices={choices()} value={scope()} onChange={setChosen} />
         </Show>

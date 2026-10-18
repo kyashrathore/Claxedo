@@ -3,14 +3,13 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 import {
   createWorkspaceRelayDurableObjectGateway,
   createWorkspaceRelayDurableObjectRoom,
-  setWorkspaceRelayAppOrigins,
-  setWorkspaceRelayAllowedOrigins,
   type WorkspaceRelayDurableObjectAlarms,
   type WorkspaceRelayDurableObjectHibernation,
   type WorkspaceRelayDurableObjectNamespace,
   type WorkspaceRelayDurableObjectRoomOptions,
   type WorkspaceRelayDurableObjectSocket,
 } from "./cloudflare"
+import { setWorkspaceRelayAllowedOrigins, setWorkspaceRelayAppOrigins } from "./relay-cors"
 import { parseWorkspaceRelayTarget, type WorkspaceRelayTarget } from "./relay-target"
 import { isSessionHostNamespace } from "./session-host-forwarding"
 import {

@@ -9,6 +9,7 @@ const en = {
   "panel.label": "Workspace panel",
   "panel.open": "Open workspace panel",
   "panel.close": "Close workspace panel",
+  "panel.details.show": "Show session details",
   "panel.maximize": "Maximize workspace panel",
   "panel.restore": "Restore workspace panel width",
   "panel.resize": "Resize workspace panel",

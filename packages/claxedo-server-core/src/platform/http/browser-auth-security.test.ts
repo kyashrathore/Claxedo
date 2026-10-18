@@ -124,6 +124,7 @@ describe("provider-neutral browser auth HTTP security", () => {
       "content-type, last-event-id, traceparent, tracestate, "
         + "x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
     )
+    expect(trusted.headers.get("access-control-max-age")).toBe("7200")
 
     for (const origin of [undefined, "null", "https://evil.example.test"]) {
       const rejected = await app(COOKIE_BROWSER).fetch(

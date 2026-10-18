@@ -15,6 +15,7 @@ export type ProjectRowsProps = SessionRowMenuActions & {
   readonly activeSessionId: string | undefined
   readonly activeTerminalId: string | undefined
   readonly onActivate: (row: SessionRowView) => void
+  readonly onPress: (row: SessionRowView) => void
   readonly markerOf: (placementId: PlacementId) => SessionMarker | undefined
   readonly projectLabel: string
   readonly prepareDrag: (row: RailRow) => string | undefined
@@ -53,6 +54,7 @@ function SessionRows(props: ProjectRowsProps): JSX.Element {
               projectLabel={props.projectLabel}
               active={props.activeSessionId === sessionId}
               onActivate={props.onActivate}
+              onPress={props.onPress}
               onRename={props.onRename}
               onToggleSettled={props.onToggleSettled}
               prepareDrag={() => props.prepareDrag({ kind: "session", key: sessionRowKey(sessionId), session: session() })}

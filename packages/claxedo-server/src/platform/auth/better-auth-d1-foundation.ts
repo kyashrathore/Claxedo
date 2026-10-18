@@ -1,9 +1,9 @@
 import { deviceApprovalTransaction } from "./device-approval-transaction"
 import { oauthConsentRevocation } from "./oauth-consent-revocation"
 import type { BetterAuthOptions } from "better-auth"
+import { APIError } from "better-auth/api"
 import { queueAfterTransactionHook } from "@better-auth/core/context"
 import { betterAuth } from "better-auth/minimal"
-import { jwt } from "better-auth/plugins"
 import { oauthDeviceAuthorization, oauthProvider } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 
@@ -22,6 +22,9 @@ import {
 } from "./better-auth-token-hash"
 
 export const BETTER_AUTH_SESSION_COOKIE = "__Secure-claxedo.session_token"
+export const BETTER_AUTH_CLI_CLIENT_ID = "claxedo-cli"
+export const BETTER_AUTH_DESKTOP_CLIENT_ID = "claxedo-desktop"
+export const BETTER_AUTH_INTROSPECTION_CLIENT_ID = "claxedo-control-plane"
 /**
  * `openid` is what makes the signed-in human have a NAME.
  *
@@ -118,25 +121,17 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
       : {}),
     account: {
       /**
-       * Validate the OAuth callback against the stored state, not a cookie.
+       * Better Auth already picks "database" when a database is configured;
+       * pinned so the browser binding below cannot change with a default.
        *
-       * Better Auth picks this default from whether a SERVER SESSION STORE
-       * exists; this deployment has none (Workers, opaque D1-backed tokens),
-       * so it silently chose "cookie" — and that path hardcodes a 300s
-       * `__Secure-claxedo.state` cookie with no knob. Five minutes is a
-       * plausible amount of time to spend on GitHub's own screens (2FA, an
-       * approval prompt, or simply switching away), and once it lapses the
-       * callback answers `state_mismatch`: an opaque error page, no recovery,
-       * and a user who cannot sign in. Reproduced from a shell with no
-       * browser at all — mint a state, replay it at
-       * `/api/auth/callback/github`, get `state_mismatch` while the row is
-       * still in `verification`.
-       *
-       * The row this writes anyway lives 10 minutes and is what "database"
-       * checks, so this both doubles the window and removes the dependency on
-       * a third-party redirect preserving a cookie. The state stays
-       * unguessable and single-use; this changes where it is read from, not
-       * what it protects.
+       * The callback must find the single-use `verification` row (10 minutes)
+       * AND the signed `__Secure-claxedo.state` cookie Better Auth sets beside
+       * it, which lives 300s with no knob. A sign-in that spends longer than
+       * five minutes on the provider's screens therefore answers
+       * `state_mismatch`. Never lift that with `skipStateCookieCheck`: the
+       * cookie is what ties the callback to the browser that started it, and
+       * without it a replayed callback URL signs a victim into an attacker's
+       * account.
        */
       storeStateStrategy: "database",
     },
@@ -179,14 +174,6 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
     databaseHooks: input.databaseHooks,
     plugins: [
       oauthConsentRevocation(),
-      jwt({
-        disableSettingJwtHeader: true,
-        jwt: {
-          issuer: betterAuthIssuer(input.configuration.public.apiOrigin),
-          audience: input.resource,
-          expirationTime: "5m",
-        },
-      }),
       oauthProvider({
         loginPage: `${input.configuration.public.appOrigin}/login`,
         consentPage: `${input.configuration.public.appOrigin}/oauth/consent`,
@@ -273,6 +260,14 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
         verificationUri: `${input.configuration.public.appOrigin}/device`,
         expiresIn: "10m",
         interval: "5s",
+        // The OAuth device path never calls `validateClient`, so without this
+        // any client that registered itself at `/oauth2/register` could ask for
+        // a user code and phish an approval through the `/device` page, which
+        // offers none of the consent page's opt-in scope choices.
+        onDeviceAuthRequest: async (clientId) => {
+          if (clientId === BETTER_AUTH_CLI_CLIENT_ID) return
+          throw new APIError("BAD_REQUEST", { error: "invalid_client", error_description: "This client may not use the device grant" })
+        },
       }),
       deviceApprovalTransaction(),
     ],

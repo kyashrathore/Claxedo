@@ -232,7 +232,10 @@ export const desktopMainComposition: Policy = {
   // downloaded update fails to install after the daemon was stopped. Reviewed
   // owner: Electron main's updater; it is split from `auto-update.ts` only so
   // it runs without the `electron` runtime. 91/25, no headroom.
-  ceilings: { modules: 91, packages: 25 },
+  // -3 modules: `main/native-mermaid.ts`, `main/native-renderer.ts` and
+  // `main/mermaid-renderer-path.ts` are gone with the native Mermaid helper;
+  // the renderer draws diagrams itself with pele. 88/25, no headroom.
+  ceilings: { modules: 88, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -704,19 +707,34 @@ export const desktopRenderer: Policy = {
   // terminal runs, each with its tooltip (owner: the app's rail domain,
   // `rail/view/settle-button.tsx`, `rail/view/session-marker-icon.tsx`). They
   // add no package edge.
-  // A harness picker's row words, shared with its cloud-choice help icon, the
-  // Check spin while that account's own check runs, and the add-account drawer
-  // with the step its one submit does (owner: the app's accounts domain,
-  // `accounts/view/account-rows.ts`, `accounts/view/cloud-choice-hint.tsx`,
-  // `accounts/view/account-actions.css`, `accounts/view/connect-drawer.tsx`,
-  // `accounts/connect-submit.ts`), in place of the Team accounts page, its
+  // A harness's account rows, each account its own row with its kind, masked
+  // key and where it works, the cloud-choice help popover, the Check spin while
+  // that account's own check runs, the add-account drawer with the step its one
+  // submit does, and the Models tab's settings placement for the connections
+  // that still need a project (owner: the app's accounts domain,
+  // `accounts/view/account-rows.ts`, `accounts/view/account-item.tsx`,
+  // `accounts/view/cloud-choice-help.tsx`, `accounts/view/account-actions.css`,
+  // `accounts/view/connect-drawer.tsx`, `accounts/connect-submit.ts`,
+  // `accounts/settings-placement.ts`), in place of the Team accounts page, its
   // store and form, and the connect dialog. They add no package edge.
-  // The Models tab's settings placement, the state that says why a harness's
-  // models cannot be listed yet (no project, a project whose folder is
-  // missing) (owner: the app's accounts domain,
-  // `accounts/settings-placement.ts`). It adds no package edge.
-  // 1403/36, no headroom.
-  ceilings: { modules: 1403, packages: 36 },
+  // The session details the workspace panel's Context tab shows, Environment
+  // and Background tasks (owner: the app's session domain,
+  // `session/view/details/`: the panel view, both cards, their models, their
+  // shared card frame and their strings). They add no package edge.
+  // Sandbox usage's By provider table and its project and provider grouping
+  // (owner: the app's usage domain, `usage/sandbox-groups.ts`,
+  // `usage/view/sandbox-provider-table.tsx`). They add no package edge.
+  // The lazy doors the web entry chunk needs (owner: the app's transcript
+  // domain, `transcript/code-view-lazy.tsx`, `transcript/source-diff.tsx`,
+  // `transcript/diff-source.ts`; the app's i18n domain,
+  // `i18n/locale-loads.ts`; the app's accounts domain,
+  // `accounts/harness-providers-state.tsx`,
+  // `accounts/catalog-account-sources.ts`). They add no package edge.
+  // Whether a session's live stream covers its snapshot reads, decided by
+  // event feed position (owner: the app's server domain,
+  // `server/snapshot-coverage.ts`). It adds no package edge.
+  // 1419/36, no headroom.
+  ceilings: { modules: 1419, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

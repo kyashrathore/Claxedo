@@ -29,6 +29,7 @@ import { createQueries } from "./queries"
 import { createPlacementStreams, type PlacementStreams } from "./placement-streams"
 import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { createSessionsApi } from "./sessions"
+import type { SnapshotCoverage } from "./snapshot-coverage"
 import { createStatusOwner, type StatusOwner } from "./status"
 import { createEventStreams } from "./streams"
 import { createStartup } from "./startup"
@@ -65,7 +66,7 @@ export type ServerHandle = Server & {
   readonly dispose: () => void
 }
 
-function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, events: EventIntake["subscribe"], queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
+function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, coverage: SnapshotCoverage, events: EventIntake["subscribe"], queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
   const telemetry = createProductTelemetry(account)
   const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
@@ -73,7 +74,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const cloud = createCloudApi(transport, workspaces, wakes, project, account)
   return {
     telemetry,
-    sessions: createSessionsApi(transport, workspaces, status, wakes, projection, telemetry, account),
+    sessions: createSessionsApi(transport, workspaces, status, coverage, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
     projects: { ...createProjectsApi(transport, queryClient, workspaces, cloud.create), ...createProjectEnvironmentApi(transport, queryClient, workspaces, account) },
     placements: {
@@ -137,7 +138,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     startup: startup.state,
     queryClient,
     subscribe: intake.subscribe,
-    ...serverApis(transport, workspaces, status, intake.subscribe, queryClient, queries, projection, account, port),
+    ...serverApis(transport, workspaces, status, placementStreams.coverage, intake.subscribe, queryClient, queries, projection, account, port),
     attachPlacement: placementStreams.attach,
     watchPlacement: placementStreams.watch,
     queries,

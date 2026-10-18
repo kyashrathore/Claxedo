@@ -200,8 +200,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   async usersMe(auth: SignedControlPlaneAuth) {
-    const who = await this.requirePrincipal(auth)
-    const [orgs, profile] = await Promise.all([this.organizationRows(who.userId), this.options.actorProfile?.(auth.principal?.identity)])
+    const [who, orgs, profile] = await Promise.all([
+      this.requirePrincipal(auth),
+      this.organizationRowsFor(auth),
+      this.options.actorProfile?.(auth.principal?.identity),
+    ])
     return {
       user_id: who.userId,
       actor_id: who.actorId,
@@ -214,8 +217,8 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   async listOrgs(auth: SignedControlPlaneAuth) {
-    const who = await this.requirePrincipal(auth)
-    return await this.organizationRows(who.userId)
+    const [, orgs] = await Promise.all([this.requirePrincipal(auth), this.organizationRowsFor(auth)])
+    return orgs
   }
 
   async createOrg(auth: SignedControlPlaneAuth, args: { name: string }) {
@@ -223,8 +226,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   async resolveOrgId(auth: SignedControlPlaneAuth) {
-    const who = await this.requirePrincipal(auth)
-    const orgs = await this.organizationRows(who.userId)
+    const [, orgs] = await Promise.all([this.requirePrincipal(auth), this.organizationRowsFor(auth)])
     if (orgs.length !== 1) {
       throw denied(
         orgs.length === 0
@@ -508,6 +510,19 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
     return requireHuman(this.database, this.options.deploymentId, auth)
+  }
+
+  /**
+   * The caller's organizations, read while `requirePrincipal` is still
+   * verifying the same auth: that verification refuses any principal whose
+   * identity row names another user, so a read keyed by the principal's user
+   * id either joins a verified principal or is discarded with the refusal.
+   * Reads that take the actor, and every write, still wait for the verified
+   * principal.
+   */
+  private async organizationRowsFor(auth: SignedControlPlaneAuth) {
+    if (!auth.principal) throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
+    return await this.organizationRows(auth.principal.userId)
   }
 
   /**

@@ -1,5 +1,5 @@
 import { checksum, markdownEnhances } from "@/ui/utils"
-import { bundledLanguages } from "shiki"
+import { bundledLanguages } from "shiki/langs"
 import { codeThemeName } from "./code-theme-name"
 import { transcriptMarked, type Block, type Projection } from "./markdown-stream"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"

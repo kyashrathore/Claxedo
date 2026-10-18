@@ -1,12 +1,14 @@
-import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, onMount, Show, Switch } from "solid-js"
 import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
 import { useElapsed } from "@/lib/delay"
+import { nextIdleSlice } from "@/lib/idle"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { useErrorCopy } from "@/i18n"
 import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
 import { useAccess, type SessionControls } from "@/access"
 import { useSessionStores, type SessionView } from "@/session"
+import { loadCodeViews } from "@/transcript"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { DockLayout, useDialog } from "@/ui"
 import { holdPaneReveal, useWorkbench } from "@/workbench"
@@ -19,7 +21,7 @@ import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { navTurns } from "./nav-turns"
-import { SessionHistoryLoading } from "./session-timeline-skeleton"
+import { SessionHistoryLoading } from "./session-history-loading"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasWhileShown } from "./delta-frames"
@@ -145,7 +147,7 @@ function SessionBody(props: {
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
           <Show when={props.view.state().kind === "loading" && !props.view.conversation()}>
-            <SessionHistoryLoading placementId={props.view.ref.placementId} />
+            <SessionHistoryLoading />
           </Show>
           <SessionTimeline view={props.view} queued={queueEdit.queued} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} />
         </div>
@@ -253,5 +255,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
 }
 
 export function SessionScreen(props: PaneProps<SessionLocation>) {
+  onMount(() => {
+    void nextIdleSlice()
+      .then(loadCodeViews)
+      .catch((error: unknown) => console.warn("The code views could not be fetched ahead; they load with the first diff shown", { error }))
+  })
   return <SessionSurface sessionRef={props.state} active={props.active} />
 }

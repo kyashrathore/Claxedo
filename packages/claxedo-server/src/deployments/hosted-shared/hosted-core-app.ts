@@ -6,7 +6,6 @@ import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
-import { responseTiming } from "../../platform/http/server-timing"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
@@ -60,7 +59,7 @@ import {
   hostedRouteGuardExemptions,
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
-import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedProjectSessionPages, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import { createSessionReaderRoutes } from "../../session/routes/session-reader"
 import type { HostedControlPlane } from "../../authority/hosted-services"
@@ -232,7 +231,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const app = withRouteOwnership(new Hono(), ownership, "hosted-core")
 
   app.use(securityHeaders())
-  app.use(responseTiming())
   const flushTelemetry = services.telemetry.flush
   if (flushTelemetry) {
     app.use(async (c, next) => {
@@ -745,7 +743,10 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
     }
     try {
-      return context.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(context.req.url))))
+      const query = parseSessionListQuery(new URL(context.req.url))
+      return context.json(query.scope === "projects"
+        ? await signedProjectSessionPages(services, authResult.auth, query)
+        : await signedSessionList(services, authResult.auth, query))
     } catch (err) {
       const mapped = sessionListErrorResponse(err)
       if (mapped) return mapped

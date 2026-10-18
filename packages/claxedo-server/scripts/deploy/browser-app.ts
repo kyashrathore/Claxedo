@@ -2,7 +2,10 @@ import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { promisify } from "node:util"
+import { brotliCompress, constants } from "node:zlib"
 
+import { PRECOMPRESSED_ASSET, brotliSibling } from "./app-asset-encoding"
 import { SERVER_ROOT } from "./wrangler-cli"
 
 export const APP_ROOT = path.resolve(SERVER_ROOT, "../claxedo-app")
@@ -16,7 +19,31 @@ async function runBun(args: readonly string[], env: NodeJS.ProcessEnv) {
   if (code !== 0) throw new Error(`bun ${args.join(" ")} exited with ${code}`)
 }
 
-/** Drop the Pages-only `_redirects` file and upload-only source maps; the assets Worker serves neither. */
+const brotli = promisify(brotliCompress)
+
+/** Write a quality-11 Brotli copy beside each script, style and sprite under `assets/` that it makes smaller. */
+async function writeBrotliSiblings(assets: string) {
+  const sources = (await readdir(assets, { recursive: true, withFileTypes: true }))
+    .filter((entry) => entry.isFile() && PRECOMPRESSED_ASSET.test(entry.name))
+    .map((entry) => path.join(entry.parentPath, entry.name))
+  await Promise.all(sources.map(async (source) => {
+    const bytes = await readFile(source)
+    const encoded = await brotli(bytes, {
+      params: {
+        [constants.BROTLI_PARAM_QUALITY]: constants.BROTLI_MAX_QUALITY,
+        [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT,
+        [constants.BROTLI_PARAM_SIZE_HINT]: bytes.byteLength,
+      },
+    })
+    if (encoded.byteLength < bytes.byteLength) await writeFile(brotliSibling(source), encoded)
+  }))
+}
+
+/**
+ * Drop the Pages-only `_redirects` file and upload-only source maps, which the
+ * assets Worker serves neither, and add the Brotli copies it serves instead of
+ * leaving those assets to the edge's faster, larger compression.
+ */
 export async function prepareBrowserArtifactsForWorkers(directory: string) {
   const root = path.resolve(directory)
   await rm(path.join(root, "_redirects"), { force: true })
@@ -28,6 +55,7 @@ export async function prepareBrowserArtifactsForWorkers(directory: string) {
     }
   }
   await removeSourceMaps(root)
+  await writeBrotliSiblings(path.join(root, "assets"))
 }
 
 /** A path-and-bytes identity of the built app, excluding the attestation that carries it. */

@@ -12,10 +12,11 @@
     "build": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts",
     "typecheck": "tsgo --noEmit -p tsconfig.json",
     "typecheck:e2e": "tsgo --noEmit -p tsconfig.e2e.json",
-    "test": "bun test --conditions browser src e2e/harness",
+    "test": "bun test --conditions browser src e2e/harness ./vite.web-document.test.ts",
     "check": "bun scripts/checks/run.ts",
     "e2e": "bun ./e2e/run.ts",
-    "e2e:perf-stream": "bun ./e2e/perf/run.ts"
+    "e2e:perf-stream": "bun ./e2e/perf/run.ts stream.ts",
+    "e2e:perf-web": "bun ./e2e/perf/run.ts web/main.ts"
   },
   "license": "MIT",
   "devDependencies": {
@@ -70,9 +71,9 @@
     "eventsource-parser": "3.1.0",
     "fuzzysort": "3.1.0",
     "marked": "catalog:",
-    "mermaid": "11.16.0",
     "morphdom": "2.7.8",
     "motion": "12.34.5",
+    "pele": "1.4.0",
     "remeda": "2.39.0",
     "remend": "catalog:",
     "shell-quote": "1.10.0",

@@ -16,7 +16,7 @@ export function SandboxTotalsSummary(props: { readonly totals: SandboxTotals; re
   }
   return (
     <dl class="usage-stats" aria-label={t("usage.totals")}>
-      <div class="usage-stat" data-lead={true}>
+      <div class="usage-stat">
         <dt>{t("usage.sandbox.rangeTotal", { days: props.days })}</dt>
         <dd>{format.spend(props.totals.cost)}</dd>
       </div>

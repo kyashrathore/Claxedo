@@ -2,7 +2,6 @@
    loads only the sheets of the components it renders. index.css adds them all. */
 @layer theme, base, components, utilities;
 
-@import "./colors.css" layer(theme);
 @import "./theme.css" layer(theme);
 
 @import "./base.css" layer(base);

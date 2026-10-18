@@ -1,7 +1,10 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { sessionEndpoint } from "./session-context"
+import { createSessionQueue } from "./session-queue"
 import { startSessionReads } from "./session-reads"
+import { createSnapshotCoverage } from "./snapshot-coverage"
+import type { RuntimeRoute } from "./transport"
 import { readTurnPageBefore } from "./transcript-reads"
 import { fakeServer, firstPath, firstRead, openPath, openView, ref, shape } from "./test-session-server"
 
@@ -22,6 +25,32 @@ test("session reads: an offline machine's session renders its published row, rea
   expect(server.runtimeCalls).toEqual([])
 })
 
+test("session reads: every snapshot read of an attached session reports the event feed position it is good up to, so the stream's start can be judged against it", async () => {
+  const reported: string[] = []
+  const coverage = {
+    ...createSnapshotCoverage(() => undefined),
+    reading: (_ref: unknown, datum: string) => ({ landed: (cursor: string | null | undefined) => void reported.push(`${datum}@${cursor}`), failed: () => void reported.push(`${datum} failed`) }),
+  }
+  const server = fakeServer({
+    reachable: () => true,
+    machine: true,
+    runtime: (path) => (path === firstPath ? firstRead() : path === openPath ? openView() : Response.json([])),
+  })
+  const headed = (response: Response, at: number) => new Response(response.body, { status: response.status, headers: { ...Object.fromEntries(response.headers), "X-Event-Cursor": `feed_1.${at}` } })
+  let at = 0
+  const transport = { ...server.context.transport, runtime: async (route: RuntimeRoute, path: string) => headed(await server.context.transport.runtime(route, path), (at += 1)) }
+  const context = { ...server.context, transport, coverage }
+  const reads = startSessionReads(context, ref, shape)
+  await Promise.all([reads.first, reads.status])
+  expect(await createSessionQueue(context).queue(ref)).toEqual([])
+  expect(reported).toEqual(["first@feed_1.1", "open@feed_1.2", "queue@feed_1.3"])
+
+  const failing = { ...context, transport: { ...transport, runtime: async () => Response.json({ error: { message: "down" } }, { status: 500 }) } }
+  const refused = startSessionReads(failing, ref, shape)
+  await Promise.allSettled([refused.first, refused.status, refused.backgroundWork, refused.requests, refused.todos, refused.goal, refused.subagents])
+  expect(reported.slice(3).toSorted()).toEqual(["first failed", "open failed"])
+})
+
 test("session reads: a machine session's first read lands while its open view is still pending", async () => {
   const facts = Promise.withResolvers<Response>()
   const server = fakeServer({
@@ -40,6 +69,17 @@ test("session reads: a machine session's first read lands while its open view is
     facts.resolve(openView())
     await Promise.all([reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal, reads.subagents])
   }
+})
+
+test("session reads: a machine session's first read is sent before its open view, so a runtime that answers in arrival order answers it first", async () => {
+  const server = fakeServer({
+    reachable: () => true,
+    machine: true,
+    runtime: (path) => (path === firstPath ? firstRead() : path === openPath ? openView() : Response.json([])),
+  })
+  const reads = startSessionReads(server.context, ref, shape)
+  await Promise.all([reads.first, reads.status, reads.requests])
+  expect(server.runtimeCalls).toEqual([firstPath, openPath])
 })
 
 test("session reads: a failed first read rejects the first read and the status it settles, and a failed open view rejects only its facts", async () => {

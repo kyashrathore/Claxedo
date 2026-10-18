@@ -25,7 +25,7 @@ export async function revealRail(app: Page, isMobile: boolean) {
 }
 
 async function showSettingsNav(app: Page, isMobile: boolean) {
-  const nav = app.getByRole("group", { name: "Account" })
+  const nav = app.getByRole("group", { name: "Account", exact: true })
   await expect(async () => {
     await expectNothingAnimating(app)
     const open = app.getByRole("button", { name: UI.openRail })

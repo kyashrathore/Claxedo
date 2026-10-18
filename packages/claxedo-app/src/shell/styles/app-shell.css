@@ -1,15 +1,4 @@
 :root {
-  --bp-sm: 640px;
-  --bp-md: 768px;
-  --bp-lg: 1024px;
-  --bp-xl: 1280px;
-  --bp-2xl: 1536px;
-  --bp-editor-wide: 1200px;
-  --bp-editor-compact: 900px;
-  --bp-xs: 420px;
-}
-
-:root {
   --z-modal: 300;
   --z-modal-popover: 320;
 }

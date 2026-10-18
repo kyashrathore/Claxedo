@@ -144,7 +144,9 @@ export type SettledFilter = "active" | "all"
 
 export type SessionListScope = { readonly projectId: ProjectId } | { readonly every: true; readonly sessionId?: SessionId }
 
-export type SessionListInput = SessionListScope & { readonly after?: string; readonly limit: number; readonly settled: SettledFilter }
+export type SessionPageQuery = { readonly limit: number; readonly settled: SettledFilter }
+
+export type SessionListInput = SessionListScope & SessionPageQuery & { readonly after?: string }
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]
@@ -190,6 +192,7 @@ export type SessionFirstRead = {
 }
 
 export type SessionReads = {
+  readonly firstSent: Promise<unknown>
   readonly first: Promise<SessionFirstRead>
   readonly runtime: Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined>
   readonly status: Promise<SessionStatus>

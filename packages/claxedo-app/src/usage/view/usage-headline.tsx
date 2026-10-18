@@ -26,8 +26,8 @@ export function UsageHeadline(props: { readonly summary: UsageSummary; readonly 
     <div class="usage-headline">
       <dl class="usage-stats" aria-label={t("usage.totals")}>
         <For each={stats()}>
-          {(stat, index) => (
-            <div class="usage-stat" data-lead={index() === 0}>
+          {(stat) => (
+            <div class="usage-stat">
               <dt>{stat.label}</dt>
               <dd>{stat.value}</dd>
             </div>

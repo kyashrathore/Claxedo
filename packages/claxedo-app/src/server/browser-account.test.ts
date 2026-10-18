@@ -35,7 +35,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean; identity
       if (options.identityUnavailable) return Response.json({ error: { code: "auth_verifier_unavailable", message: "Application identity mapping is unavailable", retryable: false } }, { status: 503 })
       if (options.unauthorized) return Response.json({ error: { code: "session_expired", message: "Sign in again" } }, { status: 401 })
       if (options.malformed) return Response.json({ workspaces: "wrong" })
-      return Response.json({ workspaces: url.searchParams.get("host") === "machine" ? [machine] : [cloud] })
+      return Response.json({ workspaces: url.searchParams.get("host") === "machine" ? [machine] : [cloud, machine] })
     }
     if (url.pathname === "/api/control/sessions/ses_1/outline") return Response.json({ session: { session_id: "ses_1", title: "Stored turn", created_at: 1, updated_at: 2 }, outline: { turns: [], complete: true }, page: { turns: [{ messages: stored }] } })
     if (url.pathname === "/api/control/session-list") return Response.json({ items: [{ sessionId: "ses_1", workspaceId: "ws_cloud", directory: "workspace:ws_cloud", title: "Stored turn", sessionRef: "ws_cloud:ses_1", createdAt: 1, updatedAt: 2 }] })

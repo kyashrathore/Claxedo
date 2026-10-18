@@ -22,6 +22,7 @@ type SidePanelProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children"> & {
   readonly open: boolean
   readonly width: number
   readonly label: string
+  readonly borderless?: boolean
   readonly header: JSX.Element
   readonly resize?: Omit<ResizeSeparatorProps, "class" | "grows" | "value" | "onDragging"> & {
     readonly onDragging?: (dragging: boolean) => void
@@ -35,6 +36,7 @@ export function SidePanel(props: SidePanelProps): JSX.Element {
     "open",
     "width",
     "label",
+    "borderless",
     "header",
     "resize",
     "onAvailable",
@@ -69,7 +71,7 @@ export function SidePanel(props: SidePanelProps): JSX.Element {
       classList={{ "pointer-events-none": !local.open }}
       style={{
         width: `${local.width}px`,
-        "border-left": `${SIDE_PANEL_BORDER_WIDTH}px solid var(--border-weaker-base)`,
+        "border-left": local.borderless ? "none" : `${SIDE_PANEL_BORDER_WIDTH}px solid var(--border-weaker-base)`,
         contain: "strict",
         "backface-visibility": "hidden",
         transform: local.open ? "translate3d(0, 0, 0)" : "translate3d(100%, 0, 0)",

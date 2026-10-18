@@ -1,3 +1,4 @@
+import type { CloudWorkspace } from "./cloud-types"
 import type { ProjectId } from "./ids"
 import type { Project } from "./types"
 import type { AccountCatalog } from "./wire/account-catalog"
@@ -6,6 +7,7 @@ import type { PlacementRecord } from "./wire/placements"
 export type LinkedCatalog = {
   readonly placements: readonly PlacementRecord[]
   readonly projects: readonly Project[]
+  readonly cloud: readonly CloudWorkspace[]
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
   readonly knowsWorkspace: (workspaceId: string) => boolean
 }
@@ -54,6 +56,10 @@ export function linkAccountCatalog(local: readonly PlacementRecord[], account: A
   return {
     placements,
     projects: account.projects.filter((project) => !pairs.has(project.id)),
+    cloud: account.cloud.map((workspace) => {
+      const home = pairs.get(workspace.projectId)
+      return home ? { ...workspace, projectId: home } : workspace
+    }),
     accountProjectIds: (projectId) => ids.get(projectId) ?? [],
     knowsWorkspace: (workspaceId) => known.has(workspaceId),
   }

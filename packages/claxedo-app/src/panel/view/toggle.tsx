@@ -4,6 +4,7 @@ import { useTranslator } from "@/i18n"
 import { SidePanelToggle } from "@/ui"
 import { panelDictionary } from "../i18n"
 import { usePanel } from "../store"
+import { workspaceTabIcon } from "../tab-presentation"
 
 function PanelToggleButton(): JSX.Element {
   const t = useTranslator(panelDictionary)
@@ -25,11 +26,28 @@ function PanelToggleButton(): JSX.Element {
   )
 }
 
+function SessionDetailsToggle(): JSX.Element {
+  const t = useTranslator(panelDictionary)
+  const panel = usePanel()
+  return (
+    <SidePanelToggle
+      testId="session-details-toggle"
+      icon={workspaceTabIcon("context")}
+      label={t("panel.details.show")}
+      open={false}
+      onToggle={() => panel.show({ kind: "context" })}
+    />
+  )
+}
+
 export function PanelToggle(): JSX.Element {
   const panel = usePanel()
   return (
     <Show when={!panel.open()}>
       <div data-testid="workspace-panel-floating-chrome" class="flex items-center gap-0.5">
+        <Show when={panel.sessionId() !== ""}>
+          <SessionDetailsToggle />
+        </Show>
         <PanelToggleButton />
       </div>
     </Show>

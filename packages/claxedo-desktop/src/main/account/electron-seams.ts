@@ -144,38 +144,10 @@ export function nodeTimer(): OAuthSeams["setTimeout"] {
 /** What a token endpoint answers with, on either grant. */
 type TokenPayload = {
   access_token?: string
-  id_token?: string
   refresh_token?: string
   expires_in?: number
   token_type?: string
   error?: string
-}
-
-/**
- * Compact JWTs have three base64url segments. An authorization server can still
- * issue opaque OAuth access tokens; those fail control-plane JWKS verification.
- */
-export function isJwtShaped(token: string) {
-  const parts = token.split(".")
-  return parts.length === 3 && parts.every((part) => part.length > 0)
-}
-
-/**
- * Bearer the hosted control plane can verify against the issuer's JWKS.
- *
- * Prefer a JWT `access_token`. When the OAuth app still issues opaque access
- * tokens, fall back to the OIDC `id_token` (always a JWT when `openid` was
- * granted). Opaque-only responses keep the access token so userinfo/sign-in
- * still work, but People/hosted ops will 401 until JWT access tokens are
- * enabled on the OAuth app.
- */
-export function controlPlaneBearerFromTokenPayload(payload: {
-  access_token?: string
-  id_token?: string
-}): string | undefined {
-  if (payload.access_token && isJwtShaped(payload.access_token)) return payload.access_token
-  if (payload.id_token && isJwtShaped(payload.id_token)) return payload.id_token
-  return payload.access_token
 }
 
 /**
@@ -229,7 +201,7 @@ async function postToTokenEndpoint(
  */
 function decodeTokenPayload(payload: TokenPayload | undefined, fallbackRefreshToken?: string): TokenSet | undefined {
   if (!payload) return undefined
-  const accessToken = controlPlaneBearerFromTokenPayload(payload)
+  const accessToken = payload.access_token
   if (
     !accessToken ||
     typeof payload.expires_in !== "number" ||
@@ -356,19 +328,13 @@ function parseTokenBody(body: string): TokenPayload | undefined {
 }
 
 /**
- * The one reader for a token endpoint's answer, on either grant.
- *
- * Both call sites used to assert `as TokenPayload` over `JSON.parse`/`.json()`
- * output, which claims six typed fields the server never promised — and the
- * consumers below then re-checked those types anyway. Reading the fields here
- * makes that check the ONLY one, and a hostile body simply loses the members
- * whose type is wrong instead of arriving mistyped.
+ * The one reader for a token endpoint's answer, on either grant. A hostile body
+ * loses the members whose type is wrong instead of arriving mistyped.
  */
 function parseTokenPayload(value: unknown): TokenPayload | undefined {
   if (!isRecord(value)) return undefined
   return {
     access_token: readString(value, "access_token"),
-    id_token: readString(value, "id_token"),
     refresh_token: readString(value, "refresh_token"),
     expires_in: readFiniteNumber(value, "expires_in"),
     token_type: readString(value, "token_type"),

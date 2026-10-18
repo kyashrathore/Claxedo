@@ -1,3 +1,4 @@
+import { renderMermaidSvg, sanitizeSvg } from "@/transcript"
 import "./markdown-viewer.css"
 
 const icons = {
@@ -85,11 +86,7 @@ export function openTableViewer(table: HTMLTableElement) {
   return close
 }
 
-export function openMermaidViewer(
-  source: string,
-  renderDiagram: (source: string) => Promise<string>,
-  sanitize: (svg: string) => string,
-) {
+export function openMermaidViewer(source: string) {
   closeActiveViewer?.()
 
   const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
@@ -257,10 +254,10 @@ export function openMermaidViewer(
   applyTransform()
   viewport.focus({ preventScroll: true })
 
-  void renderDiagram(source)
+  void renderMermaidSvg(source)
     .then((svg) => {
       if (closed) return
-      const safe = sanitize(svg)
+      const safe = sanitizeSvg(svg)
       if (!safe) throw new Error("Mermaid SVG failed sanitization")
       content.innerHTML = safe
       const diagram = content.querySelector<SVGSVGElement>("svg")

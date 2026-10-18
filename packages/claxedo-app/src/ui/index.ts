@@ -35,6 +35,7 @@ export {
   type SegmentedControlV2Props as SegmentedControlProps,
   type SegmentedControlItemV2Props as SegmentedControlItemProps,
 } from "@opencode-ai/ui/v2/segmented-control-v2"
+export { TabsV2 as Tabs, type TabsV2Props as TabsProps } from "@opencode-ai/ui/v2/tabs-v2"
 export { SelectV2 as Select, type SelectV2Props as SelectProps } from "@opencode-ai/ui/v2/select-v2"
 export { SemanticIcon, type SemanticIconConcept } from "./semantic-icon"
 export { ToastV2 as Toast, showToastV2 as showToast, toasterV2 as toaster, type ToastV2Action as ToastAction, type ToastV2Options as ToastOptions, type ToastV2RegionProps as ToastRegionProps } from "@opencode-ai/ui/v2/toast-v2"

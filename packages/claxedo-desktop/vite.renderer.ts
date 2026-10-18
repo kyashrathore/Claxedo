@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import type { ConfigEnv, UserConfig } from "vite"
 import type { PluginOption } from "vite"
 import { cloudConfig } from "../claxedo-app/vite.cloud.config"
-import { WEB_CONTENT_SECURITY_POLICY_PLUGIN } from "../claxedo-app/vite.content-security-policy"
+import { WEB_DOCUMENT_PLUGIN } from "../claxedo-app/vite.web-document"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
@@ -11,11 +11,6 @@ const normalize = (value: string) => value.replaceAll("\\", "/")
 export const desktopDir = normalize(fileURLToPath(new URL("./", import.meta.url)))
 const appDir = normalize(fileURLToPath(new URL("../claxedo-app/", import.meta.url)))
 const rendererRoot = normalize(fileURLToPath(new URL("./src/renderer/", import.meta.url)))
-
-export function desktopRendererChunk(id: string) {
-  // Mermaid's two class-diagram entries emit identical dynamic chunks.
-  return /mermaid[^]*\/classDiagram/.test(id) ? "mermaid-classDiagram" : undefined
-}
 
 function appAliases(config: UserConfig) {
   const aliases = config.resolve?.alias
@@ -27,15 +22,8 @@ function appAliases(config: UserConfig) {
   ]
 }
 
-type RendererOutput = NonNullable<NonNullable<UserConfig["build"]>["rollupOptions"]>["output"]
-
-function desktopOutput(output: RendererOutput): RendererOutput {
-  if (Array.isArray(output)) return output.map((item) => ({ ...item, manualChunks: desktopRendererChunk }))
-  return { ...output, manualChunks: desktopRendererChunk }
-}
-
-function isWebContentSecurityPolicy(plugin: PluginOption) {
-  return typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === WEB_CONTENT_SECURITY_POLICY_PLUGIN
+function isWebDocument(plugin: PluginOption) {
+  return typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === WEB_DOCUMENT_PLUGIN
 }
 
 function localServerUrl() {
@@ -50,7 +38,7 @@ export function createElectronRenderer(env: ConfigEnv): UserConfig {
     base: "./",
     publicDir: normalize(path.join(appDir, "public")),
     plugins: [
-      ...(app.plugins ?? []).filter((plugin) => !isWebContentSecurityPolicy(plugin)),
+      ...(app.plugins ?? []).filter((plugin) => !isWebDocument(plugin)),
       desktopRendererBoundaryManifestPlugin(desktopDir),
     ],
     server: {
@@ -69,7 +57,6 @@ export function createElectronRenderer(env: ConfigEnv): UserConfig {
       minify: "esbuild",
       rollupOptions: {
         ...app.build?.rollupOptions,
-        output: desktopOutput(app.build?.rollupOptions?.output),
         input: {
           main: normalize(path.join(rendererRoot, "index.local.html")),
           loading: normalize(path.join(rendererRoot, "loading.html")),

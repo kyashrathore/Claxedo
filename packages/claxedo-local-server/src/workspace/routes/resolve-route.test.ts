@@ -140,12 +140,18 @@ describe("local workspace resolve route", () => {
       { method: "POST" },
     )
 
-    for (const scope of ["", "?host=machine", "?host=provisioner"]) {
+    for (const scope of ["", "?host=provisioner"]) {
       const listed = await LocalWorkspaceRoutes().request(`http://localhost/${scope}`)
       expect(listed.status, scope).toBe(200)
       const body = await listed.json() as { workspaces: { remote_directory?: string }[] }
       expect(body.workspaces.some((row) => row.remote_directory === directory), scope).toBe(false)
     }
+  })
+
+  test("refuses a host other than the provisioner", async () => {
+    const refused = await LocalWorkspaceRoutes().request("http://localhost/?host=machine")
+    expect(refused.status).toBe(400)
+    await expect(refused.json()).resolves.toEqual({ error: { code: "workspace_host_invalid", message: "workspace host is invalid" } })
   })
 
   test("refuses a host it cannot answer rather than guessing one", async () => {

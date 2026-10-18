@@ -92,7 +92,7 @@ test("54 shell: rows are one line whose hover trades the age for the machine and
   expect((await page.request.get(`${signed.url}/api/workspace?host=provisioner`)).status()).toBe(401)
 })
 
-test("54 shell: a slow session shows the composer and says what it waits for; a failed read offers Retry; the rail list stays", async ({ signed, page, isMobile }) => {
+test("54 shell: a slow session shows the composer and a spinner; a failed read offers Retry; the rail list stays", async ({ signed, page, isMobile }) => {
   const { workspace, ids } = await sessionsIn(signed, ["Slow history", "Other session"])
   await signed.signIn(page, signed.owner)
   const rail = await showRail(page, isMobile)
@@ -109,7 +109,7 @@ test("54 shell: a slow session shows the composer and says what it waits for; a 
   await rail.getByRole("button", { name: "Slow history", exact: true }).click()
   await expect(page.getByTestId("session-messages-loading")).toBeVisible()
   await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible()
-  await expect(page.getByText("Still reading this session's history from Signed fixture machine.")).toBeVisible()
+  await expect(page.getByTestId("session-messages-loading").locator('[data-component="spinner"]')).toBeVisible()
   await history.release()
   await expect(page.getByText("Hello from the agent")).toBeVisible()
 

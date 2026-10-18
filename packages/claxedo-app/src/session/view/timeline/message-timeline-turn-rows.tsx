@@ -1,10 +1,9 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { ClaxedoIcon as Icon, Accordion, DiffChanges, StickyAccordionHeader, TextReveal, TextShimmer, useFileComponent } from "@/ui"
+import { ClaxedoIcon as Icon, Accordion, DiffChanges, StickyAccordionHeader, TextReveal, TextShimmer } from "@/ui"
 import { getDirectory, getFilename } from "@/ui/utils"
-import { normalize } from "@/transcript"
+import { SourceDiff } from "@/transcript"
 import type { SummaryDiff } from "./message-timeline.data"
 import type { TimelineTranslate } from "./model"
 
@@ -162,12 +161,9 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
 }
 
 function TimelineDiffView(props: { diff: SummaryDiff }) {
-  const fileComponent = useFileComponent()
-  const view = normalize(props.diff)
-
   return (
     <div data-slot="session-turn-diff-view" data-scrollable>
-      <Dynamic component={fileComponent} mode="diff" fileDiff={view.fileDiff} />
+      <SourceDiff source={props.diff} />
     </div>
   )
 }

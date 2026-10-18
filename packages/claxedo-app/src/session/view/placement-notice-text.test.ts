@@ -8,7 +8,7 @@ import type { SessionScreenText } from "./text"
 const t = ((key: string, params?: Record<string, unknown>) => [key, ...Object.values(params ?? {})].join(" ")) as SessionScreenText
 
 const facts = (runtime: WorkspaceRuntime, overrides: Partial<PlacementFacts> = {}): PlacementFacts =>
-  ({ placement: undefined, name: "main", runtime, wakeProgress: undefined, offline: false, harnessRunsInSessionHost: false, wake: () => undefined, startFresh: { label: "Start fresh", run: () => undefined }, ...overrides })
+  ({ placement: undefined, name: "main", runtime, wakeProgress: undefined, offline: false, harnessRunsInSessionHost: false, draft: false, wake: () => undefined, startFresh: { label: "Start fresh", run: () => undefined }, ...overrides })
 
 const noticeFor = (runtime: WorkspaceRuntime) => placementNotice(t, facts(runtime))?.message
 
@@ -35,6 +35,11 @@ test("a sandbox harness on an asleep workspace says a sent message wakes it, wit
   notice?.action?.run()
   expect(wakes).toEqual(["wake"])
   expect(sessionScreenEnglishDictionaries.en["sessionScreen.workspace.asleep"]).toBe("This workspace is asleep. It wakes when you send a message.")
+})
+
+test("a new session's composer says nothing about an asleep workspace, because its first message wakes it", () => {
+  expect(placementNotice(t, facts({ kind: "asleep" }, { draft: true }))).toBeUndefined()
+  expect(noticeFor({ kind: "asleep" })).toBe("sessionScreen.workspace.asleep")
 })
 
 test("an asleep workspace the server stopped for a reason of its own says why under the same notice", () => {

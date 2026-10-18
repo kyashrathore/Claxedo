@@ -25,22 +25,21 @@ const wakes: WorkspaceWakes = {
 
 type Posted = { readonly path: string; readonly body: unknown }
 
-function transport(posted: Posted[], stopAnswer: Record<string, unknown> = {}): Transport {
-  let provisioned = false
-  let status = "ready"
+type Catalog = { provisioned: boolean; status: string }
+
+function transport(posted: Posted[], catalog: Catalog, stopAnswer: Record<string, unknown> = {}): Transport {
   const json = async (path: string, init?: RequestInit) => {
     if (path === "/api/claxedo/bootstrap") return bootstrap
-    if (path === "/api/workspace?host=provisioner") return { workspaces: provisioned ? [{ ...created, status }] : [] }
     if (path === "/api/workspace/ws_new/lifecycle/stop" && init?.method === "POST") {
-      status = "stopped"
-      return { ok: true, status, ...stopAnswer }
+      catalog.status = "stopped"
+      return { ok: true, status: catalog.status, ...stopAnswer }
     }
     if (path === "/api/workspace/ws_new" && init?.method === "DELETE") {
-      provisioned = false
+      catalog.provisioned = false
       return { deleted: true }
     }
     if (path !== "/api/workspace/create") throw new Error(`unexpected ${path}`)
-    provisioned = true
+    catalog.provisioned = true
     posted.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
     return { workspaceId: "ws_new", directory: "/workspace/widgets" }
   }
@@ -51,24 +50,25 @@ type ProjectRead = (id: ProjectId) => Promise<Project>
 
 const publicProject: ProjectRead = async (id) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
 
-function world(signed: boolean, catalog: () => void = () => {}, project: ProjectRead = publicProject, stopAnswer: Record<string, unknown> = {}) {
+function world(sourceCreates: boolean, onCatalogRead: () => void = () => {}, project: ProjectRead = publicProject, stopAnswer: Record<string, unknown> = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const posted: Posted[] = []
   const operations: Array<{ readonly operation: string; readonly input: unknown }> = []
-  let made = false
+  const catalog: Catalog = { provisioned: false, status: "ready" }
   const account = createHostedAccount(async (operation, input) => {
     operations.push({ operation, input })
     if (operation === "workspace.create") {
-      made = true
+      catalog.provisioned = true
       return { workspaceId: "ws_new", directory: "/workspace/widgets" }
     }
-    if (operation === "workspace.list.provisioner") catalog()
-    return { workspaces: operation === "workspace.list.provisioner" && made ? [created] : [] }
+    if (operation === "session.shared.list") return { sessions: [] }
+    onCatalogRead()
+    return { workspaces: catalog.provisioned ? [{ ...created, status: catalog.status }] : [] }
   })
-  const wire = transport(posted, stopAnswer)
-  const workspaces = createWorkspaces(wire, queryClient, signed ? account : undefined)
-  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined)
-  const inventory = () => queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })
+  const wire = transport(posted, catalog, stopAnswer)
+  const workspaces = createWorkspaces(wire, queryClient, account)
+  const cloud = createCloudApi(wire, workspaces, wakes, project, sourceCreates ? account : undefined)
+  const inventory = () => queryClient.fetchQuery({ ...cloudQueries(wire, workspaces).cloud.list(), staleTime: Infinity })
   const listed = async () => (await inventory()).map((workspace) => workspace.id)
   const statuses = async () => (await inventory()).map((workspace) => workspace.status.kind)
   return { cloud, workspaces, posted, listed, statuses, queryClient, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
@@ -123,7 +123,7 @@ test("signed desktop: a connected repository names its connection and full name 
   })
 })
 
-test("without an account the project's cloud workspace is created and deleted on this server, and a bare repository's is refused", async () => {
+test("without a port to main the project's cloud workspace is created and deleted on this server and listed from the account catalog, and a bare repository's is refused", async () => {
   await createRoot(async (dispose) => {
     const { cloud, workspaces, posted, listed, operations } = world(false)
     await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, name: "Widgets" })).rejects.toThrow("created on a signed control plane")

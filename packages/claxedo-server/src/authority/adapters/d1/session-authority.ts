@@ -19,6 +19,7 @@ import {
   requireRuntimeSessionTime,
   requireRuntimeSessionTimes,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionListKeysetPage } from "@claxedo/server-core/session/navigation-list"
 import {
   SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
@@ -50,10 +51,11 @@ import {
   optionalText,
   positiveFence,
   requireText,
+  runtimeActorId,
   visibilityRows,
 } from "./session-input"
 import { D1SessionShares } from "./session-shares"
-import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
+import { readD1ProjectSessionPages, readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
 import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
@@ -846,6 +848,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }), who.userId, this.now())
   }
 
+  async listProjectSessionPages(auth: SignedControlPlaneAuth, page: SessionListKeysetPage) {
+    const who = await this.requirePrincipal(auth)
+    return await readD1ProjectSessionPages(this.database, page, who, maySql(who, "read", { kind: "session", alias: "s" }), this.now())
+  }
+
   async listOwnerSessionPage(owner: { userId: string; actorId: string }, query: SessionPageQuery) {
     return await readD1SessionPage(this.database, query, maySql(owner, "read", { kind: "session", alias: "s" }), owner.userId, this.now())
   }
@@ -1424,15 +1431,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 
   private async requireRuntimeActor(input: RuntimeSessionActor): Promise<Principal> {
-    const actorId = requireText(input.actorId, "actorId")
-    if (
-      (input.principalKind !== "user" && input.principalKind !== "service") ||
-      (input.actorKind !== "human" && input.actorKind !== "agent") ||
-      (input.principalKind === "user" && input.actorKind !== "human") ||
-      (input.principalKind === "service" && input.actorKind !== "agent")
-    ) {
-      throw new D1SessionAuthorityError("invalid_input", "Canonical runtime principal kind is required")
-    }
+    const actorId = runtimeActorId(input)
     const row = await this.database
       .prepare(
         `

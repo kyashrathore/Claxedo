@@ -1,60 +1,17 @@
-import { createEffect, createMemo, createSignal, For, onMount, Show, type JSX } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
-import { createProviderCatalog } from "@/composer"
+import { createMemo, createSignal, For, onMount, Show, type JSX } from "solid-js"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
-import { toAppError, useServer, type CatalogProvider, type PlacementId } from "@/server"
-import { ClaxedoIcon as Icon, requestConfirm, showToast, useDialog, Button, ProviderIcon, Tag } from "@/ui"
+import type { CatalogProvider } from "@/server"
+import { useDialog, Button, ProviderIcon, Tag } from "@/ui"
 import { catalogNeedsSearch, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
-import { createKeyActions } from "../key-actions"
-import { accountLabel, canDisconnectProvider, providerOwnKeys } from "../model"
-import { KeyRow, type KeyRowStore } from "./key-row"
+import { accountLabel, canDisconnectProvider } from "../model"
+import { KeyRow } from "./key-row"
 import { DialogCustomProvider } from "./custom-provider-dialog"
-import { CatalogAccountSourceChoice, createCatalogAccountSources } from "./catalog-account-source"
+import { CatalogAccountSourceChoice } from "./catalog-account-source"
+import type { HarnessProviders } from "../harness-providers-state"
 import { ProviderSetupRow } from "./provider-setup-row"
 import { SearchField } from "./search-field"
-
-export function createHarnessProviders(harness: () => string, placementId?: () => PlacementId | undefined) {
-  const server = useServer()
-  const catalog = createProviderCatalog({ server, harness, ...(placementId ? { placementId } : {}), eager: true })
-  const detailed = new Set<string>()
-  createEffect(() => {
-    const unsourced = catalog.connected().filter((provider) => provider.source === undefined && !detailed.has(provider.id))
-    for (const provider of unsourced) detailed.add(provider.id)
-    if (unsourced.length > 0) void Promise.allSettled(unsourced.map((provider) => catalog.load(provider.id)))
-  })
-  const t = useAccountsText()
-  const sources = createCatalogAccountSources(harness, () => catalog.refresh())
-  const stored = useQuery(() => server.queries.accounts.list())
-  const { activity, liveChecks, run, verify } = createKeyActions<"checking">(server.accounts.check)
-  const keys: KeyRowStore = { activity, liveChecks, check: (id) => void run("checking", id, () => verify(id)) }
-  const dialog = useDialog()
-  const disconnect = async (provider: CatalogProvider) => {
-    const names = { provider: provider.name, harness: harnessDisplayLabel(harness()) }
-    const confirmed = await requestConfirm(dialog, {
-      title: t("provider.disconnect.confirm.title", names),
-      body: t("provider.disconnect.confirm.body", names),
-      confirmLabel: t("common.disconnect"),
-      cancelLabel: t("common.cancel"),
-      destructive: true,
-    })
-    if (!confirmed) return
-    try {
-      await server.providerConnect.disconnect(harness(), provider)
-      showToast({
-        variant: "success",
-        icon: <Icon name="circle-check" />,
-        title: t("provider.disconnect.toast.disconnected.title", { provider: provider.name }),
-        description: t("provider.disconnect.toast.disconnected.description", { provider: provider.name }),
-      })
-      await catalog.refresh()
-    } catch (error) {
-      showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
-    }
-  }
-  return { harness, catalog, sources, disconnect, keys, ownKeys: (provider: CatalogProvider) => providerOwnKeys(provider, stored.data ?? []), connected: () => catalog.connected().length > 0, machine: () => server.capabilities()?.servingMachine?.name ?? "" }
-}
 
 function OwnKeyChecks(props: { readonly provider: CatalogProvider; readonly providers: HarnessProviders }) {
   return (
@@ -112,8 +69,6 @@ function CatalogNote(props: { readonly harness: string; readonly machine: string
     </SettingsEmpty>
   )
 }
-
-export type HarnessProviders = ReturnType<typeof createHarnessProviders>
 
 export function HarnessProvidersSection(props: { readonly providers: HarnessProviders; readonly onAddCustomRef?: (open: () => void) => void }) {
   const t = useAccountsText()

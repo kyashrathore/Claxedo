@@ -1,0 +1,4877 @@
+{
+  "schemaVersion": 1,
+  "runId": "claxedo-session-switch-walk-1792300214919",
+  "createdAt": "2026-10-18T05:11:30.001Z",
+  "provenance": {
+    "kind": "community-self-attested",
+    "frameworkRevision": "bfce5981e9ac796a03064850b6d42064315db769"
+  },
+  "environment": {
+    "platform": "linux",
+    "architecture": "x64",
+    "osRelease": "6.18.44-fc-v139",
+    "logicalCpuCount": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "totalMemoryBytes": 16874930176,
+    "freeMemoryBytes": 15798128640,
+    "loadAverage1mPerCpu": 0.405,
+    "powerSource": "unknown",
+    "lowPowerMode": null,
+    "memoryPressureLevel": null,
+    "nodeVersion": "v22.22.0"
+  },
+  "app": {
+    "id": "claxedo",
+    "name": "Claxedo",
+    "version": "0.0.1",
+    "buildDigestSha256": "cd9035c56187c53b64fba49966dcc1da7cd98df0f6d14c1f1dea6a3d9a18b152"
+  },
+  "driver": {
+    "name": "claxedo-reference",
+    "version": "3",
+    "sourceCommit": "81726a6ef3b47381c73335e7ec1a2157e7c3c401",
+    "digestSha256": "dc64d3a37305316730732c23aa4d135f925d0218a3177799c2da5f78926be40c"
+  },
+  "clockRule": {
+    "id": "settle-31-frames",
+    "declared": "settle-31-frames",
+    "frameLogs": {
+      "checked": 51,
+      "failed": 0,
+      "missing": 0
+    }
+  },
+  "sourceEventFormat": {
+    "id": "opencode-event",
+    "sourceRevision": "a9f7081d4015b0cc22ed67156e042b482a8d064a",
+    "schemaDigestSha256": "eb77e231c036820a83586dd18e270cca068fea4da134a24ab113f1eb0f3b473b"
+  },
+  "materialization": {
+    "mode": "native-opencode",
+    "corpusDigestSha256": "2a41c19fd8939c8cb5ed7d933c734e903a1b61ea28f5c1228f616fda6196bfb4",
+    "mappingDigestSha256": "23d6be995e4771832c5479d6b0664c06b747bb047be33bbbd2a4c5d953ddadfb"
+  },
+  "scenario": {
+    "id": "session-switch-walk",
+    "kind": "session-switch",
+    "digestSha256": "d5cf1ad1b7d3d592f28f02c89d4e74547092e402971799d6cf9160dffbb6131f",
+    "status": "public-comparable"
+  },
+  "corpus": {
+    "id": "opencode-completed-sessions",
+    "definitionDigestSha256": "b73d31b6ee0e1df8ac1218e267a70020e70dfceb2f2f8feb19e8b9fcfca996e7",
+    "digestSha256": "2a41c19fd8939c8cb5ed7d933c734e903a1b61ea28f5c1228f616fda6196bfb4",
+    "status": "public-comparable"
+  },
+  "runProfile": "publication",
+  "repetitions": 1,
+  "observations": [
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-00-latency-across-workspaces-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 0,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 0,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "control",
+        "destinationSessionId": "latency-across-workspaces-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:21.844Z",
+      "status": "valid",
+      "durationMs": 128.69999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 2615.3000000000466
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 2615.3000000000466
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 2615.3000000000466
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 2615.3000000000466
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 2486.600000000093,
+        "end": 2615.3000000000466
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-01-latency-across-workspaces-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 1,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 1,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:22.756Z",
+      "status": "valid",
+      "durationMs": 125.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 3572.399999999907
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 3572.399999999907
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 3572.399999999907
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 3572.399999999907
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 3446.899999999907,
+        "end": 3572.399999999907
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-02-latency-across-workspaces-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 2,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 2,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:23.735Z",
+      "status": "valid",
+      "durationMs": 104.39999999990687,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 4460.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 4460.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 4460.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 4460.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 4356.100000000093,
+        "end": 4460.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-03-latency-across-workspaces-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 3,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 3,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:24.798Z",
+      "status": "valid",
+      "durationMs": 109.19999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 5482.300000000047
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 5482.300000000047
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 5482.300000000047
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 5482.300000000047
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 5373.100000000093,
+        "end": 5482.300000000047
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-04-latency-across-workspaces-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 4,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 4,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:25.891Z",
+      "status": "valid",
+      "durationMs": 123.39999999990687,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 6575
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 6575
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 6575
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 6575
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 6451.600000000093,
+        "end": 6575
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-05-latency-across-workspaces-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 5,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 5,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:26.890Z",
+      "status": "valid",
+      "durationMs": 118.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 7626.699999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 7626.699999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 7626.699999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 7626.699999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 7508.199999999953,
+        "end": 7626.699999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-06-latency-across-workspaces-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 6,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 6,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:27.871Z",
+      "status": "valid",
+      "durationMs": 106.30000000004657,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 8605.199999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 8605.199999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 8605.199999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 8605.199999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 8498.899999999907,
+        "end": 8605.199999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-07-latency-across-workspaces-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 7,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 7,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:28.989Z",
+      "status": "valid",
+      "durationMs": 101.70000000018626,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 9612.600000000093
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 9612.600000000093
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 9612.600000000093
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 9612.600000000093
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 9510.899999999907,
+        "end": 9612.600000000093
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-08-progressive-resource-8388608",
+        "repetition": 0,
+        "sequence": 8,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 8,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "latency-across-workspaces-cold-0-1048576",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-18T05:10:30.106Z",
+      "status": "valid",
+      "durationMs": 131.4000000001397,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 10771.100000000093
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 10771.100000000093
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 10771.100000000093
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 10771.100000000093
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 10639.699999999953,
+        "end": 10771.100000000093
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-09-progressive-resource-1048576",
+        "repetition": 0,
+        "sequence": 9,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 9,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "progressive-resource-8388608",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:31.221Z",
+      "status": "valid",
+      "durationMs": 136.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 11929.699999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 11929.699999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 11929.699999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 11929.699999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 11793.199999999953,
+        "end": 11929.699999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-10-size-latency-long-1-1048576",
+        "repetition": 0,
+        "sequence": 10,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 10,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "progressive-resource-1048576",
+        "destinationSessionId": "size-latency-long-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:32.527Z",
+      "status": "valid",
+      "durationMs": 227.89999999990687,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 13099.699999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 13099.699999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 13099.699999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 13099.699999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 12871.800000000047,
+        "end": 13099.699999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-11-size-latency-long-0-1048576",
+        "repetition": 0,
+        "sequence": 11,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 11,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "size-latency-long-1-1048576",
+        "destinationSessionId": "size-latency-long-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:33.774Z",
+      "status": "valid",
+      "durationMs": 266.10000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 14481.300000000047
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 14481.300000000047
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 14481.300000000047
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 14481.300000000047
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 14215.199999999953,
+        "end": 14481.300000000047
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-12-size-latency-1-8388608",
+        "repetition": 0,
+        "sequence": 12,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 12,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-long-0-1048576",
+        "destinationSessionId": "size-latency-1-8388608"
+      },
+      "receivedAt": "2026-10-18T05:10:35.026Z",
+      "status": "valid",
+      "durationMs": 115.60000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 15540.600000000093
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 15540.600000000093
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 15540.600000000093
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 15540.600000000093
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 15425,
+        "end": 15540.600000000093
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-13-size-latency-1-1048576",
+        "repetition": 0,
+        "sequence": 13,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 13,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-1-8388608",
+        "destinationSessionId": "size-latency-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:36.161Z",
+      "status": "valid",
+      "durationMs": 143.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 16863.899999999907
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 16863.899999999907
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 16863.899999999907
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 16863.899999999907
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 16720.399999999907,
+        "end": 16863.899999999907
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-14-size-latency-0-8388608",
+        "repetition": 0,
+        "sequence": 14,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 14,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-1-1048576",
+        "destinationSessionId": "size-latency-0-8388608"
+      },
+      "receivedAt": "2026-10-18T05:10:37.235Z",
+      "status": "valid",
+      "durationMs": 135.5999999998603,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 17952.199999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 17952.199999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 17952.199999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 17952.199999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 17816.600000000093,
+        "end": 17952.199999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-15-size-latency-0-1048576",
+        "repetition": 0,
+        "sequence": 15,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 15,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-8388608",
+        "destinationSessionId": "size-latency-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:38.452Z",
+      "status": "valid",
+      "durationMs": 110.39999999990687,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 18997.199999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 18997.199999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 18997.199999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 18997.199999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 18886.800000000047,
+        "end": 18997.199999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-16-latency-within-workspace-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 16,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 16,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:39.616Z",
+      "status": "valid",
+      "durationMs": 153.10000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 20241
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 20241
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 20241
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 20241
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 20087.899999999907,
+        "end": 20241
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-17-latency-within-workspace-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 17,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 17,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-3-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:40.685Z",
+      "status": "valid",
+      "durationMs": 137.39999999990687,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 21365.699999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 21365.699999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 21365.699999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 21365.699999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 21228.300000000047,
+        "end": 21365.699999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-18-latency-within-workspace-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 18,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 18,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-2-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:41.822Z",
+      "status": "valid",
+      "durationMs": 123.19999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 22449.699999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 22449.699999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 22449.699999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 22449.699999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 22326.5,
+        "end": 22449.699999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-19-latency-within-workspace-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 19,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 19,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-1-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:43.103Z",
+      "status": "valid",
+      "durationMs": 107.19999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 23595.800000000047
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 23595.800000000047
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 23595.800000000047
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 23595.800000000047
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 23488.600000000093,
+        "end": 23595.800000000047
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-20-latency-within-workspace-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 20,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 20,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-0-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:44.158Z",
+      "status": "valid",
+      "durationMs": 97.5999999998603,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 24828.399999999907
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 24828.399999999907
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 24828.399999999907
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 24828.399999999907
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 24730.800000000047,
+        "end": 24828.399999999907
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-21-latency-within-workspace-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 21,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 21,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-3-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:45.156Z",
+      "status": "valid",
+      "durationMs": 125.60000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 25917.100000000093
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 25917.100000000093
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 25917.100000000093
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 25917.100000000093
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 25791.5,
+        "end": 25917.100000000093
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-22-latency-within-workspace-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 22,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 22,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-2-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:46.283Z",
+      "status": "valid",
+      "durationMs": 139.30000000004657,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 26900.600000000093
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 26900.600000000093
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 26900.600000000093
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 26900.600000000093
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 26761.300000000047,
+        "end": 26900.600000000093
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-cold-23-latency-within-workspace-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 23,
+        "workload": "list-walk",
+        "walkPass": 1,
+        "walkPosition": 23,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-1-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:47.314Z",
+      "status": "valid",
+      "durationMs": 94.10000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 28001
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 28001
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 28001
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 28001
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 27906.899999999907,
+        "end": 28001
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-00-latency-across-workspaces-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 24,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 0,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:48.514Z",
+      "status": "valid",
+      "durationMs": 68.70000000018626,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 29086.100000000093
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 29086.100000000093
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 29086.100000000093
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 29086.100000000093
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 29017.399999999907,
+        "end": 29086.100000000093
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-01-latency-across-workspaces-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 25,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 1,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:49.753Z",
+      "status": "valid",
+      "durationMs": 95.69999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 30287.699999999953
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 30287.699999999953
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 30287.699999999953
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 30287.699999999953
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 30192,
+        "end": 30287.699999999953
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-02-latency-across-workspaces-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 26,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 2,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:50.934Z",
+      "status": "valid",
+      "durationMs": 85.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 31457
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 31457
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 31457
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 31457
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 31371.5,
+        "end": 31457
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-03-latency-across-workspaces-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 27,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 3,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:52.027Z",
+      "status": "valid",
+      "durationMs": 110,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 32695.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 32695.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 32695.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 32695.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 32585.5,
+        "end": 32695.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-04-latency-across-workspaces-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 28,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 4,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-warm-0-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:53.138Z",
+      "status": "valid",
+      "durationMs": 65.60000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 33795.10000000009
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 33795.10000000009
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 33795.10000000009
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 33795.10000000009
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 33729.5,
+        "end": 33795.10000000009
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-05-latency-across-workspaces-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 29,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 5,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-3-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:54.019Z",
+      "status": "valid",
+      "durationMs": 80.80000000004657,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 34824.80000000005
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 34824.80000000005
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 34824.80000000005
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 34824.80000000005
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 34744,
+        "end": 34824.80000000005
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-06-latency-across-workspaces-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 30,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 6,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-2-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:55.022Z",
+      "status": "valid",
+      "durationMs": 67.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 35688.60000000009
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 35688.60000000009
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 35688.60000000009
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 35688.60000000009
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 35621.10000000009,
+        "end": 35688.60000000009
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-07-latency-across-workspaces-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 31,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 7,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-across-workspaces-cold-1-1048576",
+        "destinationSessionId": "latency-across-workspaces-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:56.076Z",
+      "status": "valid",
+      "durationMs": 89.19999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 36790.19999999995
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 36790.19999999995
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 36790.19999999995
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 36790.19999999995
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 36701,
+        "end": 36790.19999999995
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-08-progressive-resource-8388608",
+        "repetition": 0,
+        "sequence": 32,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 8,
+        "workspaceRelation": "across-workspaces",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "latency-across-workspaces-cold-0-1048576",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-18T05:10:57.298Z",
+      "status": "valid",
+      "durationMs": 101.10000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 37864.10000000009
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 37864.10000000009
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 37864.10000000009
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 37864.10000000009
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 37763,
+        "end": 37864.10000000009
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-09-progressive-resource-1048576",
+        "repetition": 0,
+        "sequence": 33,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 9,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "progressive-resource-8388608",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:58.436Z",
+      "status": "valid",
+      "durationMs": 95.80000000004657,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 39019.80000000005
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 39019.80000000005
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 39019.80000000005
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 39019.80000000005
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 38924,
+        "end": 39019.80000000005
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-10-size-latency-long-1-1048576",
+        "repetition": 0,
+        "sequence": 34,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 10,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "progressive-resource-1048576",
+        "destinationSessionId": "size-latency-long-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:10:59.601Z",
+      "status": "valid",
+      "durationMs": 150.60000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 40287.60000000009
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 40287.60000000009
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 40287.60000000009
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 40287.60000000009
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 40137,
+        "end": 40287.60000000009
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-11-size-latency-long-0-1048576",
+        "repetition": 0,
+        "sequence": 35,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 11,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "sourceSessionId": "size-latency-long-1-1048576",
+        "destinationSessionId": "size-latency-long-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:00.966Z",
+      "status": "valid",
+      "durationMs": 176.5999999998603,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 41490.39999999991
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 41490.39999999991
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 41490.39999999991
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 41490.39999999991
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 41313.80000000005,
+        "end": 41490.39999999991
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-12-size-latency-1-8388608",
+        "repetition": 0,
+        "sequence": 36,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 12,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-long-0-1048576",
+        "destinationSessionId": "size-latency-1-8388608"
+      },
+      "receivedAt": "2026-10-18T05:11:02.213Z",
+      "status": "valid",
+      "durationMs": 109.19999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 42751.39999999991
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 42751.39999999991
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 42751.39999999991
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 42751.39999999991
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 42642.19999999995,
+        "end": 42751.39999999991
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-13-size-latency-1-1048576",
+        "repetition": 0,
+        "sequence": 37,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 13,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-1-8388608",
+        "destinationSessionId": "size-latency-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:03.394Z",
+      "status": "valid",
+      "durationMs": 96.10000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 43985
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 43985
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 43985
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 43985
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 43888.89999999991,
+        "end": 43985
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-14-size-latency-0-8388608",
+        "repetition": 0,
+        "sequence": 38,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 14,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "size-latency-1-1048576",
+        "destinationSessionId": "size-latency-0-8388608"
+      },
+      "receivedAt": "2026-10-18T05:11:04.644Z",
+      "status": "valid",
+      "durationMs": 104.30000000004657,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 45168.60000000009
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 45168.60000000009
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 45168.60000000009
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 45168.60000000009
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 45064.30000000005,
+        "end": 45168.60000000009
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-15-size-latency-0-1048576",
+        "repetition": 0,
+        "sequence": 39,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 15,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-8388608",
+        "destinationSessionId": "size-latency-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:05.855Z",
+      "status": "valid",
+      "durationMs": 128.69999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 46401.89999999991
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 46401.89999999991
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 46401.89999999991
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 46401.89999999991
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 46273.19999999995,
+        "end": 46401.89999999991
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-16-latency-within-workspace-warm-3-1048576",
+        "repetition": 0,
+        "sequence": 40,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 16,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "size-latency-0-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:07.269Z",
+      "status": "valid",
+      "durationMs": 84.5,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 47592.39999999991
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 47592.39999999991
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 47592.39999999991
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 47592.39999999991
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 47507.89999999991,
+        "end": 47592.39999999991
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-17-latency-within-workspace-warm-2-1048576",
+        "repetition": 0,
+        "sequence": 41,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 17,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-3-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:08.301Z",
+      "status": "valid",
+      "durationMs": 96.60000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 49021.30000000005
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 49021.30000000005
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 49021.30000000005
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 49021.30000000005
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 48924.69999999995,
+        "end": 49021.30000000005
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-18-latency-within-workspace-warm-1-1048576",
+        "repetition": 0,
+        "sequence": 42,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 18,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-2-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:09.442Z",
+      "status": "valid",
+      "durationMs": 84,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 50062.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 50062.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 50062.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 50062.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 49978.5,
+        "end": 50062.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-19-latency-within-workspace-warm-0-1048576",
+        "repetition": 0,
+        "sequence": 43,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 19,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-1-1048576",
+        "destinationSessionId": "latency-within-workspace-warm-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:10.576Z",
+      "status": "valid",
+      "durationMs": 87.60000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 51150.5
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 51150.5
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 51150.5
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 51150.5
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 51062.89999999991,
+        "end": 51150.5
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-20-latency-within-workspace-cold-3-1048576",
+        "repetition": 0,
+        "sequence": 44,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 20,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-warm-0-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-3-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:11.665Z",
+      "status": "valid",
+      "durationMs": 96.29999999981374,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 52316.39999999991
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 52316.39999999991
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 52316.39999999991
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 52316.39999999991
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 52220.10000000009,
+        "end": 52316.39999999991
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-21-latency-within-workspace-cold-2-1048576",
+        "repetition": 0,
+        "sequence": 45,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 21,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-3-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-2-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:12.857Z",
+      "status": "valid",
+      "durationMs": 97.10000000009313,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 53419.60000000009
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 53419.60000000009
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 53419.60000000009
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 53419.60000000009
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 53322.5,
+        "end": 53419.60000000009
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-22-latency-within-workspace-cold-1-1048576",
+        "repetition": 0,
+        "sequence": 46,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 22,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-2-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-1-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:13.925Z",
+      "status": "valid",
+      "durationMs": 96.5999999998603,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 54607.19999999995
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 54607.19999999995
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 54607.19999999995
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 54607.19999999995
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 54510.60000000009,
+        "end": 54607.19999999995
+      }
+    },
+    {
+      "case": {
+        "caseId": "list-walk-0-warm-23-latency-within-workspace-cold-0-1048576",
+        "repetition": 0,
+        "sequence": 47,
+        "workload": "list-walk",
+        "walkPass": 2,
+        "walkPosition": 23,
+        "workspaceRelation": "within-workspace",
+        "sessionState": "warm",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "latency-within-workspace-cold-1-1048576",
+        "destinationSessionId": "latency-within-workspace-cold-0-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:15.051Z",
+      "status": "valid",
+      "durationMs": 92.19999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 55648.30000000005
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 55648.30000000005
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 55648.30000000005
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 55648.30000000005
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 55556.10000000009,
+        "end": 55648.30000000005
+      }
+    },
+    {
+      "case": {
+        "caseId": "progressive-resource-0-within-workspace-cold-1048576",
+        "repetition": 0,
+        "sequence": 0,
+        "workload": "progressive-resource",
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 1048576,
+        "sourceSessionId": "control",
+        "destinationSessionId": "progressive-resource-1048576"
+      },
+      "receivedAt": "2026-10-18T05:11:24.117Z",
+      "status": "valid",
+      "durationMs": 157.19999999995343,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 5511.09999999986
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 5511.09999999986
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 5511.09999999986
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 5511.09999999986
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 5353.899999999907,
+        "end": 5511.09999999986
+      }
+    },
+    {
+      "case": {
+        "caseId": "progressive-resource-0-within-workspace-cold-8388608",
+        "repetition": 0,
+        "sequence": 1,
+        "workload": "progressive-resource",
+        "workspaceRelation": "within-workspace",
+        "sessionState": "cold",
+        "transcriptBytes": 8388608,
+        "sourceSessionId": "control",
+        "destinationSessionId": "progressive-resource-8388608"
+      },
+      "receivedAt": "2026-10-18T05:11:25.783Z",
+      "status": "valid",
+      "durationMs": 134.80000000004657,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 7305.399999999907
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 7305.399999999907
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 7305.399999999907
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 7305.399999999907
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 7170.59999999986,
+        "end": 7305.399999999907
+      }
+    },
+    {
+      "case": {
+        "caseId": "progressive-resource-return-control",
+        "repetition": 0,
+        "workload": "resource-control",
+        "destinationSessionId": "control"
+      },
+      "receivedAt": "2026-10-18T05:11:26.466Z",
+      "status": "valid",
+      "durationMs": 50.39999999990687,
+      "readiness": {
+        "endpoint": "correct-content-painted-and-input-ready",
+        "checks": [
+          {
+            "id": "content-identity",
+            "passed": true,
+            "observedAt": 8207.899999999907
+          },
+          {
+            "id": "first-fold-painted",
+            "passed": true,
+            "observedAt": 8207.899999999907
+          },
+          {
+            "id": "two-presentations",
+            "passed": true,
+            "observedAt": 8207.899999999907
+          },
+          {
+            "id": "trusted-input",
+            "passed": true,
+            "observedAt": 8207.899999999907
+          }
+        ]
+      },
+      "clock": {
+        "kind": "single-monotonic-clock",
+        "clock": "claxedo-renderer-performance",
+        "start": 8157.5,
+        "end": 8207.899999999907
+      }
+    }
+  ],
+  "resources": {
+    "status": "valid",
+    "scope": "summed application process-family RSS",
+    "cpuDefinition": "sampled cumulative CPU delta for descendants observed inside each boundary, divided by wall time; newborn descendants count from birth and exited descendants through their final sample; 100% equals one logical core",
+    "baselineIdleAverageRssMiB": 1128.634,
+    "activeAverageRssMiB": 1160.211,
+    "activeMaximumRssMiB": 1183.586,
+    "activeP95RssMiB": 1181.254,
+    "endingIdleAverageRssMiB": 1176.766,
+    "retainedRssGrowthMiB": 48.132,
+    "rawSampleCount": 36,
+    "trend": [
+      {
+        "caseId": "progressive-resource-0-within-workspace-cold-1048576",
+        "switchSequence": 1,
+        "lane": "within-workspace-cold",
+        "transcriptBytes": 1048576,
+        "atMs": 1792300284120,
+        "rssBytes": 1220980736,
+        "cpuPercent": 80.952,
+        "wallMs": 1680,
+        "cpuDeltaMs": 1360,
+        "rssMiB": 1164.418
+      },
+      {
+        "caseId": "progressive-resource-0-within-workspace-cold-8388608",
+        "switchSequence": 2,
+        "lane": "within-workspace-cold",
+        "transcriptBytes": 8388608,
+        "atMs": 1792300285786,
+        "rssBytes": 1238634496,
+        "cpuPercent": 101.022,
+        "wallMs": 1663,
+        "cpuDeltaMs": 1680,
+        "rssMiB": 1181.254
+      }
+    ]
+  },
+  "resourceTrace": {
+    "version": 1,
+    "samples": [
+      {
+        "atMs": 1792300280690,
+        "collectionDurationMicros": 4725,
+        "rssBytes": 1183244288,
+        "cumulativeCpuTimeMs": 5380,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197500928,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195256320,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1800,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300280939,
+        "collectionDurationMicros": 3660,
+        "rssBytes": 1183244288,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197500928,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195256320,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300281188,
+        "collectionDurationMicros": 2567,
+        "rssBytes": 1183244288,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197500928,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195256320,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300281438,
+        "collectionDurationMicros": 2659,
+        "rssBytes": 1183244288,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197500928,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195256320,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300281690,
+        "collectionDurationMicros": 3907,
+        "rssBytes": 1183670272,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197861376,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195321856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300281938,
+        "collectionDurationMicros": 2574,
+        "rssBytes": 1183674368,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197865472,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195321856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300282190,
+        "collectionDurationMicros": 3981,
+        "rssBytes": 1183674368,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197865472,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195321856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300282438,
+        "collectionDurationMicros": 2557,
+        "rssBytes": 1183674368,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197865472,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195321856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300282440,
+        "collectionDurationMicros": 1931,
+        "rssBytes": 1183674368,
+        "cumulativeCpuTimeMs": 5390,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 790,
+            "rssBytes": 197865472,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195321856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255016960,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1810,
+            "rssBytes": 314490880,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300282693,
+        "collectionDurationMicros": 4701,
+        "rssBytes": 1183731712,
+        "cumulativeCpuTimeMs": 5440,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 800,
+            "rssBytes": 197898240,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195321856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 700,
+            "rssBytes": 255012864,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92409856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1850,
+            "rssBytes": 314519552,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300282942,
+        "collectionDurationMicros": 3166,
+        "rssBytes": 1183846400,
+        "cumulativeCpuTimeMs": 5470,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 800,
+            "rssBytes": 197898240,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1970,
+            "rssBytes": 195321856,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 710,
+            "rssBytes": 255012864,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 80,
+            "rssBytes": 92499968,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1870,
+            "rssBytes": 314544128,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300283191,
+        "collectionDurationMicros": 2784,
+        "rssBytes": 1186476032,
+        "cumulativeCpuTimeMs": 5720,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 810,
+            "rssBytes": 197885952,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196587520,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 780,
+            "rssBytes": 255410176,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1960,
+            "rssBytes": 315510784,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300283441,
+        "collectionDurationMicros": 2965,
+        "rssBytes": 1216888832,
+        "cumulativeCpuTimeMs": 6020,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 810,
+            "rssBytes": 197885952,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196587520,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 940,
+            "rssBytes": 272277504,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2100,
+            "rssBytes": 329056256,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300283691,
+        "collectionDurationMicros": 2535,
+        "rssBytes": 1216950272,
+        "cumulativeCpuTimeMs": 6280,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 810,
+            "rssBytes": 197885952,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196587520,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1180,
+            "rssBytes": 272248832,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 329146368,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300283941,
+        "collectionDurationMicros": 2623,
+        "rssBytes": 1217040384,
+        "cumulativeCpuTimeMs": 6550,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 810,
+            "rssBytes": 197885952,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196587520,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1430,
+            "rssBytes": 272248832,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2140,
+            "rssBytes": 329236480,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300284120,
+        "collectionDurationMicros": 2458,
+        "rssBytes": 1220980736,
+        "cumulativeCpuTimeMs": 6750,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 810,
+            "rssBytes": 197836800,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196542464,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1610,
+            "rssBytes": 275996672,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2160,
+            "rssBytes": 329523200,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300284123,
+        "collectionDurationMicros": 2767,
+        "rssBytes": 1223290880,
+        "cumulativeCpuTimeMs": 6750,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 810,
+            "rssBytes": 197836800,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196542464,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1610,
+            "rssBytes": 278306816,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2160,
+            "rssBytes": 329523200,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300284192,
+        "collectionDurationMicros": 3704,
+        "rssBytes": 1223561216,
+        "cumulativeCpuTimeMs": 6840,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 820,
+            "rssBytes": 197873664,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196542464,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1680,
+            "rssBytes": 278331392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2170,
+            "rssBytes": 329732096,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300284442,
+        "collectionDurationMicros": 3592,
+        "rssBytes": 1215987712,
+        "cumulativeCpuTimeMs": 7250,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 830,
+            "rssBytes": 197844992,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196542464,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1910,
+            "rssBytes": 269312000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2340,
+            "rssBytes": 331206656,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300284692,
+        "collectionDurationMicros": 3568,
+        "rssBytes": 1216241664,
+        "cumulativeCpuTimeMs": 7290,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 830,
+            "rssBytes": 197844992,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2040,
+            "rssBytes": 196542464,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1920,
+            "rssBytes": 269312000,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2370,
+            "rssBytes": 331460608,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300284942,
+        "collectionDurationMicros": 3798,
+        "rssBytes": 1217765376,
+        "cumulativeCpuTimeMs": 7440,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 840,
+            "rssBytes": 197820416,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2070,
+            "rssBytes": 196796416,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 1950,
+            "rssBytes": 269348864,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2450,
+            "rssBytes": 332718080,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300285191,
+        "collectionDurationMicros": 2625,
+        "rssBytes": 1238454272,
+        "cumulativeCpuTimeMs": 7770,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 840,
+            "rssBytes": 197824512,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 280039424,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2560,
+            "rssBytes": 340537344,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300285442,
+        "collectionDurationMicros": 3574,
+        "rssBytes": 1238265856,
+        "cumulativeCpuTimeMs": 8030,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 840,
+            "rssBytes": 197824512,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2350,
+            "rssBytes": 280039424,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2590,
+            "rssBytes": 340348928,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300285692,
+        "collectionDurationMicros": 3894,
+        "rssBytes": 1233551360,
+        "cumulativeCpuTimeMs": 8320,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 840,
+            "rssBytes": 197824512,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2600,
+            "rssBytes": 275079168,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2630,
+            "rssBytes": 340594688,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300285786,
+        "collectionDurationMicros": 2654,
+        "rssBytes": 1238634496,
+        "cumulativeCpuTimeMs": 8430,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 840,
+            "rssBytes": 197824512,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2700,
+            "rssBytes": 280039424,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2640,
+            "rssBytes": 340717568,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300285942,
+        "collectionDurationMicros": 3734,
+        "rssBytes": 1241079808,
+        "cumulativeCpuTimeMs": 8680,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2850,
+            "rssBytes": 278007808,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2730,
+            "rssBytes": 345214976,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300286192,
+        "collectionDurationMicros": 3740,
+        "rssBytes": 1233948672,
+        "cumulativeCpuTimeMs": 8960,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2940,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2920,
+            "rssBytes": 345337856,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300286443,
+        "collectionDurationMicros": 4421,
+        "rssBytes": 1233907712,
+        "cumulativeCpuTimeMs": 9000,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2940,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345296896,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300286719,
+        "collectionDurationMicros": 2518,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300286971,
+        "collectionDurationMicros": 4089,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300287219,
+        "collectionDurationMicros": 2858,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300287470,
+        "collectionDurationMicros": 2916,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300287721,
+        "collectionDurationMicros": 3844,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300287970,
+        "collectionDurationMicros": 3295,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300288219,
+        "collectionDurationMicros": 2818,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      },
+      {
+        "atMs": 1792300288471,
+        "collectionDurationMicros": 4140,
+        "rssBytes": 1233928192,
+        "cumulativeCpuTimeMs": 9010,
+        "inaccessibleProcessCount": 0,
+        "rootProcessFound": true,
+        "missingExternalProcessCount": 0,
+        "processes": [
+          {
+            "pid": 10027,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 850,
+            "rssBytes": 197804032,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10030,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64143360,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10031,
+            "startTimeMs": 1792300276000,
+            "cpuTimeMs": 20,
+            "rssBytes": 64425984,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10048,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2120,
+            "rssBytes": 198971392,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10066,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2950,
+            "rssBytes": 270753792,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10070,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 90,
+            "rssBytes": 92512256,
+            "name": "claxedo"
+          },
+          {
+            "pid": 10092,
+            "startTimeMs": 1792300277000,
+            "cpuTimeMs": 2960,
+            "rssBytes": 345317376,
+            "name": "claxedo"
+          }
+        ]
+      }
+    ],
+    "windows": {
+      "baseline": {
+        "startMs": 1792300280936,
+        "endMs": 1792300282437
+      },
+      "active": {
+        "startMs": 1792300282437,
+        "endMs": 1792300286466
+      },
+      "ending": {
+        "startMs": 1792300286966,
+        "endMs": 1792300288467
+      }
+    },
+    "boundaries": [
+      {
+        "case": {
+          "caseId": "progressive-resource-0-within-workspace-cold-1048576",
+          "repetition": 0,
+          "sequence": 0,
+          "workload": "progressive-resource",
+          "workspaceRelation": "within-workspace",
+          "sessionState": "cold",
+          "transcriptBytes": 1048576,
+          "sourceSessionId": "control",
+          "destinationSessionId": "progressive-resource-1048576"
+        },
+        "switchSequence": 1,
+        "beforeSampleIndex": 8,
+        "afterSampleIndex": 15
+      },
+      {
+        "case": {
+          "caseId": "progressive-resource-0-within-workspace-cold-8388608",
+          "repetition": 0,
+          "sequence": 1,
+          "workload": "progressive-resource",
+          "workspaceRelation": "within-workspace",
+          "sessionState": "cold",
+          "transcriptBytes": 8388608,
+          "sourceSessionId": "control",
+          "destinationSessionId": "progressive-resource-8388608"
+        },
+        "switchSequence": 2,
+        "beforeSampleIndex": 16,
+        "afterSampleIndex": 24
+      }
+    ],
+    "monitorErrors": [],
+    "failure": null
+  },
+  "derivation": {
+    "version": 1,
+    "summaryDigestSha256": "8f6b77de9ebbfd5e638c67a4e843bff56171f05bf70c09f0388056c11014d21e",
+    "summary": {
+      "cold-1048576": {
+        "transcriptBytes": 1048576,
+        "status": "valid",
+        "average": 120.295,
+        "maximum": 153.1,
+        "valid": 19,
+        "attempted": 19,
+        "p95": 153.1
+      },
+      "cold-8388608": {
+        "transcriptBytes": 8388608,
+        "status": "valid",
+        "average": 127.533,
+        "maximum": 135.6,
+        "valid": 3,
+        "attempted": 3,
+        "p95": 135.6
+      },
+      "cold-long-1048576": {
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "status": "valid",
+        "average": 247,
+        "maximum": 266.1,
+        "valid": 2,
+        "attempted": 2,
+        "p95": 266.1
+      },
+      "warm-1048576": {
+        "transcriptBytes": 1048576,
+        "status": "valid",
+        "average": 90.447,
+        "maximum": 128.7,
+        "valid": 19,
+        "attempted": 19,
+        "p95": 128.7
+      },
+      "warm-8388608": {
+        "transcriptBytes": 8388608,
+        "status": "valid",
+        "average": 104.867,
+        "maximum": 109.2,
+        "valid": 3,
+        "attempted": 3,
+        "p95": 109.2
+      },
+      "warm-long-1048576": {
+        "transcriptBytes": 1048576,
+        "rowShape": "long",
+        "status": "valid",
+        "average": 163.6,
+        "maximum": 176.6,
+        "valid": 2,
+        "attempted": 2,
+        "p95": 176.6
+      }
+    }
+  }
+}

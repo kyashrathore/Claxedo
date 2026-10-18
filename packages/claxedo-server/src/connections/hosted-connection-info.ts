@@ -344,10 +344,12 @@ export async function hostedSessionHostConnection(
   if (!workspaceRoleAllowsWrite(ingress.result.role)) {
     return { error: apiError("workspace_authorization_denied", "Creating a session needs write access to the workspace"), status: 403 } as const
   }
+  const [orgId, actor] = await Promise.all([runtimeTokenOrgId(ingress.authority, auth, ingress.workspace), resolveRuntimeActor(ingress.authority, auth)])
   return mintSessionHostConnection(ingress.authority, options, auth, {
     workspaceId,
     sessionId,
-    orgId: await runtimeTokenOrgId(ingress.authority, auth, ingress.workspace),
+    actor,
+    orgId,
     homeRegion: ingress.homeRegion,
     relayUrl: ingress.relayUrl,
     role: "editor",
@@ -461,19 +463,24 @@ export async function hostedSessionConnection(
   const { workspaceId, sessionId } = input
   const authority = requireAuthority(services)
   await authority.authorizeSessionRead(auth, { workspaceId, sessionId })
-  const owner = await authority.resolveWorkspaceOwner?.(workspaceId)
-  const placement = await services?.sessionHosts?.readSessionHostPlacement({ workspaceId, sessionId })
+  const [owner, placement] = await Promise.all([
+    authority.resolveWorkspaceOwner?.(workspaceId),
+    services?.sessionHosts?.readSessionHostPlacement({ workspaceId, sessionId }),
+  ])
   if (owner && placement?.session && sessionHostAdmits(placement, { workspaceId, sessionId })) {
     const homeRegion = normalizeClaxedoRegion(undefined, options.defaultHomeRegion)
     const relayUrl = configuredRelayUrl(options, homeRegion)
     if (!relayUrl) throw new ControlPlaneAuthError(503, "runtime_access_token_signer_unavailable", "Workspace Relay URL is not configured")
-    const writes = await authority.authorizeSessionWrite(auth, { workspaceId, sessionId }).then(() => true, (error: unknown) => {
-      if (error instanceof ControlPlaneAuthError && error.status === 403) return false
-      throw error
-    })
-    return mintSessionHostConnection(authority, options, auth, { workspaceId, sessionId, orgId: owner.orgId, homeRegion, relayUrl, role: writes ? "editor" : "viewer" })
+    const [writes, actor] = await Promise.all([
+      authority.authorizeSessionWrite(auth, { workspaceId, sessionId }).then(() => true, (error: unknown) => {
+        if (error instanceof ControlPlaneAuthError && error.status === 403) return false
+        throw error
+      }),
+      resolveRuntimeActor(authority, auth),
+    ])
+    return mintSessionHostConnection(authority, options, auth, { workspaceId, sessionId, actor, orgId: owner.orgId, homeRegion, relayUrl, role: writes ? "editor" : "viewer" })
   }
-  const machine = await services?.relay.hostTunnelResolver?.(workspaceId)
+  const [machine, actor] = await Promise.all([services?.relay.hostTunnelResolver?.(workspaceId), resolveRuntimeActor(authority, auth)])
   const sandbox = machine?.active ? undefined : await services?.sandbox.sandboxManager?.target(workspaceId).catch(() => undefined)
   const target = machine?.active
     ? { backing: "local-worktree" as const, hostId: machine.hostId }
@@ -487,7 +494,6 @@ export async function hostedSessionConnection(
   if (!relayUrl) {
     throw new ControlPlaneAuthError(503, "runtime_access_token_signer_unavailable", "Workspace Relay URL is not configured")
   }
-  const actor = await resolveRuntimeActor(authority, auth)
   const token = await configuredRuntimeAccessTokenSigner(options)({
     principalKind: "user",
     ...actor,
