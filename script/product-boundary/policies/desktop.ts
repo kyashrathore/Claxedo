@@ -738,8 +738,13 @@ export const desktopRenderer: Policy = {
   // settings, `settings/view/machine-connect.tsx`) and the static shiki
   // language table (owner: the app's transcript domain,
   // `transcript/markdown-code-languages.ts`). They add no package edge.
-  // 1462/36, no headroom.
-  ceilings: { modules: 1462, packages: 36 },
+  // The gate that holds the code viewers', docks', composer's and panel's
+  // prefetches until a session's first page has painted, and the paint
+  // callback it shares with the workbench's deferred unmount (owner: the
+  // app's shell and platform code, `lib/prefetch.tsx`, `lib/after-paint.ts`).
+  // They add no package edge.
+  // 1464/36, no headroom.
+  ceilings: { modules: 1464, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
