@@ -1,6 +1,9 @@
 import { deviceApprovalTransaction } from "./device-approval-transaction"
+import { desktopConsentPolicy } from "./desktop-consent-policy"
+import { deviceCodeRequestPolicy } from "./device-code-request-policy"
 import { oauthClientRegistrationPolicy } from "./oauth-client-registration-policy"
 import { oauthConsentRevocation } from "./oauth-consent-revocation"
+import { oauthSessionRevocation } from "./oauth-session-revocation"
 import type { BetterAuthOptions } from "better-auth"
 import { APIError } from "better-auth/api"
 import { queueAfterTransactionHook } from "@better-auth/core/context"
@@ -175,7 +178,9 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
     databaseHooks: input.databaseHooks,
     plugins: [
       oauthConsentRevocation(),
+      oauthSessionRevocation(),
       oauthClientRegistrationPolicy(),
+      desktopConsentPolicy(BETTER_AUTH_DESKTOP_CLIENT_ID),
       oauthProvider({
         loginPage: `${input.configuration.public.appOrigin}/login`,
         consentPage: `${input.configuration.public.appOrigin}/oauth/consent`,
@@ -275,6 +280,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
           throw new APIError("BAD_REQUEST", { error: "invalid_client", error_description: "This client may not use the device grant" })
         },
       }),
+      deviceCodeRequestPolicy(),
       deviceApprovalTransaction(),
     ],
   } satisfies BetterAuthOptions

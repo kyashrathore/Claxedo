@@ -10,7 +10,7 @@ import type { AuthEmailMessage } from "../../../platform/auth/better-auth-config
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
 import { createHostedCoreApp } from "../../../deployments/hosted-shared/hosted-core-app"
 import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../http/idempotency"
-import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_NATIVE_SCOPES } from "../../../platform/auth/better-auth-d1-foundation"
+import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID, BETTER_AUTH_NATIVE_SCOPES } from "../../../platform/auth/better-auth-d1-foundation"
 import {
   betterAuthIntrospectionClientSecretCiphertext,
   betterAuthNativeClientProvisioningStatements,
@@ -38,6 +38,7 @@ const INTROSPECTION_SECRET = "introspection-secret-that-is-also-at-least-thirty-
 let instance: Miniflare
 let disposeControlPlane: () => Promise<void>
 let controlPlaneDatabase: D1Database
+let authDatabase: D1Database
 let app: Hono
 let descriptor: ReturnType<typeof composeBetterAuthD1UserDeployedControlPlane>["options"]["authentication"]["descriptor"]
 const mail: AuthEmailMessage[] = []
@@ -51,7 +52,7 @@ async function migrateAuth(database: D1Database) {
 
 beforeAll(async () => {
   instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2025-05-01", d1Databases: ["AUTH_DB"] })
-  const authDatabase = await instance.getD1Database("AUTH_DB")
+  authDatabase = await instance.getD1Database("AUTH_DB")
   await migrateAuth(authDatabase)
   const ciphertext = await betterAuthIntrospectionClientSecretCiphertext(BETTER_AUTH_SECRET, INTROSPECTION_SECRET)
   for (const sql of betterAuthNativeClientProvisioningStatements(API, ciphertext)) await authDatabase.prepare(sql).run()
@@ -136,6 +137,49 @@ async function claimOwnership(person: { cookie: string; origin: string }) {
   await controlPlaneDatabase.prepare(ownerClaimMutationSql(await ownerClaimProvisioning({ deploymentId: "deployment-1", apiOrigin: API, subject, claim }))).run()
   const redeemed = await request("/api/claxedo/auth/bootstrap-owner", json({}, { ...person, [USER_DEPLOYED_OWNER_CLAIM_HEADER]: claim }))
   expect(redeemed.status, await redeemed.clone().text()).toBe(200)
+}
+
+type McpTokens = { access_token: string; refresh_token: string; clientId: string }
+
+/** An MCP host's whole authorization: RFC 7591 registration, consent, and the code exchange. */
+async function mcpGrant(person: { cookie: string; origin: string }, port: number): Promise<McpTokens> {
+  const redirect = `http://127.0.0.1:${port}/callback`
+  const registered = await request("/api/auth/oauth2/register", json({
+    client_name: "Fixture MCP host", redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"], token_endpoint_auth_method: "none", application_type: "native",
+  }))
+  expect(registered.status, await registered.clone().text()).toBe(201)
+  const clientId = ((await registered.json()) as { client_id: string }).client_id
+  const scope = "claxedo:read offline_access"
+  const verifier = randomBytes(32).toString("base64url")
+  const asked = await request(`/api/auth/oauth2/authorize?${new URLSearchParams({
+    client_id: clientId, redirect_uri: redirect, response_type: "code", scope, resource: MCP_RESOURCE, state: "s",
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
+  })}`, { headers: { cookie: person.cookie }, redirect: "manual" })
+  expect(asked.status).toBe(302)
+  const consented = await request("/api/auth/oauth2/consent", json(
+    { accept: true, oauth_query: new URL(asked.headers.get("location") ?? "", API).search, scope }, person,
+  ))
+  expect(consented.status, await consented.clone().text()).toBe(200)
+  const code = new URL(((await consented.json()) as { url: string }).url).searchParams.get("code")
+  if (!code) throw new Error("consent redirected without a code")
+  const exchanged = await request("/api/auth/oauth2/token", form({
+    grant_type: "authorization_code", code, redirect_uri: redirect, client_id: clientId, code_verifier: verifier, resource: MCP_RESOURCE,
+  }))
+  expect(exchanged.status, await exchanged.clone().text()).toBe(200)
+  const tokens = (await exchanged.json()) as Omit<McpTokens, "clientId">
+  expect(tokens.refresh_token).toMatch(/\S/)
+  return { ...tokens, clientId }
+}
+
+const refreshMcp = (tokens: McpTokens) => request("/api/auth/oauth2/token", form({
+  grant_type: "refresh_token", refresh_token: tokens.refresh_token, client_id: tokens.clientId, resource: MCP_RESOURCE,
+}))
+
+async function oauthTokenRows(clientId: string) {
+  const count = async (table: string) => (await authDatabase
+    .prepare(`select count(*) as rows from "${table}" where "clientId" = ?`).bind(clientId).first<{ rows: number }>())?.rows
+  return { access: await count("oauthAccessToken"), refresh: await count("oauthRefreshToken") }
 }
 
 describe("claxedo login on the Better Auth D1 composition", () => {
@@ -292,7 +336,7 @@ describe("claxedo login on the Better Auth D1 composition", () => {
 
   test("a client that registered itself cannot obtain a user code to phish an approval with", async () => {
     const registered = await request("/api/auth/oauth2/register", json({
-      client_name: "claxedo-cli", grant_types: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
+      client_name: "Terminal helper", grant_types: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
       token_endpoint_auth_method: "none", application_type: "native",
     }))
     expect(registered.status, await registered.clone().text()).toBe(201)
@@ -307,32 +351,83 @@ describe("claxedo login on the Better Auth D1 composition", () => {
 
   test("a token an MCP host obtained for the MCP resource is not a control-plane credential", async () => {
     const owner = await signIn("mcp-host-owner@device-login.test")
-    const redirect = "http://127.0.0.1:51789/callback"
-    const registered = await request("/api/auth/oauth2/register", json({
-      client_name: "Fixture MCP host", redirect_uris: [redirect], grant_types: ["authorization_code"],
-      response_types: ["code"], token_endpoint_auth_method: "none", application_type: "native",
-    }))
-    expect(registered.status, await registered.clone().text()).toBe(201)
-    const clientId = ((await registered.json()) as { client_id: string }).client_id
-    const verifier = randomBytes(32).toString("base64url")
-    const asked = await request(`/api/auth/oauth2/authorize?${new URLSearchParams({
-      client_id: clientId, redirect_uri: redirect, response_type: "code", scope: "claxedo:read", resource: MCP_RESOURCE, state: "s",
-      code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
-    })}`, { headers: { cookie: owner.cookie }, redirect: "manual" })
-    expect(asked.status).toBe(302)
-    const consented = await request("/api/auth/oauth2/consent", json(
-      { accept: true, oauth_query: new URL(asked.headers.get("location") ?? "", API).search, scope: "claxedo:read" }, owner,
-    ))
-    expect(consented.status, await consented.clone().text()).toBe(200)
-    const code = new URL(((await consented.json()) as { url: string }).url).searchParams.get("code")
-    if (!code) throw new Error("consent redirected without a code")
-    const exchanged = await request("/api/auth/oauth2/token", form({
-      grant_type: "authorization_code", code, redirect_uri: redirect, client_id: clientId, code_verifier: verifier, resource: MCP_RESOURCE,
-    }))
-    expect(exchanged.status, await exchanged.clone().text()).toBe(200)
-    const { access_token } = (await exchanged.json()) as { access_token: string }
+    const { access_token } = await mcpGrant(owner, 51789)
     expect((await enrollments(access_token)).status).toBe(401)
     expect((await enrollments("not-a-token")).status).toBe(401)
+  })
+
+  test("a password reset ends the person's MCP grants along with their sessions", async () => {
+    const email = "mcp-reset@device-login.test"
+    const owner = await signIn(email)
+    const mcp = await mcpGrant(owner, 51791)
+
+    expect((await request("/api/auth/request-password-reset", json({ email, redirectTo: `${APP}/reset-password` }))).status).toBe(200)
+    const token = mail.findLast((message) => message.recipient === email && message.kind === "password-reset")?.token
+    if (!token) throw new Error(`no password-reset mail for ${email}`)
+    const reset = await request("/api/auth/reset-password", json({ token, newPassword: "a-brand-new-correct-horse" }))
+    expect(reset.status, await reset.clone().text()).toBe(200)
+
+    expect((await refreshMcp(mcp)).status).toBe(400)
+    expect(await oauthTokenRows(mcp.clientId)).toEqual({ access: 0, refresh: 0 })
+  })
+
+  test("signing out everywhere ends the person's MCP grants and leaves another person's", async () => {
+    const owner = await signIn("mcp-revoke@device-login.test")
+    const bystander = await signIn("mcp-bystander@device-login.test")
+    const mcp = await mcpGrant(owner, 51792)
+    const kept = await mcpGrant(bystander, 51793)
+
+    const revoked = await request("/api/auth/revoke-sessions", json({}, owner))
+    expect(revoked.status, await revoked.clone().text()).toBe(200)
+
+    expect((await refreshMcp(mcp)).status).toBe(400)
+    expect(await oauthTokenRows(mcp.clientId)).toEqual({ access: 0, refresh: 0 })
+    expect((await refreshMcp(kept)).status).toBe(200)
+  })
+
+  test("every desktop authorization shows the consent screen, even to a person who consented before", async () => {
+    const owner = await signIn("desktop-consent@device-login.test")
+    const authorize = (port: number, prompt?: string) => request(`/api/auth/oauth2/authorize?${new URLSearchParams({
+      client_id: BETTER_AUTH_DESKTOP_CLIENT_ID, redirect_uri: `http://127.0.0.1:${port}/claxedo/auth/callback`, response_type: "code",
+      scope: BETTER_AUTH_NATIVE_SCOPES.join(" "), resource: CONTROL_PLANE_RESOURCE, state: "s",
+      code_challenge: createHash("sha256").update(randomBytes(32).toString("base64url")).digest("base64url"), code_challenge_method: "S256",
+      ...(prompt ? { prompt } : {}),
+    })}`, { headers: { cookie: owner.cookie }, redirect: "manual" })
+    const consentPage = `${APP}/oauth/consent?`
+
+    const first = await authorize(51801)
+    expect(first.headers.get("location")?.startsWith(consentPage), first.headers.get("location") ?? "").toBe(true)
+    const consented = await request("/api/auth/oauth2/consent", json(
+      { accept: true, oauth_query: new URL(first.headers.get("location") ?? "", API).search }, owner,
+    ))
+    expect(consented.status, await consented.clone().text()).toBe(200)
+    expect(new URL(((await consented.json()) as { url: string }).url).searchParams.get("code")).toMatch(/\S/)
+
+    const replay = (await authorize(51802)).headers.get("location") ?? ""
+    expect(replay.startsWith(consentPage), replay).toBe(true)
+    const silent = new URL((await authorize(51803, "none")).headers.get("location") ?? "", API)
+    expect(silent.searchParams.get("code"), silent.toString()).toBeNull()
+    expect(silent.searchParams.get("error")).toBe("invalid_request")
+  })
+
+  test("the device grant cannot be pre-bound to a person by whoever requests it", async () => {
+    const victim = await signIn("prebound@device-login.test")
+    const victimId = ((await (await request("/api/auth/get-session", { headers: victim })).json()) as { user: { id: string } }).user.id
+    const base = { client_id: BETTER_AUTH_CLI_CLIENT_ID, scope: BETTER_AUTH_NATIVE_SCOPES.join(" "), resource: CONTROL_PLANE_RESOURCE }
+    const attempts = {
+      json: await request("/api/auth/device/code", json({ ...base, user_id: victimId })),
+      form: await request("/api/auth/device/code", form({ ...base, user_id: victimId })),
+      repeated: await request("/api/auth/device/code", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: `${new URLSearchParams(base)}&user_id=${encodeURIComponent(victimId)}&user_id=`,
+      }),
+    }
+    for (const [shape, response] of Object.entries(attempts)) {
+      expect(response.status, `${shape}: ${await response.clone().text()}`).toBe(400)
+      expect(await response.json()).toMatchObject({ error: "invalid_request" })
+    }
+    expect((await grant().requestCode()).user_code).toMatch(/\S/)
   })
 
   test("an unauthenticated client may not send codes to an arbitrary https host or borrow this deployment's name", async () => {
