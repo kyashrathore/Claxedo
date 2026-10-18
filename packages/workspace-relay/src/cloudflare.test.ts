@@ -392,6 +392,31 @@ describe("workspace relay Cloudflare Durable Object gateway", () => {
     }
   })
 
+  test("refuses loopback page origins by default and admits them only when a deployment names them", async () => {
+    const gateway = createWorkspaceRelayDurableObjectGateway()
+    const preflight = (origin: string) => gateway.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      method: "OPTIONS",
+      headers: {
+        origin,
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization",
+      },
+    }))
+
+    expect((await preflight("http://localhost:5173")).status).toBe(403)
+    expect((await preflight("http://127.0.0.1:4444")).status).toBe(403)
+
+    setWorkspaceRelayAppOrigins("http://localhost:*, http://127.0.0.1:*")
+    try {
+      const local = await preflight("http://localhost:5173")
+      expect(local.status).toBe(204)
+      expect(local.headers.get("access-control-allow-origin")).toBe("http://localhost:5173")
+      expect((await preflight("http://127.0.0.1:4444")).status).toBe(204)
+    } finally {
+      setWorkspaceRelayAppOrigins(undefined)
+    }
+  })
+
   test("replacement allowed-origins list drops the built-in product origins", async () => {
     setWorkspaceRelayAllowedOrigins("https://selfhost.example.com, http://localhost:*")
     try {

@@ -23,7 +23,7 @@ export function setWorkspaceRelayAppOrigins(raw: string | undefined) {
 
 // Deployment-configured REPLACEMENT origin allowlist
 // (CLAXEDO_RELAY_ALLOWED_ORIGINS). When set, it fully replaces the built-in
-// default list (Claxedo/OpenCode app origins plus localhost dev hosts) — a
+// default list (Claxedo's own app origins) — a
 // self-hosted relay is not forced to keep the product domains in its CORS
 // policy. Additive CLAXEDO_APP_ORIGINS entries still apply on top.
 const defaultOriginAllowed = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)

@@ -113,7 +113,10 @@ a session host serves its events over HTTP streams.
 The relay owns CORS responses for browser-facing workspace requests. Do not
 forward upstream CORS headers as the source of truth. Configure browser origins
 with `CLAXEDO_RELAY_ALLOWED_ORIGINS` or `CLAXEDO_APP_ORIGINS` (see
-Configuration) and keep wildcard origins out of credentialed deployments.
+Configuration) and keep wildcard origins out of credentialed deployments. A
+development relay that serves a local app names its loopback origins itself,
+for example `CLAXEDO_APP_ORIGINS=http://localhost:*,http://127.0.0.1:*`; a
+deployed relay admits none by default.
 
 ### Host-Tunnel Topology
 
@@ -153,7 +156,7 @@ All knobs are environment variables: Worker vars and secrets in
 | `CLAXEDO_CONTROL_PLANE_JWKS_URL` | Remote JWKS the relay uses to verify runtime-access and host-tunnel tokens. |
 | `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` | Inline public key (alternative to JWKS). |
 | `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM` | Private PEM the relay uses to mint relay-host tokens. The Worker publishes its public half at `/.well-known/jwks.json`. |
-| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (Claxedo/OpenCode app origins plus `http://localhost:*` dev hosts). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`.  |
+| `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (`https://claxedo.com` and `https://*.claxedo.com`; no loopback origin). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`.  |
 
 Cloudflare Worker tracing knobs (Durable Object deployment):
 

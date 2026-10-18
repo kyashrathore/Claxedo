@@ -1,17 +1,18 @@
 // Browser-origin allowlist policy. The relay ships with Claxedo's own app
 // origins as the DEFAULT list, but a deployment can fully REPLACE that list
 // with `CLAXEDO_RELAY_ALLOWED_ORIGINS` — the built-in product domains are a
-// default, not a hardwired grant.
+// default, not a hardwired grant. Loopback origins are not in the default: any
+// local page or process on a user's machine could otherwise drive a deployed
+// relay with that user's token, so a development relay names them itself
+// (`CLAXEDO_APP_ORIGINS=http://localhost:*,http://127.0.0.1:*`).
 //
 // Pattern grammar (comma-separated in env form):
 //   https://app.example.com     exact origin match
 //   https://*.example.com       any subdomain of example.com (not the apex)
-//   http://localhost:*          any localhost port (dev)
-//   http://127.0.0.1:*          any loopback port (dev)
+//   http://localhost:*          any localhost port
+//   http://127.0.0.1:*          any loopback port
 
 export const DEFAULT_RELAY_APP_ORIGINS = [
-  "http://localhost:*",
-  "http://127.0.0.1:*",
   "https://claxedo.com",
   "https://*.claxedo.com",
 ]
