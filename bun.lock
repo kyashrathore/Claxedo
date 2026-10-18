@@ -89,7 +89,6 @@
         "shiki": "catalog:",
         "solid-js": "1.9.12",
         "strip-ansi": "7.1.2",
-        "zod": "4.4.3",
       },
       "devDependencies": {
         "@agentclientprotocol/sdk": "1.5.1",
@@ -111,6 +110,7 @@
         "vite": "7.1.4",
         "vite-plugin-solid": "2.11.10",
         "wrangler": "4.114.0",
+        "zod": "4.4.3",
       },
       "peerDependencies": {
         "solid-js": "1.9.12",

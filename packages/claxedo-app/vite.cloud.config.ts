@@ -82,7 +82,8 @@ function claxedoWorkspaceSource(): Plugin {
       const entry = manifestField(manifestField(manifest, "exports"), match[2] ? `.${match[2]}` : ".")
       const development = manifestField(entry, "development")
       if (typeof development !== "string") return null
-      return normalizePath(realpathSync(`${dirname(manifestPath)}/${development}`))
+      const id = normalizePath(realpathSync(`${dirname(manifestPath)}/${development}`))
+      return manifestField(manifest, "sideEffects") === false ? { id, moduleSideEffects: false } : id
     },
   }
 }

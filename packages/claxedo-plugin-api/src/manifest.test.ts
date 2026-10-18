@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { isPluginId } from "./id"
-import { PluginManifestError, pluginBackendRouteAllowed, pluginOperationAllowed, pluginRouteAllowed, readPluginManifest } from "./manifest"
+import type { z } from "zod"
+import { PluginManifestError, pluginBackendRouteAllowed, pluginOperationAllowed, pluginRouteAllowed, type PluginBackend, type PluginManifest, type PluginServerAccess } from "./manifest"
+import { pluginBackendSchema, pluginManifestSchema, pluginServerAccessSchema, readPluginManifest } from "./manifest-schema"
 
 const packageJson = {
   name: "claxedo-plugin-notes",
@@ -22,6 +24,15 @@ const packageJson = {
 }
 
 const { backend: _backend, ...appOnly } = packageJson.claxedo
+
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+
+test("the manifest types match what the schemas produce", () => {
+  const manifest: Same<PluginManifest, z.infer<typeof pluginManifestSchema>> = true
+  const server: Same<PluginServerAccess, z.infer<typeof pluginServerAccessSchema>> = true
+  const backend: Same<PluginBackend, z.infer<typeof pluginBackendSchema>> = true
+  expect([manifest, server, backend]).toEqual([true, true, true])
+})
 
 describe("readPluginManifest", () => {
   test("reads the claxedo block and fills the optional lists", () => {
