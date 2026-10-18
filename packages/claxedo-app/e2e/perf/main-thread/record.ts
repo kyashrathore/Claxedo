@@ -1,6 +1,7 @@
 import type { CDPSession, Page } from "@playwright/test"
 import { traceEventsFrom, type TraceEvent } from "../../harness/trace-events"
 import type { CpuProfile } from "../panel/trace"
+import { dwell } from "../stream-switch/surface"
 
 export type Target =
   | { kind: "session"; sessionId: string; replyIds: string[]; start: "navigation" | "pointerdown" | "now" }
@@ -33,7 +34,6 @@ const READY_TIMEOUT_MS = 180_000
 
 type MainThread = { __mainThread: { arm(target: Target): void; done(): Promise<Ready>; finish(): Probed; quietFor(): number } }
 
-export const dwell = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 export async function quiet(page: Page) {
   const deadline = Date.now() + QUIET_CAP_MS

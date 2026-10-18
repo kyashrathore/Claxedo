@@ -1,12 +1,10 @@
-import fs from "node:fs/promises"
-import path from "node:path"
-import { git } from "../../../../harness/e2e/harness/git"
 import type { Workspace } from "../../../../harness/e2e/harness/workspaces"
 import type { ClaxedoApi } from "../../harness/api"
 import type { Stack } from "../../harness/stack"
 import { acpScriptToken, type AcpScript } from "../../../../harness/e2e/harness/acp/script"
 import { seedScriptedSession } from "../seed"
 import { seedTurnScript } from "../stream-script"
+import { withValues } from "../stream-switch/surface"
 import { seedCorpusSession } from "./corpus-seed"
 
 export type SessionTarget = { id: string; replyIds: string[]; bytes: number; turns: number }
@@ -24,14 +22,6 @@ async function target(api: ClaxedoApi, directory: string, id: string): Promise<S
   const lastUser = messages.findLastIndex((message) => message.info.role === "user")
   const replyIds = messages.slice(lastUser + 1).filter((message) => message.info.role === "assistant").map((message) => message.info.id)
   return { id, replyIds, bytes: JSON.stringify(messages).length, turns: messages.filter((message) => message.info.role === "user").length }
-}
-
-async function withValues(workspace: Workspace) {
-  await fs.mkdir(path.join(workspace.directory, "src"), { recursive: true })
-  await fs.writeFile(path.join(workspace.directory, "src/values.ts"), "export const value0 = 0\n")
-  await git(workspace.directory, "add", "--", "src/values.ts")
-  await git(workspace.directory, "commit", "-q", "-m", "values", "--", "src/values.ts")
-  return workspace
 }
 
 export async function seedFixture(stack: Stack, api: ClaxedoApi, input: FixtureInput): Promise<Fixture> {

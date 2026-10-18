@@ -39,7 +39,7 @@ export type Result = {
 
 const UNTRACED = process.env.PANEL_UNTRACED === "1"
 const PROFILED = !UNTRACED && process.env.PANEL_PROFILE !== "0"
-const load = () => os.loadavg().map((value) => value.toFixed(2)).join(" ")
+export const hostLoad = () => os.loadavg().map((value) => value.toFixed(2)).join(" ")
 export class Runner {
   private cdp: CDPSession | undefined
   private results: Result[] = []
@@ -123,7 +123,7 @@ export class Runner {
       worstFrameMs: Math.max(0, ...deltas), framesOver16_7: deltas.filter((delta) => delta > 16.7).length, frameCount: deltas.length,
       worstFrameToQuietMs: worstQuiet, worstFrameToQuietAtMs: worstQuietAt, framesOver16_7ToQuiet: quietDeltas.filter((delta) => delta > 16.7).length,
       loafs: recording.loafs.filter((loaf) => loaf.start + loaf.duration >= recording.inputAt - 1 && loaf.start <= cutoff),
-      requests, load: load(), trace: traceFile, cpu,
+      requests, load: hostLoad(), trace: traceFile, cpu,
     }
     this.results.push(result)
     const loafText = result.loafs.map((loaf) => `LoAF ${loaf.duration.toFixed(1)}ms(block ${loaf.blocking.toFixed(0)}) [${loaf.scripts.map((script) => `${script.fn || "(anon)"} ${script.duration.toFixed(1)}ms${script.forced ? ` forced ${script.forced.toFixed(1)}` : ""}`).join("; ")}]`).join("\n      ")

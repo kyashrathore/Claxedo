@@ -1,6 +1,5 @@
 import { chromium } from "@playwright/test"
 import fs from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { ClaxedoApi } from "../../harness/api"
 import { ensureAppBuilt } from "../../harness/app"
@@ -8,6 +7,7 @@ import { prepareHarness } from "../../harness/global-setup"
 import { startStack } from "../../harness/stack"
 import { startAppOrigin } from "../origin"
 import { readOptions, runOrder } from "../options"
+import { hostLoad } from "../panel/runner"
 import { createSourceMapper } from "../panel/trace"
 import { bumpShort, seedFixture } from "./fixture"
 import { report } from "./report"
@@ -16,7 +16,6 @@ import { runOnce, type ScenarioRow } from "./scenarios"
 const argv = process.argv.slice(2)
 const flag = (name: string) => argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
 
-const load = () => os.loadavg().map((value) => value.toFixed(2)).join(" ")
 
 function line(row: ScenarioRow) {
   const ready = row.analysis.ready
@@ -55,7 +54,7 @@ async function main() {
       const seeded = fixture.shorts[index]
       if (!origin || !seeded) throw new Error(`run ${index} has no origin or session`)
       const short = await bumpShort(stack, api, fixture, seeded, index)
-      console.log(`[main-thread] run ${index} ${step.variant.name}${step.census ? " census" : ""}, load ${load()}`)
+      console.log(`[main-thread] run ${index} ${step.variant.name}${step.census ? " census" : ""}, load ${hostLoad()}`)
       const input = { browser, originUrl: origin.url, variant: step.variant.name, run: index, short, fixture, api, stack, throttle: options.throttle, census: step.census, mapper: createSourceMapper(origin.distDir), traceDir: index < options.variants.length ? traceDir : undefined, out: options.out, onRow: (row: ScenarioRow) => console.log(line(row)) }
       const result = await runOnce(input, scenarios)
       ;(step.census ? census : rows).push(...result)

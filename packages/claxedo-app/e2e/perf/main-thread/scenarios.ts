@@ -9,7 +9,8 @@ import { sessionRoute } from "../../harness/ui-names"
 import { STREAM_END, streamScript } from "../stream-script"
 import { analyze, type Analysis } from "./analyze"
 import type { Fixture, SessionTarget } from "./fixture"
-import { arm, dwell, quiet, startCapture, type Capture, type Census, type Target } from "./record"
+import { dwell } from "../stream-switch/surface"
+import { arm, quiet, startCapture, type Capture, type Census, type Target } from "./record"
 import type { Mapper } from "./trace-names"
 
 export type ScenarioRow = { variant: string; run: number; scenario: string; readyMs: number; railReadyMs?: number; census: Census; analysis: Analysis }
