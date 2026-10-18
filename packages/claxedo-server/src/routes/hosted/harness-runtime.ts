@@ -53,14 +53,14 @@ export async function openHarnessTarget(services: ControlPlaneServices, auth: Si
 }
 
 async function relayCapability(services: ControlPlaneServices, auth: SignedControlPlaneAuth, target: HarnessTarget) {
-  const [resolved, identity] = await Promise.allSettled([
+  const [targetRead, actorRead] = await Promise.allSettled([
     resolveWorkspaceRuntimeTarget(services, auth, { workspaceId: target.workspaceId, ...(target.workspace ? { workspace: target.workspace } : {}) }),
     resolveRuntimeActor(requireAuthority(services), auth),
   ])
-  if (resolved.status === "rejected") throw resolved.reason
-  if (identity.status === "rejected") throw identity.reason
-  const runtime = resolved.value
-  const actor = identity.value
+  if (targetRead.status === "rejected") throw targetRead.reason
+  if (actorRead.status === "rejected") throw actorRead.reason
+  const runtime = targetRead.value
+  const actor = actorRead.value
   const provider = services.relay.provider
   if (!provider) throw new Error("Workspace runtime pull transport is not configured")
   if (!target.orgId) throw new Error("Workspace is missing org identity for runtime token minting")
@@ -99,11 +99,13 @@ async function connectHarnessRuntime(services: ControlPlaneServices, auth: Signe
  * workspace is not trusted with it.
  */
 async function verifiedRuntimeJson(runtime: HarnessRuntime, workspaceId: string, path: string) {
-  const [identity, answer] = await Promise.all([runtime.json(WORKSPACE_RUNTIME_IDENTITY_PATH), runtime.json(path)])
-  if (txt(asRecord(identity)?.workspaceId) !== workspaceId) {
+  const [identity, answer] = await Promise.allSettled([runtime.json(WORKSPACE_RUNTIME_IDENTITY_PATH), runtime.json(path)])
+  if (identity.status === "rejected") throw identity.reason
+  if (txt(asRecord(identity.value)?.workspaceId) !== workspaceId) {
     throw new Error("Workspace runtime identity does not match requested workspace")
   }
-  return answer
+  if (answer.status === "rejected") throw answer.reason
+  return answer.value
 }
 
 function decodeHarnessSelection(input: unknown): RuntimeHarnessSelection | undefined {
