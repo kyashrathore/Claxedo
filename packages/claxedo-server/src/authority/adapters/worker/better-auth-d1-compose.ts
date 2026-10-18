@@ -180,14 +180,14 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     actorProfile: (identity) => betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, identity),
     invitations: orgInvitationEmailDelivery({
       verifiedEmail: async (auth) => (await betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity))?.verifiedEmail,
-      appOrigin: configured.public.appOrigin,
+      appOrigin: configured.public.origin,
       ...(configured.private.emailSender ? { sender: configured.private.emailSender } : {}),
     }),
   })
   const foundation = createBetterAuthD1Foundation({
     database: requiredDatabase(input.authDatabase),
     configuration: configured,
-    resource: betterAuthNativeResource(configured.public.apiOrigin),
+    resource: betterAuthNativeResource(configured.public.origin),
   })
   const authProtocol = new Hono()
   authProtocol.use(browserAuthHttpSecurity(descriptor.browser))
@@ -375,13 +375,13 @@ function betterAuthDescriptor(
     )
   }
   const configurationVersion = required(input.env.CLAXEDO_AUTH_CONFIGURATION_ID, "CLAXEDO_AUTH_CONFIGURATION_ID")
-  const resource = betterAuthNativeResource(configured.public.apiOrigin)
+  const resource = betterAuthNativeResource(configured.public.origin)
   return {
     adapter: "better-auth",
     deploymentId,
     configurationVersion,
     expiresAt: input.descriptorExpiresAt,
-    issuer: betterAuthIssuer(configured.public.apiOrigin),
+    issuer: betterAuthIssuer(configured.public.origin),
     methods: configured.public.methods,
     browser: {
       transport: "cookie",
@@ -405,18 +405,18 @@ function betterAuthDescriptor(
         clientId: BETTER_AUTH_CLI_CLIENT_ID,
         resource,
         scopes: BETTER_AUTH_NATIVE_SCOPES,
-        tokenEndpointOrigin: configured.public.apiOrigin,
-        controlPlaneOrigin: configured.public.apiOrigin,
-        revocation: betterAuthNativeRevocation(configured.public.apiOrigin),
+        tokenEndpointOrigin: configured.public.origin,
+        controlPlaneOrigin: configured.public.origin,
+        revocation: betterAuthNativeRevocation(configured.public.origin),
       },
       desktop: {
         flow: "authorization-code-pkce",
         clientId: BETTER_AUTH_DESKTOP_CLIENT_ID,
         resource,
         scopes: BETTER_AUTH_NATIVE_SCOPES,
-        tokenEndpointOrigin: configured.public.apiOrigin,
-        controlPlaneOrigin: configured.public.apiOrigin,
-        revocation: betterAuthNativeRevocation(configured.public.apiOrigin),
+        tokenEndpointOrigin: configured.public.origin,
+        controlPlaneOrigin: configured.public.origin,
+        revocation: betterAuthNativeRevocation(configured.public.origin),
       },
     },
   } as const satisfies AuthAdapterDescriptor

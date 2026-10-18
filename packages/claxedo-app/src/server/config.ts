@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 import type { RunHostedOperation } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 import type { RelayLinkStorage } from "./relay"
@@ -13,21 +12,18 @@ export type ServerConfig = {
   readonly onSignInRefused?: () => void
   readonly eventSocket?: boolean
   readonly relayLinks?: RelayLinkStorage
+  /** Where this client reaches every relay room, when its origin fronts the relay; absent, each connection's own relay URL. */
+  readonly relayUrl?: string
 }
 
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])
-
-function configuredServerUrl(): string | undefined {
-  const configured = import.meta.env.VITE_CLAXEDO_SERVER_URL
-  return typeof configured === "string" && configured.trim() ? configured : undefined
-}
 
 function pageOrigin(): string | undefined {
   return typeof window !== "undefined" && /^https?:$/.test(window.location.protocol) ? window.location.origin : undefined
 }
 
 export function resolveServerUrl(config: ServerConfig): string {
-  const candidate = config.serverUrl ?? configuredServerUrl() ?? pageOrigin()
+  const candidate = config.serverUrl ?? pageOrigin()
   if (!candidate) throw new ServerError({ class: "invalid", message: "No server URL: pass serverUrl when the daemon does not serve the page" })
   const url = candidate.trim().replace(/\/+$/, "")
   if (!URL.canParse(url)) throw new ServerError({ class: "invalid", message: `The server URL ${url} is not a URL` })

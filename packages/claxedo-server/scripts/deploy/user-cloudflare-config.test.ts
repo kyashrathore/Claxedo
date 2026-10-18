@@ -11,7 +11,6 @@ import {
 } from "./user-cloudflare-config"
 
 const env = {
-  CLAXEDO_API_ORIGIN: "https://api.example.com",
   CLAXEDO_APP_ORIGIN: "https://app.example.com",
   CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.example.com",
   CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Acme",
@@ -61,6 +60,7 @@ describe("user-deployed Cloudflare configuration", () => {
     expect(deployment).toMatchObject({
       workerName: "claxedo",
       appWorkerName: "claxedo-app",
+      relayWorkerName: "claxedo-relay",
       deploymentId: "claxedo",
       organization: { id: "claxedo", name: "Acme" },
       authMethods: ["github"],
@@ -81,7 +81,9 @@ describe("user-deployed Cloudflare configuration", () => {
       "CLAXEDO_RELAY_HOST_VERIFY_PEM",
       "GITHUB_CLIENT_SECRET",
     ])
-    expect(oauthCallbackUrls(deployment)).toEqual(["https://api.example.com/api/auth/callback/github"])
+    expect(oauthCallbackUrls(deployment)).toEqual(["https://app.example.com/api/auth/callback/github"])
+    expect(userCloudflareTarget({ ...env, CLAXEDO_RELAY_WORKER_NAME: "claxedo-workspace-relay-staging" }).relayWorkerName)
+      .toBe("claxedo-workspace-relay-staging")
   })
 
   test("every name is a per-deployment setting, so an existing deployment keeps its Workers and databases", () => {
@@ -98,22 +100,19 @@ describe("user-deployed Cloudflare configuration", () => {
       workerName: "claxedo-user-deployed-locked-staging",
       appWorkerName: "claxedo-user-deployed-app-staging",
       sessionHostWorkerName: "claxedo-user-deployed-session-host-staging",
+      relayWorkerName: "claxedo-user-deployed-locked-staging-relay",
       deploymentId: "deployment-staging",
-      apiOrigin: "https://api.example.com",
       appOrigin: "https://app.example.com",
       databases: { AUTH_DB: "claxedo-auth-staging", CONTROL_PLANE_DB: "claxedo-control-plane-staging" },
     })
   })
 
-  test("refuses origins the custom-domain Workers cannot serve", () => {
-    expect(() => userCloudflareTarget({ ...env, CLAXEDO_API_ORIGIN: "https://candidate.workers.dev" })).toThrow(
-      /custom domain/,
-    )
+  test("refuses a public origin the custom-domain app Worker cannot serve", () => {
+    expect(() => userCloudflareTarget({ ...env, CLAXEDO_APP_ORIGIN: "https://candidate.workers.dev" })).toThrow(/custom domain/)
     expect(() => userCloudflareTarget({ ...env, CLAXEDO_APP_ORIGIN: "https://app.pages.dev" })).toThrow(/custom domain/)
-    expect(() => userCloudflareTarget({ ...env, CLAXEDO_API_ORIGIN: "http://api.example.com" })).toThrow(/exact HTTPS/)
-    expect(() => userCloudflareTarget({ ...env, CLAXEDO_API_ORIGIN: "https://api.example.com/v1" })).toThrow(/exact HTTPS/)
-    expect(() => userCloudflareTarget({ ...env, CLAXEDO_APP_ORIGIN: env.CLAXEDO_API_ORIGIN })).toThrow(/different hosts/)
-    expect(() => userCloudflareTarget({ ...env, CLAXEDO_API_ORIGIN: "" })).toThrow(/CLAXEDO_API_ORIGIN is required/)
+    expect(() => userCloudflareTarget({ ...env, CLAXEDO_APP_ORIGIN: "http://app.example.com" })).toThrow(/exact HTTPS/)
+    expect(() => userCloudflareTarget({ ...env, CLAXEDO_APP_ORIGIN: "https://app.example.com/v1" })).toThrow(/exact HTTPS/)
+    expect(() => userCloudflareTarget({ ...env, CLAXEDO_APP_ORIGIN: "" })).toThrow(/CLAXEDO_APP_ORIGIN is required/)
   })
 
   test("refuses shared databases, reserved Worker names and a sign-in method with no email sender", () => {
@@ -168,14 +167,13 @@ describe("user-deployed Cloudflare configuration", () => {
       CLAXEDO_DEPLOYMENT_ID: "claxedo",
       CLAXEDO_AUTH_METHODS: "github",
       CLAXEDO_AUTH_CONFIGURATION_ID: configurationId,
-      BETTER_AUTH_URL: "https://api.example.com",
-      CLAXEDO_APP_ORIGIN: "https://app.example.com",
+      BETTER_AUTH_URL: "https://app.example.com",
       CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.example.com",
       CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "claxedo",
       CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Acme",
       GITHUB_CLIENT_ID: "github-client",
       CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
-      CLAXEDO_PUBLIC_URL: "https://api.example.com",
+      CLAXEDO_PUBLIC_URL: "https://app.example.com",
     })
   })
 

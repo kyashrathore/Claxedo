@@ -9,8 +9,14 @@ import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 import type { HostedStack } from "../../../harness/e2e/harness/hosted-flow"
 import { publishDeployment, readPublishedDeployment } from "../../published-deployment"
 import type { PublishedDeployment } from "../../src/server/published-deployment"
+import { forward, forwardUpgrade } from "./proxy"
 import { pagesHeaders, respondShaped, type FrontShaping } from "./front-shaping"
 import type { TlsFront } from "./tls-front"
+import { RELAY_PATH_PREFIX, publicOriginRoute } from "../../../claxedo-server/scripts/deploy/public-origin"
+
+function relayTarget(url: string, relayUrl: string) {
+  return new URL(url.slice(RELAY_PATH_PREFIX.length), relayUrl)
+}
 
 export async function startHostedAppFront(input: { port: number; distDir: string; hosted: HostedStack; shaping?: FrontShaping }): Promise<TlsFront & { controlPlaneRequests(): readonly string[] }> {
   const certificate = await fs.readFile(input.hosted.certificate)
@@ -24,9 +30,20 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     if (!deployment) throw new Error("the app front served its shell before it read the deployment")
     return new Response(publishDeployment(await asset.text(), deployment), { status: asset.status, headers: asset.headers })
   }
+  const held = (run: () => void) => {
+    const delay = input.shaping?.apiDelayMs() ?? 0
+    if (delay > 0) setTimeout(run, delay)
+    else run()
+  }
   const serve = async (request: IncomingMessage, response: ServerResponse) => {
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
-    if (/^\/(api|auth|internal|\.well-known)(\/|$)/.test(pathname) || pathname === "/health") {
+    const route = publicOriginRoute(pathname)
+    if (route === "relay") {
+      const target = relayTarget(request.url ?? "/", input.hosted.relayUrl)
+      request.url = `${target.pathname}${target.search}`
+      return held(() => forward(request, response, target))
+    }
+    if (route === "control-plane") {
       forwarded.push(`${request.method} ${pathname}`)
       const relay = () => {
         const upstream = httpsRequest({ hostname: worker.hostname, port: worker.port, method: request.method,
@@ -37,10 +54,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
         upstream.on("error", (error) => response.headersSent ? response.destroy(error) : response.writeHead(502).end(error.message))
         request.pipe(upstream)
       }
-      const delay = input.shaping?.apiDelayMs() ?? 0
-      if (delay > 0) setTimeout(relay, delay)
-      else relay()
-      return
+      return held(relay)
     }
     const bundled = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
     if (!bundled) { response.writeHead(404).end(); return }
@@ -49,6 +63,17 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
   const servers = [createServer(tls, serve), createServer(tls, serve)]
+  for (const server of servers) {
+    server.on("upgrade", (request, socket, head) => {
+      if (publicOriginRoute(new URL(request.url ?? "/", input.hosted.workerUrl).pathname) !== "relay") {
+        socket.destroy()
+        return
+      }
+      const target = relayTarget(request.url ?? "/", input.hosted.relayUrl)
+      request.url = `${target.pathname}${target.search}`
+      held(() => forwardUpgrade(request, socket, head, target))
+    })
+  }
   await listenOnLoopback(servers[0], input.port)
   await new Promise<void>((resolve, reject) => {
     servers[1].once("error", reject)

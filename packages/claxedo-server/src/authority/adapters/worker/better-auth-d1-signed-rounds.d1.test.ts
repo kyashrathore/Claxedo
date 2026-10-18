@@ -2,8 +2,7 @@ import { afterAll, beforeAll, expect, test } from "vitest"
 import type { ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { countD1Rounds, type D1Rounds } from "../../../test-support/d1-rounds"
 import {
-  USER_DEPLOYED_API as API,
-  USER_DEPLOYED_APP as APP,
+  USER_DEPLOYED_ORIGIN as API,
   USER_DEPLOYED_DEPLOYMENT_ID,
   userDeployedBetterAuthApp,
   type SignedInPerson,
@@ -40,7 +39,7 @@ beforeAll(async () => {
   const principal: ControlPlanePrincipal = {
     userId: person.userId, actorId: person.actorId, actorKind: "human", deploymentId: USER_DEPLOYED_DEPLOYMENT_ID,
     sessionId: "session-owner", authenticatedAt: Date.now(), methods: ["password"], assurance: "single-factor",
-    client: { kind: "browser", tokenKind: "browser-session", id: "browser", resource: API, scopes: ["openid"], origin: APP },
+    client: { kind: "browser", tokenKind: "browser-session", id: "browser", resource: API, scopes: ["openid"], origin: API },
     identity,
   }
   const signed = { mode: "signed" as const, principal, user: { subject, tokenIdentifier: `${identity.issuer}|${subject}`, issuer: identity.issuer } }

@@ -9,20 +9,20 @@ import { describe, expect, test } from "vitest"
 import { browserArtifactBuildId, prepareBrowserArtifactsForWorkers } from "./browser-app"
 import { d1DatabaseIdByName, d1RegionReport, d1RunningRegion, nativeClientVerificationSql, verifyNativeClientProvisioning } from "./d1-databases"
 import {
+  appPlan,
   deployPlan,
   missingSecrets,
   parseDeployArguments,
   providedSecrets,
-  verifyDeployedVersion,
-  verifyServedBrowserBuild,
+  verifyPublicOrigin,
+  versionTag,
   workerSecretNames,
 } from "./deploy-user-cloudflare"
 import { fetchReleaseProbe } from "./release-probe"
-import { userCloudflareDeployment, workerVariables } from "./user-cloudflare-config"
+import { userCloudflareDeployment, userCloudflareTarget, workerVariables } from "./user-cloudflare-config"
 import { deployedVersionId, isAbsentWorkerFailure, isTransientWranglerFailure } from "./wrangler-cli"
 
 const env = {
-  CLAXEDO_API_ORIGIN: "https://api.example.com",
   CLAXEDO_APP_ORIGIN: "https://app.example.com",
   CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.example.com",
   CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Acme",
@@ -38,10 +38,12 @@ function responses(bodies: unknown[]) {
 }
 
 describe("deploy-user-cloudflare", () => {
-  test("accepts only --dry-run and --agent-plugins", () => {
-    expect(parseDeployArguments([])).toEqual({ dryRun: false, agentPlugins: false })
-    expect(parseDeployArguments(["--dry-run", "--agent-plugins"])).toEqual({ dryRun: true, agentPlugins: true })
+  test("accepts --dry-run, --agent-plugins and the component to publish, both by default", () => {
+    expect(parseDeployArguments([])).toEqual({ dryRun: false, agentPlugins: false, components: ["control-plane", "app"] })
+    expect(parseDeployArguments(["--dry-run", "--agent-plugins"])).toEqual({ dryRun: true, agentPlugins: true, components: ["control-plane", "app"] })
+    expect(parseDeployArguments(["--component=app"])).toEqual({ dryRun: false, agentPlugins: false, components: ["app"] })
     expect(() => parseDeployArguments(["--staging"])).toThrow(/unknown argument --staging/)
+    expect(() => parseDeployArguments(["--component=relay"])).toThrow(/unknown argument --component=relay/)
   })
 
   test("uploads the secrets the environment carries and refuses to publish while any required one is nowhere", () => {
@@ -81,10 +83,18 @@ describe("deploy-user-cloudflare", () => {
     const plan = deployPlan(deployment, workerVariables(deployment, "sha256:config"), {
       BETTER_AUTH_SECRET: "super-secret-value-that-must-not-print",
     })
-    expect(plan).toContain("Worker              claxedo (user-deployed-better-auth-d1)")
-    expect(plan).toContain("custom domain api.example.com")
+    expect(plan).toContain("Worker              claxedo (user-deployed-better-auth-d1; reached only through the app Worker)")
+    expect(plan).toContain("Relay Worker        claxedo-relay (already deployed; bound by the app Worker as RELAY)")
+    expect(plan).toContain("App Worker          claxedo-app (binds claxedo as CONTROL_PLANE and the relay as RELAY)")
+    expect(plan).toContain("Public origin       https://app.example.com  (custom domain app.example.com: the app, /api and /relay)")
+    expect(appPlan(userCloudflareTarget(env))).toBe([
+      "Relay Worker        claxedo-relay (already deployed; bound by the app Worker as RELAY)",
+      "App Worker          claxedo-app (binds claxedo as CONTROL_PLANE and the relay as RELAY)",
+      "Public origin       https://app.example.com  (custom domain app.example.com: the app, /api and /relay)",
+    ].join("\n"))
     expect(plan).toContain("AUTH_DB=claxedo-auth  CONTROL_PLANE_DB=claxedo-control-plane  (created if missing)")
-    expect(plan).toContain("https://api.example.com/api/auth/callback/github")
+    expect(plan).toContain("https://app.example.com/api/auth/callback/github")
+    expect(plan).not.toContain("api.example.com")
     expect(plan).toContain("  CLAXEDO_AUTH_CONFIGURATION_ID = sha256:config")
     expect(plan).toContain("Secrets uploaded    BETTER_AUTH_SECRET")
     expect(plan).not.toContain("super-secret-value-that-must-not-print")
@@ -100,47 +110,46 @@ describe("deploy-user-cloudflare", () => {
     expect(() => deployedVersionId(JSON.stringify({ type: "wrangler-session" }), "claxedo")).toThrow(/exactly one/)
   })
 
-  test("waits for /health to name the new version, then for signed auth", async () => {
+  test("waits for the public origin to serve this commit's control plane, signed auth, then the build it just published", async () => {
+    const expected = { versionTag: versionTag("0123abcd4567ffff0123abcd4567ffff0123abcd"), browserBuildId: "sha256:new" }
+    expect(expected.versionTag).toBe("claxedo-0123abcd4567")
     await expect(
-      verifyDeployedVersion("https://api.example.com", VERSION, {
+      verifyPublicOrigin("https://app.example.com", expected, {
         ...instant,
-        fetcher: responses([{ status: "ok", platformVersionId: "previous" }, { status: "ok", platformVersionId: VERSION }, { signedAuth: true }]),
+        fetcher: responses([
+          { status: "ok", platformVersionTag: "claxedo-previous" },
+          { status: "ok", platformVersionTag: expected.versionTag },
+          { signedAuth: true },
+          { browserBuildId: "sha256:old" },
+          { browserBuildId: "sha256:new" },
+        ]),
       }),
     ).resolves.toBeUndefined()
     await expect(
-      verifyDeployedVersion("https://api.example.com", VERSION, {
+      verifyPublicOrigin("https://app.example.com", expected, {
         ...instant,
-        fetcher: responses([{ status: "ok", platformVersionId: "previous" }]),
+        fetcher: responses([{ status: "ok", platformVersionTag: "claxedo-previous" }]),
       }),
     ).rejects.toThrow(/did not converge after 3 attempts/)
     await expect(
-      verifyDeployedVersion("https://api.example.com", VERSION, {
+      verifyPublicOrigin("https://app.example.com", expected, {
         ...instant,
-        fetcher: responses([{ status: "ok", platformVersionId: VERSION }, { signedAuth: false }]),
+        fetcher: responses([{ status: "ok", platformVersionTag: expected.versionTag }, { signedAuth: false }]),
       }),
     ).rejects.toThrow(/api\/claxedo\/mode did not converge/)
-  })
-
-  test("waits for the app domain to serve the build it just published", async () => {
-    await expect(
-      verifyServedBrowserBuild("https://app.example.com", "sha256:new", {
-        ...instant,
-        fetcher: responses([{ browserBuildId: "sha256:old" }, { browserBuildId: "sha256:new" }]),
-      }),
-    ).resolves.toBeUndefined()
   })
 
   test("retries a freshly attached domain through public DNS while keeping the HTTPS hostname", async () => {
     const observed: string[] = []
     const response = await fetchReleaseProbe(
-      "https://api.example.com/health",
+      "https://app.example.com/health",
       {},
       {
         fetcher: async () => {
           throw new TypeError("cached NXDOMAIN")
         },
         resolver: async (hostname) => {
-          expect(hostname).toBe("api.example.com")
+          expect(hostname).toBe("app.example.com")
           return ["192.0.2.10"]
         },
         addressFetcher: async (url, address) => {
@@ -150,7 +159,7 @@ describe("deploy-user-cloudflare", () => {
       },
     )
     expect(response.status).toBe(200)
-    expect(observed).toEqual(["https://api.example.com/health@192.0.2.10"])
+    expect(observed).toEqual(["https://app.example.com/health@192.0.2.10"])
   })
 
   test("classifies Wrangler failures it may retry or read as an absent Worker", () => {
@@ -190,7 +199,7 @@ describe("D1 provisioning", () => {
   })
 
   test("verifies the three native OAuth clients and their resource links", () => {
-    expect(nativeClientVerificationSql("https://api.example.com")).toContain("'https://api.example.com/control-plane'")
+    expect(nativeClientVerificationSql("https://app.example.com")).toContain("'https://app.example.com/control-plane'")
     const output = (row: Record<string, number>) => JSON.stringify([{ success: true, results: [row] }])
     expect(() => verifyNativeClientProvisioning(output({ clients: 3, resource: 1, links: 3 }))).not.toThrow()
     expect(() => verifyNativeClientProvisioning(output({ clients: 2, resource: 1, links: 2 }))).toThrow(/incomplete/)

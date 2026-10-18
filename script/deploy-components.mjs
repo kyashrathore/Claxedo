@@ -2,16 +2,18 @@ import { appendFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const COMPONENTS = ["control-plane", "relay", "sandbox-image"]
+const COMPONENTS = ["control-plane", "relay", "app", "sandbox-image"]
 
 /**
  * Which staging components one deploy ships. The control plane always deploys
  * with the Boat image its own checkout builds, published under its
  * content-addressed tag: any organization may add a Boat key, and the runtime
  * in its new sandboxes is then never older than the control plane that starts
- * them. Staging's Cloudflare sandbox Worker ships with every full deploy, but
- * only when what its image is built from differs from what the deployed Worker
- * records (`sandbox_image_force` false); naming it alone redeploys it anyway.
+ * them. The app (the public origin, whose Worker binds the control plane and
+ * the relay) ships with a full deploy or by name. Staging's Cloudflare sandbox
+ * Worker ships with every full deploy, but only when what its image is built
+ * from differs from what the deployed Worker records (`sandbox_image_force`
+ * false); naming it alone redeploys it anyway.
  */
 export function deployComponents({ requested = "all" }) {
   if (requested !== "all" && !COMPONENTS.includes(requested)) throw new Error(`Unknown component ${requested}`)
@@ -20,6 +22,7 @@ export function deployComponents({ requested = "all" }) {
   return {
     control_plane: controlPlane,
     relay: selected("relay"),
+    app: selected("app"),
     sandbox_image: selected("sandbox-image"),
     sandbox_image_force: requested === "sandbox-image",
     boat_image: controlPlane,

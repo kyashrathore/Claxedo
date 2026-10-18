@@ -13,8 +13,7 @@ import { clientResult, normalizedUser, type BetterAuthBrowserClient, type Better
 import type { AuthUser } from "./display-user"
 import { forgetAuthIdentity, recordAuthIdentity } from "./persistence"
 
-type Origins = { readonly apiOrigin: string; readonly appOrigin: string }
-type Connection = { readonly client: BetterAuthBrowserClient; readonly origins: Origins }
+type Connection = { readonly client: BetterAuthBrowserClient; readonly origin: string }
 type DescriptorRequest = (input: string, init?: RequestInit) => Promise<Response>
 
 export type BetterAuthSession = ReturnType<typeof createBetterAuthSession>
@@ -29,14 +28,14 @@ export function createBetterAuthSession(input: { request?: DescriptorRequest; cr
     if (!connection) throw new Error("Better Auth browser adapter is not initialized")
     return connection
   }
-  const loadDescriptor = (origins: Origins, published?: unknown) =>
-    loadBrowserAuthDescriptor({ selectedAdapter: "better-auth", ...origins, published, ...(input.request ? { request: input.request } : {}) })
+  const loadDescriptor = (origin: string, published?: unknown) =>
+    loadBrowserAuthDescriptor({ selectedAdapter: "better-auth", origin, published, ...(input.request ? { request: input.request } : {}) })
   const readSession = (client: BetterAuthBrowserClient) => clientResult("session refresh", client.getSession())
   return {
     state: { descriptor, user, loading, unavailable },
     set: { descriptor: setDescriptor, user: setUser, loading: setLoading, unavailable: setUnavailable },
     connected,
-    connect: (origins: Origins) => (connection = { client: input.createClient({ baseURL: origins.apiOrigin, fetchOptions: { credentials: "include" } }), origins }),
+    connect: (origin: string) => (connection = { client: input.createClient({ baseURL: origin, fetchOptions: { credentials: "include" } }), origin }),
     disconnect: () => (connection = undefined),
     loadDescriptor,
     readSession,
@@ -56,7 +55,7 @@ export async function hydrateSession(session: BetterAuthSession) {
 export async function reloadDescriptor(session: BetterAuthSession) {
   const expected = session.state.descriptor()
   if (!expected) throw new Error("Better Auth browser adapter is not initialized")
-  const live = await session.loadDescriptor(session.connected().origins)
+  const live = await session.loadDescriptor(session.connected().origin)
   assertBrowserAuthDescriptorBinding(expected, live)
   session.set.descriptor(live)
   return live
@@ -75,7 +74,6 @@ export function endSession(session: BetterAuthSession) {
 }
 
 export async function initializeSession(session: BetterAuthSession, deployment: BrowserAuthDeployment) {
-  const origins = { apiOrigin: deployment.apiOrigin, appOrigin: deployment.appOrigin }
   const unsupported = browserAuthUnavailable(deployment)
   if (unsupported) {
     session.set.unavailable(unsupported)
@@ -84,10 +82,10 @@ export async function initializeSession(session: BetterAuthSession, deployment: 
     return
   }
   session.set.loading(true)
-  const { client } = session.connect(origins)
+  const { client } = session.connect(deployment.origin)
   try {
-    const published = publishedDeployment(origins.apiOrigin)?.authDescriptor
-    const [live, initial] = await Promise.all([session.loadDescriptor(origins, published), session.readSession(client)])
+    const published = publishedDeployment(deployment.origin)?.authDescriptor
+    const [live, initial] = await Promise.all([session.loadDescriptor(deployment.origin, published), session.readSession(client)])
     session.set.descriptor(live)
     adoptSession(session, initial)
     session.set.unavailable(null)

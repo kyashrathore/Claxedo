@@ -657,23 +657,13 @@ describe("resource-closed hosted core app", () => {
     }
   })
 
-  test("enforces exact-origin credentialed CORS and CSRF for cookie mutations", async () => {
+  test("grants no CORS and enforces CSRF for cookie mutations", async () => {
     const app = createHostedCoreApp(plane(), options)
-    const preflight = await app.fetch(new Request("https://core.test/api/workspace/create", {
-      method: "OPTIONS",
-      headers: {
-        origin: "https://app.test",
-        "access-control-request-method": "POST",
-      },
-    }))
-    expect(preflight.status).toBe(204)
-    expect(preflight.headers.get("access-control-allow-origin")).toBe("https://app.test")
-    expect(preflight.headers.get("access-control-allow-credentials")).toBe("true")
-
     const read = await app.fetch(new Request("https://core.test/api/claxedo/auth/descriptor", {
       headers: { origin: "https://app.test" },
     }))
-    expect(read.headers.get("timing-allow-origin")).toBe("https://app.test")
+    expect(read.status).toBe(200)
+    expect(read.headers.get("access-control-allow-origin")).toBeNull()
 
     const mutation = (headers: Record<string, string>) => app.fetch(new Request(
       "https://core.test/api/workspace/create",
@@ -889,23 +879,6 @@ describe("control-plane root and unrouted paths", () => {
     const response = await appWith("https://app.example.test").request("/")
     expect(response.status).toBe(302)
     expect(response.headers.get("location")).toBe("https://app.example.test")
-  })
-
-  /**
-   * The deployment this exists for binds the SINGULAR name. The first version
-   * read only the plural and went live redirecting nothing — the root answered
-   * JSON 404 with no `location`, which is better than a rendered "404 Not
-   * Found" but not the product.
-   */
-  test("redirects from the singular binding the locked worker actually uses", async () => {
-    const base = plane()
-    const singular = {
-      ...base,
-      env: { ...base.env, CLAXEDO_APP_ORIGIN: "https://app.single.test" },
-    } as unknown as HostedControlPlane
-    const response = await (createHostedCoreApp(singular, options) as unknown as Hono).request("/")
-    expect(response.status).toBe(302)
-    expect(response.headers.get("location")).toBe("https://app.single.test")
   })
 
   test("answers an unrouted path as JSON, never as a rendered page", async () => {

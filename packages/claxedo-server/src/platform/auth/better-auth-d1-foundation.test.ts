@@ -11,7 +11,6 @@ import {
 } from "./better-auth-token-hash"
 
 const API_ORIGIN = "https://api.claxedo.test"
-const APP_ORIGIN = "https://app.claxedo.test"
 const SECRET = "foundation-test-secret-that-is-long-enough"
 
 function options(configuration: ReturnType<typeof resolveBetterAuthConfiguration>) {
@@ -32,7 +31,6 @@ describe("Better Auth D1 foundation configuration", () => {
       env: {
         CLAXEDO_AUTH_METHODS: "github",
         BETTER_AUTH_URL: API_ORIGIN,
-        CLAXEDO_APP_ORIGIN: APP_ORIGIN,
         BETTER_AUTH_SECRET: SECRET,
         GITHUB_CLIENT_ID: "github-client",
         GITHUB_CLIENT_SECRET: "github-secret",
@@ -51,7 +49,6 @@ describe("Better Auth D1 foundation configuration", () => {
       env: {
         CLAXEDO_AUTH_METHODS: "google",
         BETTER_AUTH_URL: API_ORIGIN,
-        CLAXEDO_APP_ORIGIN: APP_ORIGIN,
         BETTER_AUTH_SECRET: SECRET,
         GOOGLE_CLIENT_ID: "google-client",
         GOOGLE_CLIENT_SECRET: "google-secret",
@@ -73,7 +70,6 @@ describe("Better Auth D1 foundation configuration", () => {
       env: {
         CLAXEDO_AUTH_METHODS: "google",
         BETTER_AUTH_URL: API_ORIGIN,
-        CLAXEDO_APP_ORIGIN: APP_ORIGIN,
         BETTER_AUTH_SECRET: SECRET,
         GOOGLE_CLIENT_ID: "google-client",
         GOOGLE_CLIENT_SECRET: "google-secret",
@@ -108,7 +104,6 @@ describe("Better Auth D1 foundation configuration", () => {
       env: {
         CLAXEDO_AUTH_METHODS: "email-password",
         BETTER_AUTH_URL: API_ORIGIN,
-        CLAXEDO_APP_ORIGIN: APP_ORIGIN,
         BETTER_AUTH_SECRET: SECRET,
       },
       emailSender: { async send(message) { messages.push(message.kind) } },

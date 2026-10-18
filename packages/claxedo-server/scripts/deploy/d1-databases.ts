@@ -92,7 +92,7 @@ export function verifyNativeClientProvisioning(output: string) {
  */
 export async function prepareD1Databases(input: {
   configArgs: readonly string[]
-  apiOrigin: string
+  origin: string
   betterAuthSecret: string
   introspectionSecret: string
 }) {
@@ -112,6 +112,6 @@ export async function prepareD1Databases(input: {
     d1Row(await execute(betterAuthDatabaseSchemaInspectionSql(), true), "auth schema inspection"),
   )
   const ciphertext = await betterAuthIntrospectionClientSecretCiphertext(input.betterAuthSecret, input.introspectionSecret)
-  for (const sql of betterAuthNativeClientProvisioningStatements(input.apiOrigin, ciphertext)) await execute(sql)
-  verifyNativeClientProvisioning(await execute(nativeClientVerificationSql(input.apiOrigin), true))
+  for (const sql of betterAuthNativeClientProvisioningStatements(input.origin, ciphertext)) await execute(sql)
+  verifyNativeClientProvisioning(await execute(nativeClientVerificationSql(input.origin), true))
 }

@@ -94,7 +94,7 @@ import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-t
 import { privateRepoHosts } from "../private-repo-hosts"
 import { hostedSandboxEgress } from "./hosted-sandbox-egress"
 import { configuredCoreAppOrigins, coreAppHomeOrigin, corsMiddleware } from "./hosted-core-origins"
-import { BROKER_ROUTE_PATTERN, isBrokerPath } from "@claxedo/egress-broker"
+import { BROKER_ROUTE_PATTERN } from "@claxedo/egress-broker"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { withTurnCompletedTelemetry } from "../../usage/turn-completed-telemetry"
@@ -240,7 +240,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     })
   }
   if (options.authentication.descriptor.browser.transport === "cookie") {
-    app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser, { withholdFrom: isBrokerPath }))
+    app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser))
   } else {
     app.use(
       corsMiddleware(
@@ -691,9 +691,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   //
   // The root gets a redirect rather than an error, because a person typing
   // this hostname wants the product, not a diagnostic.
-  // Both spellings: the hosted roots' CORS reads the plural list, while the
-  // user-deployed deploy binds only the SINGULAR `CLAXEDO_APP_ORIGIN`.
-  const appHome = coreAppHomeOrigin(plane.env.CLAXEDO_APP_ORIGINS ?? plane.env.CLAXEDO_APP_ORIGIN)
+  const appHome = coreAppHomeOrigin(plane.env.CLAXEDO_APP_ORIGINS)
   if (appHome) app.get("/", (context) => context.redirect(appHome, 302))
   app.notFound((context) =>
     context.json(

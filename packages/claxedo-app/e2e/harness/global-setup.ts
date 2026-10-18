@@ -8,10 +8,9 @@ export async function prepareHarness() {
   const daemonPort = fixedDaemonPort() ?? (await reservePort())
   releasePort(daemonPort)
   process.env[DAEMON_PORT_ENV] = String(daemonPort)
-  const serverUrl = `http://127.0.0.1:${daemonPort}`
-  const result = await ensureAppBuilt({ serverUrl })
+  const result = await ensureAppBuilt()
   const how = result.built ? `built in ${result.ms} ms` : "already current"
-  console.log(`[harness] app served from ${result.distDir} for ${serverUrl} (${how})`)
+  console.log(`[harness] app served from ${result.distDir} (${how})`)
 }
 
 export default prepareHarness

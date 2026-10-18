@@ -2,6 +2,7 @@ import path from "node:path"
 
 import type { CertifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
+import { WORKER_FIRST_PATHS } from "./public-origin"
 
 const SERVER_ROOT = path.resolve(import.meta.dirname, "../..")
 
@@ -196,12 +197,21 @@ new_sqlite_classes = ["SessionDO"]
 `
 }
 
-export const APP_ASSETS_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-assets-worker.ts")
+export const APP_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-worker.ts")
 
-/** The static-assets Worker that serves the browser app on its own custom domain; its script answers only `/assets/*`. */
-export function renderAppWranglerConfig(input: Readonly<{ appWorkerName: string; browserDirectory: string }>) {
+/**
+ * The app Worker on the deployment's one public origin: the browser app's
+ * assets, with the control plane and the relay bound as services behind the
+ * paths `public-origin.ts` names, so it is published after both exist.
+ */
+export function renderAppWranglerConfig(input: Readonly<{
+  appWorkerName: string
+  controlPlaneWorkerName: string
+  relayWorkerName: string
+  browserDirectory: string
+}>) {
   return `name = ${quote(input.appWorkerName)}
-main = ${quote(APP_ASSETS_WORKER)}
+main = ${quote(APP_WORKER)}
 compatibility_date = "2025-05-01"
 workers_dev = false
 preview_urls = false
@@ -211,6 +221,14 @@ directory = ${quote(path.resolve(input.browserDirectory))}
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 html_handling = "auto-trailing-slash"
-run_worker_first = ["/assets/*"]
+run_worker_first = [${WORKER_FIRST_PATHS.map(quote).join(", ")}]
+
+[[services]]
+binding = "CONTROL_PLANE"
+service = ${quote(input.controlPlaneWorkerName)}
+
+[[services]]
+binding = "RELAY"
+service = ${quote(input.relayWorkerName)}
 `
 }

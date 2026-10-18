@@ -83,15 +83,17 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(() => render({ variables: { CLAXEDO_DEPLOYMENT_ID: " claxedo" } })).toThrow(/trimmed/)
   })
 
-  test("renders the app as SPA-routed assets whose Worker runs ahead of /assets/* only", () => {
+  test("renders the app as the public origin: SPA-routed assets, the forwarded paths ahead of them, and both services bound", () => {
     const browserDirectory = path.join(serverRoot, "app")
-    const config = renderAppWranglerConfig({ appWorkerName: "claxedo-app", browserDirectory })
+    const config = renderAppWranglerConfig({ appWorkerName: "claxedo-app", controlPlaneWorkerName: "claxedo", relayWorkerName: "claxedo-relay", browserDirectory })
     expect(config).toContain('name = "claxedo-app"')
-    expect(config).toContain(`main = ${JSON.stringify(path.join(serverRoot, "scripts/deploy/app-assets-worker.ts"))}`)
+    expect(config).toContain(`main = ${JSON.stringify(path.join(serverRoot, "scripts/deploy/app-worker.ts"))}`)
     expect(config).toContain(`directory = ${JSON.stringify(browserDirectory)}`)
     expect(config).toContain('binding = "ASSETS"')
     expect(config).toContain('not_found_handling = "single-page-application"')
-    expect(config).toContain('run_worker_first = ["/assets/*"]')
+    expect(config).toContain('run_worker_first = ["/assets/*", "/api/*", "/internal/*", "/.well-known/*", "/health", "/relay/*"]')
+    expect(config).toContain('binding = "CONTROL_PLANE"\nservice = "claxedo"')
+    expect(config).toContain('binding = "RELAY"\nservice = "claxedo-relay"')
   })
 })
 

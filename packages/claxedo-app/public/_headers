@@ -1,21 +1,19 @@
 # ---------------------------------------------------------------------------
 # Security headers.
 #
-# This file is the ONLY place they can land for the web app. The SPA has two
-# publishers, and both serve this file: Cloudflare Pages
-# (`wrangler pages deploy dist` in .github/workflows/deploy-claxedo-app.yml) and
-# the user deployment's static-assets Worker
-# (packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts). Neither
-# routes the HTML document through the control-plane Worker, so the Hono
+# This file is the ONLY place they can land for the web app. The deployment's
+# app Worker (packages/claxedo-server/scripts/deploy/app-worker.ts) serves the
+# assets with this file; it forwards /api and /relay to the control plane and
+# the relay, whose responses carry their own headers (the Hono
 # `securityHeaders()` middleware in
 # packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts
-# covers the API responses and NOTHING here. Both surfaces need their own set.
+# covers the API responses and NOTHING here).
 #
 # A Cache-Control set here replaces the publisher's default
 # (`public, max-age=0, must-revalidate`) rather than adding to it, and a second
 # matching rule that sets any header again is joined to the first with a comma.
 # Everything outside /assets carries `no-transform`: the SPA shell is the only
-# HTML either publisher serves, and Cloudflare's HTML features (email
+# HTML the publisher serves, and Cloudflare's HTML features (email
 # obfuscation, Rocket Loader, injected beacons) would add inline scripts the
 # build's meta Content-Security-Policy refuses. The directive also stops
 # Cloudflare compressing those responses, which costs about 3 KB on the shell.
@@ -26,9 +24,9 @@
   Cache-Control: no-transform, public, max-age=0, must-revalidate
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  # Both publishers serve this project over HTTPS only, so the HSTS pin is
+  # The app Worker serves this project over HTTPS only, so the HSTS pin is
   # unconditional here. (The control plane's HSTS is gated on transport because
-  # it also runs plaintext on localhost; the app's publishers never do.) No `preload` — that is a
+  # it also runs plaintext on localhost; the app Worker never does.) No `preload` — that is a
   # one-way door that needs a deliberate submission, not a config default.
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   # Legacy clickjacking header, kept for pre-CSP2 browsers only. Every current
@@ -37,12 +35,12 @@
   # old browsers.
   X-Frame-Options: SAMEORIGIN
   # The fetch directives are enforced by the build's <meta http-equiv> policy
-  # (vite.web-document.ts), which names the exact server and relay
-  # origins. A meta policy cannot carry frame-ancestors, so it stays here.
+  # (vite.web-document.ts), which connects to the page's own origin only. A
+  # meta policy cannot carry frame-ancestors, so it stays here.
   Content-Security-Policy: frame-ancestors 'self'
 
 # Vite writes only content-hashed scripts, styles and media under /assets (e.g.
-# main-DUtf99h4.js), so they are immutable. Both publishers apply a rule's `!`
+# main-DUtf99h4.js), so they are immutable. The publisher applies a rule's `!`
 # detach before its own values, so this value replaces the one above instead of
 # being joined to it. Without `no-transform` Cloudflare compresses them on the
 # way out, or, for the scripts, styles and sprites the Workers publisher's

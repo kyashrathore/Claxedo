@@ -10,8 +10,7 @@ import { betterAuthD1CompositionInput, createBetterAuthD1Worker, type BetterAuth
 import { settledCompositionCache } from "./settled-composition-cache"
 
 const AUTH_MIGRATIONS = fileURLToPath(new URL("../../../migrations/auth/", import.meta.url))
-const API = "https://api.example.test"
-const APP = "https://app.example.test"
+const API = "https://app.example.test"
 
 const active: Miniflare[] = []
 
@@ -55,7 +54,6 @@ function workerEnv(bound: { authDatabase: D1Database; controlPlaneDatabase: D1Da
     CLAXEDO_AUTH_METHODS: "github",
     CLAXEDO_AUTH_CONFIGURATION_ID: "sha256:auth-configuration",
     BETTER_AUTH_URL: API,
-    CLAXEDO_APP_ORIGIN: APP,
     BETTER_AUTH_SECRET: "better-auth-secret-that-is-at-least-thirty-two-bytes",
     CLAXEDO_AUTH_INTROSPECTION_SECRET: "introspection-secret-that-is-also-at-least-thirty-two-bytes",
     GITHUB_CLIENT_ID: "github-client",
@@ -107,20 +105,18 @@ test("every Worker response carries Server-Timing, with the cold and compose mar
   expect(health.status).toBe(200)
   expect(timing(health)).toEqual({ marks: ["cold"], durations: ["auth", "limit", "d1", "do", "total"] })
 
-  const bootstrap = await worker.fetch(new Request(`${API}/api/claxedo/bootstrap`, { headers: { origin: APP } }), env)
+  const bootstrap = await worker.fetch(new Request(`${API}/api/claxedo/bootstrap`, { headers: { origin: API } }), env)
   expect(bootstrap.status).toBe(200)
   expect(timing(bootstrap).marks).toEqual(["compose"])
-  expect(bootstrap.headers.get("timing-allow-origin")).toBe(APP)
 
-  const session = await worker.fetch(new Request(`${API}/api/auth/get-session`, { headers: { origin: APP } }), env)
+  const session = await worker.fetch(new Request(`${API}/api/auth/get-session`, { headers: { origin: API } }), env)
   expect(session.status).toBe(200)
   expect(timing(session).durations).toEqual(["auth", "limit", "d1", "do", "total"])
-  expect(session.headers.get("timing-allow-origin")).toBe(APP)
 
   // Until a composition's readiness reads settle, every request builds its own
   // (settled-composition-cache.ts) and says so; a settled one is reused silently.
   await Promise.all(readiness)
-  const descriptor = await worker.fetch(new Request(`${API}/api/claxedo/auth/descriptor`, { headers: { origin: APP } }), env)
+  const descriptor = await worker.fetch(new Request(`${API}/api/claxedo/auth/descriptor`, { headers: { origin: API } }), env)
   expect(descriptor.status).toBe(200)
   expect(timing(descriptor).marks).toEqual([])
 

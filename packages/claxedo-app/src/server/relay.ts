@@ -19,8 +19,8 @@ export type RelayLinkStorage = {
 const REFRESH_WINDOW_MS = 60_000
 const RUNTIME_ACCESS_TOKEN_PROTOCOL = "claxedo-rat."
 
-function workspaceUrl(link: RelayConnection, path: string) {
-  const url = `${link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
+function workspaceUrl(link: RelayConnection, path: string, relayUrl: string | undefined) {
+  const url = `${relayUrl ?? link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
   return link.region ? `${url}${path.includes("?") ? "&" : "?"}region=${encodeURIComponent(link.region)}` : url
 }
 
@@ -60,13 +60,13 @@ function storedLinks(links: RelayLinkStorage | undefined) {
   }
 }
 
-async function sendThroughRelay(link: RelayConnection, path: string, init?: RequestInit) {
+async function sendThroughRelay(link: RelayConnection, path: string, init: RequestInit | undefined, relayUrl: string | undefined) {
   const headers = new Headers(init?.headers)
   headers.set("Authorization", `Bearer ${link.runtimeAccessToken}`)
   if (typeof init?.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   let response: Response
   try {
-    response = await fetch(workspaceUrl(link, path), { ...init, headers, credentials: "omit", redirect: init?.redirect ?? "manual" })
+    response = await fetch(workspaceUrl(link, path, relayUrl), { ...init, headers, credentials: "omit", redirect: init?.redirect ?? "manual" })
   } catch (error) {
     throw toAppError(error)
   }
@@ -131,16 +131,16 @@ function relayConnections(read: WorkspaceConnections["read"], links: RelayLinkSt
   }
 }
 
-export function createRelay(read: WorkspaceConnections["read"], links?: RelayLinkStorage): Relay {
+export function createRelay(read: WorkspaceConnections["read"], links?: RelayLinkStorage, relayUrl?: string): Relay {
   const { connection, adopt } = relayConnections(read, links)
   return {
     fetch: async (workspaceId, path, init, sessionId) => {
-      const response = await sendThroughRelay(await connection(workspaceId, sessionId), path, init)
-      return response.status === 401 ? sendThroughRelay(await connection(workspaceId, sessionId, true), path, init) : response
+      const response = await sendThroughRelay(await connection(workspaceId, sessionId), path, init, relayUrl)
+      return response.status === 401 ? sendThroughRelay(await connection(workspaceId, sessionId, true), path, init, relayUrl) : response
     },
     webSocket: async (workspaceId, path, sessionId) => {
       const link = await connection(workspaceId, sessionId)
-      return new WebSocket(workspaceUrl(link, path).replace(/^http/, "ws"), [`${RUNTIME_ACCESS_TOKEN_PROTOCOL}${link.runtimeAccessToken}`])
+      return new WebSocket(workspaceUrl(link, path, relayUrl).replace(/^http/, "ws"), [`${RUNTIME_ACCESS_TOKEN_PROTOCOL}${link.runtimeAccessToken}`])
     },
     adopt,
   }

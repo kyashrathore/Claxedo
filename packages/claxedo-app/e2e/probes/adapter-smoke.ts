@@ -182,7 +182,7 @@ async function streamChecks(probe: Probe, sessionId: string) {
 }
 
 async function main() {
-  await ensureAppBuilt({ serverUrl: "http://127.0.0.1:46800" })
+  await ensureAppBuilt()
   const stack = await startStack({ label: "adapter-smoke" })
   const proxy = await startTcpProxy(new URL(stack.url))
   const workspace = await stack.daemon.makeWorkspace("adapter")

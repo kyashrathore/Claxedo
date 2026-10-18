@@ -11,8 +11,8 @@ export async function signIn(session: BetterAuthSession, options?: BrowserAuthSi
   assertAvailable(session)
   await reloadDescriptor(session)
   const method = selectedMethod(session, options?.method)
-  const { client, origins } = session.connected()
-  const redirect = callbackUrl(options?.redirectUrl, origins.appOrigin)
+  const { client, origin } = session.connected()
+  const redirect = callbackUrl(options?.redirectUrl, origin)
   if (method !== "email-password") {
     await clientResult("sign-in", client.signIn.social({ provider: method, callbackURL: redirect }))
     return
@@ -31,12 +31,12 @@ export async function signUp(session: BetterAuthSession, options?: BrowserAuthSi
     return
   }
   await reloadDescriptor(session)
-  const { client, origins } = session.connected()
+  const { client, origin } = session.connected()
   await clientResult("sign-up", client.signUp.email({
     email: options.email,
     password: options.password,
     name: options.name?.trim() || options.email,
-    callbackURL: callbackUrl(options.redirectUrl, origins.appOrigin),
+    callbackURL: callbackUrl(options.redirectUrl, origin),
   }))
   await hydrateSession(session)
 }

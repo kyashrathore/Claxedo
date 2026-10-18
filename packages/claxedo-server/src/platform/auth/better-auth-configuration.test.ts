@@ -7,8 +7,7 @@ import {
 
 const baseEnv = {
   CLAXEDO_AUTH_METHODS: "google",
-  CLAXEDO_APP_ORIGIN: "https://app.example.com",
-  BETTER_AUTH_URL: "https://api.example.com",
+  BETTER_AUTH_URL: "https://app.example.com",
   BETTER_AUTH_SECRET: "a-secure-deployment-owned-secret-of-at-least-32-bytes",
   GOOGLE_CLIENT_ID: "google-client",
   GOOGLE_CLIENT_SECRET: "google-secret",
@@ -24,10 +23,9 @@ describe("Better Auth deployment configuration", () => {
     expect(google.public).toEqual({
       adapter: "better-auth",
       methods: ["google"],
-      apiOrigin: "https://api.example.com",
-      appOrigin: "https://app.example.com",
+      origin: "https://app.example.com",
       trustedOrigins: ["https://app.example.com"],
-      callbacks: { google: "https://api.example.com/api/auth/callback/google" },
+      callbacks: { google: "https://app.example.com/api/auth/callback/google" },
       sendsEmail: false,
     })
     expect(google.private.emailSender).toBeUndefined()
@@ -46,7 +44,7 @@ describe("Better Auth deployment configuration", () => {
       },
     })
     expect(github.public.methods).toEqual(["github"])
-    expect(github.public.callbacks).toEqual({ github: "https://api.example.com/api/auth/callback/github" })
+    expect(github.public.callbacks).toEqual({ github: "https://app.example.com/api/auth/callback/github" })
     expect(github.private.socialProviders).toEqual({
       github: { clientId: "github-client", clientSecret: "github-secret" },
     })
@@ -107,10 +105,10 @@ describe("Better Auth deployment configuration", () => {
   })
 
   test.each([
-    ["wildcard app origin", { ...baseEnv, CLAXEDO_APP_ORIGIN: "https://*.example.com" }],
-    ["insecure app origin", { ...baseEnv, CLAXEDO_APP_ORIGIN: "http://app.example.com" }],
-    ["API origin with a path", { ...baseEnv, BETTER_AUTH_URL: "https://api.example.com/auth" }],
-    ["credentialed API origin", { ...baseEnv, BETTER_AUTH_URL: "https://user:pass@api.example.com" }],
+    ["wildcard origin", { ...baseEnv, BETTER_AUTH_URL: "https://*.example.com" }],
+    ["insecure origin", { ...baseEnv, BETTER_AUTH_URL: "http://app.example.com" }],
+    ["origin with a path", { ...baseEnv, BETTER_AUTH_URL: "https://app.example.com/auth" }],
+    ["credentialed origin", { ...baseEnv, BETTER_AUTH_URL: "https://user:pass@app.example.com" }],
   ])("rejects a non-exact hosted origin: %s", (_name, env) => {
     expect(() => resolveBetterAuthConfiguration({ env })).toThrowError(
       expect.objectContaining({ code: "invalid_origin" }),

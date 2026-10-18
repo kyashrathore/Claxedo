@@ -3,8 +3,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID, BETTER_AUTH_NATIVE_SCOPES } from "../../../platform/auth/better-auth-d1-foundation"
 import { DEVICE_GRANT, deviceGrant } from "../../../test-support/device-grant"
 import {
-  USER_DEPLOYED_API as API,
-  USER_DEPLOYED_APP as APP,
+  USER_DEPLOYED_ORIGIN as API,
   userDeployedBetterAuthApp,
   type UserDeployedBetterAuthApp,
 } from "../../../test-support/user-deployed-better-auth-app"
@@ -34,7 +33,7 @@ const grant = () => deviceGrant(rig.app, API)
 const form = (body: Record<string, string>) =>
   ({ method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body).toString() })
 const json = (body: unknown, headers: Record<string, string> = {}) =>
-  ({ method: "POST", headers: { "content-type": "application/json", origin: APP, ...headers }, body: JSON.stringify(body) })
+  ({ method: "POST", headers: { "content-type": "application/json", origin: API, ...headers }, body: JSON.stringify(body) })
 const enrollments = (token: string) => request("/api/claxedo/host/enrollments", { headers: { authorization: `Bearer ${token}` } })
 const signIn = (email: string) => rig.signIn(email)
 const claimOwnership = (person: { cookie: string; origin: string }) => rig.claimOwnership(person)
@@ -97,7 +96,7 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     await claimOwnership(owner)
 
     const device = await grant().requestCode()
-    expect(device.verification_uri).toBe(`${APP}/device`)
+    expect(device.verification_uri).toBe(`${API}/device`)
     expect(device.user_code).toMatch(/\S/)
     expect(device.interval).toBe(5)
     expect(device.expires_in).toBe(600)
@@ -210,7 +209,7 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     const hostile = await decide("https://evil.example.test")
     expect(hostile.status).toBe(403)
     expect(await (await grant().exchange(device.device_code)).json()).toMatchObject({ error: "authorization_pending" })
-    const exact = await decide(APP)
+    const exact = await decide(API)
     expect(exact.status, await exact.clone().text()).toBe(200)
   })
 
@@ -261,7 +260,7 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     const owner = await signIn(email)
     const mcp = await mcpGrant(owner, 51791)
 
-    expect((await request("/api/auth/request-password-reset", json({ email, redirectTo: `${APP}/reset-password` }))).status).toBe(200)
+    expect((await request("/api/auth/request-password-reset", json({ email, redirectTo: `${API}/reset-password` }))).status).toBe(200)
     const token = rig.mail.findLast((message) => message.recipient === email && message.kind === "password-reset")?.token
     if (!token) throw new Error(`no password-reset mail for ${email}`)
     const reset = await request("/api/auth/reset-password", json({ token, newPassword: "a-brand-new-correct-horse" }))
@@ -293,7 +292,7 @@ describe("claxedo login on the Better Auth D1 composition", () => {
       code_challenge: createHash("sha256").update(randomBytes(32).toString("base64url")).digest("base64url"), code_challenge_method: "S256",
       ...(prompt ? { prompt } : {}),
     })}`, { headers: { cookie: owner.cookie }, redirect: "manual" })
-    const consentPage = `${APP}/oauth/consent?`
+    const consentPage = `${API}/oauth/consent?`
 
     const first = await authorize(51801)
     expect(first.headers.get("location")?.startsWith(consentPage), first.headers.get("location") ?? "").toBe(true)

@@ -18,8 +18,7 @@ import { generateCanonicalOwnerClaim, ownerClaimMutationSql, ownerClaimProvision
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../authority/adapters/d1/owner-identity"
 import type { D1CoreAuthorityBoundary } from "../authority/adapters/d1/core-authority"
 
-export const USER_DEPLOYED_API = "https://api.example.test"
-export const USER_DEPLOYED_APP = "https://app.example.test"
+export const USER_DEPLOYED_ORIGIN = "https://app.example.test"
 export const USER_DEPLOYED_DEPLOYMENT_ID = "deployment-1"
 
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
@@ -69,7 +68,7 @@ export async function userDeployedBetterAuthApp(
   const authDatabase = await instance.getD1Database("AUTH_DB")
   await migrateAuth(authDatabase)
   const ciphertext = await betterAuthIntrospectionClientSecretCiphertext(BETTER_AUTH_SECRET, INTROSPECTION_SECRET)
-  for (const sql of betterAuthNativeClientProvisioningStatements(USER_DEPLOYED_API, ciphertext)) await authDatabase.prepare(sql).run()
+  for (const sql of betterAuthNativeClientProvisioningStatements(USER_DEPLOYED_ORIGIN, ciphertext)) await authDatabase.prepare(sql).run()
   const controlPlane = await miniflareControlPlaneDatabase()
   const keys = await generateKeyPair("EdDSA", { extractable: true })
   const mail: AuthEmailMessage[] = []
@@ -82,8 +81,7 @@ export async function userDeployedBetterAuthApp(
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_AUTH_METHODS: "email-password",
       CLAXEDO_AUTH_CONFIGURATION_ID: "sha256:auth-configuration",
-      BETTER_AUTH_URL: USER_DEPLOYED_API,
-      CLAXEDO_APP_ORIGIN: USER_DEPLOYED_APP,
+      BETTER_AUTH_URL: USER_DEPLOYED_ORIGIN,
       BETTER_AUTH_SECRET,
       CLAXEDO_AUTH_INTROSPECTION_SECRET: INTROSPECTION_SECRET,
       CLAXEDO_WORKSPACE_RELAY_URL: "https://relay.example.test",
@@ -117,9 +115,9 @@ export async function userDeployedBetterAuthApp(
   app.all("/api/auth/*", (c) => composed.authHandler(c.req.raw))
   app.all("*", (c) => core.fetch(c.req.raw))
 
-  const request = async (pathname: string, init?: RequestInit) => await app.request(new URL(pathname, USER_DEPLOYED_API).toString(), init)
+  const request = async (pathname: string, init?: RequestInit) => await app.request(new URL(pathname, USER_DEPLOYED_ORIGIN).toString(), init)
   const json = (body: unknown, headers: Record<string, string> = {}) =>
-    ({ method: "POST", headers: { "content-type": "application/json", origin: USER_DEPLOYED_APP, ...headers }, body: JSON.stringify(body) })
+    ({ method: "POST", headers: { "content-type": "application/json", origin: USER_DEPLOYED_ORIGIN, ...headers }, body: JSON.stringify(body) })
   return {
     app,
     descriptor: composed.options.authentication.descriptor,
@@ -137,13 +135,13 @@ export async function userDeployedBetterAuthApp(
       const signedIn = await request("/api/auth/sign-in/email", json({ email, password }))
       const cookie = /__Secure-claxedo\.session_token=[^;]+/.exec(signedIn.headers.get("set-cookie") ?? "")?.[0]
       if (!cookie) throw new Error(`sign-in set no session cookie: ${signedIn.status} ${await signedIn.text()}`)
-      return { cookie, origin: USER_DEPLOYED_APP }
+      return { cookie, origin: USER_DEPLOYED_ORIGIN }
     },
     async claimOwnership(person) {
       const session = await request("/api/auth/get-session", { headers: person })
       const subject = ((await session.json()) as { user: { id: string } }).user.id
       const claim = generateCanonicalOwnerClaim()
-      await controlPlane.database.prepare(ownerClaimMutationSql(await ownerClaimProvisioning({ deploymentId: USER_DEPLOYED_DEPLOYMENT_ID, apiOrigin: USER_DEPLOYED_API, subject, claim }))).run()
+      await controlPlane.database.prepare(ownerClaimMutationSql(await ownerClaimProvisioning({ deploymentId: USER_DEPLOYED_DEPLOYMENT_ID, origin: USER_DEPLOYED_ORIGIN, subject, claim }))).run()
       const redeemed = await request("/api/claxedo/auth/bootstrap-owner", json({}, { ...person, [USER_DEPLOYED_OWNER_CLAIM_HEADER]: claim }))
       expect(redeemed.status, await redeemed.clone().text()).toBe(200)
       return subject

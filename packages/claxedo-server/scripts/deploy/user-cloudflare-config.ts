@@ -70,9 +70,9 @@ function exactHttpsOrigin(env: NodeJS.ProcessEnv, name: string) {
 }
 
 /**
- * Both Workers render `workers_dev = false` and are reached only through the
+ * The app Worker renders `workers_dev = false` and is reached only through the
  * custom domain `wrangler deploy --domain` attaches, which must sit on a zone
- * in the same Cloudflare account.
+ * in the same Cloudflare account; the control plane has no address of its own.
  */
 function customDomainOrigin(env: NodeJS.ProcessEnv, name: string) {
   const origin = exactHttpsOrigin(env, name)
@@ -105,13 +105,15 @@ export function allocatedRequestLimiterNamespaceId(deploymentId: string, workerN
   return String(1_000_000_000 + (digest.readUInt32BE(0) % 3_000_000_000))
 }
 
-/** Where a deployment lives: the names and origins every deploy command addresses. */
+/** Where a deployment lives: the names and the one public origin every deploy command addresses. */
 export type UserCloudflareTarget = Readonly<{
   workerName: string
   appWorkerName: string
   sessionHostWorkerName: string
+  /** The relay Worker the app Worker binds as its `RELAY` service; deployed before the app. */
+  relayWorkerName: string
   deploymentId: string
-  apiOrigin: string
+  /** The public origin: the app's custom domain, which also serves the control plane under `/api` and the relay under `/relay`. */
   appOrigin: string
   databases: Readonly<Record<D1DatabaseBinding, string>>
 }>
@@ -120,9 +122,7 @@ export function userCloudflareTarget(env: NodeJS.ProcessEnv): UserCloudflareTarg
   const workerName = requireNonLegacyWorkerName(setting(env, "CLAXEDO_WORKER_NAME", "claxedo"))
   const appWorkerName = requireNonLegacyWorkerName(setting(env, "CLAXEDO_APP_WORKER_NAME", `${workerName}-app`))
   if (appWorkerName === workerName) throw new Error("the API and app Workers need different names")
-  const apiOrigin = customDomainOrigin(env, "CLAXEDO_API_ORIGIN")
   const appOrigin = customDomainOrigin(env, "CLAXEDO_APP_ORIGIN")
-  if (apiOrigin === appOrigin) throw new Error("CLAXEDO_API_ORIGIN and CLAXEDO_APP_ORIGIN must be different hosts")
   const databases = {
     AUTH_DB: setting(env, "CLAXEDO_AUTH_D1_DATABASE_NAME", `${workerName}-auth`),
     CONTROL_PLANE_DB: setting(env, "CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME", `${workerName}-control-plane`),
@@ -134,8 +134,8 @@ export function userCloudflareTarget(env: NodeJS.ProcessEnv): UserCloudflareTarg
     workerName,
     appWorkerName,
     sessionHostWorkerName: requireNonLegacyWorkerName(setting(env, "CLAXEDO_SESSION_HOST_WORKER_NAME", `${workerName}-session-host`)),
+    relayWorkerName: requireNonLegacyWorkerName(setting(env, "CLAXEDO_RELAY_WORKER_NAME", `${workerName}-relay`)),
     deploymentId: setting(env, "CLAXEDO_DEPLOYMENT_ID", workerName),
-    apiOrigin,
     appOrigin,
     databases,
   })
@@ -251,8 +251,7 @@ export function deployReadSecrets(env: NodeJS.ProcessEnv) {
 export function authConfigurationId(deployment: UserCloudflareDeployment) {
   return betterAuthDeploymentConfigurationId({
     methods: [...deployment.authMethods],
-    apiOrigin: deployment.apiOrigin,
-    appOrigin: deployment.appOrigin,
+    origin: deployment.appOrigin,
     ...(deployment.providerClientIds.GITHUB_CLIENT_ID ? { githubClientId: deployment.providerClientIds.GITHUB_CLIENT_ID } : {}),
     ...(deployment.providerClientIds.GOOGLE_CLIENT_ID ? { googleClientId: deployment.providerClientIds.GOOGLE_CLIENT_ID } : {}),
   })
@@ -268,8 +267,7 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     CLAXEDO_DEPLOYMENT_ID: deployment.deploymentId,
     CLAXEDO_AUTH_METHODS: deployment.authMethods.join(","),
     CLAXEDO_AUTH_CONFIGURATION_ID: configurationId,
-    BETTER_AUTH_URL: deployment.apiOrigin,
-    CLAXEDO_APP_ORIGIN: deployment.appOrigin,
+    BETTER_AUTH_URL: deployment.appOrigin,
     CLAXEDO_WORKSPACE_RELAY_URL: deployment.relayUrl,
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: deployment.organization.id,
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: deployment.organization.name,
@@ -279,7 +277,7 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     ...deployment.sandboxVariables,
     ...deployment.telemetryVariables,
     ...(deployment.artifact.agentPlugins
-      ? { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_PUBLIC_URL: deployment.apiOrigin }
+      ? { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_PUBLIC_URL: deployment.appOrigin }
       : {}),
   }
 }
@@ -287,11 +285,11 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
 /** The session-host Worker's variables: where its control plane authorizes sessions and where the relay publishes its host-token keys. */
 export function sessionHostVariables(deployment: UserCloudflareDeployment): Record<string, string> {
   return {
-    WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${deployment.apiOrigin}/api/runtime-authority/session-authorize`,
+    WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${deployment.appOrigin}/api/runtime-authority/session-authorize`,
     WORKSPACE_RUNTIME_RELAY_JWKS_URL: `${deployment.relayUrl}/.well-known/jwks.json`,
   }
 }
 
 export function oauthCallbackUrls(deployment: UserCloudflareDeployment) {
-  return deployment.authMethods.filter((method) => method !== "email-password").map((method) => `${deployment.apiOrigin}/api/auth/callback/${method}`)
+  return deployment.authMethods.filter((method) => method !== "email-password").map((method) => `${deployment.appOrigin}/api/auth/callback/${method}`)
 }

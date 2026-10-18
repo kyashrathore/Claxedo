@@ -11,8 +11,9 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
 | 3 | `boat-image` | the Boat sandbox image this checkout builds, with every control-plane deploy | `packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts --agent-plugins --push-if-missing` |
-| 3 | `control-plane` | Better Auth + D1 Worker, **the browser app and the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts` |
+| 3 | `control-plane` | Better Auth + D1 Worker and **the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=control-plane` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
+| 5 | `app` | **the browser app on the public origin**, whose Worker binds the control plane and the relay | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts --component=app` |
 | 5 | `sandbox-image` | Cloudflare sandbox Worker container image | `.github/workflows/deploy-cloudflare-sandbox-worker.yml` |
 | 6 | `result` | nothing — fails the run if a selected component did not succeed | inline |
 
@@ -33,19 +34,36 @@ in `deploy-staging.yml`. `staging` is deliberately absent
 from `test.yml`'s `push.branches`: a push trigger would run the same suite a
 second time in a run the deploy does not depend on.
 
-The whole run shares the `claxedo-cloud-deploy` concurrency group with
-`deploy-claxedo-app-staging.yml`, and a queued run waits instead of cancelling.
+The whole run holds the `claxedo-cloud-deploy` concurrency group, and a
+queued run waits instead of cancelling.
 
-### The browser app is not a separate job
+### One public origin: the `app` job
 
-`deploy-user-cloudflare.ts` builds the app against the API origin it deploys,
-publishes it to the `claxedo-user-deployed-app-staging` Worker on
-`CLAXEDO_STAGING_APP_ORIGIN`, and waits until the served
-`claxedo-browser-build.json` carries the hash of that build. That is the staging
-web app. The Cloudflare Pages project `claxedo-app-staging` is the retired
-Clerk/Convex-era app; `deploy-claxedo-app-staging.yml` still deploys it on
-dispatch, and pointing it at this control plane means repointing the `staging`
-environment's `CLAXEDO_CONTROL_PLANE_URL` and `CLAXEDO_APP_URL` first.
+`CLAXEDO_STAGING_APP_ORIGIN` (`https://app.claxedo.dev`) is the deployment's one
+public origin. Its Worker, `claxedo-user-deployed-app-staging`
+(`packages/claxedo-server/scripts/deploy/app-worker.ts`), serves the browser
+app's assets and forwards `/api/*`, `/internal/*`, `/.well-known/*` and
+`/health` to the control-plane Worker and `/relay/*` to the relay Worker over
+[service bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/),
+which add no network hop ("zero overhead or added latency"; the bound Worker's
+`fetch` handler still runs where its own placement puts it, since
+[placement affects fetch handlers](https://developers.cloudflare.com/workers/configuration/smart-placement/)
+and the control plane keeps its region pin beside its databases). A browser
+therefore opens one TLS connection and sends no CORS preflight: every request,
+WebSocket upgrade and event stream is same-origin. The control-plane Worker
+has no custom domain of its own; `BETTER_AUTH_URL` is the public origin, the
+GitHub OAuth callback is `https://app.claxedo.dev/api/auth/callback/github`,
+and the session cookie is host-only on that origin.
+
+The `app` job runs after `control-plane` and `relay`, since its Worker binds
+both by name (`CLAXEDO_STAGING_RELAY_WORKER_NAME` names the relay). It builds
+the app (which bakes no origin: it reaches its server on whatever origin serves
+it), publishes the Worker with `--domain`, and waits until the origin's
+`/health` reports this commit's version tag (`claxedo-<sha12>`),
+`/api/claxedo/mode` reports signed auth, and `claxedo-browser-build.json`
+carries the hash of that build. The `control-plane` job itself can prove only
+that `wrangler deploy` published a version, because nothing reaches the
+Worker except the app Worker.
 
 ### The session-host Worker is not a separate job
 
@@ -67,9 +85,11 @@ plane's `CLAXEDO_WORKSPACE_RELAY_URL` resolves to.
 `wrangler deploy` replaces a Worker's whole plain-text var set with what the
 config and `--var` declare, and `wrangler.toml` cannot name one deployment's
 origins. `deploy-cloudflare.ts` therefore passes `CLAXEDO_CENTRAL_URL` (the
-resolver base the host-tunnel serving-generation fence derives from) and
-`CLAXEDO_APP_ORIGINS` (the CORS allowlist) explicitly; dropping either would be
-silent.
+resolver base the host-tunnel serving-generation fence derives from: the
+public origin, under whose `/internal` the app Worker forwards to the control
+plane) and `CLAXEDO_APP_ORIGINS` (the origin a browser's WebSocket upgrade
+must carry, and the CORS allowlist the desktop renderer still needs)
+explicitly; dropping either would be silent.
 
 ### Which images ship
 
@@ -86,17 +106,19 @@ stops only if it and the control plane share `CLAXEDO_SANDBOX_IDLE_STOP_TOKEN`.
 
 ## Staging runs the user deploy
 
-The `control-plane` job is `bun run deploy:user-cloudflare -- --agent-plugins`,
-the same command a user runs against their own account
+The `control-plane` and `app` jobs are `bun run deploy:user-cloudflare --
+--agent-plugins --component=control-plane` and `-- --component=app`, the
+command a user runs against their own account
 (`public-docs/user-deployed-cloudflare.md`), with staging's names passed as
 settings: the Worker keeps `claxedo-user-deployed-locked-staging` and the app
 keeps `claxedo-user-deployed-app-staging`, because their Durable Object
-namespace and custom domains live on those names. It finds the two D1
-databases by name, admits only an empty or baseline control-plane database,
-applies the control-plane baseline and auth migrations, provisions the native OAuth
-clients, deploys the Worker with `wrangler deploy`, and waits until `/health`
-names the version it deployed. The new version serves as soon as Cloudflare
-switches traffic.
+namespace and custom domain live on those names. The control-plane component
+finds the two D1 databases by name, admits only an empty or baseline
+control-plane database, applies the control-plane baseline and auth
+migrations, provisions the native OAuth clients, and deploys the Worker and the
+session host with `wrangler deploy`; the app component publishes the public
+origin and waits until it serves this commit. The new version serves as soon
+as Cloudflare switches traffic.
 
 The deploy refuses a control-plane D1 that does not hold exactly the current
 baseline; rows are never converted. To reset staging, delete that database
@@ -126,7 +148,6 @@ CLAXEDO_WORKER_NAME=claxedo-user-deployed-locked-staging \
 CLAXEDO_APP_WORKER_NAME=claxedo-user-deployed-app-staging \
 CLAXEDO_SESSION_HOST_WORKER_NAME=claxedo-session-host-staging \
 CLAXEDO_DEPLOYMENT_ID=acc-stg-260830-232009-3851 \
-CLAXEDO_API_ORIGIN=https://api.claxedo.dev \
 CLAXEDO_APP_ORIGIN=https://app.claxedo.dev \
 CLAXEDO_AUTH_D1_DATABASE_NAME=claxedo-acc-auth-stg-260830-232009-3851 \
 CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME=claxedo-acc-control-stg-260830-232009-3851 \
@@ -188,7 +209,7 @@ deletes the sandbox.
 ## Rerunning one component
 
 Dispatch `deploy-staging` from the Actions tab and pick `components`:
-`control-plane`, `relay` or `sandbox-image`. The other components are skipped
+`control-plane`, `relay`, `app` or `sandbox-image`. The other components are skipped
 and `result` does not require them. The gate and the CI suite run unless an
 earlier `deploy-staging` run for the same commit passed both
 (`script/deploy-ci-passed.mjs`, tested by `bun run test:ci-policy`); a push
@@ -204,8 +225,10 @@ bun run deploy:user-cloudflare -- --agent-plugins --dry-run
 bun run deploy:user-cloudflare -- --agent-plugins
 ```
 
-The dry run prints the plan and bundles the Worker without Cloudflare
-credentials, and is the fastest way to check the environment is wired.
+Without `--component`, the command publishes the control plane and then the
+app, which needs the relay Worker already deployed. The dry run prints the plan
+and bundles every Worker without Cloudflare credentials, and is the fastest way
+to check the environment is wired.
 
 ## The desktop app is not part of this
 

@@ -1,6 +1,6 @@
 import { readString } from "@claxedo/helpers/readers"
 import { authResponseBody, betterAuthApiError } from "./better-auth-error"
-import { apiOrigin } from "./origins"
+import { appOrigin } from "./origins"
 
 export type DeviceAuthorizationRequest = {
   userCode: string
@@ -17,7 +17,7 @@ function grantStatus(value: unknown): DeviceAuthorizationRequest["status"] {
 }
 
 export async function readDeviceAuthorization(userCode: string): Promise<DeviceAuthorizationRequest> {
-  const url = new URL("/api/auth/device", apiOrigin())
+  const url = new URL("/api/auth/device", appOrigin())
   url.searchParams.set("user_code", userCode)
   const response = await fetch(url.toString(), { credentials: "include", headers: { accept: "application/json" } })
   const body = await authResponseBody(response)
@@ -34,7 +34,7 @@ export async function readDeviceAuthorization(userCode: string): Promise<DeviceA
 }
 
 export async function submitDeviceDecision(input: { request: DeviceAuthorizationRequest; approve: boolean }): Promise<void> {
-  const response = await fetch(new URL(`/api/auth/device/${input.approve ? "approve" : "deny"}`, apiOrigin()).toString(), {
+  const response = await fetch(new URL(`/api/auth/device/${input.approve ? "approve" : "deny"}`, appOrigin()).toString(), {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },

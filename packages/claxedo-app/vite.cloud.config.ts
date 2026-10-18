@@ -97,17 +97,13 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
   const accountBinding = resolveAccountBindingSelection(
     binding ?? (env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER),
   )
-  // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-local-server
-  // (src/deployments/local/port.ts), the port the desktop's local server
-  // listens on.
-  // `CLAXEDO_DEV_PROXY_TARGET` names the server the dev proxy forwards to when
-  // the app's own origin is configured as its server (local signed web
-  // development: VITE_CLAXEDO_SERVER_URL is this dev server's HTTPS origin).
-  const backendTarget = process.env.CLAXEDO_DEV_PROXY_TARGET
-    || env.VITE_CLAXEDO_SERVER_URL
-    || "http://127.0.0.1:2593"
+  // The app reaches its server on its own origin, so the dev server forwards
+  // the server's routes to `CLAXEDO_DEV_PROXY_TARGET`, else to 2593, the
+  // DEFAULT_CLAXEDO_SERVER_PORT of claxedo-local-server
+  // (src/deployments/local/port.ts) the desktop's local server listens on.
+  const backendTarget = process.env.CLAXEDO_DEV_PROXY_TARGET || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webDocumentPlugin(env.VITE_CLAXEDO_SERVER_URL)],
+    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webDocumentPlugin()],
     publicDir: "public",
     server: {
       host: "0.0.0.0",

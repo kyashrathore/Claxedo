@@ -23,8 +23,7 @@ async function startVariants(stack: Stack): Promise<{ readonly list: readonly Va
   for (const [index, entry] of spec.split(",").entries()) {
     const [name, dist, declaredPort] = entry.split(":") as [string, string | undefined, string | undefined]
     const port = declaredPort ? Number(declaredPort) : 47380 + index
-    const serverUrl = `http://127.0.0.1:${port}`
-    const distDir = dist ?? (await ensureAppBuilt({ serverUrl, outDir: path.join(appDistDir(), "..", `dist-e2e-${name}`) })).distDir
+    const distDir = dist ?? (await ensureAppBuilt({ outDir: path.join(appDistDir(), "..", `dist-e2e-${name}`) })).distDir
     const origin = await startAppOrigin({ port, distDir, daemonUrl: stack.url })
     list.push({ ...origin, name, distDir })
     console.log(`[panel] variant ${name} at ${origin.url} from ${distDir}`)

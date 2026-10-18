@@ -30,8 +30,7 @@ function satisfiedAuthorizationSearch(search: string, query: URLSearchParams) {
 }
 
 export function loginOAuthContinuation(input: {
-  appOrigin: string
-  apiOrigin: string
+  origin: string
   pathname: string
   search: string
 }): LoginOAuthContinuation | undefined {
@@ -44,9 +43,9 @@ export function loginOAuthContinuation(input: {
     !query.get("state")
   ) return undefined
 
-  const login = new URL(input.pathname, input.appOrigin)
+  const login = new URL(input.pathname, input.origin)
   login.search = input.search
-  const authorize = new URL("/api/auth/oauth2/authorize", input.apiOrigin)
+  const authorize = new URL("/api/auth/oauth2/authorize", input.origin)
   authorize.search = satisfiedAuthorizationSearch(input.search, query)
   return {
     signInRedirect: `${login.pathname}${login.search}`,

@@ -62,7 +62,6 @@ function env(overrides: Record<string, string> = {}) {
     CLAXEDO_AUTH_METHODS: "github",
     CLAXEDO_AUTH_CONFIGURATION_ID: "sha256:auth-configuration",
     BETTER_AUTH_URL: "https://api.example.test",
-    CLAXEDO_APP_ORIGIN: "https://app.example.test",
     BETTER_AUTH_SECRET: "better-auth-secret-that-is-at-least-thirty-two-bytes",
     CLAXEDO_AUTH_INTROSPECTION_SECRET: "introspection-secret-that-is-also-at-least-thirty-two-bytes",
     GITHUB_CLIENT_ID: "github-client",
@@ -264,22 +263,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
       status: 403,
       body: { error: { code: "cloud_workspace_capability_unavailable" } },
     })
-    const authPreflight = await composed.authHandler(
-      new Request("https://api.example.test/api/auth/sign-in/social", {
-        method: "OPTIONS",
-        headers: {
-          origin: "https://app.example.test",
-          "access-control-request-method": "POST",
-          "access-control-request-headers": "content-type",
-        },
-      }),
-    )
-    expect(authPreflight.status).toBe(204)
-    expect(authPreflight.headers.get("access-control-allow-origin")).toBe("https://app.example.test")
-    expect(authPreflight.headers.get("access-control-allow-credentials")).toBe("true")
-    expect(authPreflight.headers.get("access-control-allow-headers")).toContain(
-      "x-claxedo-multiplayer-validation-operation",
-    )
   })
 
   test("fails closed when full-hosted is declared without a composed sandbox binding and lease store", async () => {

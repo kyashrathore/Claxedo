@@ -106,8 +106,7 @@ test("accepting signed out never sends an API request", async () => {
 test("a sign-in that continues an authorization request loads the authorize route even when the API shares the app's origin", () => {
   const origin = "https://claxedo.example"
   const continuation = loginOAuthContinuation({
-    appOrigin: origin,
-    apiOrigin: origin,
+    origin,
     pathname: "/login",
     search: "?response_type=code&client_id=claxedo-desktop&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s",
   })
@@ -117,7 +116,7 @@ test("a sign-in that continues an authorization request loads the authorize rout
 })
 
 test("a plain sign-in stays in the app at its home", () => {
-  expect(loginDestination(loginOAuthContinuation({ appOrigin: "https://claxedo.example", apiOrigin: "https://api.example", pathname: "/login", search: "" }))).toEqual({ navigate: "/" })
+  expect(loginDestination(loginOAuthContinuation({ origin: "https://claxedo.example", pathname: "/login", search: "" }))).toEqual({ navigate: "/" })
 })
 
 const AUTHORIZE_SEARCH = "?response_type=code&client_id=claxedo-cli&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s"

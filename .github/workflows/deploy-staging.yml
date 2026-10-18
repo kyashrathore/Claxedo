@@ -1,9 +1,9 @@
 name: deploy-staging
 
-# Everything merged to `staging` ships from here: control plane, relay, and the
-# Cloudflare sandbox image when its inputs changed. The browser app is not a job — the control-plane deploy publishes it
-# (deploy-user-cloudflare.ts). The desktop app is not either — it is
-# tag-driven (`claxedo-v*` -> release-claxedo.yml).
+# Everything merged to `staging` ships from here: control plane, relay, the
+# browser app on the public origin, and the Cloudflare sandbox image when its
+# inputs changed. The desktop app is not a job — it is tag-driven
+# (`claxedo-v*` -> release-claxedo.yml).
 
 on:
   push:
@@ -19,10 +19,11 @@ on:
           - all
           - control-plane
           - relay
+          - app
           - sandbox-image
 
-# Shared with deploy-claxedo-app-staging.yml: one Claxedo cloud deploy at a
-# time, and a queued run waits rather than being cancelled mid-deploy.
+# One Claxedo cloud deploy at a time; a queued run waits rather than being
+# cancelled mid-deploy.
 concurrency:
   group: claxedo-cloud-deploy
   cancel-in-progress: false
@@ -39,6 +40,7 @@ jobs:
     outputs:
       control_plane: ${{ steps.select.outputs.control_plane }}
       relay: ${{ steps.select.outputs.relay }}
+      app: ${{ steps.select.outputs.app }}
       sandbox_image: ${{ steps.select.outputs.sandbox_image }}
       sandbox_image_force: ${{ steps.select.outputs.sandbox_image_force }}
       ci_passed: ${{ steps.ci.outputs.ci_passed }}
@@ -150,6 +152,9 @@ jobs:
           [ -n "$BOAT_API_KEY" ] || { echo "::error::CLAXEDO_BOAT_TEMPLATE_API_KEY is not configured"; exit 1; }
           bun run --cwd packages/claxedo-server sandbox:boat-template --image="$IMAGE"
 
+  # The control plane has no address of its own: the app Worker (the `app` job)
+  # serves it under the public origin's /api, so this job proves only that the
+  # Worker deployed, and the `app` job proves the origin serves this commit.
   control-plane:
     name: control plane (Better Auth + D1)
     needs: [plan, gate, unit, boat-image]
@@ -186,9 +191,10 @@ jobs:
       CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: ${{ vars.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID }}
       CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: ${{ vars.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME }}
       CLAXEDO_DEPLOYMENT_ID: ${{ vars.CLAXEDO_STAGING_DEPLOYMENT_ID }}
-      CLAXEDO_API_ORIGIN: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+      # The one public origin: the app, and under it /api and /relay.
       CLAXEDO_APP_ORIGIN: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
       CLAXEDO_WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_STAGING_WORKSPACE_RELAY_URL }}
+      CLAXEDO_RELAY_WORKER_NAME: ${{ vars.CLAXEDO_STAGING_RELAY_WORKER_NAME }}
       CLAXEDO_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
       CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
       # Where a recreated database lands, and the region the Worker is pinned
@@ -210,15 +216,12 @@ jobs:
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID BETTER_AUTH_SECRET \
             CLAXEDO_AUTH_INTROSPECTION_SECRET CLAXEDO_AUTH_METHODS GITHUB_CLIENT_ID \
             CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME \
-            CLAXEDO_DEPLOYMENT_ID CLAXEDO_API_ORIGIN CLAXEDO_APP_ORIGIN CLAXEDO_WORKSPACE_RELAY_URL \
+            CLAXEDO_DEPLOYMENT_ID CLAXEDO_APP_ORIGIN CLAXEDO_WORKSPACE_RELAY_URL CLAXEDO_RELAY_WORKER_NAME \
             CLAXEDO_AUTH_D1_DATABASE_NAME CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME \
             CLAXEDO_SANDBOX_IMAGE; do
             [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
           done
 
-      # The deploy builds the browser app, which consumes the @claxedo
-      # workspace packages as their published dist (script/published-exports-plugin.ts).
-      # A fresh checkout has none, and Vite fails to resolve @claxedo/helpers.
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
 
@@ -230,13 +233,13 @@ jobs:
           [ -n "$BOAT_API_KEY" ] || { echo "::error::CLAXEDO_BOAT_TEMPLATE_API_KEY is not configured"; exit 1; }
           bun run --cwd packages/claxedo-server sandbox:boat-template --image="$CLAXEDO_SANDBOX_IMAGE" --share-to="$GITHUB_ENV"
 
-      - name: Print the deploy plan and bundle the Worker offline
+      - name: Print the deploy plan and bundle the Workers offline
         working-directory: packages/claxedo-server
-        run: bun run deploy:user-cloudflare -- --agent-plugins --dry-run
+        run: bun run deploy:user-cloudflare -- --agent-plugins --component=control-plane --dry-run
 
-      - name: Deploy the control plane and the app
+      - name: Deploy the control plane and the session host
         working-directory: packages/claxedo-server
-        run: bun run deploy:user-cloudflare -- --agent-plugins
+        run: bun run deploy:user-cloudflare -- --agent-plugins --component=control-plane
 
       # Only once the Worker carries the new code: a failed deploy leaves the
       # live Worker's code and template in place.
@@ -246,7 +249,8 @@ jobs:
         run: bun run --cwd packages/claxedo-server sandbox:boat-template --image="$CLAXEDO_SANDBOX_IMAGE" --deployed-share="$CLAXEDO_BOAT_RUNTIME_TEMPLATE_SHARE_ID"
 
   # The relay is the Durable Object Worker (packages/workspace-relay/src/worker.ts)
-  # that the control plane's CLAXEDO_WORKSPACE_RELAY_URL names.
+  # that the control plane's CLAXEDO_WORKSPACE_RELAY_URL names and the app
+  # Worker binds as RELAY, so the app deploys after it.
   relay:
     name: workspace relay (Cloudflare Durable Object)
     needs: [plan, gate, unit, control-plane]
@@ -259,7 +263,8 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLAXEDO_RELAY_WORKER_NAME: ${{ vars.CLAXEDO_STAGING_RELAY_WORKER_NAME }}
       CLAXEDO_RELAY_URL: ${{ vars.CLAXEDO_STAGING_WORKSPACE_RELAY_URL }}
-      CLAXEDO_RELAY_CENTRAL_URL: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+      # The resolver base: the control plane, reached under the public origin's /internal.
+      CLAXEDO_RELAY_CENTRAL_URL: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
       CLAXEDO_RELAY_APP_ORIGINS: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -284,6 +289,62 @@ jobs:
         working-directory: packages/workspace-relay
         run: ./node_modules/.bin/tsx scripts/deploy-cloudflare.ts
 
+  # The app Worker is the public origin: the browser app's assets, with the
+  # control plane bound as CONTROL_PLANE and the relay as RELAY behind /api and
+  # /relay. It deploys after both and proves the origin serves this commit's
+  # control plane and this build.
+  app:
+    name: app (the public origin)
+    needs: [plan, gate, unit, control-plane, relay]
+    if: ${{ !cancelled() && needs.plan.outputs.app == 'true' && (needs.plan.outputs.ci_passed == 'true' || (needs.gate.result == 'success' && needs.unit.result == 'success')) && needs.control-plane.result != 'failure' && needs.relay.result != 'failure' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLAXEDO_WORKER_NAME: claxedo-user-deployed-locked-staging
+      CLAXEDO_APP_WORKER_NAME: claxedo-user-deployed-app-staging
+      CLAXEDO_SESSION_HOST_WORKER_NAME: claxedo-session-host-staging
+      CLAXEDO_RELAY_WORKER_NAME: ${{ vars.CLAXEDO_STAGING_RELAY_WORKER_NAME }}
+      CLAXEDO_DEPLOYMENT_ID: ${{ vars.CLAXEDO_STAGING_DEPLOYMENT_ID }}
+      CLAXEDO_APP_ORIGIN: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
+      CLAXEDO_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
+      CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
+      # Public by design: VITE_ vars ship in the client bundle. This is the
+      # PostHog PROJECT key (capture-only), never a personal API key; an empty
+      # key builds no analytics client and sends nothing.
+      VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+      VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+      VITE_CLAXEDO_TELEMETRY_MODE: ${{ vars.CLAXEDO_STAGING_TELEMETRY_MODE }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify the deploy inputs are configured
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLAXEDO_RELAY_WORKER_NAME \
+            CLAXEDO_DEPLOYMENT_ID CLAXEDO_APP_ORIGIN \
+            CLAXEDO_AUTH_D1_DATABASE_NAME CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME; do
+            [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
+          done
+
+      # The app build consumes the @claxedo workspace packages as their
+      # published dist (script/published-exports-plugin.ts); a fresh checkout
+      # has none, and Vite fails to resolve @claxedo/helpers.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
+      - name: Print the deploy plan and bundle the app Worker offline
+        working-directory: packages/claxedo-server
+        run: bun run deploy:user-cloudflare -- --component=app --dry-run
+
+      - name: Build the app and deploy it on the public origin
+        working-directory: packages/claxedo-server
+        run: bun run deploy:user-cloudflare -- --component=app
+
   sandbox-image:
     name: cloudflare sandbox worker
     needs: [plan, gate, unit, control-plane, relay]
@@ -298,7 +359,7 @@ jobs:
   result:
     name: staging deploy result
     if: always()
-    needs: [plan, gate, unit, boat-image, control-plane, relay, sandbox-image]
+    needs: [plan, gate, unit, boat-image, control-plane, relay, app, sandbox-image]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected component to have deployed
@@ -311,6 +372,8 @@ jobs:
           CONTROL_PLANE_RESULT: ${{ needs.control-plane.result }}
           RELAY_SELECTED: ${{ needs.plan.outputs.relay }}
           RELAY_RESULT: ${{ needs.relay.result }}
+          APP_SELECTED: ${{ needs.plan.outputs.app }}
+          APP_RESULT: ${{ needs.app.result }}
           SANDBOX_SELECTED: ${{ needs.plan.outputs.sandbox_image }}
           SANDBOX_RESULT: ${{ needs.sandbox-image.result }}
           BOAT_IMAGE_SELECTED: ${{ needs.plan.outputs.boat_image }}
@@ -331,6 +394,7 @@ jobs:
           fi
           [ "$CONTROL_PLANE_SELECTED" = "true" ] && require "Control plane" "$CONTROL_PLANE_RESULT"
           [ "$RELAY_SELECTED" = "true" ] && require "Relay" "$RELAY_RESULT"
+          [ "$APP_SELECTED" = "true" ] && require "App" "$APP_RESULT"
           [ "$SANDBOX_SELECTED" = "true" ] && require "Sandbox image" "$SANDBOX_RESULT"
           [ "$BOAT_IMAGE_SELECTED" = "true" ] && require "Boat sandbox image" "$BOAT_IMAGE_RESULT"
           exit "$failed"

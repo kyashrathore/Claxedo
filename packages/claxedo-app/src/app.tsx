@@ -1,6 +1,6 @@
 import { accountBinding } from "#account-binding"
 import { createMemo, onCleanup, Show, type JSX, type ParentProps } from "solid-js"
-import { AuthProvider, useAuth, type Auth } from "@/auth"
+import { AuthProvider, relayUrl, useAuth, type Auth } from "@/auth"
 import { I18nProvider, useI18n } from "@/i18n"
 import { ClockProvider } from "@/lib/clock"
 import { PrefetchProvider } from "@/lib/prefetch"
@@ -22,7 +22,7 @@ function principalOf(auth: Auth): string | undefined {
   return state.kind === "signedIn" ? state.user.id : auth.restoringUserId()
 }
 
-type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "onSignInRefused" | "relayLinks">
+type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "onSignInRefused" | "relayLinks" | "relayUrl">
 
 function relayLinks(principal: string): Pick<ServerConfig, "relayLinks"> {
   const storage = tabStorage()
@@ -36,7 +36,7 @@ function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return {}
   const access = auth.controlPlane
   if (access.kind === "port") return { account: access.run, accountEvents: access.events, ...relayLinks(principal) }
-  return { cookies: true, onSignInRefused: () => void auth.refresh(), ...relayLinks(principal) }
+  return { cookies: true, relayUrl: relayUrl(), onSignInRefused: () => void auth.refresh(), ...relayLinks(principal) }
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {

@@ -257,3 +257,20 @@ test("relay: a runtime the control plane couldn't reach for its settings fails t
   await expect(createRelay(createWorkspaceConnections(request).read).fetch("ws_1", "/api/wr/pty")).rejects.toMatchObject({ class: "runtime_unreachable", retryable: true })
   expect(runtimeFetch).not.toHaveBeenCalled()
 })
+
+test("relay: a client whose origin fronts the relay sends every room request and socket there, whatever URL the link names", async () => {
+  const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValue(Response.json([]))
+  const relay = createRelay(server.read, undefined, "https://app.test/relay")
+  await relay.fetch("ws_1", "/api/wr/health")
+  expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://app.test/relay/workspaces/ws_1/api/wr/health?region=us-east")
+  const sockets: string[] = []
+  const original = globalThis.WebSocket
+  globalThis.WebSocket = class { constructor(url: string) { sockets.push(url) } } as unknown as typeof WebSocket
+  try {
+    await relay.webSocket("ws_1", "/pty")
+  } finally {
+    globalThis.WebSocket = original
+  }
+  expect(sockets).toEqual(["wss://app.test/relay/workspaces/ws_1/pty?region=us-east"])
+})

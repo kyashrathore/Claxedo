@@ -4,7 +4,7 @@ import { deployComponents } from "./deploy-components.mjs"
 
 await test("a control-plane deploy always builds or reuses the Boat image of its own checkout", () => {
   assert.deepEqual(deployComponents({ requested: "all" }), {
-    control_plane: true, relay: true, sandbox_image: true, sandbox_image_force: false, boat_image: true,
+    control_plane: true, relay: true, app: true, sandbox_image: true, sandbox_image_force: false, boat_image: true,
   })
   assert.equal(deployComponents({ requested: "control-plane" }).boat_image, true)
   assert.equal(deployComponents({ requested: "relay" }).boat_image, false)
@@ -16,6 +16,13 @@ await test("staging's Cloudflare sandbox Worker ships with a full deploy when it
   assert.equal(deployComponents({ requested: "control-plane" }).sandbox_image, false)
   assert.equal(deployComponents({ requested: "sandbox-image" }).sandbox_image, true)
   assert.equal(deployComponents({ requested: "sandbox-image" }).sandbox_image_force, true)
+})
+
+await test("the app is its own component, after the control plane and the relay it binds", () => {
+  assert.equal(deployComponents({ requested: "app" }).app, true)
+  assert.equal(deployComponents({ requested: "app" }).control_plane, false)
+  assert.equal(deployComponents({ requested: "app" }).relay, false)
+  assert.equal(deployComponents({ requested: "control-plane" }).app, false)
 })
 
 await test("an unknown component refuses to plan a deploy", () => {

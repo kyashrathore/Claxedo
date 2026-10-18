@@ -47,7 +47,7 @@ Domains & Routes), then deploy it; the script waits until the relay answers ther
 ```bash
 CLAXEDO_RELAY_WORKER_NAME=claxedo-relay \
 CLAXEDO_RELAY_URL=https://relay.example.com \
-CLAXEDO_RELAY_CENTRAL_URL=https://api.example.com \
+CLAXEDO_RELAY_CENTRAL_URL=https://app.example.com \
 CLAXEDO_RELAY_APP_ORIGINS=https://app.example.com \
   ./node_modules/.bin/tsx scripts/deploy-cloudflare.ts
 cd ../claxedo-server
@@ -58,9 +58,9 @@ cd ../claxedo-server
 Put the settings in a private shell (or your secret manager) and run the deploy:
 
 ```bash
-export CLAXEDO_API_ORIGIN=https://api.example.com
 export CLAXEDO_APP_ORIGIN=https://app.example.com
 export CLAXEDO_WORKSPACE_RELAY_URL=https://relay.example.com
+export CLAXEDO_RELAY_WORKER_NAME=claxedo-relay
 export CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME='Acme'
 export GITHUB_CLIENT_ID='<your GitHub OAuth app client ID>'
 export GITHUB_CLIENT_SECRET='<your GitHub OAuth app client secret>'
@@ -91,10 +91,14 @@ The deploy:
 1. finds the D1 databases `claxedo-auth` and `claxedo-control-plane`, and creates them the first time;
 2. requires an empty or baseline control-plane database, applies its canonical
    baseline and the auth migrations, and provisions the CLI and desktop OAuth clients;
-3. builds the web app against your API origin;
-4. deploys the `claxedo` Worker on `api.example.com` with every secret in the environment, and waits until
-   `https://api.example.com/health` names the version it just deployed;
-5. deploys the `claxedo-app` Worker with the web app on `app.example.com`, and waits until it serves that build.
+3. deploys the `claxedo` Worker with every secret in the environment, and the session-host Worker beside it;
+4. builds the web app and deploys the `claxedo-app` Worker on `app.example.com`, which serves the app and, over
+   service bindings, the control plane under `/api` and the relay under `/relay`, so a browser opens one connection
+   and sends no CORS preflight;
+5. waits until `https://app.example.com/health` names the version it just deployed and the app serves that build.
+
+`--component=control-plane` or `--component=app` runs one half; the app half needs the relay Worker deployed
+first, since its Worker binds it by name.
 
 It stops before publishing if a required secret is neither in the environment nor already on the Worker.
 
@@ -127,8 +131,9 @@ are forward-only; restore data to a point in time with
 
 | Setting | Default | |
 | --- | --- | --- |
-| `CLAXEDO_API_ORIGIN`, `CLAXEDO_APP_ORIGIN` | required | Custom-domain origins of the control plane and the web app. |
-| `CLAXEDO_WORKSPACE_RELAY_URL` | required | Origin of your Workspace Relay. |
+| `CLAXEDO_APP_ORIGIN` | required | The one public origin, a custom domain: the web app, and under it `/api` (the control plane, where GitHub's OAuth callback `…/api/auth/callback/github` lands) and `/relay`. |
+| `CLAXEDO_WORKSPACE_RELAY_URL` | required | Origin of your Workspace Relay, which your machines and the desktop app reach directly. |
+| `CLAXEDO_RELAY_WORKER_NAME` | `<worker>-relay` | The relay Worker the app Worker binds. |
 | `CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME` | required | Your organization's display name. |
 | `CLAXEDO_AUTH_METHODS` | `github` | Comma-separated `github`, `google`, `email-password`; OAuth methods need their `*_CLIENT_ID` and `*_CLIENT_SECRET`. Email-password requires `CLAXEDO_EMAIL_FROM`. |
 | `CLAXEDO_EMAIL_FROM` | unset | Transactional sender address on an onboarded Cloudflare Email Service domain. Enables invitations; required for email-password. |

@@ -4,9 +4,8 @@ import { PUBLISHED_DEPLOYMENT_ELEMENT_ID } from "@/server"
 import { createBetterAuthBrowserAdapter } from "./better-auth-adapter"
 import { stubGlobal } from "@/lib/stub-global"
 
-const api = "https://api.claxedo.test"
 const app = "https://app.claxedo.test"
-const deployment = { apiOrigin: api, appOrigin: app, issuesSessions: true }
+const deployment = { origin: app, issuesSessions: true }
 
 function descriptor(methods: readonly string[]) {
   return {
@@ -14,14 +13,14 @@ function descriptor(methods: readonly string[]) {
     deploymentId: "deployment",
     configurationVersion: "1",
     expiresAt: Date.now() + 60_000,
-    issuer: `${api}/api/auth`,
+    issuer: `${app}/api/auth`,
     methods,
     browser: {
       transport: "cookie",
       credentialPolicy: "reject-cookie-and-authorization",
       trustedOrigins: [app],
       clientId: "web",
-      resource: api,
+      resource: app,
       scopes: ["openid"],
       cookie: { name: "session", path: "/", secure: true, httpOnly: true, hostOnly: true, sameSite: "lax" },
     },

@@ -85,7 +85,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
   }
   return {
     database: input.database,
-    baseURL: input.configuration.public.apiOrigin,
+    baseURL: input.configuration.public.origin,
     secret: input.configuration.private.secret,
     trustedOrigins: [...input.configuration.public.trustedOrigins],
     socialProviders: input.configuration.private.socialProviders,
@@ -190,8 +190,8 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
       oauthClientRegistrationPolicy(),
       desktopConsentPolicy(BETTER_AUTH_DESKTOP_CLIENT_ID),
       oauthProvider({
-        loginPage: `${input.configuration.public.appOrigin}/login`,
-        consentPage: `${input.configuration.public.appOrigin}/oauth/consent`,
+        loginPage: `${input.configuration.public.origin}/login`,
+        consentPage: `${input.configuration.public.origin}/oauth/consent`,
         scopes: [...BETTER_AUTH_NATIVE_SCOPES, ...CLAXEDO_MCP_OAUTH_SCOPES],
         resources: [
           {
@@ -200,7 +200,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
             accessTokenTtl: 300,
           },
           {
-            identifier: claxedoMcpResource(input.configuration.public.apiOrigin),
+            identifier: claxedoMcpResource(input.configuration.public.origin),
             name: "Claxedo MCP",
             allowedScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
             accessTokenTtl: 300,
@@ -213,7 +213,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
          * resource for `workspace:write` — the account-wide scope. Its ceiling
          * is what the MCP resource allows.
          */
-        clientRegistrationDefaultResources: [claxedoMcpResource(input.configuration.public.apiOrigin)],
+        clientRegistrationDefaultResources: [claxedoMcpResource(input.configuration.public.origin)],
         /**
          * The ceiling on a registered client's own scope record too, not just
          * on what its resource allows. Left unset, Better Auth writes the
@@ -276,7 +276,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
         requireAtomicRefreshRotation: true,
       }),
       oauthDeviceAuthorization({
-        verificationUri: `${input.configuration.public.appOrigin}/device`,
+        verificationUri: `${input.configuration.public.origin}/device`,
         expiresIn: "10m",
         interval: "5s",
         // The OAuth device path never calls `validateClient`, so without this

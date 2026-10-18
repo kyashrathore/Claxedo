@@ -1,6 +1,6 @@
 import { readBoolean, readString } from "@claxedo/helpers/readers"
 import { authResponseBody, betterAuthApiError } from "./better-auth-error"
-import { apiOrigin } from "./origins"
+import { appOrigin } from "./origins"
 
 export type OAuthConsentSubmission = {
   accept: boolean
@@ -59,7 +59,7 @@ export function consentDefaults(requester: ConsentRequester): readonly string[] 
 }
 
 export async function readOAuthConsentClient(clientId: string): Promise<OAuthConsentClient> {
-  const url = new URL("/api/auth/oauth2/public-client", apiOrigin())
+  const url = new URL("/api/auth/oauth2/public-client", appOrigin())
   url.searchParams.set("client_id", clientId)
   const response = await fetch(url.toString(), { credentials: "include", headers: { accept: "application/json" } })
   const body = await authResponseBody(response)
@@ -72,7 +72,7 @@ export async function readOAuthConsentClient(clientId: string): Promise<OAuthCon
 }
 
 export async function submitOAuthConsent(input: OAuthConsentSubmission): Promise<string> {
-  const response = await fetch(new URL("/api/auth/oauth2/consent", apiOrigin()).toString(), {
+  const response = await fetch(new URL("/api/auth/oauth2/consent", appOrigin()).toString(), {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },

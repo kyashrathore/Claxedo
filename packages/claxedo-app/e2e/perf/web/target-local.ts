@@ -1,13 +1,12 @@
 import path from "node:path"
 import { ensureAppBuilt } from "../../harness/app"
 import { prepareHarness } from "../../harness/global-setup"
-import { sessionCookie, signedOrigin, startSignedStack } from "../../harness/signed-stack"
+import { sessionCookie, startSignedStack } from "../../harness/signed-stack"
 import { sessionRoute } from "../../harness/ui-names"
 import { releasePort, reservePort } from "../../../../harness/e2e/harness/ports"
 import type { AcpScript } from "../../../../harness/e2e/harness/acp/script"
 import { analyzeDist } from "./bytes"
 import { PROFILES, type Profile } from "./profiles"
-import { startRelayProxy } from "./relay-proxy"
 import { seedScriptedSession } from "../seed"
 import { seedLongSessions, seedStreamSessions } from "./seed-sessions"
 import type { Target } from "./target"
@@ -24,21 +23,18 @@ export async function localTarget(input: LocalTargetInput): Promise<Target> {
   await prepareHarness()
   const frontPort = await reservePort()
   const relayPort = await reservePort()
-  const relayFrontPort = await reservePort()
-  const ports = [frontPort, relayPort, relayFrontPort]
-  const build = await ensureAppBuilt({ serverUrl: signedOrigin(frontPort), outDir: DIST_DIR, relayOrigins: [`http://127.0.0.1:${relayFrontPort}`] })
+  const ports = [frontPort, relayPort]
+  const build = await ensureAppBuilt({ outDir: DIST_DIR })
   input.log(`app ${build.built ? `built in ${build.ms} ms` : "already current"} at ${build.distDir}`)
   const bytes = await analyzeDist(build.distDir)
   input.log(`${bytes.chunks.length} dist files compressed (br 11, gzip 6) in ${bytes.compressMs} ms`)
   let profile: Profile = PROFILES.none
-  const relay = await startRelayProxy({ port: relayFrontPort, relayPort, delayMs: () => profile.apiDelayMs })
   const signed = await startSignedStack({
-    label: "web-perf", frontPort, relayPort, relayUrl: relay.url, distDir: build.distDir,
+    label: "web-perf", frontPort, relayPort, distDir: build.distDir,
     shaping: { apiDelayMs: () => profile.apiDelayMs, encoded: bytes.encoded },
     workerEnv: UNLIMITED_REQUESTS,
     requestLimit: UNLIMITED,
-  }).catch(async (error: unknown) => {
-    await relay.close()
+  }).catch((error: unknown) => {
     for (const port of ports) releasePort(port)
     throw error
   })
@@ -65,13 +61,11 @@ export async function localTarget(input: LocalTargetInput): Promise<Target> {
       useProfile: (next) => { profile = next },
       close: async () => {
         await signed.close()
-        await relay.close()
         for (const port of ports) releasePort(port)
       },
     }
   } catch (error) {
     await signed.close()
-    await relay.close()
     for (const port of ports) releasePort(port)
     throw error
   }
