@@ -133,7 +133,7 @@ export function createServer(config: ServerConfig): ServerHandle {
   const streamed = (ref: SessionLocation) => workspaces.servedHere(ref.placementId) || placementStreams.streams(ref)
   const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status, streamed })
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
-  const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
+  const streams = createEventStreams({ config, transport, hostedAccount: account !== undefined, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
   const capabilities = createCapabilities({ hostedAccount: account !== undefined })
   const queries = createServerQueries(queryClient, transport, workspaces, account)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })

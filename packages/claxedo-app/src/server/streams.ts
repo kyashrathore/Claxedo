@@ -72,6 +72,7 @@ function aggregate(states: readonly ConnectionState[]): ConnectionState {
 type StreamsInput = {
   readonly config: ServerConfig
   readonly transport: Transport
+  readonly hostedAccount: boolean
   readonly onFrame: (frame: unknown) => void
   readonly onGap: () => void
   readonly onState: (state: ConnectionState) => void
@@ -109,8 +110,10 @@ export function createEventStreams(input: StreamsInput): EventStreams {
   const socket = config.eventSocket === true && transport.loopback
   return {
     open: (declaration) => {
-      streams.push(openEventsAt(input, CONTROL_PLANE_EVENTS_PATH, socket, report))
-      if (declaration.hostAggregate) streams.push(openEventsAt(input, WORKSPACE_EVENTS_PATH, false, report))
+      if (input.hostedAccount || !declaration.issuesSessions) {
+        streams.push(openEventsAt(input, CONTROL_PLANE_EVENTS_PATH, socket, report))
+        if (declaration.hostAggregate) streams.push(openEventsAt(input, WORKSPACE_EVENTS_PATH, false, report))
+      }
       if (config.accountEvents) account = openAccountEvents(input, config.accountEvents)
       report()
     },

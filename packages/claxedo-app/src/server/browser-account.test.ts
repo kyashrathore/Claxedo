@@ -85,6 +85,30 @@ test("a signed browser reads its machines and agent connections beside the accou
   })
 })
 
+test("a browser scope with nobody signed in reads the public bootstrap and opens no event stream on a server that issues sessions", async () => {
+  const calls = worker()
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test" })
+    try {
+      await server.ready
+      expect(server.startup().kind).toBe("ready")
+      expect(server.capabilities()).toMatchObject({ issuesSessions: true, hostedAccount: false })
+      expect(calls.map((call) => call.path)).toEqual(["/api/claxedo/bootstrap"])
+    } finally { server.dispose(); dispose() }
+  })
+})
+
+test("a signed browser scope opens the control plane's event stream once", async () => {
+  const calls = worker()
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
+    try {
+      await server.ready
+      expect(calls.filter((call) => call.path === "/api/cp/events")).toHaveLength(1)
+    } finally { server.dispose(); dispose() }
+  })
+})
+
 for (const [options, failure] of [
   [{ unauthorized: true }, { class: "auth", code: "session_expired", status: 401 }],
   [{ malformed: true }, { class: "internal" }],
