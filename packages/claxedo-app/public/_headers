@@ -44,8 +44,10 @@
 # Vite writes only content-hashed scripts, styles and media under /assets (e.g.
 # main-DUtf99h4.js), so they are immutable. Both publishers apply a rule's `!`
 # detach before its own values, so this value replaces the one above instead of
-# being joined to it. Without `no-transform` Cloudflare compresses them, which
-# takes main-*.js from 3.6 MB to about 1.0 MB. Content-Type is left to the
+# being joined to it. Without `no-transform` Cloudflare compresses them on the
+# way out, or, for the scripts, styles and sprites the Workers publisher's
+# assets Worker answers with the build's quality-11 Brotli copies, passes that
+# encoding through to clients that accept br. Content-Type is left to the
 # publisher, which derives it from the extension; a rule here would be joined to
 # any other matching Content-Type rule and name no type Cloudflare compresses.
 /assets/*
