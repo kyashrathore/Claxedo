@@ -173,9 +173,9 @@ describe("claxedo login", () => {
       resource: RESOURCE,
     })
     expect(h.slept, "the interval, then +5s after slow_down").toEqual([1000, 1000, 6000])
-    expect(h.opened).toEqual([`${ORIGIN}/device?user_code=ABCD-EFGH`])
+    expect(h.opened, "the page asks for the code; a link never carries it").toEqual([`${ORIGIN}/device`])
     expect(h.lines).toEqual([
-      `Open ${ORIGIN}/device?user_code=ABCD-EFGH`,
+      `Open ${ORIGIN}/device`,
       "Enter code: ABCD-EFGH",
       "Signed in as owner@example.test",
     ])
@@ -215,22 +215,22 @@ describe("claxedo login", () => {
 
   test("a verification URL on another origin ends the login before anything is opened or printed", async () => {
     const h = loginDeps(
-      fakeIssuer({ device: { verification_uri_complete: "https://evil.example.test/device?user_code=ABCD-EFGH" } }),
+      fakeIssuer({ device: { verification_uri: "https://evil.example.test/device" } }),
     )
-    await expect(login(h.deps)).rejects.toThrow("verification_uri_complete points at https://evil.example.test")
+    await expect(login(h.deps)).rejects.toThrow("verification_uri points at https://evil.example.test")
     expect(h.opened).toEqual([])
     expect(h.lines).toEqual([])
     expect(h.written).toEqual([])
   })
 
   test("a verification URL that is not a web page ends the login", async () => {
-    const script = loginDeps(fakeIssuer({ device: { verification_uri_complete: "javascript:alert(1)" } }))
-    await expect(login(script.deps)).rejects.toThrow("verification_uri_complete is a javascript: URL, not a web page")
+    const script = loginDeps(fakeIssuer({ device: { verification_uri: "javascript:alert(1)" } }))
+    await expect(login(script.deps)).rejects.toThrow("verification_uri is a javascript: URL, not a web page")
     expect(script.opened).toEqual([])
 
     const file = loginDeps(
       fakeIssuer({
-        device: { verification_uri: "file:///Applications/Calculator.app", verification_uri_complete: undefined },
+        device: { verification_uri: "file:///Applications/Calculator.app" },
       }),
     )
     await expect(login(file.deps)).rejects.toThrow("verification_uri is a file: URL, not a web page")
@@ -239,17 +239,17 @@ describe("claxedo login", () => {
 
   test("the web app origin the descriptor trusts is a device page, and its query reaches the browser unchanged", async () => {
     const appOrigin = "https://app.example.test"
-    const complete = `${appOrigin}/device?user_code=ABCD-EFGH&next=%26whoami`
+    const page = `${appOrigin}/device?next=%26whoami`
     const h = loginDeps(
       fakeIssuer({
         descriptor: descriptor({
           browser: { trustedOrigins: [appOrigin], clientId: "claxedo-web", resource: RESOURCE, scopes: SCOPES },
         }),
-        device: { verification_uri: `${appOrigin}/device`, verification_uri_complete: complete },
+        device: { verification_uri: page },
       }),
     )
     await login(h.deps)
-    expect(h.opened).toEqual([complete])
+    expect(h.opened).toEqual([page])
     expect(h.written).toHaveLength(1)
   })
 })
@@ -387,9 +387,9 @@ describe("the transport a descriptor may name", () => {
 
   test("a verification URL carrying userinfo is refused before the browser sees it", async () => {
     const h = loginDeps(
-      fakeIssuer({ device: { verification_uri_complete: `https://evil.example.test@cp.example.test/device` } }),
+      fakeIssuer({ device: { verification_uri: `https://evil.example.test@cp.example.test/device` } }),
     )
-    await expect(login(h.deps)).rejects.toThrow("verification_uri_complete carries a user or password")
+    await expect(login(h.deps)).rejects.toThrow("verification_uri carries a user or password")
     expect(h.opened).toEqual([])
   })
 
@@ -400,7 +400,7 @@ describe("the transport a descriptor may name", () => {
 
     await login(h.deps)
 
-    expect(h.opened).toEqual([`${local}/device?user_code=ABCD-EFGH`])
+    expect(h.opened).toEqual([`${local}/device`])
     expect(h.written).toHaveLength(1)
     expect(h.written[0]?.accessToken).toBe("at_1")
   })

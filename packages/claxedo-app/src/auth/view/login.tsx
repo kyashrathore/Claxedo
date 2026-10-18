@@ -62,31 +62,45 @@ async function acceptInvitation(accept: () => Promise<unknown>) {
   }
 }
 
-function loginAction(input: {
-  auth: ReturnType<typeof useAuth>
-  invitation?: InvitationFlow
-  action: Accessor<"signIn" | "signUp">
+type SignInInput = {
   email: Accessor<string>
   password: Accessor<string>
   redirect: Accessor<string>
+}
+
+function signInOptions(method: BrowserAuthMethod | undefined, input: SignInInput): BrowserAuthSignInOptions {
+  if (method === "email-password") return { method, email: input.email(), password: input.password(), redirectUrl: input.redirect() }
+  return method ? { method, redirectUrl: input.redirect() } : { redirectUrl: input.redirect() }
+}
+
+function loginAction(input: SignInInput & {
+  auth: ReturnType<typeof useAuth>
+  invitation?: InvitationFlow
+  action: Accessor<"signIn" | "signUp">
 }) {
   const [failure, setFailure] = createSignal<AppError>()
   return {
-    failure,
+    failure: () => {
+      const state = input.invitation?.state()
+      return state?.kind === "failed" ? state.failure : failure()
+    },
     continueWith: async (method?: BrowserAuthMethod) => {
       setFailure()
-      const options: BrowserAuthSignInOptions =
-        method === "email-password"
-          ? { method, email: input.email(), password: input.password(), redirectUrl: input.redirect() }
-          : method
-            ? { method, redirectUrl: input.redirect() }
-            : { redirectUrl: input.redirect() }
+      const options = signInOptions(method, input)
       try {
         if (input.invitation) await input.invitation.authenticate(options, input.action())
         else await input.auth.signIn(options)
       } catch (cause) {
         if (input.invitation) console.error("Organization invitation authentication failed", toAppError(cause).class)
         else setFailure(toAppError(cause))
+      }
+    },
+    signOut: async () => {
+      setFailure()
+      try {
+        await input.auth.signOut()
+      } catch (cause) {
+        setFailure(toAppError(cause))
       }
     },
   }
@@ -118,16 +132,14 @@ function createLoginController(token?: string) {
     action,
     setAction,
     continueWith: (method?: BrowserAuthMethod) => login.continueWith(method),
+    signOut: () => login.signOut(),
     joined: () => invitation?.state().kind === "joined",
     accept: () => {
       if (invitation) void acceptInvitation(invitation.accept)
     },
     busy: () =>
       auth.state().kind === "signingIn" || ["authenticating", "accepting"].includes(invitation?.state().kind ?? "idle"),
-    failure: () => {
-      const state = invitation?.state()
-      return state?.kind === "failed" ? state.failure : login.failure()
-    },
+    failure: login.failure,
     socialMethods: () =>
       auth.methods().filter((method): method is "google" | "github" => method === "google" || method === "github"),
   }
@@ -177,7 +189,7 @@ function LoginActions(props: { controller: LoginController }) {
             type="button"
             class="auth-button auth-button-secondary"
             disabled={controller.busy()}
-            onClick={() => void controller.auth.signOut()}
+            onClick={() => void controller.signOut()}
           >
             Use another account
           </button>

@@ -12,8 +12,8 @@ import { asFiniteNumber } from "@claxedo/helpers/guards"
  * `claxedo login`: the RFC 8628 device grant against the control plane's
  * Better Auth, for the `claxedo-cli` client its auth descriptor names.
  *
- * `POST {issuer}/device/code` → the user approves the code at the
- * `verification_uri` (the web app's `/device` page) → the CLI polls
+ * `POST {issuer}/device/code` → the user types the code at the
+ * `verification_uri` (the web app's `/device` page) and approves it → the CLI polls
  * `POST {issuer}/oauth2/token` with the device-code grant until it is
  * approved, denied or expired. The token it receives is the same opaque
  * access token the desktop holds, spent on every signed route as a bearer.
@@ -25,7 +25,6 @@ type DeviceCode = {
   deviceCode: string
   userCode: string
   verificationUri: string
-  verificationUriComplete?: string
   intervalMs: number
   expiresAt: number
 }
@@ -38,12 +37,10 @@ function deviceCode(input: unknown, now: number, binding: CliAuthBinding): Devic
   if (!code || !userCode || !verificationUri) {
     throw new Error("Device-code response is missing device_code, user_code, or verification_uri")
   }
-  const complete = trimToUndefined(row.verification_uri_complete)
   return {
     deviceCode: code,
     userCode,
     verificationUri: deploymentPageUrl(binding, verificationUri, "verification_uri"),
-    ...(complete ? { verificationUriComplete: deploymentPageUrl(binding, complete, "verification_uri_complete") } : {}),
     intervalMs: Math.max(1, asFiniteNumber(row.interval) ?? 5) * 1000,
     expiresAt: now + Math.max(60, asFiniteNumber(row.expires_in) ?? 600) * 1000,
   }
@@ -124,9 +121,8 @@ async function identity(binding: CliAuthBinding, accessToken: string, deps: Logi
 export async function login(deps: LoginDeps = defaultLoginDeps()) {
   const binding = await cliAuthBinding(deps.controlPlaneUrl, deps)
   const device = await requestDeviceCode(binding, deps)
-  const browserUrl = device.verificationUriComplete ?? device.verificationUri
-  deps.openBrowser(browserUrl)
-  deps.log(`Open ${browserUrl}`)
+  deps.openBrowser(device.verificationUri)
+  deps.log(`Open ${device.verificationUri}`)
   deps.log(`Enter code: ${device.userCode}`)
 
   const tokens = await pollForTokens(binding, device, deps)

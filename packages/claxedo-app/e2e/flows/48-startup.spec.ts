@@ -54,7 +54,7 @@ test("48 startup: an invitation without a token explains how to recover", async 
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
-test("48 startup: an approved device sign-in returns to Claxedo; a denied one stays denied", async ({ signed, page }) => {
+test("48 startup: a device sign-in needs the code typed from the terminal; approved returns to Claxedo, denied stays denied", async ({ signed, page }) => {
   await signed.signIn(page, signed.owner)
   const descriptor = await page.request.get(`${signed.url}/api/claxedo/auth/descriptor`)
   expect(descriptor.status()).toBe(200)
@@ -64,19 +64,31 @@ test("48 startup: an approved device sign-in returns to Claxedo; a denied one st
     expect(response.status(), await response.text()).toBe(200)
     return (await response.json() as { user_code: string }).user_code
   }
+  const codeField = page.getByRole("textbox", { name: "Device code", exact: true })
+  const enter = async (userCode: string) => {
+    await codeField.fill(userCode)
+    await page.getByRole("button", { name: "Continue", exact: true }).click()
+  }
   const approved = await grant()
   await page.goto(`${signed.url}/device?user_code=${approved}`)
+  await expect(codeField).toHaveValue("")
+  await expect(page.getByRole("button", { name: "Approve", exact: true })).toHaveCount(0)
+  await enter(approved)
+  await expect(page.getByText(approved, { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Approve", exact: true }).click()
   await expect(page).not.toHaveURL(/\/device/)
   const approval = await page.request.get(`${signed.url}/api/auth/device?user_code=${approved}`)
   expect((await approval.json() as { status: string }).status).toBe("approved")
-  await page.goto(`${signed.url}/device?user_code=${approved}`)
+  await page.goto(`${signed.url}/device`)
+  await enter(approved)
   await expect(page).not.toHaveURL(/\/device/)
   const denied = await grant()
-  await page.goto(`${signed.url}/device?user_code=${denied}`)
+  await page.goto(`${signed.url}/device`)
+  await enter(denied)
   await page.getByRole("button", { name: "Deny", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Device denied", exact: true })).toBeVisible()
   await page.reload()
+  await enter(denied)
   await expect(page.getByRole("heading", { name: "Device denied", exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })

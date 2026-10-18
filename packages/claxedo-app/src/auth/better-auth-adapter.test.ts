@@ -26,7 +26,7 @@ function descriptor(methods: readonly string[]) {
   }
 }
 
-function fakeServer(methods: readonly string[] = ["email-password", "github"], status = 200) {
+function fakeServer(methods: readonly string[] = ["email-password", "github"], status = 200, signOutRefusal?: string) {
   const calls: string[] = []
   let signedIn: { id: string; email: string } | null = null
   const ok = <T>(data: T) => Promise.resolve({ data, error: null })
@@ -41,7 +41,12 @@ function fakeServer(methods: readonly string[] = ["email-password", "github"], s
       },
     },
     signUp: { email: (input: { email: string; name: string }) => (calls.push(`sign-up ${input.email} ${input.name}`), (signedIn = { id: "user-2", email: input.email }), ok({})) },
-    signOut: () => (calls.push("sign-out"), (signedIn = null), ok(null)),
+    signOut: () => {
+      calls.push("sign-out")
+      if (signOutRefusal) return Promise.resolve({ data: null, error: { message: signOutRefusal } })
+      signedIn = null
+      return ok(null)
+    },
   }
   const request = () => Promise.resolve(Response.json(descriptor(methods), { status }))
   return { calls, adapter: createBetterAuthBrowserAdapter({ request, createClient: () => client }) }
@@ -87,6 +92,18 @@ test("better auth: an email sign-in lands on the app and adopts the user; sign-o
   await auth.signOut()
   expect(auth.user()).toBeNull()
   expect(sessionStorage.getItem("claxedo:relay-link:user-1:[\"ws_1\",null]"), "sign-out drops the tab's relay links").toBeNull()
+  expect(calls).toEqual([`email ada@claxedo.test ${app}/`, "sign-out"])
+})
+
+test("better auth: a sign-out the server refuses still ends this tab's session and reports the refusal", async () => {
+  const { adapter, calls } = fakeServer(["email-password"], 200, "Sign-out is unavailable")
+  await adapter.initialize(deployment)
+  const auth = adapter.useAuth()
+  await auth.signIn({ method: "email-password", email: "ada@claxedo.test", password: "secret" })
+  sessionStorage.setItem("claxedo:relay-link:user-1:[\"ws_1\",null]", "{}")
+  await expect(auth.signOut()).rejects.toThrow("Sign-out is unavailable")
+  expect(auth.user()).toBeNull()
+  expect(sessionStorage.getItem("claxedo:relay-link:user-1:[\"ws_1\",null]")).toBeNull()
   expect(calls).toEqual([`email ada@claxedo.test ${app}/`, "sign-out"])
 })
 

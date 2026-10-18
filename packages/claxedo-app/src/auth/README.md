@@ -28,7 +28,7 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 ## Routes
 
-`authRoutes` (`routes.ts`): `/login` and `/invitations` draw `AuthSplit` (`view/auth-split.tsx`): the kit's `ArtworkPlate` in the left column from 768 px, and one column with the title, one line and the sign-in methods (the provider's mark on its button, then email) on a phone. Routes: `/login`, `/device` (device grant approval, where the CLI's sign-in is approved), `/oauth/consent` (MCP scope consent), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
+`authRoutes` (`routes.ts`): `/login` and `/invitations` draw `AuthSplit` (`view/auth-split.tsx`): the kit's `ArtworkPlate` in the left column from 768 px, and one column with the title, one line and the sign-in methods (the provider's mark on its button, then email) on a phone. Routes: `/login`, `/device` (device grant approval, where the person types the code their terminal shows and approves the CLI's sign-in; a `user_code` in the link is never read, so a link someone else sends cannot pick the request), `/oauth/consent` (MCP scope consent), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
 
 ## Invariants
 

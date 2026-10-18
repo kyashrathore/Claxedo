@@ -42,6 +42,9 @@ export async function signUp(session: BetterAuthSession, options?: BrowserAuthSi
 }
 
 export async function signOut(session: BetterAuthSession) {
-  if (!session.state.unavailable()) await clientResult("sign-out", session.connected().client.signOut())
-  endSession(session)
+  try {
+    if (!session.state.unavailable()) await clientResult("sign-out", session.connected().client.signOut())
+  } finally {
+    endSession(session)
+  }
 }

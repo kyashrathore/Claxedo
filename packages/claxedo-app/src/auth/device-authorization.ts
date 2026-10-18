@@ -10,8 +10,6 @@ export type DeviceAuthorizationRequest = {
   transaction?: string
 }
 
-export const DEVICE_CODE_MISSING = "This link is missing its device code. Re-run the command and open the URL it prints."
-
 function grantStatus(value: unknown): DeviceAuthorizationRequest["status"] {
   const status = readString(value, "status")
   if (status === "approved" || status === "denied") return status
