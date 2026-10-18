@@ -62,6 +62,27 @@ function invitationAcceptance(
   return { ...state, accept }
 }
 
+const INVITATION_STARTED_KEY = "claxedo:invitation:started"
+
+function markInvitationStarted(token: string) {
+  try {
+    sessionStorage.setItem(INVITATION_STARTED_KEY, token)
+  } catch (error) {
+    console.warn("This tab could not record the invitation it is signing in for, so returning here asks before joining", { error })
+  }
+}
+
+function takeInvitationStarted(token: string): boolean {
+  try {
+    const started = sessionStorage.getItem(INVITATION_STARTED_KEY)
+    sessionStorage.removeItem(INVITATION_STARTED_KEY)
+    return started === token
+  } catch (error) {
+    console.warn("This tab could not read the invitation it was signing in for, so it asks before joining", { error })
+    return false
+  }
+}
+
 export function createOrgInvitationFlow(
   auth: Pick<Auth, "state" | "signIn" | "signUp">,
   acceptInvitation: Server["acceptOrgInvitation"],
@@ -71,8 +92,10 @@ export function createOrgInvitationFlow(
   return {
     state: acceptance.state,
     accept: acceptance.accept,
+    resume: () => (takeInvitationStarted(token) ? acceptance.accept() : Promise.resolve(undefined)),
     async authenticate(options: BrowserAuthSignInOptions, action: "signIn" | "signUp") {
       acceptance.send({ type: "authenticationStarted" })
+      markInvitationStarted(token)
       try {
         await auth[action]({ ...options, redirectUrl: `/invitations#${encodeURIComponent(token)}` })
         if (auth.state().kind !== "signedIn") acceptance.send({ type: "authenticationPending" })

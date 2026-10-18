@@ -1,41 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { controlPlaneBearerFromTokenPayload, isJwtShaped, tokenExchange } from "./electron-seams"
+import { tokenExchange } from "./electron-seams"
 import { printedAlone } from "../test-support/printed-alone"
-
-const JWT = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1XzEifQ.sig"
-
-describe("isJwtShaped", () => {
-  test("accepts compact JWTs", () => {
-    expect(isJwtShaped(JWT)).toBe(true)
-  })
-
-  test("rejects opaque OAuth access tokens", () => {
-    expect(isJwtShaped("oat_opaque_not_a_jwt")).toBe(false)
-    expect(isJwtShaped("")).toBe(false)
-    expect(isJwtShaped("only.two")).toBe(false)
-  })
-})
-
-describe("controlPlaneBearerFromTokenPayload", () => {
-  test("prefers a JWT access token", () => {
-    expect(controlPlaneBearerFromTokenPayload({
-      access_token: JWT,
-      id_token: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJpZCJ9.id",
-    })).toBe(JWT)
-  })
-
-  test("falls back to id_token when access_token is opaque", () => {
-    const id = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJpZCJ9.id"
-    expect(controlPlaneBearerFromTokenPayload({
-      access_token: "oat_opaque",
-      id_token: id,
-    })).toBe(id)
-  })
-
-  test("keeps opaque access_token when no id_token exists", () => {
-    expect(controlPlaneBearerFromTokenPayload({ access_token: "oat_opaque" })).toBe("oat_opaque")
-  })
-})
 
 describe("tokenExchange", () => {
   const EXCHANGE_INPUT = {
@@ -47,9 +12,31 @@ describe("tokenExchange", () => {
     resource: "https://core.example/api/claxedo",
   }
 
+  test("spends the access token, never the id token, as the control-plane bearer", async () => {
+    // An id_token is the client's proof of who signed in: it carries no scope,
+    // cannot be revoked, and its audience is this client, not the control plane.
+    const exchange = tokenExchange(async () => Response.json({
+      access_token: "clx_at_opaque",
+      id_token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1XzEifQ.sig",
+      refresh_token: "rt_1",
+      expires_in: 300,
+    }))
+
+    await expect(exchange(EXCHANGE_INPUT)).resolves.toMatchObject({ accessToken: "clx_at_opaque", refreshToken: "rt_1" })
+  })
+
+  test("refuses an id token in place of a missing access token", async () => {
+    const exchange = tokenExchange(async () => Response.json({
+      id_token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1XzEifQ.sig",
+      expires_in: 300,
+    }))
+
+    await expect(exchange(EXCHANGE_INPUT)).rejects.toThrow("valid access token and lifetime")
+  })
+
   test("rejects a token response without a finite positive lifetime", async () => {
     const exchange = tokenExchange(async () => Response.json({
-      access_token: JWT,
+      access_token: "clx_at_opaque",
       refresh_token: "rt_1",
     }))
 

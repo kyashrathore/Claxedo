@@ -14,7 +14,8 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 - The auth routes answer JSON, and a proxy's HTML error page has no fields to read, so `authResponseBody` reads a body only when the response says it is JSON (`better-auth-error.ts`).
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.
 
-- Invitation continuation (`login-continuation.ts`): sign-in or sign-up retains `/invitations#<token>`, then calls the server's typed `acceptOrgInvitation` action. The server owns email matching, expiry, revocation, single use and membership; the app owns only the authentication and acceptance screen.
+- Invitation continuation (`login-continuation.ts`): sign-in or sign-up retains `/invitations#<token>`, then calls the server's typed `acceptOrgInvitation` action. The server owns email matching, expiry, revocation, single use and membership; the app owns only the authentication and acceptance screen. Authenticating records the token in this tab's `sessionStorage` (`claxedo:invitation:started`), and a signed-in page joins on its own only when it takes that record for its own token (`resume()`); a link opened while already signed in, in another tab, or after a different user signed in waits for Accept invitation, so a link alone never adds someone to an organization.
+- Consent requester (`oauth-consent.ts`): a client this deployment registered (`claxedo-cli`, `claxedo-desktop`) is named by the deployment, never by its own `client_name`. Any other client registered itself without authentication, so the page calls it unverified, quotes the name it chose, shows the host its signed `redirect_uri` sends access to, and pre-checks no scope.
 - Native client continuation (`loginDestination`): a sign-in that continues a native client's authorization request loads the Worker's authorize URL as a full navigation, never through the client router, because on a deployment whose API and app share an origin the router would render the app shell at that path and the consent page would never appear.
 
 ## Machine
@@ -31,7 +32,8 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 ## Invariants
 
-- The consent page only narrows scopes; `claxedo:admin` is offered only to clients this deployment registered.
+- The consent page only narrows scopes: Allow always submits the scopes left checked, so a scope the page did not offer (`claxedo:admin` to a client this deployment did not register) is never granted by omission.
+- The device page names the requesting client the same way and says that approving grants the device full account access; the server issues user codes only to `claxedo-cli`.
 - Signing out clears every `claxedo:` preference except the last user id; a different user signing in clears them too.
 - No test bypass exists in this domain; flows sign in against the real Worker with the scripted OAuth provider.
 

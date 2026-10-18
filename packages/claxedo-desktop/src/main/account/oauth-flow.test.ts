@@ -133,15 +133,45 @@ describe("signIn", () => {
     expect(h.exchanges[0].redirectUri).toBe(`http://127.0.0.1:${PORT}${REDIRECT_PATH}`)
   })
 
-  test("never exchanges a code whose state did not match", async () => {
+  test("never exchanges a code whose state did not match, and keeps waiting for the real callback", async () => {
     // The attack this defends: a local process hands the listener a code of its
-    // own and the user ends up signed into someone else's account.
+    // own and the user ends up signed into someone else's account. Ending the
+    // attempt on that request would instead let any local process cancel it.
     const h = harness()
     const flow = createOAuthFlow(h.seams)
     const pending = flow.signIn(CONFIG)
     await Promise.resolve()
     await Promise.resolve()
-    h.callback(`${REDIRECT_PATH}?code=attacker-code&state=wrong`)
+
+    expect(h.callback(`${REDIRECT_PATH}?code=attacker-code&state=wrong`).status).toBe(400)
+    expect(h.callback(`${REDIRECT_PATH}?code=attacker-code`).status).toBe(400)
+    h.callback(`${REDIRECT_PATH}?code=the-code&state=${issuedState(h.opened)}`)
+
+    await expect(pending).resolves.toMatchObject({ ok: true })
+    expect(h.exchanges.map((exchange) => exchange.code)).toEqual(["the-code"])
+  })
+
+  test("an error without this attempt's state does not end the attempt", async () => {
+    const h = harness()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(h.callback(`${REDIRECT_PATH}?error=access_denied`).status).toBe(400)
+    expect(h.callback(`${REDIRECT_PATH}?error=access_denied&state=wrong`).status).toBe(400)
+    h.callback(`${REDIRECT_PATH}?code=the-code&state=${issuedState(h.opened)}`)
+
+    await expect(pending).resolves.toMatchObject({ ok: true })
+  })
+
+  test("the authorization server's own error, with this attempt's state, ends the attempt", async () => {
+    const h = harness()
+    const flow = createOAuthFlow(h.seams)
+    const pending = flow.signIn(CONFIG)
+    await Promise.resolve()
+    await Promise.resolve()
+    h.callback(`${REDIRECT_PATH}?error=access_denied&state=${issuedState(h.opened)}`)
 
     const result = await pending
     expect(result.ok).toBe(false)
@@ -169,7 +199,7 @@ describe("signIn", () => {
     // that accepts authorization codes.
     for (const finish of [
       (h: Harness) => h.callback(`${REDIRECT_PATH}?code=c&state=${issuedState(h.opened)}`),
-      (h: Harness) => h.callback(`${REDIRECT_PATH}?code=c&state=wrong`),
+      (h: Harness) => h.callback(`${REDIRECT_PATH}?error=access_denied&state=${issuedState(h.opened)}`),
       (h: Harness) => h.fireTimeout(),
     ]) {
       const h = harness()
@@ -243,8 +273,9 @@ describe("signIn", () => {
     expect(h.opened).toHaveLength(2)
 
     expect(h.callback(`${REDIRECT_PATH}?code=c&state=${firstState}`).status).toBe(400)
-    await expect(second).resolves.toMatchObject({ ok: false, reason: "callback-failed" })
-    expect(h.exchanges).toEqual([])
+    h.callback(`${REDIRECT_PATH}?code=second-code&state=${issuedState(h.opened)}`)
+    await expect(second).resolves.toMatchObject({ ok: true })
+    expect(h.exchanges.map((exchange) => exchange.code)).toEqual(["second-code"])
   })
 
   test("cancel ends a waiting attempt as cancelled and closes its listener", async () => {

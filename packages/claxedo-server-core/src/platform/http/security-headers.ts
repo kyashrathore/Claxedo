@@ -20,10 +20,11 @@
  * rendered as a document" class (content-sniffed HTML, a 404 body echoed into
  * a page, an SSE stream opened as a top-level navigation).
  *
- * The SPA's CSP is a different, much riskier policy and lives on the Pages
- * surface in `packages/claxedo-app/public/_headers`, where it ships
- * report-only. Keep the two in mind as separate problems: this one is safe to
- * enforce precisely because it protects a surface with no document.
+ * The SPA's CSP is a different, much riskier policy: the build enforces it as a
+ * `<meta>` tag (`packages/claxedo-app/vite.web-document.ts`), and
+ * `packages/claxedo-app/public/_headers` adds the `frame-ancestors` a meta
+ * policy cannot carry. Keep the two in mind as separate problems: this one is
+ * `default-src 'none'` precisely because it protects a surface with no document.
  *
  * ## Why HSTS is conditional
  *

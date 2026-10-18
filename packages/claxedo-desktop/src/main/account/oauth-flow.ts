@@ -120,12 +120,8 @@ async function attempt(config: OAuthConfig, seams: OAuthSeams, signal: AbortSign
   const server = await seams.listen((url) => {
     const result = readCallback({ url, expectedState: state, redirectPath: REDIRECT_PATH })
     if (!result.ok) {
-      // A request that is not our callback (a favicon fetch, a probe) must not
-      // end the attempt — only a real, state-matching callback does. But a
-      // callback on the RIGHT path that fails verification is an answer.
-      if (result.reason.startsWith("unexpected callback path")) {
-        return { status: 404, body: "not found" }
-      }
+      if (result.kind === "otherPath") return { status: 404, body: "not found" }
+      if (result.kind === "foreign") return { status: 400, body: "This is not the sign-in this app started." }
       settle({ ok: false, reason: "callback-failed", detail: result.reason })
       return { status: 400, body: "Sign-in failed. You can close this window." }
     }

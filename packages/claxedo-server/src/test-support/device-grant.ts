@@ -1,7 +1,6 @@
 import type { Hono } from "hono"
 import { expect } from "vitest"
-import { BETTER_AUTH_NATIVE_SCOPES } from "../platform/auth/better-auth-d1-foundation"
-import { BETTER_AUTH_CLI_CLIENT_ID } from "../platform/auth/better-auth-native-clients"
+import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_NATIVE_SCOPES } from "../platform/auth/better-auth-d1-foundation"
 
 export const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 

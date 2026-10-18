@@ -27,17 +27,7 @@ function options(configuration: ReturnType<typeof resolveBetterAuthConfiguration
 }
 
 describe("Better Auth D1 foundation configuration", () => {
-  /**
-   * Left to its default, Better Auth picks the state strategy from whether a
-   * server session store exists. This deployment has none, so it chose
-   * "cookie" — a path that hardcodes a 300s state cookie with no knob, and
-   * answers `state_mismatch` the moment a user spends longer than that on
-   * GitHub's own screens. Reproduced from a shell with no browser: mint a
-   * state, replay it at the callback, get `state_mismatch` while the row is
-   * still in `verification`. The database strategy checks that row (10
-   * minutes) and needs no cookie to survive a third-party redirect.
-   */
-  test("OAuth callback state is validated from the database, not a 5-minute cookie", () => {
+  test("OAuth callback state is validated from the database row and stays bound to the browser's state cookie", () => {
     const configured = options(resolveBetterAuthConfiguration({
       env: {
         CLAXEDO_AUTH_METHODS: "github",
@@ -50,7 +40,7 @@ describe("Better Auth D1 foundation configuration", () => {
       emailSender: { async send() {} },
     }))
     try {
-      expect(configured.value.account?.storeStateStrategy).toBe("database")
+      expect(configured.value.account).toEqual({ storeStateStrategy: "database" })
     } finally {
       configured.database.close()
     }
@@ -103,7 +93,7 @@ describe("Better Auth D1 foundation configuration", () => {
         endpoint: `${API_ORIGIN}/api/auth/oauth2/revoke`,
         tokenEndpointAuthMethod: "none",
       })
-      expect(configured.value.plugins.map((plugin) => plugin.id)).toContain("jwt")
+      expect(configured.value.plugins.map((plugin) => plugin.id)).not.toContain("jwt")
       expect(await betterAuthOAuthTokenHash("native-secret")).toBe(
         "jplrMEv5nLmnsvBZxvEjvppy9knQbqD3SCqRUJYyqBE",
       )

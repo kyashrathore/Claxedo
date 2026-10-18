@@ -10,9 +10,8 @@ import type { AuthEmailMessage } from "../../../platform/auth/better-auth-config
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
 import { createHostedCoreApp } from "../../../deployments/hosted-shared/hosted-core-app"
 import { createIdempotencyCoordinator, memoryIdempotencyStore } from "../../http/idempotency"
-import { BETTER_AUTH_NATIVE_SCOPES } from "../../../platform/auth/better-auth-d1-foundation"
+import { BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_NATIVE_SCOPES } from "../../../platform/auth/better-auth-d1-foundation"
 import {
-  BETTER_AUTH_CLI_CLIENT_ID,
   betterAuthIntrospectionClientSecretCiphertext,
   betterAuthNativeClientProvisioningStatements,
 } from "../../../platform/auth/better-auth-native-clients"
@@ -280,6 +279,30 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     expect(descriptor.native.cli).toMatchObject({
       flow: "device-authorization", clientId: BETTER_AUTH_CLI_CLIENT_ID, resource: CONTROL_PLANE_RESOURCE, scopes: BETTER_AUTH_NATIVE_SCOPES,
     })
+  })
+
+  test("a browser session cannot mint a self-contained JWT for the control plane", async () => {
+    const owner = await signIn("jwt-mint@device-login.test")
+
+    for (const path of ["/api/auth/token", "/api/auth/jwks"]) {
+      const minted = await request(path, { headers: { cookie: owner.cookie } })
+      expect(minted.status, `${path}: ${await minted.clone().text()}`).toBe(404)
+    }
+  })
+
+  test("a client that registered itself cannot obtain a user code to phish an approval with", async () => {
+    const registered = await request("/api/auth/oauth2/register", json({
+      client_name: "claxedo-cli", grant_types: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
+      token_endpoint_auth_method: "none", application_type: "native",
+    }))
+    expect(registered.status, await registered.clone().text()).toBe(201)
+    const clientId = ((await registered.json()) as { client_id: string }).client_id
+
+    const asked = await request("/api/auth/device/code", json({
+      client_id: clientId, scope: "claxedo:read claxedo:act claxedo:approve offline_access", resource: MCP_RESOURCE,
+    }))
+    expect(asked.status, await asked.clone().text()).toBe(400)
+    expect(await asked.json()).toMatchObject({ error: "invalid_client" })
   })
 
   test("a token an MCP host obtained for the MCP resource is not a control-plane credential", async () => {
