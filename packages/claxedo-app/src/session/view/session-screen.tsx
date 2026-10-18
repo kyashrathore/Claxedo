@@ -13,7 +13,8 @@ import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell
 import { DockLayout, useDialog } from "@/ui"
 import { holdPaneReveal, useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
-import { createTodoDock, SessionDocks } from "./session-docks"
+import { createTodoDock } from "./docks/todo-dock-state"
+import { SessionDocks, loadSessionDocks } from "./session-docks-lazy"
 import { SessionTimeline, userMessages } from "./session-timeline"
 import { createMessageLinks } from "./message-links"
 import { useSessionScreenText, type SessionScreenText } from "./text"
@@ -257,8 +258,8 @@ export function SessionSurface(props: SessionSurfaceProps) {
 export function SessionScreen(props: PaneProps<SessionLocation>) {
   onMount(() => {
     void nextIdleSlice()
-      .then(loadCodeViews)
-      .catch((error: unknown) => console.warn("The code views could not be fetched ahead; they load with the first diff shown", { error }))
+      .then(() => Promise.all([loadCodeViews(), loadSessionDocks()]))
+      .catch((error: unknown) => console.warn("The code views and docks could not be fetched ahead; they load when first shown", { error }))
   })
   return <SessionSurface sessionRef={props.state} active={props.active} />
 }
