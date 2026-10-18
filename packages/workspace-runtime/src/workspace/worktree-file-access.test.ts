@@ -3,6 +3,7 @@ import { testSessionCore } from "@claxedo/session-core/testing"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono, type MiddlewareHandler } from "hono"
 import fs from "node:fs/promises"
+import { rmSync, symlinkSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
@@ -324,6 +325,23 @@ describe("mounted file, diff and Git routes against a private session worktree",
     expect(await linked.text()).not.toContain(SECRET)
   })
 
+  test("refuses a symlink in the caller's own worktree that points into another session's", async () => {
+    const f = await fixture()
+    const server = mounted({
+      directory: f.source,
+      policy: sharedSessionPolicy("ses_shared"),
+      identity: relayAuth(),
+    })
+    await fs.symlink(path.relative(f.shared, f.private), path.join(f.shared, "leak"))
+
+    for (const route of ["/api/wr/file/content?path=leak/secret.txt", "/api/wr/file?path=leak", "/file/content?path=leak/secret.txt"]) {
+      const response = await server.request(scoped(route, f.shared))
+      const text = await response.text()
+      expect({ route, status: response.status }).toEqual({ route, status: 403 })
+      expect(text).not.toContain(SECRET)
+    }
+  })
+
   test("fails closed for a verified remote caller when the composition has no policy", async () => {
     const f = await fixture()
     const server = mounted({ directory: f.source, identity: relayAuth() })
@@ -388,6 +406,39 @@ describe("a private worktree nested under the workspace root", () => {
       head: () => git(["log", "-1", "--pretty=%s"], f.source),
     }
   }
+
+  test("opens the path the authority was asked about when a symlink is repointed during authorization", async () => {
+    const f = await containerFixture()
+    const decoy = path.join(f.source, "decoy")
+    await fs.mkdir(decoy)
+    await fs.writeFile(path.join(decoy, "secret.txt"), "decoy\n")
+    await fs.writeFile(path.join(decoy, "decoy-only.txt"), "")
+    const link = path.join(f.source, "leak")
+    const pointAt = (target: string) => {
+      rmSync(link, { force: true })
+      symlinkSync(target, link)
+    }
+    const base = sharedSessionPolicy("ses_shared")
+    const repointing: SessionAccessPolicy = {
+      ...base,
+      authorizeHost: (...args) => {
+        pointAt(f.nested)
+        return base.authorizeHost!(...args)
+      },
+    }
+    const server = mounted({ directory: f.source, policy: repointing, identity: relayAuth() })
+
+    pointAt(decoy)
+    const content = await server.request("/api/wr/file/content?path=leak/secret.txt")
+    expect(content.status).toBe(200)
+    await expect(content.json()).resolves.toMatchObject({ type: "text", content: "decoy" })
+
+    pointAt(decoy)
+    const listing = await server.request("/api/wr/file?path=leak")
+    expect(listing.status).toBe(200)
+    const names = (await listing.json() as Array<{ name: string; path: string }>).map((entry) => entry.path)
+    expect(names.sort()).toEqual([path.join("leak", "decoy-only.txt"), path.join("leak", "secret.txt")])
+  })
 
   test("authorization and execution agree on whitespace in requested paths", async () => {
     const f = await containerFixture()

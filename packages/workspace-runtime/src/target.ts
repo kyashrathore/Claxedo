@@ -116,14 +116,18 @@ export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T
 
 type PathAccess = { path?: typeof path; realpath?: (file: string) => Promise<string> }
 
+/** `input` as the filesystem names it: the realpath of its existing part, with the missing leaf names kept on the end. */
 async function existingPath(input: string, paths: typeof path, realpath: (file: string) => Promise<string>) {
   let current = input
+  const missing: string[] = []
   while (true) {
     try {
-      return await realpath(current)
+      const real = await realpath(current)
+      return missing.length === 0 ? real : paths.join(real, ...missing.reverse())
     } catch {
       const next = paths.dirname(current)
       if (next === current) throw new WorkspaceTargetError("workspace path does not exist")
+      missing.push(paths.basename(current))
       current = next
     }
   }
@@ -149,7 +153,24 @@ export function workspacePathCandidate(
   return paths.isAbsolute(text) ? paths.resolve(text) : paths.resolve(root, text)
 }
 
+type WorkspacePathOptions = PathAccess & { allowAbsoluteWithinRoot?: boolean; exactInput?: boolean }
+
 export async function resolveWorkspacePath(
+  root: string,
+  input: string | undefined,
+  options: WorkspacePathOptions = {},
+): Promise<string> {
+  return (await resolveWorkspacePathSpellings(root, input, options)).named
+}
+
+/**
+ * Both spellings of a contained path: `named` as the request spelled it, for
+ * reporting paths relative to the root, and `real` as the filesystem resolved
+ * it during the containment check. A read opens `real` and is authorized on it,
+ * so a symlink swapped after the check cannot redirect the open into a tree
+ * the caller was never authorized on.
+ */
+export async function resolveWorkspacePathSpellings(
   root: string,
   input: string | undefined,
   // allowAbsoluteWithinRoot: permit an absolute path IFF it resolves inside the
@@ -162,13 +183,13 @@ export async function resolveWorkspacePath(
   // arrive with stray whitespace and are trimmed by default; a path git
   // reported does not, and " lead/file.txt" trimmed resolves to a different
   // entry than the one git named.
-  options: PathAccess & { allowAbsoluteWithinRoot?: boolean; exactInput?: boolean } = {},
-): Promise<string> {
+  options: WorkspacePathOptions = {},
+): Promise<{ named: string; real: string }> {
   const paths = options.path ?? path
   const realpath = options.realpath ?? fs.realpath
   const base = paths.resolve(root)
   const txt = options.exactInput ? input : input?.trim()
-  if (!txt) return base
+  if (!txt) return { named: base, real: base }
   if (txt.includes("\0")) throw new WorkspaceTargetError("workspace path cannot contain null bytes")
   const absolute = paths.isAbsolute(txt)
   if (absolute && !options.allowAbsoluteWithinRoot) throw new WorkspaceTargetError("workspace path must be relative")
@@ -183,10 +204,10 @@ export async function resolveWorkspacePath(
     throw new WorkspaceTargetError("workspace path escapes configured directory")
   }
 
-  const realExisting = await existingPath(candidate, paths, realpath)
-  if (!inside(realRoot, realExisting, paths)) throw new WorkspaceTargetError("workspace path escapes configured directory")
+  const real = await existingPath(candidate, paths, realpath)
+  if (!inside(realRoot, real, paths)) throw new WorkspaceTargetError("workspace path escapes configured directory")
 
-  return candidate
+  return { named: candidate, real }
 }
 
 // The boundary class is every character a path token can sit directly behind:
