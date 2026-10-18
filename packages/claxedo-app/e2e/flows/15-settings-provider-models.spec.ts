@@ -25,7 +25,6 @@ async function saveProvider(stack: Stack, providerID: string, name: string, coun
 }
 
 async function providerCard(stack: Stack, app: Page, count: number, multiple = false) {
-  await stack.daemon.makeWorkspace("provider-models", "Provider models")
   await saveProvider(stack, "provider-card", "Provider Card", count)
   if (multiple) {
     await saveProvider(stack, "team-gateway", "Team Gateway", 27)

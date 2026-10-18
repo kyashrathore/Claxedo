@@ -1,5 +1,5 @@
 import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
-import { expect, test } from "../harness"
+import { expect, expectFooterAtDialogInset, test } from "../harness"
 import { saveOrgAccount } from "../harness/saved-org-account"
 
 test("15 settings: the local operator removes a saved organization account, cancellation preserves it, and the machine login stays protected", async ({ stack, app, isMobile }) => {
@@ -16,7 +16,7 @@ test("15 settings: the local operator removes a saved organization account, canc
   const saved = accounts.locator('[data-slot="account-row"]').filter({ hasText: "Saved Claude account" })
   const machine = accounts.locator('[data-slot="account-row"][data-account="machine"]')
   await expect(saved).toBeVisible()
-  await machine.getByText(/^Login on /).click()
+  await machine.getByText(/^Claude Code login on /).click()
   await expect(machine.getByRole("radio")).toBeChecked()
   await expect(machine.getByRole("button", { name: "Remove", exact: true })).toHaveCount(0)
   const remove = saved.getByRole("button", { name: "Remove", exact: true })
@@ -30,6 +30,7 @@ test("15 settings: the local operator removes a saved organization account, canc
   const confirm = app.getByRole("dialog").filter({ hasText: "Remove Saved Claude account?" })
   await remove.click()
   await expect(confirm.getByText("Used by Claude Code and Pi", { exact: true })).toBeVisible()
+  await expectFooterAtDialogInset(confirm, confirm.getByRole("button", { name: "Remove", exact: true }))
   expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
   await expect(confirm).toHaveCount(0)
@@ -64,7 +65,7 @@ test("15 settings: a chosen organization account that was removed says so and di
   await expect(missing.getByRole("radio")).toBeChecked()
   await expect(missing.getByRole("radio")).toBeDisabled()
   await expect(missing.getByText("Your organization has no Cursor API key. Ask an admin to add an organization account, or choose your own account.", { exact: true })).toBeVisible()
-  await accounts.getByText(/^Login on /).click()
+  await accounts.getByText(/^Cursor login on /).click()
   await expect(missing).toHaveCount(0)
   const read = await fetch(`${stack.url}/api/claxedo/credentials/account-sources`)
   expect(read.status).toBe(200)

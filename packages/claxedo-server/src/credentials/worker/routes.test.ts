@@ -4,6 +4,8 @@ import { CREDENTIALS_KEK_ENV, envelopeKeyProviderFromEnv } from "@claxedo/server
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "./index"
 import { hostedCredentialRoutes } from "./routes"
+import { claudeBundledOptions } from "@claxedo/harness/claude-models"
+import { codexBundledOptions } from "@claxedo/harness/codex-models"
 
 const env = { [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64") }
 const authConfig = { enabled: true as const, issuer: "https://auth.test", jwksUrl: "https://auth.test/jwks" }
@@ -30,9 +32,13 @@ const authentication: RequestAuthenticationAdapter = {
 
 const upstream: string[] = []
 const claims = Buffer.from(JSON.stringify({ email: "alice@example.com", "https://api.openai.com/auth": { chatgpt_account_id: "acct_alice" } })).toString("base64url")
-const deviceLogin: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => {
+const deviceLogin: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
   upstream.push(url)
+  if (url === "https://api.cursor.com/v1/models") {
+    if (new Headers(init?.headers).get("authorization") === "Bearer cursor-refused") return new Response("{}", { status: 401 })
+    return Response.json({ items: [{ id: "composer-2.5", displayName: "Composer 2.5" }] })
+  }
   if (url.endsWith("/deviceauth/usercode")) return Response.json({ device_auth_id: "device-secret", user_code: "WXYZ-1234", interval: 1 })
   if (url.endsWith("/deviceauth/token")) return Response.json({ authorization_code: "code", code_verifier: "verifier" })
   return Response.json({ id_token: `h.${claims}.s`, access_token: "chatgpt-access", refresh_token: "chatgpt-refresh", expires_in: 3600 })
@@ -173,5 +179,47 @@ describe("hosted account setup through the shared credential routes", () => {
     expect(await marked()).toEqual(["openai", "claude-sdk"])
     expect((await call(app(), "/api/claxedo/credentials/activate", { method: "POST", body: { ids: [anthropic.id] } })).status).toBe(200)
     expect(await marked()).toEqual(["anthropic", "openai", "claude-sdk"])
+  })
+})
+
+describe("a harness's model list for the signed person, with no workspace", () => {
+  const models = async (app: ReturnType<ReturnType<typeof rig>["app"]>, harness: string) => {
+    const response = await call(app, `/api/claxedo/credentials/harness-models?nativeHarness=${harness}`)
+    return { status: response.status, body: await response.json() }
+  }
+  const claudeProviders = ["claude-sdk", "claude-acp", "anthropic"]
+
+  test("Claude Code's list follows the form of the account the person runs it on, their own or the organization's, and no account is refused", async () => {
+    const { store, app } = rig()
+    expect(await models(app(), "claude")).toMatchObject({ status: 409, body: { error: { code: "account_unavailable" } } })
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("claude-sdk", "sk-ant-oat01-alice") })
+    expect(await models(app(), "claude")).toEqual({ status: 200, body: claudeBundledOptions("plan") })
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("anthropic", "sk-ant-api03-alice") })
+    const anthropic = (await store().listCredentials()).find((row) => row.provider_id === "anthropic")!
+    expect((await call(app(), "/api/claxedo/credentials/activate", { method: "POST", body: { ids: [anthropic.id] } })).status).toBe(200)
+    expect(await models(app(), "claude")).toEqual({ status: 200, body: claudeBundledOptions("api") })
+    const orgAccount = await store().putCredential({ owner: null, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-org" })
+    expect((await call(app(), "/api/claxedo/credentials/account-sources", { method: "PUT", body: { provider_ids: claudeProviders, source: "org" } })).status).toBe(200)
+    expect(await models(app(), "claude")).toEqual({ status: 200, body: claudeBundledOptions("api") })
+    await store().deleteCredential(orgAccount.id)
+    expect(await models(app(), "claude")).toMatchObject({ status: 409, body: { error: { code: "account_unavailable", details: { reason: "org_account_unavailable" } } } })
+  })
+
+  test("Codex lists its bundled models", async () => {
+    const { app } = rig()
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("openai", "sk-openai-alice") })
+    expect(await models(app(), "codex")).toEqual({ status: 200, body: codexBundledOptions() })
+  })
+
+  test("Cursor's list is the account's own from Cursor, Cursor's refusal is named, and a person with no Cursor account is refused", async () => {
+    const listing = rig()
+    expect(await models(listing.app(), "cursor")).toMatchObject({ status: 409, body: { error: { code: "account_unavailable" } } })
+    await call(listing.app(), "/api/claxedo/credentials", { method: "PUT", body: key("cursor-sdk", "cursor-alice") })
+    const listed = await models(listing.app(), "cursor")
+    expect(listed.status).toBe(200)
+    expect(listed.body.options.find((option: { category?: string }) => option.category === "model").selectOptions.map((row: { id: string }) => row.id)).toEqual(["auto", "composer-2.5"])
+    const refused = rig()
+    await call(refused.app(), "/api/claxedo/credentials", { method: "PUT", body: key("cursor-sdk", "cursor-refused") })
+    expect(await models(refused.app(), "cursor")).toEqual({ status: 502, body: { error: { code: "cursor_models_unavailable", message: "Cursor refused the model list read (401)." } } })
   })
 })

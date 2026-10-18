@@ -4,7 +4,8 @@ import { HostedShellRoutes } from "./shell"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
 import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
-import { CursorModelsError, type MachineHarnessDraft } from "../../credentials/worker/native-launch"
+import { CursorModelsError } from "@claxedo/server-core/credentials/harness-model-list"
+import type { MachineHarnessDraft } from "../../credentials/worker/native-launch"
 
 // An unverifiable bearer falls back to `verifyCliAccessBearer`, which reads
 // these from process.env. Clear them so "invalid token" is deterministic here

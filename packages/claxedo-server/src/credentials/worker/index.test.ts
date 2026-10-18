@@ -157,7 +157,7 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect((await pi.piProviderCatalog(as("B"))).connected).not.toContain("anthropic")
   })
 
-  test("hosted OpenCode catalogs use selected accounts, and a workspace whose runtime is asleep lists no models", async () => {
+  test("hosted OpenCode catalogs use selected accounts, and a workspace whose runtime is asleep lists the bundled models of the vendors held by key", async () => {
     const orgId = freshOrg("opencode-org")
     const credentials = store(orgId)
     await credentials.putCredential({ ...write, owner: null, provider_id: "anthropic" })
@@ -169,7 +169,10 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     await credentials.setAccountSources(["anthropic"], "org", undefined, "A")
     const chosen = await catalog.opencodeProviderCatalog(as("A"), "ws_asleep")
     expect(chosen.connected).toEqual(expect.arrayContaining(["openai", "anthropic"]))
-    expect(chosen.all.every((provider) => Object.keys(provider.models).length === 0)).toBe(true)
+    const listed = Object.fromEntries(chosen.all.map((provider) => [provider.id, Object.keys(provider.models)]))
+    expect(listed.anthropic).toEqual(openCodeBundledModels(["anthropic"]).map((model) => model.id))
+    expect(listed.openai).toEqual(openCodeBundledModels(["openai"]).map((model) => model.id))
+    expect(listed.groq).toEqual([])
     expect(JSON.stringify(chosen)).not.toContain("secret")
   })
 
@@ -363,6 +366,16 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(1)
     expect(await credentials.getCredentialByProvider("integration:conn-1", { owner: null })).toBeUndefined()
     expect(await credentials.deleteCredentialsByProvider("integration:conn-1")).toBe(0)
+  })
+
+  test("a pasted key's row keeps only its vendor prefix and last four as its hint", async () => {
+    const credentials = store(freshOrg("hint"))
+    const meta = await credentials.putCredential({ ...write, owner: "person-1", provider_id: "cursor-sdk", secret: "key_hosted_abcdefghijklmnop" })
+    expect(meta.secret_hint).toBe("key_…mnop")
+    expect(await credentials.listCredentials()).toEqual([expect.objectContaining({ id: meta.id, secret_hint: "key_…mnop" })])
+    expect(JSON.stringify(await credentials.listCredentials())).not.toContain("hosted_abcdefghijkl")
+    const connection = await credentials.putCredential({ ...write, provider_id: "integration:conn-hint", secret: "sk-hosted-secret-0042" })
+    expect(connection.secret_hint).toBeNull()
   })
 
   test("the kind argument narrows reads and deletes to the kind the caller named", async () => {

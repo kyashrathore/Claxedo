@@ -4,7 +4,7 @@ import { sessionId, type PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
 import { responseError, ServerError } from "./errors"
-import { HARNESS_NEEDS_BROKERING } from "@claxedo/agent-runtime-contract"
+import { HARNESS_NEEDS_BROKERING, type HarnessId } from "@claxedo/agent-runtime-contract"
 import type { HarnessOptions } from "./harness-types"
 import type { FetchQuery, SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
@@ -14,6 +14,7 @@ import { harnessOptionsFromWire, unavailableHereOptionsFromWire } from "./wire/h
 import { harnessSelectionQuery } from "./wire/harness-selection"
 
 const HARNESS_OPTIONS_PATH = "/api/claxedo/agent-config/harness/options"
+const HARNESS_MODELS_PATH = "/api/claxedo/credentials/harness-models"
 
 export type HarnessOptionsRequest = {
   readonly placementId: PlacementId
@@ -34,8 +35,8 @@ function controlPlaneDraftReader(transport: Transport, account: HostedAccount | 
   return (query) => readOptionsRoute(transport, query)
 }
 
-async function readOptionsRoute(transport: Transport, query: Record<string, string | undefined>): Promise<HarnessOptions | undefined> {
-  const response = await transport.request(withQuery(HARNESS_OPTIONS_PATH, query))
+async function readOptionsRoute(transport: Transport, query: Record<string, string | undefined>, path = HARNESS_OPTIONS_PATH): Promise<HarnessOptions | undefined> {
+  const response = await transport.request(withQuery(path, query))
   if (response.status === 204) return undefined
   if (!response.ok) throw await responseError(response, "Model options")
   return harnessOptionsFromWire(await response.json())
@@ -73,6 +74,8 @@ export function harnessQueries(transport: Transport, workspaces: Workspaces, acc
   return {
     options: (placementId: PlacementId, harness: string): FetchQuery<HarnessOptions> =>
       fetchQuery(queryKeys.harnessOptions(transport.serverUrl, placementId, harness), () => readHarnessOptions(transport, workspaces, account, { placementId, harness })),
+    catalogOptions: (harness: HarnessId): FetchQuery<HarnessOptions> =>
+      fetchQuery(queryKeys.harnessCatalogOptions(transport.serverUrl, harness), async () => (await readOptionsRoute(transport, { nativeHarness: harness }, HARNESS_MODELS_PATH)) ?? harnessOptionsFromWire(undefined)),
     commands: harnessCommandQuery(transport, workspaces),
     stopsBackgroundTasks: (ref: SessionLocation): FetchQuery<boolean> =>
       fetchQuery(queryKeys.stopsBackgroundTasks(transport.serverUrl, ref.placementId, ref.sessionId), async () => readStopsBackgroundTasks(transport, await workspaces.route(ref), ref)),

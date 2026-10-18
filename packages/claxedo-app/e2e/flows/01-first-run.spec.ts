@@ -19,6 +19,10 @@ function pageOverflows(app: Page) {
   })
 }
 
+function escaped(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
 async function onboard(app: Page, fromHome: string, machine: string) {
   await expect(app.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
   await expect(app.getByText(`Folder on ${machine}`, { exact: true })).toBeVisible()
@@ -27,10 +31,10 @@ async function onboard(app: Page, fromHome: string, machine: string) {
   await app.getByRole("dialog", { name: "New Project" }).getByRole("button", { name: /first/ }).click()
   await app.getByRole("button", { name: "Continue" }).click()
   await expect(app.getByRole("heading", { level: 1, name: "Connect an AI" })).toBeVisible()
-  await expect(app.getByRole("radiogroup", { name: "Claude Code" })).toBeVisible()
+  await expect(app.getByRole("radiogroup", { name: "Claude Code" }).getByRole("radio", { name: new RegExp(`^Claude Code login on ${escaped(machine)}.* CLI login · `) })).toBeVisible()
   await app.getByRole("button", { name: "Next", exact: true }).click()
   const where = app.getByRole("radiogroup", { name: "Where work runs" })
-  await expect(where.getByRole("radio", { name: new RegExp(`^${machine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) })).toBeChecked()
+  await expect(where.getByRole("radio", { name: new RegExp(`^${escaped(machine)}`) })).toBeChecked()
   await expect(where.getByRole("radio")).toHaveCount(1)
   await expect(app.getByText(/this machine|this computer/i).filter({ visible: true })).toHaveCount(0)
   await expect(app.getByRole("button", { name: "Connect a machine…" })).toHaveCount(0)

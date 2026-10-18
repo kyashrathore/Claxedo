@@ -56,7 +56,7 @@ function SurfaceForm(props: FormSurfaceProps): JSX.Element {
 
 export function FormDialog(props: FormSurfaceProps): JSX.Element {
   return (
-    <DialogV2 fit aria-label={props.title}>
+    <DialogV2 fit containerClass="form-dialog" aria-label={props.title}>
       <SurfaceForm {...props} />
     </DialogV2>
   )
