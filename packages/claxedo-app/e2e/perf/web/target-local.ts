@@ -12,8 +12,8 @@ import type { Target } from "./target"
 
 const DIST_DIR = path.resolve(import.meta.dirname, "../../../dist-e2e-web-perf")
 
-/** Production allows 600 requests a minute per client and 120 on control routes; three repetitions boot the app fifteen times a minute, which a person never does. */
-const UNLIMITED_REQUESTS = { CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: "1000000", CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "1000000" }
+/** Production allows 600 requests a minute per client, 120 on control routes and 6 workspace connections a minute per person and workspace; three repetitions boot the app fifteen times a minute, which a person never does. */
+const UNLIMITED_REQUESTS = { CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: "1000000", CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "1000000", CLAXEDO_CONNECTION_RATE_LIMIT: "1000000" }
 
 export type LocalTargetInput = { readonly seedTurns: number; readonly railSessions: number; readonly log: (line: string) => void }
 
