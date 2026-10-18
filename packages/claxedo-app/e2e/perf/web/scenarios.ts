@@ -10,6 +10,7 @@ import type { Profile } from "./profiles"
 import { startRecorder, type Recorder, type Recording } from "./recorder"
 import type { Target } from "./target"
 import { buildWaterfall, type Waterfall, type WaterfallRow } from "./waterfall"
+import { round } from "./numbers"
 
 export type Cache = "cold" | "warm"
 
@@ -61,10 +62,6 @@ function quantile(values: readonly number[], q: number) {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0
-}
-
-function round(value: number) {
-  return Math.round(value * 10) / 10
 }
 
 async function openSession(input: RunInput, signedIn: boolean): Promise<Session> {

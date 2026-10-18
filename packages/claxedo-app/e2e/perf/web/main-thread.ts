@@ -1,6 +1,7 @@
 import { traceText, type TraceEvent } from "../../harness/trace-events"
 import { describeTraceEvent, type CpuProfile, type Mapper } from "../panel/trace"
 import { mainThreadEvents } from "../stream-switch/main-thread"
+import { round } from "./numbers"
 
 export type LongTask = { readonly startMs: number; readonly durMs: number; readonly top: readonly string[] }
 
@@ -22,10 +23,6 @@ const EVALUATE = /^(EvaluateScript|v8\.evaluateModule)$/
 const GC = /GC|ThreadState::completeSweep|CollectGarbage/
 const LONG_TASK_US = 50_000
 const NO_MAPPER: Mapper = { map: (file, line, column) => `${file}:${line}:${column}` }
-
-function round(value: number) {
-  return Math.round(value * 10) / 10
-}
 
 function scriptUrl(event: TraceEvent) {
   const data = event.args?.data ?? {}

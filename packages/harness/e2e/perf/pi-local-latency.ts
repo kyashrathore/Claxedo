@@ -9,17 +9,13 @@ import { releasePort, reservePort } from "../harness/ports"
 import { startScriptedModelServer } from "../harness/scripted-model-server"
 import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST, LAUNCH_GATE_CHILD_DIST } from "../harness/workspace-dists"
 import { measureTurn, summarizeTurns, timedStream, type TurnTimes } from "./latency-client"
-import { intervals, ms, sleep, summarize, type Summary } from "./pipes"
+import { intervals, ms, sleep, summarize, summaryRow } from "./pipes"
 import { startVendorProxy } from "./vendor-proxy"
 
 const MODEL = { providerId: "pi", modelId: "openai/gpt-4.1" }
 const REPLY = Array.from({ length: 40 }, (_, index) => `token${index} `).join("")
 
 type LocalTurn = TurnTimes & { vendorRequest?: number; vendorFirstByte?: number; vendorDeltas: number[] }
-
-function row(label: string, summary: Summary | undefined) {
-  return summary ? `${label.padEnd(26)} p50 ${ms(summary.p50).padStart(6)}  mean ${ms(summary.mean).padStart(6)}  p95 ${ms(summary.p95).padStart(6)}  sd ${ms(summary.sd).padStart(5)}  n ${summary.n}` : `${label.padEnd(26)} -`
-}
 
 const { values } = parseArgs({ options: {
   turns: { type: "string", default: "6" },
@@ -89,15 +85,15 @@ const summary = {
 }
 console.log([
   `== local (daemon on loopback; vendor one way ${values.vendorMs} ms, ttft ${values.ttft} ms, ${values.chunks} chunks every ${values.cadence} ms)`,
-  row("press -> accepted", summary.accepted),
-  row("press -> vendor request", summary.vendorRequest),
-  row("press -> vendor first byte", summary.vendorFirstByte),
-  row("press -> client first delta", summary.firstDelta),
-  row("inter-delta at vendor", summary.vendorInterDelta),
-  row("inter-delta at client", summary.interDelta),
-  row("jitter (sd) at client", summary.clientJitter),
-  row("last delta -> idle", summary.lastDeltaToIdle),
-  row("press -> idle", summary.idle),
+  summaryRow("press -> accepted", summary.accepted),
+  summaryRow("press -> vendor request", summary.vendorRequest),
+  summaryRow("press -> vendor first byte", summary.vendorFirstByte),
+  summaryRow("press -> client first delta", summary.firstDelta),
+  summaryRow("inter-delta at vendor", summary.vendorInterDelta),
+  summaryRow("inter-delta at client", summary.interDelta),
+  summaryRow("jitter (sd) at client", summary.clientJitter),
+  summaryRow("last delta -> idle", summary.lastDeltaToIdle),
+  summaryRow("press -> idle", summary.idle),
 ].join("\n"))
 if (values.out) {
   await fs.mkdir(values.out, { recursive: true })

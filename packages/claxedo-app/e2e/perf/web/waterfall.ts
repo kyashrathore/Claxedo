@@ -1,4 +1,5 @@
 import type { NetworkRecord } from "./recorder"
+import { round } from "./numbers"
 
 export type WaterfallRow = {
   readonly id: string
@@ -70,10 +71,6 @@ export function shortPath(url: string) {
   } catch {
     return url
   }
-}
-
-function round(value: number) {
-  return Math.round(value * 10) / 10
 }
 
 function initiatorLabel(record: NetworkRecord) {

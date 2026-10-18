@@ -54,3 +54,7 @@ export function intervals(times: readonly number[]): number[] {
 }
 
 export const ms = (value: number | undefined) => value === undefined ? "-" : value.toFixed(value >= 100 ? 0 : 1)
+
+export function summaryRow(label: string, summary: Summary | undefined) {
+  return summary ? `${label.padEnd(26)} p50 ${ms(summary.p50).padStart(6)}  mean ${ms(summary.mean).padStart(6)}  p95 ${ms(summary.p95).padStart(6)}  sd ${ms(summary.sd).padStart(5)}  n ${summary.n}` : `${label.padEnd(26)} -`
+}

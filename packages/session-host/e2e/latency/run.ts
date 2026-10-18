@@ -5,7 +5,7 @@ import { parseArgs } from "node:util"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
 import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
 import { measureTurn, summarizeTurns, timedStream, type TurnTimes } from "../../../harness/e2e/perf/latency-client"
-import { intervals, ms, sleep, summarize, type Summary } from "../../../harness/e2e/perf/pipes"
+import { intervals, ms, sleep, summarize, summaryRow, type Summary } from "../../../harness/e2e/perf/pipes"
 import { startVendorProxy, type VendorProxy } from "../../../harness/e2e/perf/vendor-proxy"
 import { bootTopology, bundleScripts, STAGING_LINKS, type Links, type Scripts, type Topology } from "./topology"
 
@@ -159,29 +159,25 @@ async function runScenario(scenario: Scenario, input: { scripts: Scripts; model:
   }
 }
 
-function row(label: string, summary: Summary | undefined) {
-  return summary ? `${label.padEnd(26)} p50 ${ms(summary.p50).padStart(6)}  mean ${ms(summary.mean).padStart(6)}  p95 ${ms(summary.p95).padStart(6)}  sd ${ms(summary.sd).padStart(5)}  n ${summary.n}` : `${label.padEnd(26)} -`
-}
-
 function report(result: ScenarioResult): string {
   const { summary } = result
   return [
     `== ${result.scenario.name} (${result.scenario.path}; links ${JSON.stringify(result.scenario.links)}${result.scenario.relayCacheTtlMs === undefined ? "" : `; relay cache ${result.scenario.relayCacheTtlMs} ms`}${result.scenario.coldObject ? "; fresh object per turn" : ""})`,
-    row("press -> accepted", summary.accepted),
-    row("press -> room sent prompt", summary.roomPromptSent),
-    row("press -> object answered", summary.objectPromptAnswered),
-    row("press -> vendor request", summary.vendorRequest),
-    row("press -> vendor first byte", summary.vendorFirstByte),
-    row("press -> object first delta", summary.objectFirstDelta),
-    row("press -> client first delta", summary.firstDelta),
-    row("inter-delta at vendor", summary.vendorInterDelta),
-    row("inter-delta at object", summary.objectInterDelta),
-    row("inter-delta at client", summary.interDelta),
-    row("jitter (sd) at object", summary.objectJitter),
-    row("jitter (sd) at client", summary.clientJitter),
-    row("last delta -> idle", summary.lastDeltaToIdle),
-    row("press -> idle", summary.idle),
-    row("event stream open", result.streamOpen),
+    summaryRow("press -> accepted", summary.accepted),
+    summaryRow("press -> room sent prompt", summary.roomPromptSent),
+    summaryRow("press -> object answered", summary.objectPromptAnswered),
+    summaryRow("press -> vendor request", summary.vendorRequest),
+    summaryRow("press -> vendor first byte", summary.vendorFirstByte),
+    summaryRow("press -> object first delta", summary.objectFirstDelta),
+    summaryRow("press -> client first delta", summary.firstDelta),
+    summaryRow("inter-delta at vendor", summary.vendorInterDelta),
+    summaryRow("inter-delta at object", summary.objectInterDelta),
+    summaryRow("inter-delta at client", summary.interDelta),
+    summaryRow("jitter (sd) at object", summary.objectJitter),
+    summaryRow("jitter (sd) at client", summary.clientJitter),
+    summaryRow("last delta -> idle", summary.lastDeltaToIdle),
+    summaryRow("press -> idle", summary.idle),
+    summaryRow("event stream open", result.streamOpen),
     `control-plane calls ${JSON.stringify(result.cpCalls)}`,
     `relay resolver calls ${JSON.stringify(result.resolverCalls)}`,
   ].join("\n")
