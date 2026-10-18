@@ -15,9 +15,9 @@ function shell(assets: Assets, origin: string): Promise<string | null> {
  * Runs ahead of the static assets for `/assets/*` only. Vite writes nothing
  * but hashed scripts, styles and media under `/assets`, so the shell coming
  * back there is the single-page-application fallback standing in for a chunk
- * a newer deploy removed. The `_headers` rules label that answer as a script
- * and cache it for a year, so the browser parses HTML as a module
- * ("Unexpected token '<'") and keeps it; a 404 lets the app reload instead.
+ * a newer deploy removed. The `_headers` rule for `/assets/*` caches that answer
+ * for a year, so the browser keeps an HTML document where a module should be
+ * and the chunk can never load; an uncached 404 lets the app reload instead.
  */
 export default {
   async fetch(request: Request, env: { ASSETS: Assets }): Promise<Response> {

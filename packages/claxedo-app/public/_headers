@@ -13,13 +13,15 @@
 #
 # A Cache-Control set here replaces the publisher's default
 # (`public, max-age=0, must-revalidate`) rather than adding to it, and a second
-# matching rule that sets it again is joined to the first with a comma. Every
-# response carries `no-transform`, so edge features that rewrite HTML or scripts
-# (Rocket Loader, email obfuscation, injected beacons) cannot add inline scripts
-# the build's meta Content-Security-Policy refuses; the rest of this value is
-# the default revalidation the SPA shell, its client routes (/, /w/:id, /s/:id)
-# and unhashed root files need, so a new deploy's asset references are picked
-# up at once.
+# matching rule that sets any header again is joined to the first with a comma.
+# Everything outside /assets carries `no-transform`: the SPA shell is the only
+# HTML either publisher serves, and Cloudflare's HTML features (email
+# obfuscation, Rocket Loader, injected beacons) would add inline scripts the
+# build's meta Content-Security-Policy refuses. The directive also stops
+# Cloudflare compressing those responses, which costs about 3 KB on the shell.
+# The rest of the value is the default revalidation the shell, its client routes
+# (/, /w/:id, /s/:id) and unhashed root files need, so a new deploy's asset
+# references are picked up at once.
 /*
   Cache-Control: no-transform, public, max-age=0, must-revalidate
   X-Content-Type-Options: nosniff
@@ -39,31 +41,13 @@
   # origins. A meta policy cannot carry frame-ancestors, so it stays here.
   Content-Security-Policy: frame-ancestors 'self'
 
-# Vite emits content-hashed filenames under /assets (e.g. main-DUtf99h4.js), so
-# they are immutable. Both publishers apply a rule's `!` detach before its own
-# values, so this rule's Cache-Control replaces the one above instead of being
-# joined to its revalidation. The MIME type is set once on the specific
-# extensions.
+# Vite writes only content-hashed scripts, styles and media under /assets (e.g.
+# main-DUtf99h4.js), so they are immutable. Both publishers apply a rule's `!`
+# detach before its own values, so this value replaces the one above instead of
+# being joined to it. Without `no-transform` Cloudflare compresses them, which
+# takes main-*.js from 3.6 MB to about 1.0 MB. Content-Type is left to the
+# publisher, which derives it from the extension; a rule here would be joined to
+# any other matching Content-Type rule and name no type Cloudflare compresses.
 /assets/*
   ! Cache-Control
-  Cache-Control: no-transform, public, max-age=31536000, immutable
-
-/assets/*.js
-  Content-Type: application/javascript
-
-/assets/*.mjs
-  Content-Type: application/javascript
-
-/assets/*.css
-  Content-Type: text/css
-
-# Root-level scripts/styles may be unhashed (service worker, etc.), so they
-# keep the revalidating Cache-Control above and get only their MIME type here.
-/*.js
-  Content-Type: application/javascript
-
-/*.mjs
-  Content-Type: application/javascript
-
-/*.css
-  Content-Type: text/css
+  Cache-Control: public, max-age=31536000, immutable

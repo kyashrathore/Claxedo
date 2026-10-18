@@ -39,10 +39,10 @@ test("a chunk a newer deploy removed answers 404 uncached, not the shell as a mo
   expect(await response.text()).toBe("")
 })
 
-test("the bare assets binding answers a missing chunk with the shell labelled as an immutable script", async () => {
+test("the bare assets binding answers a missing chunk with the shell cached as immutable", async () => {
   const fallback = await assets.dispatchFetch("https://app.test/assets/terminal-creator-OLD.js")
   expect(fallback.status).toBe(200)
-  expect(fallback.headers.get("content-type")).toContain("application/javascript")
+  expect(fallback.headers.get("content-type")).toContain("text/html")
   expect(fallback.headers.get("cache-control")).toContain("immutable")
   expect(await fallback.text()).toMatch(/^<!doctype html>/)
 })
@@ -51,7 +51,7 @@ test("a present chunk passes through with its immutable caching", async () => {
   const response = await serve("/assets/main-new.js")
   expect(response.status).toBe(200)
   expect(await response.text()).toBe("export {}")
-  expect(response.headers.get("cache-control")).toBe("no-transform, public, max-age=31536000, immutable")
+  expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
 })
 
 test("client routes outside /assets keep the single-page fallback", async () => {
