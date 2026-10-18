@@ -35,9 +35,11 @@ beforeAll(async () => {
   const config = path.join(directory, "app-wrangler.toml")
   await writeFile(config, renderAppWranglerConfig({ appWorkerName: "app-assets-worker-test", browserDirectory: browser }))
   const { workerOptions, main } = unstable_getMiniflareWorkerOptions(config)
-  const bundle = await build({ entryPoints: [main], bundle: true, format: "esm", platform: "neutral", write: false })
+  if (main === undefined) throw new Error("the app Wrangler config names no main module")
+  const { outputFiles: [script] } = await build({ entryPoints: [main], bundle: true, format: "esm", platform: "neutral", write: false })
+  if (script === undefined) throw new Error("esbuild wrote no bundle for the app assets Worker")
   // `cf: false` keeps Miniflare from fetching a `request.cf` sample into `.wrangler/` under the working directory.
-  app = new Miniflare({ ...workerOptions, cf: false, modules: true, script: bundle.outputFiles[0]!.text })
+  app = new Miniflare({ ...workerOptions, cf: false, modules: true, script: script.text })
   origin = await app.ready
 
   bareAssets = new Miniflare({
