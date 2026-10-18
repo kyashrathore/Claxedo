@@ -49,7 +49,7 @@ async function recoverChunk(error: unknown): Promise<ChunkLoadRecovery> {
   return recovery
 }
 
-async function loadChunk<T>(load: () => Promise<T>): Promise<T> {
+export async function loadChunk<T>(load: () => Promise<T>): Promise<T> {
   try {
     return await load()
   } catch (error) {

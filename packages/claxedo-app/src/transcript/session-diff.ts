@@ -1,23 +1,16 @@
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs"
-
 import { parsePatch } from "diff"
-import type { AgentReviewFileDiff } from "@claxedo/agent-runtime-contract"
-
-type ReviewDiff = AgentReviewFileDiff
-export type DiffSource = Pick<AgentReviewFileDiff, "file" | "patch" | "before" | "after">
-
-export type ViewDiff = {
-  file: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
-  fileDiff: FileDiffMetadata
-}
+import type { DiffSource } from "./diff-source"
 
 const diffCacheLimit = 16
 const fileDiffCache = new Map<string, FileDiffMetadata>()
 
 let fileDiffSerial = 0
+
+export function text(diff: Pick<FileDiffMetadata, "deletionLines" | "additionLines">, side: "deletions" | "additions") {
+  if (side === "deletions") return diff.deletionLines.join("")
+  return diff.additionLines.join("")
+}
 
 export function resolveFileDiff(diff: DiffSource): FileDiffMetadata {
   const key = contentKey(diff)
@@ -49,21 +42,6 @@ function parseFileDiff(diff: DiffSource) {
     typeof diff.before === "string" ? diff.before : "",
     typeof diff.after === "string" ? diff.after : "",
   )
-}
-
-export function normalize(diff: ReviewDiff): ViewDiff {
-  return {
-    file: diff.file,
-    additions: diff.additions,
-    deletions: diff.deletions,
-    status: diff.status,
-    fileDiff: resolveFileDiff(diff),
-  }
-}
-
-export function text(diff: Pick<ViewDiff, "fileDiff">, side: "deletions" | "additions") {
-  if (side === "deletions") return diff.fileDiff.deletionLines.join("")
-  return diff.fileDiff.additionLines.join("")
 }
 
 function fileDiffFromPatch(file: string, patch: string) {

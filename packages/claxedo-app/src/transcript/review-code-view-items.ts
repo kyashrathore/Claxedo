@@ -1,5 +1,6 @@
 import type { CodeViewItem, DiffLineAnnotation } from "@pierre/diffs"
-import { resolveFileDiff, type DiffSource } from "./session-diff"
+import type { DiffSource } from "./diff-source"
+import { resolveFileDiff } from "./session-diff"
 
 type Entry<LAnnotation> = {
   source: DiffSource

@@ -1,12 +1,14 @@
-import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, onMount, Show, Switch } from "solid-js"
 import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
 import { useElapsed } from "@/lib/delay"
+import { nextIdleSlice } from "@/lib/idle"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { useErrorCopy } from "@/i18n"
 import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
 import { useAccess, type SessionControls } from "@/access"
 import { useSessionStores, type SessionView } from "@/session"
+import { loadCodeViews } from "@/transcript"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { DockLayout, useDialog } from "@/ui"
 import { holdPaneReveal, useWorkbench } from "@/workbench"
@@ -253,5 +255,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
 }
 
 export function SessionScreen(props: PaneProps<SessionLocation>) {
+  onMount(() => {
+    void nextIdleSlice()
+      .then(loadCodeViews)
+      .catch((error: unknown) => console.warn("The code views could not be fetched ahead; they load with the first diff shown", { error }))
+  })
   return <SessionSurface sessionRef={props.state} active={props.active} />
 }
