@@ -758,8 +758,12 @@ export const desktopRenderer: Policy = {
   // The sign-in page's continuation of an authorization request, which waits
   // for a fresh sign-in when the request asks for one (owner: the app's auth
   // domain, `auth/view/login-redirect.ts`). It adds no package edge.
-  // 1468/36, no headroom.
-  ceilings: { modules: 1468, packages: 36 },
+  // The reader of the deployment a hosted deploy publishes into the web shell
+  // (owner: the app's server adapter, `server/published-deployment.ts`), which
+  // the shared catalog read asks first; the desktop shell carries none, so it
+  // answers nothing there. It adds no package edge.
+  // 1469/36, no headroom.
+  ceilings: { modules: 1469, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
