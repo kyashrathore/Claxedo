@@ -8,16 +8,14 @@ import {
   type TaskDraft,
 } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
-import { Button, Select } from "@/ui"
+import { Button, ClaxedoIconButton, Field, Select, Textarea, TextField } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
 import { tasksDictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import { TASK_STATUS_KEYS } from "../model"
 import { draftImageUrl } from "./image-drafts"
 import { createImageQueue } from "./image-queue"
-import { ProseField } from "./prose-field"
 import { TaskStatusChip } from "./status-control"
-import { TaskTitleField } from "./title-field"
 
 export type ImageQueue = ReturnType<typeof createImageQueue>
 
@@ -29,6 +27,8 @@ export type TaskCreateFieldsProps = {
   readonly onDraftChange: (draft: TaskDraft) => void
 }
 
+type Patch = (input: Partial<TaskDraft>) => void
+
 function imageFiles(transfer: DataTransfer | null): File[] {
   if (!transfer) return []
   return [...transfer.files].filter(
@@ -36,104 +36,153 @@ function imageFiles(transfer: DataTransfer | null): File[] {
   )
 }
 
-function ImageStrip(props: {
-  readonly images: readonly TaskAttachmentDraft[]
-  readonly queue: ImageQueue
-}) {
+function FieldReason(props: { readonly reason?: string }): JSX.Element {
+  const t = useTranslator(tasksDictionary)
+  return (
+    <Show when={props.reason}>
+      {(reason) => (
+        <Field.Suffix>
+          <span class="tsk-error">{t(fieldReasonKey(reason()))}</span>
+        </Field.Suffix>
+      )}
+    </Show>
+  )
+}
+
+function ImageRows(props: { readonly images: readonly TaskAttachmentDraft[]; readonly queue: ImageQueue }): JSX.Element {
+  const t = useTranslator(tasksDictionary)
+  return (
+    <Show when={props.images.length > 0}>
+      <ul class="tsk-create-images" aria-label={t("tasks.create.images")}>
+        <For each={props.images}>
+          {(image, index) => (
+            <li class="tsk-create-image">
+              <img class="tsk-create-image-thumb" src={draftImageUrl(image)} alt="" />
+              <span class="tsk-create-image-name" title={image.filename}>
+                {image.filename}
+              </span>
+              <ClaxedoIconButton
+                type="button"
+                icon="trash"
+                size="small"
+                variant="ghost"
+                aria-label={t("tasks.create.removeImage", { name: image.filename })}
+                onClick={() => props.queue.remove(index())}
+              />
+            </li>
+          )}
+        </For>
+      </ul>
+    </Show>
+  )
+}
+
+function ImagesField(props: { readonly images: readonly TaskAttachmentDraft[]; readonly queue: ImageQueue; readonly reason?: string }): JSX.Element {
   const t = useTranslator(tasksDictionary)
   let picker: HTMLInputElement | undefined
   return (
-    <div class="tsk-images" data-testid="task-create-images">
-      <For each={props.images}>
-        {(image, index) => (
-          <figure class="tsk-image" data-testid="task-create-image">
-            <img class="tsk-image-thumb" src={draftImageUrl(image)} alt={image.filename} />
-            <figcaption class="tsk-image-name" title={image.filename}>
-              {image.filename}
-            </figcaption>
-            <button
-              type="button"
-              class="tsk-image-remove"
-              aria-label={t("tasks.create.removeImage", { name: image.filename })}
-              onClick={() => props.queue.remove(index())}
-            >
-              ×
-            </button>
-          </figure>
-        )}
-      </For>
+    <Field role="group" aria-label={t("tasks.create.images")} invalid={props.reason !== undefined}>
+      <Field.Label>{t("tasks.create.images")}</Field.Label>
+      <Field.Prefix>{t("tasks.create.imagesHint", { max: TASKS_BOUNDS.taskAttachmentsMax })}</Field.Prefix>
+      <ImageRows images={props.images} queue={props.queue} />
       <input
         ref={picker}
         type="file"
         accept={TASK_ATTACHMENT_MIMES.join(",")}
         multiple
         hidden
-        data-testid="task-create-image-picker"
         onChange={(event) => {
           props.queue.add([...(event.currentTarget.files ?? [])])
           event.currentTarget.value = ""
         }}
       />
-      <Button
-        size="small"
-        variant="ghost"
-        data-testid="task-create-add-image"
-        disabled={props.images.length >= TASKS_BOUNDS.taskAttachmentsMax}
-        onClick={() => picker?.click()}
-      >
+      <Button type="button" variant="neutral" disabled={props.images.length >= TASKS_BOUNDS.taskAttachmentsMax} onClick={() => picker?.click()}>
         {t("tasks.create.addImage")}
       </Button>
-    </div>
+      <Show when={props.queue.reading() > 0}>
+        <Field.Suffix role="status">{t("tasks.create.readingImages")}</Field.Suffix>
+      </Show>
+      <Show when={props.queue.notice()}>
+        {(notice) => (
+          <Field.Suffix role="status">
+            <span class="tsk-error">{t(notice().key, notice().params)}</span>
+          </Field.Suffix>
+        )}
+      </Show>
+      <FieldReason reason={props.reason} />
+    </Field>
   )
 }
 
-function ChipRow(props: TaskCreateFieldsProps & { readonly patch: (input: Partial<TaskDraft>) => void }): JSX.Element {
+function ProjectField(props: TaskCreateFieldsProps & { readonly patch: Patch }): JSX.Element {
   const t = useTranslator(tasksDictionary)
-  const project = () => props.projects.find((entry) => entry.id === props.draft.projectId)
-  const projectError = () => props.fieldErrors?.projectId
+  const reason = () => props.fieldErrors?.projectId
   return (
-    <div class="tsk-chiprow">
+    <Field invalid={reason() !== undefined}>
+      <Field.Label>{t("tasks.create.project")}</Field.Label>
       <Select
-        appearance="inline"
+        options={[...props.projects]}
+        current={props.projects.find((entry) => entry.id === props.draft.projectId)}
+        value={(entry: TaskProject) => entry.id}
+        label={(entry: TaskProject) => entry.label}
+        placeholder={t("tasks.create.project")}
+        invalid={reason() !== undefined}
+        triggerProps={{ "aria-label": t("tasks.create.project") }}
+        onSelect={(entry) => {
+          if (entry) props.patch({ projectId: entry.id })
+        }}
+      />
+      <FieldReason reason={reason()} />
+    </Field>
+  )
+}
+
+function StatusField(props: { readonly status: TaskCreateStatus; readonly patch: Patch }): JSX.Element {
+  const t = useTranslator(tasksDictionary)
+  return (
+    <Field>
+      <Field.Label>{t("tasks.create.status")}</Field.Label>
+      <Select
         options={[...TASK_CREATE_STATUSES]}
-        current={props.draft.status ?? "todo"}
+        current={props.status}
         value={(status: TaskCreateStatus) => status}
         label={(status: TaskCreateStatus) => t(TASK_STATUS_KEYS[status])}
-        triggerProps={{ "data-testid": "task-create-status", "aria-label": t("tasks.create.status") }}
+        triggerProps={{ "aria-label": t("tasks.create.status") }}
         onSelect={(status) => {
           if (status) props.patch({ status })
         }}
       >
         {(status) => <TaskStatusChip status={status} />}
       </Select>
-      <Select
-        appearance="inline"
-        options={[...props.projects]}
-        current={project()}
-        value={(entry: TaskProject) => entry.id}
-        label={(entry: TaskProject) => entry.label}
-        placeholder={t("tasks.create.project")}
-        triggerProps={{ "data-testid": "task-create-project", "aria-label": t("tasks.create.project") }}
-        onSelect={(entry) => {
-          if (entry) props.patch({ projectId: entry.id })
-        }}
-      />
-      <Show when={projectError()}>{(reason) => <span class="tsk-error">{t(fieldReasonKey(reason()))}</span>}</Show>
-    </div>
+    </Field>
   )
 }
 
-function FieldError(props: { readonly reason?: string }): JSX.Element {
+function DescriptionField(props: { readonly value: string; readonly reason?: string; readonly patch: Patch }): JSX.Element {
   const t = useTranslator(tasksDictionary)
-  return <Show when={props.reason}>{(reason) => <span class="tsk-error">{t(fieldReasonKey(reason()))}</span>}</Show>
+  return (
+    <Field invalid={props.reason !== undefined}>
+      <Field.Label>{t("tasks.create.description")}</Field.Label>
+      <Textarea
+        class="textarea-v2--full-width"
+        rows={5}
+        value={props.value}
+        invalid={props.reason !== undefined}
+        onInput={(event) => props.patch({ description: event.currentTarget.value })}
+      />
+      <FieldReason reason={props.reason} />
+    </Field>
+  )
 }
 
 export function TaskCreateFields(props: TaskCreateFieldsProps): JSX.Element {
   const t = useTranslator(tasksDictionary)
-  const patch = (input: Partial<TaskDraft>) => props.onDraftChange({ ...props.draft, ...input })
-  const images = () => props.draft.attachments ?? []
-  const imageFieldError = () =>
-    Object.entries(props.fieldErrors ?? {}).find(([path]) => path.startsWith("attachments"))?.[1]
+  const patch: Patch = (input) => props.onDraftChange({ ...props.draft, ...input })
+  const titleError = () => {
+    const reason = props.fieldErrors?.title
+    return reason === undefined ? undefined : t(fieldReasonKey(reason))
+  }
+  const imageReason = () => Object.entries(props.fieldErrors ?? {}).find(([path]) => path.startsWith("attachments"))?.[1]
   const dropped = (event: ClipboardEvent | DragEvent, transfer: DataTransfer | null) => {
     const files = imageFiles(transfer)
     if (files.length === 0) return
@@ -142,42 +191,26 @@ export function TaskCreateFields(props: TaskCreateFieldsProps): JSX.Element {
   }
   return (
     <div
-      class="tsk tsk-create"
+      class="tsk-create"
       onPaste={(event) => dropped(event, event.clipboardData)}
       onDragOver={(event) => {
         if (event.dataTransfer?.types.includes("Files")) event.preventDefault()
       }}
       onDrop={(event) => dropped(event, event.dataTransfer)}
     >
-      <TaskTitleField
-        testId="task-create-title"
-        ariaLabel={t("tasks.detail.titleLabel")}
-        placeholder={t("tasks.create.titlePlaceholder")}
-        invalid={props.fieldErrors?.title !== undefined}
+      <TextField
+        label={t("tasks.create.title")}
         value={props.draft.title}
-        onInput={(title) => patch({ title })}
+        maxLength={TASKS_BOUNDS.taskTitleMax}
+        invalid={titleError() !== undefined}
+        error={titleError()}
+        autofocus
+        onChange={(title) => patch({ title })}
       />
-      <FieldError reason={props.fieldErrors?.title} />
-      <div class="tsk-prose">
-        <ProseField
-          value={props.draft.description}
-          placeholder={t("tasks.detail.descriptionPlaceholder")}
-          ariaLabel={t("tasks.detail.descriptionLabel")}
-          testId="task-create-description"
-          onChange={(description) => patch({ description })}
-        />
-      </div>
-      <FieldError reason={props.fieldErrors?.description} />
-      <ImageStrip images={images()} queue={props.queue} />
-      <Show when={props.queue.notice()}>
-        {(notice) => (
-          <p class="tsk-error" role="status" data-testid="task-create-image-notice">
-            {t(notice().key, notice().params)}
-          </p>
-        )}
-      </Show>
-      <FieldError reason={imageFieldError()} />
-      <ChipRow {...props} patch={patch} />
+      <DescriptionField value={props.draft.description} reason={props.fieldErrors?.description} patch={patch} />
+      <ProjectField {...props} patch={patch} />
+      <StatusField status={props.draft.status ?? "todo"} patch={patch} />
+      <ImagesField images={props.draft.attachments ?? []} queue={props.queue} reason={imageReason()} />
     </div>
   )
 }
