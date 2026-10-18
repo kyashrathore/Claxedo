@@ -86,7 +86,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
               data-component="session-new-design-content"
               classList={{ "w-full": true, "max-w-[720px]": !sent(), "pointer-events-auto px-3 md:max-w-192 md:mx-auto 2xl:max-w-[880px]": !!sent() }}
             >
-              <Show when={sent()} fallback={<PlacementNotice placementId={where()} composerKey={key()} />}>
+              <Show when={sent()} fallback={<PlacementNotice placementId={where()} composerKey={key()} draft={true} />}>
                 <FirstSendNotice state={firstSend.state()} composerKey={key()} onRetry={firstSend.retry} onEdit={firstSend.edit} />
               </Show>
               <ComposerNoticeRow notices={notice.notices()} />

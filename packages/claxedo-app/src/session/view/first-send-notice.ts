@@ -5,7 +5,7 @@ import { useSessionScreenText } from "./text"
 
 export function FirstSendNotice(props: { readonly state: FirstSendState; readonly composerKey: ComposerKey; readonly onRetry: () => void; readonly onEdit: () => void }) {
   const t = useSessionScreenText()
-  const placement = usePlacementNotice(() => (props.state.kind === "sending" ? props.state.placementId : undefined), () => props.composerKey)
+  const placement = usePlacementNotice(() => (props.state.kind === "sending" ? props.state.placementId : undefined), () => props.composerKey, true)
   publishComposerNotice((): ComposerNotice | undefined => {
     const state = props.state
     if (state.kind === "creating") return { kind: "first-send", tone: "progress", message: t("sessionScreen.firstSend.creatingWorktree") }

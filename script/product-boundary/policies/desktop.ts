@@ -710,8 +710,11 @@ export const desktopRenderer: Policy = {
   // and Background tasks (owner: the app's session domain,
   // `session/view/details/`: the panel view, both cards, their models, their
   // shared card frame and their strings). They add no package edge.
-  // 1408/36, no headroom.
-  ceilings: { modules: 1408, packages: 36 },
+  // Sandbox usage's By provider table and its project and provider grouping
+  // (owner: the app's usage domain, `usage/sandbox-groups.ts`,
+  // `usage/view/sandbox-provider-table.tsx`). They add no package edge.
+  // 1410/36, no headroom.
+  ceilings: { modules: 1410, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

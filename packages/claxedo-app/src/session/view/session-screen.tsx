@@ -19,7 +19,7 @@ import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { navTurns } from "./nav-turns"
-import { SessionHistoryLoading } from "./session-timeline-skeleton"
+import { SessionHistoryLoading } from "./session-history-loading"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasWhileShown } from "./delta-frames"
@@ -145,7 +145,7 @@ function SessionBody(props: {
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
           <Show when={props.view.state().kind === "loading" && !props.view.conversation()}>
-            <SessionHistoryLoading placementId={props.view.ref.placementId} />
+            <SessionHistoryLoading />
           </Show>
           <SessionTimeline view={props.view} queued={queueEdit.queued} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} />
         </div>
