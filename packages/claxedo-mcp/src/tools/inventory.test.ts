@@ -150,6 +150,7 @@ describe("the registered surface", () => {
       "subagent_capabilities",
       "subagent_list",
       "subagent_status",
+      "ui_guide",
       "ui_show",
     ])
   })

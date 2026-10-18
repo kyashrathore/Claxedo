@@ -17,6 +17,7 @@ source by the three processes that mount it.
 | `src/tools/target.ts`, `src/tools/session-reach.ts` | Where a call may act: the workspace a runtime credential may write to, and the session it may drive — itself and the children it started, read from the runtime's stored rows rather than from the call. |
 | `src/client/` | `ClaxedoMcpClient`, the one client every tool calls; no tool builds a URL. |
 | `src/tools/app-plugins.ts`, `app-plugins-guide.ts` | App plugin authoring (`app_plugin_create`, `app_plugin_check`, `app_plugin_add`, `app_plugin_guide`) and the authoring guide, the one copy every harness reads. |
+| `src/tools/surfaces.ts` | `ui_show`, an agent's native reply surface, checked against the catalog in `@claxedo/plugin-api/surface`; and `ui_guide`, which serves that package's `SURFACE_DESIGN_GUIDE`, the one copy of the surface design guidance. |
 
 ## The three mounts
 

@@ -145,10 +145,10 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
 /**
  * Access for a tool the session-core inventory does not cover — the diff
  * routes, the control plane's workspace routes, the documents service, the
- * Tasks routes, app plugin authoring, and `ui_show`, which calls nothing.
- * Their write class is declared because no machine-checked table classifies
- * them; anything over a session-core route must take `runtimeToolAccess`
- * instead.
+ * Tasks routes, app plugin authoring, and `ui_show` and `ui_guide`, which
+ * call nothing. Their write class is declared because no machine-checked
+ * table classifies them; anything over a session-core route must take
+ * `runtimeToolAccess` instead.
  *
  * `operation` is the Tasks grant a tool needs and `appPlugins` the authoring
  * grant; they are the parts of an access declaration checked against the

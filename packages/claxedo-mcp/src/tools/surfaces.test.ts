@@ -3,7 +3,7 @@ import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { surfaceComponentSchema } from "@claxedo/plugin-api/surface"
+import { SURFACE_DESIGN_GUIDE, surfaceComponentSchema } from "@claxedo/plugin-api/surface"
 import { createClaxedoMcpClient } from "../client/index"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential, mcpAuditRecord } from "../server"
 import { registerSurfaceTools } from "./surfaces"
@@ -76,7 +76,7 @@ describe("ui_show", () => {
   test("is listed inside a session and never to a person's account", async () => {
     const { url } = await listen()
     const listed = async (token: string) => (await (await connect(url, token)).listTools()).tools.map((tool) => tool.name)
-    expect(await listed("rt-token")).toEqual(["ui_show"])
+    expect(await listed("rt-token")).toEqual(["ui_show", "ui_guide"])
     expect(await listed("cli-jwt")).toEqual([])
   })
 
@@ -118,5 +118,24 @@ describe("ui_show", () => {
       expect(refused.text).toMatch(/Input validation error/)
       expect(refused.text).toContain("components")
     }
+  })
+})
+
+describe("ui_guide", () => {
+  test("is read-only, takes no input, and the ui_show description sends the model to it", async () => {
+    const { url } = await listen()
+    const tools = (await (await connect(url)).listTools()).tools
+    const guide = tools.find((candidate) => candidate.name === "ui_guide")
+    expect(guide?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+    expect(guide?.inputSchema.properties ?? {}).toEqual({})
+    expect(tools.find((candidate) => candidate.name === "ui_show")?.description).toContain("call ui_guide first")
+  })
+
+  test("returns the surface design guide, and writes no audit", async () => {
+    const { url, audits } = await listen()
+    const result = await (await connect(url)).callTool({ name: "ui_guide", arguments: {} })
+    expect(result.isError).not.toBe(true)
+    expect(result.content).toEqual([{ type: "text", text: SURFACE_DESIGN_GUIDE }])
+    expect(audits).toEqual([])
   })
 })

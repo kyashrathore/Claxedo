@@ -59,6 +59,10 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | `ui` | `toast`, `confirm` |
 | `i18n` | `t` |
 
+## Surfaces
+
+`@claxedo/plugin-api/surface` is the A2UI v0.9 contract an agent's `ui_show` reply and a plugin's surface page share: the catalog (`catalog.ts`), the messages (`messages.ts`), the spec check (`spec.ts`), and `SURFACE_DESIGN_GUIDE` (`design-guide.ts`), the design guidance the `ui_guide` MCP tool serves. Every recipe in the guide is a complete spec that `design-guide.test.ts` checks.
+
 ## The runtime global
 
 Built plugin bundles do not carry `solid-js`, `solid-js/web`, `solid-js/store`, `@claxedo/plugin-api` or `@claxedo/app/ui`. The host installs those five modules on `globalThis.__claxedoPluginRuntime`, keyed by specifier, before it imports a bundle. `PLUGIN_RUNTIME_MODULES` is the one list both the build and the host read.

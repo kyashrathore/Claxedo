@@ -144,6 +144,7 @@ const en = {
   "transcript.claxedoTool.app_plugin_add": "Add app plugin",
   "transcript.claxedoTool.app_plugin_guide": "Read app plugin guide",
   "transcript.claxedoTool.ui_show": "Show reply",
+  "transcript.claxedoTool.ui_guide": "Read surface design guide",
   "transcript.surfaceReply.agent": "Agent",
   "transcript.surfaceReply.confirm.title": "Send “{{action}}” to the agent?",
   "transcript.surfaceReply.confirm.body": "This sends the values from “{{title}}” as a new message.",

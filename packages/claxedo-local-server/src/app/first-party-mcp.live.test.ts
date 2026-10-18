@@ -115,6 +115,7 @@ describe("the first-party MCP a local session is launched with", () => {
       "subagent_capabilities",
       "subagent_list",
       "subagent_status",
+      "ui_guide",
       "ui_show",
     ])
   })
