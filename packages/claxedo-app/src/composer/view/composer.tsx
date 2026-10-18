@@ -1,4 +1,4 @@
-import { createMemo, onMount, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { draftPath, settingsPath, useCommands } from "@/shell"
 import { useDialog } from "@/ui"
@@ -18,8 +18,7 @@ import { createPromptPopoverBindings } from "./popover-bindings"
 import { createPromptContextBindings } from "./context-bindings"
 import { createPromptImageMarkBindings } from "./image-mark-bindings"
 import { usePanel } from "@/panel"
-import { nextIdleSlice } from "@/lib/idle"
-import { loadOnDemandViews } from "./on-demand-views"
+import { warmOnDemandViews } from "./on-demand-views"
 
 export function Composer(props: ComposerProps) {
   const composer = createComposer(props)
@@ -43,11 +42,7 @@ export function Composer(props: ComposerProps) {
   const popoverBindings = createPromptPopoverBindings({ composer, popover, keybind: commands.keybind })
   const contextBindings = createPromptContextBindings({ composer, mode, fileItems, quoteItems, panel })
   const imageMarkBindings = createPromptImageMarkBindings({ composer, dialog })
-  onMount(() => {
-    void nextIdleSlice()
-      .then(loadOnDemandViews)
-      .catch((error: unknown) => console.warn("The composer's popover, attachments and annotation editor could not be fetched ahead; they load when first shown", { error }))
-  })
+  warmOnDemandViews()
 
   return (
     <ComposerNoticeProvider channel={notices}>
