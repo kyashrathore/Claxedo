@@ -29,6 +29,28 @@ Every bootstrap 95% interval of the time ratios excludes 1. The RSS rows rest on
 - **The first view renders no overscan rows** until the first wheel, touch or pointer press (`src/session/view/timeline/message-timeline.tsx`). In the long-rows sessions the row above the reply is a 131 KB prompt. Alone: long-rows first visit 207 → 158 ms.
 - **The autolink extension's start search is bounded** to 1,024 characters and a whitespace cut (`packages/ui/src/context/marked.tsx`). It scanned the rest of the paragraph at every inline step: 71 MB of scanning and 55–104 ms of lexing for the 131 KB reply, against 6 ms now, with identical tokens. The benchmark did not resolve it alone at n=4; it is merged for the quadratic cost, which also applies while a long paragraph streams.
 
+## Against the 29 September build
+
+The build that produced the published 29 September result, `81726a6ef3`, was packaged for Linux and run with its own driver, patched only for the same platform deviations (`/home/user/bench/sep-driver-linux.patch`, outside the repository). Two runs of each build at `--repetitions 6`, alternating, on one host. The CPU this container ran on changed between this comparison and the measurements above, so only rows within this table compare.
+
+That comparison first showed first visits tied with September. The cause was the order of a session's reads: the open view and the queue read went on the wire ahead of the first read, and the local runtime answers one session's reads in arrival order, so the first read waited 20–30 ms behind them. A session's first read now goes out first (`src/server/session-reads.ts`, `src/session/transcript/snapshot.ts`), and pending requests, todos and queued prompts land 10–20 ms after it.
+
+| Row | 29 Sep | Now | × | 95% CI |
+|---|---:|---:|---:|---|
+| App start, fresh profile | 2,156 ms | 1,874 ms | 1.15 | 1.10–1.20 |
+| App start, existing profile | 2,080 ms | 1,950 ms | 1.07 | 1.03–1.12 |
+| First visit, 1 MiB | 111.3 ms | 98.0 ms | 1.14 | 1.10–1.17 |
+| First visit, 8 MiB | 125.1 ms | 103.2 ms | 1.21 | 1.14–1.29 |
+| First visit, 1 MiB long rows | 185.3 ms | 114.2 ms | 1.62 | 1.49–1.89 |
+| Return, 1 MiB | 83.9 ms | 45.0 ms | 1.86 | 1.76–1.97 |
+| Return, 8 MiB | 93.0 ms | 51.5 ms | 1.81 | 1.64–2.12 |
+| Return, 1 MiB long rows | 150.5 ms | 72.6 ms | 2.07 | 1.78–2.26 |
+| RSS idle after launch | 1,204 MiB | 1,175 MiB | — | 0.96–1.09 |
+| RSS idle after the walk | 1,252 MiB | 1,179 MiB | — | 0.99–1.13 |
+| Idle CPU | 0.0 % | 0.0 % | — | — |
+
+The app-start rows also differ by driver: September's driver presses Load more four times and can open a project draft on the way, today's presses it one to three times. The two RSS rows rest on two memory processes per build and their intervals include 1.
+
 ## Tried and not merged
 
 See the 2026-10-18 rows of [the perf ledger](../perf/AGENTS.md). Renderer `--optimize-for-size` made returns slower. The in-process network service saved about 30 MiB at the cost of process isolation. Nine other candidates stayed inside the drift between control runs. A folded-prompt prefix reached the same row as zero overscan but hides the prompt from screen readers and find-in-page while folded.
