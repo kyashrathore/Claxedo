@@ -1,10 +1,7 @@
+import { PRECOMPRESSED_ASSET, acceptsBrotli, brotliSibling } from "./app-asset-encoding"
 import { RELAY_PATH_PREFIX, publicOriginRoute } from "./public-origin"
 
 type Fetcher = { fetch(request: Request): Promise<Response> }
-
-/** `cf` is the edge's view of the client, which workerd attaches to an incoming request and accepts back in an init. */
-type EdgeRequest = Request & { readonly cf?: object }
-type EdgeRequestInit = RequestInit & { cf?: object }
 
 export type AppWorkerEnv = {
   ASSETS: Fetcher
@@ -12,38 +9,94 @@ export type AppWorkerEnv = {
   RELAY: Fetcher
 }
 
+/**
+ * `cf` is the edge's view of the client, which workerd attaches to an incoming
+ * request and accepts back in an init: Cloudflare overwrites a Worker's
+ * incoming `Accept-Encoding` with `br, gzip` and keeps the client's own value
+ * here, and the relay places a workspace's room by the edge country.
+ */
+type EdgeRequest = Request & { readonly cf?: { clientAcceptEncoding?: string } }
+type EdgeRequestInit = RequestInit & { cf?: object }
+type WorkerResponseInit = ResponseInit & { encodeBody?: "automatic" | "manual" }
+
 let shellEtag: Promise<string | null> | undefined
 
 /** The shell's ETag, read once per isolate: a deploy that changes the shell replaces the isolate. */
 function shell(assets: Fetcher, origin: string): Promise<string | null> {
-  shellEtag ??= assets.fetch(new Request(`${origin}/index.html`)).then(
-    (response) => { void response.body?.cancel(); return response.headers.get("etag") },
+  shellEtag ??= assets.fetch(new Request(`${origin}/index.html`, { method: "HEAD" })).then(
+    (response) => response.headers.get("etag"),
     () => { shellEtag = undefined; return null },
   )
   return shellEtag
 }
 
-/**
- * Vite writes nothing but hashed scripts, styles and media under `/assets`, so
- * the shell coming back there is the single-page-application fallback standing
- * in for a chunk a newer deploy removed. The `_headers` rule for `/assets/*`
- * caches that answer for a year, so the browser keeps an HTML document where a
- * module should be and the chunk can never load; an uncached 404 lets the app
- * reload instead.
- */
-async function asset(request: Request, env: AppWorkerEnv, url: URL): Promise<Response> {
-  const response = await env.ASSETS.fetch(request)
-  if (!url.pathname.startsWith("/assets/")) return response
+async function isShell(response: Response, assets: Fetcher, origin: string) {
   const etag = response.headers.get("etag")
-  if (etag === null || etag !== await shell(env.ASSETS, url.origin)) return response
-  return new Response(null, { status: 404, headers: { "cache-control": "no-store" } })
+  return etag !== null && etag === await shell(assets, origin)
+}
+
+const removedChunk = () => new Response(null, { status: 404, headers: { "cache-control": "no-store" } })
+
+/**
+ * The Brotli copy of a precompressed asset under the asset's own type, or null
+ * when the asset has no copy. `encodeBody: "manual"` sends the stored bytes as
+ * they are; without it the runtime would compress them again.
+ */
+async function brotliAsset(request: Request, url: URL, assets: Fetcher): Promise<Response | null> {
+  const [asset, encoded] = await Promise.all([
+    assets.fetch(new Request(url, { method: "HEAD" })),
+    assets.fetch(new Request(new URL(brotliSibling(url.pathname), url), request)),
+  ])
+  if (await isShell(asset, assets, url.origin)) {
+    await encoded.body?.cancel()
+    return removedChunk()
+  }
+  const contentType = asset.headers.get("content-type")
+  const usable = asset.ok && contentType !== null && (encoded.status === 200 || encoded.status === 304)
+  if (!usable || await isShell(encoded, assets, url.origin)) {
+    await encoded.body?.cancel()
+    return null
+  }
+  const headers = new Headers(encoded.headers)
+  headers.set("content-type", contentType)
+  headers.set("content-encoding", "br")
+  headers.set("vary", "accept-encoding")
+  const init: WorkerResponseInit = { status: encoded.status, headers, encodeBody: "manual" }
+  return new Response(encoded.body, init)
 }
 
 /**
- * The request as the bound Worker receives it, on the same origin so the
- * control plane's own origin check holds; `cf` is carried because the relay
- * places a workspace's room by the edge country of whoever first reaches it.
+ * Runs ahead of the static assets for `/assets/*`. Vite writes nothing but
+ * hashed scripts, styles and media under `/assets`, so the shell coming back
+ * there is the single-page-application fallback standing in for a chunk a
+ * newer deploy removed. The `_headers` rule for `/assets/*` caches that answer
+ * for a year, so the browser keeps an HTML document where a module should be
+ * and the chunk can never load; an uncached 404 lets the app reload instead.
+ *
+ * Scripts, styles and sprites go to a client that accepts br as the Brotli
+ * copy the build stored beside them; anyone else, and any Range request, gets
+ * the asset itself, which the edge compresses on the way out.
  */
+async function asset(request: EdgeRequest, env: AppWorkerEnv, url: URL): Promise<Response> {
+  if (!url.pathname.startsWith("/assets/")) return env.ASSETS.fetch(request)
+  const precompressed = PRECOMPRESSED_ASSET.test(url.pathname)
+  const readsWhole = (request.method === "GET" || request.method === "HEAD") && !request.headers.has("range")
+  if (precompressed && readsWhole && acceptsBrotli(request.cf?.clientAcceptEncoding)) {
+    const encoded = await brotliAsset(request, url, env.ASSETS)
+    if (encoded) return encoded
+  }
+  const response = await env.ASSETS.fetch(request)
+  if (await isShell(response, env.ASSETS, url.origin)) {
+    await response.body?.cancel()
+    return removedChunk()
+  }
+  if (!precompressed) return response
+  const varied = new Response(response.body, response)
+  varied.headers.set("vary", "accept-encoding")
+  return varied
+}
+
+/** The request as the bound Worker receives it, on the same origin so the control plane's own origin check holds, with the edge's `cf`. */
 function forwarded(request: EdgeRequest, url: URL): Request {
   const init: EdgeRequestInit = { method: request.method, headers: request.headers, body: request.body, redirect: "manual", cf: request.cf }
   return new Request(url, init)
