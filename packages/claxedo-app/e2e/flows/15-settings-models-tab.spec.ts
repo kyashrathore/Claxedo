@@ -2,9 +2,10 @@ import type { Page } from "@playwright/test"
 import { apiRequests, expect, sessionRoute, test, type Stack } from "../harness"
 import { harnessSection, openSection, openSettings } from "./15-settings.navigation"
 
+const CLOUD_WORDS = /cloud workspace|sandbox/i
 const modelRead = (path: string) => path.startsWith("/api/claxedo/credentials/harness-models") || path.startsWith("/api/claxedo/agent-config/harness/options")
 
-test("15 settings: with no project, Claude Code and Codex list the server's models and Cursor says why it lists none, and nothing reads a workspace", async ({ stack, app }) => {
+test("15 settings: with no project, Claude Code and Codex list the server's models and Cursor on this computer's login says why it lists none, and nothing reads a workspace", async ({ stack, app }) => {
   const projects = await fetch(new URL("/api/claxedo/projects", stack.url))
   expect(await projects.json()).toMatchObject({ projects: [] })
   const connections: string[] = []
@@ -22,8 +23,9 @@ test("15 settings: with no project, Claude Code and Codex list the server's mode
   for (const model of ["GPT-6.1-Sol", "GPT-6-Luna"]) await expect(codex.getByRole("switch", { name: model, exact: true })).toBeVisible()
   const cursor = harnessSection(app, "Cursor")
   await cursor.getByRole("tab", { name: "Models" }).click()
-  await expect(cursor.getByText("Couldn't list Cursor's models: Cursor's model list is read with a stored Cursor API key, and none is chosen. Add one in Settings → Models.", { exact: true })).toBeVisible()
+  await expect(cursor.getByText("Couldn't list Cursor's models: Cursor's models are listed with a Cursor API key, and this computer's Cursor login has none. Add a Cursor API key in Settings → Models.", { exact: true })).toBeVisible()
   await expect(cursor.getByRole("switch")).toHaveCount(0)
+  for (const section of [claude, codex, cursor]) await expect(section, "a desktop's Models tab says nothing that applies only to the web").not.toHaveText(CLOUD_WORDS)
   const reads = await settled()
   expect(reads.filter(modelRead).sort()).toEqual([
     "/api/claxedo/credentials/harness-models?claude",

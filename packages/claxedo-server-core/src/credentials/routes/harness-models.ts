@@ -4,7 +4,7 @@ import type { Context } from "hono"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { CursorModelsError, harnessModelAccount, harnessModelList, storedAccountToken } from "../harness-model-list"
+import { CursorModelsError, harnessModelAccount, harnessModelList, storedAccountToken, type HarnessModelAccount } from "../harness-model-list"
 import { deliverableRows, spentAccounts } from "../native-delivery-plan"
 
 export type HarnessModelsReader = {
@@ -37,18 +37,24 @@ async function personHarnessAccount(reader: HarnessModelsReader, harness: Harnes
   return account
 }
 
+function cursorKeyMissing(account: HarnessModelAccount) {
+  return account.kind === "machineLogin"
+    ? "Cursor's models are listed with a Cursor API key, and this computer's Cursor login has none. Add a Cursor API key in Settings → Models."
+    : "The Cursor account in use has no API key to list its models with. Reconnect it in Settings → Models."
+}
+
 export async function harnessModelsResponse(c: Context, reader: HarnessModelsReader) {
   const harness = c.req.query("nativeHarness") ?? ""
   if (!isHarnessId(harness)) return c.json(errorBody("harness_models_unsupported", "nativeHarness must be claude, codex or cursor"), 400)
   try {
+    const account = await personHarnessAccount(reader, harness)
     const list = await harnessModelList({
       harness,
-      account: await personHarnessAccount(reader, harness),
+      account,
       cursorToken: (credentialId) => storedAccountToken(reader.store, credentialId, reader.org),
       ...(reader.fetch ? { fetch: reader.fetch } : {}),
     })
-    if (!list) return c.json(errorBody("cursor_account_missing", "Cursor's model list is read with a stored Cursor API key, and none is chosen. Add one in Settings → Models."), 409)
-    return c.json(list)
+    return list ? c.json(list) : c.json(errorBody("cursor_account_missing", cursorKeyMissing(account)), 409)
   } catch (error) {
     if (error instanceof CredentialSelectionError) {
       return c.json(errorBody(error.code, error.message, { retryable: error.retryable, ...(error.detail.reason ? { reason: error.detail.reason } : {}) }), 409)

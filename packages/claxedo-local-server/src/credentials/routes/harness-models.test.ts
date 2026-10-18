@@ -64,9 +64,9 @@ test("Codex lists its bundled models", async () => {
   expect(await read("codex")).toEqual({ status: 200, body: codexBundledOptions() })
 })
 
-test("Cursor lists the stored key's models from Cursor, names Cursor's refusal, and refuses with no stored key", async () => {
+test("Cursor lists the stored key's models from Cursor, names Cursor's refusal, and on this computer's login alone says it needs a key", async () => {
   const { read, put } = await daemon()
-  expect(await read("cursor")).toMatchObject({ status: 409, body: { error: { code: "cursor_account_missing" } } })
+  expect(await read("cursor")).toEqual({ status: 409, body: { error: { code: "cursor_account_missing", message: "Cursor's models are listed with a Cursor API key, and this computer's Cursor login has none. Add a Cursor API key in Settings → Models." } } })
   const key = await put("cursor-sdk", "cursor-good")
   const listed = await read("cursor")
   expect(listed.status).toBe(200)
