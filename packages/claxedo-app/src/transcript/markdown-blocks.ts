@@ -1,6 +1,6 @@
 import { checksum, markdownEnhances } from "@/ui/utils"
-import { bundledLanguages } from "shiki/langs"
 import { codeThemeName } from "./code-theme-name"
+import { MARKDOWN_CODE_LANGUAGES } from "./markdown-code-languages"
 import { transcriptMarked, type Block, type Projection } from "./markdown-stream"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
@@ -73,7 +73,7 @@ export function syncBlock(owner: string, cacheKey: string | undefined, index: nu
 }
 
 export function codeLanguageName(language: string | undefined) {
-  return language && language in bundledLanguages ? language : "text"
+  return language && MARKDOWN_CODE_LANGUAGES.has(language) ? language : "text"
 }
 
 export function entryBase(text: string, cacheKey: string | undefined) {
