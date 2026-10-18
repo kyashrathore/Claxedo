@@ -1,6 +1,6 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ProviderCatalogEntry } from "@claxedo/harness/contract"
-import { openCodeLaunchEntries, projectOpenCodeProviderCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
+import { projectOpenCodeProviderCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
 import { holderAccountSources, spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import type { ControlPlaneCredentials } from "../../authority/services"
 
@@ -21,7 +21,7 @@ export function hostedOpenCodeCredentials(input: {
       const person = auth.user.subject
       const sources = holderAccountSources(store ? await store.accountSelections() : {}, person, person)
       const credentials = store ? (await effectiveCredentials(store)).filter((row) => spendsAccount(row, person, sources, person)) : []
-      const engine = workspaceId ? await input.runtimeProviders(auth, workspaceId) : openCodeLaunchEntries(credentials)
+      const engine = workspaceId ? await input.runtimeProviders(auth, workspaceId) : undefined
       return projectOpenCodeProviderCatalog({ engine, declared: [], credentials })
     },
   }
