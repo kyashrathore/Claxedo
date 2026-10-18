@@ -4,10 +4,11 @@ import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { ProjectSessionPage, SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionListKeysetPage } from "@claxedo/server-core/session/navigation-list"
 import { sessionOrderSql, unsettledSql } from "@claxedo/server-core/session/navigation-order"
 import { requireHuman } from "./access-context"
-import { maySql, type BoundSql } from "./authorization"
+import { maySql, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import type { D1ActorProfile } from "./workspace-authority"
 import type { SessionHostPlacement } from "../../session-hosts"
 
@@ -108,10 +109,10 @@ function pageScope(query: SessionPageQuery, readerUserId: string): Clauses {
  * lapsed unreleased reads as `interrupted`: the runtime holding it is gone, and
  * the lease's own expiry is the one record that says so.
  */
-export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string, now: number) {
+function sessionPageStatement(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string, now: number) {
   const scope = pageScope(query, readerUserId)
   const filters = pageFilters(query, "s", "r")
-  const result = await database
+  return database
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
         s.last_human_turn_at, s.archived_at,
@@ -130,8 +131,35 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
       limit ?
     `)
     .bind(now, readerUserId, ...scope.params, ...filters.params, ...access.bind, query.limit)
-    .all<SessionPageRow>()
+}
+
+export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string, now: number) {
+  const result = await sessionPageStatement(database, query, access, readerUserId, now).all<SessionPageRow>()
   return result.results.map(pageRowJson)
+}
+
+/**
+ * The projects the reader may open a workspace in, in the catalog's order: the
+ * same rows `/api/workspace` lists, so a reader's rail and this read name the
+ * same projects.
+ */
+async function readerProjectIds(database: D1Database, who: AuthorizationPrincipal) {
+  const opens = maySql(who, "open", { kind: "workspace", alias: "w" })
+  const result = await database
+    .prepare(`select w.project_id from workspaces w where ${opens.sql} group by w.project_id order by min(w.created_at), min(w.workspace_id)`)
+    .bind(...opens.bind)
+    .all<{ project_id: string }>()
+  return result.results.map((row) => row.project_id)
+}
+
+/** Each project's first page in one D1 batch, every statement the one `readD1SessionPage` reads for that project. */
+export async function readD1ProjectSessionPages(database: D1Database, page: SessionListKeysetPage, who: AuthorizationPrincipal, access: BoundSql, now: number): Promise<ProjectSessionPage[]> {
+  const projectIds = await readerProjectIds(database, who)
+  if (projectIds.length === 0) return []
+  const results = await database.batch<SessionPageRow>(
+    projectIds.map((projectId) => sessionPageStatement(database, { ...page, projectId }, access, who.userId, now)),
+  )
+  return projectIds.map((projectId, index) => ({ projectId, sessions: (results[index]?.results ?? []).map(pageRowJson) }))
 }
 
 function backgroundWorkJson(row: SessionPageRow) {

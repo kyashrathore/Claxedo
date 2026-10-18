@@ -155,12 +155,6 @@ export const HOSTED_OPERATIONS = {
     output: withArrays("workspaces"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
-  "workspace.list.machine": defineOperation({
-    method: "GET", path: operationPath("/api/workspace?host=machine"),
-    input: operationInput({}),
-    output: withArrays("workspaces"), retry: "safe",
-    exposure: { renderer: true, app: false },
-  }),
   "workspace.resolve": defineOperation({
     method: "GET", path: operationPath("/api/workspace/resolve", { optionalQuery: ["workspaceId", "directory"] }),
     input: operationInput({ workspaceId: optionalParameter, directory: optionalParameter }),
@@ -248,6 +242,12 @@ export const HOSTED_OPERATIONS = {
     method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after", "settled"] }),
     input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter, settled: optionalParameter }),
     output: withArrays("items"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.pages": defineOperation({
+    method: "GET", path: operationPath("/api/control/session-list?scope=projects", { query: ["limit"], optionalQuery: ["sort", "settled"] }),
+    input: operationInput({ limit: requiredParameter, sort: optionalParameter, settled: optionalParameter }),
+    output: withArrays("pages"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
   "session.activity.page": defineOperation({

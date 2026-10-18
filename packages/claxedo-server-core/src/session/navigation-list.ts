@@ -6,7 +6,12 @@ import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
 
 export type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
-export type SessionListScope = "global" | "project" | "workspace" | "all"
+/**
+ * `projects` is the first page of every project the caller holds a workspace
+ * in, read as one request so a signed boot needs no project ids before it
+ * reads the rail; a project's later pages are `project` reads with `after`.
+ */
+export type SessionListScope = "global" | "project" | "workspace" | "all" | "projects"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
 export type SessionListQuery = {
@@ -94,6 +99,14 @@ export type SessionListResponse = {
   nextAfter?: string
 }
 
+export type SessionListProjectPage = { projectId: string } & Pick<SessionListResponse, "items" | "nextAfter">
+
+/** The `projects` scope's answer: one keyset page per project, each the page `scope=project` would read first. */
+export type SessionListProjectPagesResponse = {
+  view: SessionListResponse["view"]
+  pages: SessionListProjectPage[]
+}
+
 type CursorShape = SessionOrderKey & { query: string }
 
 /**
@@ -151,6 +164,19 @@ export function buildSessionListResponse(input: {
     items: page.items,
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}),
+  }
+}
+
+export function buildSessionListProjectPages(input: {
+  query: SessionListQuery
+  pages: readonly { projectId: string; sessions: readonly unknown[] }[]
+}): SessionListProjectPagesResponse {
+  return {
+    view: view(input.query),
+    pages: input.pages.map(({ projectId, sessions }) => {
+      const page = buildSessionListResponse({ query: { ...input.query, scope: "project", projectId }, sessions, cursorApplied: true })
+      return { projectId, items: page.items, ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}) }
+    }),
   }
 }
 
@@ -501,7 +527,7 @@ function querySignature(query: SessionListQuery) {
 }
 
 function scopeValue(input: string | null): SessionListScope {
-  if (input === "project" || input === "workspace" || input === "all") return input
+  if (input === "project" || input === "workspace" || input === "all" || input === "projects") return input
   return "global"
 }
 

@@ -19,6 +19,7 @@ import {
   requireRuntimeSessionTime,
   requireRuntimeSessionTimes,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionListKeysetPage } from "@claxedo/server-core/session/navigation-list"
 import {
   SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
@@ -53,7 +54,7 @@ import {
   visibilityRows,
 } from "./session-input"
 import { D1SessionShares } from "./session-shares"
-import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
+import { readD1ProjectSessionPages, readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
 import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
@@ -844,6 +845,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   async listSessionPage(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
     const who = await this.requirePrincipal(auth)
     return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }), who.userId, this.now())
+  }
+
+  async listProjectSessionPages(auth: SignedControlPlaneAuth, page: SessionListKeysetPage) {
+    const who = await this.requirePrincipal(auth)
+    return await readD1ProjectSessionPages(this.database, page, who, maySql(who, "read", { kind: "session", alias: "s" }), this.now())
   }
 
   async listOwnerSessionPage(owner: { userId: string; actorId: string }, query: SessionPageQuery) {

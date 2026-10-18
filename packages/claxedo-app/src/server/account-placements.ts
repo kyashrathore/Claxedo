@@ -14,10 +14,7 @@ export type AccountPlacements = {
 
 export function createAccountPlacements(account: HostedAccount, serverUrl: string, queryClient: QueryClient): AccountPlacements {
   const key = queryKeys.accountCatalog(serverUrl)
-  const read = async () => {
-    const [provisioned, machines] = await Promise.all([account.run("workspace.list.provisioner"), account.run("workspace.list.machine")])
-    return accountCatalogFromWire([...(readArray(provisioned, "workspaces") ?? []), ...(readArray(machines, "workspaces") ?? [])])
-  }
+  const read = async () => accountCatalogFromWire(readArray(await account.run("workspace.list.provisioner"), "workspaces") ?? [])
   const fetch = async (staleTime: number) => { await queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime }) }
   let last: { local: readonly PlacementRecord[]; account: AccountCatalog; linked: LinkedCatalog } | undefined
   return {

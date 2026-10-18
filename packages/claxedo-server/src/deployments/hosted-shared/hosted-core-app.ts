@@ -59,7 +59,7 @@ import {
   hostedRouteGuardExemptions,
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
-import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedProjectSessionPages, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import { createSessionReaderRoutes } from "../../session/routes/session-reader"
 import type { HostedControlPlane } from "../../authority/hosted-services"
@@ -743,7 +743,10 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
     }
     try {
-      return context.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(context.req.url))))
+      const query = parseSessionListQuery(new URL(context.req.url))
+      return context.json(query.scope === "projects"
+        ? await signedProjectSessionPages(services, authResult.auth, query)
+        : await signedSessionList(services, authResult.auth, query))
     } catch (err) {
       const mapped = sessionListErrorResponse(err)
       if (mapped) return mapped

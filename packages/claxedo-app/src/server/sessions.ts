@@ -6,7 +6,7 @@ import { sessionId, type RequestId } from "./ids"
 import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readTurn } from "./turn"
-import { listSessions } from "./session-list"
+import { listFirstPages, listSessions } from "./session-list"
 import { sendReaderWrite } from "./session-reader"
 import { sessionEndpoint, type SessionContext } from "./session-context"
 import { startSessionReads } from "./session-reads"
@@ -122,6 +122,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
+    firstPages: (input) => listFirstPages(context, input),
     markSeen: (ref, completedAt) => sendReaderWrite(context, ref, { kind: "seen", completedAt }),
     settle: (ref, write) => sendReaderWrite(context, ref, { kind: "settle", ...write }),
     read: (ref, shape, held) => startSessionReads(context, ref, shape, held),

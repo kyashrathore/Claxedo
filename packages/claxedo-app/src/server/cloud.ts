@@ -1,12 +1,11 @@
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
-import { readArray } from "@claxedo/helpers/readers"
 import type { HostedAccount } from "./account"
 import { fetchQuery } from "./fetch-query"
 import type { CloudApi } from "./api"
 import { ServerError } from "./errors"
 import { placementId, type PlacementId, type ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
-import { jsonInit, withQuery, type Transport } from "./transport"
+import { jsonInit, type Transport } from "./transport"
 import type { CloudProjectCreateInput, CloudSourceCreateInput, CloudWorkspace, CodeHostRepositoryListing } from "./cloud-types"
 import type { FetchQuery, Project, ProjectSource } from "./types"
 import { cloudStopOutcomeFromBody, cloudWorkspaceFromRow, codeHostRepositoryListingFromBody } from "./wire/cloud"
@@ -15,15 +14,9 @@ import type { Workspaces } from "./workspaces"
 
 const INTEGRATIONS_PATH = "/api/claxedo/integrations"
 
-export function cloudQueries(transport: Transport) {
+export function cloudQueries(transport: Transport, workspaces: Pick<Workspaces, "cloudWorkspaces">) {
   const server = transport.serverUrl
-  const list = (): FetchQuery<readonly CloudWorkspace[]> => fetchQuery(queryKeys.cloud(server), async () => {
-      const body = await transport.json(withQuery("/api/workspace", { host: "provisioner" }))
-      return (readArray(body, "workspaces") ?? []).flatMap((row) => {
-        const workspace = cloudWorkspaceFromRow(row)
-        return workspace ? [workspace] : []
-      })
-    })
+  const list = (): FetchQuery<readonly CloudWorkspace[]> => fetchQuery(queryKeys.cloud(server), () => workspaces.cloudWorkspaces())
   const repositories = (connectionId: string): FetchQuery<CodeHostRepositoryListing> => fetchQuery(queryKeys.codeHostRepositories(server, connectionId), async () =>
       codeHostRepositoryListingFromBody(await transport.json(`${INTEGRATIONS_PATH}/connections/${encodeURIComponent(connectionId)}/repositories`)))
   return { cloud: { list }, codeHost: { repositories } }

@@ -146,6 +146,10 @@ export type SessionListScope = { readonly projectId: ProjectId } | { readonly ev
 
 export type SessionListInput = SessionListScope & { readonly after?: string; readonly limit: number; readonly settled: SettledFilter }
 
+export type SessionFirstPagesInput = { readonly limit: number; readonly settled: SettledFilter }
+
+export type SessionFirstPages = { readonly page: (projectId: ProjectId) => Promise<SessionPage> }
+
 export type SessionPage = {
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>

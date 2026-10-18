@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import { placementId, projectId, sessionId, type Placement, type Server, type SessionListInput, type SessionRow } from "@/server"
+import { placementId, projectId, sessionId, type Placement, type ProjectId, type Server, type SessionFirstPagesInput, type SessionListInput, type SessionRow } from "@/server"
 import type { RequestsInternal } from "../requests/store"
 import { createSessionList } from "./store"
 
@@ -18,16 +18,15 @@ function world() {
   const asked: string[] = []
   const rows = new Map<string, SessionRow[]>()
   let failing = false
+  const list = async (input: SessionListInput) => {
+    const project = "projectId" in input ? input.projectId : "every"
+    asked.push(project)
+    if (failing) throw new Error("list unavailable")
+    return { rows: rows.get(project) ?? [], statuses: new Map(), readers: new Map(), nextAfter: undefined }
+  }
   const server = {
     placements: { list: placements, load: async () => placements(), byId: (id: string) => placements().find((candidate) => candidate.id === id) },
-    sessions: {
-      list: async (input: SessionListInput) => {
-        const project = "projectId" in input ? input.projectId : "every"
-        asked.push(project)
-        if (failing) throw new Error("list unavailable")
-        return { rows: rows.get(project) ?? [], statuses: new Map(), readers: new Map(), nextAfter: undefined }
-      },
-    },
+    sessions: { list, firstPages: (input: SessionFirstPagesInput) => ({ page: (projectId: ProjectId) => list({ ...input, projectId }) }) },
   } as unknown as Server
   const requests = { openBySession: () => new Map() } as unknown as RequestsInternal
   return { server, requests, asked, rows, setPlacements, placements, failLists: () => (failing = true) }

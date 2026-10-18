@@ -75,6 +75,8 @@ import type {
   QueuedPromptControl,
   SessionCreateInput,
   SessionGoal,
+  SessionFirstPages,
+  SessionFirstPagesInput,
   SessionListInput,
   SessionPage,
   SessionReader,
@@ -90,6 +92,7 @@ import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
+  readonly firstPages: (input: SessionFirstPagesInput) => SessionFirstPages
   readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
   readonly settle: (ref: SessionLocation, write: { readonly settled: true; readonly through: number } | { readonly settled: false }) => Promise<SessionReader>
   readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads

@@ -42,7 +42,7 @@ function placementQueries(transport: Transport, workspaces: Workspaces) {
 }
 
 export function createQueries(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined): ServerQueries {
-  const cloud = cloudQueries(transport)
+  const cloud = cloudQueries(transport, workspaces)
   return {
     livePlugins: livePluginQueries(transport),
     projects: { ...projectQueries(transport, workspaces), environment: projectEnvironmentQuery(transport, workspaces, account) },

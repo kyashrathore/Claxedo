@@ -169,7 +169,7 @@ test("desktop account: an operation crosses by name, and a rejected one re-reads
     await auth.controlPlane.run("workspace.list.provisioner")
     expect(fake.runs).toEqual([{ operation: "workspace.list.provisioner" }])
     fake.failRuns()
-    const failed = auth.controlPlane.run("workspace.list.machine")
+    const failed = auth.controlPlane.run("workspace.list.provisioner")
     await settle()
     fake.answers[1]?.resolve({ status: "unsigned" })
     await expect(failed).rejects.toThrow("HOSTED_HTTP 401")
