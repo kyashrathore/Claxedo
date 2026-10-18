@@ -14,6 +14,16 @@ export const PLUGIN_BACKEND_ROUTE_PREFIX = "/api/plugins"
 
 const PLUGIN_REQUEST_ORIGIN = "https://plugin.claxedo.internal"
 
+/**
+ * The plugin chooses its answer's content type, and the answer is served from
+ * the control plane's own origin: a `text/html` answer opened as a page would
+ * otherwise run the plugin's script with that origin's cookies.
+ */
+const PLUGIN_ANSWER_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "sandbox",
+}
+
 export type PluginBackendRouteInput = {
   authentication: RequestAuthenticationAdapter
   authority: Pick<WorkspaceAuthority, "resolveOrgId">
@@ -27,7 +37,8 @@ export type PluginBackendRouteInput = {
  * the request goes to that organization's supervisor with the plugin path. The
  * caller never names an organization, so another organization's plugin is
  * unreachable by construction. Only the body and its content type cross to the
- * plugin, and only the status, body and content type come back.
+ * plugin, and only the status, body and content type come back, under
+ * `PLUGIN_ANSWER_HEADERS`.
  */
 export function pluginBackendRouteContribution(input: PluginBackendRouteInput): ControlPlaneRouteContribution {
   const routes = new Hono()
@@ -65,7 +76,10 @@ export function pluginBackendRouteContribution(input: PluginBackendRouteInput): 
       return pluginRefusal(502, "plugin_backend_failed", `Plugin ${pluginId} failed to answer`)
     }
     const answerType = answer.headers.get("content-type")
-    return new Response(answer.body, { status: answer.status, headers: answerType ? { "content-type": answerType } : {} })
+    return new Response(answer.body, {
+      status: answer.status,
+      headers: { ...PLUGIN_ANSWER_HEADERS, ...(answerType ? { "content-type": answerType } : {}) },
+    })
   })
   return { id: "plugin-backends", path: PLUGIN_BACKEND_ROUTE_PREFIX, routes }
 }

@@ -17,7 +17,7 @@ A plugin can ship a backend: one Workers module that the hosted Worker loads as 
 
 ## A request
 
-1. **Route** (`routes.ts`, mounted by the Agent Plugins Worker entries). `ALL /api/plugins/:pluginId/*` reads the signed caller through `signedOrError`, the principal path every control-plane route uses, and asks the authority for the caller's organization (`resolveOrgId`). No credential is a 401; a principal the authority does not know is a 401; a caller with no active organization is a 403. The caller never names an organization. Only the request body and its `content-type` are forwarded, and only the plugin's status, body and `content-type` come back.
+1. **Route** (`routes.ts`, mounted by the Agent Plugins Worker entries). `ALL /api/plugins/:pluginId/*` reads the signed caller through `signedOrError`, the principal path every control-plane route uses, and asks the authority for the caller's organization (`resolveOrgId`). No credential is a 401; a principal the authority does not know is a 401; a caller with no active organization is a 403. The caller never names an organization. Only the request body and its `content-type` are forwarded, and only the plugin's status, body and `content-type` come back, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox` added because the answer is served from the control plane's own origin.
 2. **Supervisor** (`supervisor.cf.ts`, `PluginSupervisor`). One Durable Object per organization, named `org:<orgId>`. For each request it reads the organization's activation from D1 (`activations.ts`) and hands the request to the plugin's current run (`runs.ts`):
    - no activation row: 404 `plugin_not_activated`;
    - a route the manifest does not declare: 404 `plugin_route_not_declared`;

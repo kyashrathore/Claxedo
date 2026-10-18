@@ -188,6 +188,16 @@ describe("a plugin backend on workerd", () => {
     expect(await response.json()).toEqual({ userId: carol.userId })
   })
 
+  test("serves the plugin's answer with its content type, unsniffable and sandboxed on this origin", async () => {
+    const response = await miniflare.dispatchFetch(`${ORIGIN}/api/plugins/counter/whoami`, {
+      headers: { authorization: `Bearer ${carol.token}` },
+    })
+    expect(response.headers.get("content-type")).toContain("application/json")
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+    expect(response.headers.get("content-security-policy")).toBe("sandbox")
+    await response.body?.cancel()
+  })
+
   test("refuses a request with no credential", async () => {
     expect(await call(undefined, "GET", "/counter/count")).toEqual(refusal(401, "missing_bearer_token"))
   })
