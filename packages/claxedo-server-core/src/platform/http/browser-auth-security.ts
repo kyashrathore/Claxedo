@@ -31,6 +31,15 @@ export const BROWSER_ALLOWED_REQUEST_HEADERS = [
   "x-claxedo-multiplayer-validation-operation",
 ] as const
 
+/**
+ * How long a browser may reuse one preflight answer for the same URL. Without
+ * the header a browser keeps it 5 seconds, so a Worker placed a continent away
+ * from the browser charged every JSON mutation a second round trip; Chromium
+ * caps the value at 7200 (Firefox at 86400), so a larger number buys nothing
+ * (developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Access-Control-Max-Age).
+ */
+const PREFLIGHT_MAX_AGE_SECONDS = 7_200
+
 function trustedRequestOrigin(request: Request, browser: BrowserAuthDescriptor) {
   const origin = request.headers.get("origin")
   return origin && browser.trustedOrigins.includes(origin) ? origin : undefined
@@ -121,6 +130,7 @@ export function browserAuthHttpSecurity(browser: BrowserAuthDescriptor, options:
       stampCredentialedCors(context, origin)
       context.header("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
       context.header("access-control-allow-headers", BROWSER_ALLOWED_REQUEST_HEADERS.join(", "))
+      context.header("access-control-max-age", String(PREFLIGHT_MAX_AGE_SECONDS))
       return context.body(null, 204)
     }
     const cookieAuthenticatedMutation =
