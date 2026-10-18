@@ -725,8 +725,21 @@ export const desktopRenderer: Policy = {
   // Whether a session's live stream covers its snapshot reads, decided by
   // event feed position (owner: the app's server domain,
   // `server/snapshot-coverage.ts`). It adds no package edge.
-  // 1417/36, no headroom.
-  ceilings: { modules: 1417, packages: 36 },
+  // The loaders for the sixteen non-English dictionaries of five more domains
+  // (owner: the app's composer, session screen, panel, workbench and access
+  // domains, `composer/locales/`, `session/view/locales/`, `panel/locales/`,
+  // `workbench/locales/`, `access/locales/`; the composer's and session
+  // screen's replace the inline files under their i18n folders), the lazy
+  // doors the web entry chunk needs (owner: the app's panel domain,
+  // `panel/view/panel-body-lazy.tsx`; projects, `projects/view/project-create-lazy.tsx`;
+  // session screen, `session/view/session-docks-lazy.tsx`,
+  // `session/view/docks/todo-dock-state.ts`; composer,
+  // `composer/view/on-demand-views.tsx`, `composer/view/prompt-popover-ids.ts`;
+  // settings, `settings/view/machine-connect.tsx`) and the static shiki
+  // language table (owner: the app's transcript domain,
+  // `transcript/markdown-code-languages.ts`). They add no package edge.
+  // 1462/36, no headroom.
+  ceilings: { modules: 1462, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
