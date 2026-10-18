@@ -1,0 +1,71 @@
+Subject: theme: hold the caller's default theme from the start
+
+What: ThemeProvider's `defaultTheme` is a parsed DesktopTheme rather than an id, held in the store beside oc-2; theme/codex-theme.ts exports the parsed Codex theme.
+Why: a default theme named by id loaded through the themes glob as its own chunk during boot (codex-*.js, one static round trip, 116 ms on a 100 ms link) and applied only after it arrived; held, it applies in the first render and no theme chunk loads unless the reader picked another theme.
+
+diff --git a/src/theme/codex-theme.ts b/src/theme/codex-theme.ts
+new file mode 100644
+index 0000000000..8b67866f3a
+--- /dev/null
++++ b/src/theme/codex-theme.ts
+@@ -0,0 +1,4 @@
++import { parseDesktopTheme } from "./parse"
++import codexThemeJson from "./themes/codex.json"
++
++export const codexTheme = parseDesktopTheme(codexThemeJson, "themes/codex.json")
+diff --git a/src/theme/context.tsx b/src/theme/context.tsx
+index a72e2afdf8..5af9d859f8 100644
+--- a/src/theme/context.tsx
++++ b/src/theme/context.tsx
+@@ -177,15 +177,17 @@ function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
+ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProvider } = createSimpleContext({
+   name: "Theme",
+   init: (props: {
+-    defaultTheme?: string
++    defaultTheme?: DesktopTheme
+     onThemeApplied?: (theme: DesktopTheme, mode: "light" | "dark", scheme: ColorScheme) => void
+   }) => {
+-    const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
++    const defaultThemeId = props.defaultTheme?.id ?? "oc-2"
++    const themeId = normalize(read(STORAGE_KEYS.THEME_ID)) ?? defaultThemeId
+     const colorScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
+     const mode = colorScheme === "system" ? getSystemMode() : colorScheme
+     const [store, setStore] = createStore({
+       themes: {
+         "oc-2": oc2Theme,
++        ...(props.defaultTheme ? { [props.defaultTheme.id]: props.defaultTheme } : {}),
+       } as Record<string, DesktopTheme>,
+       themeId,
+       colorScheme,
+@@ -268,7 +270,7 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
+       makeEventListener(mediaQuery, "change", onMedia)
+ 
+       const rawTheme = read(STORAGE_KEYS.THEME_ID)
+-      const savedTheme = normalize(rawTheme ?? props.defaultTheme) ?? "oc-2"
++      const savedTheme = normalize(rawTheme) ?? defaultThemeId
+       const savedScheme = parseColorScheme(read(STORAGE_KEYS.COLOR_SCHEME)) ?? "system"
+       if (rawTheme && rawTheme !== savedTheme) {
+         write(STORAGE_KEYS.THEME_ID, savedTheme)
+@@ -328,7 +330,7 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
+       unregisterTheme: (id: string) => {
+         if (id === "oc-2" || knownThemes().has(id) || !store.themes[id]) return
+         setStore("themes", produce((themes) => void delete themes[id]))
+-        if (store.themeId === id) setTheme(normalize(props.defaultTheme) ?? "oc-2")
++        if (store.themeId === id) setTheme(defaultThemeId)
+       },
+       previewTheme: (id: string) => {
+         const next = normalize(id)
+diff --git a/src/theme/default-theme.ts b/src/theme/default-theme.ts
+index 16b33ec294..3dafbc6afa 100644
+--- a/src/theme/default-theme.ts
++++ b/src/theme/default-theme.ts
+@@ -1,6 +1,7 @@
+ import { parseDesktopTheme } from "./parse"
+ import oc2ThemeJson from "./themes/oc-2.json"
+ 
+-// The one theme the provider holds before any pick; every other theme loads
+-// through the `./themes/*.json` glob in context.tsx when it is chosen.
++// Every provider holds this theme and its caller's `defaultTheme` before any
++// pick; every other theme loads through the `./themes/*.json` glob in
++// context.tsx when it is chosen.
+ export const oc2Theme = parseDesktopTheme(oc2ThemeJson, "themes/oc-2.json")

@@ -12,7 +12,7 @@ import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
 import { firstParty, firstPartyDictionaries } from "./registry"
-import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
+import { codexTheme, DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
@@ -81,7 +81,7 @@ export function App(props: AppProps): JSX.Element {
     <AuthProvider binding={accountBinding}>
       <ShellRegistriesContext.Provider value={registries}>
         <I18nProvider dictionaries={firstPartyDictionaries}>
-          <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
+          <ThemeProvider defaultTheme={codexTheme} onThemeApplied={syncIconLibraryWithTheme}>
             <PreferencesProvider>
               <ClockProvider>
                 <ShellRouter router={props.router}>

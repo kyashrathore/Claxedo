@@ -55,6 +55,7 @@ export { Drawer, FormDialog, FormDrawer, type FormSurfaceProps } from "./control
 export { TextareaV2 as Textarea, type TextareaV2Props as TextareaProps } from "@opencode-ai/ui/v2/textarea-v2"
 export { useTheme, type ColorScheme, type DesktopTheme, type ThemeVariant } from "@opencode-ai/ui/theme"
 export { oc2Theme } from "@opencode-ai/ui/theme/default-theme"
+export { codexTheme } from "@opencode-ai/ui/theme/codex-theme"
 export { AccordionV2 as Accordion, type AccordionV2Props as AccordionProps } from "@opencode-ai/ui/v2/accordion-v2"
 export { AnimatedNumber } from "@opencode-ai/ui/animated-number"
 export { Card, CardDescription } from "@opencode-ai/ui/card"
