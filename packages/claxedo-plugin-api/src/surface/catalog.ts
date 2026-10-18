@@ -3,12 +3,11 @@ import { z } from "zod"
 export const SURFACE_CATALOG_ID = "https://claxedo.dev/a2ui/v0.9/catalog.json"
 
 export const SURFACE_ICON_NAMES = [
-  "accountCircle", "add", "arrowBack", "arrowForward", "attachFile", "calendarToday", "call", "camera", "check", "close",
-  "delete", "download", "edit", "event", "error", "fastForward", "favorite", "favoriteOff", "folder", "help", "home", "info",
-  "locationOn", "lock", "lockOpen", "mail", "menu", "moreVert", "moreHoriz", "notificationsOff", "notifications", "pause",
-  "payment", "person", "phone", "photo", "play", "print", "refresh", "rewind", "search", "send", "settings", "share",
-  "shoppingCart", "skipNext", "skipPrevious", "star", "starHalf", "starOff", "stop", "upload", "visibility", "visibilityOff",
-  "volumeDown", "volumeMute", "volumeOff", "volumeUp", "warning",
+  "accountCircle", "add", "arrowBack", "arrowForward", "calendarToday", "check", "close", "delete", "download", "edit",
+  "event", "error", "fastForward", "favorite", "favoriteOff", "folder", "help", "home", "info", "locationOn", "lock",
+  "lockOpen", "mail", "menu", "moreVert", "moreHoriz", "notificationsOff", "notifications", "pause", "payment", "person",
+  "photo", "play", "refresh", "rewind", "search", "send", "settings", "share", "shoppingCart", "skipNext", "skipPrevious",
+  "star", "starOff", "stop", "upload", "visibility", "visibilityOff", "warning",
 ] as const
 
 const MAX_TEXT = 100_000
@@ -68,7 +67,7 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
   catalogComponent("Button", {
     child: componentId,
     variant: z.enum(["default", "primary", "borderless"]).optional(),
-    icon: iconName.optional(),
+    icon: z.union([iconName, dataBindingSchema]).optional(),
     action: surfaceActionSchema,
   }),
   catalogComponent("TextField", {
@@ -130,10 +129,18 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     subtitle: dynamicString.optional(),
     icon: z.union([iconName, dataBindingSchema]).optional(),
     meta: componentIdList.optional(),
+    primaryAction: componentId.optional(),
     actions: componentIdList.optional(),
     selected: dynamicBoolean.optional(),
   }),
-  catalogComponent("Callout", { tone: z.enum(["info", "success", "warning", "danger"]), title: dynamicString, text: dynamicString.optional() }),
+  catalogComponent("Callout", {
+    tone: z.enum(["info", "success", "warning", "danger"]),
+    title: dynamicString,
+    text: dynamicString.optional(),
+    action: componentId.optional(),
+    dismissible: z.boolean().optional(),
+  }),
+  catalogComponent("Footer", { start: componentIdList.optional(), end: componentIdList }),
   catalogComponent("KeyValue", { items: z.union([z.array(keyValueItem), dataBindingSchema]) }),
 ])
 

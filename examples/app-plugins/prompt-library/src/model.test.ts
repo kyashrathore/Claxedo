@@ -8,14 +8,16 @@ import {
   fillPrompt,
   labelFor,
   libraryView,
+  missingText,
   missingVariables,
   placeholders,
   previewMarkdown,
   readDraft,
   readValues,
   recordUse,
-  syncFavourites,
+  selectedView,
   templateFromDraft,
+  toggleFavourite,
   valuesFor,
   type Library,
 } from "./model"
@@ -48,8 +50,10 @@ describe("filling a template", () => {
   })
 
   test("previews the filled prompt as a quote and names what is still missing", () => {
-    expect(previewMarkdown({ ...refactor, body: "Line {source}\nLine two" }, {})).toBe("> Line {source}\n> Line two\n\n_Still to fill: `{source}`, `{concept}`_")
-    expect(previewMarkdown({ ...refactor, body: "Go", variables: [] }, {})).toBe("> Go\n\n_All variables filled._")
+    expect(previewMarkdown({ ...refactor, body: "Line {source}\nLine two" }, {})).toBe("> Line {source}\n> Line two")
+    expect(missingText(refactor, { source: "a.ts" })).toBe("{concept}")
+    expect(missingText(refactor, {})).toBe("{source}, {concept}")
+    expect(missingText(refactor, { source: "a.ts", concept: "routing" })).toBe("")
   })
 
   test("restores saved values for the template's variables only", () => {
@@ -66,19 +70,30 @@ describe("filling a template", () => {
 })
 
 describe("favourites and usage", () => {
-  test("takes a switch that differs from the saved state, from whichever tab it was flipped in", () => {
-    const liked = syncFavourites(library, [[{ items: [{ id: "flaky-test", favourite: true }, { id: "reproduce-bug", favourite: false }] }], []])
+  test("a star toggles one template in and out of favourites and ignores unknown ids", () => {
+    const liked = toggleFavourite(library, "flaky-test")
     expect(liked.favourites).toEqual(["flaky-test"])
-    const unliked = syncFavourites(liked, [[{ items: [{ id: "flaky-test", favourite: true }] }], [{ id: "flaky-test", favourite: false }]])
-    expect(unliked.favourites).toEqual([])
-    expect(syncFavourites(liked, [null, undefined]).favourites).toEqual(["flaky-test"])
+    expect(libraryView(liked).favourites.map((card) => [card.favouriteLabel, card.favouriteIcon])).toEqual([["Remove from favourites", "star"]])
+    expect(libraryView(liked).tabs.flatMap((tab) => tab.items).filter((card) => card.id !== "flaky-test").every((card) => card.favouriteIcon === "starOff")).toBe(true)
+    expect(toggleFavourite(liked, "flaky-test").favourites).toEqual([])
+    expect(toggleFavourite(liked, "missing")).toBe(liked)
   })
 
   test("lists favourites in their own tab and counts uses", () => {
     const used = recordUse(recordUse({ ...library, favourites: ["changelog"] }, "changelog"), "changelog")
     const view = libraryView(used)
-    expect(view.favourites.map((card) => [card.id, card.usage, card.favourite])).toEqual([["changelog", "Used 2×", true]])
+    expect(view.favourites.map((card) => [card.id, card.usage, card.usageTone, card.favouriteLabel])).toEqual([["changelog", "Used 2×", "accent", "Remove from favourites"]])
+    expect(view.tabs[0]!.items[0]!.usageTone).toBe("neutral")
     expect(view.header).toBe("15 templates · 1 favourites · 2 sent")
+  })
+
+  test("sums up the selected template's category, variables and uses in one line", () => {
+    expect(selectedView(recordUse(library, refactor.id), refactor)).toEqual({
+      id: "extract-module",
+      name: "Extract a module",
+      byline: "Refactoring · 2 variables · Used 1×",
+      description: refactor.description,
+    })
   })
 })
 

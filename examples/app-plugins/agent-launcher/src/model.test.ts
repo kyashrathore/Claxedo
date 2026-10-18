@@ -8,8 +8,8 @@ import {
   projectsSignature,
   readLaunchForm,
   refreshStatuses,
-  statusSummary,
-  summaryLine,
+  launchStats,
+  launcherStatus,
   templateById,
   validateLaunch,
   variablesFor,
@@ -54,11 +54,12 @@ describe("templates", () => {
 })
 
 describe("batches", () => {
-  test("clamps the slider to 1..5 whole sessions", () => {
-    expect(clampBatch(0)).toBe(1)
-    expect(clampBatch(3.6)).toBe(4)
-    expect(clampBatch(9)).toBe(5)
-    expect(clampBatch("3")).toBe(1)
+  test("reads the parallel-sessions picker as 1..5 whole sessions", () => {
+    expect(clampBatch(["3"])).toBe(3)
+    expect(clampBatch(["0"])).toBe(1)
+    expect(clampBatch(["9"])).toBe(5)
+    expect(clampBatch([])).toBe(1)
+    expect(clampBatch(3)).toBe(1)
   })
 
   test("numbers titles only for more than one session and falls back to the template name", () => {
@@ -89,7 +90,7 @@ describe("launch validation", () => {
       project: ["p2"],
       prompt: "Document it",
       title: "Docs",
-      batch: 7,
+      batch: ["7"],
       variables: [{ name: "module", label: "Module", value: "auth" }, "junk"],
     })
     expect(form).toEqual({
@@ -114,15 +115,19 @@ describe("launched sessions", () => {
     expect(refreshed.launches[2]).toBe(launches[2]!)
   })
 
-  test("summarises counts in a fixed status order, skipping empty statuses", () => {
-    const launches = [launch({ status: "waiting" }), launch({ status: "running" }), launch({ status: "running" }), launch({ status: "launch_failed" })]
-    expect(statusSummary(launches)).toEqual([
-      { status: "Running", count: 2 },
-      { status: "Needs input", count: 1 },
-      { status: "Launch failed", count: 1 },
-    ])
-    expect(summaryLine(launches)).toBe("4 launched · 2 active · 1 need input")
-    expect(summaryLine([])).toBe("Nothing launched yet")
+  test("counts launched, active, waiting and failed sessions as stat values", () => {
+    const launches = [launch({ status: "waiting" }), launch({ status: "running" }), launch({ status: "running_in_background" }), launch({ status: "launch_failed" }), launch({ status: "failed" })]
+    expect(launchStats(launches)).toEqual({ launched: "5", active: "2", attention: "1", failed: "2" })
+    expect(launchStats([])).toEqual({ launched: "0", active: "0", attention: "0", failed: "0" })
+  })
+
+  test("names the page status in words with a tone, input requests first", () => {
+    expect(launcherStatus([launch({ status: "running" })], true)).toEqual({ text: "Launching", tone: "accent" })
+    expect(launcherStatus([launch({ status: "waiting" }), launch({ status: "waiting" }), launch({ status: "running" })], false)).toEqual({ text: "2 need input", tone: "warning" })
+    expect(launcherStatus([launch({ status: "waiting" })], false)).toEqual({ text: "1 needs input", tone: "warning" })
+    expect(launcherStatus([launch({ status: "running" }), launch({ status: "idle" })], false)).toEqual({ text: "1 running", tone: "success" })
+    expect(launcherStatus([launch({ status: "idle" })], false)).toEqual({ text: "All settled", tone: "neutral" })
+    expect(launcherStatus([], false)).toEqual({ text: "Nothing launched", tone: "neutral" })
   })
 
   test("shows a failed launch's error beside its project", () => {
@@ -130,6 +135,7 @@ describe("launched sessions", () => {
       key: "k",
       title: "Task",
       status: "Launch failed",
+      tone: "danger",
       detail: "Claxedo · 10:00:00 · no placement",
     })
   })

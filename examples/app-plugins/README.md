@@ -8,7 +8,7 @@ Ten app plugins whose whole UI is an A2UI v0.9 surface page. The plugin's code o
 | `feature-flags` | Flags per environment with staged edits, review and apply, audit log, kill switch | — |
 | `budget-split` | Trip expenses split to the cent, balances, greedy settle-up, budgets per category, export | — |
 | `agent-launcher` | Prompt templates with variables; launches 1–5 agent sessions and follows their status | projects, sessions |
-| `workbench-monitor` | Live table of open workbench tabs with filters, sorting and tab actions | workbench tabs |
+| `workbench-monitor` | Live list of open workbench tabs with status stats, filters, sorting and tab actions | workbench tabs |
 | `prompt-library` | 15 templates in categories, favourites, variable forms, preview, send to a new session | projects, sessions |
 | `release-train` | Staged release checklist with gating, version bump, changelog, announcement session | projects, sessions |
 | `incident-commander` | Declared incident with live clock, status timeline, runbooks, stakeholder updates, postmortem session | projects, sessions |

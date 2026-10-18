@@ -76,17 +76,6 @@ export const TEMPLATES: readonly LaunchTemplate[] = [
   { id: CUSTOM_TEMPLATE_ID, label: "Custom", body: "", variables: [] },
 ]
 
-export const STATUS_ORDER: readonly LaunchStatus[] = [
-  "launching",
-  "running",
-  "running_in_background",
-  "waiting",
-  "idle",
-  "interrupted",
-  "failed",
-  "launch_failed",
-]
-
 export const STATUS_LABELS: Readonly<Record<LaunchStatus, string>> = {
   launching: "Launching",
   running: "Running",
@@ -126,9 +115,11 @@ export function variablesFor(template: LaunchTemplate, previous: readonly Variab
   }))
 }
 
-export function clampBatch(value: unknown): number {
-  const count = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 1
-  return Math.min(MAX_BATCH, Math.max(1, count))
+export const BATCH_OPTIONS: readonly string[] = Array.from({ length: MAX_BATCH }, (_, index) => String(index + 1))
+
+export function clampBatch(value: Json | undefined): number {
+  const count = Number.parseInt(firstText(value), 10)
+  return Number.isFinite(count) ? Math.min(MAX_BATCH, Math.max(1, count)) : 1
 }
 
 export function batchTitles(title: string, count: number, fallback: string): string[] {
@@ -189,26 +180,50 @@ export function refreshStatuses(
   return { launches: next, changed }
 }
 
-export type StatusCount = { readonly status: string; readonly count: number }
+export type Tone = "neutral" | "accent" | "success" | "warning" | "danger"
 
-export function statusSummary(launches: readonly Launch[]): StatusCount[] {
-  return STATUS_ORDER.flatMap((status) => {
-    const count = launches.filter((launch) => launch.status === status).length
-    return count > 0 ? [{ status: STATUS_LABELS[status], count }] : []
-  })
+export const STATUS_TONES: Readonly<Record<LaunchStatus, Tone>> = {
+  launching: "accent",
+  running: "success",
+  running_in_background: "success",
+  waiting: "warning",
+  idle: "neutral",
+  interrupted: "warning",
+  failed: "danger",
+  launch_failed: "danger",
 }
 
-export function summaryLine(launches: readonly Launch[]): string {
-  if (launches.length === 0) return "Nothing launched yet"
-  const active = launches.filter((launch) => launch.status === "running" || launch.status === "running_in_background").length
-  const attention = launches.filter((launch) => launch.status === "waiting").length
-  return `${launches.length} launched · ${active} active · ${attention} need input`
+export type LaunchStats = { readonly launched: string; readonly active: string; readonly attention: string; readonly failed: string }
+
+function countOf(launches: readonly Launch[], statuses: readonly LaunchStatus[]): number {
+  return launches.filter((launch) => statuses.includes(launch.status)).length
+}
+
+export function launchStats(launches: readonly Launch[]): LaunchStats {
+  return {
+    launched: String(launches.length),
+    active: String(countOf(launches, ["running", "running_in_background"])),
+    attention: String(countOf(launches, ["waiting"])),
+    failed: String(countOf(launches, ["failed", "launch_failed"])),
+  }
+}
+
+export type LauncherStatus = { readonly text: string; readonly tone: Tone }
+
+export function launcherStatus(launches: readonly Launch[], launching: boolean): LauncherStatus {
+  if (launching) return { text: "Launching", tone: "accent" }
+  const attention = countOf(launches, ["waiting"])
+  if (attention > 0) return { text: `${attention} need${attention === 1 ? "s" : ""} input`, tone: "warning" }
+  const active = countOf(launches, ["running", "running_in_background"])
+  if (active > 0) return { text: `${active} running`, tone: "success" }
+  return { text: launches.length === 0 ? "Nothing launched" : "All settled", tone: "neutral" }
 }
 
 export type LaunchRow = {
   readonly key: string
   readonly title: string
   readonly status: string
+  readonly tone: Tone
   readonly detail: string
 }
 
@@ -218,6 +233,7 @@ export function launchRow(launch: Launch): LaunchRow {
     key: launch.key,
     title: launch.title,
     status: STATUS_LABELS[launch.status],
+    tone: STATUS_TONES[launch.status],
     detail: launch.error ? `${where} · ${launch.error}` : where,
   }
 }

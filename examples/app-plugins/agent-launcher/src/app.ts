@@ -8,8 +8,6 @@ import {
   readLaunchForm,
   readVariables,
   refreshStatuses,
-  statusSummary,
-  summaryLine,
   templateById,
   validateLaunch,
   variablesFor,
@@ -17,7 +15,20 @@ import {
   type Launch,
   type Project,
 } from "./model"
-import { launchArea, launchedArea, launchedData, launcherComponents, launcherData, openingMessages, patch, projectArea, replace } from "./view"
+import {
+  changedPatches,
+  launchArea,
+  launchedArea,
+  launchedData,
+  launcherComponents,
+  launcherData,
+  openingMessages,
+  patch,
+  projectArea,
+  replace,
+  summaryData,
+  templateNote,
+} from "./view"
 
 const PAGE_ID = "agent-launcher"
 const STATUS_POLL_MS = 2000
@@ -36,17 +47,27 @@ function openLauncher(api: PluginApi, channel: SurfaceChannel, ledger: Ledger): 
   const { surfaceId } = channel
   let projects: readonly Project[] = api.projects.list()
   let launching = false
+  let errorsShown = false
+  let summary = summaryData(ledger.launches, launching)
 
   channel.send(
     ...openingMessages(
       surfaceId,
-      launcherComponents({ projects, hasLaunches: ledger.launches.length > 0, launching }),
+      launcherComponents({ projects, hasLaunches: ledger.launches.length > 0, launching, hasErrors: errorsShown }),
       launcherData(projects, api.context.currentProjectId(), ledger.launches),
     ),
   )
 
   const sendSummary = () => {
-    channel.send(patch(surfaceId, "/summary", summaryLine(ledger.launches)), patch(surfaceId, "/counts", statusSummary(ledger.launches)))
+    const next = summaryData(ledger.launches, launching)
+    channel.send(...changedPatches(surfaceId, "/stats", summary.stats, next.stats), ...changedPatches(surfaceId, "/status", summary.status, next.status))
+    summary = next
+  }
+
+  const showErrors = (errors: readonly string[]) => {
+    const visible = errors.length > 0
+    channel.send(patch(surfaceId, "/errors", errors.join(" ")), ...(visible === errorsShown ? [] : [replace(surfaceId, launchArea(launching, visible))]))
+    errorsShown = visible
   }
 
   const updateLaunch = (index: number, next: Launch) => {
@@ -58,7 +79,12 @@ function openLauncher(api: PluginApi, channel: SurfaceChannel, ledger: Ledger): 
     const refreshed = refreshStatuses(ledger.launches, (ref) => api.sessions.status(ref))
     if (refreshed.changed.length > 0) {
       ledger.launches = refreshed.launches
-      channel.send(...refreshed.changed.map((index) => patch(surfaceId, `/launched/${index}/status`, launchRow(refreshed.launches[index]!).status)))
+      channel.send(
+        ...refreshed.changed.flatMap((index) => {
+          const row = launchRow(refreshed.launches[index]!)
+          return [patch(surfaceId, `/launched/${index}/status`, row.status), patch(surfaceId, `/launched/${index}/tone`, row.tone)]
+        }),
+      )
       sendSummary()
     }
     const current = api.projects.list()
@@ -72,12 +98,8 @@ function openLauncher(api: PluginApi, channel: SurfaceChannel, ledger: Ledger): 
   const pickTemplate = (context: Record<string, Json>) => {
     const template = templateById(typeof context.id === "string" ? context.id : CUSTOM_TEMPLATE_ID)
     const variables = variablesFor(template, readVariables(context.variables))
-    channel.send(
-      patch(surfaceId, "/template", template.id),
-      patch(surfaceId, "/templateLabel", template.label),
-      patch(surfaceId, "/variables", variables),
-      patch(surfaceId, "/errors", ""),
-    )
+    channel.send(patch(surfaceId, "/template", template.id), patch(surfaceId, "/templateNote", templateNote(template.label)), patch(surfaceId, "/variables", variables))
+    showErrors([])
     if (template.id !== CUSTOM_TEMPLATE_ID) channel.send(patch(surfaceId, "/prompt", fillTemplate(template.body, variables)))
   }
 
@@ -91,11 +113,8 @@ function openLauncher(api: PluginApi, channel: SurfaceChannel, ledger: Ledger): 
     if (launching) return
     const form = readLaunchForm(context)
     const errors = validateLaunch(form, projects)
-    channel.send(patch(surfaceId, "/errors", errors.map((error) => `- ${error}`).join("\n")))
-    if (errors.length > 0) {
-      api.ui.toast({ kind: "warning", title: "Can't launch yet", description: errors.join(" ") })
-      return
-    }
+    showErrors(errors)
+    if (errors.length > 0) return
     const project = projects.find((entry) => entry.id === form.projectId)!
     const titles = batchTitles(form.title, form.batch, templateById(form.templateId).label)
     const wasEmpty = ledger.launches.length === 0
@@ -111,7 +130,7 @@ function openLauncher(api: PluginApi, channel: SurfaceChannel, ledger: Ledger): 
     channel.send(
       ...titles.map((_, offset) => patch(surfaceId, `/launched/${start + offset}`, launchRow(ledger.launches[start + offset]!))),
       progress(),
-      replace(surfaceId, launchArea(true)),
+      replace(surfaceId, launchArea(true, errorsShown)),
       ...(wasEmpty ? [replace(surfaceId, launchedArea(true))] : []),
     )
     sendSummary()
@@ -132,7 +151,8 @@ function openLauncher(api: PluginApi, channel: SurfaceChannel, ledger: Ledger): 
       }),
     )
     launching = false
-    channel.send(replace(surfaceId, launchArea(false)))
+    channel.send(replace(surfaceId, launchArea(false, errorsShown)))
+    sendSummary()
     if (failures.length === 0) {
       api.ui.toast({ kind: "success", title: `Launched ${titles.length} session${titles.length === 1 ? "" : "s"}`, description: project.name })
     } else {
@@ -166,7 +186,8 @@ function openLauncher(api: PluginApi, channel: SurfaceChannel, ledger: Ledger): 
     })
     if (!confirmed) return
     ledger.launches = []
-    channel.send(replace(surfaceId, launchedArea(false)), ...Object.entries(launchedData([])).map(([key, value]) => patch(surfaceId, `/${key}`, value)))
+    summary = summaryData([], launching)
+    channel.send(replace(surfaceId, launchedArea(false)), ...Object.entries(launchedData([], launching)).map(([key, value]) => patch(surfaceId, `/${key}`, value)))
   }
 
   return {

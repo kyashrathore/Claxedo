@@ -1,10 +1,11 @@
 import { Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { Icon, Tag } from "@/ui"
-import { surfaceIcon } from "../icon-names"
+import { Tag } from "@/ui"
+import { surfaceIconName } from "../icon-names"
 import { codeFence, webUrl } from "../text-format"
 import type { SurfaceNodeProps } from "../model"
 import { badgeTagVariant, badgeTone } from "../tones"
+import { SurfaceIcon } from "./surface-icon"
 import { useSurfaceMarkdown, useSurfaceRichText } from "./surface-rich-text"
 import { useSurfaceReader } from "./surface-runtime"
 
@@ -36,7 +37,7 @@ export function CodeView(props: SurfaceNodeProps<"Code">) {
 
 export function IconView(props: SurfaceNodeProps<"Icon">) {
   const read = useSurfaceReader()
-  return <Show when={surfaceIcon(read.value(props.def.name, props.scope))}>{(name) => <Icon name={name()} size="small" />}</Show>
+  return <Show when={surfaceIconName(read.value(props.def.name, props.scope))}>{(name) => <SurfaceIcon name={name()} size="small" />}</Show>
 }
 
 export function BadgeView(props: SurfaceNodeProps<"Badge">) {

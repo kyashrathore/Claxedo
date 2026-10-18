@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { SURFACE_DESIGN_GUIDE, SURFACE_ROOT_ID, checkSurfaceSpec, componentReferences, type SurfaceSpec } from "./index"
+import { SURFACE_DESIGN_GUIDE, SURFACE_ROOT_ID, checkSurfaceSpec, componentReferences, type SurfaceComponent, type SurfaceSpec } from "./index"
 
 const recipes: unknown[] = [...SURFACE_DESIGN_GUIDE.matchAll(/^~~~json\n([\s\S]*?)\n~~~$/gm)].map((match) => JSON.parse(match[1] ?? ""))
 
@@ -77,6 +77,65 @@ describe("SURFACE_DESIGN_GUIDE", () => {
       const root = spec.components.find((component) => component.id === SURFACE_ROOT_ID)
       const blocks = root ? componentReferences(root).length : 0
       expect({ title: spec.title, primaries: primaries <= 1, blocks: blocks <= 7 }).toEqual({ title: spec.title, primaries: true, blocks: true })
+    }
+  })
+
+  test("every recipe's Header keeps a short subtitle and at most two actions, one of them primary", () => {
+    for (const spec of checkedRecipes()) {
+      const byId = new Map(spec.components.map((component) => [component.id, component]))
+      for (const header of spec.components.filter((component) => component.component === "Header")) {
+        const subtitle = typeof header.subtitle === "string" ? header.subtitle : ""
+        const actions = (header.actions ?? []).map((id) => byId.get(id))
+        const primaries = actions.filter((action) => action?.component === "Button" && action.variant === "primary").length
+        expect({ title: spec.title, facts: subtitle.split(" · ").length <= 3, short: subtitle.length <= 60, actions: actions.length <= 2, primaries: primaries <= 1 }).toEqual({
+          title: spec.title,
+          facts: true,
+          short: true,
+          actions: true,
+          primaries: true,
+        })
+      }
+    }
+  })
+
+  test("every recipe's danger Callout offers a fix and cannot be closed, and no container holds two Callouts", () => {
+    for (const spec of checkedRecipes()) {
+      const byId = new Map(spec.components.map((component) => [component.id, component]))
+      const danger = spec.components.filter((component) => component.component === "Callout" && component.tone === "danger")
+      expect({ title: spec.title, unfixable: danger.filter((callout) => callout.component === "Callout" && (callout.action === undefined || callout.dismissible === true)).map((callout) => callout.id) }).toEqual({ title: spec.title, unfixable: [] })
+      const crowded = spec.components.filter((component) => componentReferences(component).filter((reference) => byId.get(reference.id)?.component === "Callout").length > 1)
+      expect({ title: spec.title, crowded: crowded.map((component) => component.id) }).toEqual({ title: spec.title, crowded: [] })
+    }
+  })
+
+  test("every recipe with inputs ends with a Footer", () => {
+    const inputs = new Set<SurfaceComponent["component"]>(["TextField", "CheckBox", "Switch", "ChoicePicker", "Slider", "DateTimeInput"])
+    const withInputs = checkedRecipes().filter((spec) => spec.components.some((component) => inputs.has(component.component)))
+    expect(withInputs.length).toBeGreaterThan(0)
+    for (const spec of withInputs) {
+      const byId = new Map(spec.components.map((component) => [component.id, component]))
+      const root = byId.get(SURFACE_ROOT_ID)
+      const last = root ? componentReferences(root).at(-1) : undefined
+      expect({ title: spec.title, last: last ? byId.get(last.id)?.component : undefined }).toEqual({ title: spec.title, last: "Footer" })
+    }
+  })
+
+  test("every repeated row shows one text action at most and gives each of its other actions an icon", () => {
+    for (const spec of checkedRecipes()) {
+      const byId = new Map(spec.components.map((component) => [component.id, component]))
+      const templated = new Set(spec.components.flatMap((component) => ("children" in component && !Array.isArray(component.children) ? [component.children.componentId] : [])))
+      const rows = spec.components.filter((component) => component.component === "ListItem" && templated.has(component.id))
+      const problems = rows.flatMap((row) => {
+        if (row.component !== "ListItem") return []
+        const primary = row.primaryAction === undefined ? [] : [row.primaryAction]
+        const notButtons = [...primary, ...(row.actions ?? [])].filter((id) => byId.get(id)?.component !== "Button")
+        const textOnly = (row.actions ?? []).filter((id) => {
+          const action = byId.get(id)
+          return action?.component === "Button" && action.icon === undefined
+        })
+        return [...notButtons.map((id) => `${row.id}: ${id} is not a Button`), ...textOnly.map((id) => `${row.id}: ${id} has no icon`)]
+      })
+      expect({ title: spec.title, problems }).toEqual({ title: spec.title, problems: [] })
     }
   })
 })

@@ -135,7 +135,7 @@ export function parseTaskDraft(value: unknown, sprint: Sprint): { ok: true; draf
   if (!owner || !TEAM.some((member) => member.id === owner)) return { ok: false, error: "Choose an owner from the team." }
   const priority = firstChoice(input.priority)
   if (!isPriority(priority)) return { ok: false, error: "Choose a priority." }
-  const rawPoints = typeof input.points === "number" ? input.points : Number(input.points)
+  const rawPoints = typeof input.points === "number" ? input.points : Number(firstChoice(input.points))
   const due = typeof input.due === "string" ? input.due.slice(0, 10) : ""
   if (due !== "" && !isIsoDate(due)) return { ok: false, error: "The due date is not a valid date." }
   if (due !== "" && daysBetween(sprint.start, due) < 0) return { ok: false, error: "The due date falls before the sprint starts." }
@@ -199,12 +199,31 @@ export function setWipLimit(board: Board, column: string, enforce: unknown, limi
   }
 }
 
+export type Tone = "neutral" | "accent" | "success" | "warning" | "danger"
+
+export function priorityTone(priority: Priority): Tone {
+  if (priority === "critical") return "danger"
+  return priority === "high" ? "warning" : "neutral"
+}
+
 export type WipStatus = { readonly count: number; readonly limit: number; readonly enforce: boolean; readonly exceeded: boolean; readonly full: boolean }
 
 export function wipStatus(board: Board, column: ColumnId): WipStatus {
   const wip = board.wip[column]
   const count = tasksIn(board, column).length
   return { count, limit: wip.limit, enforce: wip.enforce, exceeded: count > wip.limit, full: count === wip.limit }
+}
+
+export function wipTone(status: WipStatus): Tone {
+  if (status.exceeded) return "danger"
+  return status.full && status.enforce ? "warning" : "neutral"
+}
+
+export function wipLabel(status: WipStatus): string {
+  const base = `${status.count} / ${status.limit}`
+  if (status.exceeded) return `${base} · over limit`
+  if (status.full && status.enforce) return `${base} · at limit`
+  return status.enforce ? base : `${base} advisory`
 }
 
 export function filterByOwners(tasks: readonly Task[], owners: readonly string[]): readonly Task[] {
@@ -247,6 +266,14 @@ export function burndown(board: Board, today: string): readonly BurndownDay[] {
     const ideal = Math.round(total * (1 - index / last) * 10) / 10
     return { day: index + 1, date, ideal, remaining: date > today ? undefined : total - burned, completed }
   })
+}
+
+export type SprintHealth = { readonly label: string; readonly tone: Tone; readonly day: BurndownDay | undefined }
+
+export function sprintHealth(days: readonly BurndownDay[]): SprintHealth {
+  const day = [...days].reverse().find((entry) => entry.remaining !== undefined)
+  if (!day || day.remaining === undefined) return { label: "Not started", tone: "neutral", day }
+  return day.remaining > day.ideal ? { label: "Behind", tone: "warning", day } : { label: "On track", tone: "success", day }
 }
 
 export type DueStatus = { readonly label: string; readonly overdue: boolean }

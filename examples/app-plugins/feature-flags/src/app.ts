@@ -16,7 +16,7 @@ import {
   validateFlagDraft,
   type FlagStore,
 } from "./model"
-import { changedEntries, displayEntries, emptyDraft, initialData, openingMessages, update } from "./surface"
+import { changedEntries, createBody, displayEntries, emptyDraft, initialData, openingMessages, replaceComponents, update } from "./surface"
 
 const PAGE_ID = "feature-flags"
 const ACTOR = "You"
@@ -28,6 +28,13 @@ function openFlags(api: PluginApi, state: { store: FlagStore }, channel: Surface
   const view = () => displayEntries(state.store, { query, formatTime: (iso) => time.format(new Date(iso)) })
   let shown = view()
   channel.send(...openingMessages(surfaceId, initialData(shown, query)))
+
+  let createError = false
+  const showCreateError = (error: string | undefined) => {
+    if (error !== undefined) channel.send(update(surfaceId, "/createError", error))
+    if (createError !== (error !== undefined)) channel.send(replaceComponents(surfaceId, [createBody(error !== undefined)]))
+    createError = error !== undefined
+  }
 
   const refresh = () => {
     const next = view()
@@ -123,10 +130,11 @@ function openFlags(api: PluginApi, state: { store: FlagStore }, channel: Surface
         case "create": {
           const checked = validateFlagDraft(state.store, action.context.draft)
           if (!checked.ok) {
-            api.ui.toast({ kind: "error", title: "Flag not created", description: checked.error })
+            showCreateError(checked.error)
             break
           }
           state.store = createFlag(state.store, checked.draft, new Date().toISOString(), ACTOR)
+          showCreateError(undefined)
           channel.send(update(surfaceId, "/draft", emptyDraft()))
           api.ui.toast({ kind: "success", title: `Created ${checked.draft.key}`, description: "It is off in every environment until you stage and apply a change." })
           break

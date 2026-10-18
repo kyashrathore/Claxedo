@@ -8,6 +8,7 @@ import {
   fillPrompt,
   firstText,
   libraryView,
+  missingText,
   missingVariables,
   previewMarkdown,
   readDraft,
@@ -15,8 +16,8 @@ import {
   recordUse,
   selectedView,
   sessionTitle,
-  syncFavourites,
   templateFromDraft,
+  toggleFavourite,
   valuesFor,
   type Json,
   type Library,
@@ -25,6 +26,7 @@ import {
 } from "./model"
 import {
   detailArea,
+  draftActions,
   draftCategory,
   emptyDraft,
   favouritesPanel,
@@ -32,6 +34,7 @@ import {
   libraryTabs,
   openingMessages,
   patch,
+  previewStatus,
   projectArea,
   replace,
   sendArea,
@@ -43,7 +46,9 @@ const PAGE_ID = "prompt-library"
 
 const NO_CODE = "// Press “Copy as code” to turn the filled prompt into a plugin call."
 
-const NO_SELECTION = { id: "", name: "", category: "", description: "", usage: "", variables: "" }
+const NO_SELECTION = { id: "", name: "", byline: "", description: "" }
+
+type Problem = { readonly title: string; readonly text: string }
 
 type Store = { library: Library; selectedId: string | undefined; values: Map<string, Values> }
 
@@ -64,20 +69,25 @@ function openLibrary(api: PluginApi, channel: SurfaceChannel, store: Store): Sur
   let shown: LibraryView = libraryView(store.library)
   let categories = categoriesOf(store.library.templates)
   let sending = false
+  let sendErrorShown = false
+  let draftErrorsShown = false
   const selected = templateById(store.selectedId)
   const currentProject = api.context.currentProjectId()
   const defaultProject = projects.some((project) => project.id === currentProject) ? currentProject : projects[0]?.id
   const values = selected ? valuesFor(selected, store.values.get(selected.id) ?? {}) : {}
+  let previewFilled = selected ? missingVariables(selected, values).length === 0 : false
 
   channel.send(
     ...openingMessages(
       surfaceId,
-      libraryComponents({ categories, hasFavourites: shown.favourites.length > 0, selected, projects, sending }),
+      libraryComponents({ categories, hasFavourites: shown.favourites.length > 0, selected, previewFilled, projects }),
       {
         ...shown,
         selected: selected ? selectedView(store.library, selected) : NO_SELECTION,
         values,
         preview: selected ? previewMarkdown(selected, values) : "",
+        missing: selected ? missingText(selected, values) : "",
+        sendError: { title: "", text: "" },
         code: NO_CODE,
         project: defaultProject ? [defaultProject] : [],
         title: "",
@@ -105,12 +115,25 @@ function openLibrary(api: PluginApi, channel: SurfaceChannel, store: Store): Sur
     channel.send(replace(surfaceId, projectArea(projects)))
   }
 
-  const remember = (context: Record<string, Json>) => {
-    if (typeof context.id === "string" && context.id) store.values.set(context.id, readValues(context.values))
+  const showPreview = (template: PromptTemplate, filled: Values) => {
+    const ready = missingVariables(template, filled).length === 0
+    channel.send(
+      patch(surfaceId, "/preview", previewMarkdown(template, filled)),
+      patch(surfaceId, "/missing", missingText(template, filled)),
+      ...(ready === previewFilled ? [] : [replace(surfaceId, previewStatus(ready))]),
+    )
+    previewFilled = ready
   }
 
-  const syncFrom = (context: Record<string, Json>) => {
-    store.library = syncFavourites(store.library, [context.tabs, context.favourites])
+  const showSendError = (problem: Problem | undefined) => {
+    if (problem) channel.send(patch(surfaceId, "/sendError", problem))
+    if ((problem !== undefined) === sendErrorShown) return
+    sendErrorShown = problem !== undefined
+    channel.send(replace(surfaceId, sendArea(sending, sendErrorShown)))
+  }
+
+  const remember = (context: Record<string, Json>) => {
+    if (typeof context.id === "string" && context.id) store.values.set(context.id, readValues(context.values))
   }
 
   const select = (template: PromptTemplate) => {
@@ -120,33 +143,34 @@ function openLibrary(api: PluginApi, channel: SurfaceChannel, store: Store): Sur
     channel.send(
       patch(surfaceId, "/selected", selectedView(store.library, template)),
       patch(surfaceId, "/values", filled),
-      patch(surfaceId, "/preview", previewMarkdown(template, filled)),
       patch(surfaceId, "/code", NO_CODE),
       patch(surfaceId, "/title", ""),
       replace(surfaceId, variableForm(template)),
       ...(hadSelection ? [] : [replace(surfaceId, detailArea(true))]),
     )
+    showPreview(template, filled)
+    showSendError(undefined)
   }
 
   const selectTemplate = (context: Record<string, Json>) => {
     remember(context)
-    syncFrom(context)
-    renderLibrary()
     const template = templateById(context.pick)
     if (template) select(template)
   }
 
-  const saveFavourites = (context: Record<string, Json>) => {
-    syncFrom(context)
+  const favourite = (context: Record<string, Json>) => {
+    const template = templateById(context.template)
+    if (!template) return
+    store.library = toggleFavourite(store.library, template.id)
     renderLibrary()
-    const count = store.library.favourites.length
-    api.ui.toast({ kind: "success", title: count === 0 ? "No favourites" : `Saved ${count} favourite${count === 1 ? "" : "s"}` })
+    const added = store.library.favourites.includes(template.id)
+    api.ui.toast({ kind: "success", title: added ? "Added to favourites" : "Removed from favourites", description: template.name })
   }
 
   const preview = (context: Record<string, Json>) => {
     remember(context)
     const template = templateById(context.id)
-    if (template) channel.send(patch(surfaceId, "/preview", previewMarkdown(template, readValues(context.values))))
+    if (template) showPreview(template, readValues(context.values))
   }
 
   const copyCode = async (context: Record<string, Json>) => {
@@ -160,7 +184,7 @@ function openLibrary(api: PluginApi, channel: SurfaceChannel, store: Store): Sur
       await navigator.clipboard.writeText(code)
       api.ui.toast({ kind: "success", title: "Copied the code" })
     } catch {
-      api.ui.toast({ kind: "info", title: "The code is ready below", description: "The clipboard is not available here." })
+      api.ui.toast({ kind: "info", title: "The code is ready under Code", description: "The clipboard is not available here." })
     }
   }
 
@@ -171,33 +195,33 @@ function openLibrary(api: PluginApi, channel: SurfaceChannel, store: Store): Sur
     const template = templateById(context.id)
     if (!template) return
     const filled = readValues(context.values)
-    const missing = missingVariables(template, filled)
-    if (missing.length > 0) {
-      channel.send(patch(surfaceId, "/preview", previewMarkdown(template, filled)))
-      api.ui.toast({ kind: "warning", title: "Fill in every variable", description: missing.map((name) => `{${name}}`).join(", ") })
+    showPreview(template, filled)
+    if (missingVariables(template, filled).length > 0) {
+      showSendError({ title: "Can't send yet", text: `Fill in ${missingText(template, filled)} first.` })
       return
     }
     const project = projects.find((entry) => entry.id === firstText(context.project))
     if (!project) {
-      api.ui.toast({ kind: "warning", title: "Choose a project" })
+      showSendError({ title: "Can't send yet", text: "Choose a project." })
       return
     }
+    showSendError(undefined)
     sending = true
-    channel.send(replace(surfaceId, sendArea(true)))
+    channel.send(replace(surfaceId, sendArea(true, false)))
     const title = sessionTitle(template, firstText(context.title))
     let ref: SessionRef
     try {
       ref = await api.sessions.create({ projectId: project.id, prompt: fillPrompt(template.body, filled), title })
     } catch (error) {
-      api.ui.toast({ kind: "error", title: "Couldn't send the prompt", description: errorMessage(error) })
-      return
-    } finally {
       sending = false
-      channel.send(replace(surfaceId, sendArea(false)))
+      showSendError({ title: "Couldn't send the prompt", text: errorMessage(error) })
+      return
     }
+    sending = false
+    channel.send(replace(surfaceId, sendArea(false, false)))
     store.library = recordUse(store.library, template.id)
     renderLibrary()
-    if (store.selectedId === template.id) channel.send(patch(surfaceId, "/selected/usage", selectedView(store.library, template).usage))
+    if (store.selectedId === template.id) channel.send(patch(surfaceId, "/selected/byline", selectedView(store.library, template).byline))
     api.ui.toast({ kind: "success", title: `Sent “${title}”`, description: project.name })
     if (context.openAfter !== true) return
     try {
@@ -211,18 +235,18 @@ function openLibrary(api: PluginApi, channel: SurfaceChannel, store: Store): Sur
     channel.send(
       patch(surfaceId, "/draft/variables", variables.map((name) => ({ name: `{${name}}` }))),
       patch(surfaceId, "/draft/variablesLabel", variables.length === 0 ? "Variables found: none" : `Variables found: ${variables.length}`),
-      patch(surfaceId, "/draft/errors", errors.map((error) => `- ${error}`).join("\n")),
+      patch(surfaceId, "/draft/errors", errors.join(" ")),
     )
+    const visible = errors.length > 0
+    if (visible !== draftErrorsShown) channel.send(replace(surfaceId, draftActions(visible)))
+    draftErrorsShown = visible
   }
 
   const addTemplate = (context: Record<string, Json>) => {
     const draft = readDraft(context)
     const checked = checkDraft(draft, store.library.templates)
     showDraftCheck(checked.variables, checked.errors)
-    if (checked.errors.length > 0) {
-      api.ui.toast({ kind: "warning", title: "The template needs changes", description: checked.errors[0] })
-      return
-    }
+    if (checked.errors.length > 0) return
     const template = templateFromDraft(draft, store.library.templates)
     store.library = { ...store.library, templates: [...store.library.templates, template] }
     renderLibrary()
@@ -237,8 +261,8 @@ function openLibrary(api: PluginApi, channel: SurfaceChannel, store: Store): Sur
       switch (action.name) {
         case "selectTemplate":
           return selectTemplate(context)
-        case "saveFavourites":
-          return saveFavourites(context)
+        case "toggleFavourite":
+          return favourite(context)
         case "preview":
           return preview(context)
         case "copyCode":

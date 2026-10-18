@@ -71,52 +71,91 @@ export function visibleTabs(tabs: readonly Tab[], filter: Filter): Tab[] {
     .sort(COMPARE[filter.sort])
 }
 
+export type Tone = "neutral" | "accent" | "success" | "warning" | "danger"
+
+export const STATUS_TONES: Readonly<Record<TabStatus, Tone>> = {
+  attention: "warning",
+  failed: "danger",
+  working: "accent",
+  running_in_background: "accent",
+  interrupted: "warning",
+  idle: "neutral",
+  done: "success",
+}
+
+export const STATUS_ICONS: Readonly<Record<TabStatus, string>> = {
+  attention: "warning",
+  failed: "error",
+  working: "play",
+  running_in_background: "fastForward",
+  interrupted: "pause",
+  idle: "pause",
+  done: "check",
+}
+
 export type TabRow = {
   readonly id: string
-  readonly position: string
   readonly title: string
-  readonly meta: string
+  readonly subtitle: string
   readonly status: string
-  readonly marker: string
+  readonly tone: Tone
+  readonly icon: string
+  readonly active: boolean
 }
 
 export function tabRow(tab: Tab): TabRow {
   return {
     id: tab.id,
-    position: `#${tab.index + 1}`,
     title: label(tab),
-    meta: tab.kind,
+    subtitle: [`#${tab.index + 1}`, tab.kind, ...(tab.active ? ["Active"] : [])].join(" · "),
     status: STATUS_LABELS[tab.status],
-    marker: tab.active ? "● Active" : "",
+    tone: STATUS_TONES[tab.status],
+    icon: STATUS_ICONS[tab.status],
+    active: tab.active,
   }
 }
 
-export function statusCounts(tabs: readonly Tab[]): Record<TabStatus, string> {
-  const count = (status: TabStatus) => `${STATUS_LABELS[status]} ${tabs.filter((tab) => tab.status === status).length}`
+export type MonitorStats = {
+  readonly open: string
+  readonly focused: string
+  readonly attention: string
+  readonly failed: string
+  readonly working: string
+  readonly background: string
+  readonly done: string
+  readonly doneShare: string
+}
+
+export function monitorStats(tabs: readonly Tab[]): MonitorStats {
+  const count = (...statuses: TabStatus[]) => tabs.filter((tab) => statuses.includes(tab.status)).length
+  const active = tabs.find((tab) => tab.active)
+  const done = count("done")
   return {
-    attention: count("attention"),
-    failed: count("failed"),
-    working: count("working"),
-    running_in_background: count("running_in_background"),
-    interrupted: count("interrupted"),
-    idle: count("idle"),
-    done: count("done"),
+    open: String(tabs.length),
+    focused: active ? `Focused: ${label(active)}` : "No tab focused",
+    attention: String(count("attention", "failed")),
+    failed: `${count("failed")} failed`,
+    working: String(count("working", "running_in_background")),
+    background: `${count("running_in_background")} in background`,
+    done: String(done),
+    doneShare: `${tabs.length === 0 ? 0 : Math.round((done / tabs.length) * 100)}% of open tabs`,
   }
 }
 
-export function doneShare(tabs: readonly Tab[]): { percent: number; label: string } {
-  const done = tabs.filter((tab) => tab.status === "done").length
-  return {
-    percent: tabs.length === 0 ? 0 : Math.round((done / tabs.length) * 100),
-    label: `${done} of ${tabs.length} done`,
-  }
+export type Health = { readonly text: string; readonly tone: Tone }
+
+export function monitorHealth(tabs: readonly Tab[]): Health {
+  const count = (status: TabStatus) => tabs.filter((tab) => tab.status === status).length
+  if (tabs.length === 0) return { text: "No tabs", tone: "neutral" }
+  if (count("failed") > 0) return { text: `${count("failed")} failed`, tone: "danger" }
+  if (count("attention") > 0) return { text: `${count("attention")} need${count("attention") === 1 ? "s" : ""} attention`, tone: "warning" }
+  if (count("working") + count("running_in_background") > 0) return { text: "Working", tone: "accent" }
+  return { text: "All clear", tone: "success" }
 }
 
 export function summaryLine(tabs: readonly Tab[], visible: number): string {
-  const active = tabs.find((tab) => tab.active)
   const showing = visible === tabs.length ? "" : ` · showing ${visible}`
-  const focus = active ? ` · focused: ${label(active)}` : ""
-  return `${tabs.length} open tab${tabs.length === 1 ? "" : "s"}${showing}${focus}`
+  return `${tabs.length} open tab${tabs.length === 1 ? "" : "s"}${showing}`
 }
 
 export function emptyMessage(tabs: readonly Tab[]): { title: string; description: string } {
@@ -167,8 +206,8 @@ export function recordPatches(path: string, previous: Readonly<Record<string, Js
 
 export type MonitorView = {
   readonly rows: TabRow[]
-  readonly counts: Record<TabStatus, string>
-  readonly done: { percent: number; label: string }
+  readonly stats: MonitorStats
+  readonly health: Health
   readonly summary: string
   readonly empty: { title: string; description: string }
   readonly raw: string
@@ -178,8 +217,8 @@ export function monitorView(tabs: readonly Tab[], filter: Filter): MonitorView {
   const visible = visibleTabs(tabs, filter)
   return {
     rows: visible.map(tabRow),
-    counts: statusCounts(tabs),
-    done: doneShare(tabs),
+    stats: monitorStats(tabs),
+    health: monitorHealth(tabs),
     summary: summaryLine(tabs, visible.length),
     empty: emptyMessage(tabs),
     raw: JSON.stringify([...tabs].sort(byIndex), null, 2),
@@ -187,12 +226,12 @@ export function monitorView(tabs: readonly Tab[], filter: Filter): MonitorView {
 }
 
 export function viewPatches(previous: MonitorView, next: MonitorView): Patch[] {
-  const scalar = (key: "done" | "summary" | "empty" | "raw"): Patch[] =>
+  const scalar = (key: "summary" | "empty" | "raw"): Patch[] =>
     JSON.stringify(previous[key]) === JSON.stringify(next[key]) ? [] : [{ path: `/${key}`, value: next[key] }]
   return [
     ...listPatches("/rows", previous.rows, next.rows),
-    ...recordPatches("/counts", previous.counts, next.counts),
-    ...scalar("done"),
+    ...recordPatches("/stats", previous.stats, next.stats),
+    ...recordPatches("/health", previous.health, next.health),
     ...scalar("summary"),
     ...scalar("empty"),
     ...scalar("raw"),

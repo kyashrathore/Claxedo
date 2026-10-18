@@ -30,7 +30,7 @@ test("61 an app plugin's surface page opens from the sidebar, draws natively in 
 
   const surface = app.locator('[data-component="surface"][data-source="plugin"]')
   await expect(surface).toBeVisible()
-  await expect(surface.locator('[data-slot="surface-source"]')).toHaveText(SURFACE_FIXTURE_NAME)
+  await expect(surface.locator('[data-slot="surface-source"]')).toHaveText(`${SURFACE_FIXTURE_NAME} · app plugin`)
   await expect(surface.getByRole("heading", { name: SURFACE_FIXTURE_NAME })).toBeVisible()
   await expect(surface.getByText("First item", { exact: true })).toBeVisible()
   await expect(surface.locator("iframe")).toHaveCount(0)

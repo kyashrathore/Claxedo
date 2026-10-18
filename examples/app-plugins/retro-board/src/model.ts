@@ -94,7 +94,6 @@ export function absorbView(board: Board, view: unknown): Board {
       if (!seen) return item
       return {
         ...item,
-        selected: typeof seen.selected === "boolean" ? seen.selected : item.selected,
         ownerDraft: typeof seen.ownerDraft === "string" ? seen.ownerDraft : item.ownerDraft,
         dueDraft: typeof seen.dueDraft === "string" ? seen.dueDraft : item.dueDraft,
       }
@@ -102,10 +101,17 @@ export function absorbView(board: Board, view: unknown): Board {
   }
 }
 
+function settingNumber(value: unknown): number | undefined {
+  const raw = Array.isArray(value) ? value[0] : value
+  const parsed = typeof raw === "string" && raw.trim() !== "" ? Number(raw) : raw
+  return typeof parsed === "number" && Number.isFinite(parsed) ? Math.round(parsed) : undefined
+}
+
 export function applySettings(board: Board, raw: unknown): Board {
   const settings = isRecord(raw) ? raw : {}
-  const max = typeof settings.maxVotes === "number" ? Math.round(settings.maxVotes) : board.maxVotes
-  const minutes = typeof settings.timerMinutes === "number" ? Math.min(30, Math.max(1, Math.round(settings.timerMinutes))) : board.timer.durationSeconds / 60
+  const max = settingNumber(settings.maxVotes) ?? board.maxVotes
+  const pickedMinutes = settingNumber(settings.timerMinutes)
+  const minutes = pickedMinutes === undefined ? board.timer.durationSeconds / 60 : Math.min(30, Math.max(1, pickedMinutes))
   const timer = board.timer.endsAt === null ? { durationSeconds: minutes * 60, endsAt: null, remainingSeconds: minutes * 60 } : board.timer
   return {
     ...board,
@@ -130,6 +136,13 @@ export function vote(board: Board, id: string): Change {
   if (target.column === "actions") return { board, error: "Actions are not voted on." }
   if (remainingVotes(board) === 0) return { board, error: `You have used all ${board.maxVotes} votes.` }
   return { board: { ...updateNote(board, id, (item) => ({ ...item, votes: item.votes + 1 })), votesUsed: board.votesUsed + 1 } }
+}
+
+export function toggleSelected(board: Board, id: string): Change {
+  const target = findNote(board, id)
+  if (!target) return { board, error: "That note is gone." }
+  if (target.column === "actions") return { board, error: "Actions cannot be merged, so they are not selected." }
+  return { board: updateNote(board, id, (item) => ({ ...item, selected: !item.selected })) }
 }
 
 export function mergeSelected(board: Board): Change {

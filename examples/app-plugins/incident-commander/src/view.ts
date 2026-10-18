@@ -2,7 +2,6 @@ import type { SurfaceComponent, SurfaceMessage } from "@claxedo/plugin-api"
 import {
   elapsedSeconds,
   formatDuration,
-  impactSummary,
   RESPONDERS,
   runbookProgress,
   SERVICES,
@@ -12,6 +11,8 @@ import {
   STATUS_LABEL,
   STATUSES,
   type Incident,
+  type IncidentStatus,
+  type Severity,
 } from "./model"
 
 export const CATALOG_ID = "https://claxedo.dev/a2ui/v0.9/catalog.json"
@@ -20,63 +21,87 @@ const VERSION = "v0.9"
 type Binding = { path: string }
 type Context = Record<string, Binding | string>
 type DataValue = Extract<SurfaceMessage, { updateDataModel: unknown }>["updateDataModel"]["value"]
+type ButtonOptions = { variant?: "primary" | "default" | "borderless"; icon?: Extract<SurfaceComponent, { component: "Button" }>["icon"] }
 
-function text(id: string, value: string | Binding, variant?: "h1" | "h2" | "h3" | "h4" | "h5" | "caption" | "body"): SurfaceComponent {
+export type NoticeKey = "declare" | "status" | "update" | "impact"
+export type Notice = { title: string; text: string }
+
+function text(id: string, value: string | Binding, variant?: "caption" | "body"): SurfaceComponent {
   return variant ? { id, component: "Text", text: value, variant } : { id, component: "Text", text: value }
 }
 
-function button(id: string, label: string, name: string, context?: Context, variant?: "primary" | "default" | "borderless"): SurfaceComponent[] {
-  return [
-    { id, component: "Button", child: `${id}-label`, action: { event: context ? { name, context } : { name } }, ...(variant ? { variant } : {}) },
-    text(`${id}-label`, label),
-  ]
+function button(id: string, label: string, name: string, context?: Context, options: ButtonOptions = {}): SurfaceComponent[] {
+  return [{ id, component: "Button", child: `${id}-label`, action: { event: context ? { name, context } : { name } }, ...options }, text(`${id}-label`, label)]
 }
 
 function dropdown(id: string, label: string, path: string, options: readonly string[]): SurfaceComponent {
-  return {
-    id,
-    component: "ChoicePicker",
-    label,
-    variant: "mutuallyExclusive",
-    displayStyle: "dropdown",
-    options: options.map((option) => ({ label: option, value: option })),
-    value: { path },
-    weight: 1,
-  }
+  return { id, component: "ChoicePicker", label, variant: "mutuallyExclusive", displayStyle: "dropdown", options: options.map((option) => ({ label: option, value: option })), value: { path } }
 }
 
 const RUNBOOK_CONTEXT: Context = { runbooks: { path: "/runbooks" } }
 
-export function bodyComponent(active: boolean): SurfaceComponent {
-  return { id: "body", component: "Column", children: active ? ["summary-card", "incident-tabs", "incident-actions"] : ["declare-card"] }
+export function rootComponent(active: boolean): SurfaceComponent {
+  return { id: "root", component: "Column", children: active ? ["header", "kpis", "status", "response", "postmortem-section"] : ["header", "declare-section"] }
+}
+
+export function headerComponent(active: boolean): SurfaceComponent {
+  return active
+    ? {
+        id: "header",
+        component: "Header",
+        title: { path: "/incident/title" },
+        subtitle: { path: "/incident/subtitle" },
+        icon: "warning",
+        badges: ["header-severity", "header-status"],
+        actions: ["new-incident", "resolve"],
+      }
+    : { id: "header", component: "Header", title: "Incident commander", subtitle: "No open incident", icon: "warning", badges: ["header-status"] }
+}
+
+export function structureMessage(surfaceId: string, active: boolean): SurfaceMessage {
+  return components(surfaceId, [rootComponent(active), headerComponent(active), updatesBody(false)])
+}
+
+const NOTICE_HOSTS: Record<NoticeKey, (shown: boolean) => SurfaceComponent> = {
+  declare: (shown) => ({ id: "declare-body", component: "Column", children: ["declare-fields", "declare-services", "declare-roles", "severity-guide", ...(shown ? ["declare-notice"] : []), "declare-footer"] }),
+  status: (shown) => ({ id: "status-body", component: "Column", children: ["status-fields", ...(shown ? ["status-notice"] : []), "status-footer"] }),
+  update: (shown) => ({ id: "updates-tab", component: "Column", children: ["updates-body", "update-draft", ...(shown ? ["update-notice"] : []), "updates-footer", "stakeholder-preview"] }),
+  impact: (shown) => ({ id: "impact-tab", component: "Column", children: ["impact-fields", ...(shown ? ["impact-notice"] : []), "impact-footer"] }),
+}
+
+export function noticeMessages(surfaceId: string, key: NoticeKey, notice: Notice | null, wasShown: boolean): SurfaceMessage[] {
+  if (!notice) return wasShown ? [components(surfaceId, [NOTICE_HOSTS[key](false)])] : []
+  const callout: SurfaceComponent = { id: `${key}-notice`, component: "Callout", tone: "danger", title: { path: `/notices/${key}/title` }, text: { path: `/notices/${key}/text` } }
+  return [patch(surfaceId, `/notices/${key}`, notice), ...(wasShown ? [] : [components(surfaceId, [NOTICE_HOSTS[key](true), callout])])]
 }
 
 export function updatesBody(hasUpdates: boolean): SurfaceComponent {
   return hasUpdates
-    ? { id: "updates-body", component: "List", children: { componentId: "update-card", path: "/updates" } }
+    ? { id: "updates-body", component: "List", children: { componentId: "update-row", path: "/updates" } }
     : { id: "updates-body", component: "EmptyState", title: "No updates posted", description: "Post the first stakeholder update within 15 minutes of declaring." }
 }
 
 export function postmortemStatus(busy: boolean): SurfaceComponent {
-  return busy
-    ? { id: "postmortem-status", component: "Spinner", label: "Starting the postmortem session" }
-    : { ...text("postmortem-status", { path: "/postmortem/status" }, "caption"), weight: 1 }
+  return busy ? { id: "postmortem-status", component: "Spinner", label: "Starting the postmortem session…" } : text("postmortem-status", { path: "/postmortem/status" }, "caption")
+}
+
+function stat(id: string, label: string, value: string, caption: string): SurfaceComponent {
+  return { id, component: "Stat", label, value: { path: value }, caption: { path: caption } }
 }
 
 export function incidentComponents(incident: Incident | null): SurfaceComponent[] {
+  const active = incident !== null
   return [
-    { id: "root", component: "Column", children: ["header", "body"] },
-    { id: "header", component: "Row", align: "center", children: ["header-icon", "header-title", "header-severity", "header-status", "header-elapsed"] },
-    { id: "header-icon", component: "Icon", name: "warning" },
-    { ...text("header-title", "Incident commander", "h2"), weight: 1 },
-    { id: "header-severity", component: "Badge", text: { path: "/incident/severity" } },
-    { id: "header-status", component: "Badge", text: { path: "/incident/status" }, variant: "accent" },
-    text("header-elapsed", { path: "/elapsed" }, "h3"),
-    bodyComponent(incident !== null),
+    rootComponent(active),
+    headerComponent(active),
+    { id: "header-severity", component: "Badge", text: { path: "/incident/severity" }, variant: { path: "/incident/severityTone" } },
+    { id: "header-status", component: "Badge", text: { path: "/incident/status" }, variant: { path: "/incident/statusTone" } },
+    ...button("new-incident", "Close and declare another", "reset", undefined, { variant: "borderless", icon: "close" }),
+    ...button("resolve", "Resolve incident", "resolve", { note: { path: "/transitionNote" }, ...RUNBOOK_CONTEXT }, { variant: "primary", icon: "check" }),
 
-    { id: "declare-card", component: "Card", child: "declare-column" },
-    { id: "declare-column", component: "Column", children: ["declare-title", "declare-name", "declare-severity", "declare-severity-help", "declare-services", "declare-roles", "declare"] },
-    text("declare-title", "Declare an incident", "h3"),
+    { id: "declare-section", component: "Section", title: "Declare an incident", description: "Declare as soon as customers are affected. The clock starts when you do.", child: "declare-body" },
+    NOTICE_HOSTS.declare(false),
+    { id: "declare-fields", component: "Grid", columns: 2, children: ["declare-name", "declare-severity"] },
     { id: "declare-name", component: "TextField", label: "Incident title", value: { path: "/declare/title" } },
     {
       id: "declare-severity",
@@ -87,7 +112,6 @@ export function incidentComponents(incident: Incident | null): SurfaceComponent[
       options: SEVERITIES.map((severity) => ({ label: severity, value: severity })),
       value: { path: "/declare/severity" },
     },
-    text("declare-severity-help", SEVERITIES.map((severity) => `${severity}: ${SEVERITY_MEANING[severity]}`).join(" · "), "caption"),
     {
       id: "declare-services",
       component: "ChoicePicker",
@@ -97,87 +121,92 @@ export function incidentComponents(incident: Incident | null): SurfaceComponent[
       options: SERVICES.map((service) => ({ label: service, value: service })),
       value: { path: "/declare/services" },
     },
-    { id: "declare-roles", component: "Row", children: ["declare-commander", "declare-comms", "declare-scribe"] },
+    { id: "declare-roles", component: "Grid", columns: 3, children: ["declare-commander", "declare-comms", "declare-scribe"] },
     dropdown("declare-commander", "Commander", "/declare/commander", RESPONDERS),
     dropdown("declare-comms", "Comms lead", "/declare/comms", RESPONDERS),
     dropdown("declare-scribe", "Scribe", "/declare/scribe", RESPONDERS),
-    ...button("declare", "Declare incident", "declare", { form: { path: "/declare" } }, "primary"),
+    { id: "severity-guide", component: "Collapsible", title: "Severity guide", child: "severity-meanings" },
+    { id: "severity-meanings", component: "KeyValue", items: SEVERITIES.map((severity) => ({ label: severity, value: capitalize(SEVERITY_MEANING[severity]) })) },
+    { id: "declare-footer", component: "Footer", end: ["declare"] },
+    ...button("declare", "Declare incident", "declare", { form: { path: "/declare" } }, { variant: "primary", icon: "warning" }),
 
-    { id: "summary-card", component: "Card", child: "summary-column" },
-    { id: "summary-column", component: "Column", children: ["summary-title", "summary-roles", "summary-declared", "summary-impact"] },
-    text("summary-title", { path: "/incident/title" }, "h3"),
-    text("summary-roles", { path: "/incident/roles" }, "body"),
-    text("summary-declared", { path: "/incident/declared" }, "caption"),
-    text("summary-impact", { path: "/incident/impact" }, "caption"),
+    { id: "kpis", component: "Grid", columns: 4, children: ["kpi-elapsed", "kpi-users", "kpi-errors", "kpi-updates"] },
+    stat("kpi-elapsed", "Elapsed", "/elapsed", "/incident/declared"),
+    stat("kpi-users", "Users affected", "/incident/users/value", "/incident/users/caption"),
+    stat("kpi-errors", "Error rate", "/incident/errors/value", "/incident/errors/caption"),
+    stat("kpi-updates", "Stakeholder updates", "/incident/updates/value", "/incident/updates/caption"),
 
-    {
-      id: "incident-tabs",
-      component: "Tabs",
-      tabs: [
-        { title: "Status", child: "status-tab" },
-        { title: "Runbooks", child: "runbooks-tab" },
-        { title: "Updates", child: "updates-tab" },
-        { title: "Impact", child: "impact-tab" },
-      ],
-    },
-
-    { id: "status-tab", component: "Column", children: ["status-row", "timeline"] },
-    { id: "status-row", component: "Row", align: "end", children: ["status-choice", "status-note", "update-status"] },
+    { id: "status", component: "Section", title: "Status", description: "Move the incident forward and note why. Every change lands in the timeline.", child: "status-body" },
+    NOTICE_HOSTS.status(false),
+    { id: "status-fields", component: "Grid", columns: 2, children: ["status-choice", "status-note"] },
     {
       id: "status-choice",
       component: "ChoicePicker",
-      label: "Status",
+      label: "New status",
       variant: "mutuallyExclusive",
       displayStyle: "chips",
       options: STATUSES.map((status) => ({ label: STATUS_LABEL[status], value: status })),
       value: { path: "/statusChoice" },
     },
-    { id: "status-note", component: "TextField", label: "Transition note", value: { path: "/transitionNote" }, weight: 1 },
-    ...button("update-status", "Update status", "transition", { status: { path: "/statusChoice" }, note: { path: "/transitionNote" }, ...RUNBOOK_CONTEXT }, "primary"),
-    {
-      id: "timeline",
-      component: "Table",
-      columns: [
-        { key: "time", title: "Time" },
-        { key: "elapsed", title: "T+" },
-        { key: "change", title: "Change" },
-        { key: "note", title: "Note" },
-      ],
-      rows: { path: "/timeline" },
-    },
+    { id: "status-note", component: "TextField", label: "Transition note", value: { path: "/transitionNote" } },
+    { id: "status-footer", component: "Footer", end: ["update-status"] },
+    ...button("update-status", "Update status", "transition", { status: { path: "/statusChoice" }, note: { path: "/transitionNote" }, ...RUNBOOK_CONTEXT }, { icon: "arrowForward" }),
 
-    { id: "runbooks-tab", component: "Column", children: ["runbooks", "save-runbooks"] },
+    { id: "response", component: "Section", title: "Response", child: "response-tabs" },
+    {
+      id: "response-tabs",
+      component: "Tabs",
+      tabs: [
+        { title: "Timeline", child: "timeline" },
+        { title: "Runbooks", child: "runbooks-tab" },
+        { title: "Updates", child: "updates-tab" },
+        { title: "Impact", child: "impact-tab" },
+      ],
+    },
+    { id: "timeline", component: "List", children: { componentId: "timeline-row", path: "/timeline" } },
+    { id: "timeline-row", component: "ListItem", title: { path: "change" }, subtitle: { path: "detail" }, icon: "event", meta: ["timeline-elapsed"] },
+    { id: "timeline-elapsed", component: "Badge", text: { path: "elapsed" } },
+
+    { id: "runbooks-tab", component: "Column", children: ["runbooks", "runbooks-footer"] },
     { id: "runbooks", component: "List", children: { componentId: "runbook", path: "/runbooks" } },
-    { id: "runbook", component: "Collapsible", title: { path: "title" }, child: "runbook-body", open: true },
-    { id: "runbook-body", component: "Column", children: ["runbook-progress", "runbook-steps"] },
-    { id: "runbook-progress", component: "Progress", value: { path: "percent" }, max: 100 },
+    { id: "runbook", component: "Section", variant: "plain", title: { path: "title" }, description: { path: "progress" }, child: "runbook-steps" },
     { id: "runbook-steps", component: "Column", children: { componentId: "runbook-step", path: "steps" } },
     { id: "runbook-step", component: "CheckBox", label: { path: "label" }, value: { path: "done" } },
-    ...button("save-runbooks", "Save runbook progress", "saveRunbooks", RUNBOOK_CONTEXT),
+    { id: "runbooks-footer", component: "Footer", end: ["save-runbooks"] },
+    ...button("save-runbooks", "Save runbook progress", "saveRunbooks", RUNBOOK_CONTEXT, { icon: "check" }),
 
-    { id: "updates-tab", component: "Column", children: ["update-draft", "post-update", "updates-body", "updates-divider", "stakeholder-title", "stakeholder"] },
-    { id: "update-draft", component: "TextField", label: "Status update", variant: "longText", value: { path: "/draftUpdate" } },
-    ...button("post-update", "Post update", "postUpdate", { text: { path: "/draftUpdate" } }, "primary"),
+    NOTICE_HOSTS.update(false),
     updatesBody((incident?.updates.length ?? 0) > 0),
-    { id: "update-card", component: "Card", child: "update-column" },
-    { id: "update-column", component: "Column", children: ["update-header", "update-text"] },
-    text("update-header", { path: "header" }, "caption"),
-    text("update-text", { path: "text" }, "body"),
-    { id: "updates-divider", component: "Divider" },
-    text("stakeholder-title", "Stakeholder update", "h4"),
+    { id: "update-row", component: "ListItem", title: { path: "text" }, subtitle: { path: "time" }, icon: "send", meta: ["update-status-badge"] },
+    { id: "update-status-badge", component: "Badge", text: { path: "status" }, variant: { path: "tone" } },
+    { id: "update-draft", component: "TextField", label: "Status update", variant: "longText", value: { path: "/draftUpdate" } },
+    { id: "updates-footer", component: "Footer", end: ["post-update"] },
+    ...button("post-update", "Post update", "postUpdate", { text: { path: "/draftUpdate" } }, { icon: "send" }),
+    { id: "stakeholder-preview", component: "Collapsible", title: "Stakeholder summary", child: "stakeholder" },
     { id: "stakeholder", component: "Markdown", text: { path: "/stakeholder" } },
 
-    { id: "impact-tab", component: "Column", children: ["impact-users", "impact-errors", "record-impact"] },
-    { id: "impact-users", component: "Slider", label: "Users affected (%)", min: 0, max: 100, step: 1, value: { path: "/impact/usersPercent" } },
+    NOTICE_HOSTS.impact(false),
+    { id: "impact-fields", component: "Grid", columns: 2, children: ["impact-users", "impact-errors"] },
+    { id: "impact-users", component: "TextField", label: "Users affected (%)", variant: "number", value: { path: "/impact/usersPercent" } },
     { id: "impact-errors", component: "TextField", label: "Error rate (%)", variant: "number", value: { path: "/impact/errorRate" } },
-    ...button("record-impact", "Record impact", "recordImpact", { usersPercent: { path: "/impact/usersPercent" }, errorRate: { path: "/impact/errorRate" } }),
+    { id: "impact-footer", component: "Footer", end: ["record-impact"] },
+    ...button("record-impact", "Record impact", "recordImpact", { usersPercent: { path: "/impact/usersPercent" }, errorRate: { path: "/impact/errorRate" } }, { icon: "check" }),
 
-    { id: "incident-actions", component: "Row", align: "center", children: ["resolve", "postmortem", "postmortem-status", "new-incident"] },
-    ...button("resolve", "Resolve incident", "resolve", { note: { path: "/transitionNote" }, ...RUNBOOK_CONTEXT }, "primary"),
-    ...button("postmortem", "Start postmortem with an agent", "postmortem", RUNBOOK_CONTEXT),
+    {
+      id: "postmortem-section",
+      component: "Section",
+      title: "Postmortem",
+      description: "An agent drafts a blameless postmortem from the timeline, updates and runbooks.",
+      actions: ["postmortem"],
+      child: "postmortem-status",
+    },
+    ...button("postmortem", "Start postmortem", "postmortem", RUNBOOK_CONTEXT, { icon: "play" }),
     postmortemStatus(false),
-    ...button("new-incident", "Close and declare another", "reset", undefined, "borderless"),
   ]
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 function clock(time: number): string {
@@ -187,15 +216,28 @@ function clock(time: number): string {
 
 export const EMPTY_DECLARE = { title: "", severity: ["SEV2"], services: [], commander: ["Priya"], comms: ["Ana"], scribe: ["Lee"] }
 
+export const SEVERITY_TONE: Record<Severity, string> = { SEV1: "danger", SEV2: "warning", SEV3: "accent", SEV4: "neutral" }
+export const STATUS_TONE: Record<IncidentStatus, string> = { investigating: "danger", identified: "warning", monitoring: "accent", resolved: "success" }
+
+const IDLE_FIGURE = { value: "—", caption: "No open incident" }
+
 export function summaryData(incident: Incident | null) {
-  if (!incident) return { title: "", severity: "No incident", status: "All clear", roles: "", declared: "", impact: "" }
+  if (!incident) {
+    return { title: "", subtitle: "", severity: "No incident", severityTone: "neutral", status: "All clear", statusTone: "success", declared: "", users: IDLE_FIGURE, errors: IDLE_FIGURE, updates: IDLE_FIGURE }
+  }
+  const latest = incident.updates.at(-1)
+  const count = incident.updates.length
   return {
     title: incident.title,
+    subtitle: `Commander ${incident.commander} · Comms ${incident.comms} · Scribe ${incident.scribe}`,
     severity: incident.severity,
+    severityTone: SEVERITY_TONE[incident.severity],
     status: STATUS_LABEL[incident.status],
-    roles: `Commander ${incident.commander} · Comms ${incident.comms} · Scribe ${incident.scribe}`,
-    declared: `Declared at ${clock(incident.declaredAt)}${incident.resolvedAt ? ` · resolved at ${clock(incident.resolvedAt)}` : ""} · ${incident.services.join(", ")}`,
-    impact: impactSummary(incident.impact),
+    statusTone: STATUS_TONE[incident.status],
+    declared: `Declared at ${clock(incident.declaredAt)}${incident.resolvedAt ? ` · resolved at ${clock(incident.resolvedAt)}` : ""}`,
+    users: { value: `${incident.impact.usersPercent}%`, caption: "Estimated share of all users" },
+    errors: { value: `${incident.impact.errorRate}%`, caption: `Requests to ${incident.services.join(", ")}` },
+    updates: { value: count === 0 ? "None" : String(count), caption: latest ? `Last posted at ${clock(latest.at)}` : "Post one within 15 minutes" },
   }
 }
 
@@ -204,12 +246,16 @@ export function elapsedText(incident: Incident | null, now: number): string {
 }
 
 export function timelineData(incident: Incident | null) {
-  return (incident?.timeline ?? []).map((entry) => ({
-    time: clock(entry.at),
-    elapsed: formatDuration(Math.floor((entry.at - (incident?.declaredAt ?? entry.at)) / 1000)),
-    change: entry.from ? `${STATUS_LABEL[entry.from]} → ${STATUS_LABEL[entry.to]}` : `Declared · ${STATUS_LABEL[entry.to]}`,
-    note: entry.note,
-  }))
+  return (incident?.timeline ?? []).map((entry) => {
+    const time = clock(entry.at)
+    return {
+      time,
+      elapsed: `T+${formatDuration(Math.floor((entry.at - (incident?.declaredAt ?? entry.at)) / 1000))}`,
+      change: entry.from ? `${STATUS_LABEL[entry.from]} → ${STATUS_LABEL[entry.to]}` : `Declared · ${STATUS_LABEL[entry.to]}`,
+      note: entry.note,
+      detail: entry.note ? `${time} · ${entry.note}` : time,
+    }
+  })
 }
 
 export function runbooksData(incident: Incident | null) {
@@ -217,16 +263,20 @@ export function runbooksData(incident: Incident | null) {
     const progress = runbookProgress(runbook)
     return {
       service: runbook.service,
-      title: `${runbook.service} runbook (${progress.done}/${progress.total})`,
-      percent: progress.percent,
+      title: `${runbook.service} runbook`,
+      progress: `${progress.done} of ${progress.total} steps done`,
       steps: runbook.steps.map((step) => ({ id: step.id, label: step.label, done: step.done })),
     }
   })
 }
 
 export function updatesData(incident: Incident | null) {
-  return [...(incident?.updates ?? [])].reverse().map((update) => ({ id: update.id, header: `${clock(update.at)} · ${STATUS_LABEL[update.status]}`, text: update.text }))
+  return [...(incident?.updates ?? [])]
+    .reverse()
+    .map((update) => ({ id: update.id, time: `Posted at ${clock(update.at)}`, status: STATUS_LABEL[update.status], tone: STATUS_TONE[update.status], text: update.text }))
 }
+
+const EMPTY_NOTICE: Notice = { title: "", text: "" }
 
 export function incidentModel(incident: Incident | null, now: number) {
   return {
@@ -240,8 +290,9 @@ export function incidentModel(incident: Incident | null, now: number) {
     draftUpdate: "",
     updates: updatesData(incident),
     stakeholder: incident ? stakeholderUpdate(incident, now) : "",
-    impact: { usersPercent: incident?.impact.usersPercent ?? 0, errorRate: String(incident?.impact.errorRate ?? 0) },
-    postmortem: { status: "No postmortem session yet" },
+    impact: { usersPercent: String(incident?.impact.usersPercent ?? 0), errorRate: String(incident?.impact.errorRate ?? 0) },
+    postmortem: { status: "No postmortem session yet." },
+    notices: { declare: EMPTY_NOTICE, status: EMPTY_NOTICE, update: EMPTY_NOTICE, impact: EMPTY_NOTICE },
   }
 }
 

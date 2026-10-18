@@ -20,7 +20,7 @@ import {
   type FocusState,
   type LogEntry,
 } from "./model"
-import { components, logBody, openMessages, patch, remainingData, stateMessages, tasksBody } from "./view"
+import { components, logBody, noticeMessages, openMessages, patch, remainingData, stateMessages, tasksBody, type Notice } from "./view"
 
 const PAGE_ID = "focus-timer"
 
@@ -48,6 +48,12 @@ export default definePlugin({
         const { surfaceId } = channel
         let shape = { tasks: state.tasks.length > 0, log: state.log.length > 0 }
         let interval: ReturnType<typeof setInterval> | undefined
+        let noticeShown = false
+
+        const notify = (notice: Notice | null) => {
+          channel.send(...noticeMessages(surfaceId, notice, noticeShown))
+          noticeShown = notice !== null
+        }
 
         const render = () => {
           const now = Date.now()
@@ -145,9 +151,10 @@ export default definePlugin({
               case "addTask": {
                 const change = addTask(current, contextText(action, "title"), action.context.estimate)
                 if (change.error) {
-                  api.ui.toast({ kind: "warning", title: "Task not added", description: change.error })
+                  notify({ title: "Task not added", text: change.error })
                   return
                 }
+                notify(null)
                 commit(change.state)
                 channel.send(patch(surfaceId, "/draft", { title: "", estimate: "1" }))
                 return
@@ -159,7 +166,7 @@ export default definePlugin({
                 commit(toggleTaskDone(current, contextText(action, "id")))
                 return
               case "removeTask": {
-                const ok = await api.ui.confirm({ title: `Remove "${contextText(action, "title")}"?`, confirmLabel: "Remove" })
+                const ok = await api.ui.confirm({ title: `Remove "${contextText(action, "title")}"?`, confirmLabel: "Remove task" })
                 if (ok) commit(removeTask(state, contextText(action, "id")))
                 return
               }

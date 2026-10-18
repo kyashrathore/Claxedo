@@ -13,9 +13,13 @@ import {
   seedBoard,
   setWipLimit,
   snapToStoryPoints,
+  priorityTone,
   sprintDay,
+  sprintHealth,
   sprintProgress,
+  wipLabel,
   wipStatus,
+  wipTone,
   type Board,
   type BoardResult,
 } from "./model"
@@ -96,6 +100,13 @@ describe("task drafts", () => {
     expect(parseTaskDraft(null, sprint).ok).toBe(false)
   })
 
+  test("read story points from the picker's one-item list", () => {
+    const parsed = parseTaskDraft({ ...validDraft, points: ["8"] }, sprint)
+    expect(parsed.ok && parsed.draft.points).toBe(8)
+    const missing = parseTaskDraft({ ...validDraft, points: [] }, sprint)
+    expect(missing.ok && missing.draft.points).toBe(1)
+  })
+
   test("accept an empty due date", () => {
     const parsed = parseTaskDraft({ ...validDraft, due: "" }, sprint)
     expect(parsed.ok && parsed.draft.due).toBe("")
@@ -162,6 +173,16 @@ describe("moving", () => {
 })
 
 describe("WIP limits", () => {
+  test("label and tone say whether a column is under, at or over its limit", () => {
+    const board = seedBoard(TODAY)
+    expect([wipLabel(wipStatus(board, "progress")), wipTone(wipStatus(board, "progress"))]).toEqual(["2 / 3", "neutral"])
+    expect([wipLabel(wipStatus(board, "review")), wipTone(wipStatus(board, "review"))]).toEqual(["2 / 2 · at limit", "warning"])
+    expect([wipLabel(wipStatus(board, "done")), wipTone(wipStatus(board, "done"))]).toEqual(["3 / 20 advisory", "neutral"])
+    const lowered = expectOk(setWipLimit(board, "progress", true, 1))
+    expect([wipLabel(wipStatus(lowered, "progress")), wipTone(wipStatus(lowered, "progress"))]).toEqual(["2 / 1 · over limit", "danger"])
+  })
+
+
   test("clamp the limit and coerce enforce to a boolean", () => {
     const board = expectOk(setWipLimit(seedBoard(TODAY), "progress", "yes", 99))
     expect(board.wip.progress).toEqual({ enforce: false, limit: 20 })
@@ -213,6 +234,21 @@ describe("burndown", () => {
     const today = burndown(board, TODAY)[5]
     expect(today?.completed).toBe(8)
     expect(today?.remaining).toBe(28)
+  })
+})
+
+describe("tones", () => {
+  test("critical priority reads as danger and high as warning", () => {
+    expect((["low", "medium", "high", "critical"] as const).map(priorityTone)).toEqual(["neutral", "neutral", "warning", "danger"])
+  })
+
+  test("sprint health compares today's remaining points with the ideal line", () => {
+    const board = seedBoard(TODAY)
+    const behind = sprintHealth(burndown(board, TODAY))
+    expect([behind.label, behind.tone, behind.day?.day, behind.day?.remaining]).toEqual(["Behind", "warning", 6, 36])
+    const first = sprintHealth(burndown(board, "2026-10-13"))
+    expect([first.label, first.tone]).toEqual(["On track", "success"])
+    expect(sprintHealth(burndown(board, "2026-10-01"))).toEqual({ label: "Not started", tone: "neutral", day: undefined })
   })
 })
 

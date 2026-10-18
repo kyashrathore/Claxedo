@@ -49,7 +49,7 @@ test("60 an agent's ui_show reply paints a native surface whose button, once con
   await expect.poll(async () => assistantText(await api.messages(workspace.directory, session.id)), { timeout: 30_000 }).toContain(TOKEN)
 
   const surface = await expectSurfacePainted(app)
-  await expect(surface.locator('[data-slot="surface-source"]')).toHaveText("Pi")
+  await expect(surface.locator('[data-slot="surface-source"]')).toHaveText("Pi · agent reply")
 
   await surface.getByRole("textbox", { name: "Release name" }).fill("Spring release")
   await surface.getByRole("button", { name: "Approve" }).click()

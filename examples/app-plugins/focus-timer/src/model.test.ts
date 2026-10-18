@@ -154,6 +154,11 @@ describe("settings", () => {
     expect(settings).toEqual({ ...DEFAULT_SETTINGS, focusMinutes: 90, shortMinutes: 3, longEvery: 3 })
   })
 
+  test("a picker's choice list reads as its first value", () => {
+    const settings = readSettings({ focusMinutes: ["50"], shortMinutes: [], longEvery: ["6"], dailyGoalMinutes: ["200"] }, DEFAULT_SETTINGS)
+    expect(settings).toEqual({ ...DEFAULT_SETTINGS, focusMinutes: 50, longEvery: 6, dailyGoalMinutes: 200 })
+  })
+
   test("new durations reload an idle block but leave a running one alone", () => {
     const idle = applySettings(createFocusState(), { ...DEFAULT_SETTINGS, focusMinutes: 50 })
     expect(idle.timer.remainingSeconds).toBe(50 * 60)

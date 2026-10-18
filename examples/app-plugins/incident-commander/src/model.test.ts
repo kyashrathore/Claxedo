@@ -122,9 +122,10 @@ describe("updates and impact", () => {
     expect(updated.updates).toEqual([{ id: "update-1", at: T0 + MINUTE, status: "investigating", text: "Payments are failing for card checkouts." }])
   })
 
-  test("impact accepts percentages from the slider and the number field", () => {
+  test("impact accepts percentages as numbers or as the number fields' text", () => {
     const incident = declared()
     expect(must(recordImpact(incident, 37, "4.256")).impact).toEqual({ usersPercent: 37, errorRate: 4.26 })
+    expect(must(recordImpact(incident, "36.6", "0")).impact).toEqual({ usersPercent: 37, errorRate: 0 })
     expect(recordImpact(incident, 120, "1").error).toMatch(/0 to 100/)
     expect(recordImpact(incident, 10, "lots").error).toMatch(/Error rate/)
   })

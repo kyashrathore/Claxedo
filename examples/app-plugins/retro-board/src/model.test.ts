@@ -18,6 +18,7 @@ import {
   stopTimer,
   timerPercent,
   timerRemaining,
+  toggleSelected,
   vote,
   type Board,
 } from "./model"
@@ -30,7 +31,7 @@ function must(change: { board: Board; error?: string }): Board {
 }
 
 function select(board: Board, ids: string[]): Board {
-  return absorbView(board, { improve: ids.map((id) => ({ id, selected: true })) })
+  return ids.reduce((current, id) => must(toggleSelected(current, id)), board)
 }
 
 describe("notes", () => {
@@ -70,6 +71,13 @@ describe("voting", () => {
     expect(applySettings(spent, { maxVotes: 50 }).maxVotes).toBe(10)
   })
 
+  test("settings read the pickers' choice lists as well as plain numbers", () => {
+    const board = applySettings(createBoard(), { maxVotes: ["5"], timerMinutes: ["10"] })
+    expect(board.maxVotes).toBe(5)
+    expect(board.timer.durationSeconds).toBe(600)
+    expect(applySettings(board, { maxVotes: [], timerMinutes: ["soon"] })).toMatchObject({ maxVotes: 5, timer: { durationSeconds: 600 } })
+  })
+
   test("actions and missing notes cannot be voted on", () => {
     const withAction = must(convertToAction(createBoard(), "note-4", "Sam", "2026-10-30"))
     expect(vote(withAction, "note-6").error).toMatch(/not voted/)
@@ -99,12 +107,21 @@ describe("merging", () => {
 
   test("merging needs exactly two notes from the same column", () => {
     expect(mergeSelected(select(createBoard(), ["note-3"])).error).toMatch(/exactly two notes to merge \(1 selected\)/)
-    const mixed = absorbView(createBoard(), { well: [{ id: "note-1", selected: true }], improve: [{ id: "note-3", selected: true }] })
-    expect(mergeSelected(mixed).error).toMatch(/same column/)
+    expect(mergeSelected(select(createBoard(), ["note-1", "note-3"])).error).toMatch(/same column/)
   })
 
-  test("absorbing the page keeps per-note selections and drafts and ignores junk", () => {
-    const board = absorbView(createBoard(), { improve: [{ id: "note-4", ownerDraft: "Sam", dueDraft: "2026-11-01", selected: 3 }, "junk"], well: null })
+  test("selecting toggles a discussed note and refuses actions and missing notes", () => {
+    const board = select(createBoard(), ["note-3"])
+    expect(findNote(board, "note-3")?.selected).toBe(true)
+    expect(findNote(must(toggleSelected(board, "note-3")), "note-3")?.selected).toBe(false)
+    expect(toggleSelected(board, "note-99").error).toBe("That note is gone.")
+    const withAction = must(convertToAction(createBoard(), "note-4", "Sam", "2026-10-30"))
+    const action = columnNotes(withAction, "actions")[0]
+    expect(toggleSelected(withAction, action?.id ?? "").error).toMatch(/not selected/)
+  })
+
+  test("absorbing the page keeps per-note drafts, leaves selection to the plugin and ignores junk", () => {
+    const board = absorbView(createBoard(), { improve: [{ id: "note-4", ownerDraft: "Sam", dueDraft: "2026-11-01", selected: true }, "junk"], well: null })
     expect(findNote(board, "note-4")?.ownerDraft).toBe("Sam")
     expect(findNote(board, "note-4")?.selected).toBe(false)
     expect(absorbView(createBoard(), null).notes).toEqual(createBoard().notes)

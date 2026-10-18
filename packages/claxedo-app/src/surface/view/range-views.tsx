@@ -1,6 +1,7 @@
 import { Show } from "solid-js"
 import { boundNumber, boundText, createBoundValue } from "../binding"
 import type { SurfaceNodeProps } from "../model"
+import { rangeFillPercent } from "../range-fill"
 import { useSurfaceReader, useSurfaceRuntime } from "./surface-runtime"
 
 type DateInputType = "date" | "time" | "datetime-local"
@@ -22,6 +23,8 @@ export function SliderView(props: SurfaceNodeProps<"Slider">) {
       <span data-slot="surface-slider-row">
         <input
           type="range"
+          data-slot="surface-slider"
+          style={{ "--surface-slider-fill": `${rangeFillPercent(field.value(), props.def.min ?? 0, props.def.max)}%` }}
           min={props.def.min ?? 0}
           max={props.def.max}
           step={props.def.step ?? 1}

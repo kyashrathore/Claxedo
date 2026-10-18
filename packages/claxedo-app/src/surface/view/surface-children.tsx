@@ -2,6 +2,7 @@ import { createMemo, For, Index, Match, Show, Switch } from "solid-js"
 import type { SurfaceChildList } from "@claxedo/plugin-api/surface"
 import { itemScope, resolvePath } from "../data-path"
 import type { DataPath } from "../model"
+import { RepeatedProvider } from "./row-actions"
 import { SurfaceNode } from "./surface-node"
 import { useSurfaceRuntime } from "./surface-runtime"
 
@@ -29,9 +30,11 @@ function SurfaceTemplate(props: { readonly template: ChildTemplate; readonly sco
     return Array.isArray(value) ? value : NO_ITEMS
   }
   return (
-    <Index each={items()}>
-      {(_, index) => <SurfaceChild id={props.template.componentId} scope={itemScope(listPath(), index)} weighted={props.weighted} />}
-    </Index>
+    <RepeatedProvider value={true}>
+      <Index each={items()}>
+        {(_, index) => <SurfaceChild id={props.template.componentId} scope={itemScope(listPath(), index)} weighted={props.weighted} />}
+      </Index>
+    </RepeatedProvider>
   )
 }
 
@@ -56,7 +59,14 @@ export function SurfaceChildren(props: { readonly list: SurfaceChildList; readon
   )
 }
 
-export type SurfaceGroupSlot = "surface-actions" | "surface-badges" | "surface-meta"
+export type SurfaceGroupSlot =
+  | "surface-actions"
+  | "surface-badges"
+  | "surface-meta"
+  | "surface-footer-start"
+  | "surface-footer-end"
+  | "surface-row-primary"
+  | "surface-row-secondary"
 
 export function SurfaceGroup(props: { readonly ids: string[] | undefined; readonly scope: DataPath; readonly slot: SurfaceGroupSlot }) {
   return (

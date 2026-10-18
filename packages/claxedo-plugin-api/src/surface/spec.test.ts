@@ -69,7 +69,9 @@ describe("checkSurfaceSpec", () => {
 const overview = {
   title: "Deploy overview",
   components: [
-    { id: "root", component: "Column", children: ["header", "kpis", "details", "people"] },
+    { id: "root", component: "Column", children: ["header", "stale", "kpis", "details", "people", "footer"] },
+    { id: "footer", component: "Footer", start: ["redeploy"], end: ["live", "redeploy"] },
+    { id: "stale", component: "Callout", tone: "warning", title: "Stale build", text: "Redeploy to pick up the fix.", action: "redeploy", dismissible: true },
     { id: "header", component: "Header", title: "api", subtitle: "Production", icon: "upload", badges: ["live"], actions: ["redeploy"] },
     { id: "live", component: "Badge", text: "Live", variant: "success" },
     { id: "redeploy", component: "Button", child: "redeploy-label", icon: "refresh", action: { event: { name: "redeploy" } } },
@@ -79,7 +81,7 @@ const overview = {
     { id: "details", component: "Section", title: "Details", actions: ["redeploy"], child: "facts", variant: "plain" },
     { id: "facts", component: "KeyValue", items: [{ label: "Region", value: { path: "/region" } }] },
     { id: "people", component: "List", children: { componentId: "person", path: "/people" } },
-    { id: "person", component: "ListItem", title: { path: "name" }, icon: { path: "icon" }, meta: ["live"], actions: ["redeploy"], selected: { path: "on" } },
+    { id: "person", component: "ListItem", title: { path: "name" }, icon: { path: "icon" }, meta: ["live"], primaryAction: "redeploy-label", actions: ["redeploy"], selected: { path: "on" } },
   ],
   data: { region: "eu-west", people: [{ name: "Ana", icon: "person", on: true }] },
 }
@@ -89,27 +91,57 @@ describe("the layout and display components", () => {
     expect(checkSurfaceSpec(overview).ok).toBe(true)
   })
 
+  test("accept a Button whose icon is bound, so a row toggle can show its state", () => {
+    const toggle = {
+      title: "Favourites",
+      components: [
+        { id: "root", component: "Button", child: "label", icon: { path: "/favoriteIcon" }, action: { event: { name: "toggleFavorite" } } },
+        { id: "label", component: "Text", text: "Favourite" },
+      ],
+      data: { favoriteIcon: "star" },
+    }
+    expect(checkSurfaceSpec(toggle).ok).toBe(true)
+  })
+
   test("name every child id the new containers reference", () => {
     const byId = (id: string) => surfaceComponentSchema.parse(overview.components.find((component) => component.id === id))
     expect(componentReferences(byId("header"))).toEqual([{ path: "/badges/0", id: "live" }, { path: "/actions/0", id: "redeploy" }])
     expect(componentReferences(byId("details"))).toEqual([{ path: "/child", id: "facts" }, { path: "/actions/0", id: "redeploy" }])
-    expect(componentReferences(byId("person"))).toEqual([{ path: "/meta/0", id: "live" }, { path: "/actions/0", id: "redeploy" }])
+    expect(componentReferences(byId("person"))).toEqual([
+      { path: "/meta/0", id: "live" },
+      { path: "/primaryAction", id: "redeploy-label" },
+      { path: "/actions/0", id: "redeploy" },
+    ])
     expect(componentReferences(byId("kpis"))).toEqual([{ path: "/children/0", id: "latency" }])
+    expect(componentReferences(byId("stale"))).toEqual([{ path: "/action", id: "redeploy" }])
+    expect(componentReferences(surfaceComponentSchema.parse({ id: "c", component: "Callout", tone: "info", title: "T" }))).toEqual([])
+    expect(componentReferences(byId("footer"))).toEqual([{ path: "/start/0", id: "redeploy" }, { path: "/end/0", id: "live" }, { path: "/end/1", id: "redeploy" }])
     expect(componentReferences(surfaceComponentSchema.parse({ id: "g", component: "Grid", children: { componentId: "cell", path: "/cells" } }))).toEqual([
       { path: "/children/componentId", id: "cell" },
     ])
   })
 
-  test("refuse a dangling badge, action, meta and section child", () => {
+  test("refuse a dangling badge, action, meta, footer action, callout action and section child", () => {
     const check = checkSurfaceSpec({
       title: "Dangling",
       components: [
         { id: "root", component: "Section", child: "gone", actions: ["nope"] },
         { id: "head", component: "Header", title: "T", badges: ["missing"] },
-        { id: "row", component: "ListItem", title: "R", meta: ["absent"] },
+        { id: "row", component: "ListItem", title: "R", meta: ["absent"], primaryAction: "elsewhere" },
+        { id: "bar", component: "Footer", start: ["back"], end: ["next"] },
+        { id: "note", component: "Callout", tone: "danger", title: "Refused", action: "retry" },
       ],
     })
-    expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual(["/components/0/child", "/components/0/actions/0", "/components/1/badges/0", "/components/2/meta/0"])
+    expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual([
+      "/components/0/child",
+      "/components/0/actions/0",
+      "/components/1/badges/0",
+      "/components/2/meta/0",
+      "/components/2/primaryAction",
+      "/components/3/start/0",
+      "/components/3/end/0",
+      "/components/4/action",
+    ])
   })
 
   test("refuse a Section that contains itself", () => {
@@ -117,7 +149,7 @@ describe("the layout and display components", () => {
     expect(check.ok ? [] : check.issues).toContainEqual({ path: "/components/0", message: "root contains itself" })
   })
 
-  test("refuse an unknown tone, an out-of-range column count and an unknown icon", () => {
+  test("refuse an unknown tone, an out-of-range column count, an unknown icon and a Footer without its end group", () => {
     const invalid = [
       { id: "root", component: "Stat", label: "L", value: "1", tone: "great" },
       { id: "root", component: "Callout", tone: "neutral", title: "T" },
@@ -128,7 +160,13 @@ describe("the layout and display components", () => {
       { id: "root", component: "Grid", children: [], gap: "huge" },
       { id: "root", component: "Section", child: "x", variant: "raised" },
       { id: "root", component: "Header", title: "T", icon: "rocket" },
+      { id: "root", component: "Header", title: "T", icon: "volumeUp" },
+      { id: "root", component: "Button", child: "x", icon: "print", action: { event: { name: "p" } } },
       { id: "root", component: "KeyValue", items: [{ label: "L" }] },
+      { id: "root", component: "Footer", start: ["a"] },
+      { id: "root", component: "ListItem", title: "T", primaryAction: ["a"] },
+      { id: "root", component: "Callout", tone: "info", title: "T", action: ["a"] },
+      { id: "root", component: "Callout", tone: "info", title: "T", dismissible: "yes" },
     ]
     for (const component of invalid) expect(checkSurfaceSpec({ title: "Invalid", components: [component] }).ok).toBe(false)
   })

@@ -2,10 +2,11 @@ import type { SurfaceComponent, SurfaceMessage } from "@claxedo/plugin-api"
 import {
   CATEGORIES,
   CURRENCIES,
+  balanceStatus,
   balances,
   categoryLabel,
+  categoryStatus,
   categoryTotals,
-  currencyOf,
   formatMoney,
   participantName,
   settle,
@@ -20,75 +21,80 @@ const VERSION = "v0.9" as const
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 
+type ButtonVariant = "default" | "primary" | "borderless"
+
+type IconName = Extract<SurfaceComponent, { component: "Button" }>["icon"]
+
+export type ErrorSlot = "form" | "expenses" | "people" | "budgets"
+
+export const ERROR_SLOTS: readonly ErrorSlot[] = ["form", "expenses", "people", "budgets"]
+
 function when<Item extends Json>(condition: boolean, item: Item): Item[] {
   return condition ? [item] : []
 }
 
-function text(id: string, value: string, variant?: "h1" | "h2" | "h3" | "h4" | "h5" | "caption" | "body"): SurfaceComponent {
+function text(id: string, value: string, variant?: "caption" | "body"): SurfaceComponent {
   return variant ? { id, component: "Text", text: value, variant } : { id, component: "Text", text: value }
 }
 
-function button(id: string, label: string, name: string, context: Record<string, { path: string }>, variant: "default" | "primary" | "borderless" = "default"): SurfaceComponent[] {
-  return [{ id, component: "Button", variant, child: `${id}-label`, action: { event: { name, context } } }, text(`${id}-label`, label)]
+function button(id: string, label: string, name: string, context: Record<string, { path: string }>, options: { variant?: ButtonVariant; icon?: IconName } = {}): SurfaceComponent[] {
+  return [
+    { id, component: "Button", ...(options.variant ? { variant: options.variant } : {}), ...(options.icon ? { icon: options.icon } : {}), child: `${id}-label`, action: { event: { name, context } } },
+    text(`${id}-label`, label),
+  ]
+}
+
+function stat(id: string, title: string): SurfaceComponent {
+  return { id, component: "Stat", label: title, value: { path: `/kpis/${id}/value` }, caption: { path: `/kpis/${id}/caption` } }
+}
+
+const SLOT_CHILDREN: Readonly<Record<ErrorSlot, { readonly id: string; readonly before: readonly string[]; readonly after: readonly string[] }>> = {
+  form: { id: "form-body", before: ["form-fields", "draft-category", "draft-split"], after: ["form-footer"] },
+  expenses: { id: "expenses-body", before: [], after: ["expenses-empty", "expenses-list"] },
+  people: { id: "people-body", before: ["people-list", "people-empty", "new-participant"], after: ["people-footer"] },
+  budgets: { id: "budgets-edit-body", before: ["budget-fields"], after: ["budgets-footer"] },
+}
+
+export function slotBody(slot: ErrorSlot, error: boolean): SurfaceComponent {
+  const { id, before, after } = SLOT_CHILDREN[slot]
+  return { id, component: "Column", children: [...before, ...(error ? [`${slot}-error`] : []), ...after] }
+}
+
+const REFUSAL_SLOTS: ReadonlySet<ErrorSlot> = new Set(["expenses", "people"])
+
+function errorCallout(slot: ErrorSlot): SurfaceComponent {
+  const content = { id: `${slot}-error`, title: { path: `/errors/${slot}/title` }, text: { path: `/errors/${slot}/text` } }
+  return REFUSAL_SLOTS.has(slot) ? { ...content, component: "Callout", tone: "warning", dismissible: true } : { ...content, component: "Callout", tone: "danger" }
 }
 
 export function participantPickers(trip: Trip): SurfaceComponent[] {
   const options = trip.participants.length === 0 ? [{ label: "Add a participant first", value: "" }] : trip.participants.map((participant) => ({ label: participant.name, value: participant.id }))
   return [
-    { id: "draft-payer", component: "ChoicePicker", weight: 1, label: "Paid by", variant: "mutuallyExclusive", displayStyle: "dropdown", options, value: { path: "/draft/payer" } },
+    { id: "draft-payer", component: "ChoicePicker", label: "Paid by", variant: "mutuallyExclusive", displayStyle: "dropdown", options, value: { path: "/draft/payer" } },
     { id: "draft-split", component: "ChoicePicker", label: "Split among", variant: "multipleSelection", displayStyle: "chips", options, value: { path: "/draft/split" } },
   ]
 }
 
-export function budgetSlider(trip: Trip): SurfaceComponent {
-  const currency = currencyOf(trip.currency)
-  return { id: "category-budget", component: "Slider", label: `Budget (${currency.id})`, min: 0, max: currency.budgetMax, step: currency.budgetStep, value: { path: "budget" } }
-}
-
 export function budgetComponents(trip: Trip): SurfaceComponent[] {
   return [
-    { id: "root", component: "Column", children: ["header", "people-card", "expense-form", "expenses-card", "categories-card", "money-row", "export"] },
+    { id: "root", component: "Column", children: ["header", "kpis", "form", "expenses", "money", "budgets", "export"] },
 
-    { id: "header", component: "Row", align: "center", children: ["header-icon", "header-titles", "header-total", "currency-picker", "currency-apply"] },
-    { id: "header-icon", component: "Icon", name: "payment" },
-    { id: "header-titles", component: "Column", weight: 1, children: ["header-title", "header-subtitle"] },
-    { id: "header-title", component: "Text", variant: "h1", text: { path: "/header/title" } },
-    { id: "header-subtitle", component: "Text", variant: "caption", text: { path: "/header/subtitle" } },
+    { id: "header", component: "Header", title: { path: "/header/title" }, subtitle: { path: "/header/subtitle" }, icon: "payment", badges: ["header-total"] },
     { id: "header-total", component: "Badge", variant: "accent", text: { path: "/header/total" } },
-    {
-      id: "currency-picker",
-      component: "ChoicePicker",
-      label: "Currency",
-      variant: "mutuallyExclusive",
-      displayStyle: "dropdown",
-      options: CURRENCIES.map((currency) => ({ label: currency.label, value: currency.id })),
-      value: { path: "/currency" },
-    },
-    ...button("currency-apply", "Use currency", "setCurrency", { currency: { path: "/currency" } }),
 
-    { id: "people-card", component: "Card", child: "people-body" },
-    { id: "people-body", component: "Column", children: ["people-title", "people-list", "people-empty", "people-add"] },
-    text("people-title", "Participants", "h3"),
-    { id: "people-list", component: "List", children: { componentId: "person-row", path: "/participants" } },
-    { id: "person-row", component: "Row", align: "center", children: ["person-icon", "person-name", "person-paid", "person-remove"] },
-    { id: "person-icon", component: "Icon", name: "person" },
-    { id: "person-name", component: "Text", weight: 1, text: { path: "name" } },
-    { id: "person-paid", component: "Badge", text: { path: "paidLabel" } },
-    ...button("person-remove", "Remove", "removeParticipant", { id: { path: "id" }, payer: { path: "/draft/payer" }, split: { path: "/draft/split" } }, "borderless"),
-    { id: "people-empty", component: "List", children: { componentId: "empty-state", path: "/participantsEmpty" } },
-    { id: "people-add", component: "Row", align: "end", children: ["new-participant", "add-participant"] },
-    { id: "new-participant", component: "TextField", weight: 1, label: "New participant", value: { path: "/newParticipant" } },
-    ...button("add-participant", "Add participant", "addParticipant", { name: { path: "/newParticipant" } }),
-    { id: "empty-state", component: "EmptyState", title: { path: "title" }, description: { path: "description" } },
+    { id: "kpis", component: "Grid", columns: 4, children: ["spent", "average", "budget", "transfers"] },
+    stat("spent", "Spent"),
+    stat("average", "Per person"),
+    stat("budget", "Budget used"),
+    stat("transfers", "To settle"),
 
-    { id: "expense-form", component: "Collapsible", title: "New expense", open: true, child: "form-body" },
-    { id: "form-body", component: "Column", children: ["form-row-1", "form-row-2", "draft-split", "draft-category", "form-actions"] },
-    { id: "form-row-1", component: "Row", align: "end", children: ["draft-description", "draft-amount"] },
-    { id: "draft-description", component: "TextField", weight: 2, label: "Description", value: { path: "/draft/description" } },
-    { id: "draft-amount", component: "TextField", weight: 1, label: "Amount", variant: "number", value: { path: "/draft/amount" } },
-    { id: "form-row-2", component: "Row", align: "end", children: ["draft-payer", "draft-date"] },
+    { id: "form", component: "Section", title: "New expense", description: "Shares are exact to the cent: leftover cents go to the first people in the list.", child: "form-body" },
+    slotBody("form", false),
+    { id: "form-fields", component: "Grid", columns: 2, children: ["draft-description", "draft-amount", "draft-payer", "draft-date"] },
+    { id: "draft-description", component: "TextField", label: "Description", value: { path: "/draft/description" } },
+    { id: "draft-amount", component: "TextField", label: "Amount", variant: "number", value: { path: "/draft/amount" } },
     ...participantPickers(trip),
-    { id: "draft-date", component: "DateTimeInput", weight: 1, label: "Date", enableDate: true, enableTime: false, value: { path: "/draft/date" } },
+    { id: "draft-date", component: "DateTimeInput", label: "Date", enableDate: true, enableTime: false, value: { path: "/draft/date" } },
     {
       id: "draft-category",
       component: "ChoicePicker",
@@ -98,75 +104,70 @@ export function budgetComponents(trip: Trip): SurfaceComponent[] {
       options: CATEGORIES.map((category) => ({ label: category.label, value: category.id })),
       value: { path: "/draft/category" },
     },
-    { id: "form-actions", component: "Row", align: "center", children: ["add-expense", "form-hint"] },
-    ...button("add-expense", "Add expense", "addExpense", { draft: { path: "/draft" } }, "primary"),
-    text("form-hint", "Shares are exact to the cent: leftover cents go to the first people in the list.", "caption"),
+    errorCallout("form"),
+    { id: "form-footer", component: "Footer", end: ["add-expense"] },
+    ...button("add-expense", "Add expense", "addExpense", { draft: { path: "/draft" } }, { variant: "primary", icon: "add" }),
 
-    { id: "expenses-card", component: "Card", child: "expenses-body" },
-    { id: "expenses-body", component: "Column", children: ["expenses-head", "expenses-empty", "expenses-table", "expenses-manage"] },
-    { id: "expenses-head", component: "Row", align: "center", children: ["expenses-title", "expenses-count"] },
-    { ...text("expenses-title", "Expenses", "h3"), weight: 1 },
-    { id: "expenses-count", component: "Badge", text: { path: "/expenses/count" } },
+    { id: "expenses", component: "Section", title: "Expenses", description: { path: "/expenses/count" }, child: "expenses-body" },
+    slotBody("expenses", false),
+    errorCallout("expenses"),
     { id: "expenses-empty", component: "List", children: { componentId: "empty-state", path: "/expenses/empty" } },
-    {
-      id: "expenses-table",
-      component: "Table",
-      columns: [
-        { key: "date", title: "Date" },
-        { key: "description", title: "Description" },
-        { key: "category", title: "Category" },
-        { key: "payer", title: "Paid by" },
-        { key: "split", title: "Split among" },
-        { key: "amount", title: "Amount" },
-        { key: "each", title: "Per person" },
-      ],
-      rows: { path: "/expenses/table" },
-    },
-    { id: "expenses-manage", component: "Collapsible", title: "Delete an expense", child: "expenses-items" },
-    { id: "expenses-items", component: "List", children: { componentId: "expense-item", path: "/expenses/items" } },
-    { id: "expense-item", component: "Row", align: "center", children: ["expense-item-label", "expense-delete"] },
-    { id: "expense-item-label", component: "Text", weight: 1, text: { path: "label" } },
-    ...button("expense-delete", "Delete", "deleteExpense", { id: { path: "id" } }, "borderless"),
+    { id: "expenses-list", component: "List", children: { componentId: "expense", path: "/expenses/items" } },
+    { id: "expense", component: "ListItem", icon: "shoppingCart", title: { path: "description" }, subtitle: { path: "detail" }, meta: ["expense-amount"], actions: ["expense-delete"] },
+    { id: "expense-amount", component: "Badge", text: { path: "amount" } },
+    ...button("expense-delete", "Delete expense", "deleteExpense", { id: { path: "id" } }, { icon: "delete" }),
+    { id: "empty-state", component: "EmptyState", title: { path: "title" }, description: { path: "description" } },
 
-    { id: "categories-card", component: "Card", child: "categories-body" },
-    { id: "categories-body", component: "Column", children: ["categories-title", "overall-progress", "categories-divider", "categories-list", "save-budgets"] },
-    text("categories-title", "Budgets by category", "h3"),
-    { id: "overall-progress", component: "Progress", value: { path: "/overall/percent" }, max: 100, label: { path: "/overall/label" } },
-    { id: "categories-divider", component: "Divider" },
-    { id: "categories-list", component: "List", children: { componentId: "category-row", path: "/categories" } },
-    { id: "category-row", component: "Column", children: ["category-head", "category-progress", "category-budget"] },
-    { id: "category-head", component: "Row", align: "center", children: ["category-label", "category-over", "category-status"] },
-    { id: "category-label", component: "Text", variant: "h5", weight: 1, text: { path: "label" } },
-    { id: "category-over", component: "List", direction: "horizontal", children: { componentId: "category-over-badge", path: "over" } },
-    { id: "category-over-badge", component: "Badge", variant: "accent", text: { path: "text" } },
-    { id: "category-status", component: "Text", variant: "caption", text: { path: "status" } },
-    { id: "category-progress", component: "Progress", value: { path: "percent" }, max: 100, label: { path: "progressLabel" } },
-    budgetSlider(trip),
-    ...button("save-budgets", "Save budgets", "saveBudgets", { categories: { path: "/categories" } }),
+    { id: "money", component: "Grid", columns: 2, children: ["people", "settle"] },
+    { id: "people", component: "Section", title: "People", description: "What each person paid and their share", child: "people-body" },
+    slotBody("people", false),
+    { id: "people-list", component: "List", children: { componentId: "person", path: "/people" } },
+    { id: "person", component: "ListItem", icon: "person", title: { path: "name" }, subtitle: { path: "detail" }, meta: ["person-balance"], actions: ["person-remove"] },
+    { id: "person-balance", component: "Badge", text: { path: "balance" }, variant: { path: "tone" } },
+    ...button("person-remove", "Remove person", "removeParticipant", { id: { path: "id" }, payer: { path: "/draft/payer" }, split: { path: "/draft/split" } }, { icon: "delete" }),
+    { id: "people-empty", component: "List", children: { componentId: "empty-state", path: "/peopleEmpty" } },
+    errorCallout("people"),
+    { id: "new-participant", component: "TextField", label: "New participant", value: { path: "/newParticipant" } },
+    { id: "people-footer", component: "Footer", end: ["add-participant"] },
+    ...button("add-participant", "Add participant", "addParticipant", { name: { path: "/newParticipant" } }, { icon: "add" }),
 
-    { id: "money-row", component: "Row", align: "start", children: ["balances-card", "settle-card"] },
-    { id: "balances-card", component: "Card", weight: 1, child: "balances-body" },
-    { id: "balances-body", component: "Column", children: ["balances-title", "balances-list"] },
-    text("balances-title", "Balances", "h3"),
-    { id: "balances-list", component: "List", children: { componentId: "balance-row", path: "/balances" } },
-    { id: "balance-row", component: "Row", align: "center", children: ["balance-icon", "balance-text", "balance-owed", "balance-owes"] },
-    { id: "balance-icon", component: "Icon", name: "accountCircle" },
-    { id: "balance-text", component: "Column", weight: 1, children: ["balance-name", "balance-detail"] },
-    { id: "balance-name", component: "Text", variant: "h5", text: { path: "name" } },
-    { id: "balance-detail", component: "Text", variant: "caption", text: { path: "detail" } },
-    { id: "balance-owed", component: "List", direction: "horizontal", children: { componentId: "balance-owed-badge", path: "owed" } },
-    { id: "balance-owed-badge", component: "Badge", variant: "accent", text: { path: "text" } },
-    { id: "balance-owes", component: "List", direction: "horizontal", children: { componentId: "balance-owes-badge", path: "owes" } },
-    { id: "balance-owes-badge", component: "Badge", variant: "neutral", text: { path: "text" } },
-    { id: "settle-card", component: "Card", weight: 1, child: "settle-body" },
-    { id: "settle-body", component: "Column", children: ["settle-title", "settle-caption", "settle-list", "settle-empty"] },
-    text("settle-title", "Settle up", "h3"),
-    { id: "settle-caption", component: "Text", variant: "caption", text: { path: "/settleCaption" } },
-    { id: "settle-list", component: "List", children: { componentId: "transfer-row", path: "/transfers" } },
-    { id: "transfer-row", component: "Row", align: "center", children: ["transfer-icon", "transfer-text"] },
-    { id: "transfer-icon", component: "Icon", name: "send" },
-    { id: "transfer-text", component: "Text", text: { path: "text" } },
+    { id: "settle", component: "Section", title: "Settle up", description: { path: "/settleCaption" }, child: "settle-body" },
+    { id: "settle-body", component: "Column", children: ["settle-list", "settle-empty"] },
+    { id: "settle-list", component: "List", children: { componentId: "transfer", path: "/transfers" } },
+    { id: "transfer", component: "ListItem", icon: "send", title: { path: "title" }, meta: ["transfer-amount"] },
+    { id: "transfer-amount", component: "Badge", text: { path: "amount" } },
     { id: "settle-empty", component: "List", children: { componentId: "empty-state", path: "/transfersEmpty" } },
+
+    { id: "budgets", component: "Section", title: "Budgets by category", description: { path: "/overall/label" }, child: "budgets-body" },
+    { id: "budgets-body", component: "Column", children: ["overall-progress", "categories-list", "budgets-edit"] },
+    { id: "overall-progress", component: "Progress", value: { path: "/overall/percent" }, max: 100, label: { path: "/overall/progressLabel" } },
+    { id: "categories-list", component: "List", children: { componentId: "category", path: "/categories" } },
+    { id: "category", component: "ListItem", title: { path: "label" }, subtitle: { path: "progressLabel" }, meta: ["category-status"] },
+    { id: "category-status", component: "Badge", text: { path: "status" }, variant: { path: "tone" } },
+    { id: "budgets-edit", component: "Collapsible", title: "Edit budgets and currency", child: "budgets-edit-body" },
+    slotBody("budgets", false),
+    { id: "budget-fields", component: "Grid", columns: 3, children: [...CATEGORIES.map((category) => `budget-${category.id}`), "currency-picker"] },
+    ...CATEGORIES.map((category, index): SurfaceComponent => ({
+      id: `budget-${category.id}`,
+      component: "TextField",
+      label: { path: `/categories/${index}/budgetLabel` },
+      variant: "number",
+      validationRegexp: "[0-9]+([.,][0-9]{1,2})?",
+      value: { path: `/categories/${index}/budget` },
+    })),
+    {
+      id: "currency-picker",
+      component: "ChoicePicker",
+      label: "Currency",
+      variant: "mutuallyExclusive",
+      displayStyle: "dropdown",
+      options: CURRENCIES.map((currency) => ({ label: currency.label, value: currency.id })),
+      value: { path: "/currency" },
+    },
+    errorCallout("budgets"),
+    { id: "budgets-footer", component: "Footer", start: ["currency-apply"], end: ["save-budgets"] },
+    ...button("currency-apply", "Use currency", "setCurrency", { currency: { path: "/currency" } }, { variant: "borderless" }),
+    ...button("save-budgets", "Save budgets", "saveBudgets", { categories: { path: "/categories" } }),
 
     { id: "export", component: "Collapsible", title: "Export summary", child: "export-body" },
     { id: "export-body", component: "Column", children: ["export-caption", "export-code"] },
@@ -187,76 +188,84 @@ export function emptyDraft(trip: Trip, today: string): Record<string, Json> {
 }
 
 export function categoryBudgets(trip: Trip): Json[] {
-  return CATEGORIES.map((category) => trip.budgets[category.id] / 100)
+  return CATEGORIES.map((category) => String(trip.budgets[category.id] / 100))
+}
+
+function plural(count: number, noun: string, many = `${noun}s`): string {
+  return `${count} ${count === 1 ? noun : many}`
 }
 
 export function displayEntries(trip: Trip, formatDate: (iso: string) => string): Map<string, Json> {
   const money = (cents: number) => formatMoney(cents, trip.currency)
   const total = totalSpent(trip)
+  const average = trip.participants.length === 0 ? 0 : Math.round(total / trip.participants.length)
   const balanceList = balances(trip)
   const transfers = settle(balanceList)
   const totals = categoryTotals(trip)
   const budgetTotal = totals.reduce((sum, row) => sum + row.budget, 0)
+  const used = budgetTotal === 0 ? 0 : Math.round((total / budgetTotal) * 100)
+  const sorted = [...trip.expenses].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
   const entries = new Map<string, Json>()
   entries.set("/header", {
     title: trip.name,
-    subtitle: `${trip.participants.length} people · ${trip.expenses.length} expenses · ${money(trip.participants.length === 0 ? 0 : Math.round(total / trip.participants.length))} per person on average`,
+    subtitle: `${plural(trip.participants.length, "person", "people")} · amounts in ${trip.currency}, split to the cent`,
     total: `${money(total)} spent`,
   })
+  entries.set("/kpis", {
+    spent: { value: money(total), caption: sorted[0] ? `Since ${formatDate(sorted[0].date)}` : "No expenses yet" },
+    average: { value: money(average), caption: `Average share of ${plural(trip.participants.length, "person", "people")}` },
+    budget: { value: `${used}%`, caption: `of ${money(budgetTotal)} in budgets` },
+    transfers: {
+      value: transfers.length === 0 ? "All square" : plural(transfers.length, "transfer"),
+      caption: transfers.length === 0 ? "Nobody owes anybody" : `${money(transfers.reduce((sum, transfer) => sum + transfer.amount, 0))} changes hands`,
+    },
+  })
   entries.set(
-    "/participants",
-    balanceList.map((balance) => ({ id: balance.id, name: balance.name, paidLabel: `paid ${money(balance.paid)}` })),
+    "/people",
+    balanceList.map((balance) => {
+      const status = balanceStatus(balance, trip.currency)
+      return { id: balance.id, name: balance.name, detail: `paid ${money(balance.paid)} · share ${money(balance.share)}`, balance: status.label, tone: status.tone }
+    }),
   )
-  entries.set("/participantsEmpty", when(trip.participants.length === 0, { title: "Nobody yet", description: "Add the people sharing costs on this trip." }))
-  entries.set("/expenses/count", `${trip.expenses.length} expense${trip.expenses.length === 1 ? "" : "s"}`)
+  entries.set("/peopleEmpty", when(trip.participants.length === 0, { title: "Nobody yet", description: "Add the people sharing costs on this trip." }))
+  entries.set("/expenses/count", plural(trip.expenses.length, "expense"))
   entries.set("/expenses/empty", when(trip.expenses.length === 0, { title: "No expenses yet", description: "Add the first expense with the form above." }))
-  const sorted = [...trip.expenses].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
   entries.set(
-    "/expenses/table",
+    "/expenses/items",
     sorted.map((expense) => {
       const shares = [...splitEvenly(expense.amount, expense.splitAmong).values()]
       const min = Math.min(...shares)
       const max = Math.max(...shares)
+      const among = expense.splitAmong.length === trip.participants.length ? "everyone" : expense.splitAmong.map((id) => participantName(trip, id)).join(", ")
       return {
-        date: formatDate(expense.date),
+        id: expense.id,
         description: expense.description,
-        category: categoryLabel(expense.category),
-        payer: participantName(trip, expense.payer),
-        split: expense.splitAmong.length === trip.participants.length ? "Everyone" : expense.splitAmong.map((id) => participantName(trip, id)).join(", "),
+        detail: `${formatDate(expense.date)} · ${categoryLabel(expense.category)} · ${participantName(trip, expense.payer)} paid · split among ${among}, ${min === max ? money(min) : `${money(min)}–${money(max)}`} each`,
         amount: money(expense.amount),
-        each: min === max ? money(min) : `${money(min)}–${money(max)}`,
       }
     }),
   )
-  entries.set(
-    "/expenses/items",
-    sorted.map((expense) => ({ id: expense.id, label: `${formatDate(expense.date)} · ${expense.description} · ${money(expense.amount)}` })),
-  )
   entries.set("/overall", {
-    percent: Math.min(100, budgetTotal === 0 ? 0 : Math.round((total / budgetTotal) * 100)),
+    percent: Math.min(100, used),
     label: `${money(total)} of ${money(budgetTotal)} total budget`,
+    progressLabel: `${used}% of the total budget used`,
   })
   totals.forEach((row, index) => {
+    const status = categoryStatus(row, trip.currency)
     entries.set(`/categories/${index}/id`, row.id)
     entries.set(`/categories/${index}/label`, row.label)
-    entries.set(`/categories/${index}/percent`, Math.min(100, row.percent))
+    entries.set(`/categories/${index}/budgetLabel`, `${row.label} (${trip.currency})`)
     entries.set(`/categories/${index}/progressLabel`, `${money(row.spent)} of ${money(row.budget)} (${row.percent}%)`)
-    entries.set(`/categories/${index}/status`, row.over ? `${money(row.spent - row.budget)} over` : `${money(row.budget - row.spent)} left`)
-    entries.set(`/categories/${index}/over`, when(row.over, { text: "Over budget" }))
+    entries.set(`/categories/${index}/status`, status.label)
+    entries.set(`/categories/${index}/tone`, status.tone)
   })
-  entries.set(
-    "/balances",
-    balanceList.map((balance) => ({
-      name: balance.name,
-      detail: `paid ${money(balance.paid)} · share ${money(balance.share)}`,
-      owed: when(balance.net > 0, { text: `is owed ${money(balance.net)}` }),
-      owes: balance.net < 0 ? [{ text: `owes ${money(-balance.net)}` }] : when(balance.net === 0, { text: "settled up" }),
-    })),
-  )
-  entries.set("/settleCaption", transfers.length === 0 ? "No transfers needed." : `${transfers.length} transfer${transfers.length === 1 ? "" : "s"} settle every balance, largest debts first.`)
+  entries.set("/settleCaption", transfers.length === 0 ? "No transfers needed." : `${plural(transfers.length, "transfer")} settle every balance, largest debts first.`)
   entries.set(
     "/transfers",
-    transfers.map((transfer) => ({ text: `${participantName(trip, transfer.from)} pays ${participantName(trip, transfer.to)} ${money(transfer.amount)}` })),
+    transfers.map((transfer) => ({
+      title: `${participantName(trip, transfer.from)} pays ${participantName(trip, transfer.to)}`,
+      amount: money(transfer.amount),
+    })),
   )
   entries.set("/transfersEmpty", when(transfers.length === 0, { title: "All square", description: "Nobody owes anybody." }))
   entries.set("/export", summaryMarkdown(trip))
@@ -285,7 +294,8 @@ function pointerSegments(pointer: string): string[] {
 }
 
 export function initialData(trip: Trip, entries: Map<string, Json>, today: string): { [key: string]: Json } {
-  let data: Json = { currency: [trip.currency], newParticipant: "", draft: emptyDraft(trip, today) }
+  const errors = Object.fromEntries(ERROR_SLOTS.map((slot) => [slot, { title: "", text: "" }]))
+  let data: Json = { currency: [trip.currency], newParticipant: "", draft: emptyDraft(trip, today), errors }
   for (const [pointer, value] of entries) data = withValue(data, pointerSegments(pointer), value)
   categoryBudgets(trip).forEach((budget, index) => {
     data = withValue(data, ["categories", String(index), "budget"], budget)
@@ -312,7 +322,13 @@ export function openingMessages(surfaceId: string, trip: Trip, data: Record<stri
 export function changedEntries(surfaceId: string, shown: Map<string, Json>, next: Map<string, Json>): SurfaceMessage[] {
   const messages: SurfaceMessage[] = []
   for (const [pointer, value] of next) {
-    if (JSON.stringify(shown.get(pointer)) !== JSON.stringify(value)) messages.push(update(surfaceId, pointer, value))
+    const before = shown.get(pointer)
+    if (JSON.stringify(before) === JSON.stringify(value)) continue
+    if (isObject(before) && isObject(value)) {
+      for (const [key, field] of Object.entries(value)) {
+        if (JSON.stringify(before[key]) !== JSON.stringify(field)) messages.push(update(surfaceId, `${pointer}/${key}`, field))
+      }
+    } else messages.push(update(surfaceId, pointer, value))
   }
   return messages
 }

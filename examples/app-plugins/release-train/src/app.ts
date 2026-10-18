@@ -20,11 +20,14 @@ import {
   checklistMessages,
   components,
   entriesBody,
+  noticeMessages,
   openMessages,
   ownersData,
   patch,
   releaseModel,
   summaryMessages,
+  type Notice,
+  type NoticeKey,
 } from "./view"
 
 const PAGE_ID = "release-train"
@@ -53,6 +56,13 @@ export default definePlugin({
       surface(channel) {
         const { surfaceId } = channel
         channel.send(...openMessages(surfaceId, release))
+        const shownNotices = new Set<NoticeKey>()
+
+        const notify = (key: NoticeKey, notice: Notice | null) => {
+          channel.send(...noticeMessages(surfaceId, key, notice, shownNotices.has(key)))
+          if (notice) shownNotices.add(key)
+          else shownNotices.delete(key)
+        }
 
         const absorb = (action: SurfaceActionEvent): Release => {
           const bump = contextChoice(action, "bump")
@@ -95,6 +105,7 @@ export default definePlugin({
               case "saveProgress": {
                 release = absorb(action)
                 channel.send(...checklistMessages(surfaceId, release))
+                notify("ship", null)
                 const progress = overallProgress(release.stages)
                 api.ui.toast({ kind: "success", title: "Progress saved", description: `${progress.done} of ${progress.total} checks done` })
                 return
@@ -111,10 +122,10 @@ export default definePlugin({
                   channel.send(...checklistMessages(surfaceId, release))
                   const listed = attempt.blockers.slice(0, MAX_LISTED_BLOCKERS).map((blocker) => `${blocker.stage}: ${blocker.label}`)
                   const more = attempt.blockers.length - listed.length
-                  api.ui.toast({
-                    kind: "warning",
+                  notify("ship", {
                     title: `Not shipping: ${attempt.error}`,
-                    description: listed.length > 0 ? `${listed.join("; ")}${more > 0 ? `; and ${more} more` : ""}` : undefined,
+                    text: listed.length > 0 ? `${listed.join("; ")}${more > 0 ? `; and ${more} more` : ""}.` : "",
+                    action: release.shipped ? "ship-start-next" : "ship-retry",
                   })
                   return
                 }
@@ -122,6 +133,7 @@ export default definePlugin({
                 const ok = await api.ui.confirm({ title: `Ship v${version}?`, description: `Release date ${release.releaseDate.replace("T", " ")}.`, confirmLabel: "Ship" })
                 if (!ok) return
                 release = ship(release, Date.now()).release
+                notify("ship", null)
                 channel.send(...checklistMessages(surfaceId, release), patch(surfaceId, "/changelog", changelogData(release)))
                 api.ui.toast({ kind: "success", title: `v${version} shipped`, description: "Move on to the Announce stage." })
                 return
@@ -142,6 +154,7 @@ export default definePlugin({
                   patch(surfaceId, "/releaseDate", model.releaseDate),
                   patch(surfaceId, "/announce", model.announce),
                 )
+                notify("ship", null)
                 sendChangelog(before)
                 return
               }
@@ -149,27 +162,33 @@ export default definePlugin({
                 const before = release
                 const change = addEntry(release, contextChoice(action, "type"), contextText(action, "scope"), contextText(action, "description"))
                 if (change.error) {
-                  api.ui.toast({ kind: "warning", title: "Entry not added", description: change.error })
+                  notify("entry", { title: "Entry not added", text: change.error })
                   return
                 }
                 release = change.release
+                notify("entry", null)
                 sendChangelog(before)
                 channel.send(patch(surfaceId, "/entryDraft/description", ""), patch(surfaceId, "/entryDraft/scope", ""))
                 return
               }
               case "removeEntry": {
+                const entry = release.changelog.find((item) => item.id === contextText(action, "id"))
+                if (!entry) return
+                const ok = await api.ui.confirm({ title: "Remove this changelog entry?", description: entry.description, confirmLabel: "Remove entry" })
+                if (!ok) return
                 const before = release
-                release = removeEntry(release, contextText(action, "id"))
+                release = removeEntry(release, entry.id)
                 sendChangelog(before)
                 return
               }
               case "addOwner": {
                 const change = addOwner(release, contextText(action, "name"), contextText(action, "role"), contextChoice(action, "stage"))
                 if (change.error) {
-                  api.ui.toast({ kind: "warning", title: "Owner not added", description: change.error })
+                  notify("owner", { title: "Owner not added", text: change.error })
                   return
                 }
                 release = change.release
+                notify("owner", null)
                 channel.send(patch(surfaceId, "/owners", ownersData(release)), patch(surfaceId, "/ownerDraft", { name: "", role: "", stage: ["prepare"] }))
                 return
               }

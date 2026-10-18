@@ -9,11 +9,13 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 - Group related fields in one Section and lay them out with a Grid, so the form reads left to right, top to bottom.
 - Say state in words: a status is a Badge with a word ("Failing", "Merged") and a tone; an outcome or warning is a Callout. Never colour or an Icon alone.
 - An empty collection is an EmptyState that says what to do next ("No deploy targets yet" / "Add one to ship from this workspace."), never a blank area.
-- Progressive disclosure: secondary detail (logs, raw payloads, history) goes in a Collapsible, parallel views of the same thing in Tabs. The first screen answers the person's question.
+- Progressive disclosure: secondary detail (logs, raw payloads, history) goes in a Collapsible, parallel views of the same thing in Tabs. The first screen answers the person's question. A Collapsible draws as a full-width disclosure row with a turning chevron, in the Section title's type, so give it a short noun-phrase title ("Burndown", "Rollout and targeting"), never a sentence or a button label.
 - Never a wall of inputs. Past about six inputs, split into Sections; past three Sections of settings, use Tabs.
-- Numbers carry units. A Stat value is formatted text ("412 ms", "1.28 M", "18,407"). A Table cell holds a JSON number so it right-aligns, with the unit in the column title ("p95 (ms)").
+- Numbers carry units. A Stat value is formatted text ("412 ms", "1.28 M", "18,407"); its \`delta\` carries its own sign or arrow ("+6.2%", "▼ 12 ms") and its \`tone\` says whether the change is good, bad or a warning. Keep a Stat's caption to a few words: tiles in a Grid share one height and one footer line. A Table cell holds a JSON number so it right-aligns, with the unit in the column title ("p95 (ms)").
 - Button labels are verbs naming the outcome: "Save changes", "Approve release", "Retry 3 failed jobs". Never "OK", "Submit" or "Yes". A destructive verb names its object: "Delete target".
 - Titles in sentence case, under about 40 characters. Labels are nouns ("Region", not "Choose the region:"). Real words and data, never placeholders.
+- A view or form ends with a Footer: the primary group in \`end\`, the primary Button last, secondary actions (Cancel, Reset) in \`start\`. Header \`actions\` are for page-level actions and Section \`actions\` for one group's actions, never for submitting a form.
+- Pick the input for the value: a few discrete options are ChoicePicker \`chips\` (or a \`dropdown\` past about five), a number is a TextField with \`"variant": "number"\`, and a Slider only a bounded continuous value such as a percentage. Progress shows work happening, never a value to set.
 - Keep an agent reply small: one Header or Callout, at most three Sections, under about 40 components. A larger tool is a plugin page.
 
 ## Choosing a component
@@ -30,9 +32,97 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 | An outcome, warning, refusal or validation error | \`Callout\` with a \`tone\` |
 | Prose with links or inline code | \`Markdown\` |
 | Work in progress | \`Progress\` or \`Spinner\`, each with a \`label\` |
+| The actions that finish a view or form | \`Footer\`: \`start\` for secondary actions, \`end\` for the primary group with the primary Button last |
+| One of a few options | \`ChoicePicker\` with \`chips\`; a \`dropdown\` past about five |
+| A bounded continuous value | \`Slider\`; a small whole number is a number \`TextField\` |
 | Nothing to show yet | \`EmptyState\` |
 
 A Badge's \`variant\` may be bound, so a template row can carry its own tone: put the tone beside the status word in each item (\`{"status": "Failed", "tone": "danger"}\`) and bind both (\`"text": {"path": "status"}, "variant": {"path": "tone"}\`); an unknown tone draws neutral. The text still says the state, so colour is never the only signal.
+
+## Provenance
+
+Every surface opens with a source line the app draws above your content: the producer's glyph and name and what made it ("Pi · agent reply", "Sprint board · app plugin"). It says who made the surface, so a surface can never pass for the app's own UI. Authors do not set it and cannot hide it; never repeat it in a Header or a Text.
+
+## Header
+
+- Title: the object's name ("checkout-api", "Sprint 42"), not a sentence.
+- Subtitle: one line of at most three facts joined by " · ", about 60 characters ("Production · eu-west-1 · 14 min ago"). Anything more is a Stat, a KeyValue row or a Badge. The app cuts a longer subtitle to one line on a desktop and two on a phone, with the full text on hover.
+- Badges: one or two status words beside the title.
+- Actions: at most two, a secondary one and at most one primary, aligned with the title line. More actions go to a Section's \`actions\` or the Footer.
+- Icon: names the kind of object the view is about, never decoration. Leave it out when nothing below fits.
+
+| The view is about | \`icon\` |
+| --- | --- |
+| A deploy, release or build | \`upload\` |
+| A repository, project or folder | \`folder\` |
+| An incident, alert or failing check | \`warning\` |
+| A person, team or account | \`person\` |
+| A sprint, schedule or event | \`calendarToday\` |
+| Settings or configuration | \`settings\` |
+| Notifications | \`notifications\` |
+| Messages or email | \`mail\` |
+| Billing or payments | \`payment\` |
+| Access, secrets or security | \`lock\` |
+| A region or location | \`locationOn\` |
+| An order, cart or checkout | \`shoppingCart\` |
+| Search results | \`search\` |
+
+On a phone (under about 480 px) the Header reflows in a fixed order: the icon and title, the subtitle under the title, the badges on their own line, then the actions on their own row, left-aligned with the title, at equal height.
+
+## Notices
+
+A Callout is a notice about the view's state. Pick the tone by what it means, then the parts it needs:
+
+| \`tone\` | Means | Colour | Use it when | \`action\` | \`dismissible\` |
+| --- | --- | --- | --- | --- | --- |
+| \`info\` | Context; nothing is wrong | Blue | A fact the person should know before acting | None | Yes when it is one-time knowledge |
+| \`success\` | A lasting outcome worth keeping on screen | Green | The result of the run the view reports (a passing check is a Badge, a quick confirmation is not a Callout) | Optional, to view the result | Yes |
+| \`warning\` | Needs attention soon; not blocking | Amber | Something degraded or about to expire | The fix, when one exists | No when it clears with the state (the producer removes it); yes when it is something to acknowledge |
+| \`danger\` | Blocked: an error or a refused action | Red | The action failed or cannot run | Required: fix, retry, or go where it is fixed, unless the fix is the form right below it | Never while the problem lasts |
+
+- One Callout per Section, at the top of the Section it concerns. A notice about the whole view sits directly under the Header.
+- The title says what happened ("Port 80 is already in use"); the text says why and what to do next.
+- \`action\` is the id of one Button, worded as the fix ("Choose another port", "Retry deploy"). \`dismissible\` adds a close button that hides the notice for this view; it comes back if the producer sends it again with a different title or text.
+- The tone's colour and icon always come with words; never a coloured Callout without a title.
+
+## Lists and rows
+
+- A ListItem's \`meta\` is information (status Badges, counts) and \`actions\` are commands. Meta sits on its own line under the subtitle and wraps; actions keep their own column at the right, level with the title. In a narrow row (a phone, a board lane) the actions move together to the end of the meta line instead, and only take their own right-aligned line when they do not fit there. Chips wrap; buttons move as a group.
+- The app trims a ListItem's title to one line (two on a phone) and its subtitle to two, with the full text on hover. Badge text and numbers are never cut, so keep them short.
+- Icons, chips and buttons align with the first line of a wrapping title, never with its middle. CheckBox and Switch align their control with the first line of a two-line label.
+- The app decides by the row's own width, not the screen's: in a narrow row (a lane of a four-column board, a phone) the row's actions move to the end of its \`meta\` line, beside the badges, and take their own end-aligned line only when the two do not fit or the row has no \`meta\`; they wrap inside the item, never run past its edge and never cover the title.
+- Row actions follow "Actions: what shows, what waits" below: one \`primaryAction\`, icon-only \`actions\`.
+- A selected row (\`selected\`) is shown with a faint tint only; do not add an Icon or Badge to mark it.
+
+## Actions: what shows, what waits
+
+A view that repeats rows of one kind (a List with a ListItem template) repeats every action on every row, so each row shows at most one text action and keeps the rest out of sight until the person points at it.
+
+| Action | Where it goes | Shown | Style |
+| --- | --- | --- | --- |
+| The view's main action | Footer \`end\` (or Header \`actions\` on a page without a Footer) | Always | \`primary\`, one per view |
+| A section-level action (Add, Refresh, Export) | Section \`actions\` | Always | \`default\`, or \`borderless\` for low stakes |
+| The action most rows need (Open, Advance, Review) | ListItem \`primaryAction\` | Always | Drawn as a compact outlined button; leave \`variant\` out |
+| Other per-row actions (Move back, Edit, Duplicate, Assign) | ListItem \`actions\` | On hover or keyboard focus with a mouse (their space is kept, so nothing moves); always on touch | Icon-only: give each an \`icon\`; its label becomes the accessible name and tooltip |
+| A per-row destructive action (Delete, Remove) | ListItem \`actions\`, last, with \`"icon": "delete"\` | Like other row actions | Icon-only, red on hover and focus; confirm before acting |
+| A bulk action on selected rows | Section \`actions\` | Only while something is selected (the producer adds and removes it) | \`default\` |
+
+- At most one visible text action per repeated row: its \`primaryAction\`. Everything else in \`actions\` carries an \`icon\`.
+- A toggle shows its state through its icon: bind the Button's \`icon\` to the item (\`"icon": {"path": "favouriteIcon"}\` with \`star\` or \`starOff\`, \`favorite\` or \`favoriteOff\`, \`lock\` or \`lockOpen\`) and its label to the action it will take ("Add to favourites", "Remove from favourites").
+- Never a Link next to a Button in a row; a row's commands are Buttons.
+- The same action sits in the same place on every row: one template, one order, the destructive action last.
+- A row with no actions draws no action column, so leave \`primaryAction\` and \`actions\` out rather than sending empty ones.
+- Every Button in one group is the same size; the renderer handles that. \`borderless\` is a quiet neutral button, not a link: the accent colour belongs to Links and the primary Button.
+- A single item that is not repeated (a ListItem placed directly, not from a template) shows all of its actions at full size.
+
+## Narrow screens
+
+Every layout must hold at phone width (about 360 px). The app reflows it; the spec only has to avoid fixed widths and long unbroken strings.
+
+- Grid columns collapse: 2–3 columns become one under 480 px, 4 become two, 5–6 become three then two.
+- A Table under 480 px stacks each row as a block of label and value pairs, so a Table never needs to scroll sideways. Keep it to about five columns; more belongs in a detail view.
+- The Footer's \`end\` group spans the full width with equal-width buttons, the primary on the right; the \`start\` group moves to its own row below.
+- Callout actions move under the text.
 
 ## Recipes
 
@@ -42,14 +132,14 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 {
   "title": "Checkout service health",
   "components": [
-    {"id": "root", "component": "Column", "children": ["header", "kpis", "errors", "deploys"]},
+    {"id": "root", "component": "Column", "children": ["header", "kpis", "errors", "deploys", "footer"]},
     {"id": "header", "component": "Header", "title": "Checkout service", "subtitle": "Production · last 24 hours", "icon": "shoppingCart", "badges": ["health"], "actions": ["refresh"]},
     {"id": "health", "component": "Badge", "text": "Degraded", "variant": "warning"},
     {"id": "refresh", "component": "Button", "icon": "refresh", "child": "refresh-label", "action": {"event": {"name": "refreshCheckoutHealth"}}},
     {"id": "refresh-label", "component": "Text", "text": "Refresh"},
     {"id": "kpis", "component": "Grid", "columns": 4, "children": ["requests", "latency", "error-rate", "orders"]},
-    {"id": "requests", "component": "Stat", "label": "Requests", "value": "1.28 M", "delta": "+6.2%", "tone": "neutral", "caption": "vs. the previous 24 hours"},
-    {"id": "latency", "component": "Stat", "label": "p95 latency", "value": "412 ms", "delta": "+38%", "tone": "negative"},
+    {"id": "requests", "component": "Stat", "label": "Requests", "value": "1.28 M", "delta": "+6.2%", "tone": "neutral", "caption": "vs. yesterday"},
+    {"id": "latency", "component": "Stat", "label": "p95 latency", "value": "412 ms", "delta": "▲ 38%", "tone": "negative", "caption": "SLO 300 ms"},
     {"id": "error-rate", "component": "Stat", "label": "Error rate", "value": "0.84%", "delta": "+0.31 pt", "tone": "warning"},
     {"id": "orders", "component": "Stat", "label": "Orders", "value": "18,407", "delta": "+2.1%", "tone": "positive"},
     {"id": "errors", "component": "Section", "title": "Top errors", "description": "Grouped by exception, most frequent first", "child": "error-table"},
@@ -57,7 +147,12 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
     {"id": "deploys", "component": "Collapsible", "title": "Recent deploys", "child": "deploy-list"},
     {"id": "deploy-list", "component": "List", "children": {"componentId": "deploy", "path": "/deploys"}},
     {"id": "deploy", "component": "ListItem", "title": {"path": "version"}, "subtitle": {"path": "summary"}, "icon": "upload", "meta": ["deploy-when"]},
-    {"id": "deploy-when", "component": "Badge", "text": {"path": "when"}}
+    {"id": "deploy-when", "component": "Badge", "text": {"path": "when"}},
+    {"id": "footer", "component": "Footer", "start": ["runbook"], "end": ["incident"]},
+    {"id": "runbook", "component": "Button", "variant": "borderless", "child": "runbook-label", "action": {"event": {"name": "openCheckoutRunbook"}}},
+    {"id": "runbook-label", "component": "Text", "text": "Open runbook"},
+    {"id": "incident", "component": "Button", "variant": "primary", "icon": "warning", "child": "incident-label", "action": {"event": {"name": "openCheckoutIncident", "context": {"service": "checkout"}}}},
+    {"id": "incident-label", "component": "Text", "text": "Open an incident"}
   ],
   "data": {
     "errors": [
@@ -84,9 +179,9 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
     {"id": "panes", "component": "Grid", "columns": 2, "children": ["queue", "detail"]},
     {"id": "queue", "component": "Section", "title": "Queue", "variant": "plain", "child": "pr-list"},
     {"id": "pr-list", "component": "List", "children": {"componentId": "pr", "path": "/prs"}},
-    {"id": "pr", "component": "ListItem", "title": {"path": "title"}, "subtitle": {"path": "byline"}, "selected": {"path": "selected"}, "meta": ["pr-checks"], "actions": ["pr-open"]},
+    {"id": "pr", "component": "ListItem", "title": {"path": "title"}, "subtitle": {"path": "byline"}, "selected": {"path": "selected"}, "meta": ["pr-checks"], "primaryAction": "pr-open"},
     {"id": "pr-checks", "component": "Badge", "text": {"path": "checks"}},
-    {"id": "pr-open", "component": "Button", "variant": "borderless", "child": "pr-open-label", "action": {"event": {"name": "openPullRequest", "context": {"number": {"path": "number"}}}}},
+    {"id": "pr-open", "component": "Button", "child": "pr-open-label", "action": {"event": {"name": "openPullRequest", "context": {"number": {"path": "number"}}}}},
     {"id": "pr-open-label", "component": "Text", "text": "Details"},
     {"id": "detail", "component": "Section", "title": {"path": "/selected/title"}, "description": {"path": "/selected/byline"}, "actions": ["merge"], "child": "detail-body"},
     {"id": "merge", "component": "Button", "variant": "primary", "icon": "check", "child": "merge-label", "action": {"event": {"name": "mergePullRequest", "context": {"number": {"path": "/selected/number"}}}}},
@@ -118,13 +213,13 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 }
 ~~~
 
-### Form: a Section per group, a two-column Grid, one action row
+### Form: a Section per group, a two-column Grid, a Footer
 
 ~~~json
 {
   "title": "New deploy target",
   "components": [
-    {"id": "root", "component": "Column", "children": ["header", "connection", "options", "actions"]},
+    {"id": "root", "component": "Column", "children": ["header", "connection", "options", "footer"]},
     {"id": "header", "component": "Header", "title": "New deploy target", "subtitle": "Where this workspace ships its builds", "icon": "upload"},
     {"id": "connection", "component": "Section", "title": "Connection", "child": "connection-fields"},
     {"id": "connection-fields", "component": "Grid", "columns": 2, "children": ["name", "region", "host", "port"]},
@@ -136,7 +231,7 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
     {"id": "option-fields", "component": "Column", "children": ["autoscale", "previews"]},
     {"id": "autoscale", "component": "Switch", "label": "Scale with traffic", "value": {"path": "/target/autoscale"}},
     {"id": "previews", "component": "Switch", "label": "Deploy a preview for every pull request", "value": {"path": "/target/previews"}},
-    {"id": "actions", "component": "Row", "justify": "end", "children": ["create"]},
+    {"id": "footer", "component": "Footer", "end": ["create"]},
     {"id": "create", "component": "Button", "variant": "primary", "icon": "add", "child": "create-label", "action": {"event": {"name": "createDeployTarget", "context": {"name": {"path": "/target/name"}, "region": {"path": "/target/region"}, "host": {"path": "/target/host"}, "port": {"path": "/target/port"}, "autoscale": {"path": "/target/autoscale"}, "previews": {"path": "/target/previews"}}}}},
     {"id": "create-label", "component": "Text", "text": "Create target"}
   ],
@@ -144,7 +239,7 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 }
 ~~~
 
-A plugin page adds a \`borderless\` Cancel before the primary button in the same Row. An agent reply leaves it out: not pressing is cancelling.
+A plugin page adds a \`borderless\` Cancel in the Footer's \`start\`. An agent reply leaves it out: not pressing is cancelling.
 
 ### Board: a Grid of Sections, each with a List template
 
@@ -164,10 +259,14 @@ A plugin page adds a \`borderless\` Cancel before the primary button in the same
     {"id": "doing-cards", "component": "List", "children": {"componentId": "card", "path": "/doing"}},
     {"id": "review", "component": "Section", "title": "In review", "description": "No cards", "child": "review-empty"},
     {"id": "review-empty", "component": "EmptyState", "title": "Nothing in review", "description": "A card moves here when its pull request opens."},
-    {"id": "card", "component": "ListItem", "title": {"path": "title"}, "subtitle": {"path": "owner"}, "meta": ["card-points"], "actions": ["card-advance"]},
+    {"id": "card", "component": "ListItem", "title": {"path": "title"}, "subtitle": {"path": "owner"}, "meta": ["card-points"], "primaryAction": "card-advance", "actions": ["card-assign", "card-remove"]},
     {"id": "card-points", "component": "Badge", "text": {"path": "points"}},
-    {"id": "card-advance", "component": "Button", "variant": "borderless", "icon": "arrowForward", "child": "card-advance-label", "action": {"event": {"name": "advanceSprintCard", "context": {"card": {"path": "id"}}}}},
-    {"id": "card-advance-label", "component": "Text", "text": "Advance"}
+    {"id": "card-advance", "component": "Button", "icon": "arrowForward", "child": "card-advance-label", "action": {"event": {"name": "advanceSprintCard", "context": {"card": {"path": "id"}}}}},
+    {"id": "card-advance-label", "component": "Text", "text": "Advance"},
+    {"id": "card-assign", "component": "Button", "variant": "borderless", "icon": "person", "child": "card-assign-label", "action": {"event": {"name": "assignSprintCard", "context": {"card": {"path": "id"}}}}},
+    {"id": "card-assign-label", "component": "Text", "text": "Assign"},
+    {"id": "card-remove", "component": "Button", "variant": "borderless", "icon": "delete", "child": "card-remove-label", "action": {"event": {"name": "removeSprintCard", "context": {"card": {"path": "id"}}}}},
+    {"id": "card-remove-label", "component": "Text", "text": "Remove card"}
   ],
   "data": {
     "todo": [
@@ -182,16 +281,14 @@ A plugin page adds a \`borderless\` Cancel before the primary button in the same
 }
 ~~~
 
-### Settings: Header with the save action, plain-language Sections
+### Settings: plain-language Sections, saved from the Footer
 
 ~~~json
 {
   "title": "Notification settings",
   "components": [
-    {"id": "root", "component": "Column", "children": ["header", "channels", "digest", "reset-section"]},
-    {"id": "header", "component": "Header", "title": "Notifications", "subtitle": "Applies to every project in this workspace", "icon": "notifications", "actions": ["save"]},
-    {"id": "save", "component": "Button", "variant": "primary", "child": "save-label", "action": {"event": {"name": "saveNotificationSettings", "context": {"email": {"path": "/settings/email"}, "desktop": {"path": "/settings/desktop"}, "mentionsOnly": {"path": "/settings/mentionsOnly"}, "digest": {"path": "/settings/digest"}, "digestTime": {"path": "/settings/digestTime"}}}}},
-    {"id": "save-label", "component": "Text", "text": "Save changes"},
+    {"id": "root", "component": "Column", "children": ["header", "channels", "digest", "footer"]},
+    {"id": "header", "component": "Header", "title": "Notifications", "subtitle": "Applies to every project in this workspace", "icon": "notifications"},
     {"id": "channels", "component": "Section", "title": "Channels", "description": "Where Claxedo reaches you when a session needs you", "child": "channel-fields"},
     {"id": "channel-fields", "component": "Column", "children": ["email", "desktop", "mentions-only"]},
     {"id": "email", "component": "Switch", "label": "Email", "value": {"path": "/settings/email"}},
@@ -201,10 +298,11 @@ A plugin page adds a \`borderless\` Cancel before the primary button in the same
     {"id": "digest-fields", "component": "Grid", "columns": 2, "children": ["digest-days", "digest-time"]},
     {"id": "digest-days", "component": "ChoicePicker", "label": "Send on", "variant": "mutuallyExclusive", "displayStyle": "chips", "options": [{"label": "Never", "value": "off"}, {"label": "Weekdays", "value": "weekdays"}, {"label": "Every day", "value": "daily"}], "value": {"path": "/settings/digest"}},
     {"id": "digest-time", "component": "DateTimeInput", "label": "Send at", "enableDate": false, "enableTime": true, "value": {"path": "/settings/digestTime"}},
-    {"id": "reset-section", "component": "Section", "title": "Reset notifications", "variant": "plain", "actions": ["reset"], "child": "reset-note"},
-    {"id": "reset-note", "component": "Text", "variant": "caption", "text": "Turns email and desktop back on and sends the digest on weekdays at 09:00."},
-    {"id": "reset", "component": "Button", "icon": "refresh", "child": "reset-label", "action": {"event": {"name": "resetNotificationSettings"}}},
-    {"id": "reset-label", "component": "Text", "text": "Reset to defaults"}
+    {"id": "footer", "component": "Footer", "start": ["reset"], "end": ["save"]},
+    {"id": "reset", "component": "Button", "variant": "borderless", "icon": "refresh", "child": "reset-label", "action": {"event": {"name": "resetNotificationSettings"}}},
+    {"id": "reset-label", "component": "Text", "text": "Reset to defaults"},
+    {"id": "save", "component": "Button", "variant": "primary", "child": "save-label", "action": {"event": {"name": "saveNotificationSettings", "context": {"email": {"path": "/settings/email"}, "desktop": {"path": "/settings/desktop"}, "mentionsOnly": {"path": "/settings/mentionsOnly"}, "digest": {"path": "/settings/digest"}, "digestTime": {"path": "/settings/digestTime"}}}}},
+    {"id": "save-label", "component": "Text", "text": "Save changes"}
   ],
   "data": {"settings": {"email": true, "desktop": false, "mentionsOnly": true, "digest": ["weekdays"], "digestTime": "09:00"}}
 }
@@ -217,12 +315,12 @@ A plugin page adds a \`borderless\` Cancel before the primary button in the same
   "title": "Migration applied",
   "components": [
     {"id": "root", "component": "Column", "children": ["outcome", "details", "statements", "next"]},
-    {"id": "outcome", "component": "Callout", "tone": "success", "title": "Migration 0042_invoice_due_index applied to prod-eu", "text": "Finished in 3.4 s. No rows were rewritten and no lock was held longer than 120 ms."},
+    {"id": "outcome", "component": "Callout", "tone": "success", "title": "Migration 0042_invoice_due_index applied to prod-eu", "text": "Finished in 3.4 s. No rows were rewritten and no lock was held longer than 120 ms.", "dismissible": true},
     {"id": "details", "component": "Section", "title": "Details", "child": "facts"},
     {"id": "facts", "component": "KeyValue", "items": [{"label": "Database", "value": "billing (PostgreSQL 16.4)"}, {"label": "Index", "value": "invoices_due_at_idx"}, {"label": "Index size", "value": "184 MB"}, {"label": "Rollback script", "value": "0042_invoice_due_index.down.sql"}]},
     {"id": "statements", "component": "Collapsible", "title": "Statement run", "child": "statement"},
     {"id": "statement", "component": "Code", "language": "sql", "text": "CREATE INDEX CONCURRENTLY invoices_due_at_idx ON invoices (due_at) WHERE paid_at IS NULL;"},
-    {"id": "next", "component": "Row", "justify": "end", "children": ["rollback", "smoke"]},
+    {"id": "next", "component": "Footer", "start": ["rollback"], "end": ["smoke"]},
     {"id": "rollback", "component": "Button", "icon": "arrowBack", "child": "rollback-label", "action": {"event": {"name": "rollBackMigration", "context": {"migration": "0042_invoice_due_index", "environment": "prod-eu"}}}},
     {"id": "rollback-label", "component": "Text", "text": "Roll back"},
     {"id": "smoke", "component": "Button", "variant": "primary", "icon": "play", "child": "smoke-label", "action": {"event": {"name": "runSmokeTests", "context": {"environment": "prod-eu"}}}},
@@ -231,7 +329,7 @@ A plugin page adds a \`borderless\` Cancel before the primary button in the same
 }
 ~~~
 
-A failure has the same shape: a \`danger\` Callout that says what failed and why, the facts that explain it, and the fix as the primary action.
+A failure has the same shape: a \`danger\` Callout that says what failed and why, with the fix as its \`action\` and never \`dismissible\`, then the facts that explain it.
 
 ## Interaction rules
 
@@ -242,17 +340,20 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 - Give each template item a stable key in the data (\`id\`, \`number\`) and send that, never a list index.
 - Keep component ids stable and descriptive (\`create\`, \`pr-checks\`). Sending a component again with the same id replaces it; a renamed id leaves the old one behind.
 - A plugin patches the exact path that changed (\`/prs/1/checks\`, \`/target/port\`), not the whole model. It sends \`updateComponents\` only when structure changes (a Callout appears, a Section is added), and then only the new or changed components and the parent whose children changed.
-- Validate in the handler. Show a problem as a \`danger\` Callout (it blocks) or a \`warning\` Callout (it does not) directly above the action row, naming the field and the fix: "Port 80 is already used by billing-api. Choose another port." Remove it on the next success. A TextField's \`validationRegexp\` covers format only.
+- Validate in the handler. Show a problem as a \`danger\` Callout (it blocks) or a \`warning\` Callout (it does not) directly above the Footer, naming the field and the fix: "Port 80 is already used by billing-api. Choose another port." Remove it on the next success. A TextField's \`validationRegexp\` covers format only.
 - Destructive actions confirm first. A plugin awaits \`api.ui.confirm({ title, description, confirmLabel })\` with the button's own verb ("Delete target"). An agent reply adds nothing: the app asks the person before every press is sent.
 - An agent reply is a snapshot. A press reaches the agent as a new user message, \`Surface action "createDeployTarget" on "New deploy target": {...}\`; answer with text or a new \`ui_show\` that shows the result, not the same form again.
-- Show work in place: a plugin replaces the action row with a labelled Spinner ("Creating target…") or Progress, then shows the outcome in a Callout.
+- Show work in place: a plugin replaces the Footer's buttons with a labelled Spinner ("Creating target…") or Progress, then shows the outcome in a Callout.
 - A Button always has a Text child with its label, even when it has an \`icon\`. Give \`accessibility.label\` to anything whose text is ambiguous out of context.
 
 ## Anti-patterns
 
 | Instead of | Do |
 | --- | --- |
-| Buttons stacked in a Column, each stretched full width | Page actions in the Header's \`actions\`, group actions in the Section's \`actions\`, form actions in a Row with \`"justify": "end"\` |
+| Buttons stacked in a Column, each stretched full width | Page actions in the Header's \`actions\`, group actions in the Section's \`actions\`, the closing actions in a Footer |
+| Actions dumped in a left-aligned Row at the end | A Footer: secondary actions in \`start\`, the primary group in \`end\` with the primary Button last |
+| A Slider for a handful of values or a count | ChoicePicker \`chips\`, or a number TextField |
+| Progress used as a meter the person sets | A Slider for a bounded value; Progress only for work happening |
 | Inputs scattered across Rows | A Grid, usually \`"columns": 2\`; it falls back to one column when narrow |
 | One giant Card holding everything | One Section per group; a Card only for a single standalone item |
 | Status as a coloured Icon or Text | A Badge or Callout with a word and a tone |
@@ -262,6 +363,13 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 | A Row of Stats | A Grid of Stats, 2–4 columns |
 | A List bound to an empty array | An EmptyState that says what to do |
 | Two primary buttons, or "OK", "Submit", "Yes" | One primary whose label names the outcome |
+| A Header subtitle listing every fact | Three facts at most; the rest as Stats, KeyValue rows or Badges |
+| Three or more Header actions | Two at most; the rest in a Section's \`actions\` or the Footer |
+| A \`danger\` Callout with no way forward, or one that can be closed | A \`danger\` Callout with an \`action\` that fixes it, and no close button |
+| Several Callouts stacked in one place | One per Section, at the top of the Section it concerns |
+| Badges and buttons mixed in a row's \`actions\` | Badges in \`meta\`, commands in \`primaryAction\` and \`actions\` |
+| Every row showing several text buttons and links in different styles | One \`primaryAction\` per row; the rest icon-only in \`actions\`, shown on hover |
+| A decorative Header icon | An icon that names the object type, or none |
 | Preformatted numbers in a Table ("1,204 ms") | JSON numbers, with the unit in the column title |
 
 ## Before you show it
@@ -275,7 +383,11 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 7. Every status is a word in a Badge or Callout, never colour alone.
 8. A collection that is empty shows an EmptyState instead.
 9. Numbers carry units; Table numbers are JSON numbers.
-10. Fields sit in a Grid; actions sit in a Header, a Section's \`actions\` or a right-aligned Row.
+10. Fields sit in a Grid; the view's closing actions sit in a Footer with the primary Button last, other actions in a Header's or a Section's \`actions\`.
 11. Secondary detail is behind a Collapsible or Tabs.
 12. Every title, label and value is real text in sentence case.
+13. The Header subtitle has at most three facts; the Header has at most two actions; its icon names the object type.
+14. Each Callout has the tone that matches its meaning, a title, and an \`action\` when it is \`danger\`; at most one per Section.
+15. A view with inputs ends with a Footer.
+16. Each repeated row has at most one text action (\`primaryAction\`); every Button in its \`actions\` has an \`icon\`, and a destructive one uses \`delete\`.
 `

@@ -718,12 +718,17 @@ export const desktopRenderer: Policy = {
   // summary primitives and their stylesheets (`surface/view/page-views.tsx`,
   // `surface/view/summary-views.tsx`, `surface/view/list-item-view.tsx`,
   // `surface/view/surface-layout.css`, `surface/view/surface-fields.css`,
-  // `surface/view/surface-display.css`) and the pure rules they draw from
-  // (`surface/grid-columns.ts`, `surface/key-value.ts`,
+  // `surface/view/surface-display.css`), the source mark that names a
+  // surface's producer with its strings (`surface/view/surface-source-mark.tsx`,
+  // `surface/i18n.ts`), the repeated-row action roles
+  // (`surface/view/row-actions.ts`), the icon that draws a catalog name from
+  // the kit or the surface's own glyphs (`surface/view/surface-icon.tsx`,
+  // `surface/view/surface-glyphs.tsx`) and the pure rules they draw from
+  // (`surface/grid-columns.ts`, `surface/key-value.ts`, `surface/range-fill.ts`,
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
   // renderer. They add no package edge.
-  // 1474/36, no headroom.
-  ceilings: { modules: 1474, packages: 36 },
+  // 1480/36, no headroom.
+  ceilings: { modules: 1480, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

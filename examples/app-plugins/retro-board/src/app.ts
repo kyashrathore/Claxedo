@@ -13,11 +13,13 @@ import {
   startTimer,
   stopTimer,
   timerRemaining,
+  toggleSelected,
   vote,
   type Board,
   type ColumnId,
+  type Note,
 } from "./model"
-import { boardMessages, columnBody, components, followUpStatus, openMessages, patch, retroModel, timerData } from "./view"
+import { boardMessages, columnBody, columnSection, components, exportBody, followUpStatus, noticeMessages, openMessages, patch, retroModel, rootComponent, timerData, type Notice } from "./view"
 
 const PAGE_ID = "retro-board"
 
@@ -31,9 +33,12 @@ function today(): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
-function filledColumns(board: Board): Record<ColumnId, boolean> {
-  return { well: false, improve: false, actions: false, ...Object.fromEntries(board.notes.map((item) => [item.column, true])) }
+function columnsHolding(board: Board, keep: (item: Note) => boolean): Record<ColumnId, boolean> {
+  return { well: false, improve: false, actions: false, ...Object.fromEntries(board.notes.filter(keep).map((item) => [item.column, true])) }
 }
+
+const filledColumns = (board: Board) => columnsHolding(board, () => true)
+const selectingColumns = (board: Board) => columnsHolding(board, (item) => item.selected)
 
 export default definePlugin({
   activate(api) {
@@ -49,13 +54,21 @@ export default definePlugin({
       surface(channel) {
         const { surfaceId } = channel
         let filled = filledColumns(board)
+        let selecting = selectingColumns(board)
         let ticker: ReturnType<typeof setInterval> | undefined
+        let noticeShown = false
+        let exported = false
 
         const render = (next: Board) => {
           board = next
           const now = filledColumns(board)
-          const swaps = COLUMN_IDS.filter((column) => now[column] !== filled[column]).map((column) => columnBody(column, now[column]))
+          const nowSelecting = selectingColumns(board)
+          const swaps = [
+            ...COLUMN_IDS.filter((column) => now[column] !== filled[column]).map((column) => columnBody(column, now[column])),
+            ...COLUMN_IDS.filter((column) => nowSelecting[column] !== selecting[column]).map((column) => columnSection(column, nowSelecting[column])),
+          ]
           filled = now
+          selecting = nowSelecting
           channel.send(...(swaps.length > 0 ? [components(surfaceId, swaps)] : []), ...boardMessages(surfaceId, board))
         }
 
@@ -77,17 +90,35 @@ export default definePlugin({
           if (board.timer.endsAt === null) stopTicker()
         }
 
+        const notify = (notice: Notice | null) => {
+          channel.send(...noticeMessages(surfaceId, notice, noticeShown))
+          noticeShown = notice !== null
+        }
+
+        const refuse = (title: string, text: string) => notify({ title, text })
+
+        const accept = (next: Board) => {
+          render(next)
+          notify(null)
+        }
+
         const resetView = () => {
           filled = filledColumns(board)
-          channel.send(components(surfaceId, COLUMN_IDS.map((column) => columnBody(column, filled[column]))), patch(surfaceId, "/", retroModel(board, Date.now())))
+          selecting = selectingColumns(board)
+          noticeShown = false
+          exported = false
+          const structure = [
+            rootComponent(false),
+            exportBody(false),
+            ...COLUMN_IDS.flatMap((column) => [columnBody(column, filled[column]), columnSection(column, selecting[column])]),
+          ]
+          channel.send(components(surfaceId, structure), patch(surfaceId, "/", retroModel(board, Date.now())))
           stopTicker()
         }
         listeners.add(resetView)
 
         channel.send(...openMessages(surfaceId, board, Date.now()))
         syncTicker()
-
-        const refuse = (title: string, description?: string) => api.ui.toast({ kind: "warning", title, description })
 
         const followUp = async (current: Board) => {
           const prompt = followUpPrompt(current, today())
@@ -97,7 +128,7 @@ export default definePlugin({
           }
           const projectId = api.context.currentProjectId() ?? api.projects.currentId()
           if (!projectId) {
-            refuse("Open a project first", "The follow-up session starts in the current project.")
+            api.ui.toast({ kind: "warning", title: "Open a project first", description: "The follow-up session starts in the current project." })
             return
           }
           channel.send(components(surfaceId, [followUpStatus(true)]))
@@ -117,7 +148,7 @@ export default definePlugin({
             const current = applySettings(absorbView(board, action.context.view), action.context.settings)
             switch (action.name) {
               case "applySettings":
-                render(current)
+                accept(current)
                 channel.send(patch(surfaceId, "/timer", timerData(board, Date.now())))
                 return
               case "addNote": {
@@ -127,7 +158,7 @@ export default definePlugin({
                   refuse("Note not added", change.error)
                   return
                 }
-                render(change.board)
+                accept(change.board)
                 channel.send(patch(surfaceId, `/drafts/${column}`, ""))
                 return
               }
@@ -138,7 +169,17 @@ export default definePlugin({
                   refuse("Vote not counted", change.error)
                   return
                 }
-                render(change.board)
+                accept(change.board)
+                return
+              }
+              case "toggleSelect": {
+                const change = toggleSelected(current, contextText(action, "id"))
+                if (change.error) {
+                  render(current)
+                  refuse("Note not selected", change.error)
+                  return
+                }
+                accept(change.board)
                 return
               }
               case "merge": {
@@ -148,7 +189,7 @@ export default definePlugin({
                   refuse("Nothing merged", change.error)
                   return
                 }
-                render(change.board)
+                accept(change.board)
                 api.ui.toast({ kind: "success", title: "Notes merged", description: "Their votes were added together." })
                 return
               }
@@ -159,7 +200,7 @@ export default definePlugin({
                   refuse("No action created", change.error)
                   return
                 }
-                render(change.board)
+                accept(change.board)
                 api.ui.toast({ kind: "success", title: "Action created", description: "It is in the Actions column." })
                 return
               }
@@ -179,8 +220,9 @@ export default definePlugin({
                 channel.send(patch(surfaceId, "/timer", timerData(board, Date.now())))
                 return
               case "export":
-                render(current)
-                channel.send(patch(surfaceId, "/export/markdown", exportMarkdown(board, today())))
+                accept(current)
+                channel.send(patch(surfaceId, "/export/markdown", exportMarkdown(board, today())), ...(exported ? [] : [components(surfaceId, [exportBody(true)])]))
+                exported = true
                 api.ui.toast({ kind: "success", title: "Retro exported", description: "The Markdown tab has the source to copy." })
                 return
               case "followUp":

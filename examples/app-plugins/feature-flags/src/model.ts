@@ -144,6 +144,17 @@ export function audienceLabel(setting: FlagSetting): string {
   return `${setting.rollout}% of ${who}`
 }
 
+export type Tone = "neutral" | "accent" | "success" | "warning" | "danger"
+
+export function stateBadge(setting: FlagSetting): { readonly label: string; readonly tone: Tone } {
+  if (!setting.enabled) return { label: "Off", tone: "neutral" }
+  return setting.rollout === 100 && setting.segments.length === 0 ? { label: "On", tone: "success" } : { label: "Partial", tone: "accent" }
+}
+
+export function envTone(env: EnvId): Tone {
+  return env === "prod" ? "warning" : "neutral"
+}
+
 export function describeChange(change: Change): string {
   const parts: string[] = []
   if (change.before.enabled !== change.after.enabled) parts.push(change.after.enabled ? "enabled" : "disabled")
@@ -169,19 +180,15 @@ function diffLine(sign: "-" | "+", change: Change, setting: FlagSetting): string
   return `${sign} ${change.env.padEnd(8)}${change.key.padEnd(30)}${audienceLabel(setting)}`
 }
 
-export function pendingMarkdown(store: FlagStore, changes: readonly Change[]): string {
-  if (changes.length === 0) return "Nothing is staged. Edit a switch, slider or targeting chip, then press **Stage edits**."
+export function changeSummary(changes: readonly Change[]): string {
+  if (changes.length === 0) return "Edit a switch, rollout or targeting, then press Stage edits."
   const stat = changeStat(changes)
   const envs = ENVIRONMENTS.filter((env) => changes.some((change) => change.env === env.id)).map((env) => env.title)
-  const lines = [
-    `**${changes.length} change${changes.length === 1 ? "" : "s"}** across ${envs.join(", ")}: ${stat.additions} enabled, ${stat.deletions} disabled, ${stat.updates} retargeted.`,
-    "",
-    ...changes.map((change) => `- \`${change.key}\` in ${envTitle(change.env)}: ${describeChange(change)}`),
-  ]
-  const warnings = promotionWarnings(store, changes)
-  if (warnings.length > 0) lines.push("", ...warnings.map((warning) => `> ⚠ ${warning}`))
-  lines.push("", "```diff", ...changes.flatMap((change) => [diffLine("-", change, change.before), diffLine("+", change, change.after)]), "```")
-  return lines.join("\n")
+  return `${changes.length} change${changes.length === 1 ? "" : "s"} across ${envs.join(", ")}: ${stat.additions} enabled, ${stat.deletions} disabled, ${stat.updates} retargeted.`
+}
+
+export function pendingDiff(changes: readonly Change[]): string {
+  return changes.flatMap((change) => [diffLine("-", change, change.before), diffLine("+", change, change.after)]).join("\n")
 }
 
 export function applyPending(store: FlagStore, now: string, actor: string): { readonly store: FlagStore; readonly applied: readonly Change[] } {

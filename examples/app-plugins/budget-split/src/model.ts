@@ -160,6 +160,21 @@ export function categoryTotals(trip: Trip): readonly CategoryTotal[] {
   })
 }
 
+export type Tone = "neutral" | "accent" | "success" | "warning" | "danger"
+
+export type Status = { readonly label: string; readonly tone: Tone }
+
+export function balanceStatus(balance: Balance, currency: CurrencyId): Status {
+  if (balance.net > 0) return { label: `is owed ${formatMoney(balance.net, currency)}`, tone: "success" }
+  if (balance.net < 0) return { label: `owes ${formatMoney(-balance.net, currency)}`, tone: "warning" }
+  return { label: "settled up", tone: "neutral" }
+}
+
+export function categoryStatus(row: CategoryTotal, currency: CurrencyId): Status {
+  if (row.over) return { label: `${formatMoney(row.spent - row.budget, currency)} over`, tone: "danger" }
+  return { label: `${formatMoney(row.budget - row.spent, currency)} left`, tone: row.percent >= 90 ? "warning" : "neutral" }
+}
+
 export function totalSpent(trip: Trip): number {
   return trip.expenses.reduce((sum, expense) => sum + expense.amount, 0)
 }
@@ -229,8 +244,9 @@ export function setBudgets(trip: Trip, rows: unknown): TripResult {
   const budgets = { ...trip.budgets }
   for (const row of rows) {
     const input = record(row)
+    const blank = typeof input.budget === "string" && input.budget.trim() === ""
     const value = typeof input.budget === "number" ? input.budget : Number(input.budget)
-    if (!isCategory(input.id) || !Number.isFinite(value)) continue
+    if (!isCategory(input.id) || blank || !Number.isFinite(value)) continue
     budgets[input.id] = Math.round(Math.min(budgetMax, Math.max(0, value)) * 100)
   }
   const total = CATEGORIES.reduce((sum, category) => sum + budgets[category.id], 0)

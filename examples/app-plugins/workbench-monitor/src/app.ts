@@ -12,7 +12,7 @@ import {
   type Filter,
   type Json,
 } from "./model"
-import { monitorComponents, monitorData, openingMessages, patch, replace, tabsArea } from "./view"
+import { activityArea, monitorComponents, monitorData, openingMessages, patch, replace, tabsArea } from "./view"
 
 const PAGE_ID = "workbench-monitor"
 
@@ -31,7 +31,7 @@ function openMonitor(api: PluginApi, channel: SurfaceChannel): SurfaceProgram {
   let view = monitorView(tabs, filter)
   let activity: ActivityEntry[] = []
 
-  channel.send(...openingMessages(surfaceId, monitorComponents(view.rows.length > 0), monitorData(view, activity)))
+  channel.send(...openingMessages(surfaceId, monitorComponents(view.rows.length > 0, activity.length > 0), monitorData(view, activity)))
 
   const render = () => {
     const next = monitorView(tabs, filter)
@@ -47,8 +47,9 @@ function openMonitor(api: PluginApi, channel: SurfaceChannel): SurfaceProgram {
     if (events.length > 0) {
       const time = clockTime()
       const appended = appendActivity(activity, events.map((event) => ({ time, event })))
+      const first = activity.length === 0
       activity = appended.log
-      channel.send(...appended.patches.map((entry) => patch(surfaceId, entry.path, entry.value)))
+      channel.send(...appended.patches.map((entry) => patch(surfaceId, entry.path, entry.value)), ...(first ? [replace(surfaceId, activityArea(true))] : []))
     }
     render()
   }

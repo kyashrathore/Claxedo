@@ -37,8 +37,8 @@ export function CollapsibleView(props: SurfaceNodeProps<"Collapsible">) {
   return (
     <Collapsible variant="ghost" defaultOpen={props.def.open ?? false} data-slot="surface-collapsible">
       <Collapsible.Trigger>
-        <span>{read.text(props.def.title, props.scope)}</span>
         <Collapsible.Arrow />
+        <span data-slot="surface-collapsible-title">{read.text(props.def.title, props.scope)}</span>
       </Collapsible.Trigger>
       <Collapsible.Content>
         <SurfaceNode id={props.def.child} scope={props.scope} />

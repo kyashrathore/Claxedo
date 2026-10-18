@@ -4,19 +4,22 @@ import {
   applyPending,
   audienceLabel,
   changeStat,
+  changeSummary,
   createFlag,
   describeChange,
   effectiveSetting,
+  envTone,
   envSummary,
   killSwitch,
   normalizeSetting,
   pendingChanges,
-  pendingMarkdown,
+  pendingDiff,
   promotionWarnings,
   revertPending,
   searchFlags,
   seedFlags,
   stageEdits,
+  stateBadge,
   unstage,
   validateFlagDraft,
   type FlagStore,
@@ -134,13 +137,23 @@ describe("pending diff", () => {
     expect(promotionWarnings(promoted, pendingChanges(promoted))).toEqual([])
   })
 
-  test("renders a markdown summary with a diff block", () => {
-    const markdown = pendingMarkdown(store, pendingChanges(store))
-    expect(markdown).toContain("**4 changes** across Development, Production: 1 enabled, 1 disabled, 2 retargeted.")
-    expect(markdown).toContain("```diff")
-    expect(markdown).toContain("- prod    new-search-ranking            Off")
-    expect(markdown).toContain("+ prod    new-search-ranking            25% of everyone")
-    expect(pendingMarkdown(seed, [])).toContain("Nothing is staged")
+  test("summarizes the changes in one line and renders them as a diff", () => {
+    const changes = pendingChanges(store)
+    expect(changeSummary(changes)).toBe("4 changes across Development, Production: 1 enabled, 1 disabled, 2 retargeted.")
+    expect(changeSummary([])).toContain("Stage edits")
+    const diff = pendingDiff(changes).split("\n")
+    expect(diff).toHaveLength(8)
+    expect(diff).toContain("- prod    new-search-ranking            Off")
+    expect(diff).toContain("+ prod    new-search-ranking            25% of everyone")
+    expect(pendingDiff([])).toBe("")
+  })
+
+  test("badges a setting as on, partial or off and marks Production changes", () => {
+    expect(stateBadge({ enabled: true, rollout: 100, segments: [] })).toEqual({ label: "On", tone: "success" })
+    expect(stateBadge({ enabled: true, rollout: 100, segments: ["eu"] })).toEqual({ label: "Partial", tone: "accent" })
+    expect(stateBadge({ enabled: true, rollout: 10, segments: [] })).toEqual({ label: "Partial", tone: "accent" })
+    expect(stateBadge({ enabled: false, rollout: 100, segments: [] })).toEqual({ label: "Off", tone: "neutral" })
+    expect([envTone("dev"), envTone("staging"), envTone("prod")]).toEqual(["neutral", "neutral", "warning"])
   })
 
   test("labels the audience of a setting", () => {

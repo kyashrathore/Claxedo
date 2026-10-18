@@ -35,7 +35,13 @@ export function TableView(props: SurfaceNodeProps<"Table">) {
           <Index each={rows()}>
             {(row) => (
               <tr>
-                <For each={props.def.columns}>{(column) => <td data-align={align(column.key)}>{boundText(row()[column.key])}</td>}</For>
+                <For each={props.def.columns}>
+                  {(column) => (
+                    <td data-align={align(column.key)} data-label={read.text(column.title, props.scope)}>
+                      {boundText(row()[column.key])}
+                    </td>
+                  )}
+                </For>
               </tr>
             )}
           </Index>

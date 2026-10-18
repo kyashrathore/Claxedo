@@ -4,6 +4,7 @@ declare module "bun:test" {
     readonly not: Matchers
     toBe(expected: unknown): void
     toEqual(expected: unknown): void
+    toMatchObject(expected: unknown): void
     toContain(expected: unknown): void
     toBeNull(): void
     toBeUndefined(): void

@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 import {
   ALL_TABS,
   appendActivity,
-  doneShare,
   listPatches,
   monitorView,
+  monitorHealth,
+  monitorStats,
   moveTarget,
   readFilter,
-  statusCounts,
   summaryLine,
   tabChanges,
   tabRow,
@@ -47,24 +47,39 @@ describe("filtering and sorting", () => {
 })
 
 describe("summary", () => {
-  test("counts every status, including empty ones", () => {
-    const counts = statusCounts(tabs)
-    expect(counts.done).toBe("Done 2")
-    expect(counts.failed).toBe("Failed 0")
+  test("counts open, waiting, working and done tabs, with the done share as a whole percent", () => {
+    expect(monitorStats(tabs)).toEqual({
+      open: "4",
+      focused: "Focused: Router refactor",
+      attention: "1",
+      failed: "0 failed",
+      working: "1",
+      background: "0 in background",
+      done: "2",
+      doneShare: "50% of open tabs",
+    })
+    const none = monitorStats([])
+    expect([none.open, none.focused, none.doneShare]).toEqual(["0", "No tab focused", "0% of open tabs"])
   })
 
-  test("reports the done share as a whole percent", () => {
-    expect(doneShare(tabs)).toEqual({ percent: 50, label: "2 of 4 done" })
-    expect(doneShare([])).toEqual({ percent: 0, label: "0 of 0 done" })
+  test("names the workbench health in words, failures first", () => {
+    expect(monitorHealth([])).toEqual({ text: "No tabs", tone: "neutral" })
+    expect(monitorHealth([...tabs, tab("e", 4, { status: "failed" })])).toEqual({ text: "1 failed", tone: "danger" })
+    expect(monitorHealth(tabs)).toEqual({ text: "1 needs attention", tone: "warning" })
+    expect(monitorHealth([tab("x", 0, { status: "running_in_background" })])).toEqual({ text: "Working", tone: "accent" })
+    expect(monitorHealth([tab("x", 0, { status: "done" })])).toEqual({ text: "All clear", tone: "success" })
   })
 
-  test("names the focused tab and how many are shown", () => {
-    expect(summaryLine(tabs, 4)).toBe("4 open tabs · focused: Router refactor")
+  test("counts the open tabs and how many are shown", () => {
+    expect(summaryLine(tabs, 4)).toBe("4 open tabs")
+    expect(summaryLine(tabs, 2)).toBe("4 open tabs · showing 2")
     expect(summaryLine([tab("x", 0)], 0)).toBe("1 open tab · showing 0")
   })
 
-  test("marks the active tab and labels untitled ones", () => {
-    expect(tabRow(tabs[0]!)).toEqual({ id: "a", position: "#1", title: "Router refactor", meta: "session", status: "Working", marker: "● Active" })
+  test("marks the active tab, gives each status a tone and icon, and labels untitled ones", () => {
+    expect(tabRow(tabs[0]!)).toEqual({ id: "a", title: "Router refactor", subtitle: "#1 · session · Active", status: "Working", tone: "accent", icon: "play", active: true })
+    const waiting = tabRow(tabs[2]!)
+    expect([waiting.subtitle, waiting.status, waiting.tone, waiting.active]).toEqual(["#3 · page", "Needs attention", "warning", false])
     expect(tabRow(tabs[3]!).title).toBe("Untitled")
   })
 })
@@ -108,10 +123,10 @@ describe("patches", () => {
     expect(listPatches("/rows", [1, 2], [1, 2, 3])).toEqual([{ path: "/rows", value: [1, 2, 3] }])
   })
 
-  test("a status change touches its row, two counts, the done share and the raw data only", () => {
+  test("a status change touches its row, the stats it moves and the raw data only", () => {
     const before = monitorView(tabs, ALL_TABS)
     const after = monitorView(tabs.map((entry) => (entry.id === "a" ? { ...entry, status: "done" as const } : entry)), ALL_TABS)
-    expect(viewPatches(before, after).map((entry) => entry.path)).toEqual(["/rows/0", "/counts/working", "/counts/done", "/done", "/raw"])
+    expect(viewPatches(before, after).map((entry) => entry.path)).toEqual(["/rows/0", "/stats/working", "/stats/done", "/stats/doneShare", "/raw"])
     expect(viewPatches(before, before)).toEqual([])
   })
 

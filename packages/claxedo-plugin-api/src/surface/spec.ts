@@ -52,7 +52,15 @@ export function componentReferences(component: SurfaceComponent): readonly Compo
     case "Section":
       return [{ path: "/child", id: component.child }, ...listReferences("/actions", component.actions)]
     case "ListItem":
-      return [...listReferences("/meta", component.meta), ...listReferences("/actions", component.actions)]
+      return [
+        ...listReferences("/meta", component.meta),
+        ...(component.primaryAction === undefined ? [] : [{ path: "/primaryAction", id: component.primaryAction }]),
+        ...listReferences("/actions", component.actions),
+      ]
+    case "Callout":
+      return component.action === undefined ? [] : [{ path: "/action", id: component.action }]
+    case "Footer":
+      return [...listReferences("/start", component.start), ...listReferences("/end", component.end)]
     default:
       return []
   }

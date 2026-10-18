@@ -3,7 +3,9 @@ import {
   CATEGORIES,
   addExpense,
   addParticipant,
+  balanceStatus,
   balances,
+  categoryStatus,
   categoryTotals,
   deleteExpense,
   formatMoney,
@@ -144,6 +146,15 @@ describe("balances", () => {
   })
 })
 
+describe("balance status", () => {
+  test("says who is owed, who owes and who is settled", () => {
+    const status = (net: number) => balanceStatus({ id: "p1", name: "Ana", paid: 0, share: 0, net }, "EUR")
+    expect(status(1234)).toEqual({ label: "is owed €12.34", tone: "success" })
+    expect(status(-500)).toEqual({ label: "owes €5.00", tone: "warning" })
+    expect(status(0)).toEqual({ label: "settled up", tone: "neutral" })
+  })
+})
+
 describe("settlement", () => {
   test("seed trip: everyone pays Ana, largest debt first", () => {
     expect(settle(balances(seedTrip(TODAY)))).toEqual([
@@ -259,6 +270,25 @@ describe("budgets and categories", () => {
     expect(food?.over).toBe(true)
     expect(food?.percent).toBe(139)
     expectRefused(setBudgets(trip, "nope"))
+  })
+
+  test("a blank budget field keeps the saved budget", () => {
+    const trip = expectOk(setBudgets(seedTrip(TODAY), [{ id: "food", budget: " " }, { id: "other", budget: "75.5" }]))
+    expect(trip.budgets.food).toBe(25000)
+    expect(trip.budgets.other).toBe(7550)
+  })
+
+  test("a category reads as left, nearly used up or over, in words and a tone", () => {
+    const rows = categoryTotals(seedTrip(TODAY))
+    expect(rows.map((row) => categoryStatus(row, "EUR"))).toEqual([
+      { label: "€60.00 left", tone: "warning" },
+      { label: "€41.27 left", tone: "neutral" },
+      { label: "€19.65 left", tone: "neutral" },
+      { label: "€20.00 left", tone: "warning" },
+      { label: "€50.00 left", tone: "neutral" },
+    ])
+    const over = categoryTotals(expectOk(setBudgets(seedTrip(TODAY), [{ id: "food", budget: 150 }]))).find((row) => row.id === "food")!
+    expect(categoryStatus(over, "EUR")).toEqual({ label: "€58.73 over", tone: "danger" })
   })
 
   test("a zero budget with spending reads as fully used", () => {

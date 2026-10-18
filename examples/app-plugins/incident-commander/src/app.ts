@@ -16,17 +16,20 @@ import {
   type Incident,
 } from "./model"
 import {
-  bodyComponent,
   components,
   elapsedText,
   incidentMessages,
   incidentModel,
+  noticeMessages,
   openMessages,
   patch,
   postmortemStatus,
+  structureMessage,
   summaryData,
   updatesBody,
   updatesData,
+  type Notice,
+  type NoticeKey,
 } from "./view"
 
 const PAGE_ID = "incident-commander"
@@ -54,6 +57,13 @@ export default definePlugin({
       surface(channel) {
         const { surfaceId } = channel
         let timer: ReturnType<typeof setInterval> | undefined
+        const shownNotices = new Set<NoticeKey>()
+
+        const notify = (key: NoticeKey, notice: Notice | null) => {
+          channel.send(...noticeMessages(surfaceId, key, notice, shownNotices.has(key)))
+          if (notice) shownNotices.add(key)
+          else shownNotices.delete(key)
+        }
 
         const syncTimer = () => {
           const live = incident !== null && incident.status !== "resolved"
@@ -86,9 +96,10 @@ export default definePlugin({
           }
           const change = resolve(current, Date.now(), note)
           if (change.error) {
-            api.ui.toast({ kind: "warning", title: change.error })
+            notify("status", { title: "Not resolved", text: change.error })
             return
           }
+          notify("status", null)
           show(change.incident, [patch(surfaceId, "/transitionNote", "")])
           api.ui.toast({ kind: "success", title: "Incident resolved", description: `Total duration ${formatDuration(elapsedSeconds(change.incident, Date.now()))}` })
         }
@@ -128,11 +139,12 @@ export default definePlugin({
             if (action.name === "declare") {
               const declared = declareIncident(declareInput(action.context.form), now)
               if (!declared.incident) {
-                api.ui.toast({ kind: "warning", title: "Incident not declared", description: declared.errors.join(" ") })
+                notify("declare", { title: "Incident not declared", text: declared.errors.join(" ") })
                 return
               }
               incident = declared.incident
-              channel.send(components(surfaceId, [bodyComponent(true), updatesBody(false)]), patch(surfaceId, "/", incidentModel(incident, now)))
+              notify("declare", null)
+              channel.send(structureMessage(surfaceId, true), patch(surfaceId, "/", incidentModel(incident, now)))
               syncTimer()
               api.ui.toast({ kind: "warning", title: `${incident.severity} declared`, description: `${incident.title} · commander ${incident.commander}` })
               return
@@ -155,9 +167,10 @@ export default definePlugin({
                 const change = transition(current, target, now, note)
                 if (change.error) {
                   channel.send(patch(surfaceId, "/statusChoice", [current.status]))
-                  api.ui.toast({ kind: "warning", title: change.error })
+                  notify("status", { title: "Status not changed", text: change.error })
                   return
                 }
+                notify("status", null)
                 show(change.incident, [patch(surfaceId, "/transitionNote", "")])
                 return
               }
@@ -168,9 +181,10 @@ export default definePlugin({
               case "postUpdate": {
                 const change = addUpdate(current, contextText(action, "text"), now)
                 if (change.error) {
-                  api.ui.toast({ kind: "warning", title: "Update not posted", description: change.error })
+                  notify("update", { title: "Update not posted", text: change.error })
                   return
                 }
+                notify("update", null)
                 show(change.incident, [patch(surfaceId, "/draftUpdate", "")])
                 api.ui.toast({ kind: "success", title: "Update posted", description: "The stakeholder summary is refreshed." })
                 return
@@ -178,9 +192,10 @@ export default definePlugin({
               case "recordImpact": {
                 const change = recordImpact(current, action.context.usersPercent, action.context.errorRate)
                 if (change.error) {
-                  api.ui.toast({ kind: "warning", title: "Impact not recorded", description: change.error })
+                  notify("impact", { title: "Impact not recorded", text: change.error })
                   return
                 }
+                notify("impact", null)
                 incident = change.incident
                 channel.send(patch(surfaceId, "/incident", summaryData(incident)), patch(surfaceId, "/stakeholder", stakeholderUpdate(incident, now)))
                 return
@@ -201,7 +216,8 @@ export default definePlugin({
                 })
                 if (!ok) return
                 incident = null
-                channel.send(components(surfaceId, [bodyComponent(false)]), patch(surfaceId, "/", incidentModel(null, Date.now())))
+                for (const key of shownNotices) notify(key, null)
+                channel.send(structureMessage(surfaceId, false), patch(surfaceId, "/", incidentModel(null, Date.now())))
                 syncTimer()
                 return
               }

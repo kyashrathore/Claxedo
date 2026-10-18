@@ -32,13 +32,16 @@ export function missingVariables(template: PromptTemplate, values: Values): stri
 }
 
 export function previewMarkdown(template: PromptTemplate, values: Values): string {
-  const missing = missingVariables(template, values)
-  const note = missing.length === 0 ? "_All variables filled._" : `_Still to fill: ${missing.map((name) => `\`{${name}}\``).join(", ")}_`
-  const quoted = fillPrompt(template.body, values)
+  return fillPrompt(template.body, values)
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n")
-  return `${quoted}\n\n${note}`
+}
+
+export function missingText(template: PromptTemplate, values: Values): string {
+  return missingVariables(template, values)
+    .map((name) => `{${name}}`)
+    .join(", ")
 }
 
 export function categoriesOf(templates: readonly PromptTemplate[]): string[] {
@@ -56,17 +59,23 @@ export type Card = {
   readonly category: string
   readonly summary: string
   readonly usage: string
-  readonly favourite: boolean
+  readonly usageTone: "neutral" | "accent"
+  readonly favouriteLabel: string
+  readonly favouriteIcon: "star" | "starOff"
 }
 
 export function card(library: Library, template: PromptTemplate): Card {
+  const uses = library.usage[template.id] ?? 0
+  const favourite = library.favourites.includes(template.id)
   return {
     id: template.id,
     name: template.name,
     category: template.category,
     summary: template.description.split("\n")[0] ?? "",
-    usage: usageLabel(library.usage[template.id] ?? 0),
-    favourite: library.favourites.includes(template.id),
+    usage: usageLabel(uses),
+    usageTone: uses === 0 ? "neutral" : "accent",
+    favouriteLabel: favourite ? "Remove from favourites" : "Add to favourites",
+    favouriteIcon: favourite ? "star" : "starOff",
   }
 }
 
@@ -94,47 +103,24 @@ export function libraryView(library: Library): LibraryView {
 export type SelectedView = {
   readonly id: string
   readonly name: string
-  readonly category: string
+  readonly byline: string
   readonly description: string
-  readonly usage: string
-  readonly variables: string
 }
 
 export function selectedView(library: Library, template: PromptTemplate): SelectedView {
   const count = template.variables.length
+  const variables = count === 0 ? "No variables" : `${count} variable${count === 1 ? "" : "s"}`
   return {
     id: template.id,
     name: template.name,
-    category: template.category,
+    byline: [template.category, variables, usageLabel(library.usage[template.id] ?? 0)].join(" · "),
     description: template.description,
-    usage: usageLabel(library.usage[template.id] ?? 0),
-    variables: count === 0 ? "No variables" : `${count} variable${count === 1 ? "" : "s"}`,
   }
 }
 
-function seenFavourites(snapshot: Json | undefined, into: Map<string, boolean[]>): void {
-  if (Array.isArray(snapshot)) {
-    for (const item of snapshot) seenFavourites(item, into)
-    return
-  }
-  if (!snapshot || typeof snapshot !== "object") return
-  if (typeof snapshot.id === "string" && typeof snapshot.favourite === "boolean") {
-    into.set(snapshot.id, [...(into.get(snapshot.id) ?? []), snapshot.favourite])
-    return
-  }
-  for (const value of Object.values(snapshot)) seenFavourites(value, into)
-}
-
-export function syncFavourites(library: Library, snapshots: readonly (Json | undefined)[]): Library {
-  const seen = new Map<string, boolean[]>()
-  for (const snapshot of snapshots) seenFavourites(snapshot, seen)
-  const favourites = library.templates
-    .map((template) => template.id)
-    .filter((id) => {
-      const was = library.favourites.includes(id)
-      const values = seen.get(id) ?? []
-      return values.some((value) => value !== was) ? !was : was
-    })
+export function toggleFavourite(library: Library, id: string): Library {
+  if (!library.templates.some((template) => template.id === id)) return library
+  const favourites = library.favourites.includes(id) ? library.favourites.filter((entry) => entry !== id) : [...library.favourites, id]
   return { ...library, favourites }
 }
 

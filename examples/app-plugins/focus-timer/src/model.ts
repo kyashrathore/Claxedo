@@ -174,7 +174,8 @@ export function switchMode(state: FocusState, mode: Mode): FocusState {
 }
 
 function clamp(value: unknown, [min, max]: readonly [number, number], fallback: number): number {
-  const number = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN
+  const raw = Array.isArray(value) ? value[0] : value
+  const number = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN
   return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback
 }
 

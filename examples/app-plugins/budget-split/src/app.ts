@@ -14,7 +14,7 @@ import {
   type Trip,
   type TripResult,
 } from "./model"
-import { budgetSlider, categoryBudgets, changedEntries, displayEntries, emptyDraft, initialData, openingMessages, participantPickers, replaceComponents, update } from "./surface"
+import { categoryBudgets, changedEntries, displayEntries, emptyDraft, initialData, openingMessages, participantPickers, replaceComponents, slotBody, update, type ErrorSlot } from "./surface"
 
 const PAGE_ID = "budget-split"
 
@@ -43,11 +43,20 @@ function openBudget(api: PluginApi, state: { trip: Trip }, channel: SurfaceChann
     if (messages.length > 0) channel.send(...messages)
   }
 
-  const commit = (result: TripResult, failure: string): boolean => {
+  const shownErrors = new Set<ErrorSlot>()
+  const showError = (slot: ErrorSlot, error: { title: string; text: string } | undefined) => {
+    if (error) channel.send(update(surfaceId, `/errors/${slot}`, error))
+    if (shownErrors.has(slot) !== (error !== undefined)) channel.send(replaceComponents(surfaceId, [slotBody(slot, error !== undefined)]))
+    if (error) shownErrors.add(slot)
+    else shownErrors.delete(slot)
+  }
+
+  const commit = (result: TripResult, failure: string, slot: ErrorSlot): boolean => {
     if (!result.ok) {
-      api.ui.toast({ kind: "warning", title: failure, description: result.error })
+      showError(slot, { title: failure, text: result.error })
       return false
     }
+    showError(slot, undefined)
     state.trip = result.trip
     return true
   }
@@ -60,15 +69,15 @@ function openBudget(api: PluginApi, state: { trip: Trip }, channel: SurfaceChann
       switch (action.name) {
         case "setCurrency": {
           const result = setCurrency(state.trip, context.currency)
-          if (!commit(result, "Currency not changed") || !result.ok) return
-          channel.send(replaceComponents(surfaceId, [budgetSlider(state.trip)]), update(surfaceId, "/currency", [state.trip.currency]))
+          if (!commit(result, "Currency not changed", "budgets") || !result.ok) return
+          channel.send(update(surfaceId, "/currency", [state.trip.currency]))
           sendBudgets()
           api.ui.toast({ kind: "info", title: `Showing ${state.trip.currency}`, description: `${result.message} Amounts are not converted.` })
           break
         }
         case "addParticipant": {
           const result = addParticipant(state.trip, context.name)
-          if (!commit(result, "Participant not added") || !result.ok) return
+          if (!commit(result, "Participant not added", "people") || !result.ok) return
           channel.send(replaceComponents(surfaceId, participantPickers(state.trip)), update(surfaceId, "/newParticipant", ""))
           api.ui.toast({ kind: "success", title: "Participant added", description: result.message })
           break
@@ -77,11 +86,11 @@ function openBudget(api: PluginApi, state: { trip: Trip }, channel: SurfaceChann
           const id = typeof context.id === "string" ? context.id : ""
           const precheck = removeParticipant(state.trip, id)
           if (!precheck.ok) {
-            api.ui.toast({ kind: "warning", title: "Cannot remove", description: precheck.error })
+            showError("people", { title: "Cannot remove", text: precheck.error })
             return
           }
           const confirmed = await api.ui.confirm({ title: `Remove ${participantName(state.trip, id)}?`, description: "They are not part of any expense, so no balance changes.", confirmLabel: "Remove" })
-          if (!confirmed || !commit(removeParticipant(state.trip, id), "Participant not removed")) return
+          if (!confirmed || !commit(removeParticipant(state.trip, id), "Participant not removed", "people")) return
           const keep = (value: unknown) => (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && entry !== id) : [])
           channel.send(
             replaceComponents(surfaceId, participantPickers(state.trip)),
@@ -93,7 +102,7 @@ function openBudget(api: PluginApi, state: { trip: Trip }, channel: SurfaceChann
         }
         case "addExpense": {
           const result = addExpense(state.trip, context.draft)
-          if (!commit(result, "Expense not added") || !result.ok) return
+          if (!commit(result, "Expense not added", "form") || !result.ok) return
           channel.send(update(surfaceId, "/draft", emptyDraft(state.trip, localIsoDate(new Date()))))
           api.ui.toast({ kind: "success", title: "Expense added", description: result.message })
           break
@@ -109,13 +118,13 @@ function openBudget(api: PluginApi, state: { trip: Trip }, channel: SurfaceChann
           })
           if (!confirmed) return
           const result = deleteExpense(state.trip, id)
-          if (!commit(result, "Expense not deleted") || !result.ok) return
+          if (!commit(result, "Expense not deleted", "expenses") || !result.ok) return
           api.ui.toast({ kind: "info", title: "Expense deleted", description: result.message })
           break
         }
         case "saveBudgets": {
           const result = setBudgets(state.trip, context.categories)
-          if (!commit(result, "Budgets not saved") || !result.ok) return
+          if (!commit(result, "Budgets not saved", "budgets") || !result.ok) return
           sendBudgets()
           api.ui.toast({ kind: "success", title: "Budgets saved", description: result.message })
           break

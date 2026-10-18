@@ -7,7 +7,7 @@ import { CardView, CollapsibleView, TabsView } from "./container-views"
 import { CheckBoxView, SwitchView, TextFieldView } from "./field-views"
 import { ColumnView, DividerView, GridView, SurfaceListView, RowView } from "./layout-views"
 import { ListItemView } from "./list-item-view"
-import { HeaderView, SectionView } from "./page-views"
+import { FooterView, HeaderView, SectionView } from "./page-views"
 import { DateTimeInputView, SliderView } from "./range-views"
 import { DiffStatView, EmptyStateView, ProgressView, SpinnerView } from "./status-views"
 import { CalloutView, KeyValueView, StatView } from "./summary-views"
@@ -49,4 +49,5 @@ export const SURFACE_VIEWS: SurfaceViews = {
   ListItem: ListItemView,
   Callout: CalloutView,
   KeyValue: KeyValueView,
+  Footer: FooterView,
 }
