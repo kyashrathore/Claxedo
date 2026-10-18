@@ -1,9 +1,13 @@
 /**
  * The renderer's Content-Security-Policy, stamped by main onto its own
  * documents. The app runs live plugins in this document, and the policy is what keeps
- * their `fetch`, sockets, beacons and images to the one daemon this window
- * talks to and the configured account deployment's relay, which streams cloud
- * and remote-machine runtimes. It cannot be a build-time `<meta>`: the daemon's
+ * their `fetch`, sockets and beacons to the one daemon this window talks to and
+ * the configured account deployment's relay, which streams cloud and
+ * remote-machine runtimes. Images and media still load from any `https:`
+ * origin, because account avatars come from the identity provider's host, so
+ * the policy does not stop a document from leaking data through an image URL:
+ * transcript markdown turns remote media into links before it reaches the DOM.
+ * It cannot be a build-time `<meta>`: the daemon's
  * port is chosen or adopted at launch, and the policy names exact origins, never
  * a port range.
  *

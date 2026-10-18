@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify"
 import { createByteBoundedCache } from "./byte-bounded-cache"
+import { withholdRemoteFetches } from "./markdown-remote-media"
 import { transcriptLinkUriPattern } from "./transcript-link"
 
 export type MarkdownCacheEntry = {
@@ -25,6 +26,7 @@ const config = {
 const markdownPurifier = typeof window === "undefined" || !DOMPurify.isSupported ? undefined : DOMPurify(window)
 markdownPurifier?.setConfig(config)
 markdownPurifier?.addHook("afterSanitizeAttributes", (node: Element) => {
+  withholdRemoteFetches(node, window.location)
   if (!(node instanceof HTMLAnchorElement)) return
   if (node.target !== "_blank") return
 
