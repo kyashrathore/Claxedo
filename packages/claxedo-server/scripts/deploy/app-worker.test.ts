@@ -74,7 +74,7 @@ beforeAll(async () => {
       {
         name: "app",
         modules: true,
-        script: bundled.outputFiles[0]!.text,
+        script: bundled.outputFiles[0].text,
         compatibilityDate: "2025-05-01",
         serviceBindings: { CONTROL_PLANE: "control-plane", RELAY: "relay" },
         assets: {
@@ -157,7 +157,7 @@ describe("the relay behind the public origin", () => {
     const socket = response.webSocket
     if (!socket) throw new Error("the upgrade answered no socket")
     socket.accept()
-    const echoed = new Promise<string>((resolve) => socket.addEventListener("message", (event) => resolve(String(event.data))))
+    const echoed = new Promise<string>((resolve) => socket.addEventListener("message", (event) => resolve(typeof event.data === "string" ? event.data : "")))
     socket.send("keys")
     expect(await echoed).toBe("echo /workspaces/ws_1/pty keys")
     const closed = new Promise<void>((resolve) => socket.addEventListener("close", () => resolve()))

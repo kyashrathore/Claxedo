@@ -7,7 +7,7 @@ import { ensureDesktopBuilt, type DesktopBuild } from "./desktop-build"
 import type { DesktopRenderer } from "./desktop-renderer"
 import { unexpectedEgress, type EgressAttempt } from "../../../harness/e2e/harness/egress-guard"
 import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
-import { signedOrigin, startSignedStack, type SignedStack } from "./signed-stack"
+import { startSignedStack, type SignedStack } from "./signed-stack"
 import { redRun, startStack, type Stack } from "./stack"
 
 export type HarnessFixtures = {

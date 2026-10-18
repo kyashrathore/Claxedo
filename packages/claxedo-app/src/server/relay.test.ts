@@ -266,7 +266,7 @@ test("relay: a client whose origin fronts the relay sends every room request and
   expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://app.test/relay/workspaces/ws_1/api/wr/health?region=us-east")
   const sockets: string[] = []
   const original = globalThis.WebSocket
-  globalThis.WebSocket = class { constructor(url: string) { sockets.push(url) } } as unknown as typeof WebSocket
+  globalThis.WebSocket = function (url: string) { sockets.push(url) } as unknown as typeof WebSocket
   try {
     await relay.webSocket("ws_1", "/pty")
   } finally {

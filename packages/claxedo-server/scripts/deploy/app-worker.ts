@@ -2,6 +2,10 @@ import { RELAY_PATH_PREFIX, publicOriginRoute } from "./public-origin"
 
 type Fetcher = { fetch(request: Request): Promise<Response> }
 
+/** `cf` is the edge's view of the client, which workerd attaches to an incoming request and accepts back in an init. */
+type EdgeRequest = Request & { readonly cf?: object }
+type EdgeRequestInit = RequestInit & { cf?: object }
+
 export type AppWorkerEnv = {
   ASSETS: Fetcher
   CONTROL_PLANE: Fetcher
@@ -40,8 +44,9 @@ async function asset(request: Request, env: AppWorkerEnv, url: URL): Promise<Res
  * control plane's own origin check holds; `cf` is carried because the relay
  * places a workspace's room by the edge country of whoever first reaches it.
  */
-function forwarded(request: Request, url: URL): Request {
-  return new Request(url, { ...({ cf: (request as Request & { cf?: unknown }).cf } as RequestInit), method: request.method, headers: request.headers, body: request.body, redirect: "manual" })
+function forwarded(request: EdgeRequest, url: URL): Request {
+  const init: EdgeRequestInit = { method: request.method, headers: request.headers, body: request.body, redirect: "manual", cf: request.cf }
+  return new Request(url, init)
 }
 
 /**
@@ -51,16 +56,14 @@ function forwarded(request: Request, url: URL): Request {
  * through as the bound Worker answered it.
  */
 export default {
-  async fetch(request: Request, env: AppWorkerEnv): Promise<Response> {
+  async fetch(request: EdgeRequest, env: AppWorkerEnv): Promise<Response> {
     const url = new URL(request.url)
-    switch (publicOriginRoute(url.pathname)) {
-      case "control-plane":
-        return env.CONTROL_PLANE.fetch(forwarded(request, url))
-      case "relay":
-        url.pathname = url.pathname.slice(RELAY_PATH_PREFIX.length)
-        return env.RELAY.fetch(forwarded(request, url))
-      case "assets":
-        return asset(request, env, url)
+    const route = publicOriginRoute(url.pathname)
+    if (route === "control-plane") return env.CONTROL_PLANE.fetch(forwarded(request, url))
+    if (route === "relay") {
+      url.pathname = url.pathname.slice(RELAY_PATH_PREFIX.length)
+      return env.RELAY.fetch(forwarded(request, url))
     }
+    return asset(request, env, url)
   },
 }

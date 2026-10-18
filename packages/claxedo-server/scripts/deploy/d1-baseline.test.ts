@@ -5,7 +5,7 @@ import { prepareD1Databases } from "./d1-databases"
 
 const wrangler = vi.hoisted(() => ({ run: vi.fn() }))
 vi.mock("./wrangler-cli", () => ({ runWrangler: wrangler.run }))
-const input = { configArgs: ["--config", "staging.toml"], apiOrigin: "https://api.test", betterAuthSecret: "a".repeat(32), introspectionSecret: "b".repeat(32) }
+const input = { configArgs: ["--config", "staging.toml"], origin: "https://app.test", betterAuthSecret: "a".repeat(32), introspectionSecret: "b".repeat(32) }
 beforeEach(() => { wrangler.run.mockReset() })
 
 const BASELINE = currentControlPlaneBaseline()

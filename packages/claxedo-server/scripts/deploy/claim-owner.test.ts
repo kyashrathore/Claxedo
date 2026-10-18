@@ -62,12 +62,12 @@ describe("claim-owner", () => {
     const claim = generateCanonicalOwnerClaim()
     const provisioning = await ownerClaimProvisioning({
       deploymentId: "claxedo",
-      apiOrigin: "https://api.example.com",
+      origin: "https://app.example.com",
       subject: "user_123",
       claim,
       now: new Date(1_000),
     })
-    const identity = { adapter: "better-auth" as const, issuer: "https://api.example.com/api/auth", subject: "user_123" }
+    const identity = { adapter: "better-auth" as const, issuer: "https://app.example.com/api/auth", subject: "user_123" }
     expect(provisioning).toEqual({
       deploymentId: "claxedo",
       identity,
@@ -82,7 +82,7 @@ describe("claim-owner", () => {
   test("a re-run replaces an unredeemed claim and never a redeemed one", async () => {
     const target = await controlPlane()
     const provision = (claim: string) =>
-      ownerClaimProvisioning({ deploymentId: "claxedo", apiOrigin: "https://api.example.com", subject: "user_123", claim })
+      ownerClaimProvisioning({ deploymentId: "claxedo", origin: "https://app.example.com", subject: "user_123", claim })
 
     const first = await provision(generateCanonicalOwnerClaim())
     await target.prepare(ownerClaimMutationSql(first)).run()
@@ -97,7 +97,7 @@ describe("claim-owner", () => {
     await target
       .prepare(
         `update user_deployed_owner_bootstrap_claims
-         set consumed_at = 1, consumed_adapter = 'better-auth', consumed_issuer = 'https://api.example.com/api/auth',
+         set consumed_at = 1, consumed_adapter = 'better-auth', consumed_issuer = 'https://app.example.com/api/auth',
              consumed_subject = 'user_123' where deployment_id = 'claxedo'`,
       )
       .run()
@@ -144,8 +144,8 @@ describe("claim-owner", () => {
 
   test("prints a redemption that posts the claim header to the bootstrap-owner route with the session", () => {
     const claim = generateCanonicalOwnerClaim(() => new Uint8Array(32).fill(1))
-    const line = ownerClaimRedemption("https://api.example.com", claim)
-    expect(line).toContain('"https://api.example.com/api/claxedo/auth/bootstrap-owner"')
+    const line = ownerClaimRedemption("https://app.example.com", claim)
+    expect(line).toContain('"https://app.example.com/api/claxedo/auth/bootstrap-owner"')
     expect(line).toContain('credentials: "include"')
     expect(line).toContain(`"x-claxedo-bootstrap-owner-claim": "${claim}"`)
   })
