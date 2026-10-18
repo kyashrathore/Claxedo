@@ -12,6 +12,7 @@ export type FrameEndpoints = {
   readonly slots: FrameSlots
   readonly invoke: Invoke
   readonly surfaces: SurfaceRoutes
+  readonly refreshMirror: () => void
 }
 
 function registerMention(api: PluginApi, registration: Extract<Registration, { kind: "mention" }>, invoke: Invoke): Disposer {
@@ -33,7 +34,7 @@ function registerMention(api: PluginApi, registration: Extract<Registration, { k
 }
 
 function registerFramePage(api: PluginApi, registration: Extract<Registration, { kind: "page" }>, endpoints: FrameEndpoints): Disposer {
-  if (registration.surface) return api.pages.register(frameSurfacePage(registration, endpoints.surfaces, endpoints.invoke))
+  if (registration.surface) return api.pages.register(frameSurfacePage(registration, endpoints.surfaces, endpoints.invoke, endpoints.refreshMirror))
   const { id, path, title } = registration
   return api.pages.register({ id, path, title, render: (props) => endpoints.slots({ kind: "page", id, path: props.path, params: props.params }, title) })
 }

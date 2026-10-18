@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
-import { createComputed, createRoot } from "solid-js"
+import { createComputed, createRoot, createSignal } from "solid-js"
 import type { PageDefinition, PluginApi, SurfaceMessage, SurfacePageDefinition } from "@claxedo/plugin-api"
 import { SURFACE_CATALOG_ID } from "@claxedo/plugin-api/surface"
 import { openSurfacePage, type SurfacePageController } from "../surface-page/controller"
@@ -44,20 +44,34 @@ function failureOf(controller: SurfacePageController): Promise<Error> {
 
 function hostSide(port: MessagePort) {
   const failures: string[] = []
+  const [projectId, setProjectId] = createSignal<string | undefined>(undefined)
   let announce: (page: PageDefinition) => void = () => undefined
   const registered = new Promise<PageDefinition>((resolve) => (announce = resolve))
   const api = { pages: { register: (page: PageDefinition) => (announce(page), () => undefined) } } as unknown as PluginApi
-  const link = createHostPort({ port, api, control: { slots: () => undefined, activated: () => undefined, failed: (reason) => failures.push(reason) } })
-  return { registered, failures, link }
+  const mirror = () => ({ ...MIRROR, currentProjectId: projectId() })
+  const link = createHostPort({ port, api, mirror, control: { slots: () => undefined, activated: () => undefined, failed: (reason) => failures.push(reason) } })
+  return { registered, failures, link, setProjectId }
 }
 
-function frameSide(port: MessagePort, page: SurfacePageDefinition) {
+function frameSide(port: MessagePort, page: (api: PluginApi) => SurfacePageDefinition) {
   const link = createFrameLink(port, MIRROR)
   const entries: FrameEntries = { pages: new Map(), settings: new Map(), overlays: new Map(), commands: new Map(), mentions: new Map() }
   const api = createFrameApi({ link, context: { pluginId: "fixture", pluginVersion: "0.1.0", platform: "web" }, entries, dictionary: undefined, forward: true, signal: new AbortController().signal })
   const surfaces = createFrameSurfaces(entries.pages, link.send)
   link.onInvoke((invoke) => answerInvoke(entries, surfaces, invoke))
-  api.pages.register(page)
+  api.pages.register(page(api))
+}
+
+function projectPage(api: PluginApi): SurfacePageDefinition {
+  return {
+    id: "project",
+    path: "/project",
+    title: "Project",
+    surface: (channel) => {
+      const { surfaceId } = channel
+      channel.send({ version: "v0.9", createSurface: { surfaceId, catalogId: SURFACE_CATALOG_ID } }, { version: "v0.9", updateDataModel: { surfaceId, path: "/project", value: api.projects.currentId() ?? "none" } })
+    },
+  }
 }
 
 function itemsPage(log: Recorder<string>): SurfacePageDefinition {
@@ -89,7 +103,7 @@ async function openOverPort(first = "alpha") {
   const applied = recorder<SurfaceMessage>()
   const channel = new MessageChannel()
   const host = hostSide(channel.port1)
-  frameSide(channel.port2, itemsPage(log))
+  frameSide(channel.port2, () => itemsPage(log))
   const page = await host.registered
   if (!("surface" in page)) throw new Error("the frame registered a rendered page")
   const drawn = createSurface("surface-1")
@@ -136,5 +150,21 @@ describe("a surface page in the web frame", () => {
     expect(failure.message).toBe("No items for boom")
     expect(applied.entries).toEqual([])
     link.dispose()
+  })
+})
+
+describe("the frame mirror", () => {
+  test("a page opened right after the project changed sees the new project in the frame", async () => {
+    const channel = new MessageChannel()
+    const host = hostSide(channel.port1)
+    frameSide(channel.port2, projectPage)
+    const page = await host.registered
+    if (!("surface" in page)) throw new Error("the frame registered a rendered page")
+    const applied = recorder<SurfaceMessage>()
+    host.setProjectId("project-b")
+    createRoot(() => openSurfacePage({ surface: { surfaceId: "surface-1", apply: applied.add }, page, props: { path: "/project", params: {} } }))
+    await applied.reached(2)
+    expect(applied.entries[1]).toEqual({ version: "v0.9", updateDataModel: { surfaceId: "surface-1", path: "/project", value: "project-b" } })
+    host.link.dispose()
   })
 })

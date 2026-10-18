@@ -641,7 +641,7 @@ Commands use the package scripts:
 
 Every new or changed flow records a red run, at desktop width and in `phone`. Every ceiling change is the exact measured number with its owner named in the adjacent comment.
 
-- [ ] **S0. Fresh mirror on `surface.open`.**
+- [x] **S0. Fresh mirror on `surface.open`.**
 - **Change:**
   - `frame/host-port.ts` `HostPortInput` gains `mirror: () => FrameMirror` and exposes `refreshMirror()`, which posts `{ type: "mirror", mirror: untrack(input.mirror) }`;
   - `frame/host-registrations.ts` `FrameEndpoints` gains `refreshMirror`;
@@ -652,7 +652,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - `surface-round-trip.test.ts`: switch project, open, and `surface()` sees the new id.
 - **Flow 61:** switch project, open the fixture page, and it names the new project. Red run: remove the `refreshMirror()` call.
 - **Checks:** app test (`src/plugins`), typecheck, check, e2e 61. No ratchet change.
-- Progress:
+- Progress: done (app-plugin-host lane). A plugin page has a current project only when its route names one (`currentProjectId` reads the placement, else the page's `:projectId`), so the flow 61 fixture opens a second page, `/surface-fixture/projects/:projectId`, from a per-project Button; red run without `refreshMirror()` shows "No project". The app budget's "Web plugin frame" part (which counts its tests) rose to the measured 1337 and the total to 112850.
 - [ ] **S1. Composer document leftovers.**
 - Delete or rename per §2(g); `slash-popover` keeps only file and mention options.
 - **Checks:** app test (`src/composer`), typecheck, check (budget for Composer drops), e2e `06-composer.spec.ts`, `34-live-plugin-desktop.spec.ts`, `35-live-plugin-web.spec.ts` (plugin mentions).

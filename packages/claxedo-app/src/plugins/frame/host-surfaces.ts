@@ -32,7 +32,7 @@ function failInOwner(owner: ReturnType<typeof getOwner>, error: unknown): void {
   })
 }
 
-export function frameSurfacePage(registration: Extract<Registration, { kind: "page" }>, routes: SurfaceRoutes, invoke: InvokeSurface): SurfacePageDefinition {
+export function frameSurfacePage(registration: Extract<Registration, { kind: "page" }>, routes: SurfaceRoutes, invoke: InvokeSurface, refreshMirror: () => void): SurfacePageDefinition {
   return {
     id: registration.id,
     path: registration.path,
@@ -41,6 +41,7 @@ export function frameSurfacePage(registration: Extract<Registration, { kind: "pa
       const owner = getOwner()
       const { surfaceId } = channel
       const detach = routes.attach(channel)
+      refreshMirror()
       invoke({ method: "surface.open", pageId: registration.id, surfaceId, path: props.path, params: props.params }).catch((error: unknown) => failInOwner(owner, error))
       return {
         action: async (action) => {

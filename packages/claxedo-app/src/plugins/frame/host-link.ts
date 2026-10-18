@@ -29,9 +29,10 @@ export function frameMirror(api: PluginApi, services: HostServices): FrameMirror
 }
 
 export function createHostLink(input: HostLinkInput): HostLink {
-  const hostPort = createHostPort(input)
+  const mirror = () => frameMirror(input.api, input.services)
+  const hostPort = createHostPort({ ...input, mirror })
   const disposeMirror = createRoot((dispose) => {
-    createEffect(() => hostPort.send({ type: "mirror", mirror: frameMirror(input.api, input.services) }))
+    createEffect(() => hostPort.send({ type: "mirror", mirror: mirror() }))
     return dispose
   }, input.services.owner)
   return {
