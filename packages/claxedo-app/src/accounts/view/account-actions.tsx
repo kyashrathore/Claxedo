@@ -1,12 +1,11 @@
-import { Show, type JSX } from "solid-js"
+import { Show, type Component, type JSX } from "solid-js"
 import { useAgeClock } from "@/lib/clock"
-import { formatRelativeTime } from "@/lib/relative-time"
+import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
 import { useI18n } from "@/i18n"
 import { ClaxedoIconButton, Button, Tooltip } from "@/ui"
 import type { AccountWords } from "../account-words"
-import { useAccountsText } from "../i18n"
-import { ORG_ACCOUNT_KEY, type AccountReach } from "../model"
-import { ACCOUNT_REACH_KEYS } from "./account-status"
+import { useAccountsText, type AccountsText } from "../i18n"
+import { ORG_ACCOUNT_KEY } from "../model"
 import "./account-actions.css"
 
 export function LabelHint(props: { readonly value: string; readonly children: JSX.Element }) {
@@ -19,14 +18,12 @@ export function LabelHint(props: { readonly value: string; readonly children: JS
   )
 }
 
-export function Reach(props: { readonly reach: AccountReach; readonly source?: string }) {
-  const t = useAccountsText()
+export const CheckedAge: Component<{ at: number; t: AccountsText; locale?: string; class?: string }> = (props) => {
+  const now = useAgeClock(() => props.at)
   return (
-    <LabelHint value={t(ACCOUNT_REACH_KEYS[props.reach].note)}>
-      <span class="text-12-regular text-text-weak" data-reach={props.reach}>
-        {[props.source, t(ACCOUNT_REACH_KEYS[props.reach].label)].filter(Boolean).join(" · ")}
-      </span>
-    </LabelHint>
+    <span class={props.class} aria-label={props.t("common.lastChecked", { ago: formatRelativeTime(props.at, props.locale, now()) })}>
+      {formatCompactAge(props.at, now()) ?? props.t("common.justNow")}
+    </span>
   )
 }
 
@@ -66,7 +63,7 @@ export type AccountActionsProps = {
 export function AccountActions(props: AccountActionsProps) {
   const t = useAccountsText()
   return (
-    <Show when={props.account.ids.length > 0 || props.account.machine}>
+    <Show when={props.account.ids.length > 0 || props.account.group === "machine"}>
       <span class="flex min-w-11 flex-wrap items-center justify-end gap-1">
         <Show when={props.account.key !== ORG_ACCOUNT_KEY && props.account.refused && props.account.ids[0]}>
           {(credentialId) => (

@@ -64,6 +64,10 @@ export function harnessesServedBy(providerIds: readonly string[]): readonly stri
   return [...cli, ...engines]
 }
 
+export function servedByList(providerIds: readonly string[], locale: string): string {
+  return new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(harnessesServedBy(providerIds))
+}
+
 export function accountReach(delivery: AccountDelivery | undefined): AccountReach | undefined {
   if (delivery === undefined) return "local-only"
   if (delivery.cloud) return "local-and-cloud"
