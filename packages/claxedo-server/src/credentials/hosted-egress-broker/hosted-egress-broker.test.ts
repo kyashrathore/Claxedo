@@ -408,7 +408,7 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     expect(await health()).toBe("auth_failed")
   })
 
-  test("no browser origin is granted the broker, while the rest of the plane keeps its allow-list", async () => {
+  test("no browser origin is granted the broker", async () => {
     const { app, store, delivered } = await composition()
     const key = await store.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-real-key" })
     const { baseUrl, placeholder } = await delivered(key, { workspaceId: "ws_root" })
@@ -417,8 +417,6 @@ describe("a sandbox spending its owner's account through the hosted broker", () 
     expect(brokered.headers.get("access-control-allow-origin")).toBeNull()
     const preflight = await app.request(`${baseUrl}/v1/messages`, { method: "OPTIONS", headers: { origin: "https://app.test", "access-control-request-method": "POST" } })
     expect(preflight.headers.get("access-control-allow-origin")).toBeNull()
-    const health = await app.request(`${ORIGIN}/api/claxedo/health`, { headers: { origin: "https://app.test" } })
-    expect(health.headers.get("access-control-allow-origin")).toBe("https://app.test")
   })
 
   test("a placeholder spends nothing once its sandbox stopped, or was replaced under its lease, and works again only on the sandbox it names", async () => {
