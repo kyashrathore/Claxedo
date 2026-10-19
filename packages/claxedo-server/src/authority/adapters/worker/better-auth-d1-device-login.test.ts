@@ -262,7 +262,7 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     const mcp = await mcpGrant(owner, 51791)
 
     expect((await request("/api/auth/request-password-reset", json({ email, redirectTo: `${APP}/reset-password` }))).status).toBe(200)
-    const token = mail.findLast((message) => message.recipient === email && message.kind === "password-reset")?.token
+    const token = rig.mail.findLast((message) => message.recipient === email && message.kind === "password-reset")?.token
     if (!token) throw new Error(`no password-reset mail for ${email}`)
     const reset = await request("/api/auth/reset-password", json({ token, newPassword: "a-brand-new-correct-horse" }))
     expect(reset.status, await reset.clone().text()).toBe(200)

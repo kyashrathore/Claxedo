@@ -46,7 +46,7 @@ test("a read started beside the principal's verification answers nothing to a pr
   const reads = {
     listWorkspaces: (auth: SignedControlPlaneAuth) => authority.listWorkspaces(auth),
     listSharedSessions: (auth: SignedControlPlaneAuth) => authority.listSharedSessions!(auth),
-    listProjectSessionPages: (auth: SignedControlPlaneAuth) => authority.listProjectSessionPages(auth, { limit: 5, sort: "updated_desc" }),
+    listProjectSessionPages: (auth: SignedControlPlaneAuth) => authority.listProjectSessionPages(auth, { limit: 5, sort: "updated_desc", archived: "active", settled: "all" }),
     listHostDevices: (auth: SignedControlPlaneAuth) => authority.listHostDevices(auth),
   }
   expect((await reads.listWorkspaces(alice) as { workspace_id: string }[]).map((row) => row.workspace_id)).toEqual(["ws_alice"])
@@ -57,7 +57,7 @@ test("a read started beside the principal's verification answers nothing to a pr
     staleActor: { ...alice, principal: { ...principal, actorId: "act_unknown" } },
     stolenUserId: { ...alice, principal: { ...principal, userId: "usr_other" } },
     foreignDeployment: { ...alice, principal: { ...principal, deploymentId: "deployment-b" } },
-    agentActor: { ...alice, principal: { ...principal, actorKind: "agent" } },
+    agentActor: { ...alice, principal: { ...principal, actorKind: "agent" } as unknown as ControlPlanePrincipal },
     noPrincipal: { mode: "signed", user: alice.user },
   }
   const outcomes: Record<string, unknown> = {}

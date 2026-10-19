@@ -37,6 +37,8 @@ export type UserDeployedBetterAuthApp = {
   authority: D1CoreAuthorityBoundary
   authDatabase: D1Database
   controlPlaneDatabase: D1Database
+  /** Every message the composition's email sender was handed, in order. */
+  mail: readonly AuthEmailMessage[]
   request(pathname: string, init?: RequestInit): Promise<Response>
   /** Signs a verified person up and in through the email method; the password is the rig's. */
   signIn(email: string): Promise<SignedInPerson>
@@ -124,6 +126,7 @@ export async function userDeployedBetterAuthApp(
     authority: composed.plane.services.authority as D1CoreAuthorityBoundary,
     authDatabase,
     controlPlaneDatabase: controlPlane.database,
+    mail,
     request,
     async signIn(email) {
       const password = "correct-horse-battery-staple"
