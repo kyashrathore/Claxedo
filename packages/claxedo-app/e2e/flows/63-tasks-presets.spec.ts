@@ -20,7 +20,8 @@ test("63 Settings → Presets: create a local preset with the agent picker, edit
   await rows.filter({ hasText: "Careful reviewer" }).getByRole("button", { name: "Edit" }).click()
   await surface.getByRole("textbox", { name: "Name" }).fill("Careful reviewer, edited")
   await surface.getByRole("button", { name: "Save preset" }).click()
-  await expect(rows.filter({ hasText: "Careful reviewer, edited" })).toBeVisible()
+  await expect(rows.filter({ hasText: "Careful reviewer, edited" })).toContainText("Local · Pi · openai/gpt-4.1")
+  expect((await tasksClient(stack.url).listPresets()).items.map((preset) => preset.configurations.primary.model)).toEqual([{ providerID: "pi", modelID: "openai/gpt-4.1" }])
 
   await rows.filter({ hasText: "Careful reviewer, edited" }).getByRole("button", { name: "Archive Careful reviewer, edited" }).click({ force: true })
   await expect(surface.getByText("No presets yet", { exact: true })).toBeVisible()
@@ -39,4 +40,22 @@ test("63 Settings → Presets: create a local preset with the agent picker, edit
   await app.getByRole("option", { name: "Pi", exact: true }).click()
   await expect(surface.getByText("Pi cannot run a cloud preset", { exact: true })).toBeVisible()
   await expect(surface.getByText(/^Pi runs in its own session host on a cloud workspace/)).toBeVisible()
+})
+
+test("63 Settings → Presets: a saved preset opens in the editor with its own agent configuration and saves it unchanged", async ({ stack, app }) => {
+  await stack.daemon.makeWorkspace("presets", "Presets project")
+  const primary = { harness: { id: "pi", access: "native" as const }, model: { providerID: "pi", modelID: "openai/gpt-4.1" }, effort: null }
+  await tasksClient(stack.url).command({
+    clientRequestId: crypto.randomUUID(),
+    command: { type: "preset.create", input: { name: "Seeded reviewer", instructions: "", execution: { placement: "local", capabilities: { mode: "inherit-local" } }, configurations: { primary }, agentStartable: false } },
+  })
+  await app.goto(`${stack.url}${PRESETS_SETTINGS_PATH}`)
+  const surface = pluginSurface(app)
+  const rows = surface.locator('[data-slot="surface-list-item"]')
+  await rows.filter({ hasText: "Seeded reviewer" }).getByRole("button", { name: "Edit" }).click()
+  await expect(surface.getByRole("button", { name: /^Select harness and model/ })).toContainText("GPT-4.1")
+  await surface.getByRole("textbox", { name: "Name" }).fill("Seeded reviewer, renamed")
+  await surface.getByRole("button", { name: "Save preset" }).click()
+  await expect(rows.filter({ hasText: "Seeded reviewer, renamed" })).toContainText("Local · Pi · openai/gpt-4.1")
+  expect((await tasksClient(stack.url).listPresets()).items.map((preset) => preset.configurations.primary)).toEqual([primary])
 })

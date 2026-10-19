@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createEffect, createRoot, createSignal } from "solid-js"
 import type { SurfaceActionEvent, SurfaceMessage, SurfacePageDefinition, SurfaceProgram } from "@claxedo/plugin-api"
 import { SURFACE_CATALOG_ID } from "@claxedo/plugin-api/surface"
 import { openPluginSurface } from "./controller"
@@ -71,6 +71,21 @@ describe("a plugin surface page's messages", () => {
     expect(throwing.state()).toMatchObject({ kind: "failed", error: { message: "no data" } })
   })
 
+})
+
+describe("one send of a plugin surface page", () => {
+  test("lands as one update, so a reader of its first message already sees its last", () => {
+    const [applied, setApplied] = createSignal<readonly SurfaceMessage[]>([])
+    const surface = { surfaceId: SURFACE_ID, apply: (message: SurfaceMessage) => void setApplied((before) => [...before, message]) }
+    const seen: number[] = []
+    createRoot(() => createEffect(() => {
+      if (applied().length > 0) seen.push(applied().length)
+    }))
+    let send: (...messages: SurfaceMessage[]) => void = () => undefined
+    open(surfacePage((channel) => void (send = (...messages) => channel.send(...messages))), surface)
+    send(created, counted(1), counted(2))
+    expect(seen).toEqual([3])
+  })
 })
 
 describe("a plugin surface page's actions", () => {

@@ -3,14 +3,14 @@ import { authRoutes } from "@/auth"
 import { onboardingRoute } from "@/onboarding"
 import { pluginsSettingsSection } from "@/plugins"
 import { projectsSettingsSection } from "@/projects"
-import { marketplacePage, tasksPage } from "@/rail"
+import { marketplacePage } from "@/rail"
 import { settingsSections } from "@/settings"
 import { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "@/session"
 import { terminalCreatorPaneKind, terminalPaneKind } from "@/terminal"
 import { pageTabPaneKind, paneKindEntry, settingsPage, type FirstPartyEntries } from "@/shell"
 
 export const firstParty: FirstPartyEntries = {
-  pages: [settingsPage, tasksPage, marketplacePage],
+  pages: [settingsPage, marketplacePage],
   paneKinds: [
     paneKindEntry(sessionPaneKind),
     paneKindEntry(draftSessionPaneKind),

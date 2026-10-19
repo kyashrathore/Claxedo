@@ -17,8 +17,6 @@ import zh from "./locales/zh"
 import zht from "./locales/zht"
 
 const en = {
-  "rail.tasks": "Tasks",
-  "rail.openTasks": "Open Tasks",
   "rail.marketplace": "Marketplace",
   "rail.openMarketplace": "Open Marketplace",
   "rail.projects": "Projects",

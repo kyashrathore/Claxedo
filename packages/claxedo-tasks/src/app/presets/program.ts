@@ -1,7 +1,8 @@
 import type { PluginApi, SurfaceActionEvent, SurfaceChannel, SurfaceProgram } from "@claxedo/plugin-api"
 import type { TasksClient } from "../../client/client"
-import type { Preset, TasksCommand } from "../../contracts"
+import type { TasksCommand } from "../../contracts"
 import type { Translate } from "../dictionary"
+import { allPresets } from "../paging"
 import { tasksRefusalOf } from "../refusal"
 import type { Json } from "../surface/json"
 import { createSurfaceSync, type SurfaceSync } from "../surface/sync"
@@ -27,17 +28,6 @@ export function pluginCatalogReader(api: PluginApi): () => Promise<CapabilityCat
     if (!response.ok) throw new Error(`The plugin catalog answered ${response.status}`)
     return capabilityCatalogOf(await response.json())
   }
-}
-
-async function allPresets(client: TasksClient, includeArchived: boolean): Promise<Preset[]> {
-  const presets: Preset[] = []
-  let cursor: string | null = null
-  do {
-    const page = await client.listPresets({ includeArchived, cursor })
-    presets.push(...page.items)
-    cursor = page.nextCursor ?? null
-  } while (cursor)
-  return presets
 }
 
 function contextString(action: SurfaceActionEvent, key: string): string | undefined {

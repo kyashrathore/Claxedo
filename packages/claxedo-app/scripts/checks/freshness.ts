@@ -14,9 +14,6 @@ const keyPassThroughPath = "src/server/fetch-query.ts"
 const declareIn = `declare it in ${freshnessPath}`
 
 const baseline: readonly Baselined[] = [
-  { file: "src/tasks/data/queries.ts", matcher: "api.keys.", owner: "tasks", reason: "task reads spread keys derived from queryKeys.tasksAll in src/server/tasks.ts; each read belongs in a query option in src/server/tasks.ts" },
-  { file: "src/tasks/data/queries.ts", matcher: "queryKey: current.queryKey", owner: "tasks", reason: "pagedList passes its caller's key through; goes with the task reads above" },
-  { file: "src/tasks/data/queries.ts", matcher: "staleTime: 5 * 60_000", owner: "tasks", reason: "task capabilities are re-read after five minutes at the read site; tasksAll is declared once" },
   { file: "src/marketplace/directory-state.ts", matcher: 'refetchOnMount: "always"', owner: "marketplace", reason: "the directory re-reads the plugin catalog on every open; marketplace is declared once" },
   { file: "src/server/account-placements.ts", matcher: "staleTime", owner: "server", reason: "the staleTime is a parameter, 0 on reread and infinity on load; two explicit reads would let the check see both" },
 ]

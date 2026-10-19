@@ -12,7 +12,6 @@ const baseline: readonly Baselined[] = [
   { file: "src/settings/view/settings.css", matcher: ".settings-toolbar > :first-child", owner: "settings", reason: "first toolbar child loses its margin; give the child a class" },
   { file: "src/shell/styles/index.css", matcher: '[data-action="prompt-harness-model"] > :not(:first-child)', owner: "composer", reason: "collapsed composer hides the model button's trailing children; give them a class" },
   { file: "src/onboarding/view/first-project-canvas.css", matcher: "> form > *:nth-child(", owner: "onboarding", reason: "the project step staggers its form rows by position; give each row its delay" },
-  { file: "src/tasks/view/tasks.css", matcher: '.tsk-dot[data-liveness="live"] { animation:', owner: "tasks", reason: "pulse on a live task's dot for as long as it is live" },
   { file: "src/auth/view/auth.css", matcher: "animation: auth-spin", owner: "auth", reason: "spinner while a sign-in request is pending" },
   { file: "src/shell/styles/ui-overrides.css", matcher: "animation: tl-dot-wave", owner: "shell", reason: "typing dots while a turn is running" },
   { file: "src/transcript/agent-glyph.css", matcher: "animation: agent-glyph-pulse", owner: "transcript", reason: "the agent glyph pulses while the agent is active" },

@@ -2,7 +2,7 @@ import { createMemo, For, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { byOrder, fillPattern, RegistryIcon, useShellRegistries, useShellRoute, type PageEntry, type SidebarItem } from "@/shell"
 import { railDictionary } from "../i18n"
-import { MARKETPLACE_PATH, TASKS_PATH } from "./utility-pages"
+import { MARKETPLACE_PATH } from "./utility-pages"
 import { ClaxedoIcon as Icon } from "@/ui"
 
 const ROW_CLASS =
@@ -16,7 +16,7 @@ function rowState(active: boolean) {
 }
 
 function NavigationRow(props: {
-  readonly icon: "marketplace" | "checklist"
+  readonly icon: "marketplace"
   readonly label: string
   readonly ariaLabel: string
   readonly testId: string
@@ -80,14 +80,6 @@ export function GlobalNavigation(): JSX.Element {
   const at = (path: string) => routing.pathname().startsWith(path)
   return (
     <div data-testid="global-navigation" class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
-      <NavigationRow
-        icon="checklist"
-        label={t("rail.tasks")}
-        ariaLabel={t("rail.openTasks")}
-        testId="sidebar-tasks-entry"
-        active={at(TASKS_PATH)}
-        onClick={() => routing.navigate(TASKS_PATH)}
-      />
       <NavigationRow
         icon="marketplace"
         label={t("rail.marketplace")}

@@ -6,7 +6,8 @@ function followed(initial: PageParams) {
   const [route, setRoute] = createSignal(initial)
   const navigations: PageParams[] = []
   const dispose = createRoot((disposeRoot) => {
-    followPageParams(pageParams(route), (params) => navigations.push(params))
+    const params = pageParams(route)
+    followPageParams(params, params(), (params) => navigations.push(params))
     return disposeRoot
   })
   return { setRoute, navigations, dispose }
@@ -25,5 +26,18 @@ describe("a surface page's route params", () => {
     dispose()
     setRoute({ taskId: "tsk_3" })
     expect(navigations).toHaveLength(3)
+  })
+
+  test("a change that lands before the follow's first run still reaches the program, as when a deep link's page registers late", () => {
+    const [route, setRoute] = createSignal<PageParams>({})
+    const navigations: PageParams[] = []
+    const dispose = createRoot((disposeRoot) => {
+      const params = pageParams(route)
+      followPageParams(params, params(), (next) => navigations.push(next))
+      setRoute({ taskId: "tsk_1" })
+      return disposeRoot
+    })
+    expect(navigations).toEqual([{ taskId: "tsk_1" }])
+    dispose()
   })
 })

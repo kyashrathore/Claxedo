@@ -5,13 +5,14 @@ import { followPageParams, pageParams, type PageParams } from "./page-params"
 
 export function PluginSurfacePage(props: { readonly pluginName: string; readonly page: SurfacePageDefinition; readonly params: Accessor<PageParams> }): JSX.Element {
   const params = pageParams(() => props.params())
+  const opened = untrack(params)
   const pageProps = (current: PageParams): PageProps => ({ path: props.page.path, params: current })
   return (
     <PluginSurface
       pluginName={props.pluginName}
       label={`page ${props.page.id}`}
-      open={(channel) => props.page.surface(channel, pageProps(untrack(params)))}
-      opened={(controller) => followPageParams(params, (current) => controller.navigated(pageProps(current)))}
+      open={(channel) => props.page.surface(channel, pageProps(opened))}
+      opened={(controller) => followPageParams(params, opened, (current) => controller.navigated(pageProps(current)))}
     />
   )
 }

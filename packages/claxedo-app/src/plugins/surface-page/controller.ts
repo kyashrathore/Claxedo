@@ -1,4 +1,4 @@
-import { catchError, type Accessor } from "solid-js"
+import { batch, catchError, type Accessor } from "solid-js"
 import type { PageProps, SurfaceActionEvent, SurfaceChannel, SurfaceMessage, SurfaceProgram } from "@claxedo/plugin-api"
 import type { Surface } from "@/surface"
 import { surfacePageMachine, type SurfacePageState } from "./model"
@@ -30,7 +30,7 @@ function asError(surfaceId: string, error: unknown): Error {
 type PageMachine = ReturnType<typeof surfacePageMachine>
 
 function messageReceiver(surface: PluginSurfaceInput["surface"], machine: PageMachine, fail: (error: unknown) => void) {
-  return (messages: readonly SurfaceMessage[]) => {
+  const apply = (messages: readonly SurfaceMessage[]) => {
     for (const message of messages) {
       if (machine.state().kind !== "open") return
       try {
@@ -40,6 +40,7 @@ function messageReceiver(surface: PluginSurfaceInput["surface"], machine: PageMa
       }
     }
   }
+  return (messages: readonly SurfaceMessage[]) => batch(() => apply(messages))
 }
 
 function runProgram(work: () => void | Promise<void>, fail: (error: unknown) => void): void {

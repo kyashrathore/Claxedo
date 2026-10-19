@@ -12,6 +12,13 @@ export function pageParams(params: Accessor<PageParams>): Accessor<PageParams> {
   return createMemo(params, undefined, { equals: sameParams })
 }
 
-export function followPageParams(params: Accessor<PageParams>, navigated: (params: PageParams) => void): void {
-  createEffect(on(params, (current) => navigated(current), { defer: true }))
+export function followPageParams(params: Accessor<PageParams>, opened: PageParams, navigated: (params: PageParams) => void): void {
+  let shown = opened
+  createEffect(
+    on(params, (current) => {
+      if (sameParams(current, shown)) return
+      shown = current
+      navigated(current)
+    }),
+  )
 }

@@ -27,7 +27,7 @@ function pointerKeys(path: string): string[] {
   return path === "/" ? [] : path.split("/").slice(1).map((key) => key.replaceAll("~1", "/").replaceAll("~0", "~"))
 }
 
-function isJsonObject(value: Json | undefined): value is JsonObject {
+function isPlainJsonObject(value: Json | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
@@ -37,7 +37,7 @@ function isTasksKey(key: string): key is TasksKey {
 
 function writeData(model: JsonObject, path: string, value: Json | undefined): JsonObject {
   const keys = pointerKeys(path)
-  if (keys.length === 0) return isJsonObject(value) ? value : {}
+  if (keys.length === 0) return isPlainJsonObject(value) ? value : {}
   let cursor: Record<string, Json> | Json[] = model
   for (const key of keys.slice(0, -1)) {
     const next: Json | undefined = Array.isArray(cursor) ? cursor[Number(key)] : cursor[key]
