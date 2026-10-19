@@ -388,7 +388,7 @@ person or team target's standing in the page's organization; the hosted
 index refuses any change to a page's id, organization, project or creator,
 so the entry the decision read cannot have moved.
 
-`authorizeDocument` in `packages/claxedo-server-core/src/documents/access.ts`
+`authorizeDocument` in `packages/claxedo-documents/src/host/access.ts`
 owns this policy, and `filterDocuments` applies it to listings with one
 membership, project and share read per organization and project. Hosted routes,
 the local document service, runtime writeback and the runtime's hydration

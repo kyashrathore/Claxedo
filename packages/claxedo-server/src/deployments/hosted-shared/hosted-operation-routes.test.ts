@@ -9,7 +9,7 @@ import { testRequestAuthenticationAdapter } from "../../test-support/request-aut
 import { hostedAgentPluginsModule } from "../../agent-plugins/module"
 import { HostedAgentPluginSourceRoutes } from "../../agent-plugins/sources/routes"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
-import { createHostedDocumentsPlugin } from "../../documents/hosted-plugin"
+import { composeHostedDocumentsPlugin } from "../../documents/compose"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 
 // The supervisor extends Cloudflare's DurableObject, which only workerd provides.
@@ -52,7 +52,7 @@ function hostedRoutes() {
     cloudWorkspaceAdmission: async () => undefined,
     usageLedger: {} as never,
     plugins: [
-      createHostedDocumentsPlugin({ bucket: {} as never, plane, access: {} as never, authentication, rateLimit: async () => true }),
+      composeHostedDocumentsPlugin({ bucket: {} as never, plane, access: {} as never, authentication, rateLimit: async () => true }),
     ],
     integrationRoutes: createIntegrationsRoutes({} as never, { gate: () => null }),
     accountSetup: { change: {} as never, administers: async () => true },

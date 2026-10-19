@@ -36,10 +36,9 @@ const ENTRIES = [
   // D1 constraint-failure reader and the org/People typed refusal envelope.
   // Every entry also mounts hosted Pages
   // from `core-worker.cf.ts`: the D1 document authority
-  // (`authority/adapters/d1/document-authority.ts`), the R2 documents backend
-  // and its index and managed store (`documents/backends/hosted/`), and the
-  // runtime broker that hydrates a page into a session with its relay client
-  // (`documents/relay-http.ts`). The hosted runtime delivery reads a
+  // (`authority/adapters/d1/document-authority.ts`) and the runtime broker
+  // that hydrates a page into a session with its relay client
+  // (`documents/runtime-broker.ts`, `documents/relay-http.ts`). The hosted runtime delivery reads a
   // workspace's recorded backing (`workspace/cloud-root-backing.ts`) before it
   // provisions a sandbox, which the Agent Plugins entries already carried.
   // Every entry carries the D1 workspace authority's refusal type and owner
@@ -141,10 +140,11 @@ const ENTRIES = [
   // cloud workspace's runtime is down (`credentials/worker/native-launch.ts`),
   // wired with the other draft catalogs from their own module
   // (`deployments/hosted-shared/hosted-draft-catalogs.ts`).
-  // Every entry composes hosted Pages as the Documents server plugin the core
-  // Worker root hands the core app (`documents/hosted-plugin.ts`). The sandbox
-  // pass family every entry signs with is `@claxedo/server-core`'s.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 173, packages: 22 },
+  // Every entry composes hosted Pages from `@claxedo/documents` (the R2
+  // backend, its indexes and routes) over this host's sharing authority and
+  // runtime broker (`documents/compose.ts`). The sandbox pass family every
+  // entry signs with is `@claxedo/server-core`'s.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 168, packages: 23 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
@@ -168,7 +168,7 @@ const ENTRIES = [
   // (`hosted-workerd/tasks-plugin/cloud-roots.ts`); the plugin's own code is
   // `@claxedo/tasks`. A grant a project's switch turns off is withdrawn by
   // `agent-plugins/runtime/grant-withdrawal.ts`, whatever plugin minted it.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 225, packages: 26 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 220, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -183,7 +183,7 @@ const ENTRIES = [
   // their readers (`workspace/runtime-lost.ts`,
   // `authority/adapters/d1/runtime-lost-sessions.ts`), since only this entry
   // has cloud runtimes to lose.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 237, packages: 26 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 232, packages: 27 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
@@ -200,8 +200,8 @@ describe("server deployment entry closures", () => {
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
 
-    expect(files).toContain("src/documents/backends/hosted/backend.ts")
-    expect(files.filter((file) => file.includes("src/documents/backends/local/"))).toEqual([])
+    expect(files).toContain("src/documents/compose.ts")
+    expect(result.packages).toContain("@claxedo/documents")
   })
 
   it("keeps the Better Auth D1 Worker free of optional provider implementations", () => {
@@ -211,7 +211,6 @@ describe("server deployment entry closures", () => {
     expect(files).toContain("src/deployments/hosted-workerd/core-worker.cf.ts")
     expect(result.unresolved).toEqual([])
     expect(result.opaque).toEqual([])
-    expect(files.filter((file) => file.includes("src/documents/backends/local/"))).toEqual([])
   })
 
   it("keeps the plain Worker free of Agent Plugins and the feature Worker closed over exactly it", () => {
@@ -234,7 +233,6 @@ describe("server deployment entry closures", () => {
       files.filter((file) =>
         [
           "packages/claxedo-local-server/src",
-          "documents/backends/local/",
           "convex",
         ].some((value) => file.toLowerCase().includes(value)),
       ),

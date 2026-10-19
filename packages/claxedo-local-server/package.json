@@ -63,6 +63,7 @@
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/server-core": "workspace:*",
+    "@claxedo/session-core": "workspace:*",
     "@claxedo/tasks": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@hono/node-ws": "1.3.1",
@@ -70,10 +71,10 @@
     "better-sqlite3": "13.0.1",
     "hono": "4.12.34",
     "tokentracker-cli": "0.91.0",
-    "zod": "4.4.3",
-    "@claxedo/session-core": "workspace:*"
+    "zod": "4.4.3"
   },
   "devDependencies": {
+    "@claxedo/documents": "workspace:*",
     "@hono/node-server": "1.19.11",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@tsconfig/node-lts": "22.0.4",

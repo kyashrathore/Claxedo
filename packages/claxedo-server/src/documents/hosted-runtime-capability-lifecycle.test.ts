@@ -1,4 +1,4 @@
-import { documentAuthorizedFetch, documentTestAccess } from "../test-support/document-access"
+import { documentAuthorizedFetch, documentTestAccess } from "@claxedo/documents/testing"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -8,9 +8,9 @@ import { createDocumentHydration } from "@claxedo/documents/runtime"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { createHostedDocumentsBackend } from "./backends/hosted/backend"
-import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
-import { createHostedDocumentRuntimeBroker } from "./backends/hosted/runtime-broker"
+import { createHostedDocumentsBackend } from "@claxedo/documents/hosted"
+import type { DocumentIndexEntry } from "@claxedo/documents/host/index-store"
+import { createHostedDocumentRuntimeBroker } from "./runtime-broker"
 import { fetchUrl, fetchBodyText } from "../test-support/fetch-calls"
 
 const entry = {

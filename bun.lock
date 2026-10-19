@@ -159,6 +159,7 @@
         "@claxedo/account-contract": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/app": "workspace:*",
+        "@claxedo/documents": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/host-connector": "workspace:*",
         "@claxedo/local-server": "workspace:*",
@@ -198,13 +199,15 @@
       "version": "0.1.0",
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/server-core": "workspace:*",
         "@claxedo/session-core": "workspace:*",
+        "@claxedo/workspace-runtime": "workspace:*",
+        "drizzle-orm": "catalog:",
         "hono": "4.12.34",
         "jose": "6.0.11",
         "zod": "4.4.3",
       },
       "devDependencies": {
-        "@claxedo/workspace-runtime": "workspace:*",
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "1.3.13",
         "typescript": "catalog:",
@@ -283,6 +286,7 @@
         "zod": "4.4.3",
       },
       "devDependencies": {
+        "@claxedo/documents": "workspace:*",
         "@hono/node-server": "1.19.11",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@tsconfig/node-lts": "22.0.4",

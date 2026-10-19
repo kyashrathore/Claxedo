@@ -1,4 +1,4 @@
-import { documentAuthorizedFetch } from "./test-support/authorized-fetch"
+import { documentAuthorizedFetch } from "../test-support/authorized-fetch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"

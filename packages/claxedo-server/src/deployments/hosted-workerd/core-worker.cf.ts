@@ -37,8 +37,8 @@ import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
-import type { R2BucketBinding } from "../../documents/backends/hosted/r2-object-store.cf"
-import { createHostedDocumentsPlugin } from "../../documents/hosted-plugin"
+import type { R2BucketBinding } from "@claxedo/documents/hosted"
+import { composeHostedDocumentsPlugin } from "../../documents/compose"
 
 export { LiveSyncRoom }
 
@@ -128,7 +128,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
     if (existing) return existing
 
     const sharedRateLimitStore = cloudflareRateLimitStore(limiter, { periodSeconds: 60 })
-    const documents = createHostedDocumentsPlugin({
+    const documents = composeHostedDocumentsPlugin({
       bucket: documentsBucket,
       plane: selected.plane,
       access: selected.documentAccess,

@@ -1,7 +1,7 @@
 import { startLocalServer } from "../../../claxedo-local-server/src/app/start-local-server"
 import { createLocalAgentPluginsComposition } from "../../../claxedo-local-server/src/agent-plugins/local-composition"
 import { createLocalTasksPlugin } from "../../../claxedo-tasks/src/local/index"
-import { createLocalDocumentsPlugin } from "../../../claxedo-local-server/src/app/local-documents"
+import { createLocalDocumentsPlugin } from "../../../claxedo-documents/src/local/index"
 import { localBuiltinToolGroupsReader } from "../../../claxedo-local-server/src/agent-plugins/builtin-groups"
 import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { claxedoSchemaJournals } from "@claxedo/server-core/plugins/sqlite-schema"

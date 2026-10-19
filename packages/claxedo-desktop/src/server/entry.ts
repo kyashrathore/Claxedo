@@ -6,7 +6,7 @@ import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-ser
 import { claxedoDaemonOwnershipPath, clearDaemonOwnershipSnapshot, createDaemonOwnershipPublisher, localDaemonOperationStore } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalAgentPluginsComposition } from "@claxedo/local-server/agent-plugins/local-composition"
 import { createLocalTasksPlugin } from "@claxedo/tasks/local"
-import { createLocalDocumentsPlugin } from "@claxedo/local-server/app/local-documents"
+import { createLocalDocumentsPlugin } from "@claxedo/documents/local"
 import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
 import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { claxedoSchemaJournals } from "@claxedo/server-core/plugins/sqlite-schema"
