@@ -10,7 +10,7 @@ import {
 } from "./browser-auth"
 import { clientResult, normalizedUser, type BetterAuthBrowserClient, type BetterAuthClientFactory } from "./better-auth-client"
 import type { AuthUser } from "./display-user"
-import { clearPersistedAuthState, recordAuthIdentity } from "./persistence"
+import { forgetAuthIdentity, recordAuthIdentity } from "./persistence"
 
 type Origins = { readonly apiOrigin: string; readonly appOrigin: string }
 type Connection = { readonly client: BetterAuthBrowserClient; readonly origins: Origins }
@@ -70,7 +70,7 @@ export function selectedMethod(session: BetterAuthSession, method: BrowserAuthMe
 
 export function endSession(session: BetterAuthSession) {
   session.set.user(null)
-  clearPersistedAuthState()
+  forgetAuthIdentity()
 }
 
 export async function initializeSession(session: BetterAuthSession, deployment: BrowserAuthDeployment) {

@@ -16,7 +16,7 @@ import {
 } from "./navigation-guard"
 import { trustWindowWithBridge } from "./ipc-caller-guard"
 import { installRendererPermissionPolicy } from "./renderer-permissions"
-import { isTrustedRendererDocumentUrl } from "./renderer-url-trust"
+import { isTrustedRendererDocumentUrl, rendererDevServerUrl } from "./renderer-url-trust"
 
 type Globals = {
   updaterEnabled: boolean
@@ -160,21 +160,25 @@ function packagedDocumentUrl(html: string) {
   return pathToFileURL(join(root, `../renderer/${html}`)).href
 }
 
+export function devServerUrl() {
+  return rendererDevServerUrl(process.env, IS_PACKAGED)
+}
+
 export function isRendererDocumentUrl(input: string) {
   return RENDERER_DOCUMENTS.some((html) =>
-    isTrustedRendererDocumentUrl(input, { devServerUrl: process.env.ELECTRON_RENDERER_URL, packagedIndexUrl: packagedDocumentUrl(html) }),
+    isTrustedRendererDocumentUrl(input, { devServerUrl: devServerUrl(), packagedIndexUrl: packagedDocumentUrl(html) }),
   )
 }
 
 export function rendererDocumentUrlPatterns() {
-  const devUrl = process.env.ELECTRON_RENDERER_URL
+  const devUrl = devServerUrl()
   if (devUrl) return [`${new URL(devUrl).origin}/*`]
   return RENDERER_DOCUMENTS.map((html) => `${packagedDocumentUrl(html)}*`)
 }
 
 export function isTrustedMainRendererUrl(input: string) {
   return isTrustedRendererDocumentUrl(input, {
-    devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    devServerUrl: devServerUrl(),
     packagedIndexUrl: pathToFileURL(join(root, `../renderer/${RENDERER_DOCUMENT}`)).href,
   })
 }
@@ -222,7 +226,7 @@ export function createLoadingWindow(globals: Globals) {
 }
 
 function loadWindow(win: BrowserWindow, html: string) {
-  const devUrl = process.env.ELECTRON_RENDERER_URL
+  const devUrl = devServerUrl()
   if (devUrl) {
     const url = new URL(html, devUrl)
     void win.loadURL(url.toString())
@@ -233,7 +237,7 @@ function loadWindow(win: BrowserWindow, html: string) {
 }
 
 function devtools(win: BrowserWindow) {
-  if (!process.env.ELECTRON_RENDERER_URL || process.env.CLAXEDO_DEVTOOLS !== "1") return
+  if (!devServerUrl() || process.env.CLAXEDO_DEVTOOLS !== "1") return
   win.webContents.once("did-finish-load", () => {
     if (win.isDestroyed()) return
     win.webContents.openDevTools({ mode: "undocked" })

@@ -28,8 +28,8 @@ export type MachineAuthDeps = MachineAuthAdapter & { now: () => number }
 
 export type MachineRequest = {
   method: string
-  /** Path only, no query: the signed bytes name the route, not its parameters. */
-  pathname: string
+  /** The absolute request URL. The signed bytes cover its path only, so a URL with a query is refused. */
+  url: string
   headers: { get: (name: string) => string | null }
   /** The exact body text the signature hashed; the route reads it once and passes it here. */
   bodyText: string
@@ -40,6 +40,7 @@ export type MachineAuthRefusal = {
   status: 400 | 401 | 403
   code:
     | "machine_headers_invalid"
+    | "machine_query_unsigned"
     | "machine_body_invalid"
     | "machine_timestamp_skew"
     | "machine_request_denied"
@@ -56,6 +57,8 @@ const MAX_ENROLLMENT_ID_LENGTH = 200
 const MAX_SIGNATURE_LENGTH = 200
 
 export async function verifyMachineRequest(request: MachineRequest, deps: MachineAuthDeps): Promise<MachineAuthResult> {
+  const url = URL.canParse(request.url) ? new URL(request.url) : undefined
+  if (!url || url.search) return machineRefusal(400, "machine_query_unsigned")
   const headers = machineHeaders(request.headers)
   if (!headers) return machineRefusal(400, "machine_headers_invalid")
   const now = deps.now()
@@ -72,7 +75,7 @@ export async function verifyMachineRequest(request: MachineRequest, deps: Machin
   if (!key) return machineRefusal(401, "machine_request_denied")
   const payload = machineRequestPayload({
     method: request.method,
-    pathname: request.pathname,
+    pathname: url.pathname,
     bodySha256Hex: await sha256Hex(request.bodyText),
     ts: headers.ts,
     nonce: headers.nonce,

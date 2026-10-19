@@ -704,6 +704,16 @@ describe("POST /acquire", () => {
     expect(await response.json()).toMatchObject({ error: { code: "machine_body_invalid" } })
     expect(api.acquireHostServingGeneration).not.toHaveBeenCalled()
   })
+
+  test("a query the signature does not cover is refused", async () => {
+    const key = await machineKey()
+    const { signedCall, api } = await mountedRoutes(machineAuthority(enrollmentRow(key)))
+    const body = { enrollmentId: "enr_1", hostId: "host_1", keyVersion: 1 }
+    const response = await signedCall(key, "/acquire", body, { query: "?generation=9" })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "machine_query_unsigned" } })
+    expect(api.acquireHostServingGeneration).not.toHaveBeenCalled()
+  })
 })
 
 describe("POST /redeem", () => {
@@ -1204,6 +1214,7 @@ async function mountedRoutes(api: ReturnType<typeof authority>, routeOptions: Re
       nonce?: string
       headers?: Record<string, string>
       tamper?: (text: string) => string
+      query?: string
     } = {},
   ) => {
     const enrollmentId = options.enrollmentId ?? "enr_1"
@@ -1220,7 +1231,7 @@ async function mountedRoutes(api: ReturnType<typeof authority>, routeOptions: Re
         enrollmentId,
       }),
     )
-    return app.request(`http://control.test/api/claxedo/host/enrollments${path}`, {
+    return app.request(`http://control.test/api/claxedo/host/enrollments${path}${options.query ?? ""}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

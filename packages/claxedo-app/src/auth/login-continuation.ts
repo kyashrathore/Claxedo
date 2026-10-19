@@ -3,12 +3,38 @@ import { invitationMachine } from "./model"
 import type { BrowserAuthSignInOptions } from "./browser-auth"
 import type { Auth } from "./store"
 
+const REAUTHENTICATION_PROMPTS = new Set(["login", "create"])
+
+export type LoginOAuthContinuation = {
+  readonly signInRedirect: string
+  readonly authorizationUrl: string
+  readonly requiresFreshSignIn: boolean
+}
+
+function promptsOf(query: URLSearchParams) {
+  return (query.get("prompt") ?? "").split(" ").filter(Boolean)
+}
+
+function requiresFreshSignIn(query: URLSearchParams) {
+  return query.has("max_age") || promptsOf(query).some((prompt) => REAUTHENTICATION_PROMPTS.has(prompt))
+}
+
+function satisfiedAuthorizationSearch(search: string, query: URLSearchParams) {
+  if (!requiresFreshSignIn(query)) return search
+  const satisfied = new URLSearchParams(query)
+  const remaining = promptsOf(query).filter((prompt) => !REAUTHENTICATION_PROMPTS.has(prompt))
+  if (remaining.length) satisfied.set("prompt", remaining.join(" "))
+  else satisfied.delete("prompt")
+  satisfied.delete("max_age")
+  return `?${satisfied.toString()}`
+}
+
 export function loginOAuthContinuation(input: {
   appOrigin: string
   apiOrigin: string
   pathname: string
   search: string
-}) {
+}): LoginOAuthContinuation | undefined {
   if (input.pathname !== "/login" || !input.search) return undefined
   const query = new URLSearchParams(input.search)
   if (
@@ -21,10 +47,32 @@ export function loginOAuthContinuation(input: {
   const login = new URL(input.pathname, input.appOrigin)
   login.search = input.search
   const authorize = new URL("/api/auth/oauth2/authorize", input.apiOrigin)
-  authorize.search = input.search
+  authorize.search = satisfiedAuthorizationSearch(input.search, query)
   return {
     signInRedirect: `${login.pathname}${login.search}`,
     authorizationUrl: authorize.toString(),
+    requiresFreshSignIn: requiresFreshSignIn(query),
+  }
+}
+
+const AUTHORIZATION_SIGN_IN_KEY = "claxedo:authorization:signInStarted"
+
+export function markAuthorizationSignInStarted(continuation: LoginOAuthContinuation) {
+  try {
+    sessionStorage.setItem(AUTHORIZATION_SIGN_IN_KEY, continuation.authorizationUrl)
+  } catch (error) {
+    console.warn("This tab could not record the sign-in it started for an app, so returning here asks to sign in again", { error })
+  }
+}
+
+export function takeAuthorizationSignInStarted(continuation: LoginOAuthContinuation): boolean {
+  try {
+    const started = sessionStorage.getItem(AUTHORIZATION_SIGN_IN_KEY)
+    sessionStorage.removeItem(AUTHORIZATION_SIGN_IN_KEY)
+    return started === continuation.authorizationUrl
+  } catch (error) {
+    console.warn("This tab could not read the sign-in it started for an app, so it asks to sign in again", { error })
+    return false
   }
 }
 

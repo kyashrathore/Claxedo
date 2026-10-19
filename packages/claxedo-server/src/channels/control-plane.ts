@@ -45,6 +45,7 @@ import { signedOrError, txt } from "../workspace/route-support"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { createCredentialWhatsAppBaileysAuthStateStore } from "./whatsapp-baileys-auth-state"
+import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../platform/auth/rate-limit"
 
 type ChannelMachineRuntime = MachineSessionDispatch
 
@@ -648,6 +649,12 @@ export function createControlPlaneChannels(input: {
   }
 }
 
+/**
+ * A person claims the one code a bot just sent them, so a handful a minute is
+ * generous; the ceiling keeps one account from walking the code space.
+ */
+const PAIRING_CLAIMS_PER_ACCOUNT_PER_MINUTE = 10
+
 export function mountControlPlaneChannels(app: HonoType, input: {
   services: ControlPlaneServices
   runtime: ChannelMachineRuntime
@@ -658,6 +665,7 @@ export function mountControlPlaneChannels(app: HonoType, input: {
   whatsappBaileysQrHandler?: (qr: string) => void
   channels?: ReturnType<typeof createControlPlaneChannels>
   authentication?: RequestAuthenticationAdapter
+  pairingClaimRateLimiter?: ConnectionRateLimiter
 }) {
   if (input.requireLoopbackForFake !== false) {
     app.use("/api/channels/fake", async (c, next) => {
@@ -701,6 +709,8 @@ export function mountControlPlaneChannels(app: HonoType, input: {
     if (!result.ok) return c.json(errorBody("channels_pairing_failed", result.message), 400)
     return c.json({ ok: true, channel: result.channel, externalUserId: result.externalUserId })
   })
+  const pairingClaimRateLimiter = input.pairingClaimRateLimiter ??
+    createFixedWindowConnectionRateLimiter({ limit: PAIRING_CLAIMS_PER_ACCOUNT_PER_MINUTE, windowMs: 60_000 })
   app.post("/api/channels/pairing/claim", async (c) => {
     const authority = input.services.authority
     if (!authority) return c.json(errorBody("channels_authority_unavailable", "Channel identity authority is unavailable"), 503)
@@ -715,6 +725,14 @@ export function mountControlPlaneChannels(app: HonoType, input: {
     }, input.services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
     if (!authResult.auth) return c.json(errorBody("channels_pairing_unauthorized", "Signed account authentication is required"), 401)
+    const budget = pairingClaimRateLimiter.check({ userId: authResult.auth.user.subject, workspaceId: "channels.pairing.claim" })
+    if (!budget.allowed) {
+      return c.json(
+        errorBody("channels_pairing_rate_limited", "Too many pairing attempts. Try again in a minute."),
+        429,
+        { "retry-after": String(Math.max(1, Math.ceil(budget.retryAfterMs / 1000))) },
+      )
+    }
     const code = txt((await readJsonRecord(c.req.raw))?.code)?.trim()
     if (!code) return c.json(errorBody("channels_pairing_invalid", "Missing pairing code"), 400)
     try {

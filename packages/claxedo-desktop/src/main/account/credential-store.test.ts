@@ -119,6 +119,18 @@ describe("bound encrypted credential store", () => {
     expect(h.file.contents()).toBeUndefined()
   })
 
+  test("rejecting quarantines only the revision still stored, and says whether it did", () => {
+    const h = harness()
+    h.store.save(CREDENTIAL, null)
+    h.store.save(CREDENTIAL, "r1")
+
+    expect(h.store.reject("r1", "stale")).toBe(false)
+    expect(h.file.quarantined).toEqual([])
+    expect(h.store.reject("r2", "binding changed")).toBe(true)
+    expect(h.file.quarantined).toEqual(["binding changed"])
+    expect(h.store.reject("r2", "again")).toBe(false)
+  })
+
   test("quarantines every legacy token-only record without decrypting it", () => {
     let decrypts = 0
     const h = harness(

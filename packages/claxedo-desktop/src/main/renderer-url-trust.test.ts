@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { isTrustedRendererDocumentUrl } from "./renderer-url-trust"
+import { readdirSync, readFileSync } from "node:fs"
+import path from "node:path"
+import { isTrustedRendererDocumentUrl, rendererDevServerUrl } from "./renderer-url-trust"
 
 const packagedIndexUrl = "file:///Applications/Claxedo.app/Contents/Resources/app/renderer/index.html"
 
@@ -33,4 +35,19 @@ test("a document whose path carries a tilde matches however the tilde is spelled
   expect(isTrustedRendererDocumentUrl("file:///C:/Users/RUNNER~1/AppData/Local/Programs/Claxedo/resources/app.asar/out/renderer/index.html?w=1", options)).toBe(true)
   expect(isTrustedRendererDocumentUrl("file:///C:/Users/RUNNER~2/AppData/Local/Programs/Claxedo/resources/app.asar/out/renderer/index.html", options)).toBe(false)
   expect(isTrustedRendererDocumentUrl("file:///C:/Users/RUNNER%7E1/AppData/Local/Programs/Claxedo/resources/app.asar%2Fout/renderer/index.html", options)).toBe(false)
+})
+
+describe("renderer dev server", () => {
+  test("a packaged build ignores a dev server its launch environment names", () => {
+    const env = { ELECTRON_RENDERER_URL: "http://localhost:5173/" }
+    expect(rendererDevServerUrl(env, true)).toBeUndefined()
+    expect(rendererDevServerUrl(env, false)).toBe("http://localhost:5173/")
+  })
+
+  test("only the dev server policy reads the launch environment's renderer URL", () => {
+    const readers = readdirSync(import.meta.dir, { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+      .filter((file) => readFileSync(path.join(import.meta.dir, file), "utf8").includes("ELECTRON_RENDERER_URL"))
+    expect(readers).toEqual(["renderer-url-trust.ts"])
+  })
 })

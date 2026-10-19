@@ -29,7 +29,7 @@ import {
   resolveHostedOperation,
   type HostedOperationName,
 } from "@claxedo/account-contract"
-import { connectionRetryResult, fetchHosted, hostedError, operationFailure } from "./hosted-transport"
+import { decodeHostedResponse, fetchHosted, hostedError } from "./hosted-transport"
 import { identityFromAccessToken } from "./identity"
 import type { CliCredentialFilePort } from "./cli-credential-file"
 import { readString } from "@claxedo/helpers/readers"
@@ -143,8 +143,12 @@ export function createAccountService(options: AccountServiceOptions) {
   }
 
   const rejectHeld = (held: StoredDesktopCredential, reason: string) => {
-    options.store.reject(held.revision, reason)
+    const quarantined = options.store.reject(held.revision, reason)
     if (credential?.revision === held.revision) credential = undefined
+    if (!quarantined) return
+    void options.auth.revokeUnbound(held).then((outcome) => {
+      if (outcome.state === "uncertain") options.onError?.("quarantine-revoke", outcome.detail)
+    })
   }
 
   const adopt = (
@@ -677,54 +681,9 @@ export function createAccountService(options: AccountServiceOptions) {
           },
         )
       const response = await recoverAccountResponse(await issue(access.token), held, startedIn, issue)
-      if (request.response === "http") {
-        // Some reviewed operations have expected non-2xx outcomes (OAuth
-        // replacement confirmation, optimistic revision conflict). Preserve
-        // only status and JSON body; headers and the account credential remain
-        // in main.
-        const value = await response.json().catch(() => undefined)
+      return decodeHostedResponse(name, request.response, response, () => {
         if (startedIn !== era) throw new Error("not signed in")
-        return { status: response.status, ...(value !== undefined ? { body: value } : {}) }
-      }
-      if (!response.ok) {
-        const body: unknown = await response.json().catch(() => undefined)
-        if (startedIn !== era) throw new Error("not signed in")
-        // A cloud connection still provisioning answers 409/429 with a delay.
-        // That is a wait, not a failure, so it crosses the boundary as a value
-        // the caller can poll on rather than an error it would have to parse.
-        const retry = connectionRetryResult(name, response, body)
-        if (retry) return retry
-        if (name === "session.shares.list" && response.status >= 500) {
-          throw new Error(
-            "Could not load session people. This session may only exist locally — People shares a control-plane session.",
-          )
-        }
-        // Status + body must survive Electron IPC (Error properties do not).
-        // Callers that need 409 bodies (connections.connect) parse this prefix.
-        // `detail` is the fallback those callers show when the body is absent,
-        // so it names the operation, the status, and the server's code+message.
-        throw new Error(
-          `HOSTED_HTTP ${response.status} ${JSON.stringify({
-            detail: operationFailure(name, response.status, body).message,
-            body: body ?? null,
-          })}`,
-        )
-      }
-      if (startedIn !== era) throw new Error("not signed in")
-      // Binary export: never return a raw Response (headers include auth
-      // surface). Envelope the bytes so IPC stays JSON-shaped.
-      if (name === "documents.export") {
-        const bytes = Buffer.from(await response.arrayBuffer())
-        return {
-          bytesBase64: bytes.toString("base64"),
-          contentType: response.headers.get("content-type") ?? undefined,
-        }
-      }
-      // Decoded. Returning the Response would hand the renderer the headers,
-      // and one of them is the one thing this design exists to withhold.
-      const value = await response.json().catch(() => undefined)
-      if (startedIn !== era) throw new Error("not signed in")
-      return value
+      })
     },
 
     /**

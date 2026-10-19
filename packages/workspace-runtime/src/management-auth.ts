@@ -3,6 +3,9 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 
 export const WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER = "x-workspace-runtime-management-token"
 
+/** The control plane signs management tokens and owner grants with its EdDSA runtime key and nothing else. */
+export const WORKSPACE_RUNTIME_MANAGEMENT_ALGORITHM = "EdDSA"
+
 export type WorkspaceRuntimeManagementAction = "runtime.config.apply" | "runtime.checkpoint.control"
 
 export type WorkspaceRuntimeManagementTarget = {
@@ -95,7 +98,7 @@ export async function loadWorkspaceRuntimeManagementVerificationKey(
       "Workspace runtime management verification key is not configured: set WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL or WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM",
     )
   }
-  return await importSPKI(verifyPem, "EdDSA")
+  return await importSPKI(verifyPem, WORKSPACE_RUNTIME_MANAGEMENT_ALGORITHM)
 }
 
 export function createWorkspaceRuntimeJwtManagementAuth(
@@ -115,7 +118,7 @@ export function createWorkspaceRuntimeJwtManagementAuth(
 
       let payload: Record<string, unknown>
       try {
-        const verifyOptions = { issuer: options.issuer, audience: options.audience }
+        const verifyOptions = { issuer: options.issuer, audience: options.audience, algorithms: [WORKSPACE_RUNTIME_MANAGEMENT_ALGORITHM] }
         const result = typeof options.key === "function"
           ? await jwtVerify(token, options.key, verifyOptions)
           : await jwtVerify(token, options.key, verifyOptions)

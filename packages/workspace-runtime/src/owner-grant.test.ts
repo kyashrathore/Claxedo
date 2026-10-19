@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { exportSPKI, generateKeyPair, SignJWT } from "jose"
+import { createLocalJWKSet, exportJWK, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import {
   WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE,
   WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER,
@@ -9,10 +9,10 @@ import {
 
 const claims = { user_id: "alice", org_id: "org_1", workspace_id: "ws_1", project_id: "project_a", actor_id: "actor_alice", operations: ["sessions"] }
 
-async function grant(key: CryptoKey, overrides: Record<string, unknown> = {}, header: { issuer?: string; audience?: string; ttl?: number } = {}) {
+async function grant(key: CryptoKey, overrides: Record<string, unknown> = {}, header: { issuer?: string; audience?: string; ttl?: number; alg?: string } = {}) {
   const now = Math.floor(Date.now() / 1_000)
   return await new SignJWT({ ...claims, ...overrides })
-    .setProtectedHeader({ alg: "EdDSA" })
+    .setProtectedHeader({ alg: header.alg ?? "EdDSA" })
     .setIssuer(header.issuer ?? WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER)
     .setAudience(header.audience ?? WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE)
     .setSubject("alice")
@@ -55,6 +55,15 @@ describe("the owner grant as the runtime reads it", () => {
     ]) {
       expect(await identity(token)).toBeUndefined()
     }
+  })
+
+  test("a key set that also publishes a non-EdDSA key does not accept a grant signed with it", async () => {
+    const eddsa = await generateKeyPair("EdDSA", { extractable: true })
+    const ecdsa = await generateKeyPair("ES256", { extractable: true })
+    const keys = createLocalJWKSet({ keys: [await exportJWK(eddsa.publicKey), await exportJWK(ecdsa.publicKey)] })
+    const identity = ownerGrantIdentity({ key: keys, workspaceId: "ws_1" })
+    expect(await identity(await grant(eddsa.privateKey))).toMatchObject({ actor_id: "actor_alice" })
+    expect(await identity(await grant(ecdsa.privateKey, {}, { alg: "ES256" }))).toBeUndefined()
   })
 
   test("is built from the management verification key the runtime already trusts, and is absent without one", async () => {

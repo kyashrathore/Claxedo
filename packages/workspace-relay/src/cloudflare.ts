@@ -33,7 +33,7 @@ import {
 } from "./server"
 import type { RuntimeAccessTokenActiveResult } from "./resolver-clients"
 import { createWorkspaceRelayDirectory } from "./directory"
-import { corsPreflight, withCors, workspaceUpgradeOriginDenied } from "./relay-cors"
+import { corsPreflight, withRelayResponseHeaders, workspaceUpgradeOriginDenied } from "./relay-cors"
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 import { forwardSessionHostHttp, isSessionHostTarget, type SessionHostNamespace } from "./session-host-forwarding"
 import { relayRoomPlacement } from "./relay-location"
@@ -919,7 +919,7 @@ export function createWorkspaceRelayDurableObjectGateway(
         }, placement))
       const fetchFinishedAt = performance.now()
       if (response.status === 101 || ("webSocket" in response && response.webSocket)) {
-        return url.pathname.startsWith("/workspaces/") ? withCors(request, response) : response
+        return url.pathname.startsWith("/workspaces/") ? withRelayResponseHeaders(request, response) : response
       }
       const headers = new Headers(response.headers)
       headers.set(TRACE_ID_HEADER, headers.get(TRACE_ID_HEADER) ?? gatewayTraceId)
@@ -947,7 +947,7 @@ export function createWorkspaceRelayDurableObjectGateway(
         ].join(", ")
         tracedResponse.headers.set("server-timing", `${roomTiming}, ${gatewayTiming}`)
       }
-      return url.pathname.startsWith("/workspaces/") ? withCors(request, tracedResponse) : tracedResponse
+      return url.pathname.startsWith("/workspaces/") ? withRelayResponseHeaders(request, tracedResponse) : tracedResponse
     },
   }
 }
@@ -2306,7 +2306,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         trace.phases.push({ name: "relay-room-total", ms: performance.now() - roomTotalStartedAt })
         const tracedResponse = withTraceHeaders(response, trace)
         logTrace(options, nextRequest, roomWorkspaceId, trace, tracedResponse)
-        return withCors(request, tracedResponse)
+        return withRelayResponseHeaders(request, tracedResponse)
       }
       return json("relay_route_not_found", "Workspace Relay route not found", 404)
     },

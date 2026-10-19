@@ -21,7 +21,8 @@ import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 type SandboxEnv = Record<string, string | undefined>
 
 export type DockerCommandResult = { stdout?: string | Buffer; stderr?: string | Buffer }
-export type DockerCommandRunner = (args: string[], timeoutMs?: number) => Promise<DockerCommandResult>
+/** `env` joins the docker CLI's own environment; a `--env NAME` argument with no value reads NAME from it. */
+export type DockerCommandRunner = (args: string[], timeoutMs?: number, env?: Record<string, string>) => Promise<DockerCommandResult>
 export type DockerHealthFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 export type DockerSandboxDriverOptions = {
@@ -109,10 +110,11 @@ function nameFor(workspaceId: string) {
   return `claxedo-${cleanId || "workspace"}-${Date.now().toString(36)}`.slice(0, 63)
 }
 
-async function docker(args: string[], timeoutMs = DEFAULT_OPERATION_TIMEOUT_MS) {
+async function docker(args: string[], timeoutMs = DEFAULT_OPERATION_TIMEOUT_MS, env?: Record<string, string>) {
   return execFileAsync("docker", args, {
     maxBuffer: 20 * 1024 * 1024,
     timeout: timeoutMs,
+    ...(env ? { env: { ...process.env, ...env } } : {}),
   })
 }
 
@@ -172,8 +174,13 @@ function bootScript(directory: string, runtimeCommand: string) {
   ].join(" && ")
 }
 
-function envArgs(input: Record<string, string>) {
-  return Object.entries(input).flatMap(([key, value]) => ["--env", `${key}=${value}`])
+/**
+ * Names only: a `NAME=value` argument is readable by every local user through
+ * the process table for as long as `docker create` runs, and the boot env
+ * carries the runtime's credentials.
+ */
+function envNameArgs(input: Record<string, string>) {
+  return Object.keys(input).flatMap((key) => ["--env", key])
 }
 
 function labelArgs(input: Record<string, string>) {
@@ -284,13 +291,13 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
       ...labelArgs(input.labels),
       "-p",
       `127.0.0.1::${runtimePort(input)}`,
-      ...envArgs(env),
+      ...envNameArgs(env),
       "--entrypoint",
       "sh",
       image(input),
       "-lc",
       bootScript(workspaceDirectory(input), runtimeCommand),
-    ], 120_000).catch((err) => {
+    ], 120_000, env).catch((err) => {
       if (transientDriverError(err)) return undefined
       throw err
     })
