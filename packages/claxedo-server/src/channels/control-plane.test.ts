@@ -94,6 +94,48 @@ describe("pairing admin bearer gate", () => {
   })
 })
 
+function pairingClaimApp() {
+  const approve = vi.fn(async () => ({ ok: false as const, message: "Unknown pairing code." }))
+  const channels = {
+    access: { approve },
+    ingress: new Hono(),
+  } as unknown as ReturnType<typeof createControlPlaneChannels>
+  const app = new Hono()
+  mountControlPlaneChannels(app, {
+    services: { authority: { bindChannelIdentity: vi.fn() } } as unknown as ControlPlaneServices,
+    runtime: {} as never,
+    env: {},
+    channels,
+    requireLoopbackForFake: false,
+    authentication: {
+      descriptor: {} as never,
+      authenticate: async (request: Request) => {
+        const userId = request.headers.get("authorization")?.replace("Bearer ", "") ?? ""
+        return { userId, identity: { issuer: "test", subject: userId } } as never
+      },
+    },
+  })
+  const claim = (userId: string) => app.request("https://cp.example.test/api/channels/pairing/claim", {
+    method: "POST",
+    headers: { authorization: `Bearer ${userId}`, "content-type": "application/json" },
+    body: JSON.stringify({ code: "ABCD2345" }),
+  })
+  return { claim, approve }
+}
+
+describe("pairing claim budget", () => {
+  test("an account that keeps guessing codes is turned away before another guess reaches the store", async () => {
+    const { claim, approve } = pairingClaimApp()
+    for (let attempt = 0; attempt < 10; attempt++) expect((await claim("usr_guesser")).status).toBe(400)
+    const refused = await claim("usr_guesser")
+    expect(refused.status).toBe(429)
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0)
+    expect(await refused.json()).toMatchObject({ error: { code: "channels_pairing_rate_limited" } })
+    expect(approve).toHaveBeenCalledTimes(10)
+    expect((await claim("usr_other")).status).toBe(400)
+  })
+})
+
 const TARGET: RecoveryTurnTarget = {
   scope: "turn",
   workspaceId: "ws_1",
