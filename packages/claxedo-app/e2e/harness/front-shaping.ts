@@ -66,6 +66,8 @@ export async function respondShaped(request: IncomingMessage, response: ServerRe
     etag,
     vary: "accept-encoding",
   }
+  const link = asset.headers.get("link")
+  if (link) headers.link = link
   if (request.headers["if-none-match"] === etag) {
     response.writeHead(304, headers).end()
     return

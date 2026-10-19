@@ -20,6 +20,3 @@ export function publicOriginRoute(pathname: string): PublicOriginRoute {
   if (pathname.startsWith(`${RELAY_PATH_PREFIX}/`)) return "relay"
   return "assets"
 }
-
-/** `run_worker_first` for the app's Wrangler config: every forwarded path, and the hashed assets whose fallback the Worker refuses. */
-export const WORKER_FIRST_PATHS = ["/assets/*", ...CONTROL_PLANE_PREFIXES.map((prefix) => `${prefix}*`), ...CONTROL_PLANE_PATHS, `${RELAY_PATH_PREFIX}/*`]

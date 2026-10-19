@@ -1,5 +1,7 @@
 import { PRECOMPRESSED_ASSET, acceptsBrotli, brotliSibling } from "./app-asset-encoding"
 import { RELAY_PATH_PREFIX, publicOriginRoute } from "./public-origin"
+import { shellPreloadLinks } from "./shell-preloads"
+import { carriesSessionCookie } from "../../src/platform/auth/session-cookie"
 
 type Fetcher = { fetch(request: Request): Promise<Response> }
 
@@ -66,19 +68,36 @@ async function brotliAsset(request: Request, url: URL, assets: Fetcher): Promise
 }
 
 /**
- * Runs ahead of the static assets for `/assets/*`. Vite writes nothing but
- * hashed scripts, styles and media under `/assets`, so the shell coming back
- * there is the single-page-application fallback standing in for a chunk a
- * newer deploy removed. The `_headers` rule for `/assets/*` caches that answer
- * for a year, so the browser keeps an HTML document where a module should be
- * and the chunk can never load; an uncached 404 lets the app reload instead.
+ * The shell for a client route, with the reads a signed-in app makes at boot
+ * declared as preloads so they leave with the document's response. The cookie
+ * is the only sign the edge has of a signed-in browser: a signed-out visitor
+ * gets the shell as the assets serve it, and a browser whose cookie no longer
+ * names a session preloads once for nothing, since the session read's answer
+ * clears the cookie. A 304 carries the header too, as the browser applies the
+ * revalidated shell's headers to the copy it kept.
+ */
+async function shellForRoute(request: EdgeRequest, env: AppWorkerEnv, url: URL): Promise<Response> {
+  const response = await env.ASSETS.fetch(request)
+  if (!carriesSessionCookie(request.headers.get("cookie")) || !await isShell(response, env.ASSETS, url.origin)) return response
+  const preloaded = new Response(response.body, response)
+  preloaded.headers.set("link", shellPreloadLinks(url.pathname))
+  return preloaded
+}
+
+/**
+ * Runs ahead of the static assets. Vite writes nothing but hashed scripts,
+ * styles and media under `/assets`, so the shell coming back there is the
+ * single-page-application fallback standing in for a chunk a newer deploy
+ * removed. The `_headers` rule for `/assets/*` caches that answer for a year,
+ * so the browser keeps an HTML document where a module should be and the chunk
+ * can never load; an uncached 404 lets the app reload instead.
  *
  * Scripts, styles and sprites go to a client that accepts br as the Brotli
  * copy the build stored beside them; anyone else, and any Range request, gets
  * the asset itself, which the edge compresses on the way out.
  */
 async function asset(request: EdgeRequest, env: AppWorkerEnv, url: URL): Promise<Response> {
-  if (!url.pathname.startsWith("/assets/")) return env.ASSETS.fetch(request)
+  if (!url.pathname.startsWith("/assets/")) return shellForRoute(request, env, url)
   const precompressed = PRECOMPRESSED_ASSET.test(url.pathname)
   const readsWhole = (request.method === "GET" || request.method === "HEAD") && !request.headers.has("range")
   if (precompressed && readsWhole && acceptsBrotli(request.cf?.clientAcceptEncoding)) {

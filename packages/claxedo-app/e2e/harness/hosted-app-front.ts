@@ -13,6 +13,8 @@ import { forward, forwardUpgrade } from "./proxy"
 import { pagesHeaders, respondShaped, type FrontShaping } from "./front-shaping"
 import type { TlsFront } from "./tls-front"
 import { RELAY_PATH_PREFIX, publicOriginRoute } from "../../../claxedo-server/scripts/deploy/public-origin"
+import { shellPreloadLinks } from "../../../claxedo-server/scripts/deploy/shell-preloads"
+import { carriesSessionCookie } from "../../../claxedo-server/src/platform/auth/session-cookie"
 
 function relayTarget(url: string, relayUrl: string) {
   return new URL(url.slice(RELAY_PATH_PREFIX.length), relayUrl)
@@ -25,10 +27,12 @@ export async function startHostedAppFront(input: { port: number; distDir: string
   const forwarded: string[] = []
   const answerFor = pagesHeaders(input.distDir)
   let deployment: PublishedDeployment | undefined
-  const published = async (asset: Response, pathname: string) => {
+  const published = async (asset: Response, pathname: string, cookie: string | undefined) => {
     if (path.extname(pathname) && pathname !== "/index.html") return asset
     if (!deployment) throw new Error("the app front served its shell before it read the deployment")
-    return new Response(publishDeployment(await asset.text(), deployment), { status: asset.status, headers: asset.headers })
+    const shell = new Response(publishDeployment(await asset.text(), deployment), { status: asset.status, headers: asset.headers })
+    if (carriesSessionCookie(cookie)) shell.headers.set("link", shellPreloadLinks(pathname))
+    return shell
   }
   const held = (run: () => void) => {
     const delay = input.shaping?.apiDelayMs() ?? 0
@@ -58,7 +62,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     }
     const bundled = await appBundleFile(input.distDir, pathname, request.headers.accept?.includes("text/html") ?? false)
     if (!bundled) { response.writeHead(404).end(); return }
-    const asset = await published(bundled, pathname)
+    const asset = await published(bundled, pathname, request.headers.cookie)
     if (input.shaping) return respondShaped(request, response, path.extname(pathname) ? pathname : "/index.html", asset, answerFor(path.extname(pathname) ? pathname : "/index.html"), input.shaping)
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }

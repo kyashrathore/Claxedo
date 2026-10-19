@@ -36,11 +36,11 @@ import {
   BETTER_AUTH_DESKTOP_CLIENT_ID,
   BETTER_AUTH_INTROSPECTION_CLIENT_ID,
   BETTER_AUTH_NATIVE_SCOPES,
-  BETTER_AUTH_SESSION_COOKIE,
   betterAuthIssuer,
   betterAuthNativeRevocation,
   createBetterAuthD1Foundation,
 } from "../../../platform/auth/better-auth-d1-foundation"
+import { BETTER_AUTH_SESSION_COOKIE } from "../../../platform/auth/session-cookie"
 import {
   resolveBetterAuthConfiguration,
   type AuthEmailSender,

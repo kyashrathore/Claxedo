@@ -19,13 +19,13 @@ import {
   CLAXEDO_MCP_RESOURCE_SCOPES,
   claxedoMcpResource,
 } from "./mcp-oauth-scopes"
+import { BETTER_AUTH_COOKIE_PREFIX } from "./session-cookie"
 import {
   BETTER_AUTH_ACCESS_TOKEN_PREFIX,
   BETTER_AUTH_REFRESH_TOKEN_PREFIX,
   betterAuthOAuthTokenHash,
 } from "./better-auth-token-hash"
 
-export const BETTER_AUTH_SESSION_COOKIE = "__Secure-claxedo.session_token"
 export const BETTER_AUTH_CLI_CLIENT_ID = "claxedo-cli"
 export const BETTER_AUTH_DESKTOP_CLIENT_ID = "claxedo-desktop"
 export const BETTER_AUTH_INTROSPECTION_CLIENT_ID = "claxedo-control-plane"
@@ -174,7 +174,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
       disableCSRFCheck: false,
       disableOriginCheck: false,
       crossSubDomainCookies: { enabled: false },
-      cookiePrefix: "claxedo",
+      cookiePrefix: BETTER_AUTH_COOKIE_PREFIX,
       defaultCookieAttributes: {
         secure: true,
         httpOnly: true,

@@ -2,7 +2,6 @@ import path from "node:path"
 
 import type { CertifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
-import { WORKER_FIRST_PATHS } from "./public-origin"
 
 const SERVER_ROOT = path.resolve(import.meta.dirname, "../..")
 
@@ -202,7 +201,9 @@ export const APP_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-worker.ts")
 /**
  * The app Worker on the deployment's one public origin: the browser app's
  * assets, with the control plane and the relay bound as services behind the
- * paths `public-origin.ts` names, so it is published after both exist.
+ * paths `public-origin.ts` names, so it is published after both exist. It runs
+ * ahead of every asset: the forwarded paths, the hashed chunks whose fallback
+ * it refuses, and the shell whose response names a signed-in boot's preloads.
  */
 export function renderAppWranglerConfig(input: Readonly<{
   appWorkerName: string
@@ -221,7 +222,7 @@ directory = ${quote(path.resolve(input.browserDirectory))}
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 html_handling = "auto-trailing-slash"
-run_worker_first = [${WORKER_FIRST_PATHS.map(quote).join(", ")}]
+run_worker_first = true
 
 [[services]]
 binding = "CONTROL_PLANE"

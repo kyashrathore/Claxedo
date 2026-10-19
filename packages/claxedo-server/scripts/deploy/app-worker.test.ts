@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { unstable_getMiniflareWorkerOptions } from "wrangler"
 import { prepareBrowserArtifactsForWorkers } from "./browser-app"
 import { publicOriginRoute } from "./public-origin"
+import { shellPreloadLinks } from "./shell-preloads"
 import { renderAppWranglerConfig } from "./wrangler-config"
 
 const HEADERS = path.resolve(import.meta.dirname, "../../../claxedo-app/public/_headers")
@@ -292,5 +293,44 @@ describe("the app's assets", () => {
       expect(response.status).toBe(200)
       expect(decoded(response)).toContain("main-new.js")
     }
+  })
+})
+
+describe("the shell's preloads", () => {
+  const session = { cookie: "__Secure-claxedo.session_token=held", "accept-encoding": "identity" }
+
+  test("a signed-in browser's shell names its boot reads as credentialed preloads, the workspace's connection among them", async () => {
+    const response = await serve("/w/workspace-1/session/ses_1", session)
+    expect(response.status).toBe(200)
+    expect(decoded(response)).toContain("main-new.js")
+    expect(response.headers.link).toBe(shellPreloadLinks("/w/workspace-1/session/ses_1"))
+    expect(response.headers.link).toContain("</api/auth/get-session>; rel=preload; as=fetch; crossorigin=use-credentials")
+    expect(response.headers.link).toContain("</api/workspace/workspace-1/connection>; rel=preload; as=fetch; crossorigin=use-credentials")
+    expect(response.headers["cache-control"]).toBe("no-transform, public, max-age=0, must-revalidate")
+    expect((await serve("/", session)).headers.link).toBe(shellPreloadLinks("/"))
+  })
+
+  test("a revalidated shell carries the preloads on its 304", async () => {
+    const first = await serve("/w/workspace-1/session/ses_1", session)
+    const response = await serve("/w/workspace-1/session/ses_1", { ...session, "if-none-match": first.headers.etag! })
+    expect(response.status).toBe(304)
+    expect(response.headers.link).toBe(first.headers.link)
+  })
+
+  test("a browser without the session cookie gets the shell as the assets serve it", async () => {
+    for (const headers of [{ "accept-encoding": "identity" }, { "accept-encoding": "identity", cookie: "theme=dark; __Secure-claxedo.session_token=" }]) {
+      const response = await serve("/w/workspace-1/session/ses_1", headers)
+      expect(response.status).toBe(200)
+      expect(response.headers.link).toBeUndefined()
+    }
+  })
+
+  test("the cookie preloads nothing for a file or a removed chunk", async () => {
+    const chunk = await serve("/assets/terminal-creator-OLD.js", session)
+    expect(chunk.status).toBe(404)
+    expect(chunk.headers.link).toBeUndefined()
+    const file = await serve("/assets/tiny-new.js", session)
+    expect(file.status).toBe(200)
+    expect(file.headers.link).toBeUndefined()
   })
 })
