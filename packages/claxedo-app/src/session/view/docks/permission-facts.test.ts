@@ -46,3 +46,18 @@ test("an ACP ask keeps its command, working directory and raw tool call", () => 
   expect(facts).toMatchObject({ tool: "execute", command: "ls", reason: "List files", directory: "/work", inputFields: [] })
   expect(facts.details).toContain("\"toolCallId\": \"t1\"")
 })
+
+test("an ACP edit ask is summarized by the file it writes, and its raw tool call stays behind Details", () => {
+  const facts = permissionFacts({
+    id: "perm-3", sessionID: "ses-1", permission: "edit", patterns: ["/work/notes.md"], always: [],
+    metadata: { title: "Edit notes.md", reason: "Edit notes.md", acpToolCall: { toolCallId: "t2", kind: "edit", title: "Edit notes.md", locations: [{ path: "/work/notes.md" }] } },
+  })
+  expect(facts.summarized).toBe(true)
+  expect(facts.details).toContain("\"toolCallId\": \"t2\"")
+})
+
+test("an ask that names no command, field or file is not summarized, so its whole input shows", () => {
+  expect(permissionFacts(claudeAsk("mcp__claxedo__session_send", { sessionId: "ses-2", text: "rm -rf /" })).summarized).toBe(false)
+  expect(permissionFacts(claudeAsk("Bash", { command: "ls" })).summarized).toBe(true)
+  expect(permissionFacts(claudeAsk("Edit", { file_path: "/work/a.ts" })).summarized).toBe(true)
+})
