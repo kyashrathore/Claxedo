@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -41,6 +42,12 @@ afterEach(async () => {
   await Promise.all(tempDirs.map((dir) => fs.rm(dir, { recursive: true, force: true })))
   tempDirs.length = 0
 })
+
+function nodeOnPath() {
+  const found = execFileSync(process.platform === "win32" ? "where" : "which", ["node"], { encoding: "utf8" }).split(/\r?\n/).find(Boolean)
+  if (!found) throw new Error("node is not on PATH")
+  return found
+}
 
 async function tempDir() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-docker-driver-test-"))
@@ -229,22 +236,43 @@ describe("DockerSandboxDriver", () => {
   })
 
   test("the docker CLI receives boot env values in its environment, never in its arguments", async () => {
+    // Windows runs only a real executable from `execFile`, so the `docker` on
+    // PATH is node under another name, whose preload answers the CLI's calls
+    // and exits before node would look for a script named `create`. It is a
+    // copy there, where a symlink needs a privilege, and a symlink elsewhere,
+    // where a copied node loses the shared library beside its install.
     const bin = await tempDir()
     const record = path.join(bin, "record")
-    await fs.writeFile(path.join(bin, "docker"), [
-      "#!/bin/sh",
-      `if [ "$1" = create ]; then printf '%s\\n' "$@" > ${record}.args; printf '%s' "$CUSTOM_BOOT_SECRET" > ${record}.env; echo container-id; fi`,
-      'if [ "$1" = port ]; then echo 127.0.0.1:5330; fi',
-    ].join("\n"), { mode: 0o755 })
-    const previousPath = process.env.PATH
-    process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`
+    const node = nodeOnPath()
+    const executable = path.join(bin, `docker${path.extname(node)}`)
+    if (process.platform === "win32") await fs.copyFile(node, executable)
+    else await fs.symlink(node, executable)
+    const shim = path.join(bin, "docker-shim.cjs")
+    await fs.writeFile(shim, [
+      'const fs = require("node:fs")',
+      'const path = require("node:path")',
+      "const subcommand = path.basename(process.argv[1])",
+      `if (subcommand === "create") {`,
+      `  fs.writeFileSync(${JSON.stringify(`${record}.args`)}, [subcommand, ...process.argv.slice(2)].join("\\n"))`,
+      `  fs.writeFileSync(${JSON.stringify(`${record}.env`)}, process.env.CUSTOM_BOOT_SECRET ?? "")`,
+      '  process.stdout.write("container-id\\n")',
+      "}",
+      'if (subcommand === "port") process.stdout.write("127.0.0.1:5330\\n")',
+      "process.exit(0)",
+    ].join("\n"))
+    const previous = { PATH: process.env.PATH, NODE_OPTIONS: process.env.NODE_OPTIONS }
+    process.env.PATH = `${bin}${path.delimiter}${previous.PATH ?? ""}`
+    process.env.NODE_OPTIONS = `--require ${shim}`
     try {
       const driver = createDockerSandboxDriver({ image: "claxedo-sandbox:test", syncLocalAuth: false, waitForHealth: false })
       await driver.ensureHost({ ...input, env: { CUSTOM_BOOT_SECRET: "boot-secret-value" } })
     } finally {
-      process.env.PATH = previousPath
+      process.env.PATH = previous.PATH
+      if (previous.NODE_OPTIONS === undefined) delete process.env.NODE_OPTIONS
+      else process.env.NODE_OPTIONS = previous.NODE_OPTIONS
     }
     const args = (await fs.readFile(`${record}.args`, "utf8")).split("\n")
+    expect(args[0]).toBe("create")
     expect(args).toContain("CUSTOM_BOOT_SECRET")
     expect(args.join("\n")).not.toContain("boot-secret-value")
     expect(await fs.readFile(`${record}.env`, "utf8")).toBe("boot-secret-value")

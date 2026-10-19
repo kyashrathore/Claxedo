@@ -4,19 +4,20 @@ import { createRoot, createSignal } from "solid-js"
 import type { BrowserAuthAdapter } from "./browser-auth"
 import { browserAccountBinding } from "./browser-binding"
 import type { AuthUser } from "./display-user"
+import { stubGlobal } from "@/lib/stub-global"
 
-const originalWindow = globalThis.window
 let reloads = 0
 let page: EventTarget
+let restoreWindow: () => void
 
 beforeEach(() => {
   reloads = 0
   page = new EventTarget()
   Object.assign(page, { location: { origin: "https://app.claxedo.test", reload: () => void reloads++ } })
-  Object.defineProperty(globalThis, "window", { configurable: true, value: page })
+  restoreWindow = stubGlobal("window", page)
 })
 
-afterEach(() => Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }))
+afterEach(() => restoreWindow())
 
 function fakeAdapter(initial: AuthUser | null): BrowserAuthAdapter {
   const [user] = createSignal(initial)

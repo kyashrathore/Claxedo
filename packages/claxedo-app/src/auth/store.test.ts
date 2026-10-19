@@ -1,17 +1,19 @@
 /// <reference types="bun" />
-import { beforeEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import { createComputed, createRoot, createSignal } from "solid-js"
 import type { AccountSession } from "./binding"
 import type { AuthUser } from "./display-user"
 import { createAuth } from "./store"
+import { stubGlobal } from "@/lib/stub-global"
+
+const restores: Array<() => void> = []
 
 function installStorage(entries: Record<string, string>) {
   const items = new Map(Object.entries(entries))
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) },
-  })
+  restores.push(stubGlobal("localStorage", { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) }))
 }
+
+afterEach(() => restores.splice(0).reverse().forEach((restore) => restore()))
 
 function restoringBinding() {
   const [user, setUser] = createSignal<AuthUser | null>(null)

@@ -258,8 +258,11 @@ describe("browser app artifact", () => {
       await writeFile(path.join(directory, "assets", "font-abc.woff2"), "x".repeat(4096))
       await writeFile(path.join(directory, "sw.js"), `self.source = "${"x".repeat(4096)}"`)
       await prepareBrowserArtifactsForWorkers(directory)
-      expect((await readdir(path.join(directory, "assets"), { recursive: true })).filter((name) => name.endsWith(".br")).sort())
-        .toEqual(["icons/sprite-abc.svg.br", "main-abc.css.br", "main-abc.js.br"])
+      const brotliCopies = (await readdir(path.join(directory, "assets"), { recursive: true }))
+        .filter((name) => name.endsWith(".br"))
+        .map((name) => name.split(path.sep).join("/"))
+        .sort()
+      expect(brotliCopies).toEqual(["icons/sprite-abc.svg.br", "main-abc.css.br", "main-abc.js.br"])
       expect(await readdir(directory)).not.toContain("sw.js.br")
       for (const [name, source] of Object.entries(sources)) {
         expect(brotliDecompressSync(await readFile(path.join(directory, "assets", `${name}.br`))).toString()).toBe(source)

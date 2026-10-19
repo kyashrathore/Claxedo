@@ -110,8 +110,10 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await machine.close()
     await model.close()
     releasePort(modelPort)
-    await rm(directory, { recursive: true, force: true })
-    await rm(persist, { recursive: true, force: true })
+    // Windows can hold a just-retired process's folder and a just-closed
+    // SQLite file for a moment after they are released.
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    await rm(persist, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
   const OPENAI_ACCOUNT = { credentialId: "cred_openai_owner", providerId: "openai", label: "owner's OpenAI key", revision: 3 }

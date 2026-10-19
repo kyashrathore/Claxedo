@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import {
   createOrgInvitationFlow,
   loginDestination,
@@ -8,6 +8,7 @@ import {
 } from "./login-continuation"
 import type { Auth } from "./store"
 import type { AuthState } from "./model"
+import { stubGlobal } from "@/lib/stub-global"
 
 function setup() {
   let state: AuthState = { kind: "signedOut" }
@@ -32,13 +33,14 @@ function setup() {
   return { auth, operations, calls }
 }
 
+let restoreStorage: () => void
+
 beforeEach(() => {
   const items = new Map<string, string>()
-  Object.defineProperty(globalThis, "sessionStorage", {
-    configurable: true,
-    value: { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) },
-  })
+  restoreStorage = stubGlobal("sessionStorage", { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) })
 })
+
+afterEach(() => restoreStorage())
 
 function signedInSetup() {
   const calls: unknown[] = []

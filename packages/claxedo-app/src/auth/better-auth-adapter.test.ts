@@ -1,6 +1,7 @@
 /// <reference types="bun" />
-import { beforeEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import { createBetterAuthBrowserAdapter } from "./better-auth-adapter"
+import { stubGlobal } from "@/lib/stub-global"
 
 const api = "https://api.claxedo.test"
 const app = "https://app.claxedo.test"
@@ -52,18 +53,22 @@ function fakeServer(methods: readonly string[] = ["email-password", "github"], s
   return { calls, adapter: createBetterAuthBrowserAdapter({ request, createClient: () => client }) }
 }
 
+const restores: Array<() => void> = []
+
 function installStorage(name: "localStorage" | "sessionStorage") {
   const items = new Map<string, string>()
-  Object.defineProperty(globalThis, name, {
-    configurable: true,
-    value: new Proxy({ getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) }, { ownKeys: () => [...items.keys()], getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) }),
-  })
+  restores.push(stubGlobal(name, new Proxy(
+    { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) },
+    { ownKeys: () => [...items.keys()], getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) },
+  )))
 }
 
 beforeEach(() => {
   installStorage("localStorage")
   installStorage("sessionStorage")
 })
+
+afterEach(() => restores.splice(0).reverse().forEach((restore) => restore()))
 
 test("better auth: a server that issues no sessions leaves sign-in unavailable", async () => {
   const { adapter } = fakeServer()

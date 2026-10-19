@@ -1,10 +1,10 @@
 /// <reference types="bun" />
 import { afterEach, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
+import { stubGlobal } from "@/lib/stub-global"
 import { createSystemNotificationPermission } from "./system"
 
-const globals = globalThis as unknown as { window?: unknown; Notification?: unknown }
-const saved = { window: globals.window, Notification: globals.Notification }
+const restores: Array<() => void> = []
 
 function browser(permission: NotificationPermission, answer: NotificationPermission) {
   const listeners = new Map<string, () => void>()
@@ -15,19 +15,15 @@ function browser(permission: NotificationPermission, answer: NotificationPermiss
       return answer
     },
   }
-  globals.Notification = notification
-  globals.window = {
+  restores.push(stubGlobal("Notification", notification), stubGlobal("window", {
     Notification: notification,
     addEventListener: (name: string, listener: () => void) => listeners.set(name, listener),
     removeEventListener: (name: string) => listeners.delete(name),
-  }
+  }))
   return { notification, focus: () => listeners.get("focus")?.(), listeners }
 }
 
-afterEach(() => {
-  globals.window = saved.window
-  globals.Notification = saved.Notification
-})
+afterEach(() => restores.splice(0).reverse().forEach((restore) => restore()))
 
 test("system notifications: the permission signal reads the browser's answer, asks only while unasked, and rereads when the window regains focus", async () => {
   const page = browser("default", "granted")
@@ -49,8 +45,7 @@ test("system notifications: the permission signal reads the browser's answer, as
 })
 
 test("system notifications: a browser without the Notification API reports it as unsupported", async () => {
-  globals.Notification = undefined
-  globals.window = { addEventListener: () => undefined, removeEventListener: () => undefined }
+  restores.push(stubGlobal("Notification", undefined), stubGlobal("window", { addEventListener: () => undefined, removeEventListener: () => undefined }))
   await createRoot(async (dispose) => {
     const permission = createSystemNotificationPermission()
     expect(permission.permission()).toBe("unsupported")

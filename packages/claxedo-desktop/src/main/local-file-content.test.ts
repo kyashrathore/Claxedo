@@ -78,9 +78,11 @@ describe("locations private to the desktop", () => {
   })
 
   test("on case-insensitive platforms a recased spelling is refused too", async () => {
+    // The verdict reads the path's shape by platform, so a Windows path is judged as win32, itself case-insensitive.
+    const caseInsensitive: NodeJS.Platform = process.platform === "win32" ? "win32" : "darwin"
     const recased = path.join(path.dirname(credentialsFile), "CREDENTIALS.JSON")
-    await expect(readLocalFileContent(recased, locations, "darwin")).rejects.toThrow("private to the desktop")
+    await expect(readLocalFileContent(recased, locations, caseInsensitive)).rejects.toThrow("private to the desktop")
     const recasedLocations = { ...locations, directories: [userData.toUpperCase()] }
-    await expect(readLocalFileContent(path.join(userData, "Logs", "main.log"), recasedLocations, "darwin")).rejects.toThrow("private to the desktop")
+    await expect(readLocalFileContent(path.join(userData, "Logs", "main.log"), recasedLocations, caseInsensitive)).rejects.toThrow("private to the desktop")
   })
 })

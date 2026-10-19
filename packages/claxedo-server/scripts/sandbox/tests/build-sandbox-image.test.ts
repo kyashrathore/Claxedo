@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { build as esbuildBuild } from "esbuild"
@@ -207,10 +208,14 @@ describe("build-sandbox-image", () => {
   })
 
   test("writes the runtime version consumed by the bundled host", () => {
-    const outDir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "claxedo-workspace-runtime-version-"))
-    const versionFile = writeWorkspaceRuntimeVersion(outDir)
-    expect(versionFile).toBe(path.join(outDir, WORKSPACE_RUNTIME_VERSION_FILENAME))
-    expect(fs.readFileSync(versionFile, "utf8")).toMatch(/^\d+\.\d+\.\d+\n$/)
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-workspace-runtime-version-"))
+    try {
+      const versionFile = writeWorkspaceRuntimeVersion(outDir)
+      expect(versionFile).toBe(path.join(outDir, WORKSPACE_RUNTIME_VERSION_FILENAME))
+      expect(fs.readFileSync(versionFile, "utf8")).toMatch(/^\d+\.\d+\.\d+\n$/)
+    } finally {
+      fs.rmSync(outDir, { recursive: true, force: true })
+    }
   })
 
   test("production images do not bundle or start an agent provider", () => {

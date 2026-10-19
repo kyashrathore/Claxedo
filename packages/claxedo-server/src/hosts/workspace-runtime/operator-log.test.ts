@@ -34,6 +34,12 @@ test("the runtime takes its operator log out of the environment its children inh
   log.info("prompt received", { text: "the person's prompt" })
   log.warn("Session authority unavailable", { action: "write", ms: 5003, cause: "timeout" })
   expect(readFileSync(file, "utf8")).toMatch(/^\S+ WARN  Session authority unavailable service=session-authority action=write ms=5003 cause=timeout\n$/)
+})
+
+// NT has no owner-only mode: Node reports 0o666 for any writable file there.
+test.skipIf(process.platform === "win32")("the operator log is created readable and writable by the runtime's user alone", () => {
+  const file = operatorLog()
+  claimOperatorLog({ [WORKSPACE_RUNTIME_OPERATOR_LOG]: file })
   expect(statSync(file).mode & 0o777).toBe(0o600)
 })
 
