@@ -65,7 +65,8 @@ test("59 an OpenCode draft on an asleep cloud workspace and Settings → Models 
   const boots = await bootsServed(signedCloud)
 
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
-  await expect(page.getByText("This workspace is asleep. It wakes when you send a message.", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Where it runs", exact: true })).toHaveText("main")
+  await expect(page.getByText("This workspace is asleep. It wakes when you send a message.", { exact: true })).toHaveCount(0)
   const catalog = (await page.evaluate(async (workspaceId) => (await fetch(`/api/claxedo/agent-config/providers?nativeHarness=opencode&workspaceId=${workspaceId}&view=summary`)).json(), workspace.id)) as OpenCodeCatalog
   const openai = catalog.all.find((provider) => provider.id === "openai")
   const fallback = catalog.default.openai
@@ -80,6 +81,7 @@ test("59 an OpenCode draft on an asleep cloud workspace and Settings → Models 
   await expect(picker.getByRole("button", { name: new RegExp(`^${model}`) }).first()).toBeVisible()
   await expect(picker.getByText("Its models load once it wakes.", { exact: true })).toHaveCount(0)
   await page.keyboard.press("Escape")
+  await expect(page.getByText("This workspace is asleep. It wakes when you send a message.", { exact: true })).toHaveCount(0)
   expect(starts.filter((method) => method === "POST"), "the draft's models come without starting the workspace").toEqual([])
 
   const forwarded = signedCloud.controlPlaneRequests().length
