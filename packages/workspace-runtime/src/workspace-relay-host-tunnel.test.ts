@@ -1462,7 +1462,7 @@ describe("workspace relay host tunnel client", () => {
  * W6b.3 — the region hint the relay needs to place a workspace's Durable Object.
  *
  * The relay derives its DO location hint from a region on the very first request
- * (`relayRequestRegion` in workspace-relay/src/cloudflare.ts) and that placement
+ * (`relayRequestRegion` in workspace-relay/src/relay-location.ts) and that placement
  * is PERMANENT — a DO's location is fixed at creation and never migrates. The
  * relay reads the param; this is the side that sends it.
  *

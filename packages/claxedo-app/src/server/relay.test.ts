@@ -68,6 +68,15 @@ test("relay: a workspace a person's machine serves declares no region, so its ro
   expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/api/wr/health")
 })
 
+test("relay: a session its own Durable Object serves declares no region; the relay places its room beside the object from the token", async () => {
+  const server = control({ backing: "durable-object", sessionId: "ses_pi", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockResolvedValue(Response.json([]))
+
+  await createRelay(server.read).fetch("ws_1", "/session/ses_pi/outline", undefined, "ses_pi")
+
+  expect(runtimeFetch.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/session/ses_pi/outline")
+})
+
 test("relay: a kept cloud link keeps its region across a reload", async () => {
   const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))

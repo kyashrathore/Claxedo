@@ -86,14 +86,17 @@ function startElapsedOf(value: unknown): StartElapsed | undefined {
   return { done: START_STEPS.filter((step) => reached.has(step)), sinceStartMs, sinceStepMs }
 }
 
-const PLANE_PLACED_BACKINGS: ReadonlySet<unknown> = new Set(["cloud-vm", "durable-object"])
-
+/**
+ * Only a cloud machine's region is the browser's to declare: the relay places
+ * a session its Durable Object serves from the host its token names, and a
+ * person's own machine has no region the plane placed.
+ */
 function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnection {
   const { relayUrl, runtimeAccessToken, tokenExpiresAt } = row
   if (typeof relayUrl !== "string" || typeof runtimeAccessToken !== "string" || typeof tokenExpiresAt !== "number") {
     throw new ServerError({ class: "internal", message: `The workspace connection for ${workspaceId} is malformed` })
   }
-  const region = PLANE_PLACED_BACKINGS.has(row.backing) ? nonEmptyString(row.homeRegion) : undefined
+  const region = row.backing === "cloud-vm" ? nonEmptyString(row.homeRegion) : undefined
   return { workspaceId, relayUrl: relayUrl.replace(/\/+$/, ""), runtimeAccessToken, tokenExpiresAt, ...(region ? { region } : {}) }
 }
 

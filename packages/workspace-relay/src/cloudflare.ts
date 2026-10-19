@@ -3,16 +3,13 @@
 // file list, so the ambient declaration has to travel with the file.
 /// <reference path="./workerd-globals.d.ts" />
 import { hostTunnelFailure, hostTunnelFailureResponse } from "./host-tunnel-failure"
-import { createRemoteJWKSet, importSPKI } from "jose"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import {
   WorkspaceRelayAuthError,
   verifyHostTunnelToken,
-  verifyRuntimeAccessToken,
   type HostTunnelTokenClaims,
-  type RelayKey,
 } from "./auth"
-import { bearerToken, errorBody } from "./http"
+import { bearerToken, errorBody, hostIdFromTunnelPath, workspaceIdsFromSearch } from "./http"
 import {
   makeTunnelPong,
   TUNNEL_PROTOCOL_VERSION,
@@ -36,7 +33,7 @@ import { createWorkspaceRelayDirectory } from "./directory"
 import { corsPreflight, withRelayResponseHeaders, workspaceUpgradeOriginDenied } from "./relay-cors"
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 import { forwardSessionHostHttp, isSessionHostTarget, type SessionHostNamespace } from "./session-host-forwarding"
-import { relayRoomPlacement } from "./relay-location"
+import { workspaceRelayRoomPlacement } from "./gateway-placement"
 
 export type WorkspaceRelayDurableObjectId = unknown
 
@@ -45,9 +42,7 @@ export type WorkspaceRelayDurableObjectStub = {
 }
 
 export type WorkspaceRelayDurableObjectGetOptions = {
-  // Cloudflare Durable Object placement hint, applied when the DO is first
-  // created. Keeps the relay's stateful end near users so each browser↔host
-  // round-trip doesn't cross continents.
+  /** Cloudflare's placement hint, honoured on the room's first creation only: beside the workspace's runtime (`workspaceRelayRoomPlacement`). */
   locationHint?: string
 }
 
@@ -60,90 +55,6 @@ export type WorkspaceRelayDurableObjectNamespace = {
 }
 
 export type WorkspaceRelayDurableObjectEnv = Record<string, unknown>
-
-/**
- * Runtime access key material for placement-hint authentication, resolved
- * lazily from the same env contract `worker.ts` reads
- * (`CLAXEDO_CONTROL_PLANE_JWKS_URL`, then
- * `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM`). The gateway is constructed
- * before env exists, so resolution happens per fetch and is cached by the env
- * value itself — both are fixed for a deployment's life, and a JWKS resolver
- * additionally caches its fetched key set.
- */
-const placementAuthKeys = new Map<string, Promise<RelayKey | undefined>>()
-
-function placementAuthKey(env: WorkspaceRelayDurableObjectEnv) {
-  const jwksUrl = typeof env.CLAXEDO_CONTROL_PLANE_JWKS_URL === "string"
-    ? trimToUndefined(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
-    : undefined
-  const pem = (typeof env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM === "string"
-    ? trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
-    : undefined)?.replaceAll("\\n", "\n")
-  const id = jwksUrl ? `jwks:${jwksUrl}` : pem ? `pem:${pem}` : undefined
-  if (!id) return undefined
-  const cached = placementAuthKeys.get(id)
-  if (cached) return cached
-  if (placementAuthKeys.size >= 32) placementAuthKeys.clear()
-  const loaded = (async (): Promise<RelayKey | undefined> => {
-    try {
-      if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl))
-      if (!pem) return undefined
-      return await importSPKI(pem, "EdDSA")
-    } catch {
-      return undefined
-    }
-  })()
-  placementAuthKeys.set(id, loaded)
-  return loaded
-}
-
-function runtimeAccessTokenFrom(request: Request) {
-  return bearerToken(request.headers.get("authorization") ?? undefined)
-    ?? request.headers.get("sec-websocket-protocol")
-      ?.split(",")
-      .map((item) => item.trim())
-      .find((item) => item.startsWith("claxedo-rat."))
-      ?.slice("claxedo-rat.".length)
-}
-
-/**
- * Whether the request's own credential verifies against the deployment's
- * runtime access key — the only verdict that makes its declared placement
- * inputs (region header/param, edge country) trustworthy.
- *
- * The Durable Object's location is fixed at first creation and never
- * migrates, and this gateway runs BEFORE the room authenticates anything, so
- * a hint taken straight from an anonymous request would let first-touch
- * traffic pin a workspace's room wherever the caller chose for the room's
- * whole life. This is a signature-level check only — the room still performs
- * the full authorization after routing — and it fails closed: a deployment
- * without verifiable key material, or a caller authenticated through a custom
- * `tokenVerifier` the gateway cannot see, simply gets the configured hint.
- */
-async function relayPlacementAuthenticated(
-  request: Request,
-  env: WorkspaceRelayDurableObjectEnv,
-  url: URL,
-  workspaceId: string,
-) {
-  const key = await placementAuthKey(env)
-  if (!key) return false
-  try {
-    if (url.pathname.startsWith("/host-tunnels/")) {
-      const hostId = trimToUndefined(hostIdFromTunnelPath(url.pathname))
-      const token = bearerToken(request.headers.get("authorization"))
-      if (!hostId || !token) return false
-      await verifyHostTunnelToken(token, key, { hostId, workspaceIds: workspaceIdsFromSearch(url) })
-      return true
-    }
-    const token = runtimeAccessTokenFrom(request)
-    if (!token) return false
-    await verifyRuntimeAccessToken(token, key, { workspaceId })
-    return true
-  } catch {
-    return false
-  }
-}
 
 export type WorkspaceRelayDurableObjectGatewayOptions = {
   bindingName?: string
@@ -523,10 +434,6 @@ function workspaceIdFromRelayPath(pathname: string) {
   return /^\/workspaces\/([^/]+)(?:\/|$)/.exec(pathname)?.[1]
 }
 
-function hostIdFromTunnelPath(pathname: string) {
-  return /^\/host-tunnels\/([^/]+)(?:\/|$)/.exec(pathname)?.[1]
-}
-
 function websocketRequest(request: Request) {
   return request.headers.get("upgrade")?.toLowerCase() === "websocket"
 }
@@ -538,13 +445,6 @@ function websocketRequest(request: Request) {
 // change.
 function relayWebSocketTraceEnabled(request: Request) {
   return request.headers.get("x-claxedo-relay-ws-trace") === "1"
-}
-
-function workspaceIdsFromSearch(url: URL) {
-  return [...new Set([
-    ...url.searchParams.getAll("workspaceId"),
-    ...url.searchParams.getAll("workspace_id"),
-  ].map(trimToUndefined).filter((item): item is string => !!item))]
 }
 
 function randomToken() {
@@ -900,12 +800,7 @@ export function createWorkspaceRelayDurableObjectGateway(
           url.pathname.startsWith("/workspaces/") || url.pathname.startsWith("/host-tunnels/") ? 400 : 404,
         )
       }
-      // The room's location is fixed at its first creation and never migrates,
-      // so this decision is permanent for the workspace.
-      const placement = await relayRoomPlacement(request, {
-        ...(typeof env.CLAXEDO_RELAY_LOCATION_HINT === "string" ? { configured: env.CLAXEDO_RELAY_LOCATION_HINT } : {}),
-        authenticated: () => relayPlacementAuthenticated(request, env, url, workspaceId),
-      })
+      const placement = await workspaceRelayRoomPlacement(request, env, workspaceId)
       const locationHint = placement.locationHint
       const routeFinishedAt = performance.now()
       const response = await namespace.get(namespace.idFromName(workspaceRelayDurableObjectRoomName(workspaceId)), {

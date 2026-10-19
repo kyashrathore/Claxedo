@@ -1,22 +1,15 @@
 import { sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
 import type { RelayBacking } from "./auth"
 import { errorBody } from "./http"
+import { SESSION_HOST_LOCATION_HINT } from "./relay-location"
 import { workspaceRelayForwardRequestInit, workspaceRelayTargetUrl, type AuthorizedWorkspaceRelayRequest } from "./server"
 
 /** The `SESSION_HOST` binding: one Durable Object per top-level session, named by that session's id. */
 export type SessionHostNamespace = {
-  getByName: (name: string, options?: { locationHint?: "enam" }) => { fetch: (input: string, init?: RequestInit) => Promise<Response> }
+  getByName: (name: string, options?: { locationHint?: typeof SESSION_HOST_LOCATION_HINT }) => { fetch: (input: string, init?: RequestInit) => Promise<Response> }
 }
 
-/**
- * A Durable Object is created near whoever first reaches it and never moves,
- * so without a hint a session opened from India can land in HKG, where
- * api.anthropic.com answers every request 403 `forbidden` "Request not
- * allowed" whatever the credential. Every turn the object calls its model
- * vendor and the control plane (D1 in ENAM, the API Worker pinned to
- * aws:us-east-1), so it lives beside them rather than beside its first viewer.
- */
-const SESSION_HOST_LOCATION = { locationHint: "enam" } as const
+const SESSION_HOST_LOCATION = { locationHint: SESSION_HOST_LOCATION_HINT } as const
 
 /**
  * A Durable Object stub ignores the origin of the URL it is fetched with; the

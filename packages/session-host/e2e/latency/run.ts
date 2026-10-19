@@ -38,6 +38,8 @@ type HopTimes = TurnTimes & {
 
 type ScenarioResult = {
   scenario: Scenario
+  /** The room's location hint, as the gateway decided it. */
+  room: string
   turns: HopTimes[]
   summary: ReturnType<typeof summarizeTurns> & {
     roomPromptSent: Summary | undefined
@@ -77,6 +79,7 @@ async function runScenario(scenario: Scenario, input: { scripts: Scripts; model:
   const boot = (world?: Topology["world"]) => bootTopology({ scripts: input.scripts, persist, root: "ses_latency", links: scenario.links, vendor: { url: input.vendor.url, secret: SECRET },
     ...(scenario.relayCacheTtlMs === undefined ? {} : { relayCacheTtlMs: scenario.relayCacheTtlMs }), ...(world ? { world } : {}) })
   let topology = await boot()
+  const room = topology.room
   const send = () => scenario.path === "relay" ? topology.relay : topology.direct
   const turns: HopTimes[] = []
   const cpCalls: string[] = []
@@ -135,7 +138,7 @@ async function runScenario(scenario: Scenario, input: { scripts: Scripts; model:
   }
   const jitter = (series: readonly number[][]) => summarize(series.map((times) => summarize(intervals(times))?.sd ?? 0))
   return {
-    scenario, turns,
+    scenario, room, turns,
     summary: {
       ...summarizeTurns(turns),
       roomPromptSent: summarize(turns.flatMap((turn) => turn.roomPromptSent === undefined ? [] : [turn.roomPromptSent])),
@@ -157,7 +160,7 @@ async function runScenario(scenario: Scenario, input: { scripts: Scripts; model:
 function report(result: ScenarioResult): string {
   const { summary } = result
   return [
-    `== ${result.scenario.name} (${result.scenario.path}; links ${JSON.stringify(result.scenario.links)}${result.scenario.relayCacheTtlMs === undefined ? "" : `; relay cache ${result.scenario.relayCacheTtlMs} ms`}${result.scenario.coldObject ? "; fresh object per turn" : ""})`,
+    `== ${result.scenario.name} (${result.scenario.path}; room in ${result.room}; links ${JSON.stringify(result.scenario.links)}${result.scenario.relayCacheTtlMs === undefined ? "" : `; relay cache ${result.scenario.relayCacheTtlMs} ms`}${result.scenario.coldObject ? "; fresh object per turn" : ""})`,
     summaryRow("press -> accepted", summary.accepted),
     summaryRow("press -> room sent prompt", summary.roomPromptSent),
     summaryRow("press -> object answered", summary.objectPromptAnswered),

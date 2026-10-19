@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { exportSPKI, generateKeyPair } from "jose"
-import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
+import { sessionHostId, sessionHostRootOf, TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
 import { mintHostTunnelToken, mintRuntimeAccessToken, verifyRelayHostToken, type RuntimeAccessTokenClaims } from "./auth"
 import { createWorkspaceRelayDirectory } from "./directory"
 import {
@@ -18,7 +18,7 @@ import {
   type HostGenerationLookup,
   type HostGenerationResult,
 } from "./resolver-clients"
-import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS } from "./relay-location"
+import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS, SESSION_HOST_LOCATION_HINT } from "./relay-location"
 import type { WorkspaceRelayTarget } from "./relay-target"
 import { signUnfencedHostTunnelToken } from "./test-support/unfenced-host-token"
 
@@ -3645,7 +3645,9 @@ describe("workspace relay Cloudflare room host generation fence", () => {
  *
  * Request-declared inputs (region header/param, edge country) only move the
  * hint off the configured floor when the request's own credential verifies —
- * anonymous first-touch traffic cannot pin a workspace's room placement.
+ * anonymous first-touch traffic cannot pin a workspace's room placement. A
+ * credential naming a session's Durable Object places the room beside that
+ * object, whatever the request declares.
  */
 describe("workspace relay Durable Object location hint", () => {
   async function routeWith(input: {
@@ -3654,7 +3656,9 @@ describe("workspace relay Durable Object location hint", () => {
     search?: string
     cf?: { country?: string }
     env?: Record<string, unknown>
-    authenticate?: "rat" | "rat-subprotocol" | "host-tunnel" | "wrong-workspace" | "invalid"
+    authenticate?: "rat" | "rat-subprotocol" | "host-tunnel" | "wrong-workspace" | "invalid" | "foreign-key"
+    /** The host the Runtime Access Token reaches; a machine unless the test names a session's object. */
+    hostId?: string
   }) {
     const { namespace, routed } = fakeNamespace()
     const gateway = createWorkspaceRelayDurableObjectGateway({ namespace })
@@ -3663,6 +3667,7 @@ describe("workspace relay Durable Object location hint", () => {
     if (input.authenticate) {
       const runtime = await generateKeyPair("EdDSA", { extractable: true })
       env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(runtime.publicKey)
+      const signer = input.authenticate === "foreign-key" ? await generateKeyPair("EdDSA", { extractable: true }) : runtime
       if (input.authenticate === "host-tunnel") {
         headers.authorization = `Bearer ${await mintHostTunnelToken({
           enrollmentId: "enr_1",
@@ -3680,9 +3685,10 @@ describe("workspace relay Durable Object location hint", () => {
           actorKind: "human",
           orgId: "org_1",
           workspaceId: input.authenticate === "wrong-workspace" ? "ws_2" : "ws_1",
-          hostId: "host_1",
+          hostId: input.hostId ?? "host_1",
           role: "editor",
-        }, runtime.privateKey, "EdDSA")
+          ...(input.hostId && sessionHostRootOf(input.hostId) ? { sessionId: sessionHostRootOf(input.hostId) } : {}),
+        }, signer.privateKey, "EdDSA")
         if (input.authenticate === "rat-subprotocol") {
           headers["sec-websocket-protocol"] = `claxedo-rat.${token}`
         } else {
@@ -3825,6 +3831,58 @@ describe("workspace relay Durable Object location hint", () => {
     })
 
     expect(hint).toBe("weur")
+  })
+
+  test("a workspace whose sessions run on their Durable Objects gets its room beside the object, not beside the opener", async () => {
+    // The session's object is created in enam (`SESSION_HOST_LOCATION_HINT`);
+    // the room asks the control plane in IAD on every cold start and every
+    // revocation refresh, so it lives there too, whatever the browser in India
+    // declares and wherever the deployment's floor is.
+    const opened = await routeWith({
+      path: "/workspaces/ws_1/api/wr/events",
+      search: "?sessionID=ses_1&region=apac-south",
+      cf: { country: "IN" },
+      env: { CLAXEDO_RELAY_LOCATION_HINT: "apac" },
+      authenticate: "rat-subprotocol",
+      hostId: sessionHostId("ses_1"),
+    })
+    expect(opened.hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect(opened.routed[0]?.request.url).toBe("https://relay.test/workspaces/ws_1/api/wr/events?sessionID=ses_1")
+
+    const read = await routeWith({
+      path: "/workspaces/ws_1/session/ses_1/outline",
+      authenticate: "rat",
+      hostId: sessionHostId("ses_1"),
+    })
+    expect(read.hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect(read.res.headers.get("x-claxedo-relay-location-hint")).toBe(SESSION_HOST_LOCATION_HINT)
+  })
+
+  test("a machine's room stays beside its machine", async () => {
+    // A cloud machine in apac serving a browser in India, and a person's own
+    // machine in Germany: neither credential names a session's object, so the
+    // declared region and the edge country place the room as before.
+    expect((await routeWith({ search: "?region=apac-south", cf: { country: "IN" }, authenticate: "rat", hostId: "host_cloud_vm" })).hint).toBe("apac")
+    expect((await routeWith({ search: "?region=us-east", cf: { country: "IN" }, authenticate: "rat", hostId: "host_cloud_vm" })).hint).toBe("enam")
+    expect((await routeWith({ cf: { country: "DE" }, authenticate: "rat", hostId: "host_laptop" })).hint).toBe("weur")
+    expect((await routeWith({ path: "/host-tunnels/host_1", search: "?workspaceId=ws_1", cf: { country: "IN" }, authenticate: "host-tunnel" })).hint).toBe("apac")
+  })
+
+  test("no declaration moves a session host's room off its object, and no claim of a session host moves a machine's", async () => {
+    // The host is read from the signed token alone: a region a caller sets on
+    // the query cannot drag the room away from the object, and a token naming
+    // a session's object signed by anyone but the control plane proves nothing,
+    // so the room gets the configured floor as any anonymous request does.
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "rat", hostId: sessionHostId("ses_1") })).hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect((await routeWith({
+      headers: { "x-claxedo-workspace-region": "eu-west" },
+      cf: { country: "DE" },
+      authenticate: "rat",
+      hostId: sessionHostId("ses_1"),
+    })).hint).toBe(SESSION_HOST_LOCATION_HINT)
+    expect((await routeWith({ cf: { country: "IN" }, authenticate: "foreign-key", hostId: sessionHostId("ses_1") })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "foreign-key", hostId: sessionHostId("ses_1") })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({ authenticate: "wrong-workspace", hostId: sessionHostId("ses_1") })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
   })
 
   test("only ever emits a hint Cloudflare recognises", async () => {

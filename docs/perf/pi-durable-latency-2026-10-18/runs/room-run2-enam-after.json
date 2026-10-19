@@ -1,0 +1,1888 @@
+{
+  "vendor": {
+    "ttftMs": 600,
+    "chunks": 40,
+    "cadenceMs": 25
+  },
+  "results": [
+    {
+      "scenario": {
+        "name": "open-cold",
+        "links": {
+          "clientEdgeMs": 50,
+          "roomDoMs": 110,
+          "doCpMs": 5,
+          "cpMs": 50,
+          "vendorMs": 10,
+          "doRelayMs": 10
+        },
+        "object": "cold",
+        "pauseMs": 1000
+      },
+      "room": "enam",
+      "opens": [
+        {
+          "outline": {
+            "headers": 599.962125,
+            "body": 599.9764169999999,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=95",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444327543,\"updated\":1792444328436,\"lastHumanTurn\":1792444328435},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444329712,\"assistantMessageId\":\"msg_OPENOPENCOLD_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENCOLD\",\"createdAt\":1792444328435,\"user\":\"Reply with the scripted text ending in OPENOPENCOLD\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENCOLD\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444328435},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"id\":\"msg_OPENOPENCOLD-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"},{\"info\":{\"id\":\"msg_OPENOPENCOLD_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444328435,\"completed\":1792444329712},\"parentID\":\"msg_OPENOPENCOLD\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENCOLD_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 599.8248330000006,
+            "body": 599.8854170000004,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=95",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 600.0040420000005,
+            "body": 600.0121250000002,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=95",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 600.015375,
+          "hostStart": 0,
+          "hostServe": 95,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 232.49375000000055,
+              "answered": 429.5527920000004
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 232.56420799999978,
+              "answered": 433.1748750000006
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 232.60283299999992,
+              "answered": 432.8864170000006
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 232.63758300000063,
+              "answered": 433.3318330000002
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 427.7298330000003,
+              "ms": 62.763082999999824
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 427.97862500000065,
+              "ms": 62.722625000000335
+            }
+          ],
+          "resolver": [
+            {
+              "path": "/internal/relay/target",
+              "at": 168.53162500000053
+            },
+            {
+              "path": "/internal/relay/revocation",
+              "at": 169.20358300000044
+            }
+          ],
+          "jwks": [
+            337.52408300000025
+          ]
+        },
+        {
+          "outline": {
+            "headers": 616.8429159999996,
+            "body": 616.8508750000001,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444327543,\"updated\":1792444328436,\"lastHumanTurn\":1792444328435},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444329712,\"assistantMessageId\":\"msg_OPENOPENCOLD_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENCOLD\",\"createdAt\":1792444328435,\"user\":\"Reply with the scripted text ending in OPENOPENCOLD\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENCOLD\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444328435},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"id\":\"msg_OPENOPENCOLD-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"},{\"info\":{\"id\":\"msg_OPENOPENCOLD_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444328435,\"completed\":1792444329712},\"parentID\":\"msg_OPENOPENCOLD\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENCOLD_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 616.7871660000001,
+            "body": 616.8195829999995,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 616.8709579999995,
+            "body": 616.8784580000001,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 616.8815409999997,
+          "hostStart": 0,
+          "hostServe": 93,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 233.54420800000025,
+              "answered": 448.53558299999986
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 233.6851660000002,
+              "answered": 451.3590000000004
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 233.73608299999978,
+              "answered": 451.2005829999998
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 233.78562499999953,
+              "answered": 451.4690410000003
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 446.9601249999996,
+              "ms": 61.58708399999978
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 447.1633329999995,
+              "ms": 61.423249999999825
+            }
+          ],
+          "resolver": [
+            {
+              "path": "/internal/relay/target",
+              "at": 167.69516599999952
+            },
+            {
+              "path": "/internal/relay/revocation",
+              "at": 168.39258299999983
+            }
+          ],
+          "jwks": [
+            358.4798330000003
+          ]
+        },
+        {
+          "outline": {
+            "headers": 596.0440419999995,
+            "body": 596.082625,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444327543,\"updated\":1792444328436,\"lastHumanTurn\":1792444328435},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444329712,\"assistantMessageId\":\"msg_OPENOPENCOLD_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENCOLD\",\"createdAt\":1792444328435,\"user\":\"Reply with the scripted text ending in OPENOPENCOLD\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENCOLD\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444328435},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"id\":\"msg_OPENOPENCOLD-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"},{\"info\":{\"id\":\"msg_OPENOPENCOLD_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444328435,\"completed\":1792444329712},\"parentID\":\"msg_OPENOPENCOLD\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENCOLD_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 595.9811249999993,
+            "body": 596.0184999999992,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 596.0689579999998,
+            "body": 596.0912499999995,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 596.0968329999996,
+          "hostStart": 0,
+          "hostServe": 93,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 231.02912500000002,
+              "answered": 425.4607499999993
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 231.1119579999995,
+              "answered": 429.4127499999995
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 231.1631669999997,
+              "answered": 429.1253749999996
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 231.1974169999994,
+              "answered": 429.5515829999995
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 423.57175000000007,
+              "ms": 62.12604200000078
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 423.8345419999996,
+              "ms": 62.207124999999905
+            }
+          ],
+          "resolver": [
+            {
+              "path": "/internal/relay/target",
+              "at": 167.06745799999953
+            },
+            {
+              "path": "/internal/relay/revocation",
+              "at": 167.14745799999946
+            }
+          ],
+          "jwks": [
+            336.0045829999999
+          ]
+        },
+        {
+          "outline": {
+            "headers": 617.2007089999997,
+            "body": 617.2718750000004,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=95",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444327543,\"updated\":1792444328436,\"lastHumanTurn\":1792444328435},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444329712,\"assistantMessageId\":\"msg_OPENOPENCOLD_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENCOLD\",\"createdAt\":1792444328435,\"user\":\"Reply with the scripted text ending in OPENOPENCOLD\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENCOLD\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444328435},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"id\":\"msg_OPENOPENCOLD-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"},{\"info\":{\"id\":\"msg_OPENOPENCOLD_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444328435,\"completed\":1792444329712},\"parentID\":\"msg_OPENOPENCOLD\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENCOLD_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 617.1557089999997,
+            "body": 617.2557919999999,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=95",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 617.2245000000003,
+            "body": 617.2829169999995,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=95",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 618.5000419999997,
+          "hostStart": 0,
+          "hostServe": 95,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 233.0211250000002,
+              "answered": 450.41341699999975
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 233.08870899999965,
+              "answered": 449.91033400000015
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 233.12395899999956,
+              "answered": 449.673667
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 233.15104200000042,
+              "answered": 450.03883399999995
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 445.0708340000001,
+              "ms": 62.9292089999999
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 445.2984999999999,
+              "ms": 63.495082999999795
+            }
+          ],
+          "resolver": [
+            {
+              "path": "/internal/relay/target",
+              "at": 168.18704199999956
+            },
+            {
+              "path": "/internal/relay/revocation",
+              "at": 168.25908400000026
+            }
+          ],
+          "jwks": [
+            354.49966700000004
+          ]
+        },
+        {
+          "outline": {
+            "headers": 596.8111250000002,
+            "body": 596.8170420000006,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444327543,\"updated\":1792444328436,\"lastHumanTurn\":1792444328435},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444329712,\"assistantMessageId\":\"msg_OPENOPENCOLD_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENCOLD\",\"createdAt\":1792444328435,\"user\":\"Reply with the scripted text ending in OPENOPENCOLD\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENCOLD\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444328435},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"id\":\"msg_OPENOPENCOLD-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"},{\"info\":{\"id\":\"msg_OPENOPENCOLD_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444328435,\"completed\":1792444329712},\"parentID\":\"msg_OPENOPENCOLD\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENCOLD_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 596.7651669999996,
+            "body": 596.7897499999999,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 596.8353750000006,
+            "body": 596.8392089999998,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 596.8457500000004,
+          "hostStart": 0,
+          "hostServe": 93,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 233.11937500000022,
+              "answered": 428.01166700000067
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 233.18075000000044,
+              "answered": 431.32666700000027
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 233.21441700000014,
+              "answered": 431.10795899999994
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 233.2449999999999,
+              "answered": 431.4857920000004
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 426.10350000000017,
+              "ms": 61.78299999999945
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 426.3194590000003,
+              "ms": 61.75958400000036
+            }
+          ],
+          "resolver": [
+            {
+              "path": "/internal/relay/target",
+              "at": 168.9161670000003
+            },
+            {
+              "path": "/internal/relay/revocation",
+              "at": 168.97862500000065
+            }
+          ],
+          "jwks": [
+            337.7001250000003
+          ]
+        },
+        {
+          "outline": {
+            "headers": 602.456083000001,
+            "body": 602.4612080000006,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=93",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444327543,\"updated\":1792444328436,\"lastHumanTurn\":1792444328435},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444329712,\"assistantMessageId\":\"msg_OPENOPENCOLD_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENCOLD\",\"createdAt\":1792444328435,\"user\":\"Reply with the scripted text ending in OPENOPENCOLD\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENCOLD\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444328435},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENCOLD\",\"id\":\"msg_OPENOPENCOLD-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"},{\"info\":{\"id\":\"msg_OPENOPENCOLD_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444328435,\"completed\":1792444329712},\"parentID\":\"msg_OPENOPENCOLD\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENCOLD_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENCOLD_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENCOLD\"}],\"turnId\":\"msg_OPENOPENCOLD_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 602.4135409999999,
+            "body": 602.4384160000009,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=92",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 602.4764159999995,
+            "body": 602.4799160000002,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=92",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 602.4880410000005,
+          "hostStart": 0,
+          "hostServe": 93,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 230.90537500000028,
+              "answered": 433.1385829999999
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 230.96504099999947,
+              "answered": 436.7002909999992
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 230.99741600000016,
+              "answered": 436.4250410000004
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 231.02308300000004,
+              "answered": 436.83466600000065
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 431.3480409999993,
+              "ms": 62.66033299999981
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 431.5787500000006,
+              "ms": 62.63683400000082
+            }
+          ],
+          "resolver": [
+            {
+              "path": "/internal/relay/target",
+              "at": 166.70395800000006
+            },
+            {
+              "path": "/internal/relay/revocation",
+              "at": 166.77387500000077
+            }
+          ],
+          "jwks": [
+            342.9385000000002
+          ]
+        }
+      ],
+      "summary": {
+        "outlineHeaders": {
+          "n": 6,
+          "mean": 604.8861666666667,
+          "p50": 602.456083000001,
+          "p95": 617.2007089999997,
+          "min": 596.0440419999995,
+          "max": 617.2007089999997,
+          "sd": 8.83320220343825
+        },
+        "outlineBody": {
+          "n": 6,
+          "mean": 604.9100070000003,
+          "p50": 602.4612080000006,
+          "p95": 617.2718750000004,
+          "min": 596.082625,
+          "max": 617.2718750000004,
+          "sd": 8.84265977462379
+        },
+        "queueBody": {
+          "n": 6,
+          "mean": 604.8679096666666,
+          "p50": 602.4384160000009,
+          "p95": 617.2557919999999,
+          "min": 596.0184999999992,
+          "max": 617.2557919999999,
+          "sd": 8.856245553935658
+        },
+        "openBody": {
+          "n": 6,
+          "mean": 604.9306458333332,
+          "p50": 602.4799160000002,
+          "p95": 617.2829169999995,
+          "min": 596.0912499999995,
+          "max": 617.2829169999995,
+          "sd": 8.84244509147887
+        },
+        "stream": {
+          "n": 6,
+          "mean": 605.1379303333333,
+          "p50": 602.4880410000005,
+          "p95": 618.5000419999997,
+          "min": 596.0968329999996,
+          "max": 618.5000419999997,
+          "sd": 9.13074113435854
+        },
+        "roomSent": {
+          "n": 6,
+          "mean": 232.43263866666652,
+          "p50": 233.08870899999965,
+          "p95": 233.6851660000002,
+          "min": 230.96504099999947,
+          "max": 233.6851660000002,
+          "sd": 1.038771260839689
+        },
+        "objectAnswered": {
+          "n": 6,
+          "mean": 438.64731950000004,
+          "p50": 436.7002909999992,
+          "p95": 451.3590000000004,
+          "min": 429.4127499999995,
+          "max": 451.3590000000004,
+          "sd": 8.765938934523634
+        },
+        "hostStart": {
+          "n": 6,
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "sd": 0
+        },
+        "hostServe": {
+          "n": 6,
+          "mean": 93.66666666666667,
+          "p50": 93,
+          "p95": 95,
+          "min": 93,
+          "max": 95,
+          "sd": 0.9428090415820634
+        },
+        "firstControlPlaneAnswer": {
+          "n": 6,
+          "mean": 433.46401383333324,
+          "p50": 431.3480409999993,
+          "p95": 446.9601249999996,
+          "min": 423.57175000000007,
+          "max": 446.9601249999996,
+          "sd": 9.185636518537063
+        }
+      },
+      "cpCalls": {
+        "session-authorize:start": 1,
+        "session-authorize:register": 1,
+        "session-authorize:read": 13,
+        "session-authorize:turn_acquire": 1,
+        "session-rows": 2,
+        "session-authorize:usage_report": 1,
+        "session-authorize:turn_release": 1
+      },
+      "resolverCalls": {
+        "/internal/relay/target": 7,
+        "/internal/relay/revocation": 7
+      },
+      "jwksCalls": 7
+    },
+    {
+      "scenario": {
+        "name": "open-warm",
+        "links": {
+          "clientEdgeMs": 50,
+          "roomDoMs": 110,
+          "doCpMs": 5,
+          "cpMs": 50,
+          "vendorMs": 10,
+          "doRelayMs": 10
+        },
+        "object": "warm",
+        "pauseMs": 1000
+      },
+      "room": "enam",
+      "opens": [
+        {
+          "outline": {
+            "headers": 423.58229200000096,
+            "body": 423.61262499999975,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=64",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENWARM\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444335148,\"updated\":1792444336037,\"lastHumanTurn\":1792444336036},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444337308,\"assistantMessageId\":\"msg_OPENOPENWARM_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENWARM\",\"createdAt\":1792444336036,\"user\":\"Reply with the scripted text ending in OPENOPENWARM\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENWARM\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444336036},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENWARM\",\"id\":\"msg_OPENOPENWARM-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"},{\"info\":{\"id\":\"msg_OPENOPENWARM_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444336036,\"completed\":1792444337308},\"parentID\":\"msg_OPENOPENWARM\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENWARM_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 423.52050000000054,
+            "body": 423.5455839999995,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=64",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 423.60200000000077,
+            "body": 423.6188750000001,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=64",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 423.6273340000007,
+          "hostStart": 0,
+          "hostServe": 64,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 161.99141699999927,
+              "answered": 256.2033339999998
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 163.6717090000002,
+              "answered": 257.65341699999954
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 163.75079200000073,
+              "answered": 257.4605420000007
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 163.7902090000007,
+              "answered": 257.78391700000066
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 255.07020899999952,
+              "ms": 62.30512499999895
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 255.3087919999998,
+              "ms": 61.53349999999955
+            }
+          ],
+          "resolver": [],
+          "jwks": []
+        },
+        {
+          "outline": {
+            "headers": 431.38787500000035,
+            "body": 431.3936250000006,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENWARM\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444335148,\"updated\":1792444336037,\"lastHumanTurn\":1792444336036},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444337308,\"assistantMessageId\":\"msg_OPENOPENWARM_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENWARM\",\"createdAt\":1792444336036,\"user\":\"Reply with the scripted text ending in OPENOPENWARM\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENWARM\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444336036},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENWARM\",\"id\":\"msg_OPENOPENWARM-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"},{\"info\":{\"id\":\"msg_OPENOPENWARM_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444336036,\"completed\":1792444337308},\"parentID\":\"msg_OPENOPENWARM\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENWARM_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 431.32704100000046,
+            "body": 431.35320800000045,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 431.40799999999945,
+            "body": 431.4117499999993,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 431.42008299999907,
+          "hostStart": 0,
+          "hostServe": 63,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 162.9125409999997,
+              "answered": 263.5602080000008
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 163.87170800000058,
+              "answered": 265.62104100000033
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 163.95508300000074,
+              "answered": 265.4402910000008
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 163.99987499999952,
+              "answered": 265.7506250000006
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 262.4729580000003,
+              "ms": 61.64387499999975
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 262.68070799999987,
+              "ms": 60.571874999999636
+            }
+          ],
+          "resolver": [],
+          "jwks": []
+        },
+        {
+          "outline": {
+            "headers": 424.7407499999972,
+            "body": 424.76483299999745,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=64",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENWARM\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444335148,\"updated\":1792444336037,\"lastHumanTurn\":1792444336036},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444337308,\"assistantMessageId\":\"msg_OPENOPENWARM_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENWARM\",\"createdAt\":1792444336036,\"user\":\"Reply with the scripted text ending in OPENOPENWARM\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENWARM\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444336036},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENWARM\",\"id\":\"msg_OPENOPENWARM-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"},{\"info\":{\"id\":\"msg_OPENOPENWARM_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444336036,\"completed\":1792444337308},\"parentID\":\"msg_OPENOPENWARM\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENWARM_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 424.63783299999704,
+            "body": 424.6672499999986,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 424.7960409999978,
+            "body": 424.8026659999996,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 424.807582999998,
+          "hostStart": 0,
+          "hostServe": 64,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 162.6627499999995,
+              "answered": 257.4083329999994
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 164.5654579999973,
+              "answered": 258.78158299999996
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 164.61270799999693,
+              "answered": 258.58845799999835
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 164.64333299999998,
+              "answered": 258.90916599999764
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 256.3588329999984,
+              "ms": 62.408707999999024
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 256.60029099999883,
+              "ms": 61.492833000000246
+            }
+          ],
+          "resolver": [],
+          "jwks": []
+        },
+        {
+          "outline": {
+            "headers": 428.71454099999755,
+            "body": 428.8099999999977,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENWARM\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444335148,\"updated\":1792444336037,\"lastHumanTurn\":1792444336036},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444337308,\"assistantMessageId\":\"msg_OPENOPENWARM_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENWARM\",\"createdAt\":1792444336036,\"user\":\"Reply with the scripted text ending in OPENOPENWARM\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENWARM\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444336036},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENWARM\",\"id\":\"msg_OPENOPENWARM-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"},{\"info\":{\"id\":\"msg_OPENOPENWARM_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444336036,\"completed\":1792444337308},\"parentID\":\"msg_OPENOPENWARM\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENWARM_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 428.60245799999757,
+            "body": 428.8004579999979,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 428.75229099999706,
+            "body": 428.8143749999981,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=63",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 428.8164579999975,
+          "hostStart": 0,
+          "hostServe": 63,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 163.33629099999962,
+              "answered": 262.0614159999968
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 164.31879099999787,
+              "answered": 261.7304159999985
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 164.35533299999952,
+              "answered": 261.5394159999996
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 164.3807909999996,
+              "answered": 261.91599999999744
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 259.7034999999996,
+              "ms": 61.272124999999505
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 259.9567079999979,
+              "ms": 62.25183299999844
+            }
+          ],
+          "resolver": [],
+          "jwks": []
+        },
+        {
+          "outline": {
+            "headers": 420.8860840000016,
+            "body": 420.9156670000011,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=64",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENWARM\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444335148,\"updated\":1792444336037,\"lastHumanTurn\":1792444336036},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444337308,\"assistantMessageId\":\"msg_OPENOPENWARM_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENWARM\",\"createdAt\":1792444336036,\"user\":\"Reply with the scripted text ending in OPENOPENWARM\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENWARM\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444336036},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENWARM\",\"id\":\"msg_OPENOPENWARM-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"},{\"info\":{\"id\":\"msg_OPENOPENWARM_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444336036,\"completed\":1792444337308},\"parentID\":\"msg_OPENOPENWARM\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENWARM_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 420.841042,
+            "body": 420.8670420000017,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=64",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 420.90520900000047,
+            "body": 420.92245900000125,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=64",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 420.9249170000003,
+          "hostStart": 0,
+          "hostServe": 64,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 162.73754199999894,
+              "answered": 252.6424169999991
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 164.86229200000162,
+              "answered": 255.5655000000006
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 164.9309170000015,
+              "answered": 255.37166699999943
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 164.97970899999927,
+              "answered": 255.67966700000034
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 251.60091699999975,
+              "ms": 60.642791999998735
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 253.86354199999914,
+              "ms": 62.012917000000016
+            }
+          ],
+          "resolver": [],
+          "jwks": []
+        },
+        {
+          "outline": {
+            "headers": 424.5160419999993,
+            "body": 424.5431669999998,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=62",
+            "text": "{\"session\":{\"id\":\"ses_latency_open\",\"workspaceId\":\"ws_session_host\",\"title\":\"Reply with the scripted text ending in OPENOPENWARM\",\"titleSource\":\"prompt\",\"directory\":\"/workspace\",\"time\":{\"created\":1792444335148,\"updated\":1792444336037,\"lastHumanTurn\":1792444336036},\"config\":{\"harness\":{\"id\":\"pi\",\"access\":\"native\"},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"},\"variant\":null,\"agent\":null,\"permissionMode\":\"full\"},\"status\":\"idle\",\"agent_session_id\":\"ses_latency_open:1\",\"lastTurn\":{\"status\":\"completed\",\"completedAt\":1792444337308,\"assistantMessageId\":\"msg_OPENOPENWARM_r\"}},\"outline\":{\"turns\":[{\"id\":\"msg_OPENOPENWARM\",\"createdAt\":1792444336036,\"user\":\"Reply with the scripted text ending in OPENOPENWARM\"}],\"complete\":true},\"page\":{\"turns\":[{\"messages\":[{\"info\":{\"id\":\"msg_OPENOPENWARM\",\"sessionID\":\"ses_latency_open\",\"role\":\"user\",\"time\":{\"created\":1792444336036},\"model\":{\"providerID\":\"pi\",\"modelID\":\"openai/gpt-4.1\"}},\"parts\":[{\"type\":\"text\",\"text\":\"Reply with the scripted text ending in OPENOPENWARM\",\"id\":\"msg_OPENOPENWARM-part-0\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"},{\"info\":{\"id\":\"msg_OPENOPENWARM_r\",\"sessionID\":\"ses_latency_open\",\"role\":\"assistant\",\"time\":{\"created\":1792444336036,\"completed\":1792444337308},\"parentID\":\"msg_OPENOPENWARM\",\"modelID\":\"openai/gpt-4.1\",\"providerID\":\"pi\",\"mode\":\"auto\",\"path\":{\"cwd\":\"/workspace\",\"root\":\"/workspace\"},\"cost\":0,\"tokens\":{\"input\":1,\"output\":1,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"parts\":[{\"id\":\"000000_msg_OPENOPENWARM_r-text\",\"sessionID\":\"ses_latency_open\",\"messageID\":\"msg_OPENOPENWARM_r\",\"type\":\"text\",\"text\":\"The transcript's one assistant answer OPENOPENWARM\"}],\"turnId\":\"msg_OPENOPENWARM_r\"}]}]}}"
+          },
+          "queue": {
+            "headers": 423.27229200000147,
+            "body": 423.2887499999997,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=62",
+            "text": "[]"
+          },
+          "open": {
+            "headers": 424.5687079999989,
+            "body": 424.575499999999,
+            "status": 200,
+            "serverTiming": "host-start;dur=0, host-serve;dur=62",
+            "text": "{\"status\":{\"value\":null},\"permissions\":{\"value\":[]},\"questions\":{\"value\":[]},\"todos\":{\"error\":{\"status\":409,\"code\":\"unsupported_operation\",\"message\":\"pi does not support todos\"}},\"goal\":{\"value\":{\"capabilities\":{\"implemented\":false,\"available\":false,\"actions\":[],\"recovery\":\"blocked\",\"optionalFields\":[]},\"goal\":null}},\"subagents\":{\"value\":[]}}"
+          },
+          "stream": 424.57787499999904,
+          "hostStart": 0,
+          "hostServe": 62,
+          "room": [
+            {
+              "path": "/api/wr/events",
+              "sent": 163.02095800000097,
+              "answered": 256.44758300000103
+            },
+            {
+              "path": "/session/ses_latency_open/outline",
+              "sent": 164.04300000000148,
+              "answered": 257.80125000000044
+            },
+            {
+              "path": "/session/ses_latency_open/queue",
+              "sent": 164.07995800000208,
+              "answered": 257.48566700000083
+            },
+            {
+              "path": "/session/ses_latency_open",
+              "sent": 164.109292000001,
+              "answered": 257.9873750000006
+            }
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:read",
+              "at": 255.37495800000033,
+              "ms": 61.234375
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 255.5962499999987,
+              "ms": 60.53770799999984
+            }
+          ],
+          "resolver": [],
+          "jwks": []
+        }
+      ],
+      "summary": {
+        "outlineHeaders": {
+          "n": 6,
+          "mean": 425.63793066666614,
+          "p50": 424.7407499999972,
+          "p95": 431.38787500000035,
+          "min": 420.8860840000016,
+          "max": 431.38787500000035,
+          "sd": 3.4495568647780446
+        },
+        "outlineBody": {
+          "n": 6,
+          "mean": 425.6733194999994,
+          "p50": 424.76483299999745,
+          "p95": 431.3936250000006,
+          "min": 420.9156670000011,
+          "max": 431.3936250000006,
+          "sd": 3.453137971454932
+        },
+        "queueBody": {
+          "n": 6,
+          "mean": 425.4203819999996,
+          "p50": 424.6672499999986,
+          "p95": 431.35320800000045,
+          "min": 420.8670420000017,
+          "max": 431.35320800000045,
+          "sd": 3.5586086607288205
+        },
+        "openBody": {
+          "n": 6,
+          "mean": 425.69093749999956,
+          "p50": 424.8026659999996,
+          "p95": 431.4117499999993,
+          "min": 420.92245900000125,
+          "max": 431.4117499999993,
+          "sd": 3.4532259014704927
+        },
+        "stream": {
+          "n": 6,
+          "mean": 425.69570833333245,
+          "p50": 424.807582999998,
+          "p95": 431.42008299999907,
+          "min": 420.9249170000003,
+          "max": 431.42008299999907,
+          "sd": 3.4540913929273622
+        },
+        "roomSent": {
+          "n": 6,
+          "mean": 164.2221596666665,
+          "p50": 164.31879099999787,
+          "p95": 164.86229200000162,
+          "min": 163.6717090000002,
+          "max": 164.86229200000162,
+          "sd": 0.40720004455058545
+        },
+        "objectAnswered": {
+          "n": 6,
+          "mean": 259.5255344999999,
+          "p50": 258.78158299999996,
+          "p95": 265.62104100000033,
+          "min": 255.5655000000006,
+          "max": 265.62104100000033,
+          "sd": 3.2845603451823515
+        },
+        "hostStart": {
+          "n": 6,
+          "mean": 0,
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "sd": 0
+        },
+        "hostServe": {
+          "n": 6,
+          "mean": 63.333333333333336,
+          "p50": 64,
+          "p95": 64,
+          "min": 62,
+          "max": 64,
+          "sd": 0.7453559924999298
+        },
+        "firstControlPlaneAnswer": {
+          "n": 6,
+          "mean": 256.76356249999964,
+          "p50": 256.3588329999984,
+          "p95": 262.4729580000003,
+          "min": 251.60091699999975,
+          "max": 262.4729580000003,
+          "sd": 3.4845567039810366
+        }
+      },
+      "cpCalls": {
+        "session-authorize:start": 1,
+        "session-authorize:register": 1,
+        "session-authorize:read": 18,
+        "session-authorize:turn_acquire": 1,
+        "session-rows": 2,
+        "session-authorize:usage_report": 1,
+        "session-authorize:turn_release": 1
+      },
+      "resolverCalls": {
+        "/internal/relay/target": 2,
+        "/internal/relay/revocation": 2
+      },
+      "jwksCalls": 2
+    },
+    {
+      "scenario": {
+        "name": "relay-cold-cache",
+        "links": {
+          "clientEdgeMs": 50,
+          "roomDoMs": 110,
+          "doCpMs": 5,
+          "cpMs": 50,
+          "vendorMs": 10,
+          "doRelayMs": 10
+        },
+        "relayCacheTtlMs": 1,
+        "path": "relay",
+        "pauseMs": 1000
+      },
+      "room": "enam",
+      "turns": [
+        {
+          "accepted": 492.6227080000026,
+          "firstDelta": 1222.0009580000005,
+          "deltas": [
+            1222.0009580000005,
+            1346.6267499999994,
+            1447.804833000002,
+            1550.4600000000028,
+            1652.5039580000011,
+            1754.6990829999995,
+            1860.3748750000013,
+            1964.4700000000012,
+            2059.531500000001
+          ],
+          "idle": 2067.9888329999994,
+          "lastDeltaToIdle": 8.45733299999847,
+          "roomPromptSent": 225.0794590000005,
+          "objectPromptAnswered": 326.1578750000008,
+          "vendorRequest": 326.3118340000001,
+          "vendorFirstByte": 937.4882089999992,
+          "vendorDeltas": [
+            937.4882089999992,
+            937.4927090000019,
+            937.4937089999985,
+            937.4945420000004,
+            963.8712500000001,
+            989.0421669999996,
+            1014.2024999999994,
+            1040.6132499999985,
+            1066.5068339999998,
+            1092.8848749999997,
+            1117.309959000002,
+            1143.3711250000015,
+            1169.7245000000003,
+            1195.0855840000004,
+            1220.8567089999997,
+            1246.3877089999987,
+            1272.4897920000003,
+            1298.164166999999,
+            1324.9443339999998,
+            1351.1530420000017,
+            1377.4947500000017,
+            1402.7788340000006,
+            1428.1575420000008,
+            1453.6522089999999,
+            1478.213584000001,
+            1504.7622499999998,
+            1530.0950840000005,
+            1556.2090419999986,
+            1582.7831670000014,
+            1608.1582500000004,
+            1634.780999999999,
+            1660.0929590000014,
+            1686.6692919999987,
+            1711.9719589999986,
+            1738.2577500000007,
+            1764.926209000001,
+            1790.4935839999998,
+            1817.3776670000007,
+            1842.845541999999,
+            1868.5643339999988,
+            1868.5691670000015,
+            1868.5703749999993,
+            1868.5710419999996,
+            1868.5723340000004
+          ],
+          "objectDeltas": [
+            1053.4052090000005,
+            1180.0428339999999,
+            1282.1260000000002,
+            1384.0061249999999,
+            1487.7647920000018,
+            1590.5217499999999,
+            1694.958584,
+            1797.8964589999996,
+            1893.6887090000018
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:turn_acquire",
+              "at": 302.3088339999995,
+              "ms": 61.71037499999875
+            },
+            {
+              "action": "session-rows",
+              "at": 618.7429999999986,
+              "ms": 62.89012499999808
+            },
+            {
+              "action": "session-authorize:usage_report",
+              "at": 1957.0278749999998,
+              "ms": 62.9139159999977
+            },
+            {
+              "action": "session-rows",
+              "at": 1957.4118750000016,
+              "ms": 63.17229100000259
+            },
+            {
+              "action": "session-authorize:turn_release",
+              "at": 2021.9907090000015,
+              "ms": 63.360375000000204
+            }
+          ]
+        },
+        {
+          "accepted": 473.41495799999757,
+          "firstDelta": 1197.562249999999,
+          "deltas": [
+            1197.562249999999,
+            1299.2819999999992,
+            1401.4372079999994,
+            1503.953125,
+            1606.501874999998,
+            1711.8924579999984,
+            1812.1056659999995,
+            1923.7220409999973,
+            2021.2216249999983,
+            2031.5011659999982
+          ],
+          "idle": 2040.6726659999986,
+          "lastDeltaToIdle": 9.171500000000378,
+          "roomPromptSent": 224.76304100000198,
+          "objectPromptAnswered": 307.5481660000005,
+          "vendorRequest": 307.17312500000116,
+          "vendorFirstByte": 918.229166000001,
+          "vendorDeltas": [
+            918.229166000001,
+            918.2309580000001,
+            918.2314160000024,
+            918.2321660000016,
+            943.3819160000021,
+            969.0669580000031,
+            994.6052909999999,
+            1020.510583000003,
+            1046.7247080000016,
+            1072.0560830000031,
+            1097.5627910000003,
+            1123.601458000001,
+            1149.320541000001,
+            1175.1187500000015,
+            1200.8990830000002,
+            1227.3953330000004,
+            1252.9151250000032,
+            1278.7676659999997,
+            1303.6188750000001,
+            1329.0419580000016,
+            1354.5391660000023,
+            1380.827500000003,
+            1407.281833000001,
+            1433.2974160000012,
+            1458.8720410000024,
+            1485.523916000002,
+            1510.6349160000027,
+            1536.0018750000017,
+            1561.8796250000014,
+            1588.4802080000009,
+            1615.230666000003,
+            1641.659291,
+            1666.5432500000024,
+            1692.327583000002,
+            1717.7817080000023,
+            1743.033166000001,
+            1768.6012499999997,
+            1793.987666000001,
+            1820.2067500000012,
+            1846.7851660000015,
+            1846.7896250000013,
+            1846.7907080000004,
+            1846.7913750000007,
+            1846.7925000000032
+          ],
+          "objectDeltas": [
+            1031.721958000002,
+            1134.2488750000011,
+            1235.898083,
+            1338.5430410000008,
+            1440.1271250000027,
+            1544.8916250000002,
+            1646.2523330000004,
+            1753.0049160000017,
+            1855.3915000000015,
+            1866.1437910000022
+          ],
+          "controlPlane": [
+            {
+              "action": "session-rows",
+              "at": 148.24837500000285,
+              "ms": 62.27770900000178
+            },
+            {
+              "action": "session-authorize:turn_acquire",
+              "at": 300.1121660000026,
+              "ms": 61.28050000000076
+            },
+            {
+              "action": "session-rows",
+              "at": 614.8613330000007,
+              "ms": 61.779624999999214
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 827.6383330000026,
+              "ms": 61.66712499999994
+            },
+            {
+              "action": "session-authorize:usage_report",
+              "at": 1928.319625,
+              "ms": 61.733541999998124
+            },
+            {
+              "action": "session-rows",
+              "at": 1929.697583000001,
+              "ms": 62.032124999997905
+            },
+            {
+              "action": "session-authorize:turn_release",
+              "at": 1993.7321250000023,
+              "ms": 63.407250000000204
+            }
+          ]
+        },
+        {
+          "accepted": 473.3782500000016,
+          "firstDelta": 1200.479041999999,
+          "deltas": [
+            1200.479041999999,
+            1300.7843749999993,
+            1402.945416999999,
+            1503.9222919999993,
+            1605.3578750000015,
+            1709.286082999999,
+            1810.057417,
+            1917.4169169999986,
+            2020.8901670000014,
+            2024.3927919999987
+          ],
+          "idle": 2033.6880420000016,
+          "lastDeltaToIdle": 9.295250000002852,
+          "roomPromptSent": 225.21195799999987,
+          "objectPromptAnswered": 307.5493749999987,
+          "vendorRequest": 307.1702919999989,
+          "vendorFirstByte": 918.1874169999974,
+          "vendorDeltas": [
+            918.1874169999974,
+            918.1893329999984,
+            918.1896669999987,
+            918.190499999997,
+            943.9174999999996,
+            969.1501250000001,
+            995.5843749999985,
+            1020.9913329999981,
+            1046.5729169999977,
+            1070.966708,
+            1096.7849169999972,
+            1123.474457999997,
+            1149.1159999999982,
+            1174.7671669999982,
+            1200.6318329999995,
+            1225.980166999998,
+            1251.932249999998,
+            1278.203125,
+            1303.312332999998,
+            1329.3043749999997,
+            1354.1261249999989,
+            1380.440917,
+            1405.423666999999,
+            1431.4509999999973,
+            1457.2042499999989,
+            1483.575249999998,
+            1508.6370829999978,
+            1533.880541999999,
+            1560.1103749999966,
+            1585.760041999998,
+            1611.2121669999979,
+            1637.6703749999979,
+            1663.1938749999972,
+            1688.9320419999967,
+            1715.2112499999967,
+            1741.3408329999984,
+            1766.353541999997,
+            1792.6929169999967,
+            1817.8359579999997,
+            1842.8324999999968,
+            1842.8378329999978,
+            1842.839291999997,
+            1842.8402919999971,
+            1842.8418329999986
+          ],
+          "objectDeltas": [
+            1032.2020830000001,
+            1134.0532919999969,
+            1235.5798749999994,
+            1337.9824579999986,
+            1439.541874999999,
+            1543.3031669999982,
+            1644.6732080000002,
+            1749.3722499999967,
+            1852.703207999999,
+            1859.5735419999983
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:turn_acquire",
+              "at": 301.125082999999,
+              "ms": 61.60520800000086
+            },
+            {
+              "action": "session-rows",
+              "at": 616.5116249999992,
+              "ms": 62.44250000000102
+            },
+            {
+              "action": "session-authorize:usage_report",
+              "at": 1921.5125419999968,
+              "ms": 61.583708999998635
+            },
+            {
+              "action": "session-rows",
+              "at": 1921.7867079999996,
+              "ms": 61.703457999999955
+            },
+            {
+              "action": "session-authorize:turn_release",
+              "at": 1986.1926249999997,
+              "ms": 63.44195800000307
+            }
+          ]
+        },
+        {
+          "accepted": 473.52475000000413,
+          "firstDelta": 1201.3873340000064,
+          "deltas": [
+            1201.3873340000064,
+            1303.157917000004,
+            1403.9662920000046,
+            1505.8014170000024,
+            1631.7127090000067,
+            1736.8091249999998,
+            1840.3635000000068,
+            1941.658209000001,
+            2026.4616250000036
+          ],
+          "idle": 2035.7227500000008,
+          "lastDeltaToIdle": 9.261124999997264,
+          "roomPromptSent": 224.89766699999745,
+          "objectPromptAnswered": 307.52841700000135,
+          "vendorRequest": 307.03804200000013,
+          "vendorFirstByte": 918.2271670000046,
+          "vendorDeltas": [
+            918.2271670000046,
+            918.2305419999975,
+            918.2312089999978,
+            918.2329170000012,
+            943.575042000004,
+            969.2570840000044,
+            994.7900420000005,
+            1020.5067500000005,
+            1045.8414170000033,
+            1071.9517090000008,
+            1097.8362500000003,
+            1123.8138340000005,
+            1149.883084000001,
+            1175.4502090000024,
+            1200.246791999998,
+            1225.7980840000018,
+            1252.5048749999987,
+            1277.513500000001,
+            1303.3936250000042,
+            1327.3112089999995,
+            1352.7116250000036,
+            1378.451291999998,
+            1402.8265000000029,
+            1428.7908339999994,
+            1455.1784170000028,
+            1480.8229169999977,
+            1505.9365840000028,
+            1532.0028749999983,
+            1558.7174589999995,
+            1585.085708999999,
+            1610.3397919999989,
+            1634.9838339999988,
+            1661.2700420000037,
+            1686.5696250000037,
+            1712.9390419999982,
+            1738.1674170000042,
+            1763.5469169999997,
+            1790.585334000003,
+            1817.0053340000013,
+            1841.734000000004,
+            1841.7388340000034,
+            1841.7400419999976,
+            1841.7407920000041,
+            1841.7419169999994
+          ],
+          "objectDeltas": [
+            1032.5869170000005,
+            1134.9151249999995,
+            1237.9262089999975,
+            1339.5917499999996,
+            1465.5411250000034,
+            1570.1710840000014,
+            1673.456167000004,
+            1775.5665840000001,
+            1860.3447500000038
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:turn_acquire",
+              "at": 300.42158400000335,
+              "ms": 62.098417000001064
+            },
+            {
+              "action": "session-rows",
+              "at": 616.8455000000031,
+              "ms": 62.758583000002545
+            },
+            {
+              "action": "session-authorize:usage_report",
+              "at": 1923.1627090000038,
+              "ms": 62.50770900000498
+            },
+            {
+              "action": "session-rows",
+              "at": 1923.378417,
+              "ms": 62.45833300000231
+            },
+            {
+              "action": "session-authorize:turn_release",
+              "at": 1987.986499999999,
+              "ms": 63.65945799999463
+            }
+          ]
+        },
+        {
+          "accepted": 473.29879199999414,
+          "firstDelta": 1202.9827919999952,
+          "deltas": [
+            1202.9827919999952,
+            1304.1678329999995,
+            1407.1460000000006,
+            1510.4122079999943,
+            1612.4739999999947,
+            1714.7070419999945,
+            1816.9769579999993,
+            1918.984749999996,
+            2021.125791999999,
+            2033.4049999999988
+          ],
+          "idle": 2042.528416999994,
+          "lastDeltaToIdle": 9.123416999995243,
+          "roomPromptSent": 224.78529200000048,
+          "objectPromptAnswered": 308.60487499999726,
+          "vendorRequest": 308.1879590000026,
+          "vendorFirstByte": 921.3072089999987,
+          "vendorDeltas": [
+            921.3072089999987,
+            921.3122500000027,
+            921.3125839999993,
+            921.3138340000005,
+            947.5180419999961,
+            974.0892499999973,
+            999.4167499999967,
+            1025.4294169999994,
+            1051.3479999999981,
+            1077.6424590000024,
+            1103.9937500000015,
+            1129.729833999998,
+            1155.439542,
+            1181.7677919999987,
+            1207.8578340000022,
+            1233.1614590000027,
+            1258.3761670000022,
+            1284.8126249999987,
+            1310.031624999996,
+            1335.3647090000013,
+            1360.9795000000013,
+            1386.4380420000016,
+            1412.0986669999984,
+            1436.4407500000016,
+            1462.3385419999977,
+            1488.9150840000002,
+            1513.9934999999969,
+            1539.2932089999958,
+            1565.3684169999979,
+            1591.1324999999997,
+            1616.0092500000028,
+            1641.0764169999966,
+            1666.435375000001,
+            1692.7652089999974,
+            1718.2800839999982,
+            1745.1969170000011,
+            1770.3454589999965,
+            1797.1325419999994,
+            1822.8193339999998,
+            1848.5826250000027,
+            1848.587916999997,
+            1848.5891249999986,
+            1848.5897499999992,
+            1848.5909170000014
+          ],
+          "objectDeltas": [
+            1035.025999999998,
+            1137.5011670000022,
+            1240.3114589999968,
+            1344.3706670000029,
+            1446.2250419999982,
+            1548.7707919999957,
+            1650.5774170000004,
+            1752.1424170000028,
+            1856.0945839999986,
+            1866.34375
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:turn_acquire",
+              "at": 302.2479999999996,
+              "ms": 62.434041000000434
+            },
+            {
+              "action": "session-rows",
+              "at": 616.6583339999997,
+              "ms": 61.43358399999852
+            },
+            {
+              "action": "session-authorize:read",
+              "at": 1714.5108340000006,
+              "ms": 60.9221250000046
+            },
+            {
+              "action": "session-authorize:usage_report",
+              "at": 1928.6784590000025,
+              "ms": 62.08033400000568
+            },
+            {
+              "action": "session-rows",
+              "at": 1928.942959,
+              "ms": 62.202666999997746
+            },
+            {
+              "action": "session-authorize:turn_release",
+              "at": 1993.2694590000028,
+              "ms": 63.413375000003725
+            }
+          ]
+        },
+        {
+          "accepted": 471.8092499999984,
+          "firstDelta": 1196.6478329999954,
+          "deltas": [
+            1196.6478329999954,
+            1296.9390829999975,
+            1400.6783329999962,
+            1503.562791999997,
+            1608.2167499999996,
+            1736.2154999999984,
+            1839.440999999999,
+            1943.2857079999958,
+            2032.013374999995
+          ],
+          "idle": 2041.364125,
+          "lastDeltaToIdle": 9.350750000005064,
+          "roomPromptSent": 223.61679200000071,
+          "objectPromptAnswered": 305.04699999999866,
+          "vendorRequest": 304.700499999999,
+          "vendorFirstByte": 917.2349580000009,
+          "vendorDeltas": [
+            917.2349580000009,
+            917.2371669999993,
+            917.2375000000029,
+            917.2384999999995,
+            943.0961670000033,
+            968.471292000002,
+            994.4177500000005,
+            1020.6710420000018,
+            1046.8199170000007,
+            1071.8049170000013,
+            1096.4770419999986,
+            1122.1998329999988,
+            1148.5090419999979,
+            1173.9601669999975,
+            1200.1422919999968,
+            1226.3330419999984,
+            1252.629667000001,
+            1278.851999999999,
+            1305.0774170000004,
+            1330.8424999999988,
+            1355.7594170000011,
+            1380.330833,
+            1405.1752500000002,
+            1431.4451249999984,
+            1457.6659169999984,
+            1482.9625000000015,
+            1509.2220420000012,
+            1535.4966249999998,
+            1560.9214169999977,
+            1587.715750000003,
+            1612.9177080000009,
+            1639.2081249999974,
+            1665.588708000003,
+            1691.661500000002,
+            1716.9634579999984,
+            1743.2106669999994,
+            1769.5458329999965,
+            1794.9641249999986,
+            1821.3481669999965,
+            1847.5777499999967,
+            1847.5829169999997,
+            1847.5842499999999,
+            1847.5849999999991,
+            1847.5862080000006
+          ],
+          "objectDeltas": [
+            1029.5023749999964,
+            1132.0848330000008,
+            1233.830249999999,
+            1337.617542,
+            1442.7079999999987,
+            1569.7866250000006,
+            1672.2505420000016,
+            1777.0173330000034,
+            1866.3294999999998
+          ],
+          "controlPlane": [
+            {
+              "action": "session-authorize:turn_acquire",
+              "at": 298.31445800000074,
+              "ms": 61.93100000000413
+            },
+            {
+              "action": "session-rows",
+              "at": 612.2588749999995,
+              "ms": 60.69770799999969
+            },
+            {
+              "action": "session-authorize:usage_report",
+              "at": 1930.8383749999994,
+              "ms": 64.20354200000293
+            },
+            {
+              "action": "session-rows",
+              "at": 1931.1031670000011,
+              "ms": 64.30979200000002
+            },
+            {
+              "action": "session-authorize:turn_release",
+              "at": 1994.4483330000003,
+              "ms": 62.449915999997756
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "turns": 6,
+        "accepted": {
+          "n": 6,
+          "mean": 476.34145133333305,
+          "p50": 473.41495799999757,
+          "p95": 492.6227080000026,
+          "min": 471.8092499999984,
+          "max": 492.6227080000026,
+          "sd": 7.304755017152614
+        },
+        "firstDelta": {
+          "n": 6,
+          "mean": 1203.5100348333326,
+          "p50": 1201.3873340000064,
+          "p95": 1222.0009580000005,
+          "min": 1196.6478329999954,
+          "max": 1222.0009580000005,
+          "sd": 8.547426117156892
+        },
+        "interDelta": {
+          "n": 51,
+          "mean": 97.7695146862745,
+          "p50": 102.16104199999972,
+          "p95": 124.62579199999891,
+          "min": 3.5026249999973516,
+          "max": 127.99874999999884,
+          "sd": 23.328283814391032
+        },
+        "lastDeltaToIdle": {
+          "n": 6,
+          "mean": 9.109895833333212,
+          "p50": 9.261124999997264,
+          "p95": 9.350750000005064,
+          "min": 8.45733299999847,
+          "max": 9.350750000005064,
+          "sd": 0.3014004269802927
+        },
+        "idle": {
+          "n": 6,
+          "mean": 2043.660805499999,
+          "p50": 2041.364125,
+          "p95": 2067.9888329999994,
+          "min": 2033.6880420000016,
+          "max": 2067.9888329999994,
+          "sd": 11.327015506406141
+        },
+        "roomPromptSent": {
+          "n": 6,
+          "mean": 224.72570150000016,
+          "p50": 224.89766699999745,
+          "p95": 225.21195799999987,
+          "min": 223.61679200000071,
+          "max": 225.21195799999987,
+          "sd": 0.5205425744559659
+        },
+        "objectPromptAnswered": {
+          "n": 6,
+          "mean": 310.4059513333329,
+          "p50": 307.5493749999987,
+          "p95": 326.1578750000008,
+          "min": 305.04699999999866,
+          "max": 326.1578750000008,
+          "sd": 7.126154921030405
+        },
+        "vendorRequest": {
+          "n": 6,
+          "mean": 310.096958666667,
+          "p50": 307.17312500000116,
+          "p95": 326.3118340000001,
+          "min": 304.700499999999,
+          "max": 326.3118340000001,
+          "sd": 7.3275664469367765
+        },
+        "vendorFirstByte": {
+          "n": 6,
+          "mean": 921.7790210000003,
+          "p50": 918.229166000001,
+          "p95": 937.4882089999992,
+          "min": 917.2349580000009,
+          "max": 937.4882089999992,
+          "sd": 7.138702722737992
+        },
+        "objectFirstDelta": {
+          "n": 6,
+          "mean": 1035.7407569999996,
+          "p50": 1032.5869170000005,
+          "p95": 1053.4052090000005,
+          "min": 1029.5023749999964,
+          "max": 1053.4052090000005,
+          "sd": 8.0630930565716
+        },
+        "vendorInterDelta": {
+          "n": 258,
+          "mean": 21.5715177635659,
+          "p50": 25.574625000001106,
+          "p95": 26.60058299999946,
+          "min": 0.0003330000035930425,
+          "max": 27.038417000003392,
+          "sd": 9.526444849022724
+        },
+        "objectInterDelta": {
+          "n": 51,
+          "mean": 97.99959803921585,
+          "p50": 102.47516700000415,
+          "p95": 125.94937500000378,
+          "min": 6.870333999999275,
+          "max": 127.07862500000192,
+          "sd": 23.169978006928975
+        },
+        "objectJitter": {
+          "n": 6,
+          "mean": 19.467499310845756,
+          "p50": 29.02446504944946,
+          "p95": 30.092812654133393,
+          "min": 8.53187135290983,
+          "max": 30.092812654133393,
+          "sd": 9.941192511098675
+        },
+        "clientJitter": {
+          "n": 6,
+          "mean": 19.5820147979375,
+          "p50": 28.28621172669181,
+          "p95": 31.195687210841005,
+          "min": 8.071318890387118,
+          "max": 31.195687210841005,
+          "sd": 10.093815148766378
+        }
+      },
+      "cpCalls": {
+        "session-authorize:start": 1,
+        "session-authorize:register": 1,
+        "session-authorize:read": 4,
+        "session-authorize:turn_acquire": 6,
+        "session-rows": 13,
+        "session-authorize:usage_report": 6,
+        "session-authorize:turn_release": 6
+      },
+      "resolverCalls": {
+        "/internal/relay/target": 1,
+        "/internal/relay/revocation": 8
+      },
+      "streamOpen": {
+        "n": 1,
+        "mean": 468.442959,
+        "p50": 468.442959,
+        "p95": 468.442959,
+        "min": 468.442959,
+        "max": 468.442959,
+        "sd": 0
+      }
+    }
+  ]
+}

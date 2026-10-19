@@ -336,7 +336,6 @@ export async function hostedSessionHostConnection(
     sessionId,
     actor: resolvedActor(actor),
     orgId,
-    homeRegion: ingress.homeRegion,
     relayUrl: ingress.relayUrl,
     role: "editor",
   })
@@ -465,7 +464,7 @@ export async function hostedSessionConnection(
       }),
       settled,
     ])
-    return mintSessionHostConnection(authority, options, auth, { workspaceId, sessionId, actor: resolvedActor(actor), orgId: owner.orgId, homeRegion, relayUrl, role: writes ? "editor" : "viewer" })
+    return mintSessionHostConnection(authority, options, auth, { workspaceId, sessionId, actor: resolvedActor(actor), orgId: owner.orgId, relayUrl, role: writes ? "editor" : "viewer" })
   }
   const [machine, sandbox, actor] = await Promise.all([
     services?.relay.hostTunnelResolver?.(workspaceId),

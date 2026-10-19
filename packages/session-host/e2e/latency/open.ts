@@ -47,6 +47,8 @@ export type OpenTimes = {
 
 export type OpenResult = {
   scenario: OpenScenario
+  /** The room's location hint, as the gateway decided it. */
+  room: string
   opens: OpenTimes[]
   summary: {
     outlineHeaders: Summary | undefined
@@ -114,6 +116,7 @@ export async function runOpenScenario(scenario: OpenScenario, input: { scripts: 
     relayHostKey: "jwks", ...(world ? { world } : {}),
   })
   let topology = await boot()
+  const room = topology.room
   const opens: OpenTimes[] = []
   const cpCalls: string[] = []
   const resolverCalls: string[] = []
@@ -171,7 +174,7 @@ export async function runOpenScenario(scenario: OpenScenario, input: { scripts: 
   }
   const of = (read: (open: OpenTimes) => number | undefined) => summarize(opens.flatMap((open) => { const value = read(open); return value === undefined ? [] : [value] }))
   return {
-    scenario, opens,
+    scenario, room, opens,
     summary: {
       outlineHeaders: of((open) => open.outline.headers),
       outlineBody: of((open) => open.outline.body),
@@ -193,7 +196,7 @@ export async function runOpenScenario(scenario: OpenScenario, input: { scripts: 
 export function reportOpen(result: OpenResult): string {
   const { summary } = result
   return [
-    `== ${result.scenario.name} (open; ${result.scenario.object} object and room; links ${JSON.stringify(result.scenario.links)}; relay host key over JWKS)`,
+    `== ${result.scenario.name} (open; ${result.scenario.object} object and room; room in ${result.room}; links ${JSON.stringify(result.scenario.links)}; relay host key over JWKS)`,
     summaryRow("press -> room sent outline", summary.roomSent),
     summaryRow("press -> object answered", summary.objectAnswered),
     summaryRow("press -> outline headers", summary.outlineHeaders),

@@ -66,13 +66,14 @@ enabled = true
 # 32768 equals Cloudflare's own per-DO socket ceiling, i.e. no cap at all, which
 # is fine for a load target and wrong for production.
 CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP = "256"
-# Where new relay Durable Objects are placed. A DO's location is fixed at FIRST
-# CREATION and never migrates, so this is effectively permanent per workspace.
-# "apac" matches the current India/South-Asia user base (see
-# DEFAULT_RELAY_LOCATION_HINT in src/cloudflare.ts). Revisit when the user base
-# is no longer APAC-centric: every non-APAC user crosses an ocean twice per
-# frame, forever. The real fix is a per-workspace hint derived from the user's
-# region at create time; this var is the deployment-wide floor until then.
+# Where a new relay Durable Object is placed when its workspace's credential
+# declares no region. A DO's location is fixed at FIRST CREATION and never
+# migrates, so this is permanent per workspace. "apac" matches the current
+# India/South-Asia user base (DEFAULT_RELAY_LOCATION_HINT in
+# src/relay-location.ts). A cloud machine's room follows the region its
+# credential declares, and the room of a workspace whose sessions run on their
+# own Durable Objects is created beside those objects in "enam"
+# (SESSION_HOST_LOCATION_HINT) whatever this floor says.
 CLAXEDO_RELAY_LOCATION_HINT = "apac"
 
 [[durable_objects.bindings]]

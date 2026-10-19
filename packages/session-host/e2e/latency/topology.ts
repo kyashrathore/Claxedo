@@ -4,7 +4,7 @@ import { build } from "esbuild"
 import { exportPKCS8, exportSPKI, generateKeyPair, type GenerateKeyPairResult } from "jose"
 import { Miniflare } from "miniflare"
 import type { ProviderDirect } from "@claxedo/agent-runtime-contract"
-import { mintRelayHostToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
+import { mintRelayHostToken, mintRuntimeAccessToken, SESSION_HOST_LOCATION_HINT, workspaceRelayRoomPlacement } from "@claxedo/workspace-relay"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 import { delayedResponse, sleep, type ChunkTap } from "../../../harness/e2e/perf/pipes"
 import { controlPlaneStandIn, OWNER, WORKSPACE_ID } from "../../src/test-support/control-plane"
@@ -14,13 +14,18 @@ const RELAY_WORKER = fileURLToPath(new URL("../../../workspace-relay/src/worker.
 const AUTHORITY_URL = "https://control-plane.test/api/runtime-authority/session-authorize"
 const COMPATIBILITY_DATE = "2026-07-22"
 
-/** One-way latencies of the staging topology as seen from India, in milliseconds. */
+/**
+ * One-way latencies of the staging topology as seen from India, in
+ * milliseconds. The room's own links follow where the relay gateway places it
+ * (`roomLinks`): with the opener at the edge in apac, or beside the session's
+ * object in enam.
+ */
 export type Links = {
-  /** Browser to the Cloudflare edge and the relay room (apac). */
+  /** Browser to the Cloudflare edge (apac). */
   clientEdgeMs: number
-  /** Relay room (apac) to the session's object (enam), also the room to the control plane (IAD). */
+  /** apac to enam: a room in apac to the session's object or the control plane (IAD), or the edge in apac to a room in enam. */
   roomDoMs: number
-  /** The session's object (enam) to the control-plane Worker (IAD). */
+  /** Within enam: the session's object to the control-plane Worker (IAD), or a room in enam to either. */
   doCpMs: number
   /** The control plane's own time per request, on top of the link. */
   cpMs: number
@@ -33,6 +38,13 @@ export type Links = {
 export const STAGING_LINKS: Links = { clientEdgeMs: 50, roomDoMs: 110, doCpMs: 5, cpMs: 50, vendorMs: 10, doRelayMs: 10 }
 
 export type Scripts = { relay: string; sessionHost: string }
+
+/** The room's links from where the gateway placed it: beside the object, or at the edge with the opener. */
+function roomLinks(links: Links, locationHint: string) {
+  return locationHint === SESSION_HOST_LOCATION_HINT
+    ? { edgeRoomMs: links.roomDoMs, roomObjectMs: links.doCpMs, roomControlPlaneMs: links.doCpMs }
+    : { edgeRoomMs: 0, roomObjectMs: links.roomDoMs, roomControlPlaneMs: links.roomDoMs }
+}
 
 export async function bundleScripts(): Promise<Scripts> {
   const relay = await build({
@@ -120,6 +132,18 @@ export async function bootTopology(input: TopologyInput) {
     workspaceSessions: () => [], sessionHost: () => () => { throw new Error("The latency rig has no first-party MCP") },
   })
   const world: World = { signing, controlPlane }
+  const rat = await mintRuntimeAccessToken({
+    principalKind: "user", actorId: OWNER, userId: OWNER, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,
+    hostId: sessionHostId(input.root), role: "editor", sessionId: input.root,
+  }, signing.runtimeAccess.privateKey, "EdDSA")
+  const runtimeAccessPem = await exportSPKI(signing.runtimeAccess.publicKey)
+  /** Where the real relay gateway creates this workspace's room for the browser's requests, with staging's apac floor. */
+  const placement = await workspaceRelayRoomPlacement(
+    new Request(`https://relay.test/workspaces/${WORKSPACE_ID}/session/${input.root}/outline`, { headers: { authorization: `Bearer ${rat}` } }),
+    { CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: runtimeAccessPem, CLAXEDO_RELAY_LOCATION_HINT: "apac" },
+    WORKSPACE_ID,
+  )
+  const room = roomLinks(links, placement.locationHint)
   const cpCalls: Array<{ path: string; at: number; ms: number }> = []
   const controlPlaneLink = async (request: Request) => {
     const at = performance.now()
@@ -134,7 +158,7 @@ export async function bootTopology(input: TopologyInput) {
   const resolver = async (request: Request) => {
     const url = new URL(request.url)
     resolverCalls.push({ path: url.pathname, at: performance.now() })
-    await sleep(2 * links.roomDoMs + links.cpMs)
+    await sleep(2 * room.roomControlPlaneMs + links.cpMs)
     if (request.headers.get("authorization") !== "Bearer resolver-token") return new Response("unauthorized", { status: 401 })
     if (url.pathname === "/internal/relay/target") {
       return Response.json({ workspaceId: url.searchParams.get("workspaceId"), hostId: url.searchParams.get("hostId"), baseUrl: "", backing: "durable-object" })
@@ -153,7 +177,7 @@ export async function bootTopology(input: TopologyInput) {
     const root = request.headers.get("x-pipe-root")
     if (!root) return new Response("no object", { status: 500 })
     const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text()
-    await sleep(links.roomDoMs)
+    await sleep(room.roomObjectMs)
     const namespace = await sessionHost()
     const upstream = await namespace.get(namespace.idFromName(root)).fetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }) } as never) as unknown as Response
     record.answeredAt = performance.now()
@@ -161,7 +185,7 @@ export async function bootTopology(input: TopologyInput) {
     record.serverTiming = upstream.headers.get("server-timing") ?? undefined
     const decoder = new TextDecoder()
     const tap: ChunkTap = (chunk, at) => { record.chunks.push({ at, text: decoder.decode(chunk, { stream: true }) }) }
-    return await delayedResponse(upstream, links.roomDoMs, tap)
+    return await delayedResponse(upstream, room.roomObjectMs, tap)
   }
   const jwksCalls: number[] = []
   /** The object's outbound fetches: the relay's JWKS over `doRelayMs` each way, everything else (the vendor) as is. */
@@ -195,7 +219,7 @@ export async function bootTopology(input: TopologyInput) {
         bindings: {
           CLAXEDO_RELAY_RESOLVER_URL: "https://control-plane.test/internal/relay",
           CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
-          CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(signing.runtimeAccess.publicKey),
+          CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: runtimeAccessPem,
           CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM: await exportPKCS8(signing.relayHost.privateKey),
           ...(input.relayCacheTtlMs === undefined ? {} : {
             CLAXEDO_RELAY_TARGET_CACHE_TTL_MS: String(input.relayCacheTtlMs),
@@ -227,16 +251,14 @@ export async function bootTopology(input: TopologyInput) {
   })
   const mf = miniflare
   await miniflare.ready
-  const rat = await mintRuntimeAccessToken({
-    principalKind: "user", actorId: OWNER, userId: OWNER, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,
-    hostId: sessionHostId(input.root), role: "editor", sessionId: input.root,
-  }, signing.runtimeAccess.privateKey, "EdDSA")
   const relayHostToken = () => mintRelayHostToken({
     principalKind: "user", actorId: OWNER, userId: OWNER, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,
     hostId: sessionHostId(input.root), role: "editor", sessionId: input.root, backing: "durable-object", parentJti: `rat_${crypto.randomUUID()}`,
   }, signing.relayHost.privateKey, "EdDSA")
   return {
     root: input.root,
+    /** The room's location hint, as the gateway decided it. */
+    room: placement.locationHint,
     world,
     controlPlane,
     cpCalls,
@@ -244,14 +266,14 @@ export async function bootTopology(input: TopologyInput) {
     jwksCalls,
     pipe,
     stderr: () => stderr.join(""),
-    /** The browser's view: the edge link, then the relay at the edge. */
+    /** The browser's view: the edge link, then the room where the gateway placed it. */
     relay: async (path: string, init: RequestInit = {}): Promise<Response> => {
-      await sleep(links.clientEdgeMs)
+      await sleep(links.clientEdgeMs + room.edgeRoomMs)
       const headers = new Headers(init.headers)
       headers.set("authorization", `Bearer ${rat}`)
       if (init.body !== undefined) headers.set("content-type", "application/json")
       const response = await mf.dispatchFetch(`https://relay.test/workspaces/${WORKSPACE_ID}${path}`, { ...init, headers } as never) as unknown as Response
-      return await delayedResponse(response, links.clientEdgeMs)
+      return await delayedResponse(response, links.clientEdgeMs + room.edgeRoomMs)
     },
     /** The same object over one link from the browser, with no relay in between: what a direct path would cost. */
     direct: async (path: string, init: RequestInit = {}): Promise<Response> => {
