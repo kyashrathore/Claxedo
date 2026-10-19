@@ -1,6 +1,7 @@
 import type { Component } from "solid-js"
 import type { SurfaceComponentName } from "@claxedo/plugin-api/surface"
 import type { SurfaceNodeProps } from "../model"
+import { AgentConfigurationPickerView } from "./agent-configuration-view"
 import { ButtonView } from "./button-view"
 import { ChoicePickerView } from "./choice-picker-view"
 import { CardView, CollapsibleView, TabsView } from "./container-views"
@@ -50,4 +51,5 @@ export const SURFACE_VIEWS: SurfaceViews = {
   Callout: CalloutView,
   KeyValue: KeyValueView,
   Footer: FooterView,
+  AgentConfigurationPicker: AgentConfigurationPickerView,
 }

@@ -687,10 +687,12 @@ export const desktopRenderer: Policy = {
   // start are in flight, split from the start offers' wiring so it runs
   // without the UI kit (owner: the app's tasks domain,
   // `tasks/data/start-run.ts`). It adds no package edge.
-  // A cloud OpenCode preset's model picker and the models it offers from
-  // OpenCode's provider catalog read with no workspace (owner: the app's tasks
-  // domain, `tasks/presets/cloud-catalog-model-picker.tsx`,
-  // `tasks/presets/cloud-catalog-models.ts`). They add no package edge.
+  // The agent configuration picker a Tasks preset and a plugin surface's
+  // AgentConfigurationPicker draw: the local and cloud pickers, the models a
+  // cloud OpenCode configuration offers from OpenCode's provider catalog read
+  // with no workspace, the rules they share and their strings (owner: the
+  // app's composer domain, `composer/agent-configuration/`). They add no
+  // package edge.
   // The signed-out notice Organization, Team accounts and Sandbox providers
   // share, with its Sign in action (owner: the app's access domain,
   // `access/view/signed-out.tsx`). It adds no package edge.
@@ -728,8 +730,20 @@ export const desktopRenderer: Policy = {
   // `surface/tab-strip.ts`,
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
   // renderer. They add no package edge.
-  // 1481/36, no headroom.
-  ceilings: { modules: 1481, packages: 36 },
+  // The plugin API primitives a surface page and a surface settings section
+  // use (owner: the app's plugins domain): the route params a mounted page
+  // hands its program (`plugins/surface-page/page-params.ts`), the host
+  // component both draw with (`plugins/surface-page/drawn-surface.tsx`), a
+  // cloud workspace's start followed for a plugin
+  // (`plugins/bindings/workspaces.ts`), and the frame's response bodies over
+  // the host's base64 codec (`plugins/frame/response-body.ts`,
+  // `plugins/base64.ts`); with the renderer's reference components, the
+  // AgentConfigurationPicker view and the rule that reads its bound value
+  // (owner: the app's surface domain, `surface/view/surface-references.ts`,
+  // `surface/view/agent-configuration-view.tsx`, `surface/agent-configuration.ts`).
+  // They add no package edge.
+  // 1491/36, no headroom.
+  ceilings: { modules: 1491, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -39,6 +39,7 @@ export interface SurfaceChannel {
 
 export interface SurfaceProgram {
   action?(action: SurfaceActionEvent): void | Promise<void>
+  navigated?(props: PageProps): void
   dispose?(): void
 }
 
@@ -46,6 +47,8 @@ export interface SurfacePageDefinition {
   id: string
   path: string
   title: string
+  tab?: true
+  icon?: IconName
   surface(channel: SurfaceChannel, props: PageProps): SurfaceProgram | void
 }
 
@@ -88,8 +91,22 @@ export interface SettingsSection {
   render(): JSX.Element
 }
 
+export type SettingsGroup = "workspace" | "app"
+
+export interface SurfaceSettingsSection {
+  id: string
+  title: string
+  icon?: IconName
+  order?: number
+  group?: SettingsGroup
+  surface(channel: SurfaceChannel): SurfaceProgram | void
+}
+
+export type SettingsSectionDefinition = SettingsSection | SurfaceSettingsSection
+
 export interface SettingsApi {
-  section(section: SettingsSection): Disposer
+  section(section: SettingsSectionDefinition): Disposer
+  open(sectionId: string): void
 }
 
 export interface OverlayProps {

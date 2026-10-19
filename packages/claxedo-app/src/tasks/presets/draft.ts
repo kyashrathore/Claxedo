@@ -3,22 +3,15 @@ import {
   CONFIGURATION_SLOTS,
   TASKS_BOUNDS,
   type ConfigurationSlot,
-  type HarnessReference,
   type ModelConfiguration,
-  type ModelReference,
   type Preset,
   type PresetDraft,
   type PresetPlacement,
 } from "@claxedo/tasks"
+import type { AgentConfiguration } from "@/composer"
 import type { TasksKey } from "../i18n"
 
 export type CapabilitySelection = { readonly sourceId: string; readonly name: string }
-
-export type ConfigurationDraft = {
-  readonly harness: HarnessReference | null
-  readonly model: ModelReference | null
-  readonly effort: string | null
-}
 
 export type PresetEditorDraft = {
   readonly name: string
@@ -26,13 +19,13 @@ export type PresetEditorDraft = {
   readonly placement: PresetPlacement
   readonly plugins: readonly CapabilitySelection[]
   readonly skills: readonly CapabilitySelection[]
-  readonly configurations: Readonly<Record<ConfigurationSlot, ConfigurationDraft | null>>
+  readonly configurations: Readonly<Record<ConfigurationSlot, AgentConfiguration | null>>
   readonly agentStartable: boolean
 }
 
 export type FieldProblem = { readonly key: TasksKey; readonly params?: Readonly<Record<string, string | number>> }
 
-export const EMPTY_CONFIGURATION: ConfigurationDraft = { harness: null, model: null, effort: null }
+export const EMPTY_CONFIGURATION: AgentConfiguration = { harness: null, model: null, effort: null }
 
 export function emptyPresetEditorDraft(): PresetEditorDraft {
   return {
@@ -47,7 +40,7 @@ export function emptyPresetEditorDraft(): PresetEditorDraft {
 }
 
 export function presetEditorDraftOf(preset: Preset): PresetEditorDraft {
-  const configurations: Record<ConfigurationSlot, ConfigurationDraft | null> = {
+  const configurations: Record<ConfigurationSlot, AgentConfiguration | null> = {
     primary: null,
     planning: null,
     implementation: null,
@@ -70,20 +63,6 @@ export function presetEditorDraftOf(preset: Preset): PresetEditorDraft {
     configurations,
     agentStartable: preset.agentStartable,
   }
-}
-
-function sameHarness(left: HarnessReference, right: HarnessReference) {
-  return left.id === right.id && left.access === right.access
-}
-
-export function rebaseConfiguration(previous: ConfigurationDraft | null, next: ConfigurationDraft): ConfigurationDraft {
-  if (!previous?.harness || !next.harness || sameHarness(previous.harness, next.harness)) return next
-  const carried =
-    !!previous.model &&
-    !!next.model &&
-    previous.model.providerID === next.model.providerID &&
-    previous.model.modelID === next.model.modelID
-  return carried ? { harness: next.harness, model: null, effort: null } : next
 }
 
 export type PresetEditorParse =

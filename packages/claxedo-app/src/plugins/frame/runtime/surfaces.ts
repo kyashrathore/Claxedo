@@ -1,7 +1,8 @@
 import { createRoot } from "solid-js"
-import type { PageDefinition, SurfaceMessage, SurfaceProgram } from "@claxedo/plugin-api"
+import type { SurfaceChannel, SurfaceMessage, SurfaceProgram } from "@claxedo/plugin-api"
 import { unreachable } from "@/lib/machine"
-import type { FrameToHost, SurfaceInvoke } from "../protocol"
+import type { FrameToHost, SurfaceInvoke, SurfaceTarget } from "../protocol"
+import type { FrameEntries } from "./api"
 
 export class FrameSurfaceError extends Error {
   constructor(reason: string) {
@@ -14,19 +15,32 @@ export type FrameSurfaces = { readonly answer: (invoke: SurfaceInvoke) => unknow
 
 type OpenSurface = { readonly program: SurfaceProgram; readonly close: () => void }
 
-function openSurface(page: PageDefinition | undefined, invoke: Extract<SurfaceInvoke, { method: "surface.open" }>, send: (message: FrameToHost) => void): OpenSurface {
-  if (!page || !("surface" in page)) throw new FrameSurfaceError(`No surface page ${invoke.pageId} is registered`)
+type SurfaceEntries = Pick<FrameEntries, "pages" | "settings">
+
+function programOpener(entries: SurfaceEntries, target: SurfaceTarget): (channel: SurfaceChannel) => SurfaceProgram | void {
+  if (target.kind === "page") {
+    const page = entries.pages.get(target.pageId)
+    if (!page || !("surface" in page)) throw new FrameSurfaceError(`No surface page ${target.pageId} is registered`)
+    return (channel) => page.surface(channel, { path: target.path, params: target.params })
+  }
+  const section = entries.settings.get(target.sectionId)
+  if (!section || !("surface" in section)) throw new FrameSurfaceError(`No surface settings section ${target.sectionId} is registered`)
+  return (channel) => section.surface(channel)
+}
+
+function openSurface(entries: SurfaceEntries, invoke: Extract<SurfaceInvoke, { method: "surface.open" }>, send: (message: FrameToHost) => void): OpenSurface {
+  const open = programOpener(entries, invoke.target)
   const { surfaceId } = invoke
-  let open = true
+  let delivering = true
   const channel = {
     surfaceId,
     send: (...messages: readonly SurfaceMessage[]) => {
-      if (open) send({ type: "surface", surfaceId, messages })
+      if (delivering) send({ type: "surface", surfaceId, messages })
     },
   }
   return createRoot((disposeRoot) => {
     const close = (program: SurfaceProgram) => {
-      open = false
+      delivering = false
       try {
         program.dispose?.()
       } finally {
@@ -34,7 +48,7 @@ function openSurface(page: PageDefinition | undefined, invoke: Extract<SurfaceIn
       }
     }
     try {
-      const program = page.surface(channel, { path: invoke.path, params: invoke.params }) ?? {}
+      const program = open(channel) ?? {}
       return { program, close: () => close(program) }
     } catch (error) {
       close({})
@@ -43,7 +57,7 @@ function openSurface(page: PageDefinition | undefined, invoke: Extract<SurfaceIn
   })
 }
 
-export function createFrameSurfaces(pages: ReadonlyMap<string, PageDefinition>, send: (message: FrameToHost) => void): FrameSurfaces {
+export function createFrameSurfaces(entries: SurfaceEntries, send: (message: FrameToHost) => void): FrameSurfaces {
   const opened = new Map<string, OpenSurface>()
   const surfaceOf = (surfaceId: string) => {
     const surface = opened.get(surfaceId)
@@ -55,8 +69,10 @@ export function createFrameSurfaces(pages: ReadonlyMap<string, PageDefinition>, 
       switch (invoke.method) {
         case "surface.open":
           if (opened.has(invoke.surfaceId)) throw new FrameSurfaceError(`The surface ${invoke.surfaceId} is already open`)
-          opened.set(invoke.surfaceId, openSurface(pages.get(invoke.pageId), invoke, send))
+          opened.set(invoke.surfaceId, openSurface(entries, invoke, send))
           return undefined
+        case "surface.navigated":
+          return surfaceOf(invoke.surfaceId).program.navigated?.({ path: invoke.path, params: invoke.params })
         case "surface.action":
           return surfaceOf(invoke.surfaceId).program.action?.(invoke.action)
         case "surface.close": {

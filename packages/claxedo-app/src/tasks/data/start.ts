@@ -3,7 +3,7 @@ import { machine } from "@/lib/machine"
 import type { ConfigurationSlot, Preset, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
 import { useWakeProgress } from "@/cloud"
 import { useErrorCopy, useTranslator, type DomainTranslate } from "@/i18n"
-import { useServer, type WorkspaceRuntime } from "@/server"
+import { placementId, useServer, type WorkspaceRuntime } from "@/server"
 import { showToast } from "@/ui"
 import { tasksDictionary, type TasksKey } from "../i18n"
 import { useOpenPresetSettings, useOpenTaskSession } from "../links"
@@ -41,6 +41,7 @@ export type TaskStartOffer = {
 
 function createStartCalls(t: DomainTranslate<TasksKey>) {
   const api = useTasksApi()
+  const cloud = useServer().cloud
   const invalidate = useTasksInvalidation()
   const openSession = useOpenTaskSession()
   const preview = async (request: TaskStartRequest): Promise<StartPreview> => {
@@ -53,7 +54,8 @@ function createStartCalls(t: DomainTranslate<TasksKey>) {
     start: async ({ taskId, ...body }, previewDigest, clientRequestId) =>
       api.client.start(taskId, { ...body, clientRequestId, previewDigest, handoffText: null }),
     followRoot: async (workspaceId, following) => {
-      const run = await api.followRoot(workspaceId, following)
+      const id = placementId(workspaceId)
+      const run = await cloud.followStart(id, () => following(id))
       return run.kind === "running" ? run : { kind: "failed", message: run.error?.message ?? t("tasks.start.rootDidNotStart") }
     },
     open: async (taskId, session) => {

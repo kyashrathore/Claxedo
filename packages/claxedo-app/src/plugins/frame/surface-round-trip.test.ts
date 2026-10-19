@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test"
 import { createComputed, createRoot, createSignal } from "solid-js"
 import type { PageDefinition, PluginApi, SurfaceMessage, SurfacePageDefinition } from "@claxedo/plugin-api"
 import { SURFACE_CATALOG_ID } from "@claxedo/plugin-api/surface"
-import { openSurfacePage, type SurfacePageController } from "../surface-page/controller"
+import { openPluginSurface, type SurfacePageController } from "../surface-page/controller"
 import { createHostPort } from "./host-port"
 import { FrameCallError } from "./pending-calls"
 import type { FrameMirror } from "./protocol"
@@ -57,7 +57,7 @@ function frameSide(port: MessagePort, page: (api: PluginApi) => SurfacePageDefin
   const link = createFrameLink(port, MIRROR)
   const entries: FrameEntries = { pages: new Map(), settings: new Map(), overlays: new Map(), commands: new Map(), mentions: new Map() }
   const api = createFrameApi({ link, context: { pluginId: "fixture", pluginVersion: "0.1.0", platform: "web" }, entries, dictionary: undefined, forward: true, signal: new AbortController().signal })
-  const surfaces = createFrameSurfaces(entries.pages, link.send)
+  const surfaces = createFrameSurfaces(entries, link.send)
   link.onInvoke((invoke) => answerInvoke(entries, surfaces, invoke))
   api.pages.register(page(api))
 }
@@ -111,7 +111,7 @@ async function openOverPort(first = "alpha") {
     drawn.apply(message)
     applied.add(message)
   }
-  const controller = createRoot(() => openSurfacePage({ surface: { surfaceId: "surface-1", apply }, page, props: { path: "/items", params: { first } } }))
+  const controller = createRoot(() => openPluginSurface({ surface: { surfaceId: "surface-1", apply }, label: "page items", open: (surfaceChannel) => page.surface(surfaceChannel, { path: "/items", params: { first } }) }))
   return { ...host, log, applied, controller }
 }
 
@@ -162,7 +162,7 @@ describe("the frame mirror", () => {
     if (!("surface" in page)) throw new Error("the frame registered a rendered page")
     const applied = recorder<SurfaceMessage>()
     host.setProjectId("project-b")
-    createRoot(() => openSurfacePage({ surface: { surfaceId: "surface-1", apply: applied.add }, page, props: { path: "/project", params: {} } }))
+    createRoot(() => openPluginSurface({ surface: { surfaceId: "surface-1", apply: applied.add }, label: "page project", open: (surfaceChannel) => page.surface(surfaceChannel, { path: "/project", params: {} }) }))
     await applied.reached(2)
     expect(applied.entries[1]).toEqual({ version: "v0.9", updateDataModel: { surfaceId: "surface-1", path: "/project", value: "project-b" } })
     host.link.dispose()

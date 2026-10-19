@@ -34,6 +34,15 @@ test("the resolved context is a snapshot, detached from later edits", () => {
   expect(event.context).toEqual({ tags: ["a", "b"] })
 })
 
+test("a component's supplied fields join the declared context under their own names", () => {
+  const data = form()
+  const configuration = { harness: { id: "codex", access: "native" }, model: null, effort: null }
+  const action = { event: { name: "configured", context: { slot: "primary", name: { path: "/name" } } } }
+  const event = surfaceActionEvent(action, { surfaceId: "s1", sourceComponentId: "picker", scope: [] }, data, new Date(), { value: configuration })
+  expect(event.context).toEqual({ slot: "primary", name: "api", value: configuration })
+  expect(surfaceActionEventSchema.safeParse(event).success).toBe(true)
+})
+
 test("a field bound to a path writes the data model; a literal value stays local to the field", () => {
   createRoot((dispose) => {
     const data = form()

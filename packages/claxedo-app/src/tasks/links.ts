@@ -28,7 +28,7 @@ export function useOpenTaskSession() {
   const route = useShellRoute()
   const server = useServer()
   return async (session: SessionRef) => {
-    route.navigate(sessionPath(await server.tasks.locateSession(session)))
+    route.navigate(sessionPath(await server.placements.locateSession(session)))
   }
 }
 

@@ -590,9 +590,9 @@ Every S2–S5 change updates `packages/claxedo-plugin-api/src/surface/design-gui
 | Tab pages and icon | `SurfacePageDefinition.tab?: true; icon?: IconName` → `PageEntry.tab/icon` | `plugins/bindings/regions.ts` | Tasks shares the page tab with Marketplace, never splits (flow 12) |
 | Param routes without remount | `SurfaceProgram.navigated?(props: PageProps): void`; frame `surface.navigated { surfaceId, path, params }` | `plugins/surface-page/view.tsx`, `controller.ts`, `frame/host-surfaces.ts`, `frame/runtime/surfaces.ts` | `/tasks` ↔ `/tasks/:taskId` keeps page state |
 | Settings section as a surface | `SurfaceSettingsSection { id; title; icon?; order?; group?: "workspace" \| "app"; surface(channel): SurfaceProgram \| void }`; `SettingsApi.open(sectionId): void`; frame `Registration { kind: "settings"; surface: true }` | `bindings/regions.ts`, `surface-page/settings-view.tsx` | Settings → Presets; "Open preset settings" |
-| Open a session not listed yet | `SessionsApi.open(ref: SessionRef): Promise<void>` (re-reads the workspace catalog when the placement is unknown, then navigates) | `bindings/data.ts`; `locateSession` moves from `server/tasks.ts` to `server/workspaces.ts` | Start → open the new session; Open on a cloud task |
-| Cloud wake progress | `WorkspacesApi.followStart(workspaceId: string, onProgress: (text: string \| undefined) => void): Promise<{ kind: "running" } \| { kind: "failed"; message: string }>`; frame host→frame `{ type: "progress", id, text }` | new `bindings/workspaces.ts` (over `useWakeProgress`, `cloud.follow`, `cloud.runtime`) | Start on a Cloud preset |
-| Binary `server.fetch` on the web | `FrameResponse` gains `encoding: "utf8" \| "base64"`, base64 for non-text content types | `frame/protocol.ts`, `frame/host-calls.ts`, `frame/runtime/link.ts` | Attachment images on web |
+| Open a session not listed yet | `SessionsApi.open(ref: SessionRef): Promise<void>` (re-reads the workspace catalog when the placement is unknown, then navigates) | `bindings/data.ts`; `locateSession` moves from `server/tasks.ts` to `server/workspaces.ts`, served as `placements.locateSession` | Start → open the new session; Open on a cloud task |
+| Cloud wake progress | `WorkspacesApi.followStart(workspaceId: string, onProgress: (text: string \| undefined) => void): Promise<{ kind: "running" } \| { kind: "failed"; message: string }>`; frame host→frame `{ type: "progress", id, text }` | new `bindings/workspaces.ts` (over `useWakeProgress` and `cloud.followStart`, which `tasks.followRoot` became so Tasks and plugins share one follow) | Start on a Cloud preset |
+| Binary `server.fetch` on the web | `FrameResponse` gains `encoding: "utf8" \| "base64"`; utf8 only for a JSON, XML, JavaScript or `text/*` type in UTF-8, base64 otherwise | `frame/protocol.ts`, `frame/host-calls.ts`, `frame/response-body.ts`, `plugins/base64.ts` | Attachment images on web |
 | Transcript tool cards | `TranscriptApi.toolCards(templates: readonly ToolCardTemplate[]): Disposer` (below); frame `Registration { kind: "toolCards"; templates }` | shell registry `toolCards`, `transcript/claxedo-tool-view.ts` | Task and document cards outside the app |
 | Session start with preset/harness/model | Not added: the server's Start creates the session; add only when a plugin needs it | — | — |
 
@@ -656,7 +656,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
 - [x] **S1. Composer document leftovers.**
 - Delete or rename per §2(g); `slash-popover` keeps only file and mention options.
 - **Checks:** app test (`src/composer`), typecheck, check (budget for Composer drops), e2e `06-composer.spec.ts`, `34-live-plugin-desktop.spec.ts`, `35-live-plugin-web.spec.ts` (plugin mentions).
-- Progress: done (app-plugin-host lane). The `agent` AtOption had no producer and went with `document`; the mention row shows the source's group. Composer budget lowered to the measured 14031, total 112807. No new assertion: `/docs` was already filtered out of the slash list, so nothing a person sees changed.
+- Progress: done (app-plugin-host lane). The `agent` AtOption had no producer and went with `document`; the mention row shows the source's group. Composer budget lowered to the measured 14031, total 112807. No new assertion: `/docs` was already filtered out of the slash list, so nothing a person sees changed. Flows 06 and 35 pass on web and phone, except 06's explicit-model case, which drives the machine's real `claude` CLI and read its label as "Haiku 4.5" where the spec expects "Haiku". Flow 34 is not verified (the desktop project cannot start Electron in this container; see S5).
 - [ ] **S2. Input events, `Image`, status glyphs.**
 - Implement §3.0 and S2 in the catalog, spec check, renderer, design guide and `ui_guide`.
 - **Tests:** plugin-api spec tests (collisions, Image URL rule, agent-only refusals); app `src/surface` tests (supplied fields, change fires after the write, Image refusals).
@@ -678,7 +678,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - typing in a `Combobox` streams options and selecting fires `change`.
 - **Checks:** as S2 (the no-polling check lists `search-debounce.ts` as the timer owner).
 - Progress:
-- [ ] **S5. Plugin API primitives and `AgentConfigurationPicker`.**
+- [x] **S5. Plugin API primitives and `AgentConfigurationPicker`.**
 - Implement the primitive table; move `cloud-configuration-picker.tsx`, `cloud-model.ts`, `cloud-catalog-*` to `src/composer/`.
 - **Tests:** bindings (tab entry, `navigated` without remount, settings surface, `sessions.open` re-reads the catalog once and navigates, `followStart` progress), frame protocol round trips (navigated, settings surface, progress, base64 body).
 - **Flow 61 fixture:**
@@ -687,7 +687,15 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - a settings surface section draws and `settings.open` reaches it;
   - binary fetch returns exact bytes.
 - **Checks:** app test, typecheck and check; plugin-api test; ratchets plus desktop `verify:closure`.
-- Progress:
+- Progress: done (app-plugin-host lane). Changes from the text above, from the code:
+  - `tasks.followRoot` became `cloud.followStart` (`server/cloud.ts`); the Tasks start and `workspaces.followStart` both use it, and `TasksApi` lost `followRoot` with `locateSession`.
+  - The frame's `surface.open` names its target, `{ kind: "page", pageId, path, params }` or `{ kind: "settings", sectionId }`; `surface.navigated` and settings `surface: true` are as planned. A `SurfaceSettingsSection` without `group` joins `app`.
+  - The host keeps its own standard base64 (`plugins/base64.ts`; `@claxedo/helpers` offers only base64url), so `bindings/data.ts` no longer imports `@claxedo/tasks`.
+  - `AgentConfigurationPicker` binds a value shaped by `surfaceAgentConfigurationSchema` (exported as `SurfaceAgentConfiguration`). The renderer draws it through a reference component the host passes in (`SurfaceReferencesProvider`): plugin surfaces get the composer's `AgentConfigurationPicker`, an agent reply gets none and draws a note, so it is inert there. Its `change` supplies `{ value }` through the §3.0 `supplied` argument of `surfaceActionEvent`. Still open, for the catalog lane's §3.0 producer limits: `checkSurfaceSpec(…, { producer: "agent" })` must refuse it, and the design guide and `ui_guide` must describe it (both files are that lane's).
+  - The whole configuration editor moved, not just the cloud pickers: `presets/configuration-editor.tsx` is `composer/agent-configuration/agent-configuration-picker.tsx`, with `rebaseConfiguration` applied inside the picker; the composer's type is the catalog's `SurfaceAgentConfiguration`, because app code may not declare `providerID`/`modelID`.
+  - Flow 61 adds a tab page with a param route, a surface settings section holding an `AgentConfigurationPicker`, and a byte fetch of a task attachment (fixture routes `/api/claxedo/tasks`). The phone opener now waits for the home redirect before opening the rail; a tap before it was closed by that navigation.
+  - Desktop-renderer modules 1481 → 1491 (the ten new owners named in `desktop.ts`). Budgets: Composer 14376, Plugin host 2650, Web plugin frame 1618, Surface renderer 2359, Tasks 4754, total 113505.
+  - Not verified here: flow 34 (desktop). This container runs as root and Electron exits with "Running as root without --no-sandbox is not supported"; `00-desktop-smoke` fails the same way at fixture setup.
 - [ ] **S6. Server plugin contract and bootstrap capabilities.**
 - Add `server-core/src/plugins/server-plugin.ts`.
 - Local: `StartLocalServerOptions.plugins`. Interim builders `createLocalTasksPlugin` (from `local-server/src/tasks/`) and `createLocalDocumentsPlugin` (from `app/local-documents.ts`) wrap today's code in place.

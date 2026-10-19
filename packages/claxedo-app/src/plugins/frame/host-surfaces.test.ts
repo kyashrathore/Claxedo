@@ -46,7 +46,7 @@ describe("surface routes on the host", () => {
     createRoot(() => surfacePage.surface({ surfaceId: "surface-1", send: () => undefined }, { path: "/items", params: {} }))
     expect(posted.map((message) => message.type)).toEqual(["mirror", "invoke"])
     expect(posted[0]).toEqual({ type: "mirror", mirror: { ...MIRROR, currentProjectId: "project-b" } })
-    expect(posted[1]).toMatchObject({ type: "invoke", invoke: { method: "surface.open", pageId: "items", surfaceId: "surface-1" } })
+    expect(posted[1]).toMatchObject({ type: "invoke", invoke: { method: "surface.open", surfaceId: "surface-1", target: { kind: "page", pageId: "items" } } })
     expect(failures).toEqual([])
   })
 })

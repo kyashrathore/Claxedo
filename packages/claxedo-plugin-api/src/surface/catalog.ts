@@ -47,6 +47,14 @@ function catalogComponent<Name extends string, Shape extends z.ZodRawShape>(name
 export const SURFACE_BADGE_TONES = ["neutral", "accent", "success", "warning", "danger"] as const
 const badgeTone = z.enum(SURFACE_BADGE_TONES).meta({ id: "BadgeTone" })
 
+export const surfaceAgentConfigurationSchema = z
+  .object({
+    harness: z.object({ id: z.string().min(1).max(256), access: z.enum(["native", "connection"]) }).strict().nullable(),
+    model: z.object({ providerID: z.string().min(1).max(256), modelID: z.string().min(1).max(512) }).strict().nullable(),
+    effort: z.string().max(64).nullable(),
+  })
+  .strict()
+
 const justify = z.enum(["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"]).meta({ id: "Justify" })
 const align = z.enum(["start", "center", "end", "stretch"]).meta({ id: "Align" })
 
@@ -142,6 +150,12 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
   }),
   catalogComponent("Footer", { start: componentIdList.optional(), end: componentIdList }),
   catalogComponent("KeyValue", { items: z.union([z.array(keyValueItem), dataBindingSchema]) }),
+  catalogComponent("AgentConfigurationPicker", {
+    placement: z.union([z.enum(["local", "cloud"]), dataBindingSchema]),
+    value: dataBindingSchema,
+    disabled: dynamicBoolean.optional(),
+    change: surfaceActionSchema.optional(),
+  }),
 ])
 
 export type SurfaceComponent = z.infer<typeof surfaceComponentSchema>
@@ -150,3 +164,4 @@ export type SurfaceDataBinding = z.infer<typeof dataBindingSchema>
 export type SurfaceActionDefinition = z.infer<typeof surfaceActionSchema>
 export type SurfaceChildList = z.infer<typeof childList>
 export type SurfaceDynamicValue = z.infer<typeof dynamicValue>
+export type SurfaceAgentConfiguration = z.infer<typeof surfaceAgentConfigurationSchema>

@@ -21,12 +21,18 @@ export function resolveActionContext(
   return resolved
 }
 
-export function surfaceActionEvent(action: SurfaceActionDefinition, source: ActionSource, data: SurfaceData, now: Date): SurfaceActionEvent {
+export function surfaceActionEvent(
+  action: SurfaceActionDefinition,
+  source: ActionSource,
+  data: SurfaceData,
+  now: Date,
+  supplied: Readonly<Record<string, JsonValue>> = {},
+): SurfaceActionEvent {
   return {
     name: action.event.name,
     surfaceId: source.surfaceId,
     sourceComponentId: source.sourceComponentId,
     timestamp: now.toISOString(),
-    context: resolveActionContext(action.event.context, source.scope, data),
+    context: { ...resolveActionContext(action.event.context, source.scope, data), ...supplied },
   }
 }

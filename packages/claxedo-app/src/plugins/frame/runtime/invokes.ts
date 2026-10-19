@@ -3,7 +3,7 @@ import type { FrameEntries } from "./api"
 import type { FrameSurfaces } from "./surfaces"
 
 export async function answerInvoke(entries: FrameEntries, surfaces: FrameSurfaces, invoke: FrameInvoke): Promise<unknown> {
-  if (invoke.method === "surface.open" || invoke.method === "surface.action" || invoke.method === "surface.close") return surfaces.answer(invoke)
+  if (invoke.method === "surface.open" || invoke.method === "surface.navigated" || invoke.method === "surface.action" || invoke.method === "surface.close") return surfaces.answer(invoke)
   if (invoke.method === "command.run") {
     const command = entries.commands.get(invoke.commandId)
     if (!command) throw new Error(`No command ${invoke.commandId} is registered`)

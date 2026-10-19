@@ -4,10 +4,12 @@ export {
   SURFACE_ICON_NAMES,
   dataBindingSchema,
   surfaceActionSchema,
+  surfaceAgentConfigurationSchema,
   surfaceComponentSchema,
 } from "./catalog"
 export type {
   SurfaceActionDefinition,
+  SurfaceAgentConfiguration,
   SurfaceChildList,
   SurfaceComponent,
   SurfaceComponentName,

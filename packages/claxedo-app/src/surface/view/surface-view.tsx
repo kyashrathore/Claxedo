@@ -25,8 +25,8 @@ export function SurfaceView(props: SurfaceViewProps): JSX.Element {
       return state()
     },
     actionsDisabled: () => props.actionsDisabled === true || props.onAction === undefined,
-    fire: (action, sourceComponentId, scope) => {
-      const event = surfaceActionEvent(action, { surfaceId: props.surface.surfaceId, sourceComponentId, scope }, state().data, new Date())
+    fire: (action, sourceComponentId, scope, supplied) => {
+      const event = surfaceActionEvent(action, { surfaceId: props.surface.surfaceId, sourceComponentId, scope }, state().data, new Date(), supplied)
       props.onAction?.(event)
     },
   }

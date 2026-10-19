@@ -64,7 +64,10 @@ export function createHostPort(input: HostPortInput): HostPort {
     if (message.type === "register") return registrations.register(message.key, message.registration)
     if (message.type === "unregister") return registrations.unregister(message.key)
     if (message.type === "surface") return surfaces.deliver(message)
-    if (message.type === "call") return void answerCall(send, message.id, () => performCall(api, message.call))
+    if (message.type === "call") {
+      const { id } = message
+      return void answerCall(send, id, () => performCall(api, message.call, (text) => send({ type: "progress", id, text })))
+    }
     if (message.type === "result") return requests.settle(message)
     if (message.type === "activated") return control?.activated()
     control?.failed(message.reason)
