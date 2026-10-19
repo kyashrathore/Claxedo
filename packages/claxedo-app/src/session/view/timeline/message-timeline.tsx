@@ -157,7 +157,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const toggleTool = (partId: string, open: boolean) => {
-    props.onReaderToggle()
+    readerToggle()
     setToolOpen(partId, open)
   }
   const [toolRevealed, setToolRevealed] = createStore<Record<string, boolean | undefined>>(cached?.toolRevealed ?? {})
@@ -514,9 +514,16 @@ export function MessageTimeline(props: MessageTimelineProps) {
   holdPaneReveal(() => !initialRevealReady())
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
+  const raiseOverscan = () => {
+    if (renderOverscan() < 6) setRenderOverscan(6)
+  }
+  const readerToggle = () => {
+    raiseOverscan()
+    props.onReaderToggle()
+  }
   const prepareScrollOverscan = () => {
     if (!initialTurnExpanded()) setInitialTurnExpanded(true)
-    if (renderOverscan() < 6) setRenderOverscan(6)
+    raiseOverscan()
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -844,7 +851,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           parts={Timeline.memberTools(members())}
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => {
-            props.onReaderToggle()
+            readerToggle()
             setGroupOpen(row().group.key, open)
           }}
           busy={
@@ -903,7 +910,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           parts={Timeline.memberTools(members())}
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => {
-            props.onReaderToggle()
+            readerToggle()
             setGroupOpen(row().group.key, open)
           }}
           busy={
@@ -1131,7 +1138,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                 cost={turnFoldRow().cost}
                 showTokens={host.settings.timelineShowTurnTokens()}
                 onToggle={() => {
-                  props.onReaderToggle()
+                  readerToggle()
                   turnFold.setFolded(turnFoldRow().userMessageId, !turnFoldRow().folded)
                   onSizeChange?.()
                 }}
