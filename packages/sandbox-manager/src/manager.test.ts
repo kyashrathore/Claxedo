@@ -2203,7 +2203,7 @@ describe("a host the provider no longer has", () => {
   test("a driver that reports a host gone before any host was reported is a provider failure, retried as one", async () => {
     const store = createMemoryLeaseStore()
     const driver = fakeDriver({ ensureHost: vi.fn(async () => { throw new SandboxHostGoneError("not_found") }) })
-    const manager = createSandboxManager({ leaseStore: store, driver, retryDelayMs: () => 5_000 })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => 20_000, retryDelayMs: () => 5_000 })
 
     await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "provider_failed:test-driver: not_found", retryAfterMs: 5_000, epoch: 1 })
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", epoch: 1, retryCount: 1 })
