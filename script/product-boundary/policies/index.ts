@@ -9,6 +9,7 @@ import type { Policy } from "../policy.ts"
 import { localServer } from "./local-server.ts"
 import { hostConnector } from "./host-connector.ts"
 import { serverWorkerd } from "./server.ts"
+import { tasksApp } from "./tasks.ts"
 import { desktopAccountComposition, desktopMainComposition, desktopRenderer } from "./desktop.ts"
 
 export const POLICIES: Policy[] = [
@@ -18,6 +19,7 @@ export const POLICIES: Policy[] = [
   desktopMainComposition,
   desktopAccountComposition,
   desktopRenderer,
+  tasksApp,
 ]
 
 /** Package name -> the policies its `verify:closure` runs. */
@@ -30,6 +32,7 @@ export const PRODUCTS: Record<string, string[]> = {
     "desktop-account-composition",
     "desktop-renderer",
   ],
+  "@claxedo/tasks": ["tasks-app"],
 }
 
 export function policyById(id: string): Policy | undefined {

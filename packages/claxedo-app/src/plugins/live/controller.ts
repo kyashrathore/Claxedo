@@ -1,6 +1,6 @@
 import type { LivePlugin } from "@/server"
 import type { PluginHost } from "../host"
-import type { PluginBuild } from "../model"
+import { liveOriginOf, type PluginBuild } from "../model"
 import { failingBuild, type LiveRow } from "./load"
 
 export type LiveReconciler = { readonly reconcile: (rows: readonly LivePlugin[]) => void }
@@ -22,8 +22,9 @@ export function createLiveReconciler(host: PluginHost, loadBuild: (row: LiveRow)
   return {
     reconcile: (rows) => {
       const listed = new Set(rows.map((row) => row.id))
-      for (const { id } of host.plugins()) {
-        if (listed.has(id)) continue
+      for (const plugin of host.plugins()) {
+        const { id } = plugin
+        if (!liveOriginOf(plugin) || listed.has(id)) continue
         requested.delete(id)
         host.drop(id)
       }
@@ -31,8 +32,9 @@ export function createLiveReconciler(host: PluginHost, loadBuild: (row: LiveRow)
         const hash = servedHash(row)
         if (!hash) continue
         const current = host.plugins().find((plugin) => plugin.id === row.id)
-        const loaded = current?.origin.hash === hash
-        if (loaded && current.origin.buildError === (row.lastError ?? undefined)) continue
+        const origin = current && liveOriginOf(current)
+        const loaded = origin?.hash === hash
+        if (loaded && origin.buildError === (row.lastError ?? undefined)) continue
         if (requested.get(row.id) === hash && !loaded) continue
         void load(row, hash)
       }

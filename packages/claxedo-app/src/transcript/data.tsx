@@ -1,11 +1,12 @@
 import { createContext, useContext, type ParentProps } from "solid-js"
 import type { AgentFilePart, AgentToolPart } from "@claxedo/agent-runtime-contract"
+import type { TranscriptToolCard } from "./tool-card-template"
 
 export type NavigateToSessionFn = (sessionId: string) => void
 
 export type SessionHrefFn = (sessionId: string) => string
 
-export type TaskHrefFn = (taskId: string) => string
+const NO_TOOL_CARDS: readonly TranscriptToolCard[] = []
 
 export type SubagentView = {
   parentSessionId: string
@@ -32,7 +33,7 @@ export type DataProviderProps = {
   harnessLabel?: string
   onNavigateToSession?: NavigateToSessionFn
   onSessionHref?: SessionHrefFn
-  onTaskHref?: TaskHrefFn
+  toolCards?: () => readonly TranscriptToolCard[]
   onClaxedoToolHref?: (tool: string, input: Record<string, unknown>, output?: string) => string | undefined
   resolveSubagents?: (parentSessionId: string, toolCallId?: string) => SubagentView[]
   fileUrl?: (path: string) => string | undefined
@@ -52,7 +53,7 @@ function transcriptData(props: DataProviderProps) {
     },
     navigateToSession: props.onNavigateToSession,
     sessionHref: props.onSessionHref,
-    taskHref: props.onTaskHref,
+    toolCards: () => props.toolCards?.() ?? NO_TOOL_CARDS,
     claxedoToolHref: props.onClaxedoToolHref,
     resolveSubagents: props.resolveSubagents,
     fileUrl: props.fileUrl,

@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import type { TimelineFocus } from "./model"
+import { timelineAnchorFileHref } from "./timeline-file-paths"
 import { createTimelineLinkOpen } from "./timeline-link-open"
 
 function opener(canReadLocalFiles: boolean) {
@@ -35,4 +36,12 @@ test("an absolute artifact link is refused where local files cannot be read", ()
   links.openFile("/abs/notes.md:42")
   expect(opened).toEqual([])
   expect(errors).toHaveLength(1)
+})
+
+test("an anchor a transcript card drew to an app route is the router's, never a file", () => {
+  const anchor = (attributes: Readonly<Record<string, string>>) =>
+    ({ hasAttribute: (name: string) => Object.hasOwn(attributes, name), getAttribute: (name: string) => attributes[name] ?? null }) as unknown as Element
+  expect(timelineAnchorFileHref(anchor({ href: "/tasks/tsk_1", "data-link-kind": "page" }))).toBeUndefined()
+  expect(timelineAnchorFileHref(anchor({ href: "/w/ws_1/session/ses_1", "data-link-kind": "session" }))).toBeUndefined()
+  expect(timelineAnchorFileHref(anchor({ href: "/repo/src/a.ts" }))).toBe("/repo/src/a.ts")
 })

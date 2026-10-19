@@ -33,16 +33,20 @@
       color: var(--icon-weak-base);
     }
 
-    &[data-status="doing"] .ui-icon {
+    &[data-tone="info"] .ui-icon {
       color: var(--icon-info-active);
     }
 
-    &[data-status="needs_you"] .ui-icon {
+    &[data-tone="warning"] .ui-icon {
       color: var(--icon-warning-active);
     }
 
-    &[data-status="done"] .ui-icon {
+    &[data-tone="success"] .ui-icon {
       color: var(--icon-success-active);
+    }
+
+    &[data-tone="danger"] .ui-icon {
+      color: var(--icon-critical-active);
     }
   }
 

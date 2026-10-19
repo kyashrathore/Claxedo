@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { isPluginId } from "./id"
-import { PluginManifestError, pluginBackendRouteAllowed, pluginOperationAllowed, pluginRouteAllowed, readPluginManifest } from "./manifest"
+import { FIRST_PARTY_PLUGIN_IDS, isFirstPartyPluginId, PluginManifestError, pluginBackendRouteAllowed, pluginOperationAllowed, pluginRouteAllowed, readPluginManifest } from "./manifest"
 
 const packageJson = {
   name: "claxedo-plugin-notes",
@@ -135,5 +135,14 @@ describe("isPluginId", () => {
     expect(isPluginId("counter")).toBe(true)
     expect(isPluginId("a".repeat(64))).toBe(true)
     for (const id of ["", ".", "..", "../admin", "Counter", "counter-", "-counter", "a".repeat(65)]) expect(isPluginId(id), id).toBe(false)
+  })
+})
+
+describe("first-party plugin ids", () => {
+  test("name the host's bundled plugins, which are valid plugin ids no live plugin may take", () => {
+    expect(FIRST_PARTY_PLUGIN_IDS).toEqual(["claxedo-tasks"])
+    expect(FIRST_PARTY_PLUGIN_IDS.every(isPluginId)).toBe(true)
+    expect(isFirstPartyPluginId("claxedo-tasks")).toBe(true)
+    expect(isFirstPartyPluginId("tasks")).toBe(false)
   })
 })

@@ -60,6 +60,8 @@ export function registerOnHost(api: PluginApi, registration: Registration, endpo
       return registerMention(api, registration, invoke)
     case "theme":
       return api.themes.register(registration.theme)
+    case "toolCards":
+      return api.transcript.toolCards(registration.templates)
     default:
       return unreachable(registration)
   }

@@ -100,7 +100,7 @@ function regionApi(scope: FrameScope): Pick<PluginApi, "sidebar" | "pages" | "pa
   }
 }
 
-function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" | "workbench" | "themes" | "icons"> {
+function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" | "workbench" | "themes" | "icons" | "transcript"> {
   const { entries, link } = scope
   return {
     commands: {
@@ -123,6 +123,7 @@ function actionApi(scope: FrameScope): Pick<PluginApi, "commands" | "mentions" |
         }),
     },
     themes: { register: (theme) => (scope.forward ? link.register({ kind: "theme", theme }) : () => undefined) },
+    transcript: { toolCards: (templates) => (scope.forward ? link.register({ kind: "toolCards", templates }) : () => undefined) },
     icons: {
       registerSkin: () => {
         throw new FrameUnsupportedError("icons.registerSkin")

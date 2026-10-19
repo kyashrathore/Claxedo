@@ -14,6 +14,7 @@ import type {
   SurfaceMessage,
   ThemeDefinition,
   Toast,
+  ToolCardTemplate,
   WorkbenchTab,
   WorkspaceStartResult,
 } from "@claxedo/plugin-api"
@@ -61,6 +62,7 @@ export type Registration =
   | { readonly kind: "command"; readonly id: string; readonly title: string; readonly keybinding?: string; readonly category?: string }
   | { readonly kind: "mention"; readonly id: string; readonly label: string }
   | { readonly kind: "theme"; readonly theme: ThemeDefinition }
+  | { readonly kind: "toolCards"; readonly templates: readonly ToolCardTemplate[] }
 
 export type FoundMention = { readonly item: MentionItem; readonly insert: MentionInsert }
 

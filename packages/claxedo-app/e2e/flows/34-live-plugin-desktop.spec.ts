@@ -144,6 +144,6 @@ test("34 a live plugin on the desktop swaps on save, keeps its last build on a b
   await appPluginRow(window, "Fixture").getByRole("button", { name: "Remove" }).click()
   await appPluginDialog(window, "Remove Fixture?").getByRole("button", { name: "Remove" }).click()
   await expect(appPluginRow(window, "Fixture")).toHaveCount(0)
-  await expect(window.getByText("No app plugins yet.")).toBeVisible()
+  await expect(appPluginRow(window, "Tasks"), "the built-in plugin a removal leaves").toContainText("Built in")
   expect((await listLivePlugins(desktop.url, pageTransport(window))).plugins).toEqual([])
 })

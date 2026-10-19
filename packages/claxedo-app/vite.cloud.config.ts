@@ -2,10 +2,10 @@ import { defineConfig, loadEnv, type Plugin, type UserConfig } from "vite"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
-import { existsSync, readFileSync, realpathSync } from "node:fs"
-import { dirname } from "node:path"
+import { readFileSync } from "node:fs"
 import { resolveAccountBindingSelection, type AccountBindingId } from "./vite.account-binding"
 import { webContentSecurityPolicyPlugin } from "./vite.content-security-policy"
+import { claxedoPluginBundles, workspaceSourceExport } from "./vite.plugin-bundles"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
 const shikiThemesDist = normalizePath(
@@ -29,36 +29,15 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
   }
 }
 
-function manifestField(value: unknown, key: string): unknown {
-  if (typeof value !== "object" || value === null) return undefined
-  return new Map<string, unknown>(Object.entries(value)).get(key)
-}
-
 function claxedoWorkspaceSource(): Plugin {
-  const roots = [
-    fileURLToPath(new URL("./node_modules/", import.meta.url)),
-    fileURLToPath(new URL("../../node_modules/", import.meta.url)),
-  ]
-  const manifestFor = (name: string) => {
-    for (const root of roots) {
-      const path = `${root}${name}/package.json`
-      if (existsSync(path)) return path
-    }
-    return undefined
-  }
   return {
     name: "claxedo-workspace-source",
     enforce: "pre",
     resolveId(source) {
       const match = /^(@claxedo\/[^/]+)(\/.+)?$/.exec(source)
       if (!match) return null
-      const manifestPath = manifestFor(match[1])
-      if (!manifestPath) return null
-      const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"))
-      const entry = manifestField(manifestField(manifest, "exports"), match[2] ? `.${match[2]}` : ".")
-      const development = manifestField(entry, "development")
-      if (typeof development !== "string") return null
-      return normalizePath(realpathSync(`${dirname(manifestPath)}/${development}`))
+      const path = workspaceSourceExport(match[1], match[2] ? `.${match[2]}` : ".")
+      return path ? normalizePath(path) : null
     },
   }
 }
@@ -81,7 +60,7 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
+    plugins: [claxedoPluginBundles(), claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webContentSecurityPolicyPlugin(env.VITE_CLAXEDO_SERVER_URL)],
     publicDir: "public",
     server: {
       host: "0.0.0.0",

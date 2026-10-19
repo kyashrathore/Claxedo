@@ -2,7 +2,8 @@
 import { describe, expect, test } from "bun:test"
 import { createEffect, createRoot, indexArray } from "solid-js"
 import { createSurfaceData } from "./data-model"
-import { parsePointer, resolvePath, itemScope } from "./data-path"
+import { parsePointer } from "@/lib/json-pointer"
+import { resolvePath, itemScope } from "./data-path"
 import { readDynamic } from "./binding"
 import { SurfaceMessageError, type SurfaceData } from "./model"
 

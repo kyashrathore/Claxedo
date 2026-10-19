@@ -103,14 +103,23 @@
       "default": "./src/test-support/index.ts"
     }
   },
+  "claxedo": {
+    "id": "claxedo-tasks",
+    "name": "Tasks",
+    "version": "1.0.0",
+    "app": "./src/app/index.ts",
+    "requires": ["tasks"]
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts",
     "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/mcp": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
     "@claxedo/server-core": "workspace:*",
     "drizzle-orm": "catalog:",
     "hono": "4.12.34",
