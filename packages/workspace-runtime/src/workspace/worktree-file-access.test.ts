@@ -3,7 +3,7 @@ import { testSessionCore } from "@claxedo/session-core/testing"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Hono, type MiddlewareHandler } from "hono"
 import fs from "node:fs/promises"
-import { rmSync, symlinkSync } from "node:fs"
+import { lstatSync, rmdirSync, symlinkSync, unlinkSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
@@ -415,7 +415,7 @@ describe("a private worktree nested under the workspace root", () => {
     await fs.writeFile(path.join(decoy, "decoy-only.txt"), "")
     const link = path.join(f.source, "leak")
     const pointAt = (target: string) => {
-      rmSync(link, { force: true })
+      if (lstatSync(link, { throwIfNoEntry: false })) (process.platform === "win32" ? rmdirSync : unlinkSync)(link)
       symlinkSync(target, link)
     }
     const base = sharedSessionPolicy("ses_shared")
