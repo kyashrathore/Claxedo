@@ -34,7 +34,8 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 - The consent page only narrows scopes: Allow always submits the scopes left checked, so a scope the page did not offer (`claxedo:admin` to a client this deployment did not register) is never granted by omission.
 - The device page names the requesting client the same way and says that approving grants the device full account access; the server issues user codes only to `claxedo-cli`.
-- Signing out clears every `claxedo:` preference except the last user id; a different user signing in clears them too.
+- Signing out clears every `claxedo:` preference and the last user id; a different user signing in clears them too.
+- On the web, `claxedo:auth:lastUserId` names the account this browser is signed in as, and every tab shares the one session cookie. `browserAccountBinding` listens for another tab changing it (`watchOtherTabIdentity`, `persistence.ts`, disposed with the auth owner): a signed-in tab reloads when another tab signs in as someone else or signs out, so it never keeps showing the first account or writes that account's preferences back after the switch cleared them. A signed-out tab stays on its page. A storage event never reaches the tab that wrote it.
 - No test bypass exists in this domain; flows sign in against the real Worker with the scripted OAuth provider.
 
 - The desktop renderer never holds the account's credential: its binding has no token, and every control-plane call crosses main by operation name.

@@ -25,7 +25,6 @@ evidence, is `docs/security-audit-revalidation-2026-09-20.md` at `98d3e5c88f`.
 | SI-5 — A credential quarantined after a descriptor change is never revoked | Low | `rejectHeld` renames the record to `.rejected-<uuid>` and keeps it; the refresh token in it stays live for its 30 days. Needs a revoke while the stored issuer still matches, and pruning. |
 | SI-6 — Packaged desktop builds honour `ELECTRON_RENDERER_URL` and a runtime `CLAXEDO_CORE_ORIGIN` | Low | Anyone who controls the launch environment can already inject code while SI-1 is open, so this becomes a boundary only after it. |
 | SI-7 — `/login` continuing an authorization request with `prompt=login`, `max_age` or `prompt=select_account` loops between the two pages | Low | The signed-in reader is forwarded to `/oauth2/authorize`, which sends that prompt back to `/login`. |
-| SI-8 — Another tab's account switch goes unnoticed until a 401 | Low | Nothing listens for `claxedo:auth:lastUserId` changing, so a tab keeps showing the first account and can write its drafts back after the switch cleared them. |
 
 ## Fixed, with part of the acceptance not run
 
