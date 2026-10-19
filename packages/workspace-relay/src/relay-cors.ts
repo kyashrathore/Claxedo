@@ -88,7 +88,19 @@ const UPSTREAM_OWNED_RESPONSE_HEADERS = [
   "access-control-max-age",
 ]
 
-export function withCors(request: Request, response: Response) {
+/**
+ * Every workspace's answer is served from the relay's one origin, and a host
+ * chooses its own content type: a `text/html` answer opened as a page would
+ * otherwise run the host's script on that origin, beside every other
+ * workspace's relayed responses. The app reads relayed answers with fetch, which
+ * neither header affects.
+ */
+const RELAY_DOCUMENT_LOCKDOWN_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "content-security-policy": "sandbox",
+}
+
+export function withRelayResponseHeaders(request: Request, response: Response) {
   // A WebSocket upgrade (101) CANNOT be reconstructed: in Workers
   // `new Response(..., { status: 101 })` throws and the attached `webSocket`
   // would be dropped anyway. Browsers always send `Origin` on WS upgrades, so
@@ -98,7 +110,7 @@ export function withCors(request: Request, response: Response) {
   if (response.status === 101 || ("webSocket" in response && response.webSocket)) return response
   const next = new Headers(response.headers)
   for (const name of UPSTREAM_OWNED_RESPONSE_HEADERS) next.delete(name)
-  for (const [key, value] of Object.entries(corsHeaders(request) ?? {})) next.set(key, value)
+  for (const [key, value] of Object.entries({ ...RELAY_DOCUMENT_LOCKDOWN_HEADERS, ...corsHeaders(request) })) next.set(key, value)
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
