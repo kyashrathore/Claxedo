@@ -230,8 +230,13 @@ export const serverWorkerd: Policy = {
   // `agent_turn` write, and hands a session's own host its delivery, split
   // from the route when the three requests it replaced became one. It adds no
   // package edge.
-  // 180/22, no headroom.
-  ceilings: { modules: 180, packages: 22 },
+  // +1 module (owner: the Better Auth D1 foundation): the session cookie's
+  // name (`platform/auth/session-cookie.ts`) is a leaf the app Worker bundles
+  // without Better Auth, to tell a signed-in browser's shell request from a
+  // signed-out one; the foundation and the auth descriptor read it from there.
+  // It adds no package edge.
+  // 181/22, no headroom.
+  ceilings: { modules: 181, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -318,7 +318,8 @@ describe("the shell's preloads", () => {
   })
 
   test("a browser without the session cookie gets the shell as the assets serve it", async () => {
-    for (const headers of [{ "accept-encoding": "identity" }, { "accept-encoding": "identity", cookie: "theme=dark; __Secure-claxedo.session_token=" }]) {
+    const stale: Record<string, string>[] = [{ "accept-encoding": "identity" }, { "accept-encoding": "identity", cookie: "theme=dark; __Secure-claxedo.session_token=" }]
+    for (const headers of stale) {
       const response = await serve("/w/workspace-1/session/ses_1", headers)
       expect(response.status).toBe(200)
       expect(response.headers.link).toBeUndefined()
