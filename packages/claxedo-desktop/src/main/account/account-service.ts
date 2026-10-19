@@ -143,8 +143,12 @@ export function createAccountService(options: AccountServiceOptions) {
   }
 
   const rejectHeld = (held: StoredDesktopCredential, reason: string) => {
-    options.store.reject(held.revision, reason)
+    const quarantined = options.store.reject(held.revision, reason)
     if (credential?.revision === held.revision) credential = undefined
+    if (!quarantined) return
+    void options.auth.revokeUnbound(held).then((outcome) => {
+      if (outcome.state === "uncertain") options.onError?.("quarantine-revoke", outcome.detail)
+    })
   }
 
   const adopt = (

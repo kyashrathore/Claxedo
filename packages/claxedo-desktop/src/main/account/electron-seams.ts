@@ -8,7 +8,7 @@
  */
 
 import { createServer } from "node:http"
-import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { closeSync, fsyncSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import { basename, join } from "node:path"
 import type { CallbackDisposition, OAuthSeams, TokenSet } from "./oauth-flow"
@@ -113,13 +113,21 @@ export function credentialFile(userDataDir: string): CredentialFile {
         rmSync(temporary, { force: true })
       }
     },
+    // Only the newest rejected record is kept: each one still holds a refresh
+    // token that may be live, and nothing reads them back.
     quarantine: () => {
+      const rejectedPrefix = `${ACCOUNT_CREDENTIAL_RECORD}.rejected-`
+      const kept = `${rejectedPrefix}${randomUUID()}`
       try {
-        renameSync(path, join(userDataDir, `${ACCOUNT_CREDENTIAL_RECORD}.rejected-${randomUUID()}`))
-        syncDirectory()
+        renameSync(path, join(userDataDir, kept))
       } catch (error) {
         if (!isMissingFile(error)) throw error
+        return
       }
+      for (const name of readdirSync(userDataDir)) {
+        if (name.startsWith(rejectedPrefix) && name !== kept) rmSync(join(userDataDir, name), { force: true })
+      }
+      syncDirectory()
     },
     clear: () => {
       rmSync(path, { force: true })

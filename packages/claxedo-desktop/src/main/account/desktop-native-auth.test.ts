@@ -185,6 +185,36 @@ describe("descriptor-selected desktop native auth", () => {
     expect(body.get("resource")).toBeNull()
   })
 
+  test("revokes a credential the deployment no longer binds at the issuer that minted it, as the client it was issued to", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+    const unbound = {
+      ...signed.credential,
+      binding: { ...signed.credential.binding, configurationVersion: "auth-v0", id: "desktop-old-client" },
+    }
+
+    await expect(h.auth.revokeUnbound(unbound)).resolves.toEqual({ state: "confirmed" })
+    const request = h.requests.find((candidate) => candidate.url.endsWith("/oauth2/revoke"))
+    expect(request?.url).toBe(`${CORE}/api/auth/oauth2/revoke`)
+    const body = new URLSearchParams(requestBody(request?.init?.body))
+    expect(body.get("client_id")).toBe("desktop-old-client")
+    expect(body.get("token")).toBe("refresh-1")
+  })
+
+  test("never sends a credential minted by another issuer to the selected deployment", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+    const foreign = {
+      ...signed.credential,
+      binding: { ...signed.credential.binding, issuer: "https://old-core.example.com/api/auth" },
+    }
+
+    await expect(h.auth.revokeUnbound(foreign)).resolves.toMatchObject({ state: "uncertain" })
+    expect(h.requests.filter((request) => request.url.endsWith("/oauth2/revoke"))).toEqual([])
+  })
+
   test("rechecks descriptor expiry before refresh, API validation, and logout", async () => {
     const h = harness()
     const signed = await h.auth.signIn()

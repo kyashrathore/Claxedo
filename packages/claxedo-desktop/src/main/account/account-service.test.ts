@@ -57,10 +57,10 @@ function memoryStore(initial?: BoundDesktopCredential) {
       return true
     },
     reject(expected, reason) {
-      if (held?.revision === expected) {
-        held = undefined
-        rejected.push(reason)
-      }
+      if (held?.revision !== expected) return false
+      held = undefined
+      rejected.push(reason)
+      return true
     },
     clear: () => {
       held = undefined
@@ -75,6 +75,7 @@ function authHarness(overrides: Partial<DesktopNativeAuth> = {}) {
   let validates = 0
   let refreshes = 0
   let revokes = 0
+  const unboundRevocations: BoundDesktopCredential[] = []
   const auth: DesktopNativeAuth = {
     cancel() {},
     discover: async () => ({ binding: BINDING }) as never,
@@ -91,9 +92,13 @@ function authHarness(overrides: Partial<DesktopNativeAuth> = {}) {
       revokes++
       return { state: "confirmed" }
     },
+    revokeUnbound: async (credential) => {
+      unboundRevocations.push(credential)
+      return { state: "confirmed" }
+    },
     ...overrides,
   }
-  return { auth, validates: () => validates, refreshes: () => refreshes, revokes: () => revokes }
+  return { auth, validates: () => validates, refreshes: () => refreshes, revokes: () => revokes, unboundRevocations }
 }
 
 function harness(
@@ -153,6 +158,22 @@ describe("bound desktop account lifecycle", () => {
     expect(h.store.held()).toBeUndefined()
     expect(h.store.rejected).toEqual(["configuration changed"])
     expect(h.requests).toEqual([])
+    expect(h.auth.unboundRevocations.map((held) => held.tokens.refreshToken)).toEqual(["rt_1"])
+  })
+
+  test("a binding drift that finds a newer stored revision quarantines nothing and revokes nothing", async () => {
+    const store = memoryStore(CREDENTIAL)
+    const selectedAuth = authHarness({
+      validate: async () => {
+        store.save({ ...CREDENTIAL, tokens: { ...CREDENTIAL.tokens, refreshToken: "rt_newer" } })
+        throw new DesktopAuthDescriptorError("credential_binding_mismatch", "configuration changed")
+      },
+    })
+    const h = harness({ store, auth: selectedAuth })
+
+    await h.service.restore()
+    expect(h.store.rejected).toEqual([])
+    expect(h.auth.unboundRevocations).toEqual([])
   })
 
   test("does not adopt a credential while the fresh descriptor is expired or unavailable", async () => {

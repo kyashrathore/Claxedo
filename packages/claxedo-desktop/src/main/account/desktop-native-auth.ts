@@ -30,6 +30,12 @@ export type DesktopNativeAuth = {
   /** `signal` ends the refresh grant's request, so logout can stop a rotation it is about to revoke. */
   refresh(credential: BoundDesktopCredential, signal?: AbortSignal): Promise<RefreshOutcome>
   revoke(credential: BoundDesktopCredential): Promise<RemoteRevocation>
+  /**
+   * Revokes a credential the selected deployment no longer binds, but only at
+   * the issuer that minted it: a token sent to a different issuer is a token
+   * handed to whoever answers there.
+   */
+  revokeUnbound(credential: BoundDesktopCredential): Promise<RemoteRevocation>
 }
 
 type SelectedDesktopAdapter = {
@@ -216,7 +222,7 @@ export function createDesktopNativeAuth(input: {
                 "content-type": "application/x-www-form-urlencoded",
               },
               body: new URLSearchParams({
-                client_id: descriptor.binding.id,
+                client_id: credential.binding.id,
                 token: credential.tokens.refreshToken,
                 token_type_hint: "refresh_token",
               }).toString(),
@@ -289,6 +295,20 @@ export function createDesktopNativeAuth(input: {
           state: "uncertain",
           detail: `Remote revocation was not attempted because the current descriptor could not bind the credential: ${String(error)}`,
         }
+      }
+    },
+    async revokeUnbound(credential) {
+      try {
+        const descriptor = await discover()
+        if (credential.binding.issuer !== descriptor.binding.issuer) {
+          return {
+            state: "uncertain",
+            detail: "Remote revocation was not attempted because the credential's issuer is not the selected deployment's",
+          }
+        }
+        return await select(descriptor).revoke(credential)
+      } catch (error) {
+        return { state: "uncertain", detail: `Remote revocation was not attempted: ${String(error)}` }
       }
     },
   }

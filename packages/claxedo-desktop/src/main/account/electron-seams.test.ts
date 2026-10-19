@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { refreshExchange, tokenExchange } from "./electron-seams"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { credentialFile, refreshExchange, tokenExchange } from "./electron-seams"
+import { ACCOUNT_CREDENTIAL_RECORD } from "./marker"
 import { printedAlone } from "../test-support/printed-alone"
 
 describe("tokenExchange", () => {
@@ -135,5 +139,27 @@ describe("nodeTimer", () => {
     expect(printedAlone(`
       import(${module}).then(({ nodeTimer }) => nodeTimer()(() => console.log("fired"), 20))
     `)).toBe("fired")
+  })
+})
+
+describe("credentialFile quarantine", () => {
+  test("keeps only the newest rejected record and leaves other files alone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "claxedo-credential-"))
+    const file = credentialFile(dir)
+    try {
+      writeFileSync(join(dir, `${ACCOUNT_CREDENTIAL_RECORD}.rejected-earlier`), "older")
+      writeFileSync(join(dir, "unrelated.json"), "kept")
+      file.replace("first")
+      file.quarantine("binding changed")
+      file.replace("second")
+      file.quarantine("binding changed again")
+
+      const rejected = readdirSync(dir).filter((name) => name.startsWith(`${ACCOUNT_CREDENTIAL_RECORD}.rejected-`))
+      expect(rejected).toHaveLength(1)
+      expect(readFileSync(join(dir, rejected[0]), "utf8")).toBe("second")
+      expect(readdirSync(dir).filter((name) => name !== rejected[0])).toEqual(["unrelated.json"])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

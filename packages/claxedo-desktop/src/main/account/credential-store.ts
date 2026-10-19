@@ -43,7 +43,8 @@ export type CredentialStore = {
   load: (now: number) => StoredDesktopCredential | undefined
   beginRevocation: (expectedRevision: string) => string
   completeRevocation: (expectedRevision: string) => boolean
-  reject: (expectedRevision: string, reason: string) => void
+  /** True when this call quarantined the record still stored at `expectedRevision`. */
+  reject: (expectedRevision: string, reason: string) => boolean
   clear: () => void
 }
 
@@ -191,10 +192,11 @@ export function createCredentialStore(input: {
 
     reject(expectedRevision, reason) {
       const contents = input.file.read()
-      if (!contents) return
+      if (!contents) return false
       const current = parseEnvelope(contents)
-      if (current?.revision !== expectedRevision) return
+      if (current?.revision !== expectedRevision) return false
       rejected(reason)
+      return true
     },
 
     clear: () => input.file.clear(),
