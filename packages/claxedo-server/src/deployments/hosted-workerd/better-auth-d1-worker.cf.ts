@@ -24,7 +24,7 @@ import {
 } from "../../platform/auth/rate-limit"
 import { requestClientKeyFromHeaders } from "../../platform/auth/request-guard"
 import { createHostedCoreWorker, LiveSyncRoom, type HostedCoreWorkerEnv } from "./core-worker.cf"
-import { settledCompositionCache } from "./settled-composition-cache"
+import { settledCompositionCache, type CompositionLifetime } from "./settled-composition-cache"
 
 export { LiveSyncRoom }
 
@@ -160,7 +160,7 @@ function rateLimitedResponse(request: Request, retryAfterMs: number) {
  * between artifacts.
  */
 export function createBetterAuthD1Worker(input: {
-  composition: (env: BetterAuthD1WorkerEnv) => BetterAuthD1UserDeployedComposition
+  composition: (env: BetterAuthD1WorkerEnv, lifetime?: CompositionLifetime) => BetterAuthD1UserDeployedComposition
   /**
    * Per-isolate fuse for the public-auth budget. Tests pass a smaller limit;
    * entries leave it unset — buckets live inside the limiter, so the default
@@ -175,8 +175,8 @@ export function createBetterAuthD1Worker(input: {
       limit: PUBLIC_AUTH_RATE_LIMIT,
       windowMs: PUBLIC_AUTH_RATE_LIMIT_WINDOW_MS,
     })
-  const core = createHostedCoreWorker<BetterAuthD1WorkerEnv>((env) => {
-    const selected = composition(env)
+  const core = createHostedCoreWorker<BetterAuthD1WorkerEnv>((env, lifetime) => {
+    const selected = composition(env, lifetime)
     return { plane: selected.plane, options: selected.options, documentAccess: selected.documentAccess }
   })
 
@@ -215,7 +215,7 @@ export function createBetterAuthD1Worker(input: {
       // well built every cold core request's control plane twice, since the
       // first instance is not reusable until its readiness reads settle.
       if (authRoute(url.pathname)) {
-        return withApiResponseHeaders(await composition(env).authHandler(request), {
+        return withApiResponseHeaders(await composition(env, context).authHandler(request), {
           url: request.url,
           header: (name) => request.headers.get(name) ?? undefined,
         })

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { afterEach, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
+import type { ExecutionContext } from "hono"
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { composeBetterAuthD1UserDeployedControlPlane } from "../../authority/adapters/worker/better-auth-d1-compose"
 import { betterAuthD1CompositionInput, createBetterAuthD1Worker, type BetterAuthD1WorkerEnv } from "./better-auth-d1-worker.cf"
@@ -92,35 +93,40 @@ function timing(response: Response) {
  */
 test("every Worker response carries Server-Timing, with the cold and compose marks on the requests that paid them", async () => {
   const env = workerEnv(await databases())
-  // The composition's readiness reads run past the request that built it, so
-  // the test waits for them before the databases are disposed.
-  const readiness: Promise<void>[] = []
+  // The composition's readiness reads run past the request that built it,
+  // under the request's waitUntil; the test waits for them before the
+  // databases are disposed.
+  const readiness: Promise<unknown>[] = []
+  const context = { waitUntil: (work: Promise<unknown>) => void readiness.push(work) } as unknown as ExecutionContext
   const worker = createBetterAuthD1Worker({
     composition: settledCompositionCache(
       (bound: BetterAuthD1WorkerEnv) => composeBetterAuthD1UserDeployedControlPlane(betterAuthD1CompositionInput(bound)),
-      (created) => (readiness.push(created.authReady), created.authReady),
+      (created) => created.authReady,
     ),
   })
-  const health = await worker.fetch(new Request(`${API}/health`), env)
+  const health = await worker.fetch(new Request(`${API}/health`), env, context)
   expect(health.status).toBe(200)
   expect(timing(health)).toEqual({ marks: ["cold"], durations: ["auth", "limit", "d1", "do", "total"] })
+  expect(readiness).toHaveLength(0)
 
-  const bootstrap = await worker.fetch(new Request(`${API}/api/claxedo/bootstrap`, { headers: { origin: API } }), env)
+  const bootstrap = await worker.fetch(new Request(`${API}/api/claxedo/bootstrap`, { headers: { origin: API } }), env, context)
   expect(bootstrap.status).toBe(200)
   expect(timing(bootstrap).marks).toEqual(["compose"])
+  expect(readiness).toHaveLength(1)
 
-  const session = await worker.fetch(new Request(`${API}/api/auth/get-session`, { headers: { origin: API } }), env)
+  const session = await worker.fetch(new Request(`${API}/api/auth/get-session`, { headers: { origin: API } }), env, context)
   expect(session.status).toBe(200)
   expect(timing(session).durations).toEqual(["auth", "limit", "d1", "do", "total"])
 
   // Until a composition's readiness reads settle, every request builds its own
   // (settled-composition-cache.ts) and says so; a settled one is reused silently.
   await Promise.all(readiness)
-  const descriptor = await worker.fetch(new Request(`${API}/api/claxedo/auth/descriptor`, { headers: { origin: API } }), env)
+  const descriptor = await worker.fetch(new Request(`${API}/api/claxedo/auth/descriptor`, { headers: { origin: API } }), env, context)
   expect(descriptor.status).toBe(200)
   expect(timing(descriptor).marks).toEqual([])
+  expect(readiness).toHaveLength(2)
 
-  const refused = await worker.fetch(new Request(`${API}/health`), { ...env, AUTH_DB: undefined } as unknown as BetterAuthD1WorkerEnv)
+  const refused = await worker.fetch(new Request(`${API}/health`), { ...env, AUTH_DB: undefined } as unknown as BetterAuthD1WorkerEnv, context)
   expect(refused.status).toBe(503)
   expect(timing(refused).durations).toContain("total")
   await Promise.all(readiness)

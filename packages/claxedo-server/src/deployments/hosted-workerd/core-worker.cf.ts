@@ -40,6 +40,7 @@ import {
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
+import type { CompositionLifetime } from "./settled-composition-cache"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { createHostedDocumentsBackend } from "../../documents/backends/hosted/backend"
 import type { R2BucketBinding } from "../../documents/backends/hosted/r2-object-store.cf"
@@ -56,6 +57,7 @@ export type HostedCoreWorkerEnv = Record<string, unknown> & {
 
 export type HostedCoreWorkerComposition<Env extends HostedCoreWorkerEnv> = (
   env: Env,
+  lifetime?: CompositionLifetime,
 ) => {
   plane: HostedControlPlane
   options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore" | "idempotency" | "documents">
@@ -121,13 +123,13 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
   // replaced composition gets a fresh app.
   const appByPlane = new WeakMap<object, Hono>()
 
-  function appFor(env: Env) {
+  function appFor(env: Env, lifetime: CompositionLifetime | undefined) {
     // Mandatory bindings fail closed BEFORE any composition runs.
     const limiter = requiredRateLimiter(env.CLAXEDO_REQUEST_LIMITER)
     const liveSyncRoom = requiredLiveSyncRoom(env.LIVE_SYNC_ROOM)
     const controlPlaneDatabase = requiredControlPlaneDatabase(env.CONTROL_PLANE_DB)
     const documentsBucket = requiredDocumentsBucket(env.CLAXEDO_DOCUMENTS)
-    const selected = compose(env)
+    const selected = compose(env, lifetime)
     const key = selected.plane as object
     const existing = appByPlane.get(key)
     if (existing) return existing
@@ -180,7 +182,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
   return {
     async fetch(request: Request, env: Env, context?: ExecutionContext) {
       try {
-        return await appFor(env).fetch(request, env, context)
+        return await appFor(env, context).fetch(request, env, context)
       } catch (error) {
         if (error instanceof HostedWorkerCompositionError) {
           return compositionErrorResponse(error, request)

@@ -61,6 +61,21 @@ describe("settledCompositionCache", () => {
     expect(built).toBe(2)
   })
 
+  test("hands the readiness to the composing request's lifetime, so a response that ends before the reads do leaves a settled instance", async () => {
+    const key = {}
+    const init = deferred()
+    const kept: Promise<unknown>[] = []
+    const get = settledCompositionCache(
+      () => ({ init }),
+      (value) => value.init.promise,
+    )
+    const first = get(key, { waitUntil: (work) => void kept.push(work) })
+    expect(kept).toHaveLength(1)
+    init.resolve()
+    await kept[0]
+    expect(get(key)).toBe(first)
+  })
+
   test("keys are independent", async () => {
     const get = settledCompositionCache(
       () => ({}),
