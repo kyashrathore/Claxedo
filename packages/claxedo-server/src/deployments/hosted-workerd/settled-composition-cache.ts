@@ -25,13 +25,11 @@
  * 2 ms of Worker time; the reads take two database rounds), and the runtime
  * cancels an async call that is neither awaited nor passed to
  * `ctx.waitUntil()` once the invocation ends
- * (developers.cloudflare.com/workers/runtime-apis/context/#waituntil). Left
- * to the request's own lifetime the readiness never settled unless the
- * isolate happened to hold a long-lived stream, so on staging 2026-10-19 a
- * quarter of warm requests composed again, at 16–48 ms CPU each, and under
- * local workerd every request did. The composing request therefore passes its
- * `waitUntil`, which keeps the readiness running for up to 30 s after the
- * response or the client's disconnect; a request that cannot (a Durable
+ * (developers.cloudflare.com/workers/runtime-apis/context/#waituntil).
+ * Without the composing request's `waitUntil` the readiness settles only when
+ * the isolate happens to hold a long-lived stream, and every other request
+ * composes again at 16–48 ms CPU. `waitUntil` keeps it running up to 30 s past
+ * the response or the client's disconnect; a request that has none (a Durable
  * Object's) still gets its own instance.
  */
 
