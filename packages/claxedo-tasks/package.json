@@ -108,7 +108,8 @@
     "name": "Tasks",
     "version": "1.0.0",
     "app": "./src/app/index.ts",
-    "requires": ["tasks"]
+    "requires": ["tasks"],
+    "server": { "routes": ["/api/claxedo/tasks", "/api/claxedo/plugins"], "operations": [] }
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -133,6 +134,10 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",
+    "solid-js": "catalog:",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.12"
   }
 }

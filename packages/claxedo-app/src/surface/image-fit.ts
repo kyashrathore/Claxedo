@@ -110,7 +110,3 @@ export function blobBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob)
   })
 }
-
-export function imageDataUrl(type: string, dataBase64: string): string {
-  return `data:${type};base64,${dataBase64}`
-}

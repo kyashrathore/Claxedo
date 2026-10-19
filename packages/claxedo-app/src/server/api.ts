@@ -34,7 +34,6 @@ import type {
 } from "./git-types"
 import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { TasksApi } from "./tasks"
 import type { Workspaces } from "./workspaces"
 import type {
   MarketplaceCatalog,
@@ -253,7 +252,6 @@ export type Server = {
   readonly cloud: CloudApi
   readonly accounts: AccountsApi
   readonly marketplace: MarketplaceApi
-  readonly tasks: TasksApi
   readonly folders: FoldersApi
   readonly integrations: IntegrationsApi
   readonly agentConnections: AgentConnectionsApi

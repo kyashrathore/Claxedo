@@ -669,10 +669,6 @@ export const desktopRenderer: Policy = {
   // composer's selected harness that the session screens read to keep a
   // session-host harness free of machine notices (owner: the app's composer
   // domain, `composer/harness/selected-harness.ts`). They add no package edge.
-  // A cloud preset's harness picker and the model it saves without asking a
-  // machine (owner: the app's tasks domain,
-  // `tasks/presets/cloud-configuration-picker.tsx`,
-  // `tasks/presets/cloud-model.ts`). They add no package edge.
   // The one Start fresh the placement notice, the model picker and Settings →
   // Projects share for a workspace whose checkpoint cannot be restored (owner:
   // the app's cloud domain, `cloud/view/start-fresh.ts`). It adds no package
@@ -684,12 +680,8 @@ export const desktopRenderer: Policy = {
   // The words for workspaces found gone, which tell a gone routed workspace
   // apart from closed tabs of other ones (owner: the app's shell domain,
   // `shell/gone-placements-notice.ts`). It adds no package edge.
-  // A task start's run and the progress it reports while the preview and the
-  // start are in flight, split from the start offers' wiring so it runs
-  // without the UI kit (owner: the app's tasks domain,
-  // `tasks/data/start-run.ts`). It adds no package edge.
-  // The agent configuration picker a Tasks preset and a plugin surface's
-  // AgentConfigurationPicker draw: the local and cloud pickers, the models a
+  // The agent configuration picker a plugin surface's AgentConfigurationPicker
+  // draws: the local and cloud pickers, the models a
   // cloud OpenCode configuration offers from OpenCode's provider catalog read
   // with no workspace, the rules they share and their strings (owner: the
   // app's composer domain, `composer/agent-configuration/`). They add no
@@ -740,8 +732,7 @@ export const desktopRenderer: Policy = {
   // `surface/board-moves.ts`, `surface/board-pending.ts`) belong to the same
   // renderer, as do the FilePicker with the file reading and image fitting it
   // owns (`surface/view/file-picker-view.tsx`, `surface/file-read.ts`,
-  // `surface/image-fit.ts`, moved from the tasks domain's image drafts, which
-  // the Tasks create form now imports) and the Combobox with its options and
+  // `surface/image-fit.ts`) and the Combobox with its options and
   // search debounce (`surface/view/combobox-view.tsx`,
   // `surface/view/combobox-state.ts`, `surface/view/combobox-list.tsx`,
   // `surface/combobox-options.ts`, `surface/search-debounce.ts`,
@@ -773,7 +764,13 @@ export const desktopRenderer: Policy = {
   // out of `surface/data-path.ts`). Each bundle is a
   // `@claxedo/<plugin>/app?claxedo-plugin-bundle` chunk, a package edge onto
   // `@claxedo/tasks`, which the closure already counted. 1513/36, no headroom.
-  ceilings: { modules: 1513, packages: 36 },
+  // -7 modules (owner: the Tasks plugin, `@claxedo/tasks` `app/presets/`):
+  // Settings → Presets left the app's tasks domain (`tasks/presets/*`) and is
+  // the plugin's surface settings section. 1506/36, no headroom.
+  // -33 modules (owner: the Tasks plugin, `@claxedo/tasks` `app/page/`): the
+  // Tasks page left the app (`tasks/**`, `server/tasks.ts`) and is the
+  // plugin's surface page. 1473/36, no headroom.
+  ceilings: { modules: 1473, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

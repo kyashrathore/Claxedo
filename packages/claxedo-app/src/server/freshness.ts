@@ -55,7 +55,6 @@ export const freshness = {
   marketplace: { kind: "once", reason: "the plugin catalog changes through this app's installs, removals and activations, which invalidate every catalog" },
   marketplaceSources: { kind: "once", reason: "plugin sources change through this app's source writes, which invalidate the list" },
   marketplaceSkill: { kind: "once", reason: "a skill document changes only with its plugin; nothing in this app refreshes it after the first read" },
-  tasksAll: { kind: "once", reason: "task, preset and capability reads under this prefix are refreshed by this app's own task commands" },
   folderPaths: { kind: "once", reason: "the folder picker's starting paths are read once; nothing in this app refreshes them" },
   folderChildren: { kind: "once", reason: "the folder picker lists a directory once; a folder created outside the app is missed until restart" },
   harnessOptions: { kind: "once", reason: "a harness's agent and model options for a placement are read once; nothing in this app refreshes them" },

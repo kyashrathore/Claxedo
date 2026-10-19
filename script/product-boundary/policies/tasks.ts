@@ -32,11 +32,23 @@ export const tasksApp: Policy = {
 
   control: {
     minModules: 3,
-    requiredModules: [`${SRC}/app/index.ts`, `${SRC}/app/tool-cards.ts`],
+    requiredModules: [`${SRC}/app/index.ts`, `${SRC}/app/tool-cards.ts`, `${SRC}/app/presets/program.ts`, `${SRC}/app/page/program.ts`],
     requiredPackages: ["@claxedo/plugin-api"],
   },
 
-  // The entry, its card templates and its dictionary; the plugin API is the
-  // one package. Measured, no headroom.
-  ceilings: { modules: 3, packages: 1 },
+  // The entry, its card templates, its dictionary and words, the cursor paging
+  // (`app/paging.ts`) both surfaces list presets with, the surface sync
+  // and parts every Tasks surface draws with, Settings → Presets
+  // (`app/presets/`) and the Tasks page (`app/page/`). Both read the server
+  // through the kit's own client and decoders (`client/client.ts`,
+  // `decode.ts`, `contracts.ts`, `validation.ts`); Presets refuses a cloud Pi
+  // preset with the kit's reason (`presets/model.ts`), and the page takes the
+  // attachment types from `attachments.ts` and the next attempt from the
+  // kit's start rules (`start.ts`, with its `errors.ts` and `hash.ts`).
+  // Packages: the plugin API and `solid-js` (both provided by the plugin
+  // runtime; the page watches the host's project list with a Solid effect),
+  // `@claxedo/helpers` (the client's guards) and
+  // `@claxedo/agent-runtime-contract` (harness labels and cloud hosts).
+  // Measured, no headroom.
+  ceilings: { modules: 50, packages: 4 },
 }
