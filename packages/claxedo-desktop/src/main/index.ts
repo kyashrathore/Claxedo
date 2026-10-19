@@ -105,7 +105,7 @@ import {
   setDefaultServerUrl,
   setWslConfig,
 } from "./server"
-import { createMainWindow, isRendererDocumentUrl, isTrustedMainRendererUrl, rendererDocumentUrlPatterns, setDockIcon } from "./windows"
+import { createMainWindow, devServerUrl, isRendererDocumentUrl, isTrustedMainRendererUrl, rendererDocumentUrlPatterns, setDockIcon } from "./windows"
 import { rendererContentSecurityListener } from "./renderer-content-security"
 import { createStartAtLogin } from "./start-at-login"
 import { claxedoServerExitedBeforeListening, parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
@@ -465,7 +465,7 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
         serverOrigin: serverOrigin.promise,
         relayOrigins: accountConfig.configured ? accountConfig.relayOrigins ?? [] : [],
         isRendererDocument: isRendererDocumentUrl,
-        devServerUrl: process.env.ELECTRON_RENDERER_URL,
+        devServerUrl: devServerUrl(),
       }),
     }),
   )
@@ -603,7 +603,7 @@ const account = setupLazyAccount({
   ipcMain,
   userDataDir: app.getPath("userData"),
   adapterReady: app.whenReady(),
-  env: accountConfigEnvironment(process.env, bakedAccountConfig),
+  env: accountConfigEnvironment(process.env, bakedAccountConfig, IS_PACKAGED),
   cliSignInMode: () => readCliSignInMode(store),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
   // An activation made from this machine is applied here at once rather than
@@ -725,7 +725,7 @@ agentPluginsSync = setupAgentPluginsSignedSync({
 })
 void account.ready.then(() => agentPluginsSync?.follow(account.state()))
 
-const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig))
+const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig, IS_PACKAGED))
 
 /**
  * Machine remote access, constructed but NOT started.

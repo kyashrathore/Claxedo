@@ -1,3 +1,11 @@
+/**
+ * An installed app's launch environment is not the developer's: a packaged
+ * build never loads or trusts a dev server, whatever the environment names.
+ */
+export function rendererDevServerUrl(env: { ELECTRON_RENDERER_URL?: string }, packaged: boolean) {
+  return packaged ? undefined : env.ELECTRON_RENDERER_URL
+}
+
 type TrustedRendererUrlOptions = {
   devServerUrl?: string
   packagedIndexUrl: string
