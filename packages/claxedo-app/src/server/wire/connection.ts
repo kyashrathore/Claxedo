@@ -86,11 +86,6 @@ function startElapsedOf(value: unknown): StartElapsed | undefined {
   return { done: START_STEPS.filter((step) => reached.has(step)), sinceStartMs, sinceStepMs }
 }
 
-/**
- * Only a cloud machine's region is the browser's to declare: the relay places
- * a session its Durable Object serves from the host its token names, and a
- * person's own machine has no region the plane placed.
- */
 function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnection {
   const { relayUrl, runtimeAccessToken, tokenExpiresAt } = row
   if (typeof relayUrl !== "string" || typeof runtimeAccessToken !== "string" || typeof tokenExpiresAt !== "number") {
