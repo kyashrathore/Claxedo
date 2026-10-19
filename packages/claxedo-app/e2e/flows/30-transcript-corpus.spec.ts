@@ -16,7 +16,7 @@ const TURN_TIMEOUT = 30_000
 const TALL_VIEWPORT = 1600
 const CLOCK_TIME = /\b\d{1,2}:\d{2}\s?(?:AM|PM)\b/g
 const UUID = /(?<![0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f])/g
-const LIVE_DURATION = /(· |Worked for )\d+(?:h \d+m|m \d+s|ms|s|m|h)\b/g
+const LIVE_DURATION = /(· |Worked for |^- text: )\d+(?:h \d+m|m \d+s|ms|s|m|h)\b/gm
 const HELD_IMAGE = "/held-image.png"
 
 type Target = { readonly directory: string; readonly sessionId: string }
@@ -203,7 +203,7 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
       await app.locator('[data-component="user-message"]').filter({ hasText: interaction.message }).getByRole("button", { name: /^Show (all|less)$/ }).click()
       return
     case "toggleAgentMessage":
-      await app.locator('[data-component="agent-message-notice"] summary').click()
+      await app.locator('[data-component="agent-message-notice"]').filter({ hasText: interaction.message }).locator("summary").click()
       return
     case "reload":
       await app.reload()

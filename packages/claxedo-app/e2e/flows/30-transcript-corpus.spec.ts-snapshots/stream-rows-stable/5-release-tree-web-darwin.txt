@@ -2,18 +2,18 @@ scrollTop: 0
 background subagents:
 (none)
 row 0:
-- text: Say hello first. acp-script:stream-rows-stable-0 Build · <time>
+- text: Say hello first. acp-script:stream-rows-stable-0 Scripted Acp · <time>
 - button "Copy message"
 row 1:
 - paragraph: Hello, ready to stream.
 - button "Copy response"
-- text: Build · <duration>
+- text: <duration>
 row 2:
-- text: Stream around a tool. acp-script:stream-rows-stable-1 Build · <time>
+- text: Stream around a tool. acp-script:stream-rows-stable-1 Scripted Acp · <time>
 - button "Copy message"
 row 3:
 - button "Worked for <duration>"
 row 4:
 - paragraph: The file is read, and this answer is halfway through its text and still going. Rows stay done.
 - button "Copy response"
-- text: Build · <duration>
+- text: <duration>

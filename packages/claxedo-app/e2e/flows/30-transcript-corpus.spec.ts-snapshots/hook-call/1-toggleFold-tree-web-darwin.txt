@@ -2,7 +2,7 @@ scrollTop: 0
 background subagents:
 (none)
 row 0:
-- text: Check the project after the hook runs. acp-script:hook-call-0 Build · <time>
+- text: Check the project after the hook runs. acp-script:hook-call-0 Scripted Acp · <time>
 - button "Copy message"
 row 1:
 - button "Worked for 0s" [expanded]
@@ -15,4 +15,4 @@ row 4:
 row 5:
 - paragraph: The project is ready.
 - button "Copy response"
-- text: Build · 0s
+- text: 0s

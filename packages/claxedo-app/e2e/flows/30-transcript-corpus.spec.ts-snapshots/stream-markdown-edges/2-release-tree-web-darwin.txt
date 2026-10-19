@@ -2,15 +2,15 @@ scrollTop: 0
 background subagents:
 (none)
 row 0:
-- text: Say hello first. acp-script:stream-markdown-edges-0 Build · <time>
+- text: Say hello first. acp-script:stream-markdown-edges-0 Scripted Acp · <time>
 - button "Copy message"
 row 1:
 - heading "Heading first" [level=1]
 - paragraph: Hello, ready to stream.
 - button "Copy response"
-- text: Build · <duration>
+- text: <duration>
 row 2:
-- text: Stream a mixed reply. acp-script:stream-markdown-edges-1 Build · <time>
+- text: Stream a mixed reply. acp-script:stream-markdown-edges-1 Scripted Acp · <time>
 - button "Copy message"
 row 3:
 - paragraph: Intro paragraph for the edges.
@@ -21,4 +21,4 @@ row 3:
 - button "Copy"
 - paragraph: Closing paragraph for the edges.
 - button "Copy response"
-- text: Build · <duration>
+- text: <duration>

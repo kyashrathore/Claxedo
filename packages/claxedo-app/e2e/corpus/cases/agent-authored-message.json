@@ -10,8 +10,8 @@
   "replay": { "agent": "claude", "scenario": "agent-authored-message" },
   "ready": "Message from Claude Code",
   "interactions": [
-    { "kind": "toggleAgentMessage" },
-    { "kind": "toggleAgentMessage" },
+    { "kind": "toggleAgentMessage", "message": "Message from Claude Code" },
+    { "kind": "toggleAgentMessage", "message": "Message from Claude Code" },
     { "kind": "reload" }
   ],
   "invariant": "The authoritative goal producer writes an agent-authored user-role opening. Its stored author metadata selects the shared event renderer after reload; agent-like text in a human prompt never changes its bubble presentation."
