@@ -92,22 +92,32 @@ function promptModel(input: unknown): PromptModel | null | undefined {
   return { providerID, modelID }
 }
 
-export function normalizeSessionConfigUpdate(input: unknown): SessionConfigRequestUpdate {
-  const row = asRecord(input) ?? {}
-  const harness = normalizeSessionHarness(row.harness)
+type SessionCreateConfig = Omit<SessionConfigRequestUpdate, "harness">
+
+function normalizeSessionSettings(row: Record<string, unknown>): SessionCreateConfig {
   const model = "model" in row ? promptModel(row.model) : undefined
   return {
-    ...(harness ? { harness } : {}),
     ...(model !== undefined ? { model } : {}),
     ...("variant" in row && (typeof row.variant === "string" || row.variant === null) ? { variant: row.variant } : {}),
     ...("agent" in row && (typeof row.agent === "string" || row.agent === null) ? { agent: row.agent } : {}),
   }
 }
 
-export function normalizeSessionCreateConfig(input: unknown): SessionConfigRequestUpdate {
+export function normalizeSessionConfigUpdate(input: unknown): SessionConfigRequestUpdate {
+  const row = asRecord(input) ?? {}
+  const harness = normalizeSessionHarness(row.harness)
+  return { ...(harness ? { harness } : {}), ...normalizeSessionSettings(row) }
+}
+
+/**
+ * The settings a create carries. Its harness is the request query's, so a
+ * `harness` in the body is not a setting to write after the create: that
+ * write attaches the session, whose creation has just released its harness.
+ */
+export function normalizeSessionCreateConfig(input: unknown): SessionCreateConfig {
   const row = asRecord(input) ?? {}
   const model = asRecord(row.model)
-  return normalizeSessionConfigUpdate({
+  return normalizeSessionSettings({
     ...row,
     ...(typeof model?.providerID === "string" && typeof model.id === "string"
       ? { model: { providerID: model.providerID, modelID: model.id } }

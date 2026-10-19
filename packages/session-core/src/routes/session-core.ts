@@ -767,7 +767,6 @@ export function createSessionRoutes(opts: Opts) {
             ...(body.instructions ? { instructions: body.instructions } : {}),
             ...(body.group ? { group: body.group } : {}),
           }
-          const { model: createModel, variant: createVariant, agent: createAgent, ...laterConfig } = config
           let session: AgentSession = existing ?? await runtime.sessions.create({
             ...(body.id ? { id: body.id } : {}),
             workspaceId: workspaceId ?? "",
@@ -778,25 +777,18 @@ export function createSessionRoutes(opts: Opts) {
             ...(start ? { start } : {}),
             ...(first ? { turnFollows: true as const } : {}),
             ...(body.parentID ? { parentID: body.parentID } : {}),
-            ...(createModel ? { model: createModel } : {}),
-            ...(createVariant !== undefined ? { variant: createVariant } : {}),
-            ...(createAgent !== undefined ? { agent: createAgent } : {}),
+            ...(config.model ? { model: config.model } : {}),
+            ...(config.variant !== undefined ? { variant: config.variant } : {}),
+            ...(config.agent !== undefined ? { agent: config.agent } : {}),
             ...(ceiling ? { permissionCeiling: ceiling } : {}),
             ...(body.title !== undefined ? { title: body.title } : {}),
             ...createOptions,
             ...requestSecretAuthority(c),
           })
-          const pendingConfig = existing ? config : laterConfig
-          if (Object.keys(pendingConfig).length > 0) {
-            try {
-              await runtime.sessions.updateConfig(session.id, pendingConfig, directory, requestSecretAuthority(c).secretAuthority)
-            } catch (error) {
-              // Undo only what this request made. A session that was already
-              // there belongs to the attempt that created it, and deleting it
-              // to tidy up a failed configuration destroys that work.
-              if (!existing) await rollbackCreatedSession(opts, c, directory, session.id, error)
-              throw error
-            }
+          // A config update attaches the session's harness, which a created
+          // session has just released; its settings went in with the create.
+          if (existing && Object.keys(config).length > 0) {
+            await runtime.sessions.updateConfig(session.id, config, directory, requestSecretAuthority(c).secretAuthority)
           }
           let subagentKey: string | undefined
           let time: RuntimeSessionTime
@@ -806,7 +798,7 @@ export function createSessionRoutes(opts: Opts) {
             }
             ;({ session, time } = await readCreatedSession(opts, c, directory, session.id))
             if (body.parentID && children) {
-              const harness = requestedHarness ?? config.harness ?? (await sessionConfigOf(opts, c, directory, session.id)).harness
+              const harness = requestedHarness ?? (await sessionConfigOf(opts, c, directory, session.id)).harness
               // Minted before the subagent row exists: the origin is written
               // once, and a wake with no grant on a plane that mints them is
               // never admitted, so a refused mint must fail the create.

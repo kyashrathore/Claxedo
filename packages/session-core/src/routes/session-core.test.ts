@@ -4,7 +4,7 @@ import { AgentRuntimeContractError, NO_HARNESS_EFFORT, type AgentPermissionModeS
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentSession, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
 import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
-import { AgentHarnessEngineError, applySessionConfigUpdate, type ConfigOperations, type HarnessConfigOperations, type TransportCapabilities, type TurnRequest } from "@claxedo/harness/contract"
+import { AgentHarnessEngineError, applySessionConfigUpdate, type ConfigOperations, type TransportCapabilities, type TurnRequest } from "@claxedo/harness/contract"
 import type { TurnOutline } from "@claxedo/agent-runtime-contract"
 import { AgentRuntimeTurnAdmissionError, type AgentRuntime } from "../host/runtime"
 import {
@@ -55,10 +55,6 @@ function configOps(overrides: Partial<ConfigOperations> = {}): ConfigOperations 
     setPermissionMode: async () => unsupportedModes,
     ...overrides,
   }
-}
-
-function harnessConfigOps(update: HarnessConfigOperations["update"]): HarnessConfigOperations {
-  return { read: async () => { throw new Error("the fixture's config is never read") }, update }
 }
 
 function refusingRuntime(what: string): () => Promise<AgentRuntime> {
@@ -931,13 +927,17 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(h.transport.starts[0]?.config).toMatchObject({ model: { providerID: "claude-sdk", modelID: "sonnet" }, agent: "build" })
   })
 
-  test("rolls back a session whose initial config cannot be persisted", async () => {
+  test("rolls back a session whose requested permission mode the harness cannot keep", async () => {
     const calls: string[] = []
     const lifecycle: SessionLifecycleEvent[] = []
+    const offered: AgentPermissionModeState = { modes: [{ id: "default", name: "Default" }], currentModeId: "default", appliesFrom: "next-turn" }
     const h = harness({
-      harnessConfig: harnessConfigOps(async () => {
-        calls.push("config")
-        throw new Error("config unavailable")
+      config: configOps({
+        permissionModes: async () => offered,
+        setPermissionMode: async () => {
+          calls.push("mode")
+          throw new Error("mode unavailable")
+        },
       }),
       onClose: (session) => { calls.push(`delete:${session.binding.sessionId}`) },
     })
@@ -946,13 +946,13 @@ describe("createSessionRoutes directory-less sessions", () => {
     const res = await post(app, "/session", {
       id: "session_rejected",
       harness: CODEX,
-      model: { providerID: "claude-sdk", id: "sonnet" },
+      permissionMode: "default",
     })
 
     expect(res.status).toBe(500)
-    expect(calls).toEqual(["config", "delete:session_rejected"])
+    expect(calls).toEqual(["mode", "delete:session_rejected"])
     expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "failed"])
-    expect(await res.json()).toMatchObject({ error: { message: "config unavailable" } })
+    expect(await res.json()).toMatchObject({ error: { message: "mode unavailable" } })
     expect(h.store.getSession("session_rejected")).toBeNull()
   })
 
@@ -2576,8 +2576,15 @@ function startupChildHost(): ChildSessionHost {
  * is answered, behind a policy under which only the creator holding the
  * reservation may see or answer anything about the creation.
  */
+const STARTUP_MODES: AgentPermissionModeState = { modes: [{ id: "default", name: "Default" }], currentModeId: "default", appliesFrom: "next-turn" }
+
+/**
+ * `keepMode` runs after the session is bound, as the route keeps a create's
+ * requested permission mode on the harness: the one step a new session still
+ * has between its binding and its answer.
+ */
 function startupRouteFixture(options: {
-  configUpdate?: HarnessConfigOperations["update"]
+  keepMode?: ConfigOperations["setPermissionMode"]
   refuseDelete?: () => boolean
   beforeProviderDelete?: () => Promise<void>
 } = {}) {
@@ -2597,7 +2604,7 @@ function startupRouteFixture(options: {
     capabilities: {
       requests: { permissions: false, questions: true, elicitation: false },
     },
-    ...(options.configUpdate ? { harnessConfig: harnessConfigOps(options.configUpdate) } : {}),
+    ...(options.keepMode ? { config: configOps({ permissionModes: async () => STARTUP_MODES, setPermissionMode: options.keepMode }) } : {}),
     upstreamSessionId: (input) => `upstream-${input.sessionId}`,
     beforeStart: async (input, broker) => {
       expect(h.store.sessionStarts.get(input.sessionId)?.status).toBe("starting")
@@ -2660,15 +2667,15 @@ describe("public startup question lifecycle", () => {
     expect((await second.response).status).toBe(201)
   })
 
-  test("a retry waits out a creation whose post-bind configuration is running, without finalizing, releasing or repeating it", async () => {
+  test("a retry waits out a creation whose post-bind permission mode is being kept, without finalizing, releasing or repeating it", async () => {
     let entered!: () => void, release!: () => void
     const configuring = new Promise<void>(resolve => { entered = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
-    const f = startupRouteFixture({ configUpdate: async (_session, update) => {
+    const f = startupRouteFixture({ keepMode: async () => {
       entered(); await held
-      return { harness: CODEX, agent: update.agent ?? null, variant: null }
+      return STARTUP_MODES
     } })
-    const first = f.launch("retry", { harness: CODEX })
+    const first = f.launch("retry", { permissionMode: "default" })
     await first.started
     await f.app.request("/question/question-retry/reply", answer())
     await configuring
@@ -2710,15 +2717,15 @@ describe("public startup question lifecycle", () => {
     expect(f.store.sessionStarts.get("orphan")).toMatchObject({ status: "failed", error: "provider disconnected" })
   })
 
-  test("delete cannot retire a creation whose provider configuration is still running", async () => {
+  test("delete cannot retire a creation whose permission mode is still being kept", async () => {
     let entered!: () => void, release!: () => void
     const configuring = new Promise<void>(resolve => { entered = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
-    const f = startupRouteFixture({ configUpdate: async () => {
+    const f = startupRouteFixture({ keepMode: async () => {
       entered(); await held
-      return { harness: CODEX, agent: null, variant: null }
+      return STARTUP_MODES
     } })
-    const creation = f.launch("creating-delete", { harness: CODEX })
+    const creation = f.launch("creating-delete", { permissionMode: "default" })
     await creation.started
     await f.app.request("/question/question-creating-delete/reply", answer())
     await configuring
@@ -2766,16 +2773,16 @@ describe("public startup question lifecycle", () => {
     const configuring = new Promise<void>(resolve => { entered = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
     const f = startupRouteFixture({
-      configUpdate: async () => {
+      keepMode: async () => {
         entered(); await held
-        return { harness: CODEX, agent: null, variant: null }
+        return STARTUP_MODES
       },
     })
     const parent = f.launch("parent")
     await parent.started
     await f.app.request("/question/question-parent/reply", answer())
     expect((await parent.response).status).toBe(201)
-    const child = f.launch("child", { harness: CODEX, parentID: "parent" })
+    const child = f.launch("child", { permissionMode: "default", parentID: "parent" })
     await child.started
     await f.app.request("/question/question-child/reply", answer())
     await configuring
@@ -2840,13 +2847,13 @@ describe("public startup question lifecycle", () => {
   })
 
   test("a rolled-back creation keeps its failure readable instead of releasing the id", async () => {
-    const f = startupRouteFixture({ configUpdate: async () => { throw new Error("configuration refused") } })
-    const creation = f.launch("rolled-back", { harness: CODEX })
+    const f = startupRouteFixture({ keepMode: async () => { throw new Error("mode refused") } })
+    const creation = f.launch("rolled-back", { permissionMode: "default" })
     await creation.started
     await f.app.request("/question/question-rolled-back/reply", answer())
     expect((await creation.response).status).toBe(500)
     expect(f.store.getSession("rolled-back")).toBeNull()
-    expect(await (await f.app.request("/session-start/rolled-back")).json()).toMatchObject({ status: "failed", error: expect.stringContaining("configuration refused") })
+    expect(await (await f.app.request("/session-start/rolled-back")).json()).toMatchObject({ status: "failed", error: expect.stringContaining("mode refused") })
     const retry = await post(f.app, "/session", { id: "rolled-back" }, { "x-claxedo-session-registration-operation": "op-rolled-back" })
     expect(retry.status).toBe(409)
   })
