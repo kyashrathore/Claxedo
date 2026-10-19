@@ -32,6 +32,13 @@
       "import": "./src/context.ts",
       "default": "./src/context.ts"
     },
+    "./tool-group": {
+      "types": "./src/tool-group.ts",
+      "bun": "./src/tool-group.ts",
+      "development": "./src/tool-group.ts",
+      "import": "./src/tool-group.ts",
+      "default": "./src/tool-group.ts"
+    },
     "./tools/registry": {
       "types": "./src/tools/registry.ts",
       "bun": "./src/tools/registry.ts",
@@ -48,7 +55,6 @@
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/plugin-api": "workspace:*",
-    "@claxedo/tasks": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "8.20.0",

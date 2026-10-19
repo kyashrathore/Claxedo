@@ -8,7 +8,8 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { D1Database } from "@cloudflare/workers-types"
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import type {
   MutateSignedOrganizationDefault,
   MutateSignedUserActivation,
@@ -141,7 +142,7 @@ async function fixture() {
   }
   const passes = memorySandboxPassRegister()
   const activations = new ProjectSwitches()
-  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } }
+  const builtIn = { groups: claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP]), deployment: { inProcessServices: [] } }
   const services = {
     auth: { config: { enabled: true, issuer: "https://auth.test", jwksUrl: "https://auth.test/jwks" } },
     relay: { relayUrl: "https://relay.test", resolverToken: "resolver-token" },

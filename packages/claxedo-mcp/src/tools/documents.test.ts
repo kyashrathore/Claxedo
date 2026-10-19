@@ -87,7 +87,7 @@ async function listen(service?: ReturnType<typeof documentsService>) {
           fetch: async () => new Response(null, { status: 204 }),
           workspace: { workspaceId: "ws_local", directory: "/w" },
         },
-        ...(service ? { documents: { fetch: service.fetch } } : {}),
+        ...(service ? { services: { documents: { fetch: service.fetch, operations: [] } } } : {}),
       }),
     registerTools: [{ id: "documents", reach: { service: "documents" }, register: registerDocumentTools }],
     audit: () => undefined,

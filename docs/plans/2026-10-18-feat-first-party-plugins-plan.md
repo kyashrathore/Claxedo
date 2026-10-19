@@ -703,7 +703,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - Interim builders: `claxedo-server/src/deployments/hosted-workerd/tasks-plugin.ts` (renamed from `tasks-contributions.ts`) and `claxedo-server/src/documents/hosted-plugin.ts`, which resolves the authority from `services` at request time.
   - `PluginCapability` stays as `string` with `isPluginCapability` and `PLUGIN_CAPABILITY_PATTERN`; `PluginHost.required`, which only gated the probe, is gone.
 - Progress: done (lane C). Ceilings: local-server 74→73 (`app/local-documents.ts` left the entry), server-workerd 174→175 and the deployment closures 174/233/245→175/234/246 (`documents/hosted-plugin.ts`), desktop-renderer 1481→1480 (`server/availability.ts`). Verified: local, server (+ `scripts/sandbox/cloudflare-worker`), plugin-api tests and app `src/server`, `src/plugins` tests, app `check` and `typecheck:e2e`; `bun turbo typecheck --concurrency=2`; ratchets; local-server and server `verify:closure`; e2e 12-workbench-shell and 35 on web and phone. OpenCode-backed suites need Node 24 (`patches/README.opencode-node.md`); they pass under 24.18.0. Not verified: e2e 53 and 54 (the hosted sandbox worker's local brokering driver runs only on macOS) and 34 (no Electron binary in this container).
-- [ ] **S7. MCP tool group contribution.**
+- [x] **S7. MCP tool group contribution.**
 - Add `@claxedo/mcp/tool-group`; generic `services` grants.
 - Move `tools/tasks.ts` (+ test) to `packages/claxedo-tasks/src/mcp/`; the local and hosted `mcp` contributions supply `services.tasks` (`TASKS_OPERATIONS` stays the local operation set) and `services.documents`.
 - The sandbox `first-party-mcp.ts` builds `services.tasks` from today's `tasks-grant.ts` (moved in S8b).
@@ -715,7 +715,14 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - server (hosted MCP, agent-plugins catalog inventory);
   - tasks (moved tool tests).
 - **Checks:** typecheck all; ratchets; e2e 40.
-- Progress:
+- **As built:**
+  - `McpServiceGrantInput.workspaceId` is optional: the hosted mount grants services to an account credential, which belongs to no workspace. The hosted `/api/claxedo/mcp` asks each composed plugin's service for an account credential and enters the app with the caller's own authorization; a runtime credential there gets none, as before.
+  - `mcpToolGroups(plugins)` in `server-core/src/plugins/server-plugin.ts` is the one composition of core plus plugin groups; the local start, the desktop and e2e entries, the core Worker root and the Agent Plugins entry use it. The hosted catalog (`createHostedAgentPluginsComposition({ toolGroups })`) is handed `mcpToolGroups([tasks])` by the Agent Plugins entry, which therefore builds the Tasks plugin first and reads the group switches through closures. The Documents plugin is composed by the core Worker root and contributes no group yet; S11c must give the catalog its group too.
+  - `claxedoMcpToolGroupsFor` had no caller and is deleted.
+  - Tasks tools declare `service: { id: "tasks", label: "Tasks", operation }`; Documents tools keep no service gate, so their listing per mount is unchanged and they refuse at the call where no `services.documents` was granted.
+  - The hosted Tasks plugin contributes its group only: an account credential on the plane was never granted Tasks. The sandbox runtime composes `TASKS_MCP_TOOL_GROUP` and its `services.tasks` in `runtime-boot.ts` until S8b.
+  - The transcript roster equality moved to `@claxedo/tasks` (`src/mcp/tools.test.ts`), the one package that sees the core and the Tasks groups; `@claxedo/mcp` asserts its core tools are in the roster.
+- Progress: done (lane C). Verified: mcp (196) and tasks (303, with the moved tool tests) suites; local-server (844, Node 24) and server (2905 plus the sandbox worker's 118) suites; `bun turbo typecheck --concurrency=2`; ratchets (no ceiling moved); `docs:check-links`. e2e 40: pi passes on web; the claude, codex and opencode cases fail identically at the base commit 789ec97 in this container (no codex CLI; the claude and opencode turns never call the tool), so they are not evidence either way.
 - [ ] **S8a. SQLite schema contributions; Tasks shared host and local move.**
 - `configureClaxedoSchema`; move the six task migration folders; `server-core/src/tasks-host/*` → `packages/claxedo-tasks/src/host/*` and `storage/sqlite/*`; `local-server/src/tasks/*` → `packages/claxedo-tasks/src/local/*`.
 - Update the three journal-copying build scripts; the desktop and harness entries call `configureClaxedoSchema` first.

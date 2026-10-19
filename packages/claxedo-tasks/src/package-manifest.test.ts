@@ -20,6 +20,7 @@ describe("@claxedo/tasks package manifest", () => {
       ".",
       "./http",
       "./client",
+      "./mcp",
       "./conformance",
       "./test-support",
     ])

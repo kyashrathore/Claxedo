@@ -29,10 +29,9 @@ export {
   CLAXEDO_MCP_TOOL_GROUPS,
   CLAXEDO_MCP_TOOL_GROUP_IDS,
   claxedoMcpToolGroupInventory,
-  claxedoMcpToolGroupsFor,
 } from "./tools/index"
 export type { ClaxedoMcpToolGroupDescription, ClaxedoMcpToolGroupId, McpToolGroup }
-export type { AppPluginsGrant, McpServiceGrant, TasksOperation } from "./client/contract"
+export type { AppPluginsGrant, McpServiceGrant } from "./client/contract"
 
 export const CLAXEDO_MCP_PATH = "/api/claxedo/mcp"
 export const OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
@@ -73,8 +72,8 @@ export type McpClientInputs = Readonly<{
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
   /** The registry's session list for a session's own bearer; see `ClaxedoMcpClient.listSessions`. */
   sessionList?: (workspaceId: string, limit: number) => Promise<readonly unknown[]>
-  documents?: Readonly<{ fetch: ClaxedoFetch }>
-  tasks?: McpServiceGrant
+  /** The services the composition granted this caller; see `ClaxedoMcpClient.services`. */
+  services?: Readonly<Record<string, McpServiceGrant>>
   appPlugins?: AppPluginsGrant
   /** Whether only the workspace's owner has driven the calling session; see `ClaxedoMcpClient.ownerDriven`. */
   ownerDriven?: () => boolean

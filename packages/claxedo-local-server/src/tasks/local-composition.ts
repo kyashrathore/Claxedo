@@ -1,5 +1,6 @@
 import type { LocalServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import {
   capabilityTasksAuthenticate,
   confineCapabilityBridge,
@@ -81,12 +82,14 @@ export function createLocalTasksPlugin(input: LocalTasksPluginInput = {}): Local
     capability: "tasks",
     routeContributions: () => routeContributions,
     mcp: {
+      groups: [TASKS_MCP_TOOL_GROUP],
       service: {
         id: "tasks",
         // A session whose Tasks group is off, or whose workspace names no
         // owner, keeps the bare loopback fetch that reads as the person at
         // this machine.
         async grant({ workspaceId, sessionId, enabledGroups, inProcessFetch }) {
+          if (!workspaceId) return undefined
           const handle = enabledGroups.includes(BUILTIN_TASKS_TOOL_GROUP)
             ? await grants.issue({ workspaceId, ...(sessionId ? { sessionId } : {}) })
             : undefined

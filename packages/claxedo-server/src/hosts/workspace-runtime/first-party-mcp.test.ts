@@ -1,7 +1,8 @@
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
+import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUP_IDS, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { createRuntimeCredentialIssuer, createWorkspaceRuntimeApp } from "@claxedo/workspace-runtime"
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import type { OwnerGrantIdentity } from "@claxedo/workspace-runtime"
@@ -19,7 +20,7 @@ function runtime(options: {
   ownerGrantIdentity?: OwnerGrantIdentity
 } = {}) {
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
-  const enabledToolGroups = options.groups ?? CLAXEDO_MCP_TOOL_GROUP_IDS
+  const enabledToolGroups = options.groups ?? [...CLAXEDO_MCP_TOOL_GROUP_IDS, TASKS_MCP_TOOL_GROUP.id]
   const app = createWorkspaceRuntimeApp({
     sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure(relayAuth),
@@ -32,7 +33,8 @@ function runtime(options: {
       : [firstPartyMcpRuntimeContribution({
           verifyRuntimeCredential: issuer.verify,
           enabledToolGroups,
-          ...(options.tasks ? { tasks: options.tasks } : {}),
+          registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP],
+          ...(options.tasks ? { services: (): Readonly<Record<string, McpServiceGrant>> => { const granted = options.tasks?.(); return granted ? { tasks: granted } : {} } } : {}),
           ...(options.ownerGrant ? { ownerGrant: options.ownerGrant } : {}),
         })],
   })

@@ -551,7 +551,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         // grant is decided by, so a session whose group is off is handed no
         // more than the person at this machine would be.
         const enabledGroups = (await firstPartyMcp.enabledToolGroups?.(credential)) ?? []
-        const granted = Object.fromEntries(await Promise.all(plugins.flatMap((plugin) => {
+        const granted = await Promise.all(plugins.flatMap((plugin) => {
           const service = plugin.mcp?.service
           if (!service) return []
           return [service.grant({
@@ -560,7 +560,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
             enabledGroups,
             inProcessFetch: (headers) => inProcessFetch(inProcess, headers),
           }).then((grant) => [service.id, grant] as const)]
-        })))
+        }))
         return firstPartyMcp.createClient({
           deployment: "loopback",
           credential,
@@ -568,8 +568,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           ...(ownerDriven
             ? { ownerDriven, appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
             : {}),
-          ...(granted.documents ? { documents: { fetch: granted.documents.fetch } } : {}),
-          ...(granted.tasks ? { tasks: granted.tasks } : {}),
+          services: Object.fromEntries(granted.flatMap(([id, grant]) => (grant ? [[id, grant]] : []))),
           local: {
             fetch: localFetch,
             workspace: { workspaceId: credential.workspaceId, directory: workspace.directory },

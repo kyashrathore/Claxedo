@@ -529,6 +529,7 @@ describe("resource-closed hosted core app", () => {
     const stubClient: ClaxedoMcpClient = {
       deployment: "hosted",
       runtime: async () => async () => new Response(null, { status: 204 }),
+      services: {},
       resolveTarget: async () => ({ kind: "relay", baseUrl: "", headers: {} }),
       server: () => Promise.reject(new Error("unused")),
       workspaces: async () => [],

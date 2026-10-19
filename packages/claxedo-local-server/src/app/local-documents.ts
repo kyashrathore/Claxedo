@@ -57,10 +57,11 @@ export function createLocalDocumentsPlugin(): LocalServerPlugin {
       }]
     },
     mcp: {
+      groups: [],
       service: {
         id: "documents",
         grant: async ({ workspaceId, inProcessFetch }) => ({
-          fetch: inProcessFetch({ "x-workspace-id": workspaceId }),
+          fetch: inProcessFetch(workspaceId ? { "x-workspace-id": workspaceId } : {}),
           operations: [],
         }),
       },

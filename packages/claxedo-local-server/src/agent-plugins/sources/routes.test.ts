@@ -15,7 +15,7 @@ import type { AgentPluginSourceFetch } from "@claxedo/server-core/agent-plugins/
 import { AGENT_PLUGINS_ROUTE_PATH } from "@claxedo/server-core/agent-plugins/module"
 import { LocalAgentPluginActivationRoutes } from "../activation/routes"
 import { SqliteUnsignedAgentPluginActivationStore } from "../activation/sqlite-store"
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { LocalAgentPluginSourceRoutes } from "./routes"
 import { SqliteAgentPluginSourceStore } from "./sqlite-store"
 
@@ -42,7 +42,7 @@ function rail(fetch: AgentPluginSourceFetch) {
     artifacts,
     activations,
     reconcile: { reconcile: async () => ({ state: "applied" as const }) },
-    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } },
+    builtIn: { groups: claxedoMcpToolGroupInventory(CLAXEDO_MCP_TOOL_GROUPS), deployment: { inProcessServices: ["documents"] } },
   }))
   app.route(`${AGENT_PLUGINS_ROUTE_PATH}/sources`, LocalAgentPluginSourceRoutes({
     registry,

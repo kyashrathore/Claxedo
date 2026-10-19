@@ -9,6 +9,7 @@ import {
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { createHostedTasksPlugin } from "./tasks-plugin"
+import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
@@ -71,30 +72,6 @@ export function composeBetterAuthD1AgentPlugins(
     supervisors: env.PLUGIN_SUPERVISOR,
     services: base.plane.services,
   })
-  const feature = createHostedAgentPluginsComposition({
-    env,
-    plane: base.plane,
-    database: env.CONTROL_PLANE_DB,
-    authentication: base.options.authentication,
-    tasksGrant: createTasksRootCapability(tasksRoot),
-    ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
-    passes,
-    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
-    ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
-    ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
-  })
-  const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
-    const [basePreparation, featurePreparation] = await Promise.all([
-      base.runtimeDelivery?.prepareRuntime(context),
-      feature.prepareRuntime(context),
-    ])
-    return {
-      ...featurePreparation,
-      secrets: [...(basePreparation?.secrets ?? []), ...(featurePreparation.secrets ?? [])],
-      env: { ...basePreparation?.env, ...featurePreparation.env },
-    }
-  }
-  base.runtimeDelivery?.composeRuntime({ prepareRuntime, pluginRuntime: feature.pluginRuntime })
   const tasks = createHostedTasksPlugin({
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
@@ -121,12 +98,39 @@ export function composeBetterAuthD1AgentPlugins(
       : {}),
     signingEnv,
     passes,
+    // Renewal asks the Agent Plugins composition below, which is built after
+    // this plugin because its catalog lists this plugin's tool group.
     renewal: {
-      tasksGroupEnabled: feature.tasksGroupEnabled,
+      tasksGroupEnabled: (root) => feature.tasksGroupEnabled(root),
       grant: createTasksRootGrant(tasksRoot),
-      ownerGrant: { enabled: feature.subagentsGroupEnabled, mint: createOwnerGrantMinter({ signingEnv, passes }) },
+      ownerGrant: { enabled: (root) => feature.subagentsGroupEnabled(root), mint: createOwnerGrantMinter({ signingEnv, passes }) },
     },
   })
+  const feature = createHostedAgentPluginsComposition({
+    toolGroups: mcpToolGroups([tasks]),
+    env,
+    plane: base.plane,
+    database: env.CONTROL_PLANE_DB,
+    authentication: base.options.authentication,
+    tasksGrant: createTasksRootCapability(tasksRoot),
+    ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
+    passes,
+    ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
+    ...(base.egressBroker ? { egressBroker: base.egressBroker } : {}),
+    ...(base.options.productWorkspace?.sandboxInFlight ? { sandboxInFlight: base.options.productWorkspace.sandboxInFlight } : {}),
+  })
+  const prepareRuntime = async (context: WorkspaceRuntimeContext) => {
+    const [basePreparation, featurePreparation] = await Promise.all([
+      base.runtimeDelivery?.prepareRuntime(context),
+      feature.prepareRuntime(context),
+    ])
+    return {
+      ...featurePreparation,
+      secrets: [...(basePreparation?.secrets ?? []), ...(featurePreparation.secrets ?? [])],
+      env: { ...basePreparation?.env, ...featurePreparation.env },
+    }
+  }
+  base.runtimeDelivery?.composeRuntime({ prepareRuntime, pluginRuntime: feature.pluginRuntime })
   return {
     ...base,
     options: {

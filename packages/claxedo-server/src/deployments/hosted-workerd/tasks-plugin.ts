@@ -1,5 +1,6 @@
 import type { HostedServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import {
   createHostedTasksComposition,
   hostedTasksRuntimeClient,
@@ -82,5 +83,9 @@ export function createHostedTasksPlugin(
     id: "claxedo-tasks",
     capability: "tasks",
     routeContributions: [...composition.routeContributions, ...renewal],
+    // An account credential on this plane is granted no Tasks service, so its
+    // tools are listed only to a cloud root's sessions, whose runtime holds
+    // the grant.
+    mcp: { groups: [TASKS_MCP_TOOL_GROUP] },
   }
 }

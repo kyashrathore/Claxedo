@@ -19,7 +19,6 @@ export type {
   ClaxedoMcpClient,
   ResolvedTarget,
   McpServiceGrant,
-  TasksOperation,
   WorkspaceSummary,
   WorkspaceTarget,
 } from "./contract"
@@ -43,8 +42,7 @@ export type ClaxedoMcpClientOptions = Readonly<{
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
   /** The registry's session list for a caller with no control-plane credential of its own: a session read as its workspace's owner. */
   sessionList?: (workspaceId: string, limit: number) => Promise<readonly unknown[]>
-  documents?: Readonly<{ fetch: ClaxedoFetch }>
-  tasks?: McpServiceGrant
+  services?: Readonly<Record<string, McpServiceGrant>>
   appPlugins?: AppPluginsGrant
   ownerDriven?: () => boolean
   /** Dials the relay; defaults to the global fetch. */
@@ -200,8 +198,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
   return {
     deployment,
     ...(listSessions ? { listSessions } : {}),
-    ...(options.documents ? { documents: options.documents.fetch } : {}),
-    ...(options.tasks ? { tasks: options.tasks } : {}),
+    services: options.services ?? {},
     ...(options.appPlugins ? { appPlugins: options.appPlugins } : {}),
     ...(options.ownerDriven ? { ownerDriven: options.ownerDriven } : {}),
     ...(local ? { ownWorkspace: local.workspace } : {}),

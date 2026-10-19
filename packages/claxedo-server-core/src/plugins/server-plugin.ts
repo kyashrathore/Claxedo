@@ -1,4 +1,5 @@
-import type { ClaxedoFetch, McpServiceGrant } from "@claxedo/mcp/client"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import type { ClaxedoFetch, McpServiceGrant, McpToolGroup } from "@claxedo/mcp/tool-group"
 import type { ControlPlaneAuthConfig, ControlPlaneTokenVerifier } from "../platform/auth/auth"
 import type { ControlPlaneRouteContribution } from "../platform/http/route-contribution"
 
@@ -16,6 +17,8 @@ export type ServerPluginBase = Readonly<{
 }>
 
 export type McpPluginContribution = Readonly<{
+  /** Served after the core groups, under the same consent: a group is registered only while its id is enabled. */
+  groups: readonly McpToolGroup[]
   service?: McpServiceContribution
 }>
 
@@ -26,7 +29,8 @@ export type McpServiceContribution = Readonly<{
 }>
 
 export type McpServiceGrantInput = Readonly<{
-  workspaceId: string
+  /** The calling session's workspace; absent for an account credential, which belongs to none. */
+  workspaceId?: string
   sessionId?: string
   /** The tool groups the calling session consented to. */
   enabledGroups: readonly string[]
@@ -73,4 +77,9 @@ export function assertDistinctServerPlugins(plugins: readonly ServerPluginBase[]
 /** The bootstrap's `deployment.capabilities`: each mounted plugin's capability, sorted. */
 export function serverPluginCapabilities(plugins: readonly ServerPluginBase[]): string[] {
   return [...new Set(plugins.flatMap((plugin) => (plugin.capability ? [plugin.capability] : [])))].sort()
+}
+
+/** Every group a host's MCP mount serves and its catalog lists: the core groups, then each plugin's, in composition order. */
+export function mcpToolGroups(plugins: readonly ServerPluginBase[]): readonly McpToolGroup[] {
+  return [...CLAXEDO_MCP_TOOL_GROUPS, ...plugins.flatMap((plugin) => plugin.mcp?.groups ?? [])]
 }

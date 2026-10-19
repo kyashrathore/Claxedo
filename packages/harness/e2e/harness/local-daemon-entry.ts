@@ -4,21 +4,24 @@ import { createLocalTasksPlugin } from "../../../claxedo-local-server/src/tasks/
 import { createLocalDocumentsPlugin } from "../../../claxedo-local-server/src/app/local-documents"
 import { localBuiltinToolGroupsReader } from "../../../claxedo-local-server/src/agent-plugins/builtin-groups"
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 
 const port = Number(process.env.CLAXEDO_SERVER_PORT)
 if (!Number.isSafeInteger(port) || port <= 0 || !process.env.CLAXEDO_DATA_DIR) {
   throw new Error("The e2e daemon requires a port and an isolated data directory")
 }
-const agentPlugins = createLocalAgentPluginsComposition()
+const plugins = [
+  createLocalTasksPlugin({ enabled: () => groups().includes(BUILTIN_TASKS_TOOL_GROUP) }),
+  createLocalDocumentsPlugin(),
+]
+const toolGroups = mcpToolGroups(plugins)
+const agentPlugins = createLocalAgentPluginsComposition(process.env, { toolGroups })
 await agentPlugins.ready
-const groups = localBuiltinToolGroupsReader()
+const groups = localBuiltinToolGroupsReader(toolGroups)
 const server = startLocalServer({
   port,
   routeContributions: agentPlugins.routeContributions,
-  plugins: [
-    createLocalTasksPlugin({ enabled: () => groups().includes(BUILTIN_TASKS_TOOL_GROUP) }),
-    createLocalDocumentsPlugin(),
-  ],
+  plugins,
   pluginRuntime: agentPlugins.runtimeContribution,
 })
 const distDir = process.env.CLAXEDO_APP_DIST_DIR

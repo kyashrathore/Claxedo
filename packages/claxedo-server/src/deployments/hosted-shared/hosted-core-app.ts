@@ -646,6 +646,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         app,
         authority: services.authority,
         options: options.firstPartyMcp,
+        services: plugins.flatMap((plugin) => (plugin.mcp?.service ? [plugin.mcp.service] : [])),
         signedAuth: async (request) => {
           const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
           return "error" in result ? undefined : result.auth

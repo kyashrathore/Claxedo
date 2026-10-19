@@ -51,5 +51,12 @@ export function createHostedDocumentsPlugin(input: HostedDocumentsPluginInput): 
       },
       { id: "claxedo-public-documents", path: "/p", routes: PublicDocumentRoutes({ backend, rateLimit: input.rateLimit }) },
     ],
+    mcp: {
+      groups: [],
+      service: {
+        id: "documents",
+        grant: async ({ inProcessFetch }) => ({ fetch: inProcessFetch({}), operations: [] }),
+      },
+    },
   }
 }

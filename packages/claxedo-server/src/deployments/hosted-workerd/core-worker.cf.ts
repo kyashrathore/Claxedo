@@ -33,7 +33,7 @@ import {
   createHostedCoreApp,
   type HostedCoreAppOptions,
 } from "../hosted-shared/hosted-core-app"
-import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { LiveSyncRoom } from "./live-sync-room.cf"
 import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
@@ -135,9 +135,10 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
       authentication: selected.options.authentication,
       rateLimit: async (key) => (await sharedRateLimitStore.check(key)).allowed,
     })
+    const plugins = [documents, ...(selected.options.plugins ?? [])]
     const app = createHostedCoreApp(selected.plane, {
       ...selected.options,
-      plugins: [documents, ...(selected.options.plugins ?? [])],
+      plugins,
       idempotency: createIdempotencyCoordinator(d1ProjectionCommandIdempotency(controlPlaneDatabase)),
       liveSyncRoom,
       sharedRateLimitStore,
@@ -146,7 +147,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
       // through the relay with the caller's own credential.
       firstPartyMcp: {
         createClient: (input) => createClaxedoMcpClient(input),
-        registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+        registerTools: mcpToolGroups(plugins),
       },
     })
     const errors = workerErrorCapture(selected.plane.env)

@@ -1,5 +1,5 @@
 import type { ElicitRequestFormParams, ElicitRequestURLParams, ElicitResult } from "@modelcontextprotocol/sdk/types.js"
-import type { ClaxedoMcpClient, TasksOperation } from "./client/contract"
+import type { ClaxedoMcpClient } from "./client/contract"
 
 /** OAuth scopes offered at consent; a user credential carries the subset it was granted. */
 export type McpScope = "read" | "act" | "approve" | "admin"
@@ -43,8 +43,12 @@ export type McpToolAccess = Readonly<{
   scope: McpScope
   /** Annotated `destructiveHint`, and runs only once the host's elicitation is accepted. */
   destructive?: boolean
-  /** The Tasks operation this tool performs; a tool that names one exists only while the caller's grant carries it. */
-  operation?: TasksOperation
+  /**
+   * The service this tool acts through, and the operation of it the tool
+   * performs. A tool that names one exists only while the client carries that
+   * service's grant, with the operation when it names one.
+   */
+  service?: McpToolService
   /** App plugin authoring; a tool that needs it exists only while the client carries the grant. */
   appPlugins?: true
   /**
@@ -54,12 +58,15 @@ export type McpToolAccess = Readonly<{
   ownerDriven?: true
 }>
 
-/** What the client was granted beyond the credential, read from the client rather than the credential. */
-export type McpToolGrants = Readonly<{ tasks?: readonly string[]; appPlugins?: boolean; ownerDriven?: boolean }>
+/** `label` names the service in a refusal: "<tool> needs the <label> service". */
+export type McpToolService = Readonly<{ id: string; label: string; operation?: string }>
+
+/** What the client was granted beyond the credential, read from the client rather than the credential: each service's operations. */
+export type McpToolGrants = Readonly<{ services?: Readonly<Record<string, readonly string[]>>; appPlugins?: boolean; ownerDriven?: boolean }>
 
 export function toolGrants(client: ClaxedoMcpClient): McpToolGrants {
   return {
-    ...(client.tasks ? { tasks: client.tasks.operations } : {}),
+    services: Object.fromEntries(Object.entries(client.services).map(([id, grant]) => [id, grant.operations])),
     appPlugins: client.appPlugins?.allowed() === true,
     ownerDriven: client.ownerDriven?.() === true,
   }
@@ -92,7 +99,7 @@ export class McpAccessDenied extends Error {
       | "own-children-only"
       | "owner-driven"
       | "recursion"
-      | "tasks"
+      | "service"
       | "app-plugins",
     message: string,
   ) {
@@ -125,11 +132,12 @@ export function assertToolAccess(
   if (credential.kind === "user" && !credential.scopes.has(access.scope)) {
     throw new McpAccessDenied("scope", `${name} requires the claxedo:${access.scope} scope`)
   }
-  const granted = grants.tasks
-  if (access.operation) {
-    if (!granted) throw new McpAccessDenied("tasks", `${name} needs the Tasks service, which this Claxedo deployment does not serve`)
-    if (!granted.includes(access.operation)) {
-      throw new McpAccessDenied("tasks", `${name} needs the ${access.operation} Tasks operation, which this session was not granted`)
+  const { service } = access
+  if (service) {
+    const granted = grants.services?.[service.id]
+    if (!granted) throw new McpAccessDenied("service", `${name} needs the ${service.label} service, which this Claxedo deployment does not serve`)
+    if (service.operation && !granted.includes(service.operation)) {
+      throw new McpAccessDenied("service", `${name} needs the ${service.operation} ${service.label} operation, which this session was not granted`)
     }
   }
   if (access.appPlugins && !grants.appPlugins) throw appPluginsDenied(name)

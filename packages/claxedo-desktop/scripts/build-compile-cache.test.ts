@@ -10,7 +10,7 @@ test("the daemon entry proves it was launched before it opens any store", () => 
   // The CALL, parentheses included. The bare identifier matches the import
   // first, which sits above every gate by definition and made this pass or
   // fail on where the import happened to be written.
-  const firstStore = source.indexOf("createLocalAgentPluginsComposition()")
+  const firstStore = source.indexOf("createLocalTasksPlugin(")
   expect(gate).toBeGreaterThan(-1)
   expect(firstStore).toBeGreaterThan(gate)
 })

@@ -1,4 +1,4 @@
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, type McpToolGroup } from "@claxedo/mcp"
 import { createSessionHostPlugins, machineServing } from "./runtime/session-host-launch"
 import type { SandboxInFlight } from "../workspace/sandbox-start"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
@@ -202,6 +202,8 @@ export function createHostedAgentPluginsComposition(input: {
   plane: HostedControlPlane
   database: D1Database
   authentication: RequestAuthenticationAdapter
+  /** The groups the plane's MCP mounts serve, which the Marketplace lists as the built-in plugin's. */
+  toolGroups: readonly McpToolGroup[]
   /** The grant a root whose project turned Tasks on is launched with. */
   tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /** The grant a root whose project turned subagents on is launched with: its runtime acts as the workspace's owner. */
@@ -233,7 +235,7 @@ export function createHostedAgentPluginsComposition(input: {
   // Hosted, documents are an account service a session reaches across the
   // network rather than a store in this process, so that group is a decision
   // rather than an inheritance.
-  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } }
+  const builtIn = { groups: claxedoMcpToolGroupInventory(input.toolGroups), deployment: { inProcessServices: [] } }
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
   // `caches` exists only inside a Worker isolate, so it is looked up per call.

@@ -1,45 +1,16 @@
 import { registerAppPluginTools } from "./app-plugins"
 import { registerAttentionTools } from "./attention"
 import { registerDocumentTools } from "./documents"
-import type { ToolRegistrar } from "./registry"
 import { registerReviewTools } from "./review"
 import { registerSessionTools } from "./sessions"
 import { registerSubagentTools } from "./subagents"
 import { registerSurfaceTools } from "./surfaces"
-import { registerTaskTools } from "./tasks"
 import { registerWorkspaceTools } from "./workspaces"
+import type { McpToolGroup, McpToolGroupReach } from "../tool-group"
 
-/**
- * A named group of tools, the unit a project turns on or off.
- *
- * The name rides on the registration rather than in a table beside it because
- * the catalog, the activation row and the mount all address a group by it: a
- * name kept somewhere else could be enabled under one spelling and registered
- * under another.
- */
-/**
- * How far a group's tools reach, which is what decides whether a project that
- * has said nothing gets it.
- *
- * Declared by the registration rather than inferred from the name, because the
- * rule that reads it cannot recognise a group that does not exist yet: a name
- * it did not know would have to be guessed at, and the safe-looking guess —
- * this one is like the others — is the one that grants.
- */
-export type McpToolGroupReach =
-  /** The workspace runtime this session is already running in; its tools reach nothing outside that workspace. */
-  | "runtime"
-  /** A named service some deployments run in this process and others reach as the account's. */
-  | Readonly<{ service: string }>
-  /** Outside the project altogether. Never on until a user says so. */
-  | "account"
+export type { McpToolGroup, McpToolGroupReach } from "../tool-group"
 
-export type McpToolGroup = Readonly<{
-  id: string
-  reach: McpToolGroupReach
-  register: (registry: ToolRegistrar) => void
-}>
-
+/** The groups every mount serves. A first-party plugin's groups are composed after them by the host that mounts the plugin. */
 export const CLAXEDO_MCP_TOOL_GROUPS = [
   { id: "app-plugins", reach: { service: "app-plugins" }, register: registerAppPluginTools },
   { id: "attention", reach: "runtime", register: registerAttentionTools },
@@ -48,7 +19,6 @@ export const CLAXEDO_MCP_TOOL_GROUPS = [
   { id: "sessions", reach: "runtime", register: registerSessionTools },
   { id: "subagents", reach: "runtime", register: registerSubagentTools },
   { id: "surfaces", reach: "runtime", register: registerSurfaceTools },
-  { id: "tasks", reach: "account", register: registerTaskTools },
   { id: "workspaces", reach: "runtime", register: registerWorkspaceTools },
 ] as const satisfies readonly McpToolGroup[]
 
@@ -58,12 +28,12 @@ export const CLAXEDO_MCP_TOOL_GROUP_IDS: readonly ClaxedoMcpToolGroupId[] =
   CLAXEDO_MCP_TOOL_GROUPS.map((group) => group.id)
 
 export type ClaxedoMcpToolGroupDescription = Readonly<{
-  id: ClaxedoMcpToolGroupId
+  id: string
   reach: McpToolGroupReach
   tools: readonly string[]
 }>
 
-let inventory: readonly ClaxedoMcpToolGroupDescription[] | undefined
+const inventories = new WeakMap<readonly McpToolGroup[], readonly ClaxedoMcpToolGroupDescription[]>()
 
 /**
  * Each group's tool names, read by running its registration against a sink
@@ -73,17 +43,14 @@ let inventory: readonly ClaxedoMcpToolGroupDescription[] | undefined
  * and the only place those names exist is the registration call. A second list
  * would be a list to forget; this one cannot disagree with the code.
  */
-export function claxedoMcpToolGroupInventory(): readonly ClaxedoMcpToolGroupDescription[] {
-  inventory ??= CLAXEDO_MCP_TOOL_GROUPS.map((group) => {
+export function claxedoMcpToolGroupInventory(groups: readonly McpToolGroup[]): readonly ClaxedoMcpToolGroupDescription[] {
+  const known = inventories.get(groups)
+  if (known) return known
+  const inventory = groups.map((group) => {
     const tools: string[] = []
     group.register({ tool: (name) => { tools.push(name) } })
     return { id: group.id, reach: group.reach, tools }
   })
+  inventories.set(groups, inventory)
   return inventory
-}
-
-/** The registrations an enabled set selects, in catalog order; an unknown name selects nothing. */
-export function claxedoMcpToolGroupsFor(enabled: Iterable<string>): readonly McpToolGroup[] {
-  const wanted = new Set(enabled)
-  return CLAXEDO_MCP_TOOL_GROUPS.filter((group) => wanted.has(group.id))
 }

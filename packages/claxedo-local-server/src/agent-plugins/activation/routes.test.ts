@@ -9,7 +9,8 @@ import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/p
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import { LocalAgentPluginArtifactStore } from "../artifacts/local-store"
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { createLocalAgentPluginsModule } from "../module"
 import { SqliteUnsignedAgentPluginActivationStore } from "./sqlite-store"
 
@@ -42,7 +43,7 @@ async function fixture() {
   const activations = new SqliteUnsignedAgentPluginActivationStore(new Database(":memory:"))
   const artifacts = new LocalAgentPluginArtifactStore(path.join(root, "data"))
   const reconcile = { reconcile: vi.fn(async () => ({ state: "applied" as const })) }
-  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } }
+  const builtIn = { groups: claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP]), deployment: { inProcessServices: ["documents"] } }
   const module = createLocalAgentPluginsModule({ sources, activations, artifacts, reconcile, builtIn })
   const app = new Hono()
   mountControlPlaneRouteContributions({

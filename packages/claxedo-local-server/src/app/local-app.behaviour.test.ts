@@ -842,6 +842,7 @@ describe("local composition — first-party MCP", () => {
   const stubClient: ClaxedoMcpClient = {
     deployment: "loopback",
     runtime: async () => async () => new Response(null, { status: 204 }),
+    services: {},
     resolveTarget: async () => ({ kind: "loopback", baseUrl: "", headers: {} }),
     server: () => Promise.reject(new Error("unused")),
     workspaces: async () => [],
@@ -889,10 +890,10 @@ describe("local composition — first-party MCP", () => {
       local: { workspace: { workspaceId: claims.workspaceId, directory } },
     })
     expect(inputs[0]?.controlPlane).toBeUndefined()
-    const documents = inputs[0]?.documents
+    const documents = inputs[0]?.services?.documents
     if (!documents) throw new Error("the loopback mount composed no Documents service")
     expect(await (await documents.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: claims.workspaceId })
-    expect(inputs[0]?.tasks).toBeUndefined()
+    expect(inputs[0]?.services?.tasks).toBeUndefined()
     const local = inputs[0]?.local
     if (!local) throw new Error("the loopback mount composed no runtime client")
     expect(await (await local.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: claims.workspaceId })
@@ -904,7 +905,7 @@ describe("local composition — first-party MCP", () => {
       routeContributions: [{ id: "echo", path: "/api/claxedo/echo", routes: new Hono().get("/", (c) => c.text("ok")) }],
       plugins: [createLocalTasksPlugin()],
       firstPartyMcp: {
-        enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS,
+        enabledToolGroups: () => [...CLAXEDO_MCP_TOOL_GROUP_IDS, "tasks"],
         verifyRuntimeCredential: (token) => (token === "rt" ? claims : undefined),
         createClient: (input) => {
           inputs.push(input)
@@ -914,7 +915,7 @@ describe("local composition — first-party MCP", () => {
     })
 
     expect((await initialize(built, { authorization: "Bearer rt" })).status).toBe(200)
-    const tasks = inputs[0]?.tasks
+    const tasks = inputs[0]?.services?.tasks
     if (!tasks) throw new Error("the loopback mount composed no Tasks grant")
     expect(tasks.operations).toEqual(["read", "create", "start"])
     // No project: this machine's own workspace answers that question, and a
