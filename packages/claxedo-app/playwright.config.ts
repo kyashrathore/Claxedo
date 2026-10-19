@@ -14,6 +14,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { outputFolder: "e2e/report", open: "never" }]],
   use: {
     ignoreHTTPSErrors: true,
+    launchOptions: { args: ["--ignore-certificate-errors"] },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

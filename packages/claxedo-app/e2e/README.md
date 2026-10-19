@@ -20,6 +20,8 @@ The runner pins `--workers=1` (the machine is shared). Concurrent runs need thei
 
 Typecheck the suite with `bun run typecheck:e2e`.
 
+Chromium starts with `--ignore-certificate-errors` beside `ignoreHTTPSErrors`. The signed stacks serve HTTPS with a certificate generated for the run, and `ignoreHTTPSErrors` alone accepts it per request through the browser's certificate-error callback: a render-blocking stylesheet whose request restarted on a fresh connection after a navigation got the same `ERR_CERT_AUTHORITY_INVALID` on every restart until Chromium gave up with `ERR_TOO_MANY_RETRIES` after 50, and the page rendered unstyled (3 of 8 runs of flows 24 and 51; 0 of 8 with the switch).
+
 ## Isolation
 
 Nothing a spec does reaches the internet or this Mac's accounts, and every spec proves it.
