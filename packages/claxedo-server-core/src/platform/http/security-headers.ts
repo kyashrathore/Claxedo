@@ -12,9 +12,9 @@
  *
  * This app serves ONLY JSON and SSE. There is no `c.html(...)`, no
  * `text/html`, and no static-asset mount anywhere in the hosted route set —
- * the SolidJS SPA is a completely separate deploy target (Cloudflare Pages,
- * `wrangler pages deploy` in `.github/workflows/deploy-claxedo-app.yml`) and
- * never passes through this Worker. A JSON body loads no scripts, styles,
+ * the SolidJS SPA's assets are served by the deployment's app Worker
+ * (`packages/claxedo-server/scripts/deploy/app-worker.ts`) and never pass
+ * through this Worker. A JSON body loads no scripts, styles,
  * fonts, images or frames, so `default-src 'none'` denies exactly nothing the
  * API needs while removing the whole "attacker gets a control-plane response
  * rendered as a document" class (content-sniffed HTML, a 404 body echoed into

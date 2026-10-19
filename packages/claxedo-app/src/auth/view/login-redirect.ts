@@ -5,7 +5,7 @@ import {
   markAuthorizationSignInStarted,
   takeAuthorizationSignInStarted,
 } from "../login-continuation"
-import { apiOrigin, appOrigin } from "../origins"
+import { appOrigin } from "../origins"
 
 export type LoginRedirect = ReturnType<typeof loginRedirect>
 
@@ -14,8 +14,7 @@ export function loginRedirect() {
   const navigate = useNavigate()
   const continuation = () =>
     loginOAuthContinuation({
-      appOrigin: appOrigin(),
-      apiOrigin: apiOrigin(),
+      origin: appOrigin(),
       pathname: location.pathname,
       search: location.search,
     })

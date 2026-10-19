@@ -12,6 +12,7 @@ import {
   appPlan,
   deployPlan,
   missingSecrets,
+  originFrontsControlPlane,
   parseDeployArguments,
   providedSecrets,
   verifyPublicOrigin,
@@ -137,6 +138,15 @@ describe("deploy-user-cloudflare", () => {
         fetcher: responses([{ status: "ok", platformVersionTag: expected.versionTag }, { signedAuth: false }]),
       }),
     ).rejects.toThrow(/api\/claxedo\/mode did not converge/)
+  })
+
+  test("knows whether the public origin already fronts the control plane, so a first publish deploys before it reads the shell's deployment", async () => {
+    const hosted = Response.json({ deployment: { serverKind: "hosted" } })
+    expect(await originFrontsControlPlane("https://app.example.com", async () => hosted)).toBe(true)
+    const fallback = new Response("<!doctype html>", { headers: { "content-type": "text/html" } })
+    expect(await originFrontsControlPlane("https://app.example.com", async () => fallback)).toBe(false)
+    expect(await originFrontsControlPlane("https://app.example.com", async () => Response.json({ deployment: { serverKind: "daemon" } }))).toBe(false)
+    expect(await originFrontsControlPlane("https://app.example.com", async () => { throw new TypeError("ENOTFOUND") })).toBe(false)
   })
 
   test("retries a freshly attached domain through public DNS while keeping the HTTPS hostname", async () => {

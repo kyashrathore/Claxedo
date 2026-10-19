@@ -122,7 +122,7 @@ test("a plain sign-in stays in the app at its home", () => {
 const AUTHORIZE_SEARCH = "?response_type=code&client_id=claxedo-cli&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s"
 
 function continuationFor(extra: string) {
-  const continuation = loginOAuthContinuation({ appOrigin: "https://claxedo.example", apiOrigin: "https://api.example", pathname: "/login", search: `${AUTHORIZE_SEARCH}${extra}` })
+  const continuation = loginOAuthContinuation({ origin: "https://claxedo.example", pathname: "/login", search: `${AUTHORIZE_SEARCH}${extra}` })
   if (!continuation) throw new Error("expected an authorization continuation")
   return continuation
 }
