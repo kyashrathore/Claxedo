@@ -1,4 +1,4 @@
-import { createHash } from "crypto"
+import { createHash } from "node:crypto"
 import { fanoutEligibleAuth } from "./account-kinds"
 import type { CredentialWrite } from "./types"
 

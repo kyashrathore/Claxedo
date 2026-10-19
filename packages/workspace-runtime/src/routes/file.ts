@@ -110,7 +110,7 @@ export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
     })
     .get("/file", async (c) => {
       const opened = await openable(c)
-      if (opened instanceof Response) return opened
+      if (!("target" in opened)) return opened
       const { base, target } = opened
       // The tree lists a directory when the panel opens, seconds before the
       // first keystroke reaches /find/file — build the index off that path so
@@ -125,7 +125,7 @@ export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
     })
     .get("/file/content", async (c) => {
       const opened = await openable(c)
-      if (opened instanceof Response) return opened
+      if (!("target" in opened)) return opened
       try {
         return c.json(await readFileContent(opened.target.real))
       } catch (error) {
