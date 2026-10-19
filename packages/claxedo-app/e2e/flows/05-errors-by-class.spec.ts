@@ -37,6 +37,7 @@ test("05 errors by class: a send the server cannot receive shows the network cla
   await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
   const prompt = app.getByRole("textbox", { name: UI.composer })
   await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  await expect(app.getByRole("region", { name: UI.notifications })).toBeAttached()
   await stack.daemon.close()
   await sendPrompt(app, "This prompt never reaches the server", { waitForSend: false })
 

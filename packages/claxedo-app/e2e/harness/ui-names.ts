@@ -13,6 +13,7 @@ export const UI = {
   signedOutAccount: "Not signed in",
   signInAccount: "Sign in",
   palette: "Search files, commands, and sessions",
+  notifications: /^Notifications/,
   workedFor: /^Worked for/,
   explored: /^Explored/,
 } as const

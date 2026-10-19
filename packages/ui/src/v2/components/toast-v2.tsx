@@ -1,8 +1,8 @@
 import type { ToasterProps } from "solid-sonner"
 import { isRTL } from "@kobalte/core/i18n"
 import type { ComponentProps, JSX } from "solid-js"
-import { createContext, createSignal, lazy, onCleanup, onMount, Show, splitProps, useContext } from "solid-js"
-import { Portal } from "solid-js/web"
+import { createContext, createSignal, onCleanup, onMount, Show, splitProps, useContext } from "solid-js"
+import { Dynamic, Portal } from "solid-js/web"
 import { useI18n } from "../../context/i18n"
 import "./button-v2.css"
 import "./toast-v2.css"
@@ -11,20 +11,42 @@ export interface ToastV2RegionProps extends ToasterProps {}
 
 type Sonner = typeof import("solid-sonner")
 
+const [sonnerModule, setSonnerModule] = createSignal<Sonner>()
 let sonnerLoad: Promise<Sonner> | undefined
-let sonner: Sonner | undefined
+let subscribed = false
+const unpublished: Array<(module: Sonner) => void> = []
 
 function loadSonner(): Promise<Sonner> {
-  sonnerLoad ??= import("solid-sonner").then((module) => (sonner = module))
+  sonnerLoad ??= import("solid-sonner").then(
+    (module) => {
+      setSonnerModule(() => module)
+      return module
+    },
+    (error: unknown) => {
+      sonnerLoad = undefined
+      throw error
+    },
+  )
   return sonnerLoad
 }
 
 function withSonner(run: (module: Sonner) => void): void {
-  if (sonner) run(sonner)
-  else void loadSonner().then(run)
+  const module = sonnerModule()
+  if (module && subscribed) return run(module)
+  unpublished.push(run)
+  void loadSonner().catch(() => undefined)
 }
 
-const Toaster = lazy(() => loadSonner().then((module) => ({ default: module.Toaster })))
+function PublishWhenSubscribed(props: { module: Sonner }) {
+  onMount(() => {
+    subscribed = true
+    for (const run of unpublished.splice(0)) run(props.module)
+  })
+  onCleanup(() => {
+    subscribed = false
+  })
+  return null
+}
 
 const IDLE_MOUNT_TIMEOUT_MS = 250
 
@@ -36,10 +58,9 @@ function afterIdle(run: () => void): void {
 function ToastV2Region(props: ToastV2RegionProps) {
   const i18n = useI18n()
   const [local, rest] = splitProps(props, ["class", "className", "style", "toastOptions", "swipeDirections"])
-  const [idle, setIdle] = createSignal(false)
   let host!: HTMLDivElement
   onMount(() => {
-    afterIdle(() => setIdle(true))
+    afterIdle(() => void loadSonner().catch(() => undefined))
     const sync = () => {
       host.querySelectorAll<HTMLElement>(".toast-v2").forEach((element) => {
         const hidden = element.dataset.visible === "false"
@@ -55,24 +76,30 @@ function ToastV2Region(props: ToastV2RegionProps) {
   })
   return (
     <Portal ref={host}>
-      <Show when={idle()}>
-        <Toaster
-          position={isRTL(i18n.locale()) ? "bottom-left" : "bottom-right"}
-          offset={isRTL(i18n.locale()) ? { left: 32, bottom: 48 } : { right: 32, bottom: 48 }}
-          mobileOffset={16}
-          gap={12}
-          duration={5000}
-          swipeDirections={["bottom"]}
-          className={["toast-v2-region", local.className, local.class].filter(Boolean).join(" ")}
-          style={{ "--width": "320px", ...local.style } as JSX.CSSProperties}
-          toastOptions={{
-            ...local.toastOptions,
-            unstyled: true,
-            closeButton: true,
-            closeButtonAriaLabel: local.toastOptions?.closeButtonAriaLabel ?? i18n.t("ui.common.dismiss"),
-          }}
-          {...rest}
-        />
+      <Show when={sonnerModule()}>
+        {(module) => (
+          <>
+            <Dynamic
+              component={module().Toaster}
+              position={isRTL(i18n.locale()) ? "bottom-left" : "bottom-right"}
+              offset={isRTL(i18n.locale()) ? { left: 32, bottom: 48 } : { right: 32, bottom: 48 }}
+              mobileOffset={16}
+              gap={12}
+              duration={5000}
+              swipeDirections={["bottom"]}
+              className={["toast-v2-region", local.className, local.class].filter(Boolean).join(" ")}
+              style={{ "--width": "320px", ...local.style } as JSX.CSSProperties}
+              toastOptions={{
+                ...local.toastOptions,
+                unstyled: true,
+                closeButton: true,
+                closeButtonAriaLabel: local.toastOptions?.closeButtonAriaLabel ?? i18n.t("ui.common.dismiss"),
+              }}
+              {...rest}
+            />
+            <PublishWhenSubscribed module={module()} />
+          </>
+        )}
       </Show>
     </Portal>
   )
@@ -236,7 +263,8 @@ export function showToastV2(options: ToastV2Options | string) {
     actions: opts.actions?.map((action) => [action.label, action.variant]),
   })
   const active = activeToastV2ByKey.get(key)
-  const toasts = sonner ? sonner.toast.getToasts() : [...activeToastV2ById.values()]
+  const sonner = sonnerModule()
+  const toasts = sonner && subscribed ? sonner.toast.getToasts() : [...activeToastV2ById.values()]
 
   if (active && toasts.at(-1)?.id === active.id) {
     active.options = opts
