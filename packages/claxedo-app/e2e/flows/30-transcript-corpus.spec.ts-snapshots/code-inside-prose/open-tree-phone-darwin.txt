@@ -2,7 +2,7 @@ scrollTop: 0
 background subagents:
 (none)
 row 0:
-- text: Show the setup. acp-script:code-inside-prose-0 Build · <time>
+- text: Show the setup. acp-script:code-inside-prose-0 Scripted Acp · <time>
 - button "Copy message"
 row 1:
 - paragraph: "Run these first:"
@@ -15,4 +15,4 @@ row 1:
     - button "Copy"
 - paragraph: Then the setup is done.
 - button "Copy response"
-- text: Build · 0s
+- text: 0s

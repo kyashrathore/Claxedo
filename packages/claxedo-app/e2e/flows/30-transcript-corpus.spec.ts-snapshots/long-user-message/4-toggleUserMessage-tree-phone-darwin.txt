@@ -77,16 +77,16 @@ row 0:
     - strong: Requirement 24
     - text: ": inspect this part of the project. acp-script:long-user-message-1"
 - button "Show less" [expanded]
-- text: Build · <time>
+- text: Scripted Acp · <time>
 - button "Copy message"
 row 1:
 - paragraph: Markdown prompt received.
 - button "Copy response"
-- text: Build · 0s
+- text: 0s
 row 2:
-- text: A short prompt. acp-script:long-user-message-2 Build · <time>
+- text: A short prompt. acp-script:long-user-message-2 Scripted Acp · <time>
 - button "Copy message"
 row 3:
 - paragraph: All prompts received.
 - button "Copy response"
-- text: Build · 0s
+- text: 0s

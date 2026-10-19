@@ -2,7 +2,7 @@ scrollTop: 0
 background subagents:
 (none)
 row 0:
-- text: Show every block. acp-script:markdown-blocks-0 Build · <time>
+- text: Show every block. acp-script:markdown-blocks-0 Scripted Acp · <time>
 - button "Copy message"
 row 1:
 - paragraph: "Here are the blocks:"
@@ -66,4 +66,4 @@ row 1:
 - separator
 - paragraph: Done with the blocks.
 - button "Copy response"
-- text: Build · 0s
+- text: 0s
