@@ -21,6 +21,12 @@ async function openSettings(page: Page, isMobile: boolean) {
   await expect(page.getByTestId("settings-page")).toBeVisible()
 }
 
+async function openModelsWithoutProjects(signed: SignedStack, page: Page) {
+  await page.goto(`${signed.url}/settings/models`)
+  await expect(page.getByTestId("settings-page")).toBeVisible()
+  await expect(page.getByRole("heading", { level: 1, name: "Models" })).toBeVisible()
+}
+
 test("53 settings on the web: the signed-in person's organization, usage limits, sandbox and AI usage, models, connections and a project's Where it runs say only what applies on the web, at phone width too", async ({ signed, page, isMobile }, testInfo) => {
   const { orgName } = await colleague(signed, "Grace Member")
   await signed.makeWorkspace("settings-web", "Settings project")
@@ -123,7 +129,7 @@ test("53 settings on the web: the signed-in person's organization, usage limits,
   expect(text).not.toContain("secret.example.test")
 })
 
-test("53 settings on the web: a member chooses the organization account but neither adds, checks nor removes it, and the cloud choice is explained beside Accounts", async ({ signed, page, isMobile }) => {
+test("53 settings on the web: a member chooses the organization account but neither adds, checks nor removes it, and the cloud choice is explained beside Accounts", async ({ signed, page }) => {
   const { person: member } = await colleague(signed, "Grace Member")
   const put = (person: typeof member.person, body: unknown) =>
     hostedFetch(signed.hosted, "/api/claxedo/credentials", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, person)
@@ -132,8 +138,7 @@ test("53 settings on the web: a member chooses the organization account but neit
   const sources = await hostedFetch(signed.hosted, "/api/claxedo/credentials/account-sources", {}, member.person)
   expect(await sources.json()).toMatchObject({ can_manage_org_accounts: false, org: [expect.objectContaining({ label: "Acme Cursor" })] })
   await signed.signIn(page, member)
-  await openSettings(page, isMobile)
-  await openSection(page, isMobile, "Models")
+  await openModelsWithoutProjects(signed, page)
   const section = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Cursor", exact: true }) }).last()
   const cursor = page.getByRole("radiogroup", { name: "Cursor", exact: true })
   const org = cursor.locator('[data-slot="account-row"][data-account="org"]')
@@ -169,11 +174,10 @@ test("53 settings on the web: a member chooses the organization account but neit
   await expect(drawer).toHaveCount(0)
 })
 
-test("53 settings on the web: Claude Code's Models tab lists the account's models from the hosted plane and says nothing of a computer, its folders or its CLI", async ({ signed, page, isMobile }) => {
+test("53 settings on the web: Claude Code's Models tab lists the account's models from the hosted plane and says nothing of a computer, its folders or its CLI", async ({ signed, page }) => {
   await storeOwnerKey(signed, "claude-sdk", "sk-ant-api03-owner")
   await signed.signIn(page, signed.owner)
-  await openSettings(page, isMobile)
-  await openSection(page, isMobile, "Models")
+  await openModelsWithoutProjects(signed, page)
   const claude = harnessSection(page, "Claude Code")
   await claude.getByRole("tab", { name: "Models" }).click()
   for (const model of ["Opus", "Sonnet", "Haiku"]) await expect(claude.getByRole("switch", { name: model, exact: true })).toBeVisible()
