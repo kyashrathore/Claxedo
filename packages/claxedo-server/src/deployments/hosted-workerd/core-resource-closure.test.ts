@@ -78,7 +78,7 @@ describe("certified core resource ownership", () => {
 })
 
 const AGENT_PLUGINS_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-worker.agent-plugins.cf.ts"
-const TASKS_MODULE = "src/deployments/hosted-workerd/tasks-contributions.ts"
+const TASKS_MODULE = "src/deployments/hosted-workerd/tasks-plugin.ts"
 
 const temporaryDirectories: string[] = []
 

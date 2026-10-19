@@ -4,7 +4,7 @@ import {
   createClaxedoMcpRoutes,
   inProcessFetch,
   mcpAuditRecord,
-  type TasksGrant,
+  type McpServiceGrant,
   type VerifyRuntimeCredential,
 } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
@@ -36,7 +36,7 @@ export function firstPartyMcpRuntimeContribution(input: {
   verifyRuntimeCredential: VerifyRuntimeCredential
   /** This root's consented groups, read once at boot; the mount registers no others. */
   enabledToolGroups: readonly string[]
-  tasks?: () => TasksGrant | undefined
+  tasks?: () => McpServiceGrant | undefined
   ownerGrant?: () => string | undefined
   /** The owner grant's actor; a session is owner-driven only while every turn in its lineage is this actor's. */
   ownerActorId?: () => string | undefined

@@ -55,7 +55,7 @@ export type McpToolAccess = Readonly<{
 }>
 
 /** What the client was granted beyond the credential, read from the client rather than the credential. */
-export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean; ownerDriven?: boolean }>
+export type McpToolGrants = Readonly<{ tasks?: readonly string[]; appPlugins?: boolean; ownerDriven?: boolean }>
 
 export function toolGrants(client: ClaxedoMcpClient): McpToolGrants {
   return {

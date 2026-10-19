@@ -68,11 +68,13 @@ export type {
 } from "./host"
 export {
   PLUGIN_BACKEND_METHODS,
-  PLUGIN_CAPABILITIES,
+  PLUGIN_CAPABILITY_MAX_LENGTH,
+  PLUGIN_CAPABILITY_PATTERN,
   PLUGIN_NAME_MAX_LENGTH,
   PLUGIN_SERVER_ROUTE_PREFIX,
   PluginManifestError,
   PluginStatusHooksRefusedError,
+  isPluginCapability,
   pluginBackendRouteAllowed,
   pluginBackendSchema,
   pluginManifestSchema,

@@ -729,7 +729,10 @@ export const desktopRenderer: Policy = {
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
   // renderer. They add no package edge.
   // 1481/36, no headroom.
-  ceilings: { modules: 1481, packages: 36 },
+  // -1 module (owner: the app's server domain): `server/availability.ts`, the
+  // Tasks route probe, is gone; the bootstrap's `deployment.capabilities`
+  // says which plugin capabilities the server offers. 1480/36, no headroom.
+  ceilings: { modules: 1480, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -14,7 +14,6 @@ export type PluginHostDeps = {
 
 export type PluginHost = {
   readonly plugins: Accessor<readonly PluginSummary[]>
-  readonly required: Accessor<ReadonlySet<PluginCapability>>
   readonly put: (build: PluginBuild) => void
   readonly drop: (pluginId: string) => void
   readonly switchOn: (pluginId: string) => void
@@ -73,7 +72,6 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
   const policy = createBuildPolicy(deps)
   const [lifecycles, setLifecycles] = createSignal<readonly PluginLifecycle[]>([])
   const summaries = createMemo<readonly PluginSummary[]>(() => lifecycles().map((lifecycle) => pluginSummaryOf(lifecycle, policy, preferences)))
-  const required = createMemo<ReadonlySet<PluginCapability>>(() => new Set(lifecycles().flatMap((lifecycle) => lifecycle.build().manifest.requires)))
   const find = (pluginId: string) => lifecycles().find((lifecycle) => lifecycle.id === pluginId)
   const drop = (pluginId: string) => {
     const lifecycle = find(pluginId)
@@ -83,7 +81,6 @@ export function createPluginHost(deps: PluginHostDeps): PluginHost {
   }
   return {
     plugins: summaries,
-    required,
     put: (build) => {
       const existing = find(build.manifest.id)
       if (existing) return existing.setBuild(build)

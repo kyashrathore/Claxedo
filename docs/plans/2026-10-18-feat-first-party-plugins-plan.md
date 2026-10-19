@@ -688,7 +688,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - binary fetch returns exact bytes.
 - **Checks:** app test, typecheck and check; plugin-api test; ratchets plus desktop `verify:closure`.
 - Progress:
-- [ ] **S6. Server plugin contract and bootstrap capabilities.**
+- [x] **S6. Server plugin contract and bootstrap capabilities.**
 - Add `server-core/src/plugins/server-plugin.ts`.
 - Local: `StartLocalServerOptions.plugins`. Interim builders `createLocalTasksPlugin` (from `local-server/src/tasks/`) and `createLocalDocumentsPlugin` (from `app/local-documents.ts`) wrap today's code in place.
 - Hosted: `HostedCoreAppOptions.plugins`; interim hosted builders wrap `tasks-contributions.ts` and the R2 backend in place.
@@ -696,7 +696,13 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
 - **Delete:** `tasksGrants`, `documents` option, `deployment.documents`, `PLUGIN_CAPABILITIES`, `queries.tasks.availability` and its key and freshness entries.
 - **Tests:** local bootstrap and route mounting (`/api/claxedo/tasks`, `/documents` answer as before), hosted shell bootstrap per profile, app `server/capabilities.test.ts` and wire tests, plugin-api manifest tests, duplicate plugin id refused.
 - **Checks:** local, server, app, plugin-api tests; typecheck all; ratchets; `verify:closure` for local-server and server; e2e 12 (boot reads nothing under Tasks), 34, 35, 53, 54.
-- Progress:
+- **As built (recorded where the code proved the interface wrong):**
+  - `LocalServerPlugin.routeContributions(host: LocalServerPluginHost)` is a function of the host's `{ authConfig, verifier }`: the local `/documents` routes verify a signed caller with the host's own `services.auth`, which the composition root does not hold. `HostedServerPlugin.routeContributions` stays an array; `ServerPluginBase` carries `id`, `capability` and `mcp`.
+  - Deleting `tasksGrants` needs the grant to come from the plugin, so `mcp.service` (`McpServiceContribution`) lands here; `TasksGrant` in `@claxedo/mcp` became `McpServiceGrant` (`operations: string[]`). Until S7 the local mount maps `services.tasks` and `services.documents` onto the client's existing fields.
+  - The hosted bootstrap now reports `documents`: the core Worker mounts `/documents` in every profile, where it used to declare `documents: false`. No app plugin requires it yet.
+  - Interim builders: `claxedo-server/src/deployments/hosted-workerd/tasks-plugin.ts` (renamed from `tasks-contributions.ts`) and `claxedo-server/src/documents/hosted-plugin.ts`, which resolves the authority from `services` at request time.
+  - `PluginCapability` stays as `string` with `isPluginCapability` and `PLUGIN_CAPABILITY_PATTERN`; `PluginHost.required`, which only gated the probe, is gone.
+- Progress: done (lane C). Ceilings: local-server 74→73 (`app/local-documents.ts` left the entry), server-workerd 174→175 and the deployment closures 174/233/245→175/234/246 (`documents/hosted-plugin.ts`), desktop-renderer 1481→1480 (`server/availability.ts`). Verified: local, server (+ `scripts/sandbox/cloudflare-worker`), plugin-api tests and app `src/server`, `src/plugins` tests, app `check` and `typecheck:e2e`; `bun turbo typecheck --concurrency=2`; ratchets; local-server and server `verify:closure`; e2e 12-workbench-shell and 35 on web and phone. OpenCode-backed suites need Node 24 (`patches/README.opencode-node.md`); they pass under 24.18.0. Not verified: e2e 53 and 54 (the hosted sandbox worker's local brokering driver runs only on macOS) and 34 (no Electron binary in this container).
 - [ ] **S7. MCP tool group contribution.**
 - Add `@claxedo/mcp/tool-group`; generic `services` grants.
 - Move `tools/tasks.ts` (+ test) to `packages/claxedo-tasks/src/mcp/`; the local and hosted `mcp` contributions supply `services.tasks` (`TASKS_OPERATIONS` stays the local operation set) and `services.documents`.

@@ -8,7 +8,7 @@ import {
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { asRecord, parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
-import type { TasksGrant } from "@claxedo/mcp"
+import type { McpServiceGrant } from "@claxedo/mcp"
 import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "./half-life-renewal"
 
 /**
@@ -40,11 +40,11 @@ export type TasksGrantState =
   /** Expired with no renewal landed; every request is answered here. */
   | Readonly<{ kind: "lapsed" }>
 
-export type WorkspaceRuntimeTasksGrant = TasksGrant & Readonly<{
+export type WorkspaceRuntimeTasksGrant = McpServiceGrant & Readonly<{
   readonly state: TasksGrantState
   readonly expiresAt: number | undefined
   /** This grant while it can still reach the control plane; nothing once it has lapsed, so a new MCP session gets no Tasks client. */
-  current(): TasksGrant | undefined
+  current(): McpServiceGrant | undefined
   start(): void
   stop(): void
 }>

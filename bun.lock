@@ -404,6 +404,7 @@
         "@claxedo/egress-broker": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/mcp": "workspace:*",
         "@claxedo/sandbox-contract": "workspace:*",
         "@claxedo/session-core": "workspace:*",
         "@claxedo/tasks": "workspace:*",

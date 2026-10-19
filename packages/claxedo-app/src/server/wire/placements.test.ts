@@ -6,7 +6,7 @@ import { bootstrapCatalog } from "./placements"
 const signedBody = {
   healthy: true,
   events: { hostAggregate: false },
-  deployment: { serverKind: "daemon", issuesSessions: true, documents: false, connections: true },
+  deployment: { serverKind: "daemon", issuesSessions: true, capabilities: ["tasks"], connections: true },
   host: { enrollment: "enr_self", name: "Ada's MacBook" },
   project: [
     {
@@ -28,7 +28,7 @@ const signedBody = {
 test("placements: a signed bootstrap places each control-plane workspace by its id, reachable and in the lifecycle the server states", () => {
   const catalog = bootstrapCatalog(signedBody)
 
-  expect(catalog.declaration).toEqual({ serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: true, enrollmentId: "enr_self", machineName: "Ada's MacBook" })
+  expect(catalog.declaration).toEqual({ serverKind: "daemon", hostAggregate: false, issuesSessions: true, capabilities: ["tasks"], connections: true, enrollmentId: "enr_self", machineName: "Ada's MacBook" })
   expect(catalog.placements.map(({ placement, route }) => ({ id: placement.id, kind: placement.kind, reachable: placement.reachable, lifecycle: placement.kind === "cloud" ? placement.lifecycle : undefined, route }))).toEqual([
     { id: placementId("ws_running"), kind: "cloud", reachable: true, lifecycle: "live", route: { directory: "workspace:ws_running", workspaceId: "ws_running", remote: true } },
     { id: placementId("ws_stopped"), kind: "cloud", reachable: false, lifecycle: "asleep", route: { directory: "workspace:ws_stopped", workspaceId: "ws_stopped", remote: true } },

@@ -209,7 +209,12 @@ export const serverWorkerd: Policy = {
   // (`deployments/hosted-shared/hosted-draft-catalogs.ts`), split from the
   // core app. It adds no package edge: the harness was already in the Worker.
   // 174/22, no headroom.
-  ceilings: { modules: 174, packages: 22 },
+  // +1 module (owner: hosted Pages, composed in every profile):
+  // `documents/hosted-plugin.ts` builds the Documents server plugin the core
+  // Worker root hands the core app, which mounts its `/documents` and `/p`
+  // routes and reports its capability. It reaches only owners already here.
+  // 175/22, no headroom.
+  ceilings: { modules: 175, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

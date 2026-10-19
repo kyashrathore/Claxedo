@@ -8,7 +8,7 @@ import {
 } from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
-import { hostedTasksRouteContributions } from "./tasks-contributions"
+import { createHostedTasksPlugin } from "./tasks-plugin"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
@@ -95,7 +95,7 @@ export function composeBetterAuthD1AgentPlugins(
     }
   }
   base.runtimeDelivery?.composeRuntime({ prepareRuntime, pluginRuntime: feature.pluginRuntime })
-  const tasks = hostedTasksRouteContributions({
+  const tasks = createHostedTasksPlugin({
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
@@ -133,7 +133,8 @@ export function composeBetterAuthD1AgentPlugins(
       ...base.options,
       sandboxPasses: passes,
       ...(sessionRowsPasses ? { sessionRowsPasses } : {}),
-      routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
+      routeContributions: [...feature.routeContributions, pluginBackends],
+      plugins: [tasks],
       integrationRoutes: feature.integrationRoutes,
       sessionHostPlugins: feature.sessionHostPlugins,
       sessionHostToolGroups: feature.sessionHostToolGroups,

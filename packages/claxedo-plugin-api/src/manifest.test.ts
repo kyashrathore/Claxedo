@@ -34,6 +34,10 @@ describe("readPluginManifest", () => {
     expect(manifest.backend).toEqual({ entry: "./backend.ts", objects: [], outbound: [], routes: ["GET /"] })
   })
 
+  test("reads any capability id a server may report, since the server decides what it offers", () => {
+    expect(readPluginManifest({ claxedo: { ...appOnly, requires: ["tasks", "claxedo-review"] } }).requires).toEqual(["tasks", "claxedo-review"])
+  })
+
   test("keeps every declared field", () => {
     expect(readPluginManifest(packageJson)).toEqual(packageJson.claxedo)
   })
@@ -44,7 +48,7 @@ describe("readPluginManifest", () => {
     ["an id ending in a dash", { claxedo: { ...packageJson.claxedo, id: "notes-" } }, "claxedo.id"],
     ["an app entry outside the package", { claxedo: { ...packageJson.claxedo, app: "src/app.tsx" } }, "claxedo.app"],
     ["a route outside the Claxedo server", { claxedo: { ...packageJson.claxedo, server: { routes: ["/api/wr/session"] } } }, "claxedo.server.routes.0"],
-    ["an unknown capability", { claxedo: { ...packageJson.claxedo, requires: ["network"] } }, "claxedo.requires.0"],
+    ["a capability that is not an id", { claxedo: { ...packageJson.claxedo, requires: ["Tasks!"] } }, "claxedo.requires.0"],
     ["an operation with no namespace", { claxedo: { ...packageJson.claxedo, server: { operations: ["list"] } } }, "claxedo.server.operations.0"],
     ["a field the manifest does not know", { claxedo: { ...packageJson.claxedo, sandbox: true } }, "claxedo"],
     ["a backend entry outside the package", { claxedo: { ...appOnly, backend: { ...packageJson.claxedo.backend, entry: "/src/backend.ts" } } }, "claxedo.backend.entry"],

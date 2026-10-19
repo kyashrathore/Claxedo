@@ -4,7 +4,9 @@ import { PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
 export const PLUGIN_NAME_MAX_LENGTH = 80
 
 const STATUS_HOOKS_REFUSAL = "status hook templates are honored only from Claxedo's bundled status-hooks plugin"
-export const PLUGIN_CAPABILITIES = ["tasks", "documents"] as const
+/** A server capability an app plugin requires, as a server's bootstrap reports it (`tasks`, `documents`). */
+export const PLUGIN_CAPABILITY_PATTERN = /^[a-z][a-z0-9-]*$/
+export const PLUGIN_CAPABILITY_MAX_LENGTH = 64
 export const PLUGIN_SERVER_ROUTE_PREFIX = "/api/claxedo/"
 export const PLUGIN_BACKEND_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const
 
@@ -18,7 +20,11 @@ const BACKEND_ROUTE_PATTERN = new RegExp(
   String.raw`^(?:${PLUGIN_BACKEND_METHODS.join("|")}) \/(?:\*|${BACKEND_ROUTE_SEGMENT}(?:\/${BACKEND_ROUTE_SEGMENT})*(?:\/\*)?)?$`,
 )
 
-export type PluginCapability = (typeof PLUGIN_CAPABILITIES)[number]
+export type PluginCapability = string
+
+export function isPluginCapability(value: string): value is PluginCapability {
+  return value.length <= PLUGIN_CAPABILITY_MAX_LENGTH && PLUGIN_CAPABILITY_PATTERN.test(value)
+}
 
 export const pluginServerAccessSchema = z
   .object({
@@ -46,7 +52,7 @@ export const pluginManifestSchema = z
     name: z.string().trim().min(1).max(PLUGIN_NAME_MAX_LENGTH),
     version: z.string().regex(VERSION_PATTERN),
     app: z.string().regex(ENTRY_PATTERN),
-    requires: z.array(z.enum(PLUGIN_CAPABILITIES)).default([]),
+    requires: z.array(z.string().max(PLUGIN_CAPABILITY_MAX_LENGTH).regex(PLUGIN_CAPABILITY_PATTERN)).default([]),
     server: pluginServerAccessSchema.default({ routes: [], operations: [] }),
     backend: pluginBackendSchema.optional(),
     // A template defines shell wrappers and rewrites files in the person's home,

@@ -63,7 +63,7 @@ This is a real channel-to-session path. It does not yet implement task intake, p
 
 Documents already has an authorized service, version-aware operations, history and local/hosted backends. Reuse it for user-visible documents and their history. Task attachments today are input images; they are not a general document/result ledger. [Documents service](../../packages/claxedo-server-core/src/documents/service.ts), [history](../../packages/claxedo-server-core/src/documents/history.ts), [agent tools](../../packages/claxedo-mcp/src/tools/documents.ts).
 
-The current Task contracts have no durable wake, trigger, check script, memory namespace, run ledger or human case ownership. The hosted core Worker intentionally excludes optional services' jobs. A Task scheduler must be composed into the appropriate optional service/deployment; adding a timer to a client or assuming the core Worker already schedules tasks would be incorrect. [Core composition](../../packages/claxedo-server/src/deployments/hosted-workerd/core-worker.cf.ts), [Task route composition](../../packages/claxedo-server/src/deployments/hosted-workerd/tasks-contributions.ts).
+The current Task contracts have no durable wake, trigger, check script, memory namespace, run ledger or human case ownership. The hosted core Worker intentionally excludes optional services' jobs. A Task scheduler must be composed into the appropriate optional service/deployment; adding a timer to a client or assuming the core Worker already schedules tasks would be incorrect. [Core composition](../../packages/claxedo-server/src/deployments/hosted-workerd/core-worker.cf.ts), [Task route composition](../../packages/claxedo-server/src/deployments/hosted-workerd/tasks-plugin.ts).
 
 ## 3. Product scope: the whole range of work
 

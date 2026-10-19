@@ -10,7 +10,7 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { controlBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { runGit } from "@claxedo/workspace-runtime/host"
-import type { ControlPlaneAuthConfig, ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { LocalServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
 
 const log = Log.create({ service: "local-documents" })
 
@@ -32,19 +32,38 @@ export const documentGit: LocalDocumentsBackendDependencies["runGit"] = async (a
     })
   ).trim()
 
-export function localDocumentsRoutes(auth: {
-  authConfig?: ControlPlaneAuthConfig
-  verifier?: ControlPlaneTokenVerifier
-  authority?: LocalDocumentsBackendDependencies["sessionAuthority"]
-}) {
-  const backend = createLocalDocumentsBackend({
-    resolveWorkspace,
-    sessionMeta,
-    sessionAuthority: auth.authority,
-    dataDir,
-    reportError: (error) => log.error("Document operation failed", { error }),
-    runGit: documentGit,
-  })
-  setDocumentChangedSink((event) => controlBus.publish(event))
-  return DocumentsRoutes({ backend, authConfig: auth.authConfig, verifier: auth.verifier })
+/**
+ * The repository and managed document backend for this machine's own
+ * workspaces, mounted at `/documents`. Its routes verify a signed caller with
+ * the host's own authentication, which the host hands over at mount.
+ */
+export function createLocalDocumentsPlugin(): LocalServerPlugin {
+  return {
+    id: "claxedo-documents",
+    capability: "documents",
+    routeContributions: (host) => {
+      const backend = createLocalDocumentsBackend({
+        resolveWorkspace,
+        sessionMeta,
+        dataDir,
+        reportError: (error) => log.error("Document operation failed", { error }),
+        runGit: documentGit,
+      })
+      setDocumentChangedSink((event) => controlBus.publish(event))
+      return [{
+        id: "claxedo-documents",
+        path: "/documents",
+        routes: DocumentsRoutes({ backend, authConfig: host.authConfig, verifier: host.verifier }),
+      }]
+    },
+    mcp: {
+      service: {
+        id: "documents",
+        grant: async ({ workspaceId, inProcessFetch }) => ({
+          fetch: inProcessFetch({ "x-workspace-id": workspaceId }),
+          operations: [],
+        }),
+      },
+    },
+  }
 }
