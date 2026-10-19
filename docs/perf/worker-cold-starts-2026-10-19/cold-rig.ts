@@ -89,7 +89,8 @@ async function round(n: number) {
       await auth.prepare(statement).run()
     }
   }
-  await applyControlPlaneBaseline((await mf.getD1Database("CONTROL_PLANE_DB")) as never)
+  const controlPlane: D1Database = await mf.getD1Database("CONTROL_PLANE_DB")
+  await applyControlPlaneBaseline(controlPlane)
   const rows: string[] = []
   const hit = async (label: string, route: string, headers: Record<string, string> = { origin: APP }) => {
     const t = performance.now()
