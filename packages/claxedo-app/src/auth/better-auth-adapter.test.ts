@@ -139,7 +139,7 @@ test("better auth: a failed descriptor read makes sign-in unavailable with the r
 
 test("better auth: the descriptor the deployment published into the shell starts sign-in without a request, and sign-in still reads the live one", async () => {
   const { adapter, calls } = fakeServer(["github"])
-  publish({ server: api, bootstrap: {}, authDescriptor: descriptor(["email-password"]) })
+  publish({ server: app, bootstrap: {}, authDescriptor: descriptor(["email-password"]) })
   await adapter.initialize(deployment)
   const auth = adapter.useAuth()
   expect(auth.methods()).toEqual(["email-password"])
@@ -151,7 +151,7 @@ test("better auth: the descriptor the deployment published into the shell starts
 
 test("better auth: an expired published descriptor is never used; initialize reads the live one", async () => {
   const { adapter, calls } = fakeServer(["github"])
-  publish({ server: api, bootstrap: {}, authDescriptor: { ...descriptor(["email-password"]), expiresAt: Date.now() - 1 } })
+  publish({ server: app, bootstrap: {}, authDescriptor: { ...descriptor(["email-password"]), expiresAt: Date.now() - 1 } })
   await adapter.initialize(deployment)
   expect(adapter.useAuth().methods()).toEqual(["github"])
   expect(calls).toEqual(["descriptor"])
