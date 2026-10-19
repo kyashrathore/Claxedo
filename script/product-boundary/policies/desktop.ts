@@ -755,8 +755,11 @@ export const desktopRenderer: Policy = {
   // a link and drops other remote fetches while it sanitizes (owner: the
   // app's transcript domain, `transcript/markdown-remote-media.ts`). It adds
   // no package edge.
-  // 1467/36, no headroom.
-  ceilings: { modules: 1467, packages: 36 },
+  // The sign-in page's continuation of an authorization request, which waits
+  // for a fresh sign-in when the request asks for one (owner: the app's auth
+  // domain, `auth/view/login-redirect.ts`). It adds no package edge.
+  // 1468/36, no headroom.
+  ceilings: { modules: 1468, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
