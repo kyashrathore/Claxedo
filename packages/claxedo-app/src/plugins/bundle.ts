@@ -21,3 +21,11 @@ export function bundleDefinition(module: unknown): PluginDefinition | undefined 
   const candidate = readField(module, "default")
   return isPluginDefinition(candidate) ? candidate : undefined
 }
+
+export function throwingDefinition(error: unknown): PluginDefinition {
+  return {
+    activate: () => {
+      throw error
+    },
+  }
+}

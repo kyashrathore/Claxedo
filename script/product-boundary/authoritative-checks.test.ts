@@ -13,6 +13,7 @@ describe("product boundary authoritative checks", () => {
       "@claxedo/host-connector",
       "@claxedo/local-server",
       "@claxedo/server",
+      "@claxedo/tasks",
     ])
 
     const commands = Object.values(AUTHORITATIVE_CHECKS)
@@ -46,6 +47,7 @@ describe("product boundary authoritative checks", () => {
       "hosted workerd built entry smoke",
       "Worker deployment closures",
     ])
+    expect(AUTHORITATIVE_CHECKS["@claxedo/tasks"]?.map((check) => check.label)).toEqual(["tasks app entry"])
     expect(commands.filter((command) => command.includes("verify:closure"))).toEqual([])
   })
 

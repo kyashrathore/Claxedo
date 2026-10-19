@@ -4,7 +4,7 @@ import { usePhone } from "@/lib/viewport"
 import { useErrorCopy } from "@/i18n"
 import { sessionId, toAppError, useServer } from "@/server"
 import type { SessionView } from "@/session"
-import { sessionLinkPath } from "@/shell"
+import { sessionLinkPath, useShellRegistries } from "@/shell"
 import { DataProvider, TranscriptKitProviders, type PromptSendAnswer, type SubagentStopAnswer, type TranscriptUserMessage } from "@/transcript"
 import { McpAppSessionProvider } from "@/mcp-apps"
 import { MessageTimeline, type SessionErrorClass, type TimelineHost, type TimelineNavTurn } from "./timeline"
@@ -35,6 +35,7 @@ export function SessionTimeline(props: {
 }) {
   const phone = usePhone()
   const server = useServer()
+  const registries = useShellRegistries()
   const users = createMemo(() => userMessages(props.view))
   const current = () => props.navTurns.find((turn) => turn.id === props.scroll.selected())
   const t = useSessionScreenText()
@@ -68,6 +69,7 @@ export function SessionTimeline(props: {
           sessionLinkPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) }, server.placements.byId(props.view.ref.placementId))
         }
         resolveSubagents={resolveSubagents}
+        toolCards={registries.toolCards.list}
         loadToolBody={(part) => void props.view.loadPart(part.messageID, part.id)}
         stopBackgroundTask={props.follow ? undefined : stopBackgroundTask}
         sendPrompt={props.canPrompt ? sendPrompt : undefined}

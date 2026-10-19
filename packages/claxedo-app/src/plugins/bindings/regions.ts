@@ -3,7 +3,7 @@ import type { PageDefinition, PluginApi, SettingsSectionDefinition } from "@clax
 import { fillPattern, settingsPath, type PageEntry, type PageProps, type SettingsSection } from "@/shell"
 import { boundedView } from "../boundary"
 import { PluginSurfacePage, PluginSurfaceSettings } from "../surface-page/view"
-import { entryId, PluginEntryError, type BindingScope } from "./services"
+import { entryId, pageEntryFor, PluginEntryError, type BindingScope } from "./services"
 
 export const PLUGIN_ICON = "grid-plus"
 
@@ -39,8 +39,7 @@ function registerPage(scope: BindingScope, page: PageDefinition) {
 }
 
 function openPage(scope: BindingScope, pageId: string, params?: Readonly<Record<string, string>>) {
-  const pages = scope.services.registries.pages.list()
-  const entry = pages.find((page) => page.id === entryId(scope.manifest.id, pageId)) ?? pages.find((page) => page.id === pageId)
+  const entry = pageEntryFor(scope, pageId)
   if (!entry) throw new PluginEntryError(scope.manifest.id, `no page ${pageId} is registered`)
   scope.services.routing.navigate(fillPattern(entry.path, params))
 }

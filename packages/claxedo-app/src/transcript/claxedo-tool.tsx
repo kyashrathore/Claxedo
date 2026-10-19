@@ -1,25 +1,18 @@
 import { createMemo, For, Show } from "solid-js"
-import { Icon, type IconProps, TextShimmer } from "@/ui"
+import { TextShimmer } from "@/ui"
+import { SurfaceIcon } from "@/surface"
 import { useTranscriptI18n } from "./i18n"
 import { useData } from "./data"
 import { BasicTool } from "./basic-tool"
 import { claxedoToolName } from "@claxedo/agent-runtime-contract"
-import { claxedoToolView, taskStatusLabel, type ClaxedoLink } from "./claxedo-tool-view"
+import { claxedoToolView } from "./claxedo-tool-view"
+import { claxedoLinkHref, type ClaxedoLink, type ClaxedoStatus } from "./tool-card-template"
 import { safeLinkHref } from "./safe-link"
 import type { ToolProps } from "./message-part"
 
-const STATUS_ICONS: Record<string, IconProps["name"]> = {
-  backlog: "circle-dashed",
-  todo: "circle",
-  doing: "circle-half",
-  needs_you: "circle-alert",
-  done: "circle-check",
-}
-
 function CardLink(props: { link: ClaxedoLink; slot: "basic-tool-tool-subtitle" | "claxedo-tool-row-link" | "claxedo-tool-fact-link"; class?: string }) {
   const data = useData()
-  const href = () =>
-    safeLinkHref(props.link.kind === "task" ? data.taskHref?.(props.link.id) : data.sessionHref?.(props.link.id))
+  const href = () => safeLinkHref(claxedoLinkHref(props.link, data.sessionHref))
   const activate = (event: MouseEvent) => {
     event.stopPropagation()
   }
@@ -44,12 +37,11 @@ function CardLink(props: { link: ClaxedoLink; slot: "basic-tool-tool-subtitle" |
   )
 }
 
-function StatusPill(props: { status: string }) {
-  const i18n = useTranscriptI18n()
+function StatusPill(props: { status: ClaxedoStatus }) {
   return (
-    <span data-slot="claxedo-tool-status" data-status={props.status}>
-      <Show when={STATUS_ICONS[props.status]}>{(name) => <Icon name={name()} size="small" />}</Show>
-      {taskStatusLabel(props.status, i18n)}
+    <span data-slot="claxedo-tool-status" data-tone={props.status.tone}>
+      <Show when={props.status.icon}>{(name) => <SurfaceIcon name={name()} size="small" />}</Show>
+      {props.status.label}
     </span>
   )
 }
@@ -59,7 +51,7 @@ export function ClaxedoTool(props: ToolProps) {
   const data = useData()
   const name = createMemo(() => claxedoToolName(props.tool, props.input) ?? props.tool)
   const view = createMemo(() =>
-    claxedoToolView({ name: name(), input: props.input, output: props.output, i18n }),
+    claxedoToolView({ name: name(), input: props.input, output: props.output, i18n, toolCards: data.toolCards() }),
   )
   const href = () => safeLinkHref(data.claxedoToolHref?.(name(), props.input, props.output))
   const running = () => props.status === "pending" || props.status === "running"

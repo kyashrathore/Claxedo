@@ -6,7 +6,7 @@ import type { PluginBuild } from "./model"
 
 const build: PluginBuild = {
   manifest: { id: "fixture", name: "Fixture", version: "0.1.0", app: "./app.tsx", requires: [], server: { routes: [], operations: [] } },
-  origin: { hash: "a".repeat(16), directory: "/tmp/fixture" },
+  origin: { kind: "live", hash: "a".repeat(16), directory: "/tmp/fixture" },
   definition: { activate: () => undefined },
 }
 

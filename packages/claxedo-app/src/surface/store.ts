@@ -4,7 +4,8 @@ import { surfaceMessageSchema, surfaceMessageSurfaceId, type SurfaceMessage } fr
 import { machine, type Machine } from "@/lib/machine"
 import { createComponentRegistry } from "./component-registry"
 import { createSurfaceData } from "./data-model"
-import { parsePointer, ROOT_PATH } from "./data-path"
+import { parsePointer } from "@/lib/json-pointer"
+import { ROOT_PATH } from "./data-path"
 import {
   surfaceLifecycle,
   SurfaceMessageError,

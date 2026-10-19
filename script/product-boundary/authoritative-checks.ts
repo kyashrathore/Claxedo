@@ -93,6 +93,13 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
       ],
     },
   ],
+  "@claxedo/tasks": [
+    {
+      label: "tasks app entry",
+      cwd: "packages/claxedo-tasks",
+      command: ["bun", "test", "./src/app"],
+    },
+  ],
   "@claxedo/desktop": [
     {
       label: "desktop production build with sign-in",

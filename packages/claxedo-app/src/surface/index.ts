@@ -1,6 +1,7 @@
 export { SurfaceMessageError, type Surface, type SurfaceSource } from "./model"
 export { createSurface } from "./store"
 export { SurfaceView, type SurfaceViewProps } from "./view/surface-view"
+export { SurfaceIcon } from "./view/surface-icon"
 export { SurfaceRichTextProvider, type SurfaceRichText } from "./view/surface-rich-text"
 export { SurfaceReferencesProvider, type SurfaceAgentConfigurationPickerProps, type SurfaceReferences } from "./view/surface-references"
 export { blobBase64, fitImage, imageDataUrl, imageTypeOf } from "./image-fit"

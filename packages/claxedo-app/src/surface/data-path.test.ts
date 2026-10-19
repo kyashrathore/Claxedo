@@ -1,18 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test"
-import { isBinding, itemScope, parsePointer, pathsOverlap, resolvePath } from "./data-path"
-
-describe("parsePointer", () => {
-  test("reads / and the empty pointer as the whole model", () => {
-    expect(parsePointer("/")).toEqual([])
-    expect(parsePointer("")).toEqual([])
-  })
-
-  test("splits segments and unescapes ~1 and ~0", () => {
-    expect(parsePointer("/items/3/title")).toEqual(["items", "3", "title"])
-    expect(parsePointer("/a~1b/c~0d")).toEqual(["a/b", "c~d"])
-  })
-})
+import { isBinding, itemScope, pathsOverlap, resolvePath } from "./data-path"
 
 describe("resolvePath", () => {
   const scope = itemScope(["regions"], 1)

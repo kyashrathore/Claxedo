@@ -1,11 +1,11 @@
 import type { PluginDefinition, PluginManifest } from "@claxedo/plugin-api"
 import type { LivePlugin } from "@/server"
 import type { PluginServerCalls } from "../api"
-import { moduleDictionary } from "../dictionary"
 import { frameDefinition } from "../frame/definition"
 import type { FrameSource } from "../frame/open"
 import type { PluginBuild, PluginOrigin } from "../model"
-import { bundleDefinition, importBundle, NOT_A_PLUGIN } from "../bundle"
+import { throwingDefinition } from "../bundle"
+import { importInApp } from "../in-app"
 
 export class LivePluginLoadError extends Error {
   constructor(readonly pluginId: string, message: string) {
@@ -30,17 +30,12 @@ export function rowManifest(row: LivePlugin): PluginManifest {
 
 function originOf(row: LivePlugin, hash: string): PluginOrigin {
   return {
+    kind: "live",
     hash,
     directory: row.directory,
     ...(row.builtAt && row.hash === hash ? { builtAt: row.builtAt } : {}),
     ...(row.lastError ? { buildError: row.lastError } : {}),
   }
-}
-
-function definitionOf(row: LiveRow, module: unknown): PluginDefinition {
-  const definition = bundleDefinition(module)
-  if (!definition) throw new LivePluginLoadError(row.id, NOT_A_PLUGIN)
-  return definition
 }
 
 function manifestOf(row: LiveRow, definition: PluginDefinition): PluginManifest {
@@ -53,22 +48,14 @@ export function failingBuild(row: LivePlugin, hash: string, error: unknown): Plu
   return {
     manifest: rowManifest(row),
     origin: originOf(row, hash),
-    definition: {
-      activate: () => {
-        throw error
-      },
-    },
+    definition: throwingDefinition(error),
   }
 }
 
 export async function loadLiveBuild(row: LiveRow, calls: PluginServerCalls): Promise<PluginBuild> {
   try {
-    const { installPluginRuntime } = await import("./runtime")
-    installPluginRuntime()
-    const module = await importBundle(await calls.liveBundle(row.id, row.hash))
-    const definition = definitionOf(row, module)
-    const dictionary = moduleDictionary(module)
-    return { manifest: manifestOf(row, definition), origin: originOf(row, row.hash), definition, ...(dictionary ? { dictionary } : {}) }
+    const module = await importInApp(row.id, await calls.liveBundle(row.id, row.hash))
+    return { manifest: manifestOf(row, module.definition), origin: originOf(row, row.hash), ...module }
   } catch (error) {
     return failingBuild(row, row.hash, error)
   }

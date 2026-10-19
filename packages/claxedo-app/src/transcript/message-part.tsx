@@ -45,6 +45,7 @@ import { ToolAttachments, useImagePreview } from "./tool-attachments"
 import { dispatchTranscriptLinkOpen } from "./transcript-link"
 import { isMcpAppPart, McpAppToolRow } from "@/mcp-apps"
 import { claxedoToolTitle, claxedoToolView } from "./claxedo-tool-view"
+import { claxedoLinkHref } from "./tool-card-template"
 import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
 import { Markdown } from "./markdown"
@@ -1007,11 +1008,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const claxedoSubject = createMemo(() => {
     const name = claxedo()
     if (!name) return undefined
-    const view = claxedoToolView({ name, input: input(), output: undefined, i18n })
-    if (view.link) {
-      const href = view.link.kind === "task" ? data.taskHref?.(view.link.id) : data.sessionHref?.(view.link.id)
-      return { subtitle: view.link.label, href }
-    }
+    const view = claxedoToolView({ name, input: input(), output: undefined, i18n, toolCards: data.toolCards() })
+    if (view.link) return { subtitle: view.link.label, href: claxedoLinkHref(view.link, data.sessionHref) }
     return { subtitle: view.subject ?? view.title, href: data.claxedoToolHref?.(name, input()) }
   })
 
@@ -1080,7 +1078,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   input={input()}
                   title={
                     claxedo()
-                      ? claxedoToolTitle(claxedo()!, i18n)
+                      ? claxedoToolTitle(claxedo()!, i18n, data.toolCards())
                       : part().tool === "websearch"
                         ? webSearchProviderLabel(partMetadata().provider)
                         : undefined

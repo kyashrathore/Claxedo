@@ -7,7 +7,9 @@ export class FrameRuntimeError extends Error {
   }
 }
 
-export function createFrameRuntimeSource(): () => Promise<string> {
+export type FrameRuntime = () => Promise<string>
+
+export function createFrameRuntimeSource(): FrameRuntime {
   let loading: Promise<string> | undefined
   const load = async () => {
     const response = await fetch(frameRuntimeUrl)

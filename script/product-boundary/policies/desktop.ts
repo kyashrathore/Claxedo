@@ -368,8 +368,9 @@ export const desktopRenderer: Policy = {
     `${DESKTOP}/main/account`,
     `${DESKTOP}/main/host-connector`,
   ],
-  // A plugin's code is a blob: URL built at runtime from the bundle the user
-  // installed, so neither edge is repository source. `plugins/bundle.ts` loads
+  // A plugin's code is a blob: URL built at runtime from its bundle text (the
+  // one the user installed, or a first-party bundle the build emitted as a
+  // string), so neither edge is repository source. `plugins/bundle.ts` loads
   // a desktop plugin into the window; `plugins/frame/document.ts` holds, as a
   // string, the loader the web's sandboxed plugin frame runs.
   permittedOpaqueImports: [
@@ -761,7 +762,18 @@ export const desktopRenderer: Policy = {
   // -1 module (owner: the app's server domain): `server/availability.ts`, the
   // Tasks route probe, is gone; the bootstrap's `deployment.capabilities`
   // says which plugin capabilities the server offers. 1507/36, no headroom.
-  ceilings: { modules: 1507, packages: 36 },
+  // +6 modules (owner: the app's plugins and transcript domains): the bundled
+  // first-party plugins the host ships and loads through the same in-app and
+  // frame loaders as live plugins (`plugins/first-party/bundles.ts`,
+  // `plugins/first-party/load.ts`, `plugins/in-app.ts`), the binding that
+  // registers a plugin's transcript card templates
+  // (`plugins/bindings/transcript.ts`), the transcript's evaluation of those
+  // templates (`transcript/tool-card-template.ts`), and the JSON Pointer
+  // parser it shares with the surface renderer (`lib/json-pointer.ts`, moved
+  // out of `surface/data-path.ts`). Each bundle is a
+  // `@claxedo/<plugin>/app?claxedo-plugin-bundle` chunk, a package edge onto
+  // `@claxedo/tasks`, which the closure already counted. 1513/36, no headroom.
+  ceilings: { modules: 1513, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

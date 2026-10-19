@@ -1,19 +1,11 @@
 import type { SurfaceDataBinding } from "@claxedo/plugin-api/surface"
+import { parsePointer, unescapePointerSegment } from "@/lib/json-pointer"
 import type { DataPath } from "./model"
 
 export const ROOT_PATH: DataPath = []
 
-function unescapeSegment(segment: string): string {
-  return segment.replaceAll("~1", "/").replaceAll("~0", "~")
-}
-
-export function parsePointer(pointer: string): DataPath {
-  if (pointer === "" || pointer === "/") return ROOT_PATH
-  return pointer.slice(1).split("/").map(unescapeSegment)
-}
-
 function parseRelative(path: string): DataPath {
-  return path.split("/").filter((segment) => segment.length > 0).map(unescapeSegment)
+  return path.split("/").filter((segment) => segment.length > 0).map(unescapePointerSegment)
 }
 
 export function resolvePath(path: string, scope: DataPath): DataPath {

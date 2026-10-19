@@ -5,6 +5,7 @@ import { SURFACE_CATALOG_ID } from "@claxedo/plugin-api/surface"
 import { openPluginSurface } from "./controller"
 
 await mock.module("@/surface/view/surface-view", () => ({ SurfaceView: () => undefined }))
+await mock.module("@/surface/view/surface-icon", () => ({ SurfaceIcon: () => undefined }))
 const { createSurface, SurfaceMessageError } = await import("@/surface")
 
 const SURFACE_ID = "surface-1"

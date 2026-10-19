@@ -89,8 +89,11 @@ export {
   pluginServerAccessSchema,
   readPluginManifest,
 } from "./manifest"
-export type { PluginBackend, PluginCapability, PluginManifest, PluginServerAccess } from "./manifest"
+export type { FirstPartyPluginId, PluginBackend, PluginCapability, PluginManifest, PluginServerAccess } from "./manifest"
 export { isPluginId, PLUGIN_ID_MAX_LENGTH, PLUGIN_ID_PATTERN } from "./id"
+export { FIRST_PARTY_PLUGIN_IDS, isFirstPartyPluginId } from "./manifest"
+export { readToolCardTemplates, TOOL_CARD_MAX_TEMPLATES, TOOL_CARD_TONES, ToolCardTemplateError, toolCardTemplatesSchema } from "./transcript"
+export type { ToolCardCondition, ToolCardFact, ToolCardLink, ToolCardRows, ToolCardStatus, ToolCardTemplate, ToolCardText, ToolCardTone, TranscriptApi } from "./transcript"
 export { isPluginRuntimeModule, PLUGIN_RUNTIME_GLOBAL, PLUGIN_RUNTIME_MODULES } from "./runtime"
 export type { PluginRuntime, PluginRuntimeModule } from "./runtime"
 

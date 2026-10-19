@@ -28,4 +28,5 @@ export const firstParty: FirstPartyEntries = {
   themes: [],
   iconSkins: [],
   routes: [onboardingRoute, ...authRoutes],
+  toolCards: [],
 }

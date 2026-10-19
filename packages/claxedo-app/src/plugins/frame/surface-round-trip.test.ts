@@ -12,6 +12,7 @@ import { createFrameLink } from "./runtime/link"
 import { createFrameSurfaces } from "./runtime/surfaces"
 
 await mock.module("@/surface/view/surface-view", () => ({ SurfaceView: () => undefined }))
+await mock.module("@/surface/view/surface-icon", () => ({ SurfaceIcon: () => undefined }))
 const { createSurface, SurfaceMessageError } = await import("@/surface")
 
 const MIRROR: FrameMirror = { locale: "en", projects: [], currentProjectId: undefined, currentSession: undefined, tabs: [], statuses: {} }

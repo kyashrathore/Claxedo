@@ -786,7 +786,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - the baseline hash test.
 - **Checks:** server and tasks tests; `bun run --cwd packages/claxedo-server d1:baseline:check`; typecheck all (incl. `typecheck:auth-d1`); ratchets; server `verify:closure` (lower to measured); `rg -n "BUILTIN_TASKS_TOOL_GROUP|tasksGrant|claxedo-server/src/tasks" packages` returns nothing.
 - Progress:
-- [ ] **S9. Bundled first-party path and Tasks tool cards.**
+- [x] **S9. Bundled first-party path and Tasks tool cards.**
 - `vite.plugin-bundles.ts`; `src/plugins/first-party/`; origin union, bundled approval, live-only reconcile, Settings built-in row; reserved ids in the daemon registry.
 - `packages/claxedo-tasks` gains the `claxedo` manifest and `src/app/index.ts`, which registers the five task card templates and the dictionary.
 - `claxedo-tool-view.ts` drops the task cases and `CLAXEDO_TOOL_TITLE_KEYS` task entries (title keys move to the plugin dictionary); see Q2 for the vocabulary.
@@ -798,7 +798,19 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - daemon refuses a live plugin named `claxedo-tasks`.
 - **Flows:** 30 corpus snapshots unchanged once the plugin registered (the transcript upgrades the generic row reactively; R9); 34, 35 unchanged; 12 unchanged.
 - **Checks:** app test, typecheck and check; local test; ratchets plus desktop and tasks `verify:closure`.
-- Progress:
+- **As built (recorded where the code proved the text wrong):**
+  - `vite.plugin-bundles.ts` runs `@claxedo/plugin-build` under Bun as a child process (`@claxedo/plugin-build/app-bundle-cli`) instead of importing it: Vite's config loader leaves workspace packages external, and Node cannot load their extensionless TypeScript source. The desktop renderer extends `cloudConfig`, so it gets the plugin without its own entry. The chunk holds the bundle as a string; the bundle resolves `@claxedo/plugin-api` from the runtime global, so `tasks-app` measures 3 modules and 1 package.
+  - `@claxedo/tasks` gains no `./app` export, so no app source can import the entry statically; the specifier is resolved by the Vite plugin from the manifest's `claxedo.app`. The manifest declares `requires: ["tasks"]` and no routes yet (the cards fetch nothing; S10 adds `/api/claxedo/tasks` and `/api/claxedo/plugins`).
+  - `FIRST_PARTY_PLUGIN_IDS` is `["claxedo-tasks"]`; S11c adds `claxedo-documents` with its entry. The daemon refuses a live plugin with a first-party id (`409 live_plugin_id_reserved`) and does not load one already in its registry (logged).
+  - `TranscriptApi.toolCards` landed here (S5 had not added it). `ToolCardText` gained `{ path, max }` (a clamp) and `{ format }` (placeholders `{/pointer}`, resolved only when every one does), which the task labels (`#key title`, else `#key`, else title, else a short id) need. `ToolCardStatus` is `{ value, states: { [value]: { label, icon, tone } } }`, so status words, catalog glyphs and tones are the plugin's; the pill styles by `data-tone`. A `rows.link` is required; `rows.continued` is the "more available" line. Notes show the first that holds. Templates are checked with `readToolCardTemplates` in the host binding, so a frame's and a desktop plugin's are checked alike, and a tool that already has a card is refused. The task numeric-id label (`#12` for a bare number) was dropped: task ids are `tsk_…`.
+  - Card templates are evaluated in `transcript/tool-card-template.ts` only for a tool with no core case. A page link resolves to the plugin's own page first, then an app page of that id (shared with `pages.open`, `bindings/services.ts` `pageEntryFor`), so the Tasks card links reach today's app Tasks page at `/tasks/:taskId?` until S10b registers the plugin's.
+  - Task links did not work even with an href: the timeline's file-link capture (`session/view/timeline/timeline-file-paths.ts`) took every root-relative anchor as a file path. It now skips anchors carrying `data-link-kind`, which fixes the card's session links too.
+  - The JSON Pointer parser moved from `surface/data-path.ts` to `lib/json-pointer.ts`, shared by the surface and the transcript (the helper-divergence ratchet).
+  - Titles are localized at activation (the plugin dictionary has `en` only, as the old task keys did); a later locale change keeps the activation's words.
+  - The bundled plugin is listed in Settings → App plugins wherever the app runs, and says it needs `tasks` where the server does not mount Tasks.
+  - The roster tests that read `CLAXEDO_TOOL_TITLE_KEYS` by text (`claxedo-mcp/src/tools/inventory.test.ts`, `claxedo-tasks/src/mcp/tools.test.ts`) follow its new declaration; the Tasks one asserts core titles plus the Tasks entry's cards equal the composed inventory.
+  - Flow 12 asserts the status pill's words and `data-tone`; flows 34 and 35 assert the built-in Tasks row remains after the fixture is removed, and 35 that safe mode keeps it on. New flow 36 (web and phone). `tasks` verify:closure runs in `test:architecture-ratchets` (source) and by hand; no CI step was added (CI selects closure steps through `script/ci-changes.mjs` outputs).
+- Progress: done (first-party-plugin-bundling lane). desktop-renderer 1507 → 1513 (the six owners named in `desktop.ts`); `tasks-app` 3 modules, 1 package. Budgets: Plugin host 3050, Web plugin frame 1626, Shell and platform 7406, Surface renderer 4040, total 115711; file-size ceiling of `transcript/message-part.tsx` lowered to the measured 2057. Not verified: flow 34 (no Electron in this container), hosted web (flows 53 and 54 need the macOS sandbox driver).
 - [ ] **S10a. Presets as a plugin settings surface.**
 - Plugin `src/app/presets/*`.
 - **Delete:** `src/tasks/presets/*` and `presetsSettingsSection` from `registry.ts`.

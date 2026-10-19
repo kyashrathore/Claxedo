@@ -17,6 +17,10 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./app-bundle-cli": {
+      "development": "./src/app-bundle-cli.ts",
+      "default": "./src/app-bundle-cli.ts"
+    },
     "./bundle-hash": {
       "types": "./src/bundle-hash.ts",
       "development": "./src/bundle-hash.ts",

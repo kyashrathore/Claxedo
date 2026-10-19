@@ -29,6 +29,7 @@ export function createShellRegistries(firstParty: FirstPartyEntries): ShellRegis
     themes: createRegistry(firstParty.themes),
     iconSkins: createRegistry(firstParty.iconSkins),
     routes: createRegistry(firstParty.routes),
+    toolCards: createRegistry(firstParty.toolCards),
   }
 }
 

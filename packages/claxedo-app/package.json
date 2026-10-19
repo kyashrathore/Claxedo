@@ -22,6 +22,7 @@
     "@agentclientprotocol/sdk": "1.5.1",
     "@anthropic-ai/sdk": "0.115.0",
     "@axe-core/playwright": "4.12.1",
+    "@claxedo/plugin-build": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@playwright/test": "1.61.1",
     "@tailwindcss/vite": "4.1.11",

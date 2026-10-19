@@ -7,6 +7,7 @@ import { createClaxedoMcpClient, type ClaxedoFetch } from "@claxedo/mcp/client"
 import { assertToolAccess, McpAccessDenied, type McpCredential, type McpToolAccess } from "@claxedo/mcp/context"
 import { readFileSync } from "node:fs"
 import { CLAXEDO_MCP_PATH, CLAXEDO_MCP_TOOL_GROUPS, claxedoMcpToolGroupInventory, createClaxedoMcpRoutes, fullUserCredential, mcpAuditRecord } from "@claxedo/mcp"
+import { taskToolCards } from "../app/tool-cards"
 import { TASKS_MCP_TOOL_GROUP } from "./tools"
 
 type TasksOperation = "read" | "create" | "start"
@@ -804,11 +805,12 @@ describe("the Tasks group in a composed catalog", () => {
     expect(TASKS_MCP_TOOL_GROUP.reach).toBe("account")
   })
 
-  test("with the core groups, is exactly the transcript's first-party roster, so a renamed or added tool cannot render as a generic row", () => {
+  test("with the core groups, is exactly the transcript's core roster plus the cards the Tasks app entry registers, so a renamed or added tool cannot render as a generic row", () => {
     const source = readFileSync(new URL("../../../claxedo-app/src/transcript/claxedo-tool-view.ts", import.meta.url), "utf8")
-    const block = source.split("export const CLAXEDO_TOOL_TITLE_KEYS = {")[1]?.split("} as const")[0] ?? ""
-    const roster = [...block.matchAll(/^\s*([a-z_]+):\s*"transcript\.claxedoTool\.[a-z_]+",$/gm)].map((match) => match[1]).sort()
+    const block = source.split("export const CLAXEDO_TOOL_TITLE_KEYS: Partial<Record<ClaxedoToolName, TranscriptTextKey>> = {")[1]?.split("\n}")[0] ?? ""
+    const core = [...block.matchAll(/^\s*([a-z_]+):\s*"transcript\.claxedoTool\.[a-z_]+",$/gm)].map((match) => match[1])
+    const cards = taskToolCards((key) => key).map((card) => card.tool)
     const registered = claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP]).flatMap((group) => group.tools).sort()
-    expect(roster).toEqual(registered)
+    expect([...core, ...cards].sort()).toEqual(registered)
   })
 })
