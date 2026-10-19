@@ -146,6 +146,18 @@ describe("ui_show for plugin-only events", () => {
     })
     expect(await show(client, board({}))).toEqual({ isError: false, text: 'Shown "Board" with 2 components.' })
   })
+
+  test("refuses an AgentConfigurationPicker as a whole, and the description says it is for app plugin pages", async () => {
+    const { url } = await listen()
+    const client = await connect(url)
+    const picker = { title: "Preset", components: [{ id: "root", component: "AgentConfigurationPicker", placement: "local", value: { path: "/primary" } }], data: { primary: { harness: null, model: null, effort: null } } }
+    expect(await show(client, picker)).toEqual({
+      isError: true,
+      text: "/components/0/component: the AgentConfigurationPicker is for app plugin pages; an agent reply leaves it out",
+    })
+    const description = (await client.listTools()).tools.find((candidate) => candidate.name === "ui_show")?.description
+    expect(description).toContain("AgentConfigurationPicker draws the person's own harness and model pickers and is for app plugin pages only")
+  })
 })
 
 describe("ui_guide", () => {

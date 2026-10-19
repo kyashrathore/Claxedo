@@ -23,7 +23,14 @@ export type {
   SurfaceDataBinding,
   SurfaceDynamicValue,
 } from "./catalog"
-export { SURFACE_EVENT_FIELDS, SURFACE_PLUGIN_ONLY_EVENTS, isPluginOnlyEvent, surfaceComponentEvents } from "./events"
+export {
+  SURFACE_EVENT_FIELDS,
+  SURFACE_PLUGIN_ONLY_COMPONENTS,
+  SURFACE_PLUGIN_ONLY_EVENTS,
+  isPluginOnlyComponent,
+  isPluginOnlyEvent,
+  surfaceComponentEvents,
+} from "./events"
 export type { SurfaceComponentEvent, SurfaceProducer } from "./events"
 export { SURFACE_IMAGE_MAX_DATA_URL_LENGTH, SURFACE_IMAGE_REFUSALS, surfaceImageUrl } from "./image-url"
 export type { SurfaceImageRefusal, SurfaceImageUrl } from "./image-url"

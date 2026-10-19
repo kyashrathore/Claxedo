@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { SURFACE_DESIGN_GUIDE, SURFACE_ROOT_ID, checkSurfaceSpec, componentReferences, type SurfaceComponent, type SurfaceSpec } from "./index"
+import { SURFACE_DESIGN_GUIDE, SURFACE_PLUGIN_ONLY_COMPONENTS, SURFACE_ROOT_ID, checkSurfaceSpec, componentReferences, type SurfaceComponent, type SurfaceSpec } from "./index"
 
 const recipes: unknown[] = [...SURFACE_DESIGN_GUIDE.matchAll(/^~~~json\n([\s\S]*?)\n~~~$/gm)].map((match) => JSON.parse(match[1] ?? ""))
 
@@ -65,6 +65,11 @@ describe("SURFACE_DESIGN_GUIDE", () => {
       const check = checkSurfaceSpec(recipe)
       expect({ title: isRecord(recipe) ? recipe.title : undefined, issues: check.ok ? [] : check.issues }).toEqual({ title: expect.any(String), issues: [] })
     }
+  })
+
+  test("tells authors that each plugin-only component is for app plugin pages and what its value is", () => {
+    for (const name of SURFACE_PLUGIN_ONLY_COMPONENTS) expect(SURFACE_DESIGN_GUIDE).toContain(`An ${name} is for app plugin pages only.`)
+    expect(SURFACE_DESIGN_GUIDE).toContain('`{"harness": {"id", "access"} | null, "model": {"providerID", "modelID"} | null, "effort": string | null}`')
   })
 
   test("every recipe draws each of its components and every binding finds a value in its data", () => {

@@ -7,6 +7,6 @@ export function surfaceReplySpecInput(input: Record<string, unknown> | undefined
 }
 
 export function surfaceReplySpec(specInput: unknown): SurfaceSpec | undefined {
-  const check = checkSurfaceSpec(specInput)
+  const check = checkSurfaceSpec(specInput, { producer: "agent" })
   return check.ok ? check.spec : undefined
 }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   checkSurfaceSpec,
   componentReferences,
+  isPluginOnlyComponent,
   isPluginOnlyEvent,
   surfaceComponentEvents,
   surfaceComponentSchema,
@@ -435,5 +436,31 @@ describe("Combobox", () => {
     expect(checkSurfaceSpec(project({ search: undefined }), { producer: "agent" }).ok).toBe(true)
     const clash = checkSurfaceSpec(project({ search: { event: { name: "find", context: { query: "x" } } }, change: { event: { name: "pick", context: { value: "x" } } } }))
     expect(clash.ok ? [] : clash.issues.map((issue) => issue.path)).toEqual(["/components/0/search/event/context/query", "/components/0/change/event/context/value"])
+  })
+})
+
+const configure = (props: Record<string, unknown> = {}) => ({
+  title: "Preset",
+  components: [{ id: "root", component: "AgentConfigurationPicker", placement: "cloud", value: { path: "/primary" }, change: { event: { name: "configured", context: { slot: "primary" } } }, ...props }],
+  data: { primary: { harness: null, model: null, effort: null } },
+})
+
+describe("AgentConfigurationPicker", () => {
+  test("binds its value, takes a literal or bound placement, and its change supplies the value", () => {
+    expect(checkSurfaceSpec(configure()).ok).toBe(true)
+    expect(checkSurfaceSpec(configure({ placement: { path: "/placement" }, change: undefined })).ok).toBe(true)
+    for (const props of [{ value: { harness: null, model: null, effort: null } }, { placement: "remote" }]) expect(checkSurfaceSpec(configure(props)).ok).toBe(false)
+    const clash = checkSurfaceSpec(configure({ change: { event: { name: "configured", context: { value: "x" } } } }))
+    expect(clash.ok ? [] : clash.issues.map((issue) => issue.path)).toEqual(["/components/0/change/event/context/value"])
+  })
+
+  test("is plugin-only as a whole: an agent's spec is refused at the component, with or without change", () => {
+    const message = "the AgentConfigurationPicker is for app plugin pages; an agent reply leaves it out"
+    for (const spec of [configure(), configure({ change: undefined })]) {
+      const agent = checkSurfaceSpec(spec, { producer: "agent" })
+      expect(agent.ok ? [] : agent.issues).toEqual([{ path: "/components/0/component", message }])
+    }
+    expect(isPluginOnlyComponent("AgentConfigurationPicker")).toBe(true)
+    expect(isPluginOnlyComponent("FilePicker")).toBe(false)
   })
 })

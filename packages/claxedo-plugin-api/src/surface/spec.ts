@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { SURFACE_CATALOG_ID, surfaceComponentSchema, type SurfaceChildList, type SurfaceComponent } from "./catalog"
-import { isPluginOnlyEvent, surfaceComponentEvents, type SurfaceProducer } from "./events"
+import { isPluginOnlyComponent, isPluginOnlyEvent, surfaceComponentEvents, type SurfaceProducer } from "./events"
 import { SURFACE_IMAGE_REFUSALS, surfaceImageUrl } from "./image-url"
 import { SURFACE_MAX_COMPONENTS, SURFACE_PROTOCOL_VERSION, type SurfaceMessage } from "./messages"
 
@@ -124,6 +124,11 @@ function eventIssues(component: SurfaceComponent, at: string, producer: SurfaceP
   ])
 }
 
+function producerIssues(component: SurfaceComponent, at: string, producer: SurfaceProducer): SurfaceIssue[] {
+  if (producer !== "agent" || !isPluginOnlyComponent(component.component)) return []
+  return [{ path: `${at}/component`, message: `the ${component.component} is for app plugin pages; an agent reply leaves it out` }]
+}
+
 function imageIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
   if (component.component !== "Image" || typeof component.url !== "string") return []
   const checked = surfaceImageUrl(component.url)
@@ -142,7 +147,7 @@ function boardIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
 function componentIssues(components: readonly SurfaceComponent[], producer: SurfaceProducer): SurfaceIssue[] {
   return components.flatMap((component, index) => {
     const at = `/components/${index}`
-    return [...eventIssues(component, at, producer), ...imageIssues(component, at), ...boardIssues(component, at)]
+    return [...producerIssues(component, at, producer), ...eventIssues(component, at, producer), ...imageIssues(component, at), ...boardIssues(component, at)]
   })
 }
 

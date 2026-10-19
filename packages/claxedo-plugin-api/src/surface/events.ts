@@ -18,6 +18,8 @@ export const SURFACE_PLUGIN_ONLY_EVENTS = {
   Combobox: ["search"],
 } as const satisfies Partial<Record<keyof typeof SURFACE_EVENT_FIELDS, readonly string[]>>
 
+export const SURFACE_PLUGIN_ONLY_COMPONENTS = ["AgentConfigurationPicker"] as const satisfies readonly SurfaceComponentName[]
+
 export type SurfaceProducer = "agent" | "plugin"
 
 export type SurfaceComponentEvent = {
@@ -43,6 +45,11 @@ export function surfaceComponentEvents(component: SurfaceComponent): readonly Su
     const action: unknown = Reflect.get(component, prop)
     return isAction(action) ? [{ prop, action, supplied }] : []
   })
+}
+
+export function isPluginOnlyComponent(component: SurfaceComponentName): boolean {
+  const names: readonly SurfaceComponentName[] = SURFACE_PLUGIN_ONLY_COMPONENTS
+  return names.includes(component)
 }
 
 export function isPluginOnlyEvent(component: SurfaceComponentName, prop: string): boolean {

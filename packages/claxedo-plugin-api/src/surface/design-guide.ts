@@ -66,6 +66,12 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 - \`pick\` carries the bytes, never a path: \`files\` is \`[{"name", "mimeType", "size", "dataBase64"}]\` and \`refused\` is \`[{"name", "reason"}]\` with reason \`type\`, \`size\` or \`count\`. One pick carries at most 12 MiB; files past it are refused as \`size\`. Keep what you accept in your own state, show it back (an \`Image\` per picture, a ListItem per document, each with a remove Button), and name each refusal in a \`warning\` Callout.
 - A Combobox binds \`value\` (a string, or a list with \`multiple\`) and draws \`options\` (\`{"label", "value", "description"}\`, literal or bound). Without \`search\` it filters its options by the typed text itself. With \`search\` (plugin pages only) it sends \`{"query"}\` 250 ms after the last keystroke and shows "Searching…" until your next patch under the bound \`options\` path; answer with the matching options and drop answers to older queries. \`change\` sends \`{"value"}\` once the person picks.
 
+## Agent configuration
+
+- An AgentConfigurationPicker is for app plugin pages only. It draws the person's own harness, model and effort pickers over their own projects and accounts, so a plugin never lists harnesses or models itself.
+- Bind \`value\` to \`{"harness": {"id", "access"} | null, "model": {"providerID", "modelID"} | null, "effort": string | null}\`, all three null before anything is chosen. \`placement\`, literal or bound, is \`local\` (the harnesses and models of the person's first project) or \`cloud\` (a new cloud workspace, so no machine is asked; a harness that lists its models only from a running workspace runs its own default model).
+- The picker writes the bound \`value\` itself; \`change\` sends \`{"value"}\` after each pick, with the model and effort a switched harness carried over already cleared. Give each configuration its own Section and save them all from one Footer.
+
 ## Provenance
 
 Every surface opens with a source line the app draws above your content: the producer's glyph and name and what made it ("Pi · agent reply", "Sprint board · app plugin"). It says who made the surface, so a surface can never pass for the app's own UI. Authors do not set it and cannot hide it; never repeat it in a Header or a Text.
