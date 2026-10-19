@@ -1,11 +1,11 @@
-import { chooseProjectWorkspace } from "@claxedo/server-core/tasks-host/project-workspace"
+import { chooseProjectWorkspace } from "@claxedo/tasks/host/project-workspace"
 import {
   createTasksSessionBridge,
   type TasksCloudOrigin,
   type TasksCloudTargetChoice,
   type TasksRuntimeTarget,
   type TasksSessionHost,
-} from "@claxedo/server-core/tasks-host/session-bridge-core"
+} from "@claxedo/tasks/host/session-bridge-core"
 import {
   createWorkspaceRuntimeClient,
   type WorkspaceRuntimeClientOptions,
@@ -13,7 +13,7 @@ import {
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
+import type { TasksCapabilityOwner } from "@claxedo/tasks/host/capability"
 import {
   startOriginId,
   type StartBlocker,

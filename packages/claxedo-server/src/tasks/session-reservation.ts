@@ -5,7 +5,7 @@
  */
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
-import type { TasksSessionHost, TasksSessionReservation } from "@claxedo/server-core/tasks-host/session-bridge-core"
+import type { TasksSessionHost, TasksSessionReservation } from "@claxedo/tasks/host/session-bridge-core"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { tasksErrorDetail, type TasksActor, type TasksErrorDetail } from "@claxedo/tasks"

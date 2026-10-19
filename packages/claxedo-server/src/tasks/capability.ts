@@ -5,7 +5,7 @@ import {
   isTasksOperation,
   type TasksCapabilityScope,
   type TasksOperation,
-} from "@claxedo/server-core/tasks-host/capability"
+} from "@claxedo/tasks/host/capability"
 
 export const TASKS_CAPABILITY_AUDIENCE = "claxedo-tasks-capability" as const
 

@@ -8,7 +8,7 @@ import { hostTunnelTokenVerifier, runtimeAccessTokenSigner } from "@claxedo/serv
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import { createRuntimeCredentialIssuer } from "@claxedo/workspace-runtime"
 import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
-import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
+import type { TasksRuntimePrincipal } from "@claxedo/tasks/host/authorization"
 
 import { createHostedCoreApp } from "./hosted-core-app"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"

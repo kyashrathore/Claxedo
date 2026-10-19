@@ -1,5 +1,5 @@
-import { workspaceRuntimeTasksCapabilityEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
-import type { TasksCapabilityScope, TasksOperation } from "@claxedo/server-core/tasks-host/capability"
+import { workspaceRuntimeTasksCapabilityEnv } from "@claxedo/tasks/host/runtime-env"
+import type { TasksCapabilityScope, TasksOperation } from "@claxedo/tasks/host/capability"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { mintTasksCapability } from "./capability"
 

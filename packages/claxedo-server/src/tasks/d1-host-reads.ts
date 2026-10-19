@@ -1,6 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import type { RegisteredSession } from "@claxedo/server-core/tasks-host/registered-sessions"
+import type { RegisteredSession } from "@claxedo/tasks/host/registered-sessions"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { OriginCloudSource } from "../workspace/origin-cloud-workspace"
 

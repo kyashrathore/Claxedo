@@ -1,6 +1,6 @@
 import { decodeJwt } from "jose"
 import type { SandboxLeaseStore } from "@claxedo/sandbox-manager"
-import type { TasksCapabilityOwner, TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
+import type { TasksCapabilityOwner, TasksCapabilityPort } from "@claxedo/tasks/host/capability"
 import type { HostSessionRowsPublisher } from "@claxedo/server-core/platform/auth/host-session-rows"
 import { SESSION_ROWS_PASS_PATH, type SessionRowsPassHeld } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"

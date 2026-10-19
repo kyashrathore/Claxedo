@@ -14,11 +14,11 @@ import {
 import {
   tasksSessionBridgeConformance,
   type TasksSessionBridgeFixture,
-} from "@claxedo/server-core/tasks-host/session-bridge-conformance"
+} from "@claxedo/tasks/host/session-bridge-conformance"
 import { startedSession } from "@claxedo/tasks/test-support"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
-import type { RegisteredSession } from "@claxedo/server-core/tasks-host/registered-sessions"
+import type { RegisteredSession } from "@claxedo/tasks/host/registered-sessions"
 import type { TasksHostReads } from "./d1-host-reads"
 
 const mock = vi.hoisted(() => ({

@@ -19,7 +19,7 @@ import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { memorySandboxPassRegister, type SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import type { SessionRef, TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
-import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
+import type { TasksRuntimePrincipal } from "@claxedo/tasks/host/authorization"
 
 import { createHostedCoreApp } from "../deployments/hosted-shared/hosted-core-app"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../deployments/hosted-shared/deployment-profile"

@@ -23,22 +23,24 @@ import { repair, REPAIR_VERSION } from "./repair"
 declare const CLAXEDO_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
 /**
- * Where this deployment's migration journal lives.
+ * Where this deployment's migration journals live: the host's and each
+ * composed plugin's.
  *
- * The journal is PRODUCT schema — documents, credentials, connections,
- * channels — so the product supplies it rather than the database engine
- * carrying it. Resolving it from this module's own directory only worked while
- * engine and journal shipped together.
+ * The journals are PRODUCT schema — documents, credentials, connections,
+ * channels, a plugin's tables — so the composition supplies them rather than
+ * the database engine carrying them.
  *
  * There is no default. An unconfigured database would apply zero migrations and
  * hand back a working handle to a file with no tables, which is a failure this
  * product has shipped before: every query fails later, somewhere else, for a
- * reason the stack trace does not name.
+ * reason the stack trace does not name. A plugin journal configured after the
+ * database opened would leave its tables missing the same way, so the
+ * composition names every journal before anything opens it.
  */
-let migrationsDir: string | undefined
+let migrationJournals: readonly string[] = []
 
-export function configureClaxedoMigrations(dir: string) {
-  migrationsDir = dir
+export function configureClaxedoSchema(input: { journals: readonly string[] }) {
+  migrationJournals = [...input.journals]
 }
 
 const log = Log.create({ service: "claxedo-db" })
@@ -273,7 +275,7 @@ export namespace ClaxedoDB {
     )
   }
 
-  function migrations(dir: string): MigrationEntry[] {
+  function journalEntries(dir: string): MigrationEntry[] {
     if (!existsSync(dir)) return []
     return readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -288,7 +290,27 @@ export namespace ClaxedoDB {
         // a pending apply still fails loudly here.
         sql: () => readFileSync(path.join(dir, name, "migration.sql"), "utf-8"),
       }))
-      .sort((a, b) => a.timestamp - b.timestamp)
+  }
+
+  /**
+   * Every journal's entries in one global order. Applied names are the
+   * database's record of its history, so a name two journals both claim is
+   * refused rather than applied once under whichever journal came first.
+   */
+  function migrations(journals: readonly string[]): MigrationEntry[] {
+    const seen = new Map<string, string>()
+    const entries: MigrationEntry[] = []
+    for (const journal of journals) {
+      const own = journalEntries(journal)
+      if (own.length === 0) throw new Error(`claxedo migration journal at ${journal} is empty or missing`)
+      for (const entry of own) {
+        const other = seen.get(entry.name)
+        if (other) throw new Error(`claxedo migration ${entry.name} is in two journals: ${other} and ${journal}`)
+        seen.set(entry.name, journal)
+        entries.push(entry)
+      }
+    }
+    return entries.sort((a, b) => a.timestamp - b.timestamp || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   }
 
   /**
@@ -303,16 +325,12 @@ export namespace ClaxedoDB {
         timestamp: entry.timestamp,
         sql: () => entry.sql,
       }))
-    if (!migrationsDir) {
+    if (migrationJournals.length === 0) {
       throw new Error(
-        "claxedo database opened before its migration journal was configured; call configureClaxedoMigrations(dir) from the composition that owns the schema",
+        "claxedo database opened before its migration journals were configured; call configureClaxedoSchema({ journals }) from the composition that owns the schema",
       )
     }
-    const entries = migrations(migrationsDir)
-    if (entries.length === 0) {
-      throw new Error(`claxedo migration journal at ${migrationsDir} is empty or missing`)
-    }
-    return entries
+    return migrations(migrationJournals)
   }
 
   export const Drizzle = lazy(() => {

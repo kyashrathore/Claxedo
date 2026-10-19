@@ -1,11 +1,11 @@
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/session-core"
 import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
-import { isTasksOperation, type TasksOperation } from "@claxedo/server-core/tasks-host/capability"
+import { isTasksOperation, type TasksOperation } from "@claxedo/tasks/host/capability"
 import {
   WORKSPACE_RUNTIME_TASKS_CAPABILITY,
   WORKSPACE_RUNTIME_TASKS_OPERATIONS,
   WORKSPACE_RUNTIME_TASKS_PROJECT,
-} from "@claxedo/server-core/hosts/workspace-runtime/env"
+} from "@claxedo/tasks/host/runtime-env"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { asRecord, parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import type { McpServiceGrant } from "@claxedo/mcp"

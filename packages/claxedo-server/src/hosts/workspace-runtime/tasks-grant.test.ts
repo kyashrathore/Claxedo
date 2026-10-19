@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import { workspaceRuntimeTasksCapabilityEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { workspaceRuntimeTasksCapabilityEnv } from "@claxedo/tasks/host/runtime-env"
 import { mintTasksCapability } from "../../tasks/capability"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 

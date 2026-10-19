@@ -1,5 +1,5 @@
 import { decodeJwt } from "jose"
-import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
+import type { TasksCapabilityPort } from "@claxedo/tasks/host/capability"
 import { workspaceRuntimeOwnerGrantEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { credentialFault } from "../platform/auth/runtime-token-keys"
 import { mintSandboxPass, verifySandboxPass } from "../platform/auth/sandbox-pass"

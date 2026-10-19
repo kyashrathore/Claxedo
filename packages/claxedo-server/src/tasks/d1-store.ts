@@ -52,19 +52,19 @@ import {
   type StoredPresetColumns,
   type StoredReceiptColumns,
   type StoredTaskColumns,
-} from "@claxedo/server-core/tasks-host/stored-rows"
+} from "@claxedo/tasks/host/stored-rows"
 import {
   childCountLookup,
   linkCountLookup,
   taskSummaryPage,
   tasksPage,
   tasksPageBounds,
-} from "@claxedo/server-core/tasks-host/paging"
+} from "@claxedo/tasks/host/paging"
 import {
   taskNumberTakenRefusal,
   tasksStoreConflict,
   type TasksConflictProbe,
-} from "@claxedo/server-core/tasks-host/store-conflicts"
+} from "@claxedo/tasks/host/store-conflicts"
 
 export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 

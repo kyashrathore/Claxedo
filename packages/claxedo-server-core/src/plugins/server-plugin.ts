@@ -2,6 +2,7 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import type { ClaxedoFetch, McpServiceGrant, McpToolGroup } from "@claxedo/mcp/tool-group"
 import type { ControlPlaneAuthConfig, ControlPlaneTokenVerifier } from "../platform/auth/auth"
 import type { ControlPlaneRouteContribution } from "../platform/http/route-contribution"
+import { CLAXEDO_MIGRATION_JOURNAL } from "../platform/db/journal"
 
 /**
  * What a first-party plugin hands a server host. A host mounts each plugin it
@@ -48,7 +49,15 @@ export type LocalServerPluginHost = Readonly<{
   verifier?: ControlPlaneTokenVerifier
 }>
 
+/** A plugin's tables in the host's `claxedo.db`: its own journal, applied in one global order with the host's. */
+export type SqliteSchemaContribution = Readonly<{
+  id: string
+  /** The directory of `<yyyymmddhhmmss>_<name>/migration.sql` folders. */
+  journal: string
+}>
+
 export type LocalServerPlugin = ServerPluginBase & Readonly<{
+  sqliteSchema?: SqliteSchemaContribution
   routeContributions(host: LocalServerPluginHost): readonly ControlPlaneRouteContribution[]
 }>
 
@@ -82,4 +91,9 @@ export function serverPluginCapabilities(plugins: readonly ServerPluginBase[]): 
 /** Every group a host's MCP mount serves and its catalog lists: the core groups, then each plugin's, in composition order. */
 export function mcpToolGroups(plugins: readonly ServerPluginBase[]): readonly McpToolGroup[] {
   return [...CLAXEDO_MCP_TOOL_GROUPS, ...plugins.flatMap((plugin) => plugin.mcp?.groups ?? [])]
+}
+
+/** Every journal `configureClaxedoSchema` is handed for a local composition: the host's, then each plugin's. */
+export function claxedoSchemaJournals(plugins: readonly LocalServerPlugin[]): readonly string[] {
+  return [CLAXEDO_MIGRATION_JOURNAL, ...plugins.flatMap((plugin) => (plugin.sqliteSchema ? [plugin.sqliteSchema.journal] : []))]
 }

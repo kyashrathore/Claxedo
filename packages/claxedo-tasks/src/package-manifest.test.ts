@@ -21,6 +21,9 @@ describe("@claxedo/tasks package manifest", () => {
       "./http",
       "./client",
       "./mcp",
+      "./host/*",
+      "./storage/sqlite",
+      "./local",
       "./conformance",
       "./test-support",
     ])

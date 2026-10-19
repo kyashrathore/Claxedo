@@ -2,7 +2,7 @@ import * as fs from "node:fs"
 import { createRequire } from "node:module"
 import * as path from "node:path"
 
-import { resolveLocalServerMigrationJournal } from "./local-server"
+import { resolveServerMigrationJournals } from "./local-server"
 import { OPENCODE_SDK_EXTERNALS, stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 import { bundleCursorWorker } from "../../harness/scripts/cursor-worker"
 import { PLUGIN_TOOLCHAIN_EXTERNALS, stagePluginToolchain } from "./stage-plugin-toolchain"
@@ -107,20 +107,19 @@ export async function emitClaxedoServerBundle(source: string, outdir: string) {
 
   const outputBytes = result.outputs.reduce((total, output) => total + fs.statSync(output.path).size, 0)
 
-  // `journal.ts` resolves SQL migrations at runtime relative to
-  // import.meta.dirname (claxedo-migration next to the compiled module).
-  // Bundling moves the module into chunks/ without its data directory, so a
-  // fresh profile opened a database with ZERO claxedo tables. Ship the
-  // migration journal next to both candidate dirnames (entry root and chunks/).
+  // `journal.ts` and each plugin's schema module resolve SQL migrations at
+  // runtime relative to import.meta.dirname (`claxedo-migration`,
+  // `claxedo-tasks-migration` next to the compiled module). Bundling moves the
+  // modules into chunks/ without their data directories, so a fresh profile
+  // opened a database with ZERO claxedo tables. Ship every journal next to
+  // both candidate dirnames (entry root and chunks/).
   //
-  // Located through the local-server package rather than a `../../` reach into
-  // a sibling source tree: the desktop's server is `@claxedo/local-server`, so
-  // whichever package IT depends on for `platform/db` owns this asset. A
-  // relative path would keep resolving after that edge moved, and the only
-  // symptom is an empty database on a fresh profile.
-  const migrationsSource = resolveLocalServerMigrationJournal()
+  // Located through the packages that carry them rather than a `../../` reach
+  // into a sibling source tree: a relative path would keep resolving after an
+  // edge moved, and the only symptom is an empty database on a fresh profile.
+  const journals = resolveServerMigrationJournals()
   for (const parent of [outdir, path.join(outdir, "chunks")]) {
-    fs.cpSync(migrationsSource, path.join(parent, "claxedo-migration"), { recursive: true })
+    for (const journal of journals) fs.cpSync(journal.directory, path.join(parent, journal.name), { recursive: true })
   }
 
   return { outputBytes }
