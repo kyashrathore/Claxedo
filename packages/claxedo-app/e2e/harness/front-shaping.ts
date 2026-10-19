@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs"
-import type { IncomingMessage, ServerResponse } from "node:http"
 import path from "node:path"
+import type { FrontRequest, FrontResponse } from "./proxy"
 
 export type EncodedAsset = { readonly br?: Buffer; readonly gzip?: Buffer }
 
@@ -50,14 +50,14 @@ export function pagesHeaders(distDir: string): (pathname: string) => PagesAnswer
   }
 }
 
-function acceptedEncoding(request: IncomingMessage, encoded: EncodedAsset | undefined): { encoding: "br" | "gzip"; body: Buffer } | undefined {
+function acceptedEncoding(request: FrontRequest, encoded: EncodedAsset | undefined): { encoding: "br" | "gzip"; body: Buffer } | undefined {
   const accepted = (request.headers["accept-encoding"] ?? "").split(",").map((token) => token.trim().split(";")[0])
   if (encoded?.br && accepted.includes("br")) return { encoding: "br", body: encoded.br }
   if (encoded?.gzip && accepted.includes("gzip")) return { encoding: "gzip", body: encoded.gzip }
   return undefined
 }
 
-export async function respondShaped(request: IncomingMessage, response: ServerResponse, pathname: string, asset: Response, answer: PagesAnswer, shaping: FrontShaping) {
+export async function respondShaped(request: FrontRequest, response: FrontResponse, pathname: string, asset: Response, answer: PagesAnswer, shaping: FrontShaping) {
   const identity = Buffer.from(await asset.arrayBuffer())
   const etag = `"${createHash("sha1").update(identity).digest("base64url")}"`
   const headers: Record<string, string> = {

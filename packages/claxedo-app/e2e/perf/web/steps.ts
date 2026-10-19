@@ -9,7 +9,7 @@ import { installWebProbe, type ProbeCensus, type ProbeState } from "./probe"
 import type { Profile } from "./profiles"
 import { startRecorder, type Recorder, type Recording } from "./recorder"
 import type { Target } from "./target"
-import { buildWaterfall, type Waterfall, type WaterfallRow } from "./waterfall"
+import { buildWaterfall, describeProtocols, type Waterfall, type WaterfallRow } from "./waterfall"
 import { round } from "./numbers"
 
 export type Cache = "cold" | "warm"
@@ -175,7 +175,7 @@ export async function summarizeStep(input: RunInput, session: Session, spec: Mea
     probeLongTasks: { count: longTasks.length, tbtMs: round(longTasks.reduce((sum, task) => sum + Math.max(0, task.duration - 50), 0)) },
     census: state.census, hostLoad: hostLoad(), traceFile,
   }
-  input.log(`${input.profile.name} ${spec.scenario}/${spec.step} rep ${input.rep}: ${result.primary.name} ${result.primary.ms} ms; ${waterfall.requests} requests, ${(waterfall.transferBytes / 1000).toFixed(0)} kB, ${waterfall.waves} waves; TBT ${mainThread?.tbtMs ?? "—"} ms; ${result.hostLoad}`)
+  input.log(`${input.profile.name} ${spec.scenario}/${spec.step} rep ${input.rep}: ${result.primary.name} ${result.primary.ms} ms; ${waterfall.requests} requests (${describeProtocols(waterfall.protocols)}), ${(waterfall.transferBytes / 1000).toFixed(0)} kB, ${waterfall.waves} waves; TBT ${mainThread?.tbtMs ?? "—"} ms; ${result.hostLoad}`)
   return result
 }
 

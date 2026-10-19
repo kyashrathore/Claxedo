@@ -1,5 +1,6 @@
-import type { IncomingMessage, ServerResponse } from "node:http"
-import { createServer, request as httpsRequest } from "node:https"
+import { createSecureServer } from "node:http2"
+import { request as httpsRequest } from "node:https"
+import type { Socket } from "node:net"
 import { X509Certificate, createHash } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -9,7 +10,7 @@ import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
 import type { HostedStack } from "../../../harness/e2e/harness/hosted-flow"
 import { publishDeployment, readPublishedDeployment } from "../../published-deployment"
 import type { PublishedDeployment } from "../../src/server/published-deployment"
-import { forward, forwardUpgrade } from "./proxy"
+import { abortResponse, answerHeaders, forward, forwardUpgrade, forwardedHeaders, type FrontRequest, type FrontResponse } from "./proxy"
 import { pagesHeaders, respondShaped, type FrontShaping } from "./front-shaping"
 import type { TlsFront } from "./tls-front"
 import { RELAY_PATH_PREFIX, publicOriginRoute } from "../../../claxedo-server/scripts/deploy/public-origin"
@@ -39,7 +40,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     if (delay > 0) setTimeout(run, delay)
     else run()
   }
-  const serve = async (request: IncomingMessage, response: ServerResponse) => {
+  const serve = async (request: FrontRequest, response: FrontResponse) => {
     const pathname = new URL(request.url ?? "/", input.hosted.workerUrl).pathname
     const route = publicOriginRoute(pathname)
     if (route === "relay") {
@@ -51,11 +52,12 @@ export async function startHostedAppFront(input: { port: number; distDir: string
       forwarded.push(`${request.method} ${pathname}`)
       const relay = () => {
         const upstream = httpsRequest({ hostname: worker.hostname, port: worker.port, method: request.method,
-          path: request.url, headers: request.headers, ca: certificate, agent: false }, (reply) => {
-          response.writeHead(reply.statusCode ?? 502, reply.headers)
+          path: request.url, headers: forwardedHeaders(request), ca: certificate, agent: false }, (reply) => {
+          response.writeHead(reply.statusCode ?? 502, answerHeaders(reply.headers))
           reply.pipe(response)
         })
-        upstream.on("error", (error) => response.headersSent ? response.destroy(error) : response.writeHead(502).end(error.message))
+        upstream.on("error", (error) => abortResponse(response, error))
+        response.on("close", () => upstream.destroy())
         request.pipe(upstream)
       }
       return held(relay)
@@ -66,8 +68,13 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     if (input.shaping) return respondShaped(request, response, path.extname(pathname) ? pathname : "/index.html", asset, answerFor(path.extname(pathname) ? pathname : "/index.html"), input.shaping)
     response.writeHead(asset.status, Object.fromEntries(asset.headers)).end(Buffer.from(await asset.arrayBuffer()))
   }
-  const servers = [createServer(tls, serve), createServer(tls, serve)]
+  const servers = [createSecureServer({ ...tls, allowHTTP1: true }, serve), createSecureServer({ ...tls, allowHTTP1: true }, serve)]
+  const sockets = new Set<Socket>()
   for (const server of servers) {
+    server.on("secureConnection", (socket) => {
+      sockets.add(socket)
+      socket.on("close", () => sockets.delete(socket))
+    })
     server.on("upgrade", (request, socket, head) => {
       if (publicOriginRoute(new URL(request.url ?? "/", input.hosted.workerUrl).pathname) !== "relay") {
         socket.destroy()
@@ -90,7 +97,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     controlPlaneRequests: () => [...forwarded],
     trust: { caPath: input.hosted.certificate, spki: createHash("sha256").update(spki).digest("base64") },
     close: async () => {
-      await Promise.all(servers.map((server) => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) })))
+      await Promise.all(servers.map((server) => new Promise<void>((resolve) => { server.close(() => resolve()); for (const socket of sockets) socket.destroy() })))
     },
   }
 }

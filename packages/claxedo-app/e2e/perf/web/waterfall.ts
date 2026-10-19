@@ -41,6 +41,7 @@ export type Waterfall = {
   readonly lastEndMs: number
   readonly byKind: Readonly<Record<string, { readonly count: number; readonly transferBytes: number; readonly ms: number }>>
   readonly waves: number
+  readonly protocols: Readonly<Record<string, number>>
 }
 
 const API_GAP_MS = 50
@@ -144,6 +145,8 @@ export function buildWaterfall(records: readonly NetworkRecord[], originTs: numb
     bucket.transferBytes += row.transferBytes
     bucket.ms = round(bucket.ms + (row.totalMs ?? 0))
   }
+  const protocols: Record<string, number> = {}
+  for (const row of rows) protocols[row.protocol ?? "none"] = (protocols[row.protocol ?? "none"] ?? 0) + 1
   return {
     rows,
     requests: rows.length,
@@ -152,5 +155,10 @@ export function buildWaterfall(records: readonly NetworkRecord[], originTs: numb
     lastEndMs: Math.max(0, ...rows.map((row) => row.endMs ?? 0)),
     byKind,
     waves: Math.max(0, ...rows.map((row) => row.wave)) + 1,
+    protocols,
   }
+}
+
+export function describeProtocols(protocols: Waterfall["protocols"]) {
+  return Object.entries(protocols).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name} ${count}`).join(", ")
 }
