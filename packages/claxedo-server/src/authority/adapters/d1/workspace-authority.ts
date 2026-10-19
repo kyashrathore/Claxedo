@@ -324,7 +324,8 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
    * join a verified principal or are discarded with the refusal.
    */
   async listWorkspaces(auth: SignedControlPlaneAuth) {
-    const [, rows] = await Promise.all([this.requirePrincipal(auth), this.openableWorkspaces(namedPrincipal(auth))])
+    const who = namedPrincipal(auth)
+    const [, rows] = await Promise.all([this.requirePrincipal(auth), this.openableWorkspaces(who)])
     return rows.map((row) => ({
       ...workspaceJson(row),
       role: "owner" as const,

@@ -585,6 +585,11 @@ describe("D1 host access authority", () => {
     await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
     expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: true })
 
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-c", paused: true })
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: false })
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-c", paused: false })
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: true })
+
     // The lease expiring is what makes it unreachable — no revoke, no unassign.
     input.advance(8_001)
     expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: false })

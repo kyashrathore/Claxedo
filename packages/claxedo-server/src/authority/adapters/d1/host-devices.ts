@@ -30,6 +30,7 @@ function storedStringList(raw: string): string[] {
  * verification keyed by the actor the auth names (`namedPrincipal`).
  */
 export async function listHostDevices(database: D1Database, deploymentId: string, auth: SignedControlPlaneAuth, now: number): Promise<HostDevice[]> {
+  const who = namedPrincipal(auth)
   const [, rows] = await Promise.all([requireHuman(database, deploymentId, auth), database.prepare(`
     select enrollment.enrollment_id, enrollment.host_id, enrollment.display_name, enrollment.last_seen_at,
       enrollment.expires_at, enrollment.paused_at, assignment.workspace_id,
@@ -39,7 +40,7 @@ export async function listHostDevices(database: D1Database, deploymentId: string
       and assignment.owner_actor_id = enrollment.owner_actor_id
     where enrollment.owner_actor_id = ? and enrollment.revoked_at is null
     order by enrollment.last_seen_at desc, enrollment.enrollment_id, assignment.workspace_id
-  `).bind(namedPrincipal(auth).actorId).all<DeviceRow>()])
+  `).bind(who.actorId).all<DeviceRow>()])
   const devices = new Map<string, HostDevice>()
   for (const row of rows.results ?? []) {
     const device = devices.get(row.enrollment_id) ?? {

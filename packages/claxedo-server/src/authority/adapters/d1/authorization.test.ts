@@ -168,6 +168,16 @@ describe("one authorization owner", () => {
     expect(await authority.listWorkspaces(follower)).toEqual([])
   })
 
+  test("a share revoked and granted again lists its session once, under the live grant's level", async () => {
+    const { authority, alice, follower } = await setup()
+    const share = { sessionId: "ses_alice", workspaceId: "ws_alice", grantedToUserId: id(follower) }
+    await authority.grantSessionShare!(alice, { ...share, level: "send" })
+    await authority.revokeSessionShare!(alice, share)
+    expect(await authority.listSharedSessions!(follower)).toEqual([])
+    await authority.grantSessionShare!(alice, { ...share, level: "follow" })
+    expect(await authority.listSharedSessions!(follower)).toEqual([expect.objectContaining({ session_id: "ses_alice", level: "follow" })])
+  })
+
   test("a session is shared with a person only: a team or organization target is refused and reaches no member", async () => {
     const { authority, alice, follower, teamId, grantees: { teamEditor } } = await setup()
     const input = { sessionId: "ses_alice", workspaceId: "ws_alice" }
