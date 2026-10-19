@@ -6,6 +6,7 @@ import type { MachineEnrollmentRow } from "./host-connect-contract"
 import { type MachineAuthDeps, type MachineRequest, verifyMachineRequest } from "./machine-auth"
 
 const NOW = 1_726_000_000_000
+const ORIGIN = "https://cp.example.test"
 const PATH = "/api/claxedo/host/enrollments/heartbeat"
 
 type Signer = { publicKeyJson: string; sign: (payload: string) => Promise<string> }
@@ -109,7 +110,7 @@ async function signedRequest(input: {
     if (value === null) headers.delete(name)
     else headers.set(name, value)
   }
-  return { method, pathname, headers: { get: (name) => headers.get(name) ?? null }, bodyText: body }
+  return { method, url: `${ORIGIN}${pathname}`, headers: { get: (name) => headers.get(name) ?? null }, bodyText: body }
 }
 
 describe("verifyMachineRequest", () => {
@@ -345,8 +346,22 @@ describe("verifyMachineRequest", () => {
       const request = await signedRequest({})
       expect(await verifyMachineRequest({ ...request, method: "PUT" }, deps().deps)).toEqual(DENIED)
       expect(
-        await verifyMachineRequest({ ...request, pathname: "/api/claxedo/host/enrollments/acquire" }, deps().deps),
+        await verifyMachineRequest({ ...request, url: `${ORIGIN}/api/claxedo/host/enrollments/acquire` }, deps().deps),
       ).toEqual(DENIED)
+    })
+
+    test("a query the signature does not cover is refused before lookup, even on a valid signature", async () => {
+      const request = await signedRequest({})
+      const { deps: refusing, lookups, consumed } = deps()
+      for (const url of [`${request.url}?generation=9`, "not a url"]) {
+        expect(await verifyMachineRequest({ ...request, url }, refusing), url).toEqual({
+          ok: false,
+          status: 400,
+          code: "machine_query_unsigned",
+        })
+      }
+      expect(lookups).toEqual([])
+      expect(consumed).toEqual([])
     })
 
     test("the signature binds ts and nonce headers", async () => {
