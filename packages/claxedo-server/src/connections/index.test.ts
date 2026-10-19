@@ -209,6 +209,36 @@ describe("connections host", () => {
     host.dispose()
   })
 
+  test("a pasted repository resolves to the code-host connection that can read it", async () => {
+    vi.stubGlobal("fetch", async (url: string) => url.includes("/user/installations") ? new Response("", { status: 403 }) : Response.json([{
+      id: 7,
+      name: "private",
+      full_name: "acme/private",
+      clone_url: "https://github.com/acme/private.git",
+      private: true,
+      permissions: { pull: true, push: false },
+    }]))
+    const host = createConnectionsHost({ credentials: credentialsPort(), env: {} })
+    await createConnectionStoreAdapter().upsert({
+      id: "org-github",
+      integrationId: "github",
+      grantedCapabilities: ["code-host"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    await createCredentialStoreAdapter(credentialsPort()).put({ providerId: "integration:org-github", kind: "api_key", secret: "gho_org" })
+
+    expect(await host.repositoryForAuth(undefined, undefined, "acme/private")).toMatchObject({
+      ok: true,
+      repository: { fullName: "acme/private", cloneUrl: "https://github.com/acme/private.git" },
+      token: "gho_org",
+    })
+    expect(await host.repositoryForAuth(undefined, "org-github", "acme/private")).toMatchObject({ ok: true, token: "gho_org" })
+    expect(await host.repositoryForAuth(undefined, undefined, "acme/other")).toEqual({ ok: false, status: 404, code: "repository_not_found" })
+    host.dispose()
+  })
+
   test("Google registers only when client credentials are configured", () => {
     const without = createConnectionsHost({ credentials: credentialsPort(), env: {} })
     expect(without.service.listIntegrations().map((integration) => integration.id)).not.toContain("google")
