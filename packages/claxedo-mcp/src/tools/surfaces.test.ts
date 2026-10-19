@@ -128,6 +128,26 @@ describe("ui_show", () => {
   })
 })
 
+describe("ui_show for plugin-only events", () => {
+  test("refuses a Board that moves items, at its move, and shows one that does not", async () => {
+    const { url } = await listen()
+    const client = await connect(url)
+    const board = (move: Record<string, unknown>) => ({
+      title: "Board",
+      components: [
+        { id: "root", component: "Board", columns: [{ key: "todo", title: "To do", items: "/todo" }], item: "card", itemKey: "id", ...move },
+        { id: "card", component: "Text", text: { path: "title" } },
+      ],
+      data: { todo: [{ id: "a", title: "A" }] },
+    })
+    expect(await show(client, board({ move: { event: { name: "moveCard" } } }))).toEqual({
+      isError: true,
+      text: "/components/0/move: the Board's move event is for app plugin pages; an agent reply leaves it out",
+    })
+    expect(await show(client, board({}))).toEqual({ isError: false, text: 'Shown "Board" with 2 components.' })
+  })
+})
+
 describe("ui_guide", () => {
   test("is read-only, takes no input, and the ui_show description sends the model to it", async () => {
     const { url } = await listen()

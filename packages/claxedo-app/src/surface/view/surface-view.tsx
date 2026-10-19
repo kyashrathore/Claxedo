@@ -10,6 +10,7 @@ import "./surface.css"
 import "./surface-layout.css"
 import "./surface-fields.css"
 import "./surface-display.css"
+import "./surface-board.css"
 
 export type SurfaceViewProps = {
   readonly surface: Surface
@@ -25,6 +26,9 @@ export function SurfaceView(props: SurfaceViewProps): JSX.Element {
   const runtime: SurfaceRuntime = {
     get state() {
       return state()
+    },
+    get source() {
+      return props.source
     },
     actionsDisabled,
     fire: (action, sourceComponentId, scope, supplied) => {

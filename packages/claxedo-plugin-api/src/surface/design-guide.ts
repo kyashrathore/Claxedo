@@ -37,6 +37,7 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 | A bounded continuous value | \`Slider\`; a small whole number is a number \`TextField\` |
 | Nothing to show yet | \`EmptyState\` |
 | A picture the producer has (a screenshot, an attachment, an avatar) | \`Image\` with a \`data:\` URL and an \`accessibility.label\` |
+| Items that move between states (a task board, a pipeline) | \`Board\`: one column per state, one \`item\` template; on a plugin page, \`move\` lets the person drag or key them across |
 | A work item's status beside its title | A ListItem \`icon\` or an \`Icon\` of \`circleDashed\` (not started), \`circle\` (to do), \`circleHalf\` (in progress), \`checkCircle\` (done) or \`alertCircle\` (blocked), with the status word in a Badge |
 
 A Badge's \`variant\` may be bound, so a template row can carry its own tone: put the tone beside the status word in each item (\`{"status": "Failed", "tone": "danger"}\`) and bind both (\`"text": {"path": "status"}, "variant": {"path": "tone"}\`); an unknown tone draws neutral. The text still says the state, so colour is never the only signal.
@@ -47,6 +48,15 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 - \`accessibility.label\` is required and says what the picture shows ("Login page after the fix"), not "image". A refused url draws a dashed box with that label instead of the picture.
 - \`variant\` sets the size: \`icon\` 24 px, \`avatar\` a 40 px circle, \`smallFeature\`, \`mediumFeature\` and \`largeFeature\` up to 120, 240 and 480 px wide, \`header\` the full width at most 200 px tall. Without one the picture keeps its own size, never wider than its column. \`fit\` (\`contain\` by default, \`cover\`, \`fill\`, \`none\`, \`scaleDown\`) says how it fills that box.
 - Several pictures sit in a Grid; a picture beside text sits in a Row.
+
+## Boards
+
+- A Board draws \`columns\`, each \`{"key", "title", "items"}\` where \`items\` is the data path of that column's list, with one \`item\` template for every card (paths inside it are relative to the item). \`itemKey\` names the field that holds each item's stable id. A column may add \`headerActions\` (an "Add card" icon Button) and a \`footer\` ("Load more").
+- \`layout\`: \`columns\` (default) draws lanes side by side that scroll sideways on a narrow screen; \`list\` stacks the columns as titled groups, and a single column is a sortable list.
+- \`move\` is for app plugin pages only. With it, every item whose \`movable\` field is true (every item when \`movable\` is left out) can be dragged with a pointer, or focused and moved with the keyboard: Space or Enter picks it up, the arrow keys move it within and across columns, Space or Enter drops it, Escape cancels. The event adds \`itemId\`, \`fromColumn\`, \`fromIndex\`, \`toColumn\` and \`toIndex\` (the position in the target list once the item is taken out of its old one).
+- The app never changes your data: it draws the dropped item at its target until your next \`updateDataModel\` touching either column's list. Answer every \`move\` with a patch: the new lists when it succeeds, the old lists when you refuse it (then say why in a Callout).
+- Touch has no drag. Give each card another way to move, such as a status ChoicePicker \`dropdown\` whose \`change\` you answer the same way.
+- An agent reply may draw a Board without \`move\`; for a few short lanes the Board recipe below (a Grid of Sections) works too.
 
 ## Provenance
 
@@ -389,6 +399,7 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 | Preformatted numbers in a Table ("1,204 ms") | JSON numbers, with the unit in the column title |
 | An Image pointing at an \`https\` URL | A \`data:\` URL in \`data\`, bound to \`url\` |
 | A status shown only as a coloured circle | The status glyph with its word in a Badge |
+| A Board \`move\` handler that only updates its own state | A patch of both columns' lists, old or new, for every move |
 
 ## Before you show it
 

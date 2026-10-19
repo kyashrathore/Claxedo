@@ -13,7 +13,7 @@ export function surfaceFixtureSource() {
 const CATALOG = "https://claxedo.dev/a2ui/v0.9/catalog.json"
 
 const components: SurfaceComponent[] = [
-  { id: "root", component: "Column", children: ["title", "search", "items", "add", "pictures", "order", "order-note"] },
+  { id: "root", component: "Column", children: ["title", "search", "items", "add", "pictures", "order", "order-note", "board", "move-note"] },
   { id: "title", component: "Text", text: "Surface fixture", variant: "h2" },
   { id: "search", component: "TextField", label: "Search items", value: { path: "/query" } },
   { id: "items", component: "List", children: { componentId: "item", path: "/items" } },
@@ -33,7 +33,27 @@ const components: SurfaceComponent[] = [
     change: { event: { name: "orderItems" } },
   },
   { id: "order-note", component: "Text", text: { path: "/orderNote" } },
+  {
+    id: "board",
+    component: "Board",
+    columns: [{ key: "todo", title: "To do", items: "/todo" }, { key: "done", title: "Done", items: "/done" }],
+    item: "card",
+    itemKey: "id",
+    move: { event: { name: "moveCard" } },
+  },
+  { id: "card", component: "ListItem", title: { path: "title" } },
+  { id: "move-note", component: "Text", text: { path: "/moveNote" } },
 ]
+
+function moveCard(lanes: Record<string, { id: string; title: string }[]>, context: Record<string, unknown>) {
+  const from = lanes[String(context.fromColumn)]
+  const to = lanes[String(context.toColumn)]
+  const index = from ? from.findIndex((card) => card.id === context.itemId) : -1
+  if (!from || !to || index === -1) return undefined
+  const [card] = from.splice(index, 1)
+  to.splice(Number(context.toIndex), 0, card)
+  return card.title + " is in " + String(context.toColumn) + " at " + (Number(context.toIndex) + 1)
+}
 
 export default definePlugin({
   activate(api) {
@@ -45,13 +65,23 @@ export default definePlugin({
       surface(channel) {
         const { surfaceId } = channel
         const items = [{ name: "First item" }]
+        const lanes = { todo: [{ id: "c1", title: "First card" }, { id: "c2", title: "Second card" }], done: [{ id: "c3", title: "Third card" }] }
         channel.send(
           { version: "v0.9", createSurface: { surfaceId, catalogId: CATALOG } },
           { version: "v0.9", updateComponents: { surfaceId, components } },
-          { version: "v0.9", updateDataModel: { surfaceId, path: "/", value: { query: "", items, picture: ${JSON.stringify(SURFACE_FIXTURE_PICTURE)}, order: ["oldest"], orderNote: "Ordered oldest first" } } },
+          { version: "v0.9", updateDataModel: { surfaceId, path: "/", value: { query: "", items, picture: ${JSON.stringify(SURFACE_FIXTURE_PICTURE)}, order: ["oldest"], orderNote: "Ordered oldest first", ...lanes, moveNote: "No card moved yet" } } },
         )
         return {
           action(action) {
+            if (action.name === "moveCard") {
+              const note = moveCard(lanes, action.context)
+              channel.send(
+                { version: "v0.9", updateDataModel: { surfaceId, path: "/todo", value: lanes.todo } },
+                { version: "v0.9", updateDataModel: { surfaceId, path: "/done", value: lanes.done } },
+                { version: "v0.9", updateDataModel: { surfaceId, path: "/moveNote", value: note ?? "The plugin refused the move" } },
+              )
+              return
+            }
             if (action.name === "orderItems") {
               const order = Array.isArray(action.context.value) ? action.context.value.join(", ") : "nothing"
               channel.send({ version: "v0.9", updateDataModel: { surfaceId, path: "/orderNote", value: "The plugin ordered by " + order } })

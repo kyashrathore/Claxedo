@@ -46,6 +46,17 @@ function catalogComponent<Name extends string, Shape extends z.ZodRawShape>(name
   return z.object({ ...common, component: z.literal(name), ...shape }).strict()
 }
 
+const boardColumn = z
+  .object({
+    key: z.string().min(1).max(64),
+    title: dynamicString,
+    items: z.string().max(1024),
+    headerActions: componentIdList.optional(),
+    footer: componentId.optional(),
+  })
+  .strict()
+  .meta({ id: "BoardColumn" })
+
 export const SURFACE_IMAGE_FITS = ["contain", "cover", "fill", "none", "scaleDown"] as const
 export const SURFACE_IMAGE_VARIANTS = ["icon", "avatar", "smallFeature", "mediumFeature", "largeFeature", "header"] as const
 
@@ -161,6 +172,14 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
   }),
   catalogComponent("Footer", { start: componentIdList.optional(), end: componentIdList }),
   catalogComponent("KeyValue", { items: z.union([z.array(keyValueItem), dataBindingSchema]) }),
+  catalogComponent("Board", {
+    columns: z.array(boardColumn).min(1).max(12),
+    item: componentId,
+    itemKey: z.string().min(1).max(64),
+    movable: z.string().max(64).optional(),
+    move: surfaceActionSchema.optional(),
+    layout: z.enum(["columns", "list"]).optional(),
+  }),
 ])
 
 export type SurfaceComponent = z.infer<typeof surfaceComponentSchema>
@@ -169,3 +188,4 @@ export type SurfaceDataBinding = z.infer<typeof dataBindingSchema>
 export type SurfaceActionDefinition = z.infer<typeof surfaceActionSchema>
 export type SurfaceChildList = z.infer<typeof childList>
 export type SurfaceDynamicValue = z.infer<typeof dynamicValue>
+export type SurfaceBoardColumn = z.infer<typeof boardColumn>

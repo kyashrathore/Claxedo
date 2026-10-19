@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import type { Locator, Page } from "@playwright/test"
 import {
   APP_PLUGIN_WARNING,
   approveAppPlugin,
@@ -28,7 +28,35 @@ async function openFixtureFromRail(app: Page, isMobile: boolean) {
   await row.click()
 }
 
-test("61 an app plugin's surface page opens from the sidebar, draws natively in the app's document, and answers its button, its images and its input events", async ({ stack, app, isMobile }) => {
+async function moveCardsOnTheBoard(surface: Locator, isMobile: boolean) {
+  const todo = surface.getByRole("region", { name: "To do" })
+  const done = surface.getByRole("region", { name: "Done" })
+  const board = surface.locator('[data-slot="surface-board"]')
+  await expect(surface.getByText("No card moved yet", { exact: true })).toBeVisible()
+  if (isMobile) expect(await board.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+  else {
+    const target = done.locator('[data-slot="surface-board-items"]')
+    const box = await target.boundingBox()
+    await todo.getByText("First card", { exact: true }).dragTo(target, { targetPosition: { x: 24, y: (box?.height ?? 40) - 4 } })
+    await expect(surface.getByText("First card is in done at 2", { exact: true })).toBeVisible()
+    await expect(done.getByText("First card", { exact: true })).toBeVisible()
+    await expect(todo.getByText("First card", { exact: true })).toHaveCount(0)
+  }
+  const second = todo.locator('[data-slot="surface-board-item"]').filter({ hasText: "Second card" })
+  await expect(second).toHaveAttribute("aria-roledescription", "movable item")
+  await second.focus()
+  await second.press(" ")
+  await second.press("ArrowRight")
+  const moved = done.locator('[data-slot="surface-board-item"]').filter({ hasText: "Second card" })
+  await expect(moved).toBeFocused()
+  await moved.press(" ")
+  await expect(board.locator('[data-slot="surface-board-status"]')).toHaveText(/^Dropped in Done, position \d$/)
+  await expect(surface.getByText(/^Second card is in done at \d$/)).toBeVisible()
+  await expect(done.getByText("Second card", { exact: true })).toBeVisible()
+  await expect(todo.getByText("Second card", { exact: true })).toHaveCount(0)
+}
+
+test("61 an app plugin's surface page opens from the sidebar, draws natively in the app's document, and answers its button, its images, its input events and its board moves", async ({ stack, app, isMobile }) => {
   await stack.daemon.makeWorkspace("surface-page", "Surface project")
   expect(await registerLivePlugin(stack.url, await writeSurfaceFixturePlugin(stack.dataDir))).toMatchObject({ id: "surface-fixture", status: "ready" })
   const requested: string[] = []
@@ -66,5 +94,7 @@ test("61 an app plugin's surface page opens from the sidebar, draws natively in 
   await expect(surface.getByText("Ordered oldest first", { exact: true })).toBeVisible()
   await surface.getByRole("button", { name: "Newest", exact: true }).click()
   await expect(surface.getByText("The plugin ordered by newest", { exact: true })).toBeVisible()
+
+  await moveCardsOnTheBoard(surface, isMobile)
   expect((await listLivePlugins(stack.url)).plugins).toEqual([expect.objectContaining({ id: "surface-fixture", status: "ready" })])
 })

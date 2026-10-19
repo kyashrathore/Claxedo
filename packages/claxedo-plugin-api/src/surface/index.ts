@@ -10,14 +10,15 @@ export {
 } from "./catalog"
 export type {
   SurfaceActionDefinition,
+  SurfaceBoardColumn,
   SurfaceChildList,
   SurfaceComponent,
   SurfaceComponentName,
   SurfaceDataBinding,
   SurfaceDynamicValue,
 } from "./catalog"
-export { SURFACE_EVENT_FIELDS, surfaceComponentEvents } from "./events"
-export type { SurfaceComponentEvent } from "./events"
+export { SURFACE_EVENT_FIELDS, SURFACE_PLUGIN_ONLY_EVENTS, isPluginOnlyEvent, surfaceComponentEvents } from "./events"
+export type { SurfaceComponentEvent, SurfaceProducer } from "./events"
 export { SURFACE_IMAGE_MAX_DATA_URL_LENGTH, SURFACE_IMAGE_REFUSALS, surfaceImageUrl } from "./image-url"
 export type { SurfaceImageRefusal, SurfaceImageUrl } from "./image-url"
 export {
@@ -29,5 +30,5 @@ export {
 } from "./messages"
 export type { SurfaceActionEvent, SurfaceMessage } from "./messages"
 export { SURFACE_ROOT_ID, checkSurfaceSpec, componentReferences, surfaceSpecMessages, surfaceSpecSchema } from "./spec"
-export type { SurfaceCheck, SurfaceIssue, SurfaceSpec } from "./spec"
+export type { SurfaceCheck, SurfaceCheckOptions, SurfaceIssue, SurfaceSpec } from "./spec"
 export { SURFACE_DESIGN_GUIDE } from "./design-guide"

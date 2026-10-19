@@ -19,6 +19,7 @@ export const UI_SHOW_DESCRIPTION = [
   "Any text, number or boolean prop may instead be a binding `{\"path\": \"/a/b\"}`, a JSON Pointer into `data`. To repeat a component per array item, give a container `children: {\"componentId\": \"row\", \"path\": \"/items\"}`; inside that template a path without a leading slash is relative to the item, as `{\"path\": \"name\"}`.",
   "Inputs (TextField, CheckBox, Switch, ChoicePicker, Slider, DateTimeInput) bind `value` to a data path. A Button needs a `child` (usually a Text) and `action: {\"event\": {\"name\": \"...\", \"context\": {...}}}`, whose context values may be bindings such as an input's path. When the person presses it and confirms, the event reaches you as a new user message carrying its name and resolved context. Inputs may also declare an event of the same shape (TextField `submit`, ChoicePicker, CheckBox, Switch and Tabs `change`), which adds `value` (Tabs: `index`) to its context; prefer one Button in a reply.",
   "An Image takes `accessibility.label` and a `url` that is a base64 PNG, JPEG, GIF or WebP `data:` URL; no other URL is drawn.",
+  "A Board draws `columns` (each `{key, title, items}` where `items` is a data path) of one `item` template keyed by `itemKey`; moving items (`move`) is for app plugin pages and is refused here.",
   `Components: ${COMPONENT_NAMES.join(", ")}.`,
   "An invalid spec is answered with each problem's JSON Pointer path; fix them and call again.",
 ].join("\n")
@@ -35,7 +36,7 @@ export function registerSurfaceTools(registry: ToolRegistrar) {
       access: declaredToolAccess({ audiences: ["runtime"], write: false, scope: "read" }),
     },
     async (args) => {
-      const checked = checkSurfaceSpec(args)
+      const checked = checkSurfaceSpec(args, { producer: "agent" })
       if (!checked.ok) return mcpToolRefusal(checked.issues.map((issue) => (issue.path ? `${issue.path}: ${issue.message}` : issue.message)).join("\n"))
       const count = checked.spec.components.length
       return toolText(`Shown "${checked.spec.title}" with ${count} ${count === 1 ? "component" : "components"}.`)

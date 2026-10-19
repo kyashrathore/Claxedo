@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   checkSurfaceSpec,
   componentReferences,
+  isPluginOnlyEvent,
   surfaceComponentEvents,
   surfaceComponentSchema,
   surfaceImageUrl,
@@ -303,5 +304,69 @@ describe("input events", () => {
     expect(surfaceComponentEvents(component)).toEqual([{ prop: "change", action: { event: { name: "toggle" } }, supplied: ["value"] }])
     expect(SURFACE_EVENT_FIELDS.Tabs).toEqual({ change: ["index"] })
     expect(surfaceComponentEvents(surfaceComponentSchema.parse({ id: "c", component: "CheckBox", label: "On", value: true }))).toEqual([])
+  })
+})
+
+const board = {
+  title: "Sprint board",
+  components: [
+    {
+      id: "root",
+      component: "Board",
+      columns: [
+        { key: "todo", title: "To do", items: "/todo", headerActions: ["add"], footer: "more" },
+        { key: "done", title: "Done", items: "/done" },
+      ],
+      item: "card",
+      itemKey: "id",
+      movable: "movable",
+      move: { event: { name: "moveCard", context: { board: "sprint" } } },
+    },
+    { id: "card", component: "Text", text: { path: "title" } },
+    { id: "add", component: "Button", child: "add-label", icon: "add", action: { event: { name: "addCard" } } },
+    { id: "add-label", component: "Text", text: "Add card" },
+    { id: "more", component: "Button", child: "more-label", variant: "borderless", action: { event: { name: "loadMore" } } },
+    { id: "more-label", component: "Text", text: "Load more" },
+  ],
+  data: { todo: [{ id: "a", title: "A", movable: true }], done: [] },
+}
+
+describe("Board", () => {
+  test("accepts columns with header actions and a footer, and names every id it references", () => {
+    expect(checkSurfaceSpec(board).ok).toBe(true)
+    expect(componentReferences(surfaceComponentSchema.parse(board.components[0]))).toEqual([
+      { path: "/item", id: "card" },
+      { path: "/columns/0/headerActions/0", id: "add" },
+      { path: "/columns/0/footer", id: "more" },
+    ])
+  })
+
+  test("refuses a dangling item template, a reused column key and a move context naming a supplied field", () => {
+    const [root, ...rest] = board.components
+    const broken = {
+      ...board,
+      components: [
+        { ...root, item: "gone", columns: [...board.components[0].columns!, { key: "todo", title: "Again", items: "/again" }], move: { event: { name: "moveCard", context: { toColumn: "x" } } } },
+        ...rest,
+      ],
+    }
+    const check = checkSurfaceSpec(broken)
+    expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual(["/components/0/item", "/components/0/move/event/context/toColumn", "/components/0/columns/2/key"])
+  })
+
+  test("is plugin-only when it moves: an agent's spec is refused at move, and a Board without move is accepted", () => {
+    const agent = checkSurfaceSpec(board, { producer: "agent" })
+    expect(agent.ok ? [] : agent.issues).toEqual([{ path: "/components/0/move", message: "the Board's move event is for app plugin pages; an agent reply leaves it out" }])
+    const { move: _move, ...still } = board.components[0]
+    expect(checkSurfaceSpec({ ...board, components: [still, ...board.components.slice(1)] }, { producer: "agent" }).ok).toBe(true)
+    expect(isPluginOnlyEvent("Board", "move")).toBe(true)
+    expect(isPluginOnlyEvent("ChoicePicker", "change")).toBe(false)
+  })
+
+  test("refuses no columns, more than 12, and an unknown layout", () => {
+    const root = board.components[0]
+    for (const change of [{ columns: [] }, { columns: Array.from({ length: 13 }, (_, index) => ({ key: `c${index}`, title: "C", items: "/c" })) }, { layout: "grid" }]) {
+      expect(checkSurfaceSpec({ ...board, components: [{ ...root, ...change }, ...board.components.slice(1)] }).ok).toBe(false)
+    }
   })
 })

@@ -729,9 +729,15 @@ export const desktopRenderer: Policy = {
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
   // renderer, as do the Image view that draws only the URLs the catalog's
   // rule admits (`surface/view/image-view.tsx`) and the key that fires a text
-  // field's submit event (`surface/submit-key.ts`). They add no package edge.
-  // 1483/36, no headroom.
-  ceilings: { modules: 1483, packages: 36 },
+  // field's submit event (`surface/submit-key.ts`). The Board, its lanes, its
+  // keyboard grab machine and pointer drop, and the pending move it draws until
+  // the producer's patch (`surface/view/board-view.tsx`,
+  // `surface/view/board-lane.tsx`, `surface/view/board-interaction.ts`,
+  // `surface/view/board-input.ts`, `surface/view/surface-board.css`,
+  // `surface/board-moves.ts`, `surface/board-pending.ts`) belong to the same
+  // renderer. They add no package edge.
+  // 1490/36, no headroom.
+  ceilings: { modules: 1490, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

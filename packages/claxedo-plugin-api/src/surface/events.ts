@@ -6,7 +6,14 @@ export const SURFACE_EVENT_FIELDS = {
   CheckBox: { change: ["value"] },
   Switch: { change: ["value"] },
   Tabs: { change: ["index"] },
+  Board: { move: ["itemId", "fromColumn", "fromIndex", "toColumn", "toIndex"] },
 } as const satisfies Partial<Record<SurfaceComponentName, Readonly<Record<string, readonly string[]>>>>
+
+export const SURFACE_PLUGIN_ONLY_EVENTS = {
+  Board: ["move"],
+} as const satisfies Partial<Record<keyof typeof SURFACE_EVENT_FIELDS, readonly string[]>>
+
+export type SurfaceProducer = "agent" | "plugin"
 
 export type SurfaceComponentEvent = {
   readonly prop: string
@@ -31,4 +38,9 @@ export function surfaceComponentEvents(component: SurfaceComponent): readonly Su
     const action: unknown = Reflect.get(component, prop)
     return isAction(action) ? [{ prop, action, supplied }] : []
   })
+}
+
+export function isPluginOnlyEvent(component: SurfaceComponentName, prop: string): boolean {
+  const props: readonly string[] = Object.hasOwn(SURFACE_PLUGIN_ONLY_EVENTS, component) ? Reflect.get(SURFACE_PLUGIN_ONLY_EVENTS, component) : []
+  return props.includes(prop)
 }

@@ -42,6 +42,14 @@ test("an input's event carries the declared context and the component's supplied
   expect(surfaceActionEventSchema.safeParse(event).success).toBe(true)
 })
 
+test("a Board move carries the item's key and both slots beside the declared context", () => {
+  const data = form()
+  const move = { itemId: "r2", fromColumn: "todo", fromIndex: 1, toColumn: "done", toIndex: 0 }
+  const event = surfaceActionEvent({ event: { name: "moveCard", context: { board: "sprint" } } }, { surfaceId: "s1", sourceComponentId: "board", scope: [] }, data, new Date(), move)
+  expect(event.context).toEqual({ board: "sprint", itemId: "r2", fromColumn: "todo", fromIndex: 1, toColumn: "done", toIndex: 0 })
+  expect(surfaceActionEventSchema.safeParse(event).success).toBe(true)
+})
+
 test("a supplied field wins over a declared context entry of the same name, which the spec check refuses", () => {
   const data = form()
   const event = surfaceActionEvent({ event: { name: "tab", context: { index: "declared" } } }, { surfaceId: "s1", sourceComponentId: "tabs", scope: [] }, data, new Date(), { index: 2 })

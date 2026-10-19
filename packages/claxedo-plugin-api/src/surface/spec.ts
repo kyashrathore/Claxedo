@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { SURFACE_CATALOG_ID, surfaceComponentSchema, type SurfaceChildList, type SurfaceComponent } from "./catalog"
-import { surfaceComponentEvents } from "./events"
+import { isPluginOnlyEvent, surfaceComponentEvents, type SurfaceProducer } from "./events"
 import { SURFACE_IMAGE_REFUSALS, surfaceImageUrl } from "./image-url"
 import { SURFACE_MAX_COMPONENTS, SURFACE_PROTOCOL_VERSION, type SurfaceMessage } from "./messages"
 
@@ -63,6 +63,14 @@ export function componentReferences(component: SurfaceComponent): readonly Compo
       return component.action === undefined ? [] : [{ path: "/action", id: component.action }]
     case "Footer":
       return [...listReferences("/start", component.start), ...listReferences("/end", component.end)]
+    case "Board":
+      return [
+        { path: "/item", id: component.item },
+        ...component.columns.flatMap((column, index) => [
+          ...listReferences(`/columns/${index}/headerActions`, column.headerActions),
+          ...(column.footer === undefined ? [] : [{ path: `/columns/${index}/footer`, id: column.footer }]),
+        ]),
+      ]
     default:
       return []
   }
@@ -102,15 +110,18 @@ function graphIssues(components: readonly SurfaceComponent[]): SurfaceIssue[] {
   return issues
 }
 
-function eventIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
-  return surfaceComponentEvents(component).flatMap((event) =>
-    Object.keys(event.action.event.context ?? {})
+function eventIssues(component: SurfaceComponent, at: string, producer: SurfaceProducer): SurfaceIssue[] {
+  return surfaceComponentEvents(component).flatMap((event) => [
+    ...(producer === "agent" && isPluginOnlyEvent(component.component, event.prop)
+      ? [{ path: `${at}/${event.prop}`, message: `the ${component.component}'s ${event.prop} event is for app plugin pages; an agent reply leaves it out` }]
+      : []),
+    ...Object.keys(event.action.event.context ?? {})
       .filter((key) => event.supplied.includes(key))
       .map((key) => ({
         path: `${at}/${event.prop}/event/context/${pointerOf([key]).slice(1)}`,
         message: `the ${component.component}'s ${event.prop} event supplies ${key} itself; give this context entry another name`,
       })),
-  )
+  ])
 }
 
 function imageIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
@@ -119,14 +130,28 @@ function imageIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
   return checked.ok ? [] : [{ path: `${at}/url`, message: SURFACE_IMAGE_REFUSALS[checked.reason] }]
 }
 
-function componentIssues(components: readonly SurfaceComponent[]): SurfaceIssue[] {
-  return components.flatMap((component, index) => [...eventIssues(component, `/components/${index}`), ...imageIssues(component, `/components/${index}`)])
+function boardIssues(component: SurfaceComponent, at: string): SurfaceIssue[] {
+  if (component.component !== "Board") return []
+  return component.columns.flatMap((column, index) =>
+    component.columns.findIndex((other) => other.key === column.key) === index
+      ? []
+      : [{ path: `${at}/columns/${index}/key`, message: `the column key ${column.key} is used twice` }],
+  )
 }
 
-export function checkSurfaceSpec(value: unknown): SurfaceCheck {
+function componentIssues(components: readonly SurfaceComponent[], producer: SurfaceProducer): SurfaceIssue[] {
+  return components.flatMap((component, index) => {
+    const at = `/components/${index}`
+    return [...eventIssues(component, at, producer), ...imageIssues(component, at), ...boardIssues(component, at)]
+  })
+}
+
+export type SurfaceCheckOptions = { readonly producer?: SurfaceProducer }
+
+export function checkSurfaceSpec(value: unknown, options: SurfaceCheckOptions = {}): SurfaceCheck {
   const parsed = surfaceSpecSchema.safeParse(value)
   if (!parsed.success) return { ok: false, issues: parsed.error.issues.map((issue) => ({ path: pointerOf(issue.path), message: issue.message })) }
-  const issues = [...graphIssues(parsed.data.components), ...componentIssues(parsed.data.components)]
+  const issues = [...graphIssues(parsed.data.components), ...componentIssues(parsed.data.components, options.producer ?? "plugin")]
   return issues.length > 0 ? { ok: false, issues } : { ok: true, spec: parsed.data }
 }
 

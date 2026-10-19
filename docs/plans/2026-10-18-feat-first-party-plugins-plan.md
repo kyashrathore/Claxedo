@@ -669,12 +669,18 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - the renderer adds `submit-key.ts` (Enter; Mod+Enter or Mod+S in `longText`) and `tab-strip.ts` `selectedTabIndex`;
   - flow 61's phone arrange opens the drawer until the fixture row is in view: the shell's `navigated` event closes the drawer once the home workspace is chosen, which failed the phone project at the base commit.
 - Progress: done 2026-10-18 — input `change`/`submit` events, `Image` (data:/same-origin blob:) and the five status glyphs; desktop-renderer 1483 modules, surface budget 2430.
-- [ ] **S3. `Board` with `move`.**
+- [x] **S3. `Board` with `move`.**
 - **Tests:** keyboard machine transitions, supplied move fields, the renderer never writes data, pending cleared by a patch to either column.
 - **Flow 61 fixture:** drag a card to another column; keyboard Space, ArrowRight, Space; the plugin patches and the card stays.
 - **Phone:** the board scrolls and the keyboard path works.
 - **Checks:** as S2.
-- Progress:
+- **As built:**
+  - `SURFACE_PLUGIN_ONLY_EVENTS` (`events.ts`) names the plugin-only events, and `checkSurfaceSpec(value, { producer: "agent" })` refuses them at the prop's pointer; `ui_show` checks as the agent producer;
+  - the spec check also refuses a reused column key;
+  - the pending move settles on the producer's patches only: `SurfaceState.watchPatches` reports each `updateDataModel` path from the store, so a local input write never settles it; while a move is pending no other move starts;
+  - the view splits into `board-view.tsx`, `board-lane.tsx`, `board-interaction.ts` (lanes, pending, announcer) and `board-input.ts` (keyboard grab and pointer drop);
+  - `move` reports `fromIndex` in the source list and `toIndex` in the target list with the item taken out.
+- Progress: done 2026-10-19 — `Board` with pointer drag and the keyboard grab (Space/Enter, arrows, Escape), pending until the plugin's patch; desktop-renderer 1490 modules, surface budget 3073.
 - [ ] **S4. `FilePicker` and `Combobox`.**
 - Move `image-drafts.ts` to `src/surface/image-fit.ts`; the Tasks create form imports it through `@/surface` until S10b.
 - **Tests:** accept/size/count/event caps, `fitImages` rounds, paste scope, debounce timing (fake clock), searching state.
