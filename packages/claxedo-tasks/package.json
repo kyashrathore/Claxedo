@@ -108,7 +108,8 @@
     "name": "Tasks",
     "version": "1.0.0",
     "app": "./src/app/index.ts",
-    "requires": ["tasks"]
+    "requires": ["tasks"],
+    "server": { "routes": ["/api/claxedo/tasks", "/api/claxedo/plugins"], "operations": [] }
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

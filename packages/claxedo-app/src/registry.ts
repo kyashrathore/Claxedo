@@ -5,7 +5,6 @@ import { pluginsSettingsSection } from "@/plugins"
 import { projectsSettingsSection } from "@/projects"
 import { marketplacePage, tasksPage } from "@/rail"
 import { settingsSections } from "@/settings"
-import { presetsSettingsSection } from "@/tasks"
 import { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "@/session"
 import { terminalCreatorPaneKind, terminalPaneKind } from "@/terminal"
 import { pageTabPaneKind, paneKindEntry, settingsPage, type FirstPartyEntries } from "@/shell"
@@ -20,7 +19,7 @@ export const firstParty: FirstPartyEntries = {
     paneKindEntry(pageTabPaneKind),
   ],
   panelViews: [subagentPanelView],
-  settingsSections: [...settingsSections, modelsSettingsSection, teamSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection, presetsSettingsSection],
+  settingsSections: [...settingsSections, modelsSettingsSection, teamSettingsSection, sandboxSettingsSection, projectsSettingsSection, pluginsSettingsSection],
   sidebarItems: [],
   overlays: [],
   commands: [],

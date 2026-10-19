@@ -11,7 +11,7 @@ const parts: readonly Part[] = [
   { name: "Server adapter", folders: ["src/server"] },
   { name: "Session client", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
   { name: "Session screen", budget: 14300, folders: ["src/session/view"] },
-  { name: "Composer", budget: 14376, folders: ["src/composer"] },
+  { name: "Composer", budget: 14401, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs", budget: 1542, folders: ["src/browser"] },
   { name: "Shell and platform", budget: 7406, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
@@ -24,15 +24,15 @@ const parts: readonly Part[] = [
   { name: "Plugin host", budget: 3050, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 1626, folders: ["src/plugins/frame"] },
   { name: "MCP App host", budget: 1791, folders: ["src/mcp-apps"] },
-  { name: "Surface renderer", budget: 4040, folders: ["src/surface"] },
+  { name: "Surface renderer", budget: 4042, folders: ["src/surface"] },
   { name: "Marketplace", budget: 2294, folders: ["src/marketplace"] },
-  { name: "Tasks", budget: 4658, folders: ["src/tasks"] },
+  { name: "Tasks", budget: 3665, folders: ["src/tasks"] },
   { name: "Notifications", budget: 183, folders: ["src/notifications"] },
   { name: "Workspace panel", budget: 1903, folders: ["src/panel"] },
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 115711
+const totalBudget = 114744
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))

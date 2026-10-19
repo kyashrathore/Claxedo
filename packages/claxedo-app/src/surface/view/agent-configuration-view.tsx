@@ -23,13 +23,15 @@ export function AgentConfigurationPickerView(props: SurfaceNodeProps<"AgentConfi
   return (
     <Show when={drawn()} fallback={<p class="text-12-regular text-text-weak">{t("surface.reference.unavailable")}</p>}>
       {(drawn) => (
-        <Dynamic
-          component={drawn().AgentConfigurationPicker}
-          placement={boundAgentPlacement(read.value(props.def.placement, props.scope))}
-          value={boundAgentConfiguration(runtime.state.data.read(path()))}
-          disabled={read.value(props.def.disabled, props.scope) === true}
-          onChange={change}
-        />
+        <div data-slot="surface-agent-configuration">
+          <Dynamic
+            component={drawn().AgentConfigurationPicker}
+            placement={boundAgentPlacement(read.value(props.def.placement, props.scope))}
+            value={boundAgentConfiguration(runtime.state.data.read(path()))}
+            disabled={read.value(props.def.disabled, props.scope) === true}
+            onChange={change}
+          />
+        </div>
       )}
     </Show>
   )

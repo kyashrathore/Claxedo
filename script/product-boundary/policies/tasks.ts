@@ -32,11 +32,17 @@ export const tasksApp: Policy = {
 
   control: {
     minModules: 3,
-    requiredModules: [`${SRC}/app/index.ts`, `${SRC}/app/tool-cards.ts`],
+    requiredModules: [`${SRC}/app/index.ts`, `${SRC}/app/tool-cards.ts`, `${SRC}/app/presets/program.ts`],
     requiredPackages: ["@claxedo/plugin-api"],
   },
 
-  // The entry, its card templates and its dictionary; the plugin API is the
-  // one package. Measured, no headroom.
-  ceilings: { modules: 3, packages: 1 },
+  // The entry, its card templates, its dictionary and words, the surface sync
+  // and parts every Tasks surface draws with, and Settings → Presets
+  // (`app/presets/`), which reads the server through the kit's own client and
+  // decoders (`client/client.ts`, `decode.ts`, `contracts.ts`, `validation.ts`)
+  // and refuses a cloud Pi preset with the kit's reason (`presets/model.ts`).
+  // Packages: the plugin API, `@claxedo/helpers` (the client's guards) and
+  // `@claxedo/agent-runtime-contract` (harness labels and cloud hosts).
+  // Measured, no headroom.
+  ceilings: { modules: 27, packages: 3 },
 }

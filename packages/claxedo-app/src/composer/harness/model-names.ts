@@ -1,3 +1,4 @@
+import { untrack } from "solid-js"
 import { produce } from "solid-js/store"
 import { isRecord } from "@claxedo/helpers/guards"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
@@ -26,7 +27,7 @@ export function createModelNames(): ModelNames {
     name: (model: ModelChoice): string | undefined => store[nameKey(model)],
     remember: (model: ModelChoice, name: string) => {
       const key = nameKey(model)
-      if (store[key] === name && Object.keys(store).at(-1) === key) return
+      if (untrack(() => store[key] === name && Object.keys(store).at(-1) === key)) return
       setStore(
         produce((names) => {
           delete names[key]

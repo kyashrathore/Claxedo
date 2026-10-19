@@ -669,10 +669,6 @@ export const desktopRenderer: Policy = {
   // composer's selected harness that the session screens read to keep a
   // session-host harness free of machine notices (owner: the app's composer
   // domain, `composer/harness/selected-harness.ts`). They add no package edge.
-  // A cloud preset's harness picker and the model it saves without asking a
-  // machine (owner: the app's tasks domain,
-  // `tasks/presets/cloud-configuration-picker.tsx`,
-  // `tasks/presets/cloud-model.ts`). They add no package edge.
   // The one Start fresh the placement notice, the model picker and Settings →
   // Projects share for a workspace whose checkpoint cannot be restored (owner:
   // the app's cloud domain, `cloud/view/start-fresh.ts`). It adds no package
@@ -773,7 +769,10 @@ export const desktopRenderer: Policy = {
   // out of `surface/data-path.ts`). Each bundle is a
   // `@claxedo/<plugin>/app?claxedo-plugin-bundle` chunk, a package edge onto
   // `@claxedo/tasks`, which the closure already counted. 1513/36, no headroom.
-  ceilings: { modules: 1513, packages: 36 },
+  // -7 modules (owner: the Tasks plugin, `@claxedo/tasks` `app/presets/`):
+  // Settings → Presets left the app's tasks domain (`tasks/presets/*`) and is
+  // the plugin's surface settings section. 1506/36, no headroom.
+  ceilings: { modules: 1506, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

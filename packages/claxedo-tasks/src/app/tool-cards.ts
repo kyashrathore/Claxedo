@@ -1,5 +1,5 @@
 import type { ToolCardLink, ToolCardStatus, ToolCardTemplate, ToolCardText } from "@claxedo/plugin-api"
-import type { TasksCardKey } from "./dictionary"
+import type { TasksCardKey } from "./words/card-words"
 
 export type CardTranslate = (key: TasksCardKey) => string
 

@@ -1,37 +1,16 @@
-const en = {
-  "claxedo-tasks.card.task_list": "List tasks",
-  "claxedo-tasks.card.task_get": "Read task",
-  "claxedo-tasks.card.task_create": "Create task",
-  "claxedo-tasks.card.task_edit": "Edit task",
-  "claxedo-tasks.card.task_start": "Start task",
-  "claxedo-tasks.card.status.backlog": "Backlog",
-  "claxedo-tasks.card.status.todo": "To do",
-  "claxedo-tasks.card.status.doing": "In progress",
-  "claxedo-tasks.card.status.needs_you": "Needs you",
-  "claxedo-tasks.card.status.done": "Done",
-  "claxedo-tasks.card.fact.parent": "Subtask of",
-  "claxedo-tasks.card.fact.createdFrom": "Created from",
-  "claxedo-tasks.card.fact.session": "Session",
-  "claxedo-tasks.card.fact.preset": "Preset",
-  "claxedo-tasks.card.fact.slot": "Slot",
-  "claxedo-tasks.card.fact.attempt": "Attempt",
-  "claxedo-tasks.card.fact.placement": "Placement",
-  "claxedo-tasks.card.fact.destination": "Destination",
-  "claxedo-tasks.card.fact.subtasks": "Subtasks",
-  "claxedo-tasks.card.fact.sessions": "Sessions",
-  "claxedo-tasks.card.note.replayed": "already existed",
-  "claxedo-tasks.card.note.alreadyRunning": "already running",
-  "claxedo-tasks.card.note.continued": "continues the previous session",
-  "claxedo-tasks.card.task.one": "task",
-  "claxedo-tasks.card.task.other": "tasks",
-  "claxedo-tasks.card.subtask.one": "subtask",
-  "claxedo-tasks.card.subtask.other": "subtasks",
-  "claxedo-tasks.card.session.one": "session",
-  "claxedo-tasks.card.session.other": "sessions",
-  "claxedo-tasks.card.more": "+{count} more",
-  "claxedo-tasks.card.moreAvailable": "more available",
-} as const
+import type { I18nApi } from "@claxedo/plugin-api"
+import { CARD_WORDS } from "./words/card-words"
+import { COMMON_WORDS } from "./words/common-words"
+import { PRESET_WORDS } from "./words/preset-words"
 
-export type TasksCardKey = keyof typeof en
+const en = { ...CARD_WORDS, ...COMMON_WORDS, ...PRESET_WORDS }
 
-export const dictionary: { readonly en: Readonly<Record<TasksCardKey, string>> } = { en }
+export type TasksKey = keyof typeof en
+
+export type Translate = (key: TasksKey, params?: Readonly<Record<string, string | number>>) => string
+
+export const dictionary: { readonly en: Readonly<Record<TasksKey, string>> } = { en }
+
+export function translator(i18n: I18nApi): Translate {
+  return (key, params) => i18n.t(key, params)
+}

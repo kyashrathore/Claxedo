@@ -137,57 +137,6 @@ const en = {
   "tasks.image.limit": "A task holds up to {{max}} images.",
   "tasks.start.createPreset": "Create a preset in Settings",
   "tasks.start.managePresets": "Manage presets in Settings",
-  "tasks.preset.title": "Presets",
-  "tasks.preset.description":
-    "Presets are yours. They describe how and where an agent works, and are reusable across your projects.",
-  "tasks.preset.showArchived": "Show archived",
-  "tasks.preset.new": "New preset",
-  "tasks.preset.none": "No presets yet.",
-  "tasks.preset.archive": "Archive",
-  "tasks.preset.restore": "Restore",
-  "tasks.preset.save": "Save preset",
-  "tasks.preset.create": "Create preset",
-  "tasks.preset.local": "Local",
-  "tasks.preset.cloud": "Cloud",
-  "tasks.preset.name": "Name",
-  "tasks.preset.namePlaceholder": "Careful reviewer",
-  "tasks.preset.nameRequired": "Name is required.",
-  "tasks.preset.nameTooLong": "Name is longer than {{max}} characters.",
-  "tasks.preset.cloudHarnessElsewhere":
-    "{{harness}} runs in its own session host on a cloud workspace, and a cloud task starts its session in the workspace's runtime. Choose another harness for a cloud preset.",
-  "tasks.preset.chooseHarness": "Choose a harness.",
-  "tasks.preset.chooseModel": "Choose a model for this harness.",
-  "tasks.preset.primaryRequired": "The primary configuration is required.",
-  "tasks.preset.execution": "Execution",
-  "tasks.preset.unsupportedPlacement":
-    "This server cannot run {{placement}} presets. Saving keeps the choice; starting will be refused rather than moved elsewhere.",
-  "tasks.preset.agentStartable": "Startable by agents",
-  "tasks.preset.agentStartableHint":
-    "An agent working in a session may start this preset on a task, once your account lets agents act on your other machines. Off, only you can start it.",
-  "tasks.preset.configurations": "Configurations",
-  "tasks.preset.primaryConfiguration": "Primary configuration",
-  "tasks.preset.additionalConfigurations": "Additional configurations",
-  "tasks.preset.labelsHint":
-    "Labels describe intended use. They are settings you pick when starting a session, not stages that run on their own.",
-  "tasks.preset.instructions": "Instructions",
-  "tasks.preset.instructionsLabel": "Preset instructions",
-  "tasks.preset.instructionsPlaceholder": "What this agent should always do, whatever the task says",
-  "tasks.preset.capabilities": "Capabilities",
-  "tasks.preset.guaranteeLocal":
-    "Uses the skills and plugins installed on the machine the session runs on. The selection below is not enforced there.",
-  "tasks.preset.guaranteeCloud":
-    "Only the selected plugins and skills are installed in the isolated cloud environment, and only their credentials are brokered. The repository, shell and network still follow the host's policy, so this limits registered capabilities, not everything the agent can reach.",
-  "tasks.preset.emptySelection":
-    "An empty selection means none of these optional capabilities. The platform tools every session needs are always present.",
-  "tasks.preset.loadingCapabilities": "Loading installed capabilities…",
-  "tasks.preset.plugins": "Plugins",
-  "tasks.preset.skills": "Skills",
-  "tasks.preset.noPlugins": "No installed plugins.",
-  "tasks.preset.noSkills": "No installed skills.",
-  "tasks.preset.skillGuidance": "A selected skill adds guidance only. It does not enable the plugin that supplies it.",
-  "tasks.preset.bundledSkills": "Bundled skills: {{skills}}",
-  "tasks.preset.noSource": "No source serves this plugin any more.",
-  "tasks.preset.artifactUnavailable": "The retained artifact is unavailable.",
 }
 
 export type TasksKey = keyof typeof en

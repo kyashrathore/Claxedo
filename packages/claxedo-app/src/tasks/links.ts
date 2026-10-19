@@ -37,7 +37,7 @@ export function useOpenTasksPage() {
   return (taskId?: string) => route.navigate(taskId ? `/tasks/${encodeURIComponent(taskId)}` : "/tasks")
 }
 
-export const PRESETS_SECTION_ID = "tasks-presets"
+export const PRESETS_SECTION_ID = "claxedo-tasks/presets"
 
 export function useOpenPresetSettings() {
   const route = useShellRoute()
