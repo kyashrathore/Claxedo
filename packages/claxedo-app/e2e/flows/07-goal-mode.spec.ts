@@ -2,9 +2,9 @@ import { type CliName, expect, installedCli, sessionRoute, test, UI } from "../h
 
 test.skip(({ isMobile }) => isMobile, "flow 7 runs at desktop width")
 
-const GOALS: readonly { readonly cli: CliName; readonly mode: string }[] = [
-  { cli: "codex", mode: "native" },
-  { cli: "claude", mode: "evaluated" },
+const GOALS: readonly { readonly cli: CliName; readonly mode: string; readonly controls: boolean }[] = [
+  { cli: "codex", mode: "native", controls: true },
+  { cli: "claude", mode: "evaluated", controls: false },
 ]
 
 for (const goal of GOALS) {
@@ -28,16 +28,23 @@ for (const goal of GOALS) {
     await expect(dock).toBeVisible()
     await expect(dock).toContainText("Write GOALDONE into notes.md")
     const opened = await fetch(`${stack.url}/session/${session.id}?view=open&directory=${encodeURIComponent(workspace.directory)}`)
-    expect(JSON.stringify((await opened.json()).goal)).toContain("Write GOALDONE into notes.md")
-    release()
-
+    const recorded = (await opened.json()).goal
+    expect(JSON.stringify(recorded)).toContain("Write GOALDONE into notes.md")
     await dock.getByRole("button", { expanded: false }).click()
-    await dock.getByRole("button", { name: "Delete", exact: true }).click()
-    const confirm = app.getByRole("dialog", { name: "Delete Goal?" })
-    const remove = confirm.getByRole("button", { name: "Delete", exact: true })
-    await expect(remove).toHaveAttribute("data-variant", "danger")
-    await remove.click()
-    await expect(dock).toHaveCount(0)
+    if (goal.controls) {
+      release()
+      await dock.getByRole("button", { name: "Delete", exact: true }).click()
+      const confirm = app.getByRole("dialog", { name: "Delete Goal?" })
+      const remove = confirm.getByRole("button", { name: "Delete", exact: true })
+      await expect(remove).toHaveAttribute("data-variant", "danger")
+      await remove.click()
+      await expect(dock).toHaveCount(0)
+    } else {
+      expect(recorded, "Claude Code offers no Goal controls").toMatchObject({ value: { capabilities: { actions: [] } } })
+      await expect(dock.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0)
+      release()
+      await expect(dock, "Claude Code clears its native Goal once its evaluator accepts it").toHaveCount(0, { timeout: 60_000 })
+    }
     const cleared = await fetch(`${stack.url}/session/${session.id}?view=open&directory=${encodeURIComponent(workspace.directory)}`)
     expect((await cleared.json()).goal).toMatchObject({ value: { goal: null } })
   })
