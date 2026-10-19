@@ -1,3 +1,4 @@
+import { pathsOverlap } from "./data-path"
 import type { DataPath } from "./model"
 
 export type BoardMove = {
@@ -47,12 +48,8 @@ export function arrangeBoard(sources: readonly BoardLaneSource[], itemKey: strin
   return move ? applyMove(lanes, move) : lanes
 }
 
-function isPathWithin(path: DataPath, prefix: DataPath): boolean {
-  return prefix.length <= path.length && prefix.every((segment, index) => path[index] === segment)
-}
-
 export function patchSettlesMove(patched: DataPath, move: BoardMove, lanes: readonly BoardLaneSource[]): boolean {
   return lanes
     .filter((lane) => lane.key === move.fromColumn || lane.key === move.toColumn)
-    .some((lane) => isPathWithin(patched, lane.path) || isPathWithin(lane.path, patched))
+    .some((lane) => pathsOverlap(patched, lane.path))
 }

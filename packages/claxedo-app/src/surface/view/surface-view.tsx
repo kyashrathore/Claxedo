@@ -11,6 +11,7 @@ import "./surface-layout.css"
 import "./surface-fields.css"
 import "./surface-display.css"
 import "./surface-board.css"
+import "./surface-pickers.css"
 
 export type SurfaceViewProps = {
   readonly surface: Surface

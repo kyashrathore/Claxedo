@@ -735,9 +735,16 @@ export const desktopRenderer: Policy = {
   // `surface/view/board-lane.tsx`, `surface/view/board-interaction.ts`,
   // `surface/view/board-input.ts`, `surface/view/surface-board.css`,
   // `surface/board-moves.ts`, `surface/board-pending.ts`) belong to the same
-  // renderer. They add no package edge.
-  // 1490/36, no headroom.
-  ceilings: { modules: 1490, packages: 36 },
+  // renderer, as do the FilePicker with the file reading and image fitting it
+  // owns (`surface/view/file-picker-view.tsx`, `surface/file-read.ts`,
+  // `surface/image-fit.ts`, moved from the tasks domain's image drafts, which
+  // the Tasks create form now imports) and the Combobox with its options and
+  // search debounce (`surface/view/combobox-view.tsx`,
+  // `surface/view/combobox-state.ts`, `surface/view/combobox-list.tsx`,
+  // `surface/combobox-options.ts`, `surface/search-debounce.ts`,
+  // `surface/view/surface-pickers.css`). They add no package edge.
+  // 1498/36, no headroom.
+  ceilings: { modules: 1498, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

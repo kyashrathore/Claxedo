@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test"
-import { isBinding, itemScope, parsePointer, resolvePath } from "./data-path"
+import { isBinding, itemScope, parsePointer, pathsOverlap, resolvePath } from "./data-path"
 
 describe("parsePointer", () => {
   test("reads / and the empty pointer as the whole model", () => {
@@ -36,4 +36,11 @@ test("only an object with a string path is a binding", () => {
   expect(isBinding("a")).toBe(false)
   expect(isBinding(["/a"])).toBe(false)
   expect(isBinding({ path: 1 })).toBe(false)
+})
+
+describe("pathsOverlap", () => {
+  test("holds when one path is the other or lies inside it", () => {
+    expect([pathsOverlap(["a", "b"], ["a"]), pathsOverlap(["a"], ["a", "b"]), pathsOverlap([], ["a"]), pathsOverlap(["a"], ["a"])]).toEqual([true, true, true, true])
+    expect([pathsOverlap(["a", "b"], ["a", "c"]), pathsOverlap(["ab"], ["a"])]).toEqual([false, false])
+  })
 })

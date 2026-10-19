@@ -7,10 +7,14 @@ export const SURFACE_EVENT_FIELDS = {
   Switch: { change: ["value"] },
   Tabs: { change: ["index"] },
   Board: { move: ["itemId", "fromColumn", "fromIndex", "toColumn", "toIndex"] },
+  FilePicker: { pick: ["files", "refused"] },
+  Combobox: { search: ["query"], change: ["value"] },
 } as const satisfies Partial<Record<SurfaceComponentName, Readonly<Record<string, readonly string[]>>>>
 
 export const SURFACE_PLUGIN_ONLY_EVENTS = {
   Board: ["move"],
+  FilePicker: ["pick"],
+  Combobox: ["search"],
 } as const satisfies Partial<Record<keyof typeof SURFACE_EVENT_FIELDS, readonly string[]>>
 
 export type SurfaceProducer = "agent" | "plugin"

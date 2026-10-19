@@ -38,6 +38,8 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 | Nothing to show yet | \`EmptyState\` |
 | A picture the producer has (a screenshot, an attachment, an avatar) | \`Image\` with a \`data:\` URL and an \`accessibility.label\` |
 | Items that move between states (a task board, a pipeline) | \`Board\`: one column per state, one \`item\` template; on a plugin page, \`move\` lets the person drag or key them across |
+| Files the person attaches (images, documents) | \`FilePicker\` (plugin pages only), with the picked images shown back as \`Image\`s |
+| One choice from a long or searched list (a project, a person) | \`Combobox\`; \`multiple\` for several |
 | A work item's status beside its title | A ListItem \`icon\` or an \`Icon\` of \`circleDashed\` (not started), \`circle\` (to do), \`circleHalf\` (in progress), \`checkCircle\` (done) or \`alertCircle\` (blocked), with the status word in a Badge |
 
 A Badge's \`variant\` may be bound, so a template row can carry its own tone: put the tone beside the status word in each item (\`{"status": "Failed", "tone": "danger"}\`) and bind both (\`"text": {"path": "status"}, "variant": {"path": "tone"}\`); an unknown tone draws neutral. The text still says the state, so colour is never the only signal.
@@ -57,6 +59,12 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 - The app never changes your data: it draws the dropped item at its target until your next \`updateDataModel\` touching either column's list. Answer every \`move\` with a patch: the new lists when it succeeds, the old lists when you refuse it (then say why in a Callout).
 - Touch has no drag. Give each card another way to move, such as a status ChoicePicker \`dropdown\` whose \`change\` you answer the same way.
 - An agent reply may draw a Board without \`move\`; for a few short lanes the Board recipe below (a Grid of Sections) works too.
+
+## Files and search
+
+- A FilePicker is for app plugin pages only. It draws a "Choose" button and a drop area; \`paste: "self"\` also takes a paste while the picker has focus, \`paste: "section"\` while focus is anywhere in its Section or Card. \`accept\` lists types (\`image/png\`, \`image/*\`) or extensions (\`.pdf\`), \`maxBytes\` caps each file (at most 8 MiB) and \`maxFiles\` caps one pick (1 by default). \`fitImages\` re-encodes an image over \`maxBytes\` smaller before refusing it.
+- \`pick\` carries the bytes, never a path: \`files\` is \`[{"name", "mimeType", "size", "dataBase64"}]\` and \`refused\` is \`[{"name", "reason"}]\` with reason \`type\`, \`size\` or \`count\`. One pick carries at most 12 MiB; files past it are refused as \`size\`. Keep what you accept in your own state, show it back (an \`Image\` per picture, a ListItem per document, each with a remove Button), and name each refusal in a \`warning\` Callout.
+- A Combobox binds \`value\` (a string, or a list with \`multiple\`) and draws \`options\` (\`{"label", "value", "description"}\`, literal or bound). Without \`search\` it filters its options by the typed text itself. With \`search\` (plugin pages only) it sends \`{"query"}\` 250 ms after the last keystroke and shows "Searching…" until your next patch under the bound \`options\` path; answer with the matching options and drop answers to older queries. \`change\` sends \`{"value"}\` once the person picks.
 
 ## Provenance
 
@@ -420,4 +428,5 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 15. A view with inputs ends with a Footer.
 16. Each repeated row has at most one text action (\`primaryAction\`); every Button in its \`actions\` has an \`icon\`, and a destructive one uses \`delete\`.
 17. Every Image has a \`data:\` URL and an \`accessibility.label\` that says what it shows.
+18. A FilePicker's refusals are named back in a Callout, and a Combobox with \`search\` binds \`options\` so its answers can arrive.
 `

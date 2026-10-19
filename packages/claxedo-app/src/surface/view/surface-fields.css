@@ -98,6 +98,8 @@
   [data-component="field-v2"] [data-slot="field-v2-label"],
   [data-component="radio-v2"] [data-slot="radio-v2-label"],
   [data-slot="surface-choice"] [data-slot="surface-input-label"],
+  [data-slot="surface-file-picker"] [data-slot="surface-input-label"],
+  [data-slot="surface-combobox"] [data-slot="surface-input-label"],
   [data-slot="surface-input"] [data-slot="surface-input-label"] {
     min-height: 16px;
     padding: 0;

@@ -10,6 +10,7 @@ import {
   surfaceSpecMessages,
   SURFACE_CATALOG_ID,
   SURFACE_EVENT_FIELDS,
+  SURFACE_FILE_MAX_BYTES,
   SURFACE_IMAGE_MAX_DATA_URL_LENGTH,
 } from "./index"
 
@@ -368,5 +369,71 @@ describe("Board", () => {
     for (const change of [{ columns: [] }, { columns: Array.from({ length: 13 }, (_, index) => ({ key: `c${index}`, title: "C", items: "/c" })) }, { layout: "grid" }]) {
       expect(checkSurfaceSpec({ ...board, components: [{ ...root, ...change }, ...board.components.slice(1)] }).ok).toBe(false)
     }
+  })
+})
+
+const attach = (props: Record<string, unknown> = {}) => ({
+  title: "Attach",
+  components: [{ id: "root", component: "FilePicker", label: "Images", accept: ["image/png", ".jpg", "image/*"], maxBytes: 1_572_864, maxFiles: 6, fitImages: true, paste: "section", pick: { event: { name: "attach" } }, ...props }],
+})
+
+const project = (props: Record<string, unknown> = {}) => ({
+  title: "Project",
+  components: [
+    {
+      id: "root",
+      component: "Combobox",
+      label: "Project",
+      value: { path: "/project" },
+      options: { path: "/projects" },
+      query: { path: "/query" },
+      search: { event: { name: "findProjects" } },
+      change: { event: { name: "chooseProject" } },
+      placeholder: "Search projects",
+      emptyText: "No project matches",
+      ...props,
+    },
+  ],
+  data: { project: "", projects: [{ label: "Claxedo", value: "p1", description: "kyashrathore/Claxedo" }], query: "" },
+})
+
+describe("FilePicker", () => {
+  test("accepts types and extensions, a per-file cap up to 8 MiB and up to 16 files", () => {
+    expect(checkSurfaceSpec(attach()).ok).toBe(true)
+    expect(checkSurfaceSpec(attach({ maxBytes: SURFACE_FILE_MAX_BYTES, maxFiles: 16 })).ok).toBe(true)
+  })
+
+  test("refuses a malformed accept entry, a cap past 8 MiB, more than 16 files and a missing pick", () => {
+    for (const props of [{ accept: ["png"] }, { accept: ["Image/PNG"] }, { accept: [] }, { maxBytes: SURFACE_FILE_MAX_BYTES + 1 }, { maxFiles: 17 }, { paste: "page" }, { pick: undefined }]) {
+      expect(checkSurfaceSpec(attach(props)).ok).toBe(false)
+    }
+  })
+
+  test("is plugin-only, and its pick context may not name files or refused", () => {
+    const agent = checkSurfaceSpec(attach(), { producer: "agent" })
+    expect(agent.ok ? [] : agent.issues.map((issue) => issue.path)).toEqual(["/components/0/pick"])
+    const clash = checkSurfaceSpec(attach({ pick: { event: { name: "attach", context: { files: [] } } } }))
+    expect(clash.ok ? [] : clash.issues.map((issue) => issue.path)).toEqual(["/components/0/pick/event/context/files"])
+  })
+})
+
+describe("Combobox", () => {
+  test("accepts bound or literal options, one or many values", () => {
+    expect(checkSurfaceSpec(project()).ok).toBe(true)
+    expect(checkSurfaceSpec(project({ multiple: true, options: [{ label: "A", value: "a" }], search: undefined })).ok).toBe(true)
+  })
+
+  test("refuses a literal value, more than 200 literal options and an unknown option field", () => {
+    for (const props of [{ value: "p1" }, { options: Array.from({ length: 201 }, (_, index) => ({ label: "O", value: String(index) })) }, { options: [{ label: "A", value: "a", icon: "add" }] }]) {
+      expect(checkSurfaceSpec(project(props)).ok).toBe(false)
+    }
+  })
+
+  test("is plugin-only when it searches; change stays open to agents, and neither may reuse query or value", () => {
+    const agent = checkSurfaceSpec(project(), { producer: "agent" })
+    expect(agent.ok ? [] : agent.issues.map((issue) => issue.path)).toEqual(["/components/0/search"])
+    expect(checkSurfaceSpec(project({ search: undefined }), { producer: "agent" }).ok).toBe(true)
+    const clash = checkSurfaceSpec(project({ search: { event: { name: "find", context: { query: "x" } } }, change: { event: { name: "pick", context: { value: "x" } } } }))
+    expect(clash.ok ? [] : clash.issues.map((issue) => issue.path)).toEqual(["/components/0/search/event/context/query", "/components/0/change/event/context/value"])
   })
 })

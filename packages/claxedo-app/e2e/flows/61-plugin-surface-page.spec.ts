@@ -9,6 +9,7 @@ import {
   registerLivePlugin,
   SURFACE_FIXTURE_NAME,
   SURFACE_FIXTURE_PATH,
+  SURFACE_FIXTURE_PICTURE,
   SURFACE_FIXTURE_REMOTE_PICTURE,
   test,
   UI,
@@ -56,7 +57,28 @@ async function moveCardsOnTheBoard(surface: Locator, isMobile: boolean) {
   await expect(todo.getByText("Second card", { exact: true })).toHaveCount(0)
 }
 
-test("61 an app plugin's surface page opens from the sidebar, draws natively in the app's document, and answers its button, its images, its input events and its board moves", async ({ stack, app, isMobile }) => {
+async function attachAndSearch(surface: Locator) {
+  const attachments = surface.getByRole("region", { name: "Attachments" })
+  const input = attachments.getByRole("group", { name: "Attach images" }).locator('input[type="file"]')
+  const swatch = Buffer.from(SURFACE_FIXTURE_PICTURE.slice(SURFACE_FIXTURE_PICTURE.indexOf(",") + 1), "base64")
+  await input.setInputFiles({ name: "swatch.png", mimeType: "image/png", buffer: swatch })
+  const preview = attachments.getByRole("img", { name: "swatch.png" })
+  await expect(preview).toHaveAttribute("data-slot", "surface-image")
+  await expect.poll(() => preview.evaluate((image: HTMLImageElement) => (image.complete ? image.naturalWidth : 0))).toBe(16)
+  await expect(attachments.getByText("Nothing refused", { exact: true })).toBeVisible()
+  await input.setInputFiles({ name: "big.png", mimeType: "image/png", buffer: Buffer.alloc(5000) })
+  await expect(attachments.getByText("Refused big.png: size", { exact: true })).toBeVisible()
+
+  const project = surface.getByRole("combobox", { name: "Project" })
+  await project.fill("doc")
+  await expect(surface.getByRole("option", { name: /^Docs site/ })).toBeVisible()
+  await expect(surface.getByRole("option", { name: /^Claxedo app/ })).toHaveCount(0)
+  await surface.getByRole("option", { name: /^Docs site/ }).click()
+  await expect(surface.getByText("Chose docs", { exact: true })).toBeVisible()
+  await expect(project).toHaveValue("Docs site")
+}
+
+test("61 an app plugin's surface page opens from the sidebar, draws natively in the app's document, and answers its button, its images, its input events, its board moves, its picked files and its searched choices", async ({ stack, app, isMobile }) => {
   await stack.daemon.makeWorkspace("surface-page", "Surface project")
   expect(await registerLivePlugin(stack.url, await writeSurfaceFixturePlugin(stack.dataDir))).toMatchObject({ id: "surface-fixture", status: "ready" })
   const requested: string[] = []
@@ -96,5 +118,6 @@ test("61 an app plugin's surface page opens from the sidebar, draws natively in 
   await expect(surface.getByText("The plugin ordered by newest", { exact: true })).toBeVisible()
 
   await moveCardsOnTheBoard(surface, isMobile)
+  await attachAndSearch(surface)
   expect((await listLivePlugins(stack.url)).plugins).toEqual([expect.objectContaining({ id: "surface-fixture", status: "ready" })])
 })

@@ -57,6 +57,15 @@ const boardColumn = z
   .strict()
   .meta({ id: "BoardColumn" })
 
+export const SURFACE_FILE_MAX_BYTES = 8 * 1024 * 1024
+export const SURFACE_FILE_EVENT_MAX_BYTES = 12 * 1024 * 1024
+export const SURFACE_FILE_ACCEPT_PATTERN = /^(?:\.[a-z0-9]+|[a-z]+\/(?:[a-z0-9.+-]+|\*))$/
+
+const comboOption = z
+  .object({ label: dynamicString, value: z.string().max(256), description: dynamicString.optional() })
+  .strict()
+  .meta({ id: "ComboboxOption" })
+
 export const SURFACE_IMAGE_FITS = ["contain", "cover", "fill", "none", "scaleDown"] as const
 export const SURFACE_IMAGE_VARIANTS = ["icon", "avatar", "smallFeature", "mediumFeature", "largeFeature", "header"] as const
 
@@ -180,6 +189,26 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     move: surfaceActionSchema.optional(),
     layout: z.enum(["columns", "list"]).optional(),
   }),
+  catalogComponent("FilePicker", {
+    label: dynamicString,
+    accept: z.array(z.string().regex(SURFACE_FILE_ACCEPT_PATTERN)).min(1).max(16),
+    maxBytes: z.number().int().positive().max(SURFACE_FILE_MAX_BYTES),
+    maxFiles: z.number().int().min(1).max(16).optional(),
+    fitImages: z.boolean().optional(),
+    paste: z.enum(["self", "section"]).optional(),
+    pick: surfaceActionSchema,
+  }),
+  catalogComponent("Combobox", {
+    label: dynamicString.optional(),
+    value: dataBindingSchema,
+    multiple: z.boolean().optional(),
+    options: z.union([z.array(comboOption).max(200), dataBindingSchema]),
+    query: dataBindingSchema.optional(),
+    search: surfaceActionSchema.optional(),
+    change: surfaceActionSchema.optional(),
+    placeholder: dynamicString.optional(),
+    emptyText: dynamicString.optional(),
+  }),
 ])
 
 export type SurfaceComponent = z.infer<typeof surfaceComponentSchema>
@@ -189,3 +218,4 @@ export type SurfaceActionDefinition = z.infer<typeof surfaceActionSchema>
 export type SurfaceChildList = z.infer<typeof childList>
 export type SurfaceDynamicValue = z.infer<typeof dynamicValue>
 export type SurfaceBoardColumn = z.infer<typeof boardColumn>
+export type SurfaceComboboxOption = z.infer<typeof comboOption>

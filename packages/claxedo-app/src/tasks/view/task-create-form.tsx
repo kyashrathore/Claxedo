@@ -8,12 +8,12 @@ import {
   type TaskDraft,
 } from "@claxedo/tasks"
 import { useTranslator } from "@/i18n"
+import { imageDataUrl } from "@/surface"
 import { Button, Select } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
 import { tasksDictionary } from "../i18n"
 import type { TaskProject } from "../links"
 import { TASK_STATUS_KEYS } from "../model"
-import { draftImageUrl } from "./image-drafts"
 import { createImageQueue } from "./image-queue"
 import { ProseField } from "./prose-field"
 import { TaskStatusChip } from "./status-control"
@@ -48,7 +48,7 @@ function ImageStrip(props: {
       <For each={props.images}>
         {(image, index) => (
           <figure class="tsk-image" data-testid="task-create-image">
-            <img class="tsk-image-thumb" src={draftImageUrl(image)} alt={image.filename} />
+            <img class="tsk-image-thumb" src={imageDataUrl(image.mime, image.data)} alt={image.filename} />
             <figcaption class="tsk-image-name" title={image.filename}>
               {image.filename}
             </figcaption>

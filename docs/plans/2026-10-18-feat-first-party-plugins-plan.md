@@ -681,7 +681,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - the view splits into `board-view.tsx`, `board-lane.tsx`, `board-interaction.ts` (lanes, pending, announcer) and `board-input.ts` (keyboard grab and pointer drop);
   - `move` reports `fromIndex` in the source list and `toIndex` in the target list with the item taken out.
 - Progress: done 2026-10-19 — `Board` with pointer drag and the keyboard grab (Space/Enter, arrows, Escape), pending until the plugin's patch; desktop-renderer 1490 modules, surface budget 3073.
-- [ ] **S4. `FilePicker` and `Combobox`.**
+- [x] **S4. `FilePicker` and `Combobox`.**
 - Move `image-drafts.ts` to `src/surface/image-fit.ts`; the Tasks create form imports it through `@/surface` until S10b.
 - **Tests:** accept/size/count/event caps, `fitImages` rounds, paste scope, debounce timing (fake clock), searching state.
 - **Flow 61 fixture:**
@@ -689,7 +689,13 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - an oversize file is refused;
   - typing in a `Combobox` streams options and selecting fires `change`.
 - **Checks:** as S2 (the no-polling check lists `search-debounce.ts` as the timer owner).
-- Progress:
+- **As built:**
+  - `image-fit.ts` holds only the generic fit (type from the declared type or the name, `shrinkInRounds`, `canvasShrink`, `fitImage`, `blobBase64`, `imageDataUrl`); the Tasks bounds, refusal kinds and their copy moved into `src/tasks/view/image-queue.ts`, and the create form draws previews with `imageDataUrl`;
+  - `maxFiles` counts accepted files only; a file the browser cannot read is logged and refused as `type` (the plan's three reasons are kept);
+  - the Combobox's listbox sits in flow under its input (no overlay), and "searching" ends on the producer's next patch overlapping the bound options path (`data-path.ts` `pathsOverlap`, shared with the Board);
+  - an agent's FilePicker draws disabled and an agent's Combobox never searches; `checkSurfaceSpec(…, { producer: "agent" })` refuses `pick` and `search`;
+  - no e2e flow covers the Tasks create form's images; the moved code is covered by `image-fit.test.ts` and `src/tasks` tests.
+- Progress: done 2026-10-19 — `FilePicker` (choose, drop, paste; per-file, count and 12 MiB event caps; `fitImages`) and `Combobox` (local filter or 250 ms debounced `search`, `change`); `image-drafts.ts` moved to `src/surface/image-fit.ts`; desktop-renderer 1498 modules, surface budget 3957, Tasks 5014.
 - [ ] **S5. Plugin API primitives and `AgentConfigurationPicker`.**
 - Implement the primitive table; move `cloud-configuration-picker.tsx`, `cloud-model.ts`, `cloud-catalog-*` to `src/composer/`.
 - **Tests:** bindings (tab entry, `navigated` without remount, settings surface, `sessions.open` re-reads the catalog once and navigates, `followStart` progress), frame protocol round trips (navigated, settings surface, progress, base64 body).

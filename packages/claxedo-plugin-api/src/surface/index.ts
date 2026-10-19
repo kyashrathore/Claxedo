@@ -1,6 +1,9 @@
 export {
   SURFACE_BADGE_TONES,
   SURFACE_CATALOG_ID,
+  SURFACE_FILE_ACCEPT_PATTERN,
+  SURFACE_FILE_EVENT_MAX_BYTES,
+  SURFACE_FILE_MAX_BYTES,
   SURFACE_ICON_NAMES,
   SURFACE_IMAGE_FITS,
   SURFACE_IMAGE_VARIANTS,
@@ -12,6 +15,7 @@ export type {
   SurfaceActionDefinition,
   SurfaceBoardColumn,
   SurfaceChildList,
+  SurfaceComboboxOption,
   SurfaceComponent,
   SurfaceComponentName,
   SurfaceDataBinding,

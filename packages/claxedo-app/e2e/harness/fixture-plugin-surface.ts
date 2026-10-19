@@ -13,7 +13,7 @@ export function surfaceFixtureSource() {
 const CATALOG = "https://claxedo.dev/a2ui/v0.9/catalog.json"
 
 const components: SurfaceComponent[] = [
-  { id: "root", component: "Column", children: ["title", "search", "items", "add", "pictures", "order", "order-note", "board", "move-note"] },
+  { id: "root", component: "Column", children: ["title", "search", "items", "add", "pictures", "order", "order-note", "board", "move-note", "attachments", "project", "project-note"] },
   { id: "title", component: "Text", text: "Surface fixture", variant: "h2" },
   { id: "search", component: "TextField", label: "Search items", value: { path: "/query" } },
   { id: "items", component: "List", children: { componentId: "item", path: "/items" } },
@@ -43,7 +43,49 @@ const components: SurfaceComponent[] = [
   },
   { id: "card", component: "ListItem", title: { path: "title" } },
   { id: "move-note", component: "Text", text: { path: "/moveNote" } },
+  { id: "attachments", component: "Section", title: "Attachments", child: "attachments-body" },
+  { id: "attachments-body", component: "Column", children: ["attach", "attached", "attach-note"] },
+  {
+    id: "attach",
+    component: "FilePicker",
+    label: "Attach images",
+    accept: ["image/png", "image/jpeg"],
+    maxBytes: 4096,
+    maxFiles: 3,
+    paste: "section",
+    pick: { event: { name: "attachImages" } },
+  },
+  { id: "attached", component: "Grid", columns: 4, children: { componentId: "attached-image", path: "/attached" } },
+  { id: "attached-image", component: "Image", url: { path: "url" }, variant: "smallFeature", accessibility: { label: { path: "name" } } },
+  { id: "attach-note", component: "Text", text: { path: "/attachNote" } },
+  {
+    id: "project",
+    component: "Combobox",
+    label: "Project",
+    value: { path: "/project" },
+    options: { path: "/projects" },
+    query: { path: "/projectQuery" },
+    search: { event: { name: "findProjects" } },
+    change: { event: { name: "chooseProject" } },
+    placeholder: "Search projects",
+  },
+  { id: "project-note", component: "Text", text: { path: "/projectNote" } },
 ]
+
+const PROJECTS = [
+  { label: "Claxedo app", value: "app", description: "The desktop and web app" },
+  { label: "Docs site", value: "docs", description: "Guides and reference" },
+  { label: "Relay", value: "relay", description: "Workspace relay" },
+]
+
+function attached(files: unknown) {
+  return (Array.isArray(files) ? files : []).map((file) => ({ name: String(file.name), url: "data:" + file.mimeType + ";base64," + file.dataBase64 }))
+}
+
+function refusals(refused: unknown) {
+  const list = Array.isArray(refused) ? refused : []
+  return list.length === 0 ? "Nothing refused" : list.map((file) => "Refused " + file.name + ": " + file.reason).join("; ")
+}
 
 function moveCard(lanes: Record<string, { id: string; title: string }[]>, context: Record<string, unknown>) {
   const from = lanes[String(context.fromColumn)]
@@ -69,10 +111,27 @@ export default definePlugin({
         channel.send(
           { version: "v0.9", createSurface: { surfaceId, catalogId: CATALOG } },
           { version: "v0.9", updateComponents: { surfaceId, components } },
-          { version: "v0.9", updateDataModel: { surfaceId, path: "/", value: { query: "", items, picture: ${JSON.stringify(SURFACE_FIXTURE_PICTURE)}, order: ["oldest"], orderNote: "Ordered oldest first", ...lanes, moveNote: "No card moved yet" } } },
+          { version: "v0.9", updateDataModel: { surfaceId, path: "/", value: { query: "", items, picture: ${JSON.stringify(SURFACE_FIXTURE_PICTURE)}, order: ["oldest"], orderNote: "Ordered oldest first", ...lanes, moveNote: "No card moved yet", attached: [], attachNote: "No images yet", project: "", projectQuery: "", projects: PROJECTS, projectNote: "No project chosen" } } },
         )
         return {
           action(action) {
+            if (action.name === "attachImages") {
+              channel.send(
+                { version: "v0.9", updateDataModel: { surfaceId, path: "/attached", value: attached(action.context.files) } },
+                { version: "v0.9", updateDataModel: { surfaceId, path: "/attachNote", value: refusals(action.context.refused) } },
+              )
+              return
+            }
+            if (action.name === "findProjects") {
+              const query = String(action.context.query).toLowerCase()
+              const found = PROJECTS.filter((project) => project.label.toLowerCase().includes(query))
+              channel.send({ version: "v0.9", updateDataModel: { surfaceId, path: "/projects", value: found } })
+              return
+            }
+            if (action.name === "chooseProject") {
+              channel.send({ version: "v0.9", updateDataModel: { surfaceId, path: "/projectNote", value: "Chose " + String(action.context.value) } })
+              return
+            }
             if (action.name === "moveCard") {
               const note = moveCard(lanes, action.context)
               channel.send(
