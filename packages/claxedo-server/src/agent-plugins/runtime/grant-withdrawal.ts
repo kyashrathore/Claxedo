@@ -1,5 +1,5 @@
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import type { TasksRootIdentity } from "./root-capability"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
+import type { CloudRootIdentity } from "@claxedo/server-core/plugins/server-plugin"
 
 export type GrantWithdrawalInput = Readonly<{
   passes: SandboxPassRegister
@@ -8,7 +8,7 @@ export type GrantWithdrawalInput = Readonly<{
   /** Written on each revoked pass, so a refusal can say which switch ended it. */
   reason: string
   /** The same reading the launch environment and the renewal route make for this grant's group. */
-  groupEnabled: (root: TasksRootIdentity) => Promise<boolean>
+  groupEnabled: (root: CloudRootIdentity) => Promise<boolean>
 }>
 
 /**
@@ -31,7 +31,7 @@ export function createGrantWithdrawal(input: GrantWithdrawalInput) {
       // A consent is one reader's, so a root is a workspace and the reader its
       // passes name; revoking by workspace alone would also end the passes of
       // any other reader there.
-      const roots = new Map<string, TasksRootIdentity>()
+      const roots = new Map<string, CloudRootIdentity>()
       for (const pass of outstanding) {
         const { projectId, ...scope } = pass.scope
         if (projectId) roots.set(JSON.stringify([scope.workspaceId, scope.userId]), { ...scope, projectId })

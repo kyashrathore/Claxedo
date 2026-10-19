@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { D1SessionAuthorityError } from "../authority/adapters/d1/session-input"
+import { D1SessionAuthorityError } from "../../../authority/adapters/d1/session-input"
 import {
   startConfigurationDigest,
   type ConfigurationSlot,
@@ -16,10 +16,11 @@ import {
   type TasksSessionBridgeFixture,
 } from "@claxedo/tasks/host/session-bridge-conformance"
 import { startedSession } from "@claxedo/tasks/test-support"
-import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
-import type { ControlPlaneServices } from "../authority/services"
+import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "@claxedo/tasks/hosted"
+import type { ControlPlaneServices } from "../../../authority/services"
 import type { RegisteredSession } from "@claxedo/tasks/host/registered-sessions"
-import type { TasksHostReads } from "./d1-host-reads"
+import type { TasksHostReads } from "@claxedo/tasks/hosted"
+import { hostedTasksBridgePorts } from "./compose"
 
 const mock = vi.hoisted(() => ({
   request: vi.fn(),
@@ -275,9 +276,11 @@ function bridge(
   principal?: HostedTasksSessionBridgeInput["principal"],
 ) {
   return createHostedTasksSessionBridge({
-    services: input.value,
+    ...hostedTasksBridgePorts({
+      services: input.value,
+      reads: input.reads,
+    }),
     runtimeClient: {},
-    reads: input.reads,
     auth: signedStarter,
     ...(principal ? { principal } : {}),
   })
@@ -379,8 +382,10 @@ describe("hosted tasks session bridge", () => {
     mock.clients.length = 0
     const composition = services()
     const kit = createHostedTasksSessionBridge({
-      services: composition.value,
-      reads: composition.reads,
+      ...hostedTasksBridgePorts({
+        services: composition.value,
+        reads: composition.reads,
+      }),
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
       principal: async () => ({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human" }),
       auth: signedStarter,
@@ -400,8 +405,10 @@ describe("hosted tasks session bridge", () => {
     mock.clients.length = 0
     const composition = services()
     const kit = createHostedTasksSessionBridge({
-      services: composition.value,
-      reads: composition.reads,
+      ...hostedTasksBridgePorts({
+        services: composition.value,
+        reads: composition.reads,
+      }),
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
       principal: async () => ({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human" }),
       owner: () => ({ userId: STARTER.userId, actorId: STARTER.actorId, orgId: "org", projectId: "prj_1" }),
@@ -569,8 +576,10 @@ describe("hosted tasks session bridge", () => {
     const host = runtime()
     const composition = services()
     const kit = createHostedTasksSessionBridge({
-      services: composition.value,
-      reads: composition.reads,
+      ...hostedTasksBridgePorts({
+        services: composition.value,
+        reads: composition.reads,
+      }),
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
       principal: async () => ({ principalKind: "user", actorId: STARTER.actorId, actorKind: "human" }),
       auth: signedStarter,
@@ -606,8 +615,10 @@ describe("hosted tasks session bridge", () => {
     const composition = services()
     const previous: Workspace = { ...WORKSPACE, id: "ws_previous" }
     const kit = createHostedTasksSessionBridge({
-      services: composition.value,
-      reads: { ...composition.reads, workspace: async (id) => (id === previous.id ? previous : composition.reads.workspace(id)) },
+      ...hostedTasksBridgePorts({
+        services: composition.value,
+        reads: { ...composition.reads, workspace: async (id) => (id === previous.id ? previous : composition.reads.workspace(id)) },
+      }),
       runtimeClient: { runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" }, role: "owner" },
       auth: signedStarter,
     })

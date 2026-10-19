@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { certifiedHostedWorkerArtifact } from "../../../claxedo-server/src/deployments/hosted-workerd/certified-worker-artifacts"
 import { renderWorkerWranglerConfig } from "../../../claxedo-server/scripts/deploy/wrangler-config"
+import { stageWorkerControlPlaneMigrations } from "../../../claxedo-server/scripts/deploy/staged-control-plane-migrations"
 import { SERVER_DIR } from "./node-loader"
 
 const CONFIG_DIRECTORY = path.join(SERVER_DIR, "scripts")
@@ -12,14 +14,14 @@ export type HostedWranglerConfig = {
   e2e: string
 }
 
-export function renderHostedE2eWranglerConfig(): HostedWranglerConfig {
+export function renderHostedE2eWranglerConfig(controlPlaneMigrationsDir: string): HostedWranglerConfig {
   const production = renderWorkerWranglerConfig({
     workerName: "claxedo-hosted-e2e",
     artifact: certifiedHostedWorkerArtifact("user-deployed-better-auth-d1-agent-plugins-full-hosted"),
     configDirectory: CONFIG_DIRECTORY,
     authDatabase: { name: "claxedo-hosted-e2e-auth", id: "11111111-1111-4111-8111-111111111111" },
     controlPlaneDatabase: { name: "claxedo-hosted-e2e-control", id: "22222222-2222-4222-8222-222222222222" },
-    controlPlaneMigrationsDir: "../migrations/control-plane",
+    controlPlaneMigrationsDir,
     requestLimiterNamespaceId: "1930000001",
     documentsBucket: "claxedo-documents-e2e",
     agentPluginsBucket: "claxedo-agent-plugins-e2e",
@@ -34,7 +36,13 @@ export function renderHostedE2eWranglerConfig(): HostedWranglerConfig {
 
 export async function writeHostedE2eWranglerConfig() {
   const file = path.join(CONFIG_DIRECTORY, `.wrangler-hosted-e2e-${randomUUID()}.toml`)
-  const { e2e } = renderHostedE2eWranglerConfig()
+  // The deployed baseline is rendered from every owner's, so the run applies a
+  // staged copy rather than the host's own source directory.
+  const staged = stageWorkerControlPlaneMigrations({
+    configDirectory: CONFIG_DIRECTORY,
+    stageInto: await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-hosted-e2e-migrations-")),
+  })
+  const { e2e } = renderHostedE2eWranglerConfig(staged.migrationsDir)
   await fs.writeFile(file, e2e, { flag: "wx", mode: 0o600 })
   return file
 }

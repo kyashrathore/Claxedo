@@ -87,10 +87,10 @@ test("check refuses a migration beside the baseline and a hand-edited baseline",
   expect(run(directory).status).toBe(0)
   expect(run(directory, "--check").status).toBe(0)
   writeFileSync(path.join(directory, "0052_later.sql"), "create table later (id text primary key);")
-  expect(run(directory, "--check").stderr).toContain("Migrations not folded into 0001_baseline.sql: 0052_later.sql. Run bun run d1:baseline:generate.")
+  expect(run(directory, "--check").stderr).toContain(`Migrations not folded into ${path.join(directory, "0001_baseline.sql")}: 0052_later.sql. Run bun run d1:baseline:generate.`)
   rmSync(path.join(directory, "0052_later.sql"))
   writeFileSync(path.join(directory, "0001_baseline.sql"), `${baseline(directory)}\nCREATE TABLE appended (id text);\n`)
-  expect(run(directory, "--check").stderr).toContain("0001_baseline.sql is not the generator's output. Run bun run d1:baseline:generate.")
+  expect(run(directory, "--check").stderr).toContain(`${path.join(directory, "0001_baseline.sql")} is not the generator's output. Run bun run d1:baseline:generate.`)
 })
 
 test("the shipped control-plane migrations are exactly the generated baseline", () => {

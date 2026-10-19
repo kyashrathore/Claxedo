@@ -1,33 +1,15 @@
-import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/session-core"
-import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
-import { isTasksOperation, type TasksOperation } from "@claxedo/tasks/host/capability"
+import { TASKS_ROUTE_PATH } from "../http"
+import { isTasksOperation, type TasksOperation } from "../host/capability"
 import {
   WORKSPACE_RUNTIME_TASKS_CAPABILITY,
   WORKSPACE_RUNTIME_TASKS_OPERATIONS,
   WORKSPACE_RUNTIME_TASKS_PROJECT,
-} from "@claxedo/tasks/host/runtime-env"
+} from "../host/runtime-env"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { asRecord, parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
-import type { McpServiceGrant } from "@claxedo/mcp"
-import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "./half-life-renewal"
-
-/**
- * Where this runtime reaches its control plane.
- *
- * Derived from the session-authority endpoint the host is already booted with,
- * because that is the one channel a sandboxed runtime has to the plane: a
- * second URL would be a second thing to configure, a second thing to get
- * wrong, and a second egress destination to allow.
- */
-export function controlPlaneOrigin(env: NodeJS.ProcessEnv): string | undefined {
-  const authority = env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]?.trim()
-  if (!authority) return undefined
-  try {
-    return new URL(authority).origin
-  } catch {
-    return undefined
-  }
-}
+import type { McpServiceGrant } from "@claxedo/mcp/tool-group"
+import { controlPlaneOrigin } from "@claxedo/server-core/hosts/workspace-runtime/control-plane-origin"
+import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "@claxedo/server-core/hosts/workspace-runtime/half-life-renewal"
 
 function grantedOperations(value: string | undefined): readonly TasksOperation[] {
   return [...new Set((value ?? "").split(",").map((name) => name.trim()).filter(isTasksOperation))]

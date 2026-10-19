@@ -27,8 +27,8 @@ import {
 import {
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
-} from "../test-support/control-plane-migrations"
-import { createD1TasksStore } from "./d1-store"
+} from "../../../test-support/control-plane-migrations"
+import { createD1TasksStore } from "@claxedo/tasks/storage/d1"
 
 
 const active: ControlPlaneDatabase[] = []

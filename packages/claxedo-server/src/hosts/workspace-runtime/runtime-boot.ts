@@ -28,9 +28,8 @@ import { repositoryScript } from "./repository-scripts"
 import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
-import { workspaceRuntimeTasksGrant } from "./tasks-grant"
-import { CLAXEDO_MCP_TOOL_GROUPS, type McpServiceGrant } from "@claxedo/mcp"
-import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import type { RuntimeHostPlugin } from "@claxedo/server-core/plugins/runtime-host"
 import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { claimOperatorLog } from "./operator-log"
@@ -150,7 +149,11 @@ export function claxedoRuntimeHarnessFromEnv(env: NodeJS.ProcessEnv = process.en
  */
 export async function claxedoWorkspaceRuntimeBootFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-  input: { routeContributions?: readonly WorkspaceRuntimeRouteContribution[] } = {},
+  input: {
+    routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
+    /** The first-party plugins this root's runtime serves, each started from the launch environment. */
+    plugins?: readonly RuntimeHostPlugin[]
+  } = {},
 ): Promise<ClaxedoWorkspaceRuntimeBoot> {
   claimOperatorLog(env)
   const rawPort = text(env, "WORKSPACE_RUNTIME_PORT") ?? "3002"
@@ -193,10 +196,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // launch. A sandbox cannot ask again, and a variable that never arrived is
   // not consent, so an absent one leaves every group off.
   const enabledToolGroups = workspaceRuntimeMcpToolGroups(env) ?? []
-  // Renewed for as long as the control plane will renew it; the host has no
-  // later moment to start this at, and the timer holds nothing open.
-  const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
-  tasks?.start()
+  // Started here because the host has no later moment to start a plugin's
+  // grant renewal at; its timers hold nothing open.
+  const plugins = input.plugins ?? []
+  const started = plugins.flatMap((plugin) => plugin.start(env, ownerGrant ? { ownerGrant } : {}) ?? [])
   // A relay-exposed runtime answers to the control plane's session authority,
   // which is also where its turns' usage and its sessions' list rows are reported.
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
@@ -251,9 +254,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           },
         }
       : {}),
-    ...(usage || sessionRows || history
+    ...(usage || sessionRows || history || started.length
       ? {
           onDrain: async () => {
+            for (const plugin of started) plugin.dispose()
             sessionRows?.stop()
             await history?.stop()
             await usage?.drain()
@@ -277,11 +281,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
-        registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP],
-        services: (): Readonly<Record<string, McpServiceGrant>> => {
-          const granted = tasks?.current()
-          return granted ? { tasks: granted } : {}
-        },
+        registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, ...plugins.flatMap((plugin) => plugin.mcp?.groups ?? [])],
+        services: () => Object.assign({}, ...started.map((plugin) => plugin.mcpServices())),
         ...(ownerGrant ? { ownerGrant: () => ownerGrant.current(), ownerActorId: () => ownerGrant.actorId } : {}),
       }),
     ],

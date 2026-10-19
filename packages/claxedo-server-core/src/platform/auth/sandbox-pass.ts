@@ -12,8 +12,8 @@ import type { SandboxPassRegister } from "./sandbox-pass-register"
 
 /**
  * The one shape of every pass a sandbox holds that this control plane can
- * verify: the Tasks capability, the Agent Plugins gateway token, and every
- * grant plan 004 adds after them.
+ * verify: the Tasks capability, the owner grant, the Agent Plugins gateway
+ * token and the egress broker's placeholder among them.
  *
  * All of them are signed with the runtime access-token key under its
  * published `kid` (a JWKS verifier holding the current and the next key can
@@ -26,8 +26,7 @@ import type { SandboxPassRegister } from "./sandbox-pass-register"
  *
  * The hosted egress broker's placeholder is one of them: a pass for the
  * `claxedo-egress-broker` audience naming the binding and the stored account
- * it spends (`credentials/hosted-egress-broker/placeholder.ts`). The
- * runtime's own HS256 session credential is not: it is minted inside the
+ * it spends. The runtime's own HS256 session credential is not: it is minted inside the
  * sandbox and never presented to this plane.
  */
 export type SandboxPassScope = Readonly<{

@@ -1,6 +1,6 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test } from "bun:test"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { TASKS_CAPABILITY_AUDIENCE, verifyTasksCapability } from "./capability"
 import { createTasksRootCapability, createTasksRootGrant } from "./root-capability"
 

@@ -3,8 +3,8 @@ import { createLocalAgentPluginsComposition } from "../../../claxedo-local-serve
 import { createLocalTasksPlugin } from "../../../claxedo-tasks/src/local/index"
 import { createLocalDocumentsPlugin } from "../../../claxedo-local-server/src/app/local-documents"
 import { localBuiltinToolGroupsReader } from "../../../claxedo-local-server/src/agent-plugins/builtin-groups"
-import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
-import { claxedoSchemaJournals, mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
+import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
+import { claxedoSchemaJournals } from "@claxedo/server-core/plugins/sqlite-schema"
 import { configureClaxedoSchema } from "@claxedo/server-core/platform/db/index"
 
 const port = Number(process.env.CLAXEDO_SERVER_PORT)
@@ -12,7 +12,7 @@ if (!Number.isSafeInteger(port) || port <= 0 || !process.env.CLAXEDO_DATA_DIR) {
   throw new Error("The e2e daemon requires a port and an isolated data directory")
 }
 const plugins = [
-  createLocalTasksPlugin({ enabled: () => groups().includes(BUILTIN_TASKS_TOOL_GROUP) }),
+  createLocalTasksPlugin({ enabledGroups: () => groups() }),
   createLocalDocumentsPlugin(),
 ]
 configureClaxedoSchema({ journals: claxedoSchemaJournals(plugins) })

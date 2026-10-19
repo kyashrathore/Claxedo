@@ -1,5 +1,4 @@
 import type { LocalServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
-import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { TASKS_MCP_TOOL_GROUP } from "../mcp"
 import {
   capabilityTasksAuthenticate,
@@ -21,13 +20,13 @@ import { createLocalTasksSessionBridge } from "./session-bridge"
 
 export type LocalTasksPluginInput = {
   /**
-   * Whether this machine has the Tasks tools turned on, read at every issue
-   * and every verify. The switch that hides the tools is the same decision as
-   * the one that withdraws the handle they would act with, so a grant a
-   * session is still holding stops answering the moment Tasks is turned off.
-   * Absent means always on.
+   * The tool groups this machine has turned on, read at every issue and every
+   * verify. The switch that hides the Tasks tools is the same decision as the
+   * one that withdraws the handle they would act with, so a grant a session
+   * is still holding stops answering the moment Tasks is turned off. Absent
+   * means Tasks is always on.
    */
-  enabled?: () => boolean
+  enabledGroups?: () => readonly string[]
 }
 
 /**
@@ -50,12 +49,13 @@ export type LocalTasksPluginInput = {
  */
 export function createLocalTasksPlugin(input: LocalTasksPluginInput = {}): LocalServerPlugin {
   const principals = createTasksPrincipals()
+  const { enabledGroups } = input
   const grants = createTasksSessionGrants({
     workspaceOwner: async (workspaceId) => {
       const workspace = await resolveWorkspace({ workspaceId })
       return workspace ? localTasksWorkspaceOwner(workspace.project_id ?? workspace.id) : undefined
     },
-    ...(input.enabled ? { enabled: input.enabled } : {}),
+    ...(enabledGroups ? { enabled: () => enabledGroups().includes(TASKS_MCP_TOOL_GROUP.id) } : {}),
   })
   const { capability } = grants
   const routeContributions = [
@@ -92,7 +92,7 @@ export function createLocalTasksPlugin(input: LocalTasksPluginInput = {}): Local
         // this machine.
         async grant({ workspaceId, sessionId, enabledGroups, inProcessFetch }) {
           if (!workspaceId) return undefined
-          const handle = enabledGroups.includes(BUILTIN_TASKS_TOOL_GROUP)
+          const handle = enabledGroups.includes(TASKS_MCP_TOOL_GROUP.id)
             ? await grants.issue({ workspaceId, ...(sessionId ? { sessionId } : {}) })
             : undefined
           return {

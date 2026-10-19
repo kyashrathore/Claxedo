@@ -1,6 +1,6 @@
-import { credentialFault } from "../../platform/auth/runtime-token-keys"
-import { mintSandboxPass, verifySandboxPass } from "../../platform/auth/sandbox-pass"
-import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import { credentialFault } from "@claxedo/server-core/platform/auth/runtime-token-keys"
+import { mintSandboxPass, verifySandboxPass } from "@claxedo/server-core/platform/auth/sandbox-pass"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { isAgentPluginHarnessId, type AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { isArtifactDigest, type ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 

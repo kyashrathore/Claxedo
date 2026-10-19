@@ -26,17 +26,18 @@ import {
   type StartedSessionRuntime,
   type Task,
 } from "@claxedo/tasks"
-import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
-import { createCloudCreateAdmission } from "../workspace/cloud-create-admission"
-import { createFixedWindowConnectionRateLimiter } from "../platform/auth/rate-limit"
-import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
-import { composeProviderNeutralHostedControlPlane } from "../authority/provider-neutral-hosted-services"
-import type { ControlPlaneServices } from "../authority/services"
-import { unusedSandboxStarts } from "../test-support/inline-sandbox-start"
-import type { TasksHostReads } from "./d1-host-reads"
+import { originCloudWorkspaceId } from "../../../workspace/origin-cloud-workspace"
+import { createCloudCreateAdmission, type CloudCreateAdmission, type CloudCreateUsage } from "../../../workspace/cloud-create-admission"
+import { createFixedWindowConnectionRateLimiter } from "../../../platform/auth/rate-limit"
+import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "@claxedo/tasks/hosted"
+import { composeProviderNeutralHostedControlPlane } from "../../../authority/provider-neutral-hosted-services"
+import type { ControlPlaneServices } from "../../../authority/services"
+import { unusedSandboxStarts } from "../../../test-support/inline-sandbox-start"
+import type { TasksHostReads } from "@claxedo/tasks/hosted"
 import { startedSession } from "@claxedo/tasks/test-support"
-import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
-import type { SandboxStart, SandboxStartRequest } from "../workspace/sandbox-start"
+import { hostedSandboxInput } from "../../../workspace/hosted-sandbox-input"
+import type { SandboxStart, SandboxStartRequest } from "../../../workspace/sandbox-start"
+import { hostedTasksBridgePorts } from "./compose"
 
 const mock = vi.hoisted(() => ({
   request: vi.fn(),
@@ -294,8 +295,8 @@ const grantOwner: Identity = { owner: () => OWNER }
 type BridgeOptions = {
   sandboxStart?: SandboxStart | null
   identity?: Identity
-  admission?: HostedTasksSessionBridgeInput["cloudCreateAdmission"]
-  sandboxUsage?: HostedTasksSessionBridgeInput["sandboxUsage"]
+  admission?: CloudCreateAdmission
+  sandboxUsage?: CloudCreateUsage
 }
 
 function bridge(composition: ReturnType<typeof services>, options: BridgeOptions = {}) {
@@ -304,14 +305,16 @@ function bridge(composition: ReturnType<typeof services>, options: BridgeOptions
     ? sandboxManager && provisioner(sandboxManager).start
     : options.sandboxStart
   return createHostedTasksSessionBridge({
-    services: composition.value,
+    ...hostedTasksBridgePorts({
+      services: composition.value,
+      reads: composition.reads,
+      ...(sandboxStart ? { sandboxStart } : {}),
+      ...(options.admission ? { cloudCreateAdmission: options.admission } : {}),
+      ...(options.sandboxUsage ? { sandboxUsage: options.sandboxUsage } : {}),
+    }),
     runtimeClient: {},
-    reads: composition.reads,
     principal: async () => ({ principalKind: "user", actorId: OWNER.actorId, actorKind: "human" }),
     ...(options.identity ?? signedPerson),
-    ...(sandboxStart ? { sandboxStart } : {}),
-    ...(options.admission ? { cloudCreateAdmission: options.admission } : {}),
-    ...(options.sandboxUsage ? { sandboxUsage: options.sandboxUsage } : {}),
   })
 }
 

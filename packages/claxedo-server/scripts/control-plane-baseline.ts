@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite"
 import { readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { CONTROL_PLANE_BASELINE, CONTROL_PLANE_MIGRATIONS_DIRECTORY, baselineStatements } from "./control-plane-schema"
+import { CONTROL_PLANE_BASELINE, CONTROL_PLANE_SCHEMA_SOURCES, baselineStatements } from "./control-plane-schema"
 
 type SchemaObject = { type: string; name: string; tbl_name: string; sql: string }
 
@@ -48,16 +48,20 @@ function renderControlPlaneBaseline(directory: string) {
 
 if (import.meta.main) {
   const check = process.argv[2] === "--check"
-  const directory = path.resolve(process.argv[check ? 3 : 2] ?? CONTROL_PLANE_MIGRATIONS_DIRECTORY)
-  const baseline = path.join(directory, CONTROL_PLANE_BASELINE)
-  const { schema, folded } = renderControlPlaneBaseline(directory)
-  if (check) {
-    if (folded.length) throw new Error(`Migrations not folded into ${CONTROL_PLANE_BASELINE}: ${folded.join(", ")}. Run ${GENERATE_COMMAND}.`)
-    if (readFileSync(baseline, "utf8") !== schema) throw new Error(`${CONTROL_PLANE_BASELINE} is not the generator's output. Run ${GENERATE_COMMAND}.`)
-    console.log(`${CONTROL_PLANE_BASELINE} is current`)
-  } else {
-    writeFileSync(baseline, schema)
-    for (const name of folded) unlinkSync(path.join(directory, name))
-    console.log(`${CONTROL_PLANE_BASELINE}: folded ${folded.length} migrations${folded.length ? `: ${folded.join(", ")}` : ""}`)
+  const named = process.argv[check ? 3 : 2]
+  // Each owner's baseline folds its own migrations; the deployed file is
+  // rendered from all of them by `currentControlPlaneBaseline`.
+  for (const directory of named ? [path.resolve(named)] : CONTROL_PLANE_SCHEMA_SOURCES) {
+    const baseline = path.join(directory, CONTROL_PLANE_BASELINE)
+    const { schema, folded } = renderControlPlaneBaseline(directory)
+    if (check) {
+      if (folded.length) throw new Error(`Migrations not folded into ${baseline}: ${folded.join(", ")}. Run ${GENERATE_COMMAND}.`)
+      if (readFileSync(baseline, "utf8") !== schema) throw new Error(`${baseline} is not the generator's output. Run ${GENERATE_COMMAND}.`)
+      console.log(`${baseline} is current`)
+    } else {
+      writeFileSync(baseline, schema)
+      for (const name of folded) unlinkSync(path.join(directory, name))
+      console.log(`${baseline}: folded ${folded.length} migrations${folded.length ? `: ${folded.join(", ")}` : ""}`)
+    }
   }
 }

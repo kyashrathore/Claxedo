@@ -8,6 +8,7 @@ import {
   WORKSPACE_RUNTIME_OWNER_GRANT,
   workspaceRuntimeMcpToolGroups,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import type { CloudRootIdentity } from "@claxedo/server-core/plugins/server-plugin"
 import { createBuiltinGroupReader, createCloudRootEnvironment } from "./cloud-root-environment"
 
 const root = { userId: "user-1", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root" }
@@ -33,10 +34,20 @@ function activations(overrides: Record<string, boolean> = {}) {
   }
 }
 
+type Mint = (root: CloudRootIdentity) => Promise<Readonly<Record<string, string>>>
+
 /** What every test launches with unless it says otherwise: grants that carry their env name, so the sweep can tell them apart. */
-const grants = {
-  tasksGrant: async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "tasks-token" }),
-  ownerGrant: async () => ({ [WORKSPACE_RUNTIME_OWNER_GRANT]: "owner-token" }),
+const defaults = {
+  tasks: async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "tasks-token" }),
+  owner: async () => ({ [WORKSPACE_RUNTIME_OWNER_GRANT]: "owner-token" }),
+}
+
+/** The owner grant under the subagents group and the Tasks plugin's capability under its own, as the hosted composition lists them. */
+function grants(mints: { tasks?: Mint; owner?: Mint } = {}) {
+  return [
+    { group: "subagents", mint: mints.owner ?? defaults.owner },
+    { group: TASKS_MCP_TOOL_GROUP.id, mint: mints.tasks ?? defaults.tasks },
+  ]
 }
 
 describe("whether a cloud root's project has a group on", () => {
@@ -56,11 +67,11 @@ describe("whether a cloud root's project has a group on", () => {
     await expect(createBuiltinGroupReader({ activations: activations(), builtIn }, "tasks")(root)).resolves.toBe(false)
   })
 
-  test("agrees with the launch environment about the same root, for the Tasks grant and the owner grant alike", async () => {
+  test("agrees with the launch environment about the same root, for the Tasks capability and the owner grant alike", async () => {
     for (const tasks of [true, false]) {
       for (const subagents of [true, false]) {
         const store = activations({ tasks, subagents })
-        const environment = await createCloudRootEnvironment({ activations: store, builtIn, ...grants })(root)
+        const environment = await createCloudRootEnvironment({ activations: store, builtIn, grants: grants() })(root)
         expect(await createBuiltinGroupReader({ activations: store, builtIn }, "tasks")(root)).toBe("WORKSPACE_RUNTIME_TASKS_CAPABILITY" in environment)
         expect(await createBuiltinGroupReader({ activations: store, builtIn }, "subagents")(root)).toBe(WORKSPACE_RUNTIME_OWNER_GRANT in environment)
       }
@@ -80,43 +91,43 @@ describe("whether a cloud root's project has a group on", () => {
 describe("the first-party environment a cloud root boots with", () => {
   test("declares the groups the project has on, readable by the runtime's own parser, and no Tasks grant while Tasks is off", async () => {
     const store = activations({ attention: false, subagents: false })
-    const tasksGrant = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" }))
-    const environment = await createCloudRootEnvironment({ activations: store, builtIn, tasksGrant, ownerGrant: grants.ownerGrant })(root)
+    const tasksMint = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" }))
+    const environment = await createCloudRootEnvironment({ activations: store, builtIn, grants: grants({ tasks: tasksMint }) })(root)
 
     expect(RUNTIME_GROUPS).toContain("attention")
     expect(workspaceRuntimeMcpToolGroups(environment)).toEqual(RUNTIME_GROUPS.filter((group) => group !== "attention" && group !== "subagents"))
     expect(environment).toEqual({ [WORKSPACE_RUNTIME_MCP_TOOL_GROUPS]: expect.any(String) })
-    expect(tasksGrant).not.toHaveBeenCalled()
+    expect(tasksMint).not.toHaveBeenCalled()
   })
 
   test("carries the Tasks grant once the project turned Tasks on", async () => {
     const store = activations({ tasks: true, subagents: false })
-    const tasksGrant = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" }))
-    const environment = await createCloudRootEnvironment({ activations: store, builtIn, tasksGrant, ownerGrant: grants.ownerGrant })(root)
+    const tasksMint = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" }))
+    const environment = await createCloudRootEnvironment({ activations: store, builtIn, grants: grants({ tasks: tasksMint }) })(root)
 
     expect(workspaceRuntimeMcpToolGroups(environment)).toEqual(
       builtIn.groups.filter((group) => (group.reach === "runtime" && group.id !== "subagents") || group.id === "tasks").map((group) => group.id),
     )
     expect(environment.WORKSPACE_RUNTIME_TASKS_CAPABILITY).toBe("grant-token")
     expect(environment).not.toHaveProperty(WORKSPACE_RUNTIME_OWNER_GRANT)
-    expect(tasksGrant).toHaveBeenCalledWith(root)
+    expect(tasksMint).toHaveBeenCalledWith(root)
   })
 
   test("carries the owner grant exactly while the subagents group is on, whatever Tasks says", async () => {
     const ownerGrant = vi.fn(async () => ({ [WORKSPACE_RUNTIME_OWNER_GRANT]: "owner-token" }))
     // The subagents group reaches only the runtime, so a project that said nothing has it on.
-    const silent = await createCloudRootEnvironment({ activations: activations(), builtIn, tasksGrant: grants.tasksGrant, ownerGrant })(root)
+    const silent = await createCloudRootEnvironment({ activations: activations(), builtIn, grants: grants({ owner: ownerGrant }) })(root)
     expect(silent[WORKSPACE_RUNTIME_OWNER_GRANT]).toBe("owner-token")
     expect(silent).not.toHaveProperty("WORKSPACE_RUNTIME_TASKS_CAPABILITY")
     expect(ownerGrant).toHaveBeenCalledWith(root)
 
-    const off = await createCloudRootEnvironment({ activations: activations({ subagents: false, tasks: true }), builtIn, tasksGrant: grants.tasksGrant, ownerGrant })(root)
+    const off = await createCloudRootEnvironment({ activations: activations({ subagents: false, tasks: true }), builtIn, grants: grants({ owner: ownerGrant }) })(root)
     expect(off).not.toHaveProperty(WORKSPACE_RUNTIME_OWNER_GRANT)
     expect(off.WORKSPACE_RUNTIME_TASKS_CAPABILITY).toBe("tasks-token")
     expect(workspaceRuntimeMcpToolGroups(off)).not.toContain("subagents")
     expect(ownerGrant).toHaveBeenCalledTimes(1)
 
-    const both = await createCloudRootEnvironment({ activations: activations({ subagents: true, tasks: true }), builtIn, tasksGrant: grants.tasksGrant, ownerGrant })(root)
+    const both = await createCloudRootEnvironment({ activations: activations({ subagents: true, tasks: true }), builtIn, grants: grants({ owner: ownerGrant }) })(root)
     expect(both).toMatchObject({ [WORKSPACE_RUNTIME_OWNER_GRANT]: "owner-token", WORKSPACE_RUNTIME_TASKS_CAPABILITY: "tasks-token" })
   })
 
@@ -124,15 +135,14 @@ describe("the first-party environment a cloud root boots with", () => {
     const environment = createCloudRootEnvironment({
       activations: activations({ subagents: true }),
       builtIn,
-      tasksGrant: grants.tasksGrant,
-      ownerGrant: async () => { throw new Error("Workspace ws_root has no owner this control plane can launch it as") },
+      grants: grants({ owner: async () => { throw new Error("Workspace ws_root has no owner this control plane can launch it as") } }),
     })
     await expect(environment(root)).rejects.toThrow("no owner this control plane can launch it as")
   })
 
   test("reads each group's activation as the workspace's recorded owner, for the harness the runtime serves", async () => {
     const store = activations()
-    await createCloudRootEnvironment({ activations: store, builtIn, ...grants })(root)
+    await createCloudRootEnvironment({ activations: store, builtIn, grants: grants() })(root)
 
     expect(store.readRuntime).toHaveBeenCalledTimes(builtIn.groups.length)
     expect(store.readRuntime).toHaveBeenCalledWith({
@@ -147,7 +157,7 @@ describe("the first-party environment a cloud root boots with", () => {
 
   test("a project that turned everything off launches with an empty declaration, not an absent one", async () => {
     const store = activations(Object.fromEntries(builtIn.groups.map((group) => [group.id, false])))
-    const environment = await createCloudRootEnvironment({ activations: store, builtIn, ...grants })(root)
+    const environment = await createCloudRootEnvironment({ activations: store, builtIn, grants: grants() })(root)
 
     expect(environment).toEqual({ [WORKSPACE_RUNTIME_MCP_TOOL_GROUPS]: "" })
     expect(workspaceRuntimeMcpToolGroups(environment)).toEqual([])

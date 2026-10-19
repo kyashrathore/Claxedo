@@ -214,7 +214,11 @@ export const serverWorkerd: Policy = {
   // Worker root hands the core app, which mounts its `/documents` and `/p`
   // routes and reports its capability. It reaches only owners already here.
   // 175/22, no headroom.
-  ceilings: { modules: 175, packages: 22 },
+  // -2 modules: the sandbox pass family (`platform/auth/sandbox-pass.ts`,
+  // `platform/auth/runtime-token-keys.ts`) moved to `@claxedo/server-core`,
+  // where the Tasks plugin's capability signs with it too.
+  // 173/22, no headroom.
+  ceilings: { modules: 173, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

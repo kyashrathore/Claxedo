@@ -1,18 +1,17 @@
 import { Hono } from "hono"
 import { decodeJwt } from "jose"
-import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
+import { TASKS_ROUTE_PATH } from "../http"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
-import type { TasksCapabilityPort, TasksOperation } from "@claxedo/tasks/host/capability"
+import type { TasksCapabilityOwner, TasksCapabilityPort, TasksOperation } from "../host/capability"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import type { OwnerGrantScope } from "../session/owner-grant"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { TasksCapabilityConfigurationError, verifyTasksCapability } from "./capability"
 import type { TasksRootGrant, TasksRootIdentity } from "./root-capability"
 
 export const TASKS_GRANT_RENEWAL_CONTRIBUTION_ID = "claxedo-tasks-grant"
 
-export type TasksGrantRenewalAudit = Readonly<{
+export type TasksCapabilityRenewalAudit = Readonly<{
   workspaceId: string
   owner: string
   orgId: string
@@ -24,11 +23,12 @@ export type TasksGrantRenewalAudit = Readonly<{
   ownerGrantJti?: string
 }>
 
-export type TasksGrantRenewalInput = Readonly<{
+export type TasksCapabilityRenewalInput = Readonly<{
   signingEnv: Record<string, string | undefined>
   passes?: SandboxPassRegister
   workspaceOwner: TasksCapabilityPort["workspaceOwner"]
-  tasksGroupEnabled: (root: TasksRootIdentity) => Promise<boolean>
+  /** Whether the root's project has the Tasks group on now, read as its launch environment was. */
+  groupEnabled: (root: TasksRootIdentity) => Promise<boolean>
   /** The launch minter, so a renewed grant holds exactly what a fresh one would. */
   grant: (root: TasksRootIdentity) => Promise<TasksRootGrant>
   /**
@@ -38,9 +38,9 @@ export type TasksGrantRenewalInput = Readonly<{
    */
   ownerGrant?: Readonly<{
     enabled: (root: TasksRootIdentity) => Promise<boolean>
-    mint: (owner: OwnerGrantScope) => Promise<{ token: string; expiresAt: number }>
+    mint: (owner: TasksCapabilityOwner & Readonly<{ workspaceId: string }>) => Promise<{ token: string; expiresAt: number }>
   }>
-  audit?: (record: TasksGrantRenewalAudit) => void
+  audit?: (record: TasksCapabilityRenewalAudit) => void
   now?: () => number
 }>
 
@@ -64,9 +64,9 @@ const GROUP_DISABLED = "Tasks was turned off for this project."
  * project has subagents on but Tasks off carries an owner grant that ends at
  * its own expiry, since there is no Tasks capability to renew it with.
  */
-export function tasksGrantRenewalContribution(input: TasksGrantRenewalInput): ControlPlaneRouteContribution {
+export function tasksCapabilityRenewalContribution(input: TasksCapabilityRenewalInput): ControlPlaneRouteContribution {
   const log = Log.create({ service: "claxedo-tasks" })
-  const audit = input.audit ?? ((record: TasksGrantRenewalAudit) => log.info("tasks.grant.renewed", record))
+  const audit = input.audit ?? ((record: TasksCapabilityRenewalAudit) => log.info("tasks.grant.renewed", record))
   const refusal = (code: string, message: string) => ({ error: { code, message } })
   const routes = new Hono()
   routes.post("/renew", async (c) => {
@@ -87,7 +87,7 @@ export function tasksGrantRenewalContribution(input: TasksGrantRenewalInput): Co
       return c.json(refusal("tasks_grant_owner_changed", OWNER_CHANGED), 403)
     }
     const { operations: _operations, ...root } = scope
-    if (!(await input.tasksGroupEnabled(root))) return c.json(refusal("tasks_group_disabled", GROUP_DISABLED), 403)
+    if (!(await input.groupEnabled(root))) return c.json(refusal("tasks_group_disabled", GROUP_DISABLED), 403)
     const renewed = await input.grant(root)
     const ownerGrant = input.ownerGrant && (await input.ownerGrant.enabled(root))
       ? await input.ownerGrant.mint({ ...owner, workspaceId: root.workspaceId })

@@ -23,7 +23,7 @@ import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-p
 import { mintMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
 import { sandboxCarriesGatewayCredential } from "./gateway-reach"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 
 type ConnectionReadiness = (input: {
   ownerUserId: string

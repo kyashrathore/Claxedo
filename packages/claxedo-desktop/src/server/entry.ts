@@ -8,8 +8,8 @@ import { createLocalAgentPluginsComposition } from "@claxedo/local-server/agent-
 import { createLocalTasksPlugin } from "@claxedo/tasks/local"
 import { createLocalDocumentsPlugin } from "@claxedo/local-server/app/local-documents"
 import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
-import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
-import { claxedoSchemaJournals, mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
+import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
+import { claxedoSchemaJournals } from "@claxedo/server-core/plugins/sqlite-schema"
 import { configureClaxedoSchema } from "@claxedo/server-core/platform/db/index"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { claxedoServerStartup } from "./startup"
@@ -40,7 +40,7 @@ const startup = claxedoServerStartup(process.env)
 // The Marketplace switch decides both halves at once: no Tasks tools for a
 // session, and no grant left answering for one that still holds a handle.
 const plugins = [
-  createLocalTasksPlugin({ enabled: () => builtinToolGroups().includes(BUILTIN_TASKS_TOOL_GROUP) }),
+  createLocalTasksPlugin({ enabledGroups: () => builtinToolGroups() }),
   createLocalDocumentsPlugin(),
 ]
 // Every journal is named before the Agent Plugins composition below opens

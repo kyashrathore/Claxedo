@@ -1,9 +1,8 @@
-import { describe, expect, test } from "vitest"
-import { exportPKCS8, exportSPKI, generateKeyPair, jwtVerify, SignJWT } from "jose"
+import { describe, expect, test } from "bun:test"
+import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair, jwtVerify, SignJWT } from "jose"
 import { runtimeAccessTokenAudience, runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
-import { MCP_GATEWAY_TOKEN_AUDIENCE } from "../agent-plugins/mcp/runtime-token"
 import { TASKS_CAPABILITY_AUDIENCE, mintTasksCapability, verifyTasksCapability } from "./capability"
-import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 
 async function fixture() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
@@ -90,11 +89,11 @@ describe("Tasks capability", () => {
     await expect(verifyTasksCapability(forged, env)).rejects.toThrow("scope is invalid")
   })
 
-  test("has its own audience and cannot be replayed as relay access or a gateway credential", async () => {
+  test("names its own audience alone, so it cannot be replayed as relay access or any other pass", async () => {
     const { env, key } = await fixture()
     const { token } = await mintTasksCapability(scope, env)
     await expect(jwtVerify(token, key.publicKey, { audience: runtimeAccessTokenAudience })).rejects.toThrow()
-    await expect(jwtVerify(token, key.publicKey, { audience: MCP_GATEWAY_TOKEN_AUDIENCE })).rejects.toThrow()
+    expect(decodeJwt(token).aud).toBe(TASKS_CAPABILITY_AUDIENCE)
     await expect(jwtVerify(token, key.publicKey, { audience: TASKS_CAPABILITY_AUDIENCE })).resolves.toBeTruthy()
   })
 

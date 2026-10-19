@@ -9,18 +9,19 @@ import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { accountPlaceholderEnv } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { startOriginId, type Preset, type Task } from "@claxedo/tasks"
 import type { RuntimeSnapshot } from "@claxedo/workspace-runtime/config"
-import { createHostedRuntimeDelivery } from "../workspace/hosted-runtime-delivery"
-import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
-import { hostedBrokerCredentialReader, hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
-import { createHostedEgressBroker } from "../credentials/hosted-egress-broker"
-import { inlineSandboxStart, unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../test-support/inline-sandbox-start"
-import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
-import type { SandboxStartAnswer, SandboxStartRequest } from "../workspace/sandbox-start"
+import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
+import { originCloudWorkspaceId } from "../../../workspace/origin-cloud-workspace"
+import { hostedBrokerCredentialReader, hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../../../credentials/worker"
+import { createHostedEgressBroker } from "../../../credentials/hosted-egress-broker"
+import { inlineSandboxStart, unusedSandboxRedeliver, unusedSandboxStart, unusedWorkspaceIdleStop } from "../../../test-support/inline-sandbox-start"
+import { hostedSandboxInput } from "../../../workspace/hosted-sandbox-input"
+import type { SandboxStartAnswer, SandboxStartRequest } from "../../../workspace/sandbox-start"
 import { startConfigurationDigest } from "@claxedo/tasks"
-import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
-import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
-import type { ControlPlaneServices } from "../authority/services"
-import { createHostedTasksSessionBridge } from "./session-bridge"
+import { workspaceBackingDatabase } from "../../../test-support/workspace-backing-database"
+import type { ControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
+import type { ControlPlaneServices } from "../../../authority/services"
+import { createHostedTasksSessionBridge } from "@claxedo/tasks/hosted"
+import { hostedTasksBridgePorts } from "./compose"
 
 const runtimeRequest = vi.hoisted(() => vi.fn())
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: RuntimeSnapshot) => {}))
@@ -149,22 +150,24 @@ async function rootStart(secretBrokering: "native" | "none") {
   const requests: (SandboxStartRequest | undefined)[] = []
   const answers: SandboxStartAnswer[] = []
   const bridge = createHostedTasksSessionBridge({
-    services,
+    ...hostedTasksBridgePorts({
+      services,
+      reads: {
+        workspace: async (workspaceId) => filed.get(workspaceId),
+        projectWorkspaces: async () => [],
+        projectSource: async () => ({ repoUrl: REPO, gitBranch: "main" }),
+        sessions: async () => new Map(),
+      },
+      sandboxStart: async (workspaceId, request) => {
+        requests.push(request)
+        const answer = await inline(workspaceId, request)
+        answers.push(answer)
+        return answer
+      },
+    }),
     runtimeClient: {},
-    reads: {
-      workspace: async (workspaceId) => filed.get(workspaceId),
-      projectWorkspaces: async () => [],
-      projectSource: async () => ({ repoUrl: REPO, gitBranch: "main" }),
-      sessions: async () => new Map(),
-    },
     principal: async () => ({ principalKind: "user", actorId: owner.actorId, actorKind: "human" }),
     auth: () => ({ user: { subject: "owner" }, principal: { userId: owner.userId } }) as unknown as SignedControlPlaneAuth,
-    sandboxStart: async (workspaceId, request) => {
-      requests.push(request)
-      const answer = await inline(workspaceId, request)
-      answers.push(answer)
-      return answer
-    },
   })
   runtimeRequest.mockImplementation(async () => Response.json({
     harness: "claude",

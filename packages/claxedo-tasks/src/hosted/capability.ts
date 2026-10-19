@@ -1,11 +1,11 @@
-import { credentialFault } from "../platform/auth/runtime-token-keys"
-import { mintSandboxPass, verifySandboxPass } from "../platform/auth/sandbox-pass"
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { credentialFault } from "@claxedo/server-core/platform/auth/runtime-token-keys"
+import { mintSandboxPass, verifySandboxPass } from "@claxedo/server-core/platform/auth/sandbox-pass"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import {
   isTasksOperation,
   type TasksCapabilityScope,
   type TasksOperation,
-} from "@claxedo/tasks/host/capability"
+} from "../host/capability"
 
 export const TASKS_CAPABILITY_AUDIENCE = "claxedo-tasks-capability" as const
 

@@ -1,7 +1,13 @@
+/**
+ * The Tasks plugin reads the host's `workspaces` and `sessions` rows (and its own
+ * `task_session_links`) straight from D1, so it is checked here against the
+ * baseline this host deploys: a host column it names that moves fails here.
+ */
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { D1Database } from "@cloudflare/workers-types"
-import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
-import { createD1TasksHostReads } from "./d1-host-reads"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
+import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
+import { createD1TasksHostReads } from "@claxedo/tasks/hosted"
 
 let instance: ControlPlaneDatabase
 let database: D1Database
@@ -59,7 +65,7 @@ afterAll(async () => {
 
 describe("the hosted Tasks host's D1 reads", () => {
   test("answers a live cloud workspace by id, and no machine or deleted one", async () => {
-    const reads = createD1TasksHostReads(database)
+    const reads = createD1TasksHostReads({ database, cloudWorkspaceDirectory: WORKSPACE_DIR })
     expect(await reads.workspace("ws_alice")).toEqual({
       id: "ws_alice",
       org_id: "org",
@@ -79,20 +85,20 @@ describe("the hosted Tasks host's D1 reads", () => {
   })
 
   test("lists a person's own cloud workspaces in a project, oldest first, without a cloud task's root", async () => {
-    const reads = createD1TasksHostReads(database)
+    const reads = createD1TasksHostReads({ database, cloudWorkspaceDirectory: WORKSPACE_DIR })
     expect((await reads.projectWorkspaces("prj", "alice")).map((row) => row.id)).toEqual(["ws_alice", "ws_alice_second"])
     expect((await reads.projectWorkspaces("prj", "bob")).map((row) => row.id)).toEqual(["ws_bob"])
     expect(await reads.projectWorkspaces("prj", "carol")).toEqual([])
   })
 
   test("takes a project's source from its oldest live workspace that names a remote", async () => {
-    const reads = createD1TasksHostReads(database)
+    const reads = createD1TasksHostReads({ database, cloudWorkspaceDirectory: WORKSPACE_DIR })
     expect(await reads.projectSource("prj")).toEqual({ repoUrl: "https://github.com/acme/importer.git", gitBranch: "main" })
     expect(await reads.projectSource("prj_none")).toBeUndefined()
   })
 
   test("reads every registered session asked about, past D1's bound-parameter limit, with archived ones and a person's last turn marked and deleted ones absent", async () => {
-    const reads = createD1TasksHostReads(database)
+    const reads = createD1TasksHostReads({ database, cloudWorkspaceDirectory: WORKSPACE_DIR })
     const ids = [...Array.from({ length: 130 }, (_, index) => `ses_${String(index).padStart(3, "0")}`), "ses_archived", "ses_deleted", "ses_turned", "ses_never"]
     const metas = await reads.sessions(ids)
     expect(metas.size).toBe(132)

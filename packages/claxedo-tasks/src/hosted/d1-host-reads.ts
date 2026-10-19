@@ -1,8 +1,9 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import type { RegisteredSession } from "@claxedo/tasks/host/registered-sessions"
+import type { RegisteredSession } from "../host/registered-sessions"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { OriginCloudSource } from "../workspace/origin-cloud-workspace"
+
+/** The repository and ref a project's cloud roots clone. */
+export type TasksProjectSource = { repoUrl: string; gitBranch?: string; repoName?: string }
 
 /**
  * What the hosted Tasks bridge reads about workspaces and sessions, from the
@@ -20,7 +21,7 @@ export type TasksHostReads = {
    */
   projectWorkspaces(projectId: string, ownerUserId: string): Promise<Workspace[]>
   /** The repository and ref a project's cloud roots clone, from the oldest of its workspaces that names one. */
-  projectSource(projectId: string): Promise<OriginCloudSource | undefined>
+  projectSource(projectId: string): Promise<TasksProjectSource | undefined>
   /** The registered, undeleted sessions among these ids, as the rows their runtimes publish. */
   sessions(sessionIds: readonly string[]): Promise<ReadonlyMap<string, RegisteredSession>>
 }
@@ -44,8 +45,8 @@ const D1_BOUND_PARAMETERS = 100
 const WORKSPACE_COLUMNS =
   "w.workspace_id, w.org_id, w.project_id, w.display_name, w.repo_url, w.repo_name, w.git_branch, w.remote_directory, w.created_at, w.updated_at"
 
-function cloudWorkspace(row: WorkspaceRow): Workspace {
-  const directory = row.remote_directory ?? WORKSPACE_DIR
+function cloudWorkspaceOf(row: WorkspaceRow, defaultDirectory: string): Workspace {
+  const directory = row.remote_directory ?? defaultDirectory
   return {
     id: row.workspace_id,
     org_id: row.org_id,
@@ -62,7 +63,14 @@ function cloudWorkspace(row: WorkspaceRow): Workspace {
   }
 }
 
-export function createD1TasksHostReads(database: D1Database): TasksHostReads {
+export type D1TasksHostReadsInput = Readonly<{
+  database: D1Database
+  /** Where a cloud workspace whose row names no directory is checked out in its sandbox. */
+  cloudWorkspaceDirectory: string
+}>
+
+export function createD1TasksHostReads({ database, cloudWorkspaceDirectory }: D1TasksHostReadsInput): TasksHostReads {
+  const cloudWorkspace = (row: WorkspaceRow) => cloudWorkspaceOf(row, cloudWorkspaceDirectory)
   return {
     async workspace(workspaceId) {
       const row = await database

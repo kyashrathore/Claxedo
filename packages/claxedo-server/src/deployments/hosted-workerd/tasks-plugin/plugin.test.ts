@@ -17,28 +17,29 @@ import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { memorySandboxPassRegister, type SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister, type SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import type { SessionRef, TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { TasksRuntimePrincipal } from "@claxedo/tasks/host/authorization"
 
-import { createHostedCoreApp } from "../deployments/hosted-shared/hosted-core-app"
-import { STATIC_PRODUCT_DESCRIPTORS } from "../deployments/hosted-shared/deployment-profile"
-import { sandboxRelayTargetLookup, type HostedControlPlane } from "../authority/hosted-services"
-import type { ControlPlaneServices } from "../authority/services"
-import { UNUSED_PROJECTION_STORE } from "../authority/unavailable-session-stores"
+import { createHostedCoreApp } from "../../hosted-shared/hosted-core-app"
+import { STATIC_PRODUCT_DESCRIPTORS } from "../../hosted-shared/deployment-profile"
+import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../../authority/hosted-services"
+import type { ControlPlaneServices } from "../../../authority/services"
+import { UNUSED_PROJECTION_STORE } from "../../../authority/unavailable-session-stores"
 import {
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
-} from "../test-support/control-plane-migrations"
-import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
-import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE } from "./capability"
-import { createD1TasksStore } from "./d1-store"
-import { createHostedTasksComposition, type HostedTasksCompositionInput } from "./hosted-composition"
-import type { TasksHostReads } from "./d1-host-reads"
-import { createHostedTasksSessionBridge } from "./session-bridge"
-import { createCloudCreateAdmission } from "../workspace/cloud-create-admission"
-import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
-import type { SandboxStart } from "../workspace/sandbox-start"
+} from "../../../test-support/control-plane-migrations"
+import { testRequestAuthenticationAdapter } from "../../../test-support/request-authentication"
+import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE } from "@claxedo/tasks/hosted"
+import { createD1TasksStore } from "@claxedo/tasks/storage/d1"
+import { createHostedTasksComposition, type HostedTasksCompositionInput } from "@claxedo/tasks/hosted"
+import type { TasksHostReads } from "@claxedo/tasks/hosted"
+import { createHostedTasksSessionBridge } from "@claxedo/tasks/hosted"
+import { createCloudCreateAdmission } from "../../../workspace/cloud-create-admission"
+import { hostedSandboxInput } from "../../../workspace/hosted-sandbox-input"
+import type { SandboxStart } from "../../../workspace/sandbox-start"
+import { hostedTasksBridgePorts, hostedTasksIdentityPorts } from "./compose"
 
 const runtime = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
@@ -235,9 +236,8 @@ async function hostedApp(
   const base = plane(sandbox)
   const authentication = options.authentication ?? testRequestAuthenticationAdapter()
   const tasks = createHostedTasksComposition({
-    services: base.services,
+    ...hostedTasksIdentityPorts({ services: base.services, authentication }),
     database: options.database ?? (await database()),
-    authentication,
     bridge: options.bridge ? options.bridge(base.services) : reportingBridge,
     ...(options.cloudSelectedCapabilities === undefined ? {} : { cloudSelectedCapabilities: options.cloudSelectedCapabilities }),
     ...(options.signingEnv ? { signingEnv: options.signingEnv } : {}),
@@ -950,13 +950,15 @@ describe("hosted Tasks cloud start from inside a session", () => {
         cloudSelectedCapabilities: true,
         bridge: (services) => (principal, auth, owner) =>
           createHostedTasksSessionBridge({
-            services,
+            ...hostedTasksBridgePorts({
+              services,
+              reads,
+              sandboxStart: settledStart(sandboxManager),
+            }),
             runtimeClient: {},
-            reads,
             principal,
             auth,
             owner,
-            sandboxStart: settledStart(sandboxManager),
           }),
       },
     )
@@ -1087,14 +1089,16 @@ describe("hosted Tasks cloud start from inside a session", () => {
         cloudSelectedCapabilities: true,
         bridge: (services) => (principal, auth, owner) =>
           createHostedTasksSessionBridge({
-            services,
+            ...hostedTasksBridgePorts({
+              services,
+              reads,
+              sandboxStart: settledStart(sandboxManager),
+              cloudCreateAdmission: createCloudCreateAdmission({ services, entitlement }),
+            }),
             runtimeClient: {},
-            reads,
             principal,
             auth,
             owner,
-            sandboxStart: settledStart(sandboxManager),
-            cloudCreateAdmission: createCloudCreateAdmission({ services, entitlement }),
           }),
       },
     )

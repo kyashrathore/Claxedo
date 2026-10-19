@@ -16,7 +16,7 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal, ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
-import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { createOwnerGrantProof, mintOwnerGrant } from "../session/owner-grant"
 import {
   DEFERRED_TURN_GRANT_AUDIENCE,
@@ -25,7 +25,7 @@ import {
   mintDeferredTurnGrant,
   verifyDeferredTurnGrant,
 } from "../session/deferred-turn-grant"
-import { mintTasksCapability } from "../tasks/capability"
+import { mintTasksCapability } from "@claxedo/tasks/hosted"
 import { RuntimeSessionAuthorityRoutes, type RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 import { D1SessionAuthorityError } from "../authority/adapters/d1/session-input"
 import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"

@@ -101,7 +101,7 @@ test("the host journal composed with the Tasks journal builds the recorded schem
 
   expect(textColumns(queryRows(sqlite, "SELECT name FROM __claxedo_migrations ORDER BY rowid"), "name")).toEqual(RECORDED_NAMES)
   const schema = queryRows(sqlite, "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name")
-    .map((row) => `${row.type}\t${row.name}\t${row.tbl_name}\t${row.sql ?? ""}`)
+    .map((row) => [row.type, row.name, row.tbl_name, row.sql].map((value) => (typeof value === "string" ? value : "")).join("\t"))
     .join("\n")
   expect(createHash("sha256").update(schema).digest("hex")).toBe(RECORDED_SCHEMA_SHA256)
 })

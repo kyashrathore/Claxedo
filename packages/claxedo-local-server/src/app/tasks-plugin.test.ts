@@ -158,7 +158,7 @@ describe("desktop-local Tasks plugin", () => {
   test("a session whose Tasks group is off is handed the person's loopback fetch, not a grant", async () => {
     const workspace = await localWorkspace()
     expect(await sessionHandle(createLocalTasksPlugin(), workspace.id, "ses_caller", [])).toBeUndefined()
-    expect(await sessionHandle(createLocalTasksPlugin({ enabled: () => false }), workspace.id, "ses_caller")).toBeUndefined()
+    expect(await sessionHandle(createLocalTasksPlugin({ enabledGroups: () => [] }), workspace.id, "ses_caller")).toBeUndefined()
     expect(await sessionHandle(createLocalTasksPlugin(), workspace.id, "ses_caller")).toEqual(expect.any(String))
   })
 
@@ -344,7 +344,7 @@ describe("desktop-local Tasks plugin", () => {
   test("refuses a grant it cannot verify instead of reading it as the person at this machine", async () => {
     const workspace = await localWorkspace()
     let tasksOn = true
-    const target = app(createLocalTasksPlugin({ enabled: () => tasksOn }))
+    const target = app(createLocalTasksPlugin({ enabledGroups: () => (tasksOn ? ["tasks"] : []) }))
     const handle = await sessionHandle(target.plugin, workspace.id, "ses_caller")
     // A handle of the same shape from a registry that is not this one: what a
     // session still holding a bearer across a daemon restart presents.

@@ -18,22 +18,26 @@ import type {
 } from "@claxedo/server-core/agent-plugins/activation/store"
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES, agentPluginHarnessRecord } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
-import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP, builtinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { BUILTIN_SUBAGENTS_TOOL_GROUP, builtinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { bearerToken, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
-import type { ControlPlaneServices } from "../authority/services"
-import { HostedAgentPluginRoutes } from "../agent-plugins/routes"
-import { createBuiltinGroupReader } from "../agent-plugins/runtime/cloud-root-environment"
-import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
-import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
-import { OWNER_GRANT_AUDIENCE, createOwnerRootGrant, verifyOwnerGrant } from "../session/owner-grant"
-import { TASKS_CAPABILITY_AUDIENCE } from "./capability"
-import { createGrantWithdrawal } from "./grant-withdrawal"
-import { createHostedTasksComposition } from "./hosted-composition"
-import { createTasksRootGrant, type TasksRootIdentity } from "./root-capability"
+import type { ControlPlaneServices } from "../../../authority/services"
+import { HostedAgentPluginRoutes } from "../../../agent-plugins/routes"
+import { createBuiltinGroupReader } from "../../../agent-plugins/runtime/cloud-root-environment"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
+import { testRequestAuthenticationAdapter } from "../../../test-support/request-authentication"
+import { OWNER_GRANT_AUDIENCE, createOwnerRootGrant, verifyOwnerGrant } from "../../../session/owner-grant"
+import { createGrantWithdrawal } from "../../../agent-plugins/runtime/grant-withdrawal"
+import {
+  TASKS_CAPABILITY_AUDIENCE,
+  createHostedTasksComposition,
+  createTasksRootGrant,
+  type TasksRootIdentity,
+} from "@claxedo/tasks/hosted"
+import { hostedTasksIdentityPorts } from "./compose"
 
 const active: ControlPlaneDatabase[] = []
 
@@ -54,7 +58,7 @@ const OWNERS: Record<string, typeof OWNER> = {
   ws_root: OWNER,
   ws_other: { ...OWNER, projectId: "project-b" },
 }
-const TASKS_ID = builtinPluginInstanceId(BUILTIN_TASKS_TOOL_GROUP)
+const TASKS_ID = builtinPluginInstanceId(TASKS_MCP_TOOL_GROUP.id)
 const SUBAGENTS_ID = builtinPluginInstanceId(BUILTIN_SUBAGENTS_TOOL_GROUP)
 const HARNESSES: AgentPluginHarnessId[] = [...SUPPORTED_AGENT_PLUGIN_HARNESSES]
 
@@ -164,7 +168,7 @@ async function fixture() {
     passes,
     audience: TASKS_CAPABILITY_AUDIENCE,
     reason: "tasks_group_disabled",
-    groupEnabled: createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP),
+    groupEnabled: createBuiltinGroupReader({ activations, builtIn }, TASKS_MCP_TOOL_GROUP.id),
   })
   const ownerWithdrawal = createGrantWithdrawal({
     passes,
@@ -182,14 +186,13 @@ async function fixture() {
     reconcile: { reconcile: async () => ({ state: "scheduled" as const }) },
     builtIn,
     builtInConsentChanged: async (auth, groupId) => {
-      if (groupId === BUILTIN_TASKS_TOOL_GROUP) await withdrawal.reconcile(await services.authority!.resolveOrgId(auth))
+      if (groupId === TASKS_MCP_TOOL_GROUP.id) await withdrawal.reconcile(await services.authority!.resolveOrgId(auth))
       if (groupId === BUILTIN_SUBAGENTS_TOOL_GROUP) await ownerWithdrawal.reconcile(await services.authority!.resolveOrgId(auth))
     },
   })
   const tasks = createHostedTasksComposition({
-    services,
+    ...hostedTasksIdentityPorts({ services, authentication }),
     database: await database(),
-    authentication,
     bridge: refusingBridge,
     signingEnv,
     passes,

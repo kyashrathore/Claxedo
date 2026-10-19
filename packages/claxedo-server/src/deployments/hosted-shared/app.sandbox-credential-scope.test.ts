@@ -16,10 +16,13 @@ import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authori
 import type { ControlPlaneServices } from "../../authority/services"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
-import { createHostedTasksComposition } from "../../tasks/hosted-composition"
-import { mintTasksCapability } from "../../tasks/capability"
-import { tasksGrantRenewalContribution } from "../../tasks/grant-renewal"
-import { createTasksRootGrant } from "../../tasks/root-capability"
+import {
+  createHostedTasksComposition,
+  createTasksRootGrant,
+  mintTasksCapability,
+  tasksCapabilityRenewalContribution,
+} from "@claxedo/tasks/hosted"
+import { hostedTasksIdentityPorts } from "../hosted-workerd/tasks-plugin/compose"
 import { mintMcpGatewayToken } from "../../agent-plugins/mcp/runtime-token"
 import { mintOwnerGrant } from "../../session/owner-grant"
 
@@ -199,16 +202,15 @@ async function hostedApp(
   const authentication = knownUsersAuthentication()
   const controlPlane = await database()
   const tasks = createHostedTasksComposition({
-    services: base.services,
+    ...hostedTasksIdentityPorts({ services: base.services, authentication }),
     database: controlPlane,
-    authentication,
     bridge: reportingBridge,
     signingEnv: env,
   })
-  const renewal = tasksGrantRenewalContribution({
+  const renewal = tasksCapabilityRenewalContribution({
     signingEnv: env,
     workspaceOwner: async (workspaceId) => WORKSPACE_OWNERS[workspaceId],
-    tasksGroupEnabled: async () => true,
+    groupEnabled: async () => true,
     grant: createTasksRootGrant({ signingEnv: env }),
     audit: () => {},
   })

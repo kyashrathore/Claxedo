@@ -1,29 +1,26 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
-import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
-import type { WorkspaceRuntimeClientOptions } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
-import type { TasksRuntimePrincipal } from "@claxedo/tasks/host/authorization"
-import { signedTasksIdentity, tasksRouteContribution } from "@claxedo/tasks/host/contribution"
-import { createTasksCapabilities } from "@claxedo/tasks/host/host-ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
-import type { TasksCapabilityOwner, TasksCapabilityPort } from "@claxedo/tasks/host/capability"
-import type { ControlPlaneServices } from "../authority/services"
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { signedOrError } from "../workspace/route-support"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
+import type { SignedTasksAuthenticateInput, TasksRuntimePrincipal } from "../host/authorization"
+import { signedTasksIdentity, tasksRouteContribution } from "../host/contribution"
+import { createTasksCapabilities } from "../host/host-ports"
+import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from ".."
+import type { TasksCapabilityOwner, TasksCapabilityPort } from "../host/capability"
 import { verifyTasksCapability } from "./capability"
-import { createD1TasksStore } from "./d1-store"
+import { createD1TasksStore } from "../storage/d1/d1-store"
 
 export type HostedTasksComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]
 }
 
 export type HostedTasksCompositionInput = {
-  services: ControlPlaneServices
+  /** The workspace authority every other hosted route asks. */
+  authority: WorkspaceAuthority
   database: D1Database
-  authentication: RequestAuthenticationAdapter
+  /** The deployment's signed-request reader, which answers a refusal in the deployment's own words. */
+  signed: SignedTasksAuthenticateInput["signed"]
   /**
    * Built here rather than passed in, because the bridge has to reserve each
    * session — and create a cloud root's own workspace — as the person who
@@ -32,6 +29,12 @@ export type HostedTasksCompositionInput = {
    * workspace owner its grant resolved to.
    */
   bridge: (principal: TasksRuntimePrincipal, auth: TasksSignedAuth, owner: TasksGrantOwner) => TasksSessionBridgePort
+  /**
+   * Whether this deployment has an isolated root to allocate at all: the same
+   * reading the workspace routes make before they will create a cloud
+   * workspace.
+   */
+  cloudPlacement: boolean
   /**
    * Whether this deployment can project a cloud root's selected capability
    * set. It is the build's Agent Plugins wiring, not a runtime flag: an
@@ -57,23 +60,6 @@ export type TasksSignedAuth = (actor: TasksActor) => SignedControlPlaneAuth | un
 export type TasksGrantOwner = (actor: TasksActor) => TasksCapabilityOwner | undefined
 
 /**
- * The runtime principal Tasks dispatches as. Start reserves and creates a
- * session before any human turn exists, so it acts as the one control-plane
- * service actor the D1 runtime authority mints service tokens for — the same
- * actor the checkpoint routes and the Agent Plugins provisioner use — and the
- * bridge names the person each Start acts for on it.
- */
-export function hostedTasksRuntimeClient(services: ControlPlaneServices): WorkspaceRuntimeClientOptions {
-  return {
-    ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-    ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
-    ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
-    runtimeActor: CONTROL_PLANE_RUNTIME_ACTOR,
-    role: "owner",
-  }
-}
-
-/**
  * Hosted Tasks over D1 and the signed control-plane identity.
  *
  * The scope is the organization the authority resolves for the caller, so a
@@ -85,7 +71,7 @@ export function hostedTasksRuntimeClient(services: ControlPlaneServices): Worksp
  * route asks.
  */
 export function createHostedTasksComposition(input: HostedTasksCompositionInput): HostedTasksComposition {
-  const authority = requireAuthority(input.services)
+  const authority = input.authority
   const owners = authority.resolveWorkspaceOwner?.bind(authority)
   const signingEnv = input.signingEnv
   // Both halves or neither: a grant whose owner this deployment cannot look
@@ -118,16 +104,10 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
     : undefined
   const identity = signedTasksIdentity({
     authority,
-    signed: (request) =>
-      signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
+    signed: input.signed,
     ...(capability ? { capability } : {}),
   })
-  // The same reading the workspace routes make before they will create a
-  // cloud workspace at all: without a sandbox manager this deployment has no
-  // isolated root to allocate.
-  const placements: TasksHostCapabilities["placements"] = input.services.sandbox.sandboxManager
-    ? ["local", "cloud"]
-    : ["local"]
+  const placements: TasksHostCapabilities["placements"] = input.cloudPlacement ? ["local", "cloud"] : ["local"]
   const store = createD1TasksStore({ database: input.database })
   return {
     routeContributions: [

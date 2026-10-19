@@ -1,6 +1,10 @@
+import { createHash } from "node:crypto"
 import Database from "better-sqlite3"
 import { afterEach, expect, test } from "vitest"
 import { currentControlPlaneBaseline } from "../../../../scripts/control-plane-schema"
+
+/** sha256 of the single `0001_baseline.sql` the host carried before Tasks' tables moved into `@claxedo/tasks`, recorded at 789ec97. */
+const RECORDED_BASELINE_SHA256 = "9d0bb00cc292dd07106bcf4fdb393422ae009318a1ff18f2ced37c8969a3c1b7"
 
 const open: Database.Database[] = []
 afterEach(() => open.splice(0).forEach((database) => database.close()))
@@ -14,6 +18,10 @@ function baseline() {
     insert into orgs (org_id, name, kind, owner_user_id, created_at, updated_at) values ('org-a', 'A', 'shared', 'user-a', 1, 1)`)
   return database
 }
+
+test("the host's and the plugins' baselines render the deployed baseline byte for byte", () => {
+  expect(createHash("sha256").update(currentControlPlaneBaseline()).digest("hex")).toBe(RECORDED_BASELINE_SHA256)
+})
 
 test("an auth identity accepts only current adapters and stays pinned to its user", () => {
   const database = baseline()

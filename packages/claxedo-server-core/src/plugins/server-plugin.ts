@@ -2,7 +2,6 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import type { ClaxedoFetch, McpServiceGrant, McpToolGroup } from "@claxedo/mcp/tool-group"
 import type { ControlPlaneAuthConfig, ControlPlaneTokenVerifier } from "../platform/auth/auth"
 import type { ControlPlaneRouteContribution } from "../platform/http/route-contribution"
-import { CLAXEDO_MIGRATION_JOURNAL } from "../platform/db/journal"
 
 /**
  * What a first-party plugin hands a server host. A host mounts each plugin it
@@ -63,6 +62,29 @@ export type LocalServerPlugin = ServerPluginBase & Readonly<{
 
 export type HostedServerPlugin = ServerPluginBase & Readonly<{
   routeContributions: readonly ControlPlaneRouteContribution[]
+  rootGrants?: readonly CloudRootGrantContribution[]
+}>
+
+/** One cloud root as the workspace authority records it. */
+export type CloudRootIdentity = Readonly<{
+  userId: string
+  orgId: string
+  projectId: string
+  workspaceId: string
+}>
+
+/**
+ * A credential a cloud root launches with while its project consents to one
+ * tool group. The grant travels only with its group, and when the group is
+ * turned off every pass under `audience` that the root's project no longer
+ * consents to is revoked with `withdrawalReason`.
+ */
+export type CloudRootGrantContribution = Readonly<{
+  group: string
+  audience: string
+  withdrawalReason: string
+  /** The environment the root's sandbox reads the grant from. */
+  mint(root: CloudRootIdentity): Promise<Readonly<Record<string, string>>>
 }>
 
 export class ServerPluginCompositionError extends Error {
@@ -91,9 +113,4 @@ export function serverPluginCapabilities(plugins: readonly ServerPluginBase[]): 
 /** Every group a host's MCP mount serves and its catalog lists: the core groups, then each plugin's, in composition order. */
 export function mcpToolGroups(plugins: readonly ServerPluginBase[]): readonly McpToolGroup[] {
   return [...CLAXEDO_MCP_TOOL_GROUPS, ...plugins.flatMap((plugin) => plugin.mcp?.groups ?? [])]
-}
-
-/** Every journal `configureClaxedoSchema` is handed for a local composition: the host's, then each plugin's. */
-export function claxedoSchemaJournals(plugins: readonly LocalServerPlugin[]): readonly string[] {
-  return [CLAXEDO_MIGRATION_JOURNAL, ...plugins.flatMap((plugin) => (plugin.sqliteSchema ? [plugin.sqliteSchema.journal] : []))]
 }

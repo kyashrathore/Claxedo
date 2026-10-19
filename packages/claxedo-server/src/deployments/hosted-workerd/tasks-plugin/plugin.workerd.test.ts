@@ -2,14 +2,14 @@ import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
-import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
-import { hostedWorkerCompatibility, wranglerBundle } from "../test-support/hosted-worker-bundle"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
+import { hostedWorkerCompatibility, wranglerBundle } from "../../../test-support/hosted-worker-bundle"
 import { startOriginId } from "@claxedo/tasks"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
-import { mintTasksCapability } from "./capability"
+import { originCloudWorkspaceId } from "../../../workspace/origin-cloud-workspace"
+import { mintTasksCapability } from "@claxedo/tasks/hosted"
 
-const FIXTURE_WORKER = fileURLToPath(new URL("../test-support/hosted-task-start-worker.ts", import.meta.url))
+const FIXTURE_WORKER = fileURLToPath(new URL("../../../test-support/hosted-task-start-worker.ts", import.meta.url))
 const ORIGIN = "https://core.test"
 const TASKS = `${ORIGIN}/api/claxedo/tasks`
 const REPO = "https://github.com/acme/importer.git"

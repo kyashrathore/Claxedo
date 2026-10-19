@@ -16,6 +16,7 @@ import { requireSignedControlPlaneRoute } from "@claxedo/server-core/platform/ht
 import {
   assertDistinctServerPlugins,
   serverPluginCapabilities,
+  type CloudRootIdentity,
   type HostedServerPlugin,
 } from "@claxedo/server-core/plugins/server-plugin"
 import {
@@ -45,7 +46,7 @@ import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
-import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { createOwnerGrantProof } from "../../session/owner-grant"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
@@ -86,7 +87,6 @@ import {
 import type { FirstPartyMcpOptions } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { sessionMcpCredentials, type SessionMcpCredentialsInput } from "../../mcp/session-mcp-credentials"
-import type { CloudRootIdentity } from "../../agent-plugins/runtime/cloud-root-environment"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"

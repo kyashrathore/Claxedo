@@ -50,14 +50,6 @@ export function isBuiltinFamilyName(pluginInstanceId: string): boolean {
 }
 
 /**
- * The group whose consent the Tasks capability is.
- *
- * Named here rather than beside a minter because the hosted composition and
- * the local daemon both grant on it, and the two sit in different deployments.
- */
-export const BUILTIN_TASKS_TOOL_GROUP = "tasks"
-
-/**
  * The group whose consent the owner grant is: a root that may start
  * subagents is a root whose runtime may act as the workspace's owner.
  */

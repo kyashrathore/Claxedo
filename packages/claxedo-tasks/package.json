@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "The Tasks plugin: personal execution presets, project-owned tasks with subtasks and linked sessions, their rules, store ports, HTTP routes, client, MCP tools, and the host code and SQLite storage a server composes",
+  "description": "The Tasks plugin: personal execution presets, project-owned tasks with subtasks and linked sessions, their rules, store ports, HTTP routes, client, MCP tools, and the host code, SQLite and D1 storage, local, hosted and cloud-runtime contributions a server composes",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -53,12 +53,40 @@
       "import": "./src/storage/sqlite/index.ts",
       "default": "./src/storage/sqlite/index.ts"
     },
+    "./storage/d1": {
+      "types": "./src/storage/d1/index.ts",
+      "bun": "./src/storage/d1/index.ts",
+      "development": "./src/storage/d1/index.ts",
+      "import": "./src/storage/d1/index.ts",
+      "default": "./src/storage/d1/index.ts"
+    },
+    "./storage/d1/schema": {
+      "types": "./src/storage/d1/schema.ts",
+      "bun": "./src/storage/d1/schema.ts",
+      "development": "./src/storage/d1/schema.ts",
+      "import": "./src/storage/d1/schema.ts",
+      "default": "./src/storage/d1/schema.ts"
+    },
     "./local": {
       "types": "./src/local/index.ts",
       "bun": "./src/local/index.ts",
       "development": "./src/local/index.ts",
       "import": "./src/local/index.ts",
       "default": "./src/local/index.ts"
+    },
+    "./hosted": {
+      "types": "./src/hosted/index.ts",
+      "bun": "./src/hosted/index.ts",
+      "development": "./src/hosted/index.ts",
+      "import": "./src/hosted/index.ts",
+      "default": "./src/hosted/index.ts"
+    },
+    "./runtime-host": {
+      "types": "./src/runtime-host/index.ts",
+      "bun": "./src/runtime-host/index.ts",
+      "development": "./src/runtime-host/index.ts",
+      "import": "./src/runtime-host/index.ts",
+      "default": "./src/runtime-host/index.ts"
     },
     "./conformance": {
       "types": "./src/conformance/index.ts",
@@ -86,9 +114,12 @@
     "@claxedo/server-core": "workspace:*",
     "drizzle-orm": "catalog:",
     "hono": "4.12.34",
+    "jose": "6.2.4",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@claxedo/workspace-relay": "workspace:*",
+    "@cloudflare/workers-types": "catalog:",
     "@hono/node-server": "1.19.11",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@tsconfig/node-lts": "22.0.4",

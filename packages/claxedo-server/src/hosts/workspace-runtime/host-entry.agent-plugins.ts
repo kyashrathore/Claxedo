@@ -3,6 +3,7 @@
 import fs from "node:fs"
 import { agentPluginWorkspaceRuntimeContribution } from "@claxedo/local-server/agent-plugins/runtime/runtime-contribution"
 import { runWorkspaceRuntimeHost } from "./host-run"
+import { tasksRuntimeHostPlugin } from "@claxedo/tasks/runtime-host"
 import { claxedoWorkspaceRuntimeBootFromEnv } from "./runtime-boot"
 
 if (process.argv[2] === "--version") {
@@ -12,4 +13,5 @@ if (process.argv[2] === "--version") {
 
 await runWorkspaceRuntimeHost(() => claxedoWorkspaceRuntimeBootFromEnv(process.env, {
   routeContributions: [agentPluginWorkspaceRuntimeContribution()],
+  plugins: [tasksRuntimeHostPlugin],
 }))

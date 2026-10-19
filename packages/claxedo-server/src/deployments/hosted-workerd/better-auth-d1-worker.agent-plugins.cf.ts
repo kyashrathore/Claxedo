@@ -8,10 +8,10 @@ import {
 } from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
-import { createHostedTasksPlugin } from "./tasks-plugin"
+import { composeHostedTasksPlugin } from "./tasks-plugin/compose"
 import { mcpToolGroups } from "@claxedo/server-core/plugins/server-plugin"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
+import { BUILTIN_SUBAGENTS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
@@ -58,7 +58,6 @@ export function composeBetterAuthD1AgentPlugins(
   })
   const signingEnv = stringEnvironment(env)
   const passes = createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB })
-  const tasksRoot = { signingEnv, passes }
   const authority = requireAuthority(base.plane.services)
   if (!authority.resolveWorkspaceOwner) {
     throw new Error("Enabled Agent Plugins build requires an authority that resolves workspace owners")
@@ -72,7 +71,7 @@ export function composeBetterAuthD1AgentPlugins(
     supervisors: env.PLUGIN_SUPERVISOR,
     services: base.plane.services,
   })
-  const tasks = createHostedTasksPlugin({
+  const tasks = composeHostedTasksPlugin({
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
@@ -96,23 +95,26 @@ export function composeBetterAuthD1AgentPlugins(
     ...(base.options.productWorkspace?.sandboxUsage
       ? { sandboxUsage: base.options.productWorkspace.sandboxUsage }
       : {}),
-    signingEnv,
-    passes,
-    // Renewal asks the Agent Plugins composition below, which is built after
-    // this plugin because its catalog lists this plugin's tool group.
-    renewal: {
-      tasksGroupEnabled: (root) => feature.tasksGroupEnabled(root),
-      grant: createTasksRootGrant(tasksRoot),
-      ownerGrant: { enabled: (root) => feature.subagentsGroupEnabled(root), mint: createOwnerGrantMinter({ signingEnv, passes }) },
+    grants: {
+      signingEnv,
+      passes,
+      // Renewal asks the Agent Plugins composition below, which is built after
+      // this plugin because its catalog lists this plugin's tool group.
+      groupEnabled: (group, root) => feature.groupEnabled(group, root),
+      ownerGrant: {
+        enabled: (root) => feature.groupEnabled(BUILTIN_SUBAGENTS_TOOL_GROUP, root),
+        mint: createOwnerGrantMinter({ signingEnv, passes }),
+      },
     },
   })
+  const plugins = [tasks]
   const feature = createHostedAgentPluginsComposition({
-    toolGroups: mcpToolGroups([tasks]),
+    toolGroups: mcpToolGroups(plugins),
     env,
     plane: base.plane,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
-    tasksGrant: createTasksRootCapability(tasksRoot),
+    rootGrants: plugins.flatMap((plugin) => plugin.rootGrants ?? []),
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,
     ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged } : {}),
@@ -138,7 +140,7 @@ export function composeBetterAuthD1AgentPlugins(
       sandboxPasses: passes,
       ...(sessionRowsPasses ? { sessionRowsPasses } : {}),
       routeContributions: [...feature.routeContributions, pluginBackends],
-      plugins: [tasks],
+      plugins,
       integrationRoutes: feature.integrationRoutes,
       sessionHostPlugins: feature.sessionHostPlugins,
       sessionHostToolGroups: feature.sessionHostToolGroups,

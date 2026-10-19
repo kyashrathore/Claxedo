@@ -5,15 +5,21 @@
  */
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
-import type { TasksSessionHost, TasksSessionReservation } from "@claxedo/tasks/host/session-bridge-core"
+import type { TasksSessionHost, TasksSessionReservation } from "../host/session-bridge-core"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import { tasksErrorDetail, type TasksActor, type TasksErrorDetail } from "@claxedo/tasks"
-import { isComposedAuthorityPort } from "../authority/composed-authority"
-import type { ControlPlaneServices } from "../authority/services"
+import { tasksErrorDetail, type TasksActor, type TasksErrorDetail } from ".."
+
+/** The parts of the host's private session authority Tasks reserves and undoes sessions through. */
+export type TasksSessionRegistrations = Readonly<{
+  /** Absent on a host with no managed reservation, which then cannot start a session. */
+  reservation?: Pick<PrivateSessionAuthority, "reserveRuntimeSession">
+  /** Absent, a released session's reservation is left as it was. */
+  compensation?: Pick<PrivateSessionAuthority, "beginSessionCompensation" | "completeSessionCompensation">
+}>
 
 export type TasksSessionReserveInput = {
-  services: ControlPlaneServices
+  registrations: TasksSessionRegistrations
   /**
    * An unowned service actor cannot reserve a session on a human's workspace.
    * Tasks ownerId names a user, while reservations require their canonical
@@ -32,13 +38,8 @@ export function createTasksSessionRelease(
   input: TasksSessionReserveInput,
 ): NonNullable<TasksSessionHost["release"]> {
   return async (released): Promise<void> => {
-    const authority = input.services.authority ?? undefined
-    if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "beginSessionCompensation" | "completeSessionCompensation">>(
-      authority,
-      ["beginSessionCompensation", "completeSessionCompensation"],
-    )) {
-      return
-    }
+    const authority = input.registrations.compensation
+    if (!authority) return
     const principal = input.principal ? await input.principal(released.actor) : CONTROL_PLANE_RUNTIME_ACTOR
     if (!principal) return
     const transition = {
@@ -57,11 +58,8 @@ export function createTasksSessionReserve(
   input: TasksSessionReserveInput,
 ): NonNullable<TasksSessionHost["reserve"]> {
   return async (intent): Promise<TasksSessionReservation> => {
-    const authority = input.services.authority ?? undefined
-    if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "reserveRuntimeSession">>(
-      authority,
-      ["reserveRuntimeSession"],
-    )) {
+    const authority = input.registrations.reservation
+    if (!authority) {
       return { ok: false, error: tasksErrorDetail("unsupported", "Session registration is unavailable on this host") }
     }
     // The service actor is the fallback for a composition that named no

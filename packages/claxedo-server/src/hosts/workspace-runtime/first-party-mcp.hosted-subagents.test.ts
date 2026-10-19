@@ -21,7 +21,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
-import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import { createOwnerGrantProof, mintOwnerGrant } from "../../session/owner-grant"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"

@@ -5,9 +5,9 @@ import type { HostSessionRowsPublisher } from "@claxedo/server-core/platform/aut
 import { SESSION_ROWS_PASS_PATH, type SessionRowsPassHeld } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-import { credentialFault } from "../platform/auth/runtime-token-keys"
-import { mintSandboxPass, verifySandboxPass } from "../platform/auth/sandbox-pass"
-import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { credentialFault } from "@claxedo/server-core/platform/auth/runtime-token-keys"
+import { mintSandboxPass, verifySandboxPass } from "@claxedo/server-core/platform/auth/sandbox-pass"
+import type { SandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
 
 const log = Log.create({ service: "session-rows-pass" })
 

@@ -3,12 +3,12 @@ import { Hono } from "hono"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
 import type { TasksCapabilityOwner } from "@claxedo/tasks/host/capability"
-import { mintMcpGatewayToken } from "../agent-plugins/mcp/runtime-token"
-import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { OWNER_GRANT_AUDIENCE, createOwnerGrantMinter, verifyOwnerGrant } from "../session/owner-grant"
-import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE, verifyTasksCapability } from "./capability"
-import { tasksGrantRenewalContribution, type TasksGrantRenewalAudit } from "./grant-renewal"
-import { createTasksRootGrant, type TasksRootIdentity } from "./root-capability"
+import { mintMcpGatewayToken } from "../../../agent-plugins/mcp/runtime-token"
+import { memorySandboxPassRegister } from "@claxedo/server-core/platform/auth/sandbox-pass-register"
+import { OWNER_GRANT_AUDIENCE, createOwnerGrantMinter, verifyOwnerGrant } from "../../../session/owner-grant"
+import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE, verifyTasksCapability } from "@claxedo/tasks/hosted"
+import { tasksCapabilityRenewalContribution, type TasksCapabilityRenewalAudit } from "@claxedo/tasks/hosted"
+import { createTasksRootGrant, type TasksRootIdentity } from "@claxedo/tasks/hosted"
 
 const RENEW = `${TASKS_ROUTE_PATH}/grant/renew`
 const root: TasksRootIdentity = { userId: "alice", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root", sessionId: "ses_1" }
@@ -30,17 +30,17 @@ async function fixture(options: {
 } = {}) {
   const env = await signingEnv()
   const passes = memorySandboxPassRegister(options.now ? { now: options.now } : {})
-  const audit = vi.fn<(record: TasksGrantRenewalAudit) => void>()
+  const audit = vi.fn<(record: TasksCapabilityRenewalAudit) => void>()
   const workspaceOwner = vi.fn(async (workspaceId: string) =>
     workspaceId === root.workspaceId ? ("owner" in options ? options.owner : owner) : undefined,
   )
   const tasksGroupEnabled = vi.fn(async () => options.tasksEnabled ?? true)
   const subagentsGroupEnabled = vi.fn(async () => options.subagentsEnabled ?? false)
-  const contribution = tasksGrantRenewalContribution({
+  const contribution = tasksCapabilityRenewalContribution({
     signingEnv: env,
     passes,
     workspaceOwner,
-    tasksGroupEnabled,
+    groupEnabled: tasksGroupEnabled,
     ownerGrant: { enabled: subagentsGroupEnabled, mint: createOwnerGrantMinter({ signingEnv: env, passes, ...(options.now ? { now: options.now } : {}) }) },
     grant: createTasksRootGrant({
       signingEnv: env,
@@ -108,10 +108,10 @@ describe("the Tasks grant renewal route", () => {
     expect(off.audit).toHaveBeenCalledWith(expect.not.objectContaining({ ownerGrantJti: expect.anything() }))
 
     const env = await signingEnv()
-    const contribution = tasksGrantRenewalContribution({
+    const contribution = tasksCapabilityRenewalContribution({
       signingEnv: env,
       workspaceOwner: async () => owner,
-      tasksGroupEnabled: async () => true,
+      groupEnabled: async () => true,
       grant: createTasksRootGrant({ signingEnv: env }),
     })
     const app = new Hono().route(contribution.path, contribution.routes)
@@ -194,10 +194,10 @@ describe("the Tasks grant renewal route", () => {
 
   test("a deployment without its verification key answers 503, not a withdrawal", async () => {
     const { capability } = await fixture()
-    const contribution = tasksGrantRenewalContribution({
+    const contribution = tasksCapabilityRenewalContribution({
       signingEnv: {},
       workspaceOwner: async () => owner,
-      tasksGroupEnabled: async () => true,
+      groupEnabled: async () => true,
       grant: createTasksRootGrant({ signingEnv: {} }),
     })
     const app = new Hono().route(contribution.path, contribution.routes)

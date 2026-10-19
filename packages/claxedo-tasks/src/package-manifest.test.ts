@@ -23,7 +23,11 @@ describe("@claxedo/tasks package manifest", () => {
       "./mcp",
       "./host/*",
       "./storage/sqlite",
+      "./storage/d1",
+      "./storage/d1/schema",
       "./local",
+      "./hosted",
+      "./runtime-host",
       "./conformance",
       "./test-support",
     ])

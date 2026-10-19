@@ -1,7 +1,7 @@
-import { describe, expect, test, vi } from "vitest"
+import { describe, expect, test, vi } from "bun:test"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import { workspaceRuntimeTasksCapabilityEnv } from "@claxedo/tasks/host/runtime-env"
-import { mintTasksCapability } from "../../tasks/capability"
+import { workspaceRuntimeTasksCapabilityEnv } from "../host/runtime-env"
+import { mintTasksCapability } from "../hosted/capability"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 
 const AUTHORITY = { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://plane.test/api/runtime-authority/session-authorize" }

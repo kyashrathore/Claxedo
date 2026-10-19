@@ -445,9 +445,12 @@
         "@claxedo/server-core": "workspace:*",
         "drizzle-orm": "catalog:",
         "hono": "4.12.34",
+        "jose": "6.2.4",
         "zod": "4.4.3",
       },
       "devDependencies": {
+        "@claxedo/workspace-relay": "workspace:*",
+        "@cloudflare/workers-types": "catalog:",
         "@hono/node-server": "1.19.11",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@tsconfig/node-lts": "22.0.4",
