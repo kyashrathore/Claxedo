@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { builtinPluginInstanceId, builtinToolGroupId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { SignedActivationSnapshot } from "@claxedo/server-core/agent-plugins/activation/store"
 import {
@@ -12,7 +13,7 @@ import { createBuiltinGroupReader, createCloudRootEnvironment } from "./cloud-ro
 const root = { userId: "user-1", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root" }
 
 /** The hosted deployment: no service runs in the control plane's own process. */
-const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } }
+const builtIn = { groups: claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP]), deployment: { inProcessServices: [] } }
 
 const RUNTIME_GROUPS = builtIn.groups.filter((group) => group.reach === "runtime").map((group) => group.id)
 

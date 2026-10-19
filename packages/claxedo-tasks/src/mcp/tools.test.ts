@@ -1,13 +1,15 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "bun:test"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { createClaxedoMcpClient } from "../client/index"
-import type { ClaxedoFetch, TasksOperation } from "../client/contract"
-import { assertToolAccess, McpAccessDenied, type McpCredential, type McpToolAccess } from "../context"
-import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential, mcpAuditRecord } from "../server"
-import { registerTaskTools } from "./tasks"
+import { createClaxedoMcpClient, type ClaxedoFetch } from "@claxedo/mcp/client"
+import { assertToolAccess, McpAccessDenied, type McpCredential, type McpToolAccess } from "@claxedo/mcp/context"
+import { readFileSync } from "node:fs"
+import { CLAXEDO_MCP_PATH, CLAXEDO_MCP_TOOL_GROUPS, claxedoMcpToolGroupInventory, createClaxedoMcpRoutes, fullUserCredential, mcpAuditRecord } from "@claxedo/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "./tools"
+
+type TasksOperation = "read" | "create" | "start"
 
 const ALL_OPERATIONS: readonly TasksOperation[] = ["read", "create", "start"]
 
@@ -205,15 +207,17 @@ async function listen(input: MountInput = {}) {
         local: { fetch: localFetch, workspace: { workspaceId: "ws_local", directory: "/w" } },
         ...(input.service
           ? {
-              tasks: {
-                fetch: input.service.fetch,
-                operations: input.operations ?? ALL_OPERATIONS,
-                ...(input.grantedProject ? { projectId: input.grantedProject } : {}),
+              services: {
+                tasks: {
+                  fetch: input.service.fetch,
+                  operations: input.operations ?? ALL_OPERATIONS,
+                  ...(input.grantedProject ? { projectId: input.grantedProject } : {}),
+                },
               },
             }
           : {}),
       }),
-    registerTools: [{ id: "tasks", reach: "account", register: registerTaskTools }],
+    registerTools: [TASKS_MCP_TOOL_GROUP],
     audit: (event) => void audits.push(mcpAuditRecord(event)),
     crossMachineWrites: () => input.crossMachineWrites === true,
   })
@@ -777,20 +781,34 @@ describe("the handler-side operation check", () => {
     crossMachineWrites: true,
     readOnly: false,
   }
-  const access: McpToolAccess = { audiences: ["runtime", "user"], write: true, scope: "act", operation: "start" }
+  const access: McpToolAccess = { audiences: ["runtime", "user"], write: true, scope: "act", service: { id: "tasks", label: "Tasks", operation: "start" } }
 
   test("refuses an operation the grant does not carry, whatever tools/list showed", () => {
-    expect(() => assertToolAccess(credential, "task_start", access, { tasks: ["read", "create"] })).toThrow(McpAccessDenied)
-    expect(() => assertToolAccess(credential, "task_start", access, { tasks: ["read", "create"] }))
+    expect(() => assertToolAccess(credential, "task_start", access, { services: { tasks: ["read", "create"] } })).toThrow(McpAccessDenied)
+    expect(() => assertToolAccess(credential, "task_start", access, { services: { tasks: ["read", "create"] } }))
       .toThrow("task_start needs the start Tasks operation, which this session was not granted")
   })
 
   test("refuses every Tasks tool where there is no grant at all", () => {
-    expect(() => assertToolAccess(credential, "task_list", { ...access, write: false, scope: "read", operation: "read" }))
+    expect(() => assertToolAccess(credential, "task_list", { ...access, write: false, scope: "read", service: { id: "tasks", label: "Tasks", operation: "read" } }))
       .toThrow("task_list needs the Tasks service, which this Claxedo deployment does not serve")
   })
 
   test("lets a granted operation through", () => {
-    expect(() => assertToolAccess(credential, "task_start", access, { tasks: ALL_OPERATIONS })).not.toThrow()
+    expect(() => assertToolAccess(credential, "task_start", access, { services: { tasks: ALL_OPERATIONS } })).not.toThrow()
+  })
+})
+
+describe("the Tasks group in a composed catalog", () => {
+  test("reaches the account, so a project that has said nothing does not get it", () => {
+    expect(TASKS_MCP_TOOL_GROUP.reach).toBe("account")
+  })
+
+  test("with the core groups, is exactly the transcript's first-party roster, so a renamed or added tool cannot render as a generic row", () => {
+    const source = readFileSync(new URL("../../../claxedo-app/src/transcript/claxedo-tool-view.ts", import.meta.url), "utf8")
+    const block = source.split("export const CLAXEDO_TOOL_TITLE_KEYS = {")[1]?.split("} as const")[0] ?? ""
+    const roster = [...block.matchAll(/^\s*([a-z_]+):\s*"transcript\.claxedoTool\.[a-z_]+",$/gm)].map((match) => match[1]).sort()
+    const registered = claxedoMcpToolGroupInventory([...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP]).flatMap((group) => group.tools).sort()
+    expect(roster).toEqual(registered)
   })
 })

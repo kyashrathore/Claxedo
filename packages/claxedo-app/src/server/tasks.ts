@@ -1,13 +1,8 @@
 import type { InfiniteData, QueryClient } from "@tanstack/solid-query"
 import { TASKS_ROUTE_PATH, taskSummaryOf, type Page, type Task, type TaskSummary } from "@claxedo/tasks"
 import { createTasksClient, type TasksClient } from "@claxedo/tasks/client"
-import { probeAvailability } from "./availability"
-import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
-import type { FeatureAvailability } from "./types"
-
-export const TASKS_PRESETS_PATH = "/api/claxedo/tasks/presets"
 
 export type TaskListKey = {
   readonly projectId: string
@@ -30,15 +25,6 @@ export type TasksApi = {
 }
 
 type ChildPages = InfiniteData<Page<TaskSummary>, string | undefined>
-
-export function taskQueries(transport: Transport) {
-  return {
-    availability: () =>
-      fetchQuery<FeatureAvailability>(queryKeys.tasks(transport.serverUrl), () =>
-        probeAvailability(transport, TASKS_PRESETS_PATH),
-      ),
-  }
-}
 
 function withCreatedChild(pages: ChildPages | undefined, task: Task): ChildPages | undefined {
   const first = pages?.pages[0]

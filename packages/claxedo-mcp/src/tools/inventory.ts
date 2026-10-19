@@ -8,8 +8,7 @@
  * spells a `write` flag of its own for read-only mode to trust.
  */
 import { SESSION_CORE_ROUTE_ACCESS, sessionAccessRequiresWrite, type SessionAccessOperation } from "@claxedo/session-core/access-policy"
-import type { TasksOperation } from "../client/contract"
-import type { McpAudience, McpScope, McpToolAccess } from "../context"
+import type { McpAudience, McpScope, McpToolAccess, McpToolService } from "../context"
 
 export type RuntimeOperationEntry = Readonly<{
   operation: SessionAccessOperation
@@ -150,19 +149,19 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
  * table classifies them; anything over a session-core route must take
  * `runtimeToolAccess` instead.
  *
- * `operation` is the Tasks grant a tool needs and `appPlugins` the authoring
+ * `service` is the service grant a tool needs and `appPlugins` the authoring
  * grant; they are the parts of an access declaration checked against the
  * client rather than the credential.
  */
 export function declaredToolAccess(
-  gating: McpToolGating & Readonly<{ write: boolean; operation?: TasksOperation; appPlugins?: true }>,
+  gating: McpToolGating & Readonly<{ write: boolean; service?: McpToolService; appPlugins?: true }>,
 ): McpToolAccess {
   return {
     audiences: gating.audiences,
     write: gating.write,
     scope: gating.scope,
     ...(gating.destructive ? { destructive: true } : {}),
-    ...(gating.operation ? { operation: gating.operation } : {}),
+    ...(gating.service ? { service: gating.service } : {}),
     ...(gating.appPlugins ? { appPlugins: true } : {}),
     ...(gating.ownerDriven ? { ownerDriven: true } : {}),
   }

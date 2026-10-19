@@ -11,11 +11,13 @@ import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/brow
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
-import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
-import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { ProjectEnvironmentRoutes } from "@claxedo/server-core/projects/environment-routes"
 import { requireSignedControlPlaneRoute } from "@claxedo/server-core/platform/http/control-plane-route-auth"
-import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
+import {
+  assertDistinctServerPlugins,
+  serverPluginCapabilities,
+  type HostedServerPlugin,
+} from "@claxedo/server-core/plugins/server-plugin"
 import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
@@ -115,7 +117,6 @@ export type HostedCoreProductWorkspaceOptions = Pick<
 >
 
 export type HostedCoreAppOptions = {
-  documents?: DocumentsBackend
   idempotency: IdempotencyCoordinator
   authentication: RequestAuthenticationAdapter
   relayTargetLookup?: RelayTargetLookup
@@ -143,6 +144,13 @@ export type HostedCoreAppOptions = {
    * cannot silently shadow a core family.
    */
   routeContributions?: readonly ControlPlaneRouteContribution[]
+  /**
+   * The first-party plugins the entry composed (Documents in every profile,
+   * Tasks where the profile serves it). Their routes mount under their own
+   * owners beside the contributions, and the bootstrap reports their
+   * capabilities.
+   */
+  plugins?: readonly HostedServerPlugin[]
   /**
    * The hosted Connections family (`/api/claxedo/integrations`), supplied only
    * by an entry that composed a durable D1 Connections setup. The base core
@@ -228,6 +236,8 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     issuer: options.authentication.descriptor.issuer,
     jwksUrl: `request-adapter:${encodeURIComponent(options.authentication.descriptor.configurationVersion)}`,
   } as const
+  const plugins = options.plugins ?? []
+  assertDistinctServerPlugins(plugins)
   const ownership = createRouteOwnership()
   const app = withRouteOwnership(new Hono(), ownership, "hosted-core")
 
@@ -330,6 +340,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authentication: options.authentication,
       authConfig,
       connections: options.integrationRoutes !== undefined,
+      capabilities: serverPluginCapabilities(plugins),
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
@@ -440,24 +451,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   )
 
-  if (options.documents) {
-    app.route(
-      "/documents",
-      DocumentsRoutes({
-        backend: options.documents,
-        authority: requireAuthority(services),
-        authentication: options.authentication,
-        env: plane.env,
-      }),
-    )
-    app.route(
-      "/p",
-      PublicDocumentRoutes({
-        backend: options.documents,
-        rateLimit: async (key) => (await options.sharedRateLimitStore.check(key)).allowed,
-      }),
-    )
-  }
   mountSessionReadRoutes(app, plane, options.authentication)
 
   app.route(
@@ -653,6 +646,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         app,
         authority: services.authority,
         options: options.firstPartyMcp,
+        services: plugins.flatMap((plugin) => (plugin.mcp?.service ? [plugin.mcp.service] : [])),
         signedAuth: async (request) => {
           const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
           return "error" in result ? undefined : result.auth
@@ -677,7 +671,11 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }))
   }
   mountControlPlaneRouteContributions({
-    contributions: [...(options.routeContributions ?? []), ...(firstPartyMcp ? [firstPartyMcp] : [])],
+    contributions: [
+      ...(options.routeContributions ?? []),
+      ...plugins.flatMap((plugin) => plugin.routeContributions),
+      ...(firstPartyMcp ? [firstPartyMcp] : []),
+    ],
     mount: (contribution) => mountOwnedRoute(app, ownership, `contribution:${contribution.id}`, contribution.path, contribution.routes),
   })
   // An API worker's unrouted paths must not render as a PAGE.

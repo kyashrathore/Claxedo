@@ -1,11 +1,12 @@
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
+import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUP_IDS, CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { createRuntimeCredentialIssuer, createWorkspaceRuntimeApp } from "@claxedo/workspace-runtime"
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import type { OwnerGrantIdentity } from "@claxedo/workspace-runtime"
-import type { TasksGrant } from "@claxedo/mcp"
+import type { McpServiceGrant } from "@claxedo/mcp"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
@@ -13,13 +14,13 @@ const relayAuth = { key: new Uint8Array([1]), workspaceId: "ws_1", hostId: "host
 
 function runtime(options: {
   contribute?: boolean
-  tasks?: () => TasksGrant | undefined
+  tasks?: () => McpServiceGrant | undefined
   groups?: readonly string[]
   ownerGrant?: () => string | undefined
   ownerGrantIdentity?: OwnerGrantIdentity
 } = {}) {
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
-  const enabledToolGroups = options.groups ?? CLAXEDO_MCP_TOOL_GROUP_IDS
+  const enabledToolGroups = options.groups ?? [...CLAXEDO_MCP_TOOL_GROUP_IDS, TASKS_MCP_TOOL_GROUP.id]
   const app = createWorkspaceRuntimeApp({
     sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure(relayAuth),
@@ -32,7 +33,8 @@ function runtime(options: {
       : [firstPartyMcpRuntimeContribution({
           verifyRuntimeCredential: issuer.verify,
           enabledToolGroups,
-          ...(options.tasks ? { tasks: options.tasks } : {}),
+          registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP],
+          ...(options.tasks ? { services: (): Readonly<Record<string, McpServiceGrant>> => { const granted = options.tasks?.(); return granted ? { tasks: granted } : {} } } : {}),
           ...(options.ownerGrant ? { ownerGrant: options.ownerGrant } : {}),
         })],
   })
@@ -162,7 +164,7 @@ describe("the cloud runtime's first-party MCP contribution", () => {
   })
 
   test("reads the grant per session, so a session opened after a renewal sees the renewed operations and one after a lapse sees none", async () => {
-    let grant: TasksGrant | undefined = { fetch: async () => new Response(null, { status: 503 }), operations: ["read", "create"] }
+    let grant: McpServiceGrant | undefined = { fetch: async () => new Response(null, { status: 503 }), operations: ["read", "create"] }
     const app = runtime({ tasks: () => grant })
     try {
       expect(await toolNames(app.app, app.issuer.current("ses_1"))).not.toContain("task_start")

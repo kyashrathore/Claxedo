@@ -15,7 +15,7 @@ import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { LocalAgentPluginArtifactStore } from "./artifacts/local-store"
 import { SqliteUnsignedAgentPluginActivationStore } from "./activation/sqlite-store"
-import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { claxedoMcpToolGroupInventory, type McpToolGroup } from "@claxedo/mcp"
 import { LOCAL_BUILTIN_DEPLOYMENT } from "./builtin-groups"
 import { createLocalAgentPluginsModule } from "./module"
 import { LocalAgentPluginSourceRoutes } from "./sources/routes"
@@ -84,12 +84,14 @@ export type LocalAgentPluginsComposition = {
  * machine world without re-materializing anything.
  */
 export function createLocalAgentPluginsComposition(
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv,
   options: {
+    /** The groups this machine's MCP mount serves, which the Marketplace lists as the built-in plugin's. */
+    toolGroups: readonly McpToolGroup[]
     sources?: CatalogSourceProvider
     /** Runs after an activation or signed-world change is materialized; by default the runtime config fan-out, so running runtimes receive the new contribution. */
     changed?: () => Promise<void>
-  } = {},
+  },
 ): LocalAgentPluginsComposition {
   const changed = options.changed ?? fanOutConfig
   const artifacts = new LocalAgentPluginArtifactStore(dataDir())
@@ -250,7 +252,7 @@ export function createLocalAgentPluginsComposition(
     activations,
     reconcile,
     signedRuntime,
-    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: LOCAL_BUILTIN_DEPLOYMENT },
+    builtIn: { groups: claxedoMcpToolGroupInventory(options.toolGroups), deployment: LOCAL_BUILTIN_DEPLOYMENT },
   })
   const runtimeContribution = async () => {
     // A failed apply belongs to the caller that asked for it; a snapshot read

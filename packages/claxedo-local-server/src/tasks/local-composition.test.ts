@@ -17,7 +17,8 @@ import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platfo
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { createLocalApp, type LocalAppOptions } from "../app/local-app"
 import { testDaemon } from "../app/test-support/daemon"
-import { createLocalTasksComposition, type LocalTasksComposition } from "./local-composition"
+import type { LocalServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
+import { createLocalTasksPlugin } from "./local-composition"
 
 const LOOPBACK = "http://127.0.0.1:4096"
 const TASKS = "/api/claxedo/tasks"
@@ -76,21 +77,42 @@ function services() {
  * is what the person at this machine is admitted by; what a request adds to it
  * is the only thing that makes it a session's.
  */
-function app(composition: LocalTasksComposition = createLocalTasksComposition()) {
+function app(plugin: LocalServerPlugin = createLocalTasksPlugin()) {
   const identity = testDaemon()
   const instance = createLocalApp({
     services: services(),
     daemon: identity.daemon,
-    routeContributions: composition.routeContributions,
+    plugins: [plugin],
   }).app
   return {
-    composition,
+    plugin,
     request: (url: string, init: RequestInit = {}) =>
       instance.request(url, {
         ...init,
         headers: { ...identity.capability, ...Object.fromEntries(new Headers(init.headers)) },
       }),
   }
+}
+
+/**
+ * The bearer the plugin's MCP service grant would stamp on a session's calls,
+ * read off the headers it asks the host's in-process fetch for.
+ */
+async function sessionHandle(plugin: LocalServerPlugin, workspaceId: string, sessionId: string, enabledGroups = ["tasks"]) {
+  const service = plugin.mcp?.service
+  if (!service) throw new Error("the Tasks plugin contributes no MCP service")
+  let stamped: Readonly<Record<string, string>> = {}
+  const grant = await service.grant({
+    workspaceId,
+    sessionId,
+    enabledGroups,
+    inProcessFetch: (headers) => {
+      stamped = headers
+      return async () => new Response(null, { status: 204 })
+    },
+  })
+  if (!grant) throw new Error("the Tasks service granted nothing")
+  return stamped.authorization?.replace(/^Bearer /, "")
 }
 
 /** A workspace row of this machine's own, which is where a grant reads its owner and project from. */
@@ -132,7 +154,14 @@ const PRESET = {
   },
 }
 
-describe("desktop-local Tasks composition", () => {
+describe("desktop-local Tasks plugin", () => {
+  test("a session whose Tasks group is off is handed the person's loopback fetch, not a grant", async () => {
+    const workspace = await localWorkspace()
+    expect(await sessionHandle(createLocalTasksPlugin(), workspace.id, "ses_caller", [])).toBeUndefined()
+    expect(await sessionHandle(createLocalTasksPlugin({ enabled: () => false }), workspace.id, "ses_caller")).toBeUndefined()
+    expect(await sessionHandle(createLocalTasksPlugin(), workspace.id, "ses_caller")).toEqual(expect.any(String))
+  })
+
   test("answers its capabilities over the loopback app", async () => {
     const response = await app().request(`${LOOPBACK}${TASKS}/capabilities`)
     expect(response.status).toBe(200)
@@ -264,8 +293,8 @@ describe("desktop-local Tasks composition", () => {
   test("a session's grant acts only in its own workspace's project and may record only itself as provenance", async () => {
     const workspace = await localWorkspace()
     const target = app()
-    const handle = await target.composition.grants.issue({ workspaceId: workspace.id, sessionId: "ses_caller" })
-    if (!handle) throw new Error("the composition issued no grant for its own workspace")
+    const handle = await sessionHandle(target.plugin, workspace.id, "ses_caller")
+    if (!handle) throw new Error("the plugin issued no grant for its own workspace")
     const asSession = (path: string, init: RequestInit = {}) =>
       target.request(`${LOOPBACK}${TASKS}${path}`, {
         ...init,
@@ -315,14 +344,11 @@ describe("desktop-local Tasks composition", () => {
   test("refuses a grant it cannot verify instead of reading it as the person at this machine", async () => {
     const workspace = await localWorkspace()
     let tasksOn = true
-    const target = app(createLocalTasksComposition({ enabled: () => tasksOn }))
-    const handle = await target.composition.grants.issue({ workspaceId: workspace.id, sessionId: "ses_caller" })
+    const target = app(createLocalTasksPlugin({ enabled: () => tasksOn }))
+    const handle = await sessionHandle(target.plugin, workspace.id, "ses_caller")
     // A handle of the same shape from a registry that is not this one: what a
     // session still holding a bearer across a daemon restart presents.
-    const previousProcess = await createLocalTasksComposition().grants.issue({
-      workspaceId: workspace.id,
-      sessionId: "ses_caller",
-    })
+    const previousProcess = await sessionHandle(createLocalTasksPlugin(), workspace.id, "ses_caller")
     if (!handle || !previousProcess) throw new Error("the fixture issued no grant")
 
     const write = (clientRequestId: string, headers: Record<string, string>) =>
@@ -377,7 +403,7 @@ describe("desktop-local Tasks composition", () => {
   test("the contribution itself refuses a non-loopback request", async () => {
     const bare = new Hono()
     mountControlPlaneRouteContributions({
-      contributions: createLocalTasksComposition().routeContributions,
+      contributions: createLocalTasksPlugin().routeContributions({}),
       mount: (contribution) => bare.route(contribution.path, contribution.routes),
     })
 

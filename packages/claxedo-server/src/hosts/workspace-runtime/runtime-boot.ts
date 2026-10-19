@@ -29,6 +29,8 @@ import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
+import { CLAXEDO_MCP_TOOL_GROUPS, type McpServiceGrant } from "@claxedo/mcp"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { claimOperatorLog } from "./operator-log"
@@ -275,7 +277,11 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
-        tasks: () => tasks?.current(),
+        registerTools: [...CLAXEDO_MCP_TOOL_GROUPS, TASKS_MCP_TOOL_GROUP],
+        services: (): Readonly<Record<string, McpServiceGrant>> => {
+          const granted = tasks?.current()
+          return granted ? { tasks: granted } : {}
+        },
         ...(ownerGrant ? { ownerGrant: () => ownerGrant.current(), ownerActorId: () => ownerGrant.actorId } : {}),
       }),
     ],

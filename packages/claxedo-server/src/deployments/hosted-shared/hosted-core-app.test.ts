@@ -503,11 +503,33 @@ describe("resource-closed hosted core app", () => {
     expect((await base.fetch(new Request("https://core.test/api/claxedo/integrations"))).status).toBe(404)
   })
 
+  test("mounts each first-party plugin's routes, reports its capability, and refuses one id twice", async () => {
+    const { Hono } = await import("hono")
+    const plugin = (id: string, capability: string, path: string) => ({
+      id,
+      capability,
+      routeContributions: [{ id, path, routes: new Hono().get("/", (c) => c.json({ plugin: id })) }],
+    })
+    const app = createHostedCoreApp(plane(), {
+      ...options,
+      plugins: [plugin("claxedo-tasks", "tasks", "/api/claxedo/tasks"), plugin("claxedo-documents", "documents", "/documents")],
+    })
+    expect(await (await app.fetch(new Request("https://core.test/api/claxedo/tasks"))).json()).toEqual({ plugin: "claxedo-tasks" })
+    expect(await (await app.fetch(new Request("https://core.test/documents"))).json()).toEqual({ plugin: "claxedo-documents" })
+    await expect((await app.fetch(new Request("https://core.test/api/claxedo/bootstrap"))).json())
+      .resolves.toMatchObject({ deployment: { capabilities: ["documents", "tasks"] } })
+    await expect((await createHostedCoreApp(plane(), options).fetch(new Request("https://core.test/api/claxedo/bootstrap"))).json())
+      .resolves.toMatchObject({ deployment: { capabilities: [] } })
+    expect(() => createHostedCoreApp(plane(), { ...options, plugins: [plugin("claxedo-tasks", "tasks", "/a"), plugin("claxedo-tasks", "tasks", "/b")] }))
+      .toThrow("Server plugin claxedo-tasks was supplied more than once")
+  })
+
   test("mounts the first-party MCP under its own owner and admits the CLI JWT as the whole account", async () => {
     const inputs: McpClientInputs[] = []
     const stubClient: ClaxedoMcpClient = {
       deployment: "hosted",
       runtime: async () => async () => new Response(null, { status: 204 }),
+      services: {},
       resolveTarget: async () => ({ kind: "relay", baseUrl: "", headers: {} }),
       server: () => Promise.reject(new Error("unused")),
       workspaces: async () => [],

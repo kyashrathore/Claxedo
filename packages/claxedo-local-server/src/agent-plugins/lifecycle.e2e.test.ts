@@ -1,3 +1,4 @@
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -75,6 +76,7 @@ function startComposition(root: string, collection: string) {
     CODEX_HOME: path.join(root, "codex-home"),
     HOME: path.join(root, "home"),
   }, {
+    toolGroups: CLAXEDO_MCP_TOOL_GROUPS,
     sources: {
       async listAuthorizedSources() {
         return [await fileSystemCollectionSource({

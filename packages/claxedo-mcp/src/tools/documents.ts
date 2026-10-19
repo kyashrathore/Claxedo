@@ -198,7 +198,7 @@ async function documentsJson(ctx: McpToolContext, requestPath: string, input: Re
 }
 
 function documentsService(ctx: McpToolContext): ClaxedoFetch {
-  const { documents } = ctx.client
+  const documents = ctx.client.services.documents
   if (!documents) throw new DocumentsUnavailable("This Claxedo deployment does not serve the documents service.")
-  return documents
+  return documents.fetch
 }

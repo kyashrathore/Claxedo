@@ -41,7 +41,8 @@ function capabilitiesFromDeclaration(declaration: BootstrapDeclaration, scope: C
     hostedAccount: scope.hostedAccount,
     servingMachine,
     harnesses: AGENT_HARNESS_IDS.map(harnessInfo),
-    features: { documents: declaration.documents, connections: declaration.connections, cloud: declaration.issuesSessions, livePlugins: servingMachine !== undefined },
+    features: { connections: declaration.connections, cloud: declaration.issuesSessions, livePlugins: servingMachine !== undefined },
+    plugins: new Set(declaration.capabilities),
   }
 }
 

@@ -54,7 +54,7 @@ describe("hosted core Worker root", () => {
     expect(mocks.createHostedCoreApp).toHaveBeenCalledTimes(1)
     expect(mocks.createHostedCoreApp).toHaveBeenCalledWith(selected.plane, expect.objectContaining({
       product,
-      documents: expect.objectContaining({ placement: "hosted", access: expect.any(Object) }),
+      plugins: [expect.objectContaining({ id: "claxedo-documents", capability: "documents" })],
       liveSyncRoom: bindings.LIVE_SYNC_ROOM,
       sharedRateLimitStore: expect.objectContaining({ periodSeconds: 60 }),
     }))

@@ -32,6 +32,13 @@
       "import": "./src/client/index.ts",
       "default": "./src/client/index.ts"
     },
+    "./mcp": {
+      "types": "./src/mcp/index.ts",
+      "bun": "./src/mcp/index.ts",
+      "development": "./src/mcp/index.ts",
+      "import": "./src/mcp/index.ts",
+      "default": "./src/mcp/index.ts"
+    },
     "./conformance": {
       "types": "./src/conformance/index.ts",
       "bun": "./src/conformance/index.ts",
@@ -54,9 +61,13 @@
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
-    "hono": "4.12.34"
+    "@claxedo/mcp": "workspace:*",
+    "hono": "4.12.34",
+    "zod": "4.4.3"
   },
   "devDependencies": {
+    "@hono/node-server": "1.19.11",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "1.3.13",
     "typescript": "catalog:"

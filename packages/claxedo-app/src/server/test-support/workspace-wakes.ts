@@ -75,7 +75,7 @@ function fakeWorkspaces(running: { value: boolean }, server: ServerScript): Work
   const lifecycle = (): Lifecycle => (running.value ? "live" : server.lifecycle ?? "asleep")
   const cloudFacts = () => ({ lifecycle: lifecycle(), ...(server.failure ? { failure: server.failure } : {}), ...(server.checkpointUnusable ? { checkpointUnusable: true } : {}), ...(server.stopReason ? { stopReason: server.stopReason } : {}) })
   return {
-    load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
+    load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, capabilities: [], connections: false }, placements: [] }),
     byId: (id: string) => ({ ...placements[id], ...(id === "ws_cloud" ? cloudFacts() : {}), reachable: id === "ws_cloud" && running.value }),
     locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,

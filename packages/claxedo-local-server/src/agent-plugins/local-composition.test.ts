@@ -1,3 +1,4 @@
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -45,6 +46,7 @@ describe("local Agent Plugins composition", () => {
       CODEX_HOME: path.join(root, "codex-home"),
       HOME: path.join(root, "home"),
     }, {
+      toolGroups: CLAXEDO_MCP_TOOL_GROUPS,
       sources: {
         async listAuthorizedSources() {
           return [await fileSystemCollectionSource({
@@ -106,6 +108,7 @@ describe("local Agent Plugins composition", () => {
       CODEX_HOME: path.join(root, "codex-home"),
       HOME: path.join(root, "home"),
     }, {
+      toolGroups: CLAXEDO_MCP_TOOL_GROUPS,
       sources: {
         async listAuthorizedSources() {
           return [await fileSystemCollectionSource({
@@ -162,6 +165,7 @@ describe("local Agent Plugins composition", () => {
       CODEX_HOME: path.join(root, "codex-home"),
       HOME: path.join(root, "home"),
     }, {
+      toolGroups: CLAXEDO_MCP_TOOL_GROUPS,
       sources: {
         async listAuthorizedSources() {
           return [await fileSystemCollectionSource({
@@ -281,6 +285,7 @@ describe("local Agent Plugins composition", () => {
       CODEX_HOME: path.join(root, "codex-home"),
       HOME: path.join(root, "home"),
     }, {
+      toolGroups: CLAXEDO_MCP_TOOL_GROUPS,
       sources: { async listAuthorizedSources() { return [] } },
       changed: async () => { changes.push(changes.length + 1) },
     })
@@ -358,7 +363,7 @@ describe("local Agent Plugins composition", () => {
     const restarted = createLocalAgentPluginsComposition({
       CODEX_HOME: path.join(root, "codex-home"),
       HOME: path.join(root, "home"),
-    }, { sources: { async listAuthorizedSources() { return [] } } })
+    }, { toolGroups: CLAXEDO_MCP_TOOL_GROUPS, sources: { async listAuthorizedSources() { return [] } } })
     await restarted.ready
     expect(restarted.signedRuntime.state()).toMatchObject({ active: true, revision: 3, userId: "usr_1" })
     expect(await restarted.runtimeContribution()).toEqual(contribution)

@@ -758,7 +758,10 @@ export const desktopRenderer: Policy = {
   // `surface/view/agent-configuration-view.tsx`, `surface/agent-configuration.ts`).
   // They add no package edge.
   // 1508/36, no headroom.
-  ceilings: { modules: 1508, packages: 36 },
+  // -1 module (owner: the app's server domain): `server/availability.ts`, the
+  // Tasks route probe, is gone; the bootstrap's `deployment.capabilities`
+  // says which plugin capabilities the server offers. 1507/36, no headroom.
+  ceilings: { modules: 1507, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

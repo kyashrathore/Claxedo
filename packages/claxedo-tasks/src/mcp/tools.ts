@@ -10,23 +10,23 @@
  * deployment that serves no documents service.
  */
 import { z } from "zod"
-import {
-  createTasksClient,
-  TASKS_ROUTE_PATH,
-  TasksApiError,
-  TasksClientPayloadError,
-  type TasksClient,
-} from "@claxedo/tasks/client"
-import type { ConfigurationSlot, Preset, SessionRef, TaskSessionLinkView, TaskSummary } from "@claxedo/tasks"
-import { CONFIGURATION_SLOTS, TASK_CREATE_STATUSES, TASK_STATUSES, admissibleAttempt, taskNumber } from "@claxedo/tasks"
-import { record, text } from "../json"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 import { decodeApiError } from "@claxedo/helpers/api-error"
-import type { McpToolContext } from "../context"
-import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
-import type { ToolRegistrar } from "./registry"
-import { declaredToolAccess } from "./inventory"
-import { assertDetachedSessionCreation } from "./session-reach"
-import { targetScope, toolJson, toolTarget } from "./target"
+import {
+  assertDetachedSessionCreation,
+  declaredToolAccess,
+  mcpToolRefusal,
+  targetScope,
+  toolJson,
+  toolTarget,
+  type McpToolContext,
+  type McpToolGroup,
+  type McpToolResult,
+  type ToolRegistrar,
+} from "@claxedo/mcp/tool-group"
+import { createTasksClient, TASKS_ROUTE_PATH, TasksApiError, TasksClientPayloadError, type TasksClient } from "../client"
+import type { ConfigurationSlot, Preset, SessionRef, TaskSessionLinkView, TaskSummary } from "../index"
+import { CONFIGURATION_SLOTS, TASK_CREATE_STATUSES, TASK_STATUSES, admissibleAttempt, taskNumber } from "../index"
 
 const PROJECT_ARG = {
   project: z.string().trim().min(1).optional().describe("Project id. Defaults to the project of this session's own workspace."),
@@ -34,7 +34,16 @@ const PROJECT_ARG = {
 
 const TASK_ARG = { task: z.string().trim().min(1).describe("Task id.") } as const
 
-export function registerTaskTools(registry: ToolRegistrar) {
+/** The service a Tasks tool acts through: its grant names the operations this caller may perform. */
+const TASKS_SERVICE_ID = "tasks"
+
+function tasksService(operation: "read" | "create" | "start") {
+  return { id: TASKS_SERVICE_ID, label: "Tasks", operation }
+}
+
+export const TASKS_MCP_TOOL_GROUP: McpToolGroup = { id: "tasks", reach: "account", register: registerTaskTools }
+
+function registerTaskTools(registry: ToolRegistrar) {
   registry.tool(
     "task_list",
     {
@@ -46,7 +55,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
         limit: z.number().int().min(1).max(100).optional().describe("Rows per page. Defaults to the service's own page size."),
         cursor: z.string().min(1).optional().describe("`nextCursor` from a previous call."),
       },
-      access: declaredToolAccess({ audiences: ["runtime", "user"], write: false, scope: "read", operation: "read" }),
+      access: declaredToolAccess({ audiences: ["runtime", "user"], write: false, scope: "read", service: tasksService("read") }),
     },
     async (args, ctx) => tasksRefusals(async () => {
       await auditRead(ctx, "task_list", args)
@@ -68,7 +77,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       description:
         "One task in full, with every session it has run: the slot, the attempt, the preset it started on, and whether that session is still live. Images attached to the task are listed by name and type; they reach a session as prompt images when the task is started.",
       inputSchema: { ...TASK_ARG },
-      access: declaredToolAccess({ audiences: ["runtime", "user"], write: false, scope: "read", operation: "read" }),
+      access: declaredToolAccess({ audiences: ["runtime", "user"], write: false, scope: "read", service: tasksService("read") }),
     },
     async (args, ctx) => tasksRefusals(async () => {
       await auditRead(ctx, "task_get", args)
@@ -94,7 +103,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
           .optional()
           .describe("Retrying with the same id returns the task already created instead of creating another."),
       },
-      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act", operation: "create" }),
+      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act", service: tasksService("create") }),
     },
     async (args, ctx) => tasksRefusals(async () => {
       const client = tasksClient(ctx)
@@ -150,7 +159,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
           .optional()
           .describe("Retrying with the same id returns the edit already applied instead of editing again."),
       },
-      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act", operation: "create" }),
+      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act", service: tasksService("create") }),
     },
     async (args, ctx) => tasksRefusals(async () => {
       if (args.title === undefined && args.description === undefined) {
@@ -207,7 +216,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
           .optional()
           .describe("Retrying with the same id returns the session already started instead of starting another."),
       },
-      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act", operation: "start" }),
+      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act", service: tasksService("start") }),
       sessionIdFromHandler: true,
     },
     async (args, ctx, addressed) => tasksRefusals(async () => {
@@ -395,7 +404,7 @@ async function runtimeGrantRefusal(response: Response): Promise<string | undefin
 }
 
 function tasksClient(ctx: McpToolContext): TasksClient {
-  const grant = ctx.client.tasks
+  const grant = ctx.client.services[TASKS_SERVICE_ID]
   if (!grant) throw new RefusalSentence("This Claxedo deployment does not serve Tasks.")
   return createTasksClient({
     baseUrl: TASKS_ROUTE_PATH,
@@ -423,7 +432,7 @@ function tasksClient(ctx: McpToolContext): TasksClient {
  * with a forbidden it cannot act on.
  */
 async function projectOf(ctx: McpToolContext, requested: string | undefined): Promise<string> {
-  const granted = ctx.client.tasks?.projectId
+  const granted = ctx.client.services[TASKS_SERVICE_ID]?.projectId
   if (granted && requested && requested !== granted) {
     throw new RefusalSentence(`This session's Tasks grant is confined to project ${granted}; it cannot work in ${requested}.`)
   }
@@ -438,7 +447,7 @@ async function projectOf(ctx: McpToolContext, requested: string | undefined): Pr
     throw new RefusalSentence(`This session's own project could not be read, so name the project: ${causeOf(error)}.`)
   }
   if (!response.ok) throw new RefusalSentence("This session's workspace has no project of its own; name the project to work in.")
-  const id = text(record(await response.json().catch(() => undefined))?.id)
-  if (!id) throw new RefusalSentence("The project route answered without a project id; name the project to work in.")
+  const id = asString(asRecord(await response.json().catch(() => undefined))?.id)
+  if (!id?.trim()) throw new RefusalSentence("The project route answered without a project id; name the project to work in.")
   return id
 }

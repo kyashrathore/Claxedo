@@ -100,13 +100,8 @@ function useLiveApprovals(host: PluginHost, services: HostServices): (pluginId: 
   return request
 }
 
-function useOfferedCapabilities(services: HostServices, required: Accessor<ReadonlySet<PluginCapability>>) {
-  const tasks = useQuery(() => ({ ...services.server.queries.tasks.availability(), enabled: required().has("tasks") }))
-  const offered: Record<PluginCapability, () => boolean> = {
-    documents: () => services.server.capabilities()?.features.documents === true,
-    tasks: () => tasks.data?.kind === "available",
-  }
-  return (capability: PluginCapability) => offered[capability]()
+function offeredCapability(services: HostServices) {
+  return (capability: PluginCapability) => services.server.capabilities()?.plugins.has(capability) === true
 }
 
 export function PluginHostProvider(props: { readonly scope: string; readonly children: JSX.Element }): JSX.Element {
@@ -114,11 +109,10 @@ export function PluginHostProvider(props: { readonly scope: string; readonly chi
   onCleanup(services.i18n.add(pluginsDictionary))
   const host = createPluginHost({
     preferences: createPluginPreferences(props.scope, safeModeRequested(window.location.search)),
-    offered: (capability) => offered(capability),
+    offered: offeredCapability(services),
     activate: createActivate(services),
     removeLive: services.calls.removeLive,
   })
-  const offered = useOfferedCapabilities(services, host.required)
   onCleanup(host.dispose)
   const value: PluginsContext = {
     ...host,

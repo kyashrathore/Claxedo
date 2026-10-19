@@ -13,6 +13,7 @@ import { resolveOAuthMcpCredential, type OAuthAccessTokenClaims } from "./oauth-
 const stubClient: ClaxedoMcpClient = {
   deployment: "hosted",
   runtime: async () => async () => new Response(null, { status: 204 }),
+  services: {},
   resolveTarget: async () => ({ kind: "relay", baseUrl: "", headers: {} }),
   server: () => Promise.reject(new Error("unused")),
   workspaces: async () => [],
@@ -75,6 +76,10 @@ function compose(overrides: Partial<FirstPartyMcpContributionInput> = {}) {
       },
       registerTools: [tools],
     },
+    services: [{
+      id: "documents",
+      grant: async ({ inProcessFetch }) => ({ fetch: inProcessFetch({ "x-service": "documents" }), operations: [] }),
+    }],
     signedAuth: async (request) => (request.headers.get("authorization") === "Bearer jwt" ? signed("user_1", "actor_9") : undefined),
     auditFallback,
     ...overrides,
@@ -111,6 +116,9 @@ describe("firstPartyMcpContribution", () => {
     const controlPlane = inputs[0]?.controlPlane
     if (!controlPlane) throw new Error("the hosted mount composed no control-plane client")
     expect(await (await controlPlane.fetch("/api/echo")).json()).toEqual({ authorization: "Bearer jwt" })
+    const documents = inputs[0]?.services?.documents
+    if (!documents) throw new Error("the hosted mount granted the account credential no composed service")
+    expect(await (await documents.fetch("/api/echo")).json()).toEqual({ authorization: "Bearer jwt" })
   })
 
   test("falls back to the token subject when the adapter resolved no principal", () => {
@@ -193,12 +201,14 @@ function oauthComposed(tokens: Readonly<Record<string, readonly string[]>>) {
         deployment: "hosted",
         ownWorkspace: { workspaceId: "ws_1" },
         runtime: async () => async () => new Response(null, { status: 204 }),
+        services: {},
         resolveTarget: async () => ({ kind: "relay", baseUrl: "", headers: {} }),
         server: async () => server,
         workspaces: async () => [],
       }),
       registerTools: CLAXEDO_MCP_TOOL_GROUPS,
     },
+    services: [],
     signedAuth: async () => undefined,
     oauthCredential: (request) =>
       resolveOAuthMcpCredential(request, {

@@ -1,5 +1,6 @@
-import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
+import type { HostedServerPlugin } from "@claxedo/server-core/plugins/server-plugin"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { TASKS_MCP_TOOL_GROUP } from "@claxedo/tasks/mcp"
 import {
   createHostedTasksComposition,
   hostedTasksRuntimeClient,
@@ -17,9 +18,9 @@ import {
 } from "../../workspace/cloud-create-admission"
 
 /**
- * The hosted Tasks routes a Worker entry mounts, with the session bridge each
- * request's principal is handed to, and the renewal door a running root's
- * grant comes back through.
+ * Hosted Tasks as the plugin a Worker entry composes: the routes, with the
+ * session bridge each request's principal is handed to, and the renewal door
+ * a running root's grant comes back through.
  *
  * The composition and the bridge are paired here rather than in the entry
  * because the bridge is per-principal and the composition is per-Worker: an
@@ -28,7 +29,7 @@ import {
  * same register the composition refuses revoked grants from; a deployment that
  * mints no grants — no signing key — mounts no renewal either.
  */
-export function hostedTasksRouteContributions(
+export function createHostedTasksPlugin(
   input: Omit<HostedTasksCompositionInput, "bridge" | "cloudSelectedCapabilities"> & {
     /**
      * The workspace's sandbox start, which prepares a root with its own
@@ -47,7 +48,7 @@ export function hostedTasksRouteContributions(
     cloudCreateAdmission?: CloudCreateAdmissionPolicy
     renewal?: Pick<TasksGrantRenewalInput, "tasksGroupEnabled" | "grant" | "ownerGrant">
   },
-): readonly ControlPlaneRouteContribution[] {
+): HostedServerPlugin {
   const createAdmission = createCloudCreateAdmission({
     services: input.services,
     ...input.cloudCreateAdmission,
@@ -70,14 +71,21 @@ export function hostedTasksRouteContributions(
       }),
   })
   const owners = requireAuthority(input.services).resolveWorkspaceOwner?.bind(requireAuthority(input.services))
-  if (!input.renewal || !input.signingEnv || !owners) return composition.routeContributions
-  return [
-    ...composition.routeContributions,
-    tasksGrantRenewalContribution({
-      signingEnv: input.signingEnv,
-      ...(input.passes ? { passes: input.passes } : {}),
-      workspaceOwner: owners,
-      ...input.renewal,
-    }),
-  ]
+  const renewal = input.renewal && input.signingEnv && owners
+    ? [tasksGrantRenewalContribution({
+        signingEnv: input.signingEnv,
+        ...(input.passes ? { passes: input.passes } : {}),
+        workspaceOwner: owners,
+        ...input.renewal,
+      })]
+    : []
+  return {
+    id: "claxedo-tasks",
+    capability: "tasks",
+    routeContributions: [...composition.routeContributions, ...renewal],
+    // An account credential on this plane is granted no Tasks service, so its
+    // tools are listed only to a cloud root's sessions, whose runtime holds
+    // the grant.
+    mcp: { groups: [TASKS_MCP_TOOL_GROUP] },
+  }
 }

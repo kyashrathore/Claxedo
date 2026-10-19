@@ -59,7 +59,6 @@ import type {
 import type {
   AgentRequestReply,
   Capabilities,
-  FeatureAvailability,
   FetchQuery,
   GoalAction,
   HeldSessionReads,
@@ -207,7 +206,6 @@ export type ServerQueries = {
     readonly sources: () => FetchQuery<readonly PluginSourceRecord[]>
     readonly skill: (request: PluginSkillRequest) => FetchQuery<PluginSkillDocument>
   }
-  readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {
     readonly repositories: (connectionId: string) => FetchQuery<CodeHostRepositoryListing>
   }

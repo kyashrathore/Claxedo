@@ -714,7 +714,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - Flow 61 adds a tab page with a param route, a surface settings section holding an `AgentConfigurationPicker`, and a byte fetch of a task attachment (fixture routes `/api/claxedo/tasks`). The phone opener now waits for the home redirect before opening the rail; a tap before it was closed by that navigation.
   - Desktop-renderer modules 1481 → 1491 (the ten new owners named in `desktop.ts`). Budgets: Composer 14376, Plugin host 2650, Web plugin frame 1618, Surface renderer 2359, Tasks 4754, total 113505. Merged with S2–S4: desktop-renderer 1508 (their 1498 plus these ten), Surface renderer 4057, Tasks 4658, total 115118 (115107 at the merge, plus the transcript's agent-producer test); the picker's `change` is declared in `SURFACE_EVENT_FIELDS` and fires through S2's `supplied`; flow 61 holds both lanes' cases on one fixture page (the per-project buttons became `project-links`, since S4's Combobox owns `project`).
   - Not verified here: flow 34 (desktop). This container runs as root and Electron exits with "Running as root without --no-sandbox is not supported"; `00-desktop-smoke` fails the same way at fixture setup.
-- [ ] **S6. Server plugin contract and bootstrap capabilities.**
+- [x] **S6. Server plugin contract and bootstrap capabilities.**
 - Add `server-core/src/plugins/server-plugin.ts`.
 - Local: `StartLocalServerOptions.plugins`. Interim builders `createLocalTasksPlugin` (from `local-server/src/tasks/`) and `createLocalDocumentsPlugin` (from `app/local-documents.ts`) wrap today's code in place.
 - Hosted: `HostedCoreAppOptions.plugins`; interim hosted builders wrap `tasks-contributions.ts` and the R2 backend in place.
@@ -722,8 +722,14 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
 - **Delete:** `tasksGrants`, `documents` option, `deployment.documents`, `PLUGIN_CAPABILITIES`, `queries.tasks.availability` and its key and freshness entries.
 - **Tests:** local bootstrap and route mounting (`/api/claxedo/tasks`, `/documents` answer as before), hosted shell bootstrap per profile, app `server/capabilities.test.ts` and wire tests, plugin-api manifest tests, duplicate plugin id refused.
 - **Checks:** local, server, app, plugin-api tests; typecheck all; ratchets; `verify:closure` for local-server and server; e2e 12 (boot reads nothing under Tasks), 34, 35, 53, 54.
-- Progress:
-- [ ] **S7. MCP tool group contribution.**
+- **As built (recorded where the code proved the interface wrong):**
+  - `LocalServerPlugin.routeContributions(host: LocalServerPluginHost)` is a function of the host's `{ authConfig, verifier }`: the local `/documents` routes verify a signed caller with the host's own `services.auth`, which the composition root does not hold. `HostedServerPlugin.routeContributions` stays an array; `ServerPluginBase` carries `id`, `capability` and `mcp`.
+  - Deleting `tasksGrants` needs the grant to come from the plugin, so `mcp.service` (`McpServiceContribution`) lands here; `TasksGrant` in `@claxedo/mcp` became `McpServiceGrant` (`operations: string[]`). Until S7 the local mount maps `services.tasks` and `services.documents` onto the client's existing fields.
+  - The hosted bootstrap now reports `documents`: the core Worker mounts `/documents` in every profile, where it used to declare `documents: false`. No app plugin requires it yet.
+  - Interim builders: `claxedo-server/src/deployments/hosted-workerd/tasks-plugin.ts` (renamed from `tasks-contributions.ts`) and `claxedo-server/src/documents/hosted-plugin.ts`, which resolves the authority from `services` at request time.
+  - `PluginCapability` stays as `string` with `isPluginCapability` and `PLUGIN_CAPABILITY_PATTERN`; `PluginHost.required`, which only gated the probe, is gone.
+- Progress: done (lane C). Ceilings: local-server 74→73 (`app/local-documents.ts` left the entry), server-workerd 174→175 and the deployment closures 174/233/245→175/234/246 (`documents/hosted-plugin.ts`), desktop-renderer 1481→1480 (`server/availability.ts`). Verified: local, server (+ `scripts/sandbox/cloudflare-worker`), plugin-api tests and app `src/server`, `src/plugins` tests, app `check` and `typecheck:e2e`; `bun turbo typecheck --concurrency=2`; ratchets; local-server and server `verify:closure`; e2e 12-workbench-shell and 35 on web and phone. OpenCode-backed suites need Node 24 (`patches/README.opencode-node.md`); they pass under 24.18.0. Not verified: e2e 53 and 54 (the hosted sandbox worker's local brokering driver runs only on macOS) and 34 (no Electron binary in this container).
+- [x] **S7. MCP tool group contribution.**
 - Add `@claxedo/mcp/tool-group`; generic `services` grants.
 - Move `tools/tasks.ts` (+ test) to `packages/claxedo-tasks/src/mcp/`; the local and hosted `mcp` contributions supply `services.tasks` (`TASKS_OPERATIONS` stays the local operation set) and `services.documents`.
 - The sandbox `first-party-mcp.ts` builds `services.tasks` from today's `tasks-grant.ts` (moved in S8b).
@@ -735,7 +741,14 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - server (hosted MCP, agent-plugins catalog inventory);
   - tasks (moved tool tests).
 - **Checks:** typecheck all; ratchets; e2e 40.
-- Progress:
+- **As built:**
+  - `McpServiceGrantInput.workspaceId` is optional: the hosted mount grants services to an account credential, which belongs to no workspace. The hosted `/api/claxedo/mcp` asks each composed plugin's service for an account credential and enters the app with the caller's own authorization; a runtime credential there gets none, as before.
+  - `mcpToolGroups(plugins)` in `server-core/src/plugins/server-plugin.ts` is the one composition of core plus plugin groups; the local start, the desktop and e2e entries, the core Worker root and the Agent Plugins entry use it. The hosted catalog (`createHostedAgentPluginsComposition({ toolGroups })`) is handed `mcpToolGroups([tasks])` by the Agent Plugins entry, which therefore builds the Tasks plugin first and reads the group switches through closures. The Documents plugin is composed by the core Worker root and contributes no group yet; S11c must give the catalog its group too.
+  - `claxedoMcpToolGroupsFor` had no caller and is deleted.
+  - Tasks tools declare `service: { id: "tasks", label: "Tasks", operation }`; Documents tools keep no service gate, so their listing per mount is unchanged and they refuse at the call where no `services.documents` was granted.
+  - The hosted Tasks plugin contributes its group only: an account credential on the plane was never granted Tasks. The sandbox runtime composes `TASKS_MCP_TOOL_GROUP` and its `services.tasks` in `runtime-boot.ts` until S8b.
+  - The transcript roster equality moved to `@claxedo/tasks` (`src/mcp/tools.test.ts`), the one package that sees the core and the Tasks groups; `@claxedo/mcp` asserts its core tools are in the roster.
+- Progress: done (lane C). Verified: mcp (196) and tasks (303, with the moved tool tests) suites; local-server (844, Node 24) and server (2905 plus the sandbox worker's 118) suites; `bun turbo typecheck --concurrency=2`; ratchets (no ceiling moved); `docs:check-links`. e2e 40: pi passes on web; the claude, codex and opencode cases fail identically at the base commit 789ec97 in this container (no codex CLI; the claude and opencode turns never call the tool), so they are not evidence either way.
 - [ ] **S8a. SQLite schema contributions; Tasks shared host and local move.**
 - `configureClaxedoSchema`; move the six task migration folders; `server-core/src/tasks-host/*` → `packages/claxedo-tasks/src/host/*` and `storage/sqlite/*`; `local-server/src/tasks/*` → `packages/claxedo-tasks/src/local/*`.
 - Update the three journal-copying build scripts; the desktop and harness entries call `configureClaxedoSchema` first.

@@ -97,6 +97,7 @@ export async function sessionHostPlane(input: {
     app,
     authority: undefined,
     options: { createClient: (client) => createClaxedoMcpClient(client), registerTools: CLAXEDO_MCP_TOOL_GROUPS },
+    services: [],
     signedAuth: async () => undefined,
     auditFallback: () => {},
     sessionMcp,

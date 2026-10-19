@@ -25,6 +25,7 @@ const packageVersion = (JSON.parse(readFileSync(new URL("../package.json", impor
 const stubClient: ClaxedoMcpClient = {
   deployment: "loopback",
   runtime: async () => async () => new Response(null, { status: 204 }),
+  services: {},
   resolveTarget: async () => ({ kind: "loopback", baseUrl: "", headers: {} }),
   server: () => Promise.reject(new Error("no typed client in this fixture")),
   workspaces: async () => [],
@@ -496,14 +497,13 @@ describe("composition", () => {
 })
 
 describe("tool groups", () => {
-  const inventory = claxedoMcpToolGroupInventory()
+  const inventory = claxedoMcpToolGroupInventory(CLAXEDO_MCP_TOOL_GROUPS)
   const toolsOf = (...ids: string[]) =>
     inventory.filter((group) => ids.includes(group.id)).flatMap((group) => group.tools).toSorted()
 
   test("every registered group's inventory is the names its registration declares", () => {
     expect(inventory.map((group) => group.id)).toEqual(CLAXEDO_MCP_TOOL_GROUP_IDS)
     expect(inventory.every((group) => group.tools.length > 0)).toBe(true)
-    expect(toolsOf("tasks")).toEqual(["task_create", "task_edit", "task_get", "task_list", "task_start"])
   })
 
   test("a mount serving a subset lists and admits exactly that subset's tools", async () => {
