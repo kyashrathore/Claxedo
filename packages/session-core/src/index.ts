@@ -27,6 +27,7 @@ export { RUNTIME_NATIVE_HARNESS_IDS, requestedSessionHarness } from "./routes/se
 export { harnessUnavailableResponse } from "./routes/session-harness-refusal"
 export { sessionOwner } from "./routes/session-route-options"
 export { SessionRoutes } from "./routes/session"
+export type { SessionLifecycleHooks } from "./routes/session-lifecycle"
 export { queuedPromptStore, storeSessionRoutes } from "./routes/session-store-reads"
 export type { ActiveSessionTurnLease } from "./routes/session-turn-lease"
 export { type SessionRouteCheckpoint, type SessionRouteCompositionInput, type SessionRouteMachine, composeSessionRoutes } from "./routes/session-route-composition"

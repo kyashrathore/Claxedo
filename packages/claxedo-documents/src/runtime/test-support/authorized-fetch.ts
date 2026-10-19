@@ -1,4 +1,4 @@
-import { fetchDouble, fetchUrl, type FetchHandler } from "./fetch-double"
+import { fetchDouble, fetchUrl, type FetchHandler } from "@claxedo/workspace-runtime/testing"
 
 export function documentAuthorizedFetch(handler: FetchHandler): typeof fetch {
   return fetchDouble(async (input, init) => {

@@ -4,20 +4,13 @@ import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import { watchRealDirectory } from "@claxedo/helpers/real-path"
 import { createHash } from "node:crypto"
-import { verifyDocumentJobCapability } from "../document-job-capability"
-import { Hono } from "hono"
+import { verifyDocumentJobCapability } from "./job-capability"
+import { Hono, type Context } from "hono"
 import { z } from "zod"
 import { asNumber, asRecord, asString } from "@claxedo/helpers/guards"
-import {
-  boundedJson,
-  RequestBodyTooLargeError,
-  sessionAccessContext,
-  type SessionAccessPolicy,
-} from "@claxedo/session-core"
-import { authorizeHostCapability } from "./host-capability-access"
-import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
+import { boundedJson, RequestBodyTooLargeError } from "@claxedo/session-core"
 import { isMissingFile } from "@claxedo/helpers/fs"
-import { MAX_DOCUMENT_BYTES, readContained, secureDirectory, writeContained } from "./document-hydration-files"
+import { MAX_DOCUMENT_BYTES, readContained, secureDirectory, writeContained } from "./files"
 
 const Job = z
   .object({
@@ -98,36 +91,97 @@ type RuntimeDocument = {
   }
   requestTimeoutMs: number
   beforeReadOpen?: () => void | Promise<void>
+  hydration: HydrationState
 }
 
-const documents = new Map<string, RuntimeDocument>()
-const manifestTails = new Map<string, Promise<void>>()
-const sessionLifecycles = new Map<string, Promise<void>>()
-const documentLifecycles = new Map<string, Promise<void>>()
+/** One hydration's documents, keyed `${sessionId}:${documentId}`, and the queues that order their writes. */
+type HydrationState = {
+  documents: Map<string, RuntimeDocument>
+  manifestWrites: KeyedSerialQueue
+  sessionWork: KeyedSerialQueue
+  documentWork: KeyedSerialQueue
+}
+
+/** Runs each key's work after the work queued before it for that key; a failed run does not stop the next. */
+type KeyedSerialQueue = <T>(key: string, run: () => Promise<T>) => Promise<T>
+
+function keyedSerialQueue(): KeyedSerialQueue {
+  const tails = new Map<string, Promise<void>>()
+  return async (key, run) => {
+    const work = (tails.get(key) ?? Promise.resolve()).then(run)
+    const tail = work.then(
+      () => undefined,
+      () => undefined,
+    )
+    tails.set(key, tail)
+    try {
+      return await work
+    } finally {
+      if (tails.get(key) === tail) tails.delete(key)
+    }
+  }
+}
+
+export type DocumentHydrationOptions = {
+  workspaceRoot?: string
+  controlPlaneOrigin?: string
+  verifyJob?: (token: string, expected: Parameters<typeof verifyDocumentJobCapability>[1]) => Promise<unknown>
+  beforeReadOpen?: () => void | Promise<void>
+  beforeWriteOpen?: () => void | Promise<void>
+  afterWatcherCreated?: (watcher: FSWatcher) => void
+  renewalTimer?: RuntimeDocument["renewalTimer"]
+  requestTimeoutMs?: number
+}
+
+/** What the routes are served for: the relay-exposed workspace, and the runtime's session authority. */
+export type DocumentHydrationScope = {
+  /** Without it the routes are not served. */
+  workspaceId?: string
+  authorizeSessionControl?: (context: Context, sessionId: string) => Promise<Response | undefined>
+}
+
+export type DocumentHydration = {
+  routes: (scope: DocumentHydrationScope) => Hono
+  flushDocument: (sessionId: string, documentId: string) => Promise<void>
+  flushSession: (sessionId: string) => Promise<void>
+  disposeSession: (sessionId: string) => Promise<void>
+  /** Closes every watcher and timer and drops every document, writing nothing back. */
+  forget: () => void
+}
 const MAX_CALLBACK_RESPONSE_BYTES = 64 * 1024
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 
-export function RuntimeDocumentHydrationRoutes(
-  options: {
-    workspaceRoot?: string
-    /** The relay-exposed workspace this runtime serves; without it the routes are not served. */
-    workspaceId?: string
-    controlPlaneOrigin?: string
-    verifyJob?: (token: string, expected: Parameters<typeof verifyDocumentJobCapability>[1]) => Promise<unknown>
-    beforeReadOpen?: () => void | Promise<void>
-    beforeWriteOpen?: () => void | Promise<void>
-    afterWatcherCreated?: (watcher: FSWatcher) => void
-    renewalTimer?: RuntimeDocument["renewalTimer"]
-    requestTimeoutMs?: number
-    sessionAccessPolicy?: SessionAccessPolicy
-  } = {},
-) {
+export function createDocumentHydration(options: DocumentHydrationOptions = {}): DocumentHydration {
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-  const { workspaceId } = options
   if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
     throw new Error("Runtime document request timeout must be positive")
   }
-  return new Hono<{ Variables: RelayHostAuthContext }>()
+  const state: HydrationState = {
+    documents: new Map(),
+    manifestWrites: keyedSerialQueue(),
+    sessionWork: keyedSerialQueue(),
+    documentWork: keyedSerialQueue(),
+  }
+  return {
+    routes: (scope) => hydrationRoutes(state, options, requestTimeoutMs, scope),
+    flushDocument: (sessionId, documentId) => flushDocument(state, sessionId, documentId),
+    flushSession: (sessionId) => flushSession(state, sessionId),
+    disposeSession: (sessionId) => state.sessionWork(sessionId, () => disposeSessionNow(state, sessionId)),
+    forget: () => {
+      for (const document of state.documents.values()) close(document)
+      state.documents.clear()
+    },
+  }
+}
+
+function hydrationRoutes(
+  state: HydrationState,
+  options: DocumentHydrationOptions,
+  requestTimeoutMs: number,
+  scope: DocumentHydrationScope,
+) {
+  const { workspaceId } = scope
+  return new Hono()
     .onError((error, context) => {
       if (error instanceof RuntimeDocumentDenied) return context.json({ error: "document_not_found" }, 404)
       if (error instanceof RequestBodyTooLargeError) return context.json({ error: "request_body_too_large" }, 413)
@@ -139,7 +193,7 @@ export function RuntimeDocumentHydrationRoutes(
     .post("/api/wr/documents/hydrate", async (context) => {
       if (!workspaceId) return context.notFound()
       const input = Input.parse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
-      return await withSessionLifecycle(input.sessionId, async () => {
+      return await state.sessionWork(input.sessionId, async () => {
         const authorized = await (options.verifyJob ?? verifyDocumentJobCapability)(input.job.token, {
           userId: input.job.userId,
           orgId: input.job.orgId,
@@ -172,7 +226,7 @@ export function RuntimeDocumentHydrationRoutes(
           requestTimeoutMs,
         )
         const key = `${input.sessionId}:${input.documentId}`
-        return await withDocumentLifecycle(key, async () => {
+        return await state.documentWork(key, async () => {
           const root = await fs.realpath(
             options.workspaceRoot ?? process.env.WORKSPACE_RUNTIME_DIRECTORY ?? "/workspace",
           )
@@ -216,10 +270,11 @@ export function RuntimeDocumentHydrationRoutes(
             renewalTimer: options.renewalTimer ?? { set: setTimeout, clear: clearTimeout, now: Date.now },
             requestTimeoutMs,
             ...(options.beforeReadOpen ? { beforeReadOpen: options.beforeReadOpen } : {}),
+            hydration: state,
           }
-          const previous = documents.get(key)
+          const previous = state.documents.get(key)
           close(previous)
-          documents.set(key, document)
+          state.documents.set(key, document)
           await persist(input.sessionId, input.documentId, document)
           return context.json({ path: target })
         })
@@ -232,17 +287,11 @@ export function RuntimeDocumentHydrationRoutes(
       if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || !/^[A-Za-z0-9_-]+$/.test(documentId)) {
         return context.json({ error: "document_request_invalid" }, 400)
       }
-      const denied = await authorizeHostCapability(
-        context,
-        options,
-        "document_write",
-        sessionAccessContext(context),
-        sessionId,
-      )
+      const denied = await scope.authorizeSessionControl?.(context, sessionId)
       if (denied) return denied
       Activation.parse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
-      return await withDocumentLifecycle(`${sessionId}:${documentId}`, async () => {
-        const document = documents.get(`${sessionId}:${documentId}`)
+      return await state.documentWork(`${sessionId}:${documentId}`, async () => {
+        const document = state.documents.get(`${sessionId}:${documentId}`)
         if (!document) return context.json({ error: "document_hydration_not_found" }, 404)
         const authorized = await (options.verifyJob ?? verifyDocumentJobCapability)(document.job.token, {
           userId: document.job.userId,
@@ -284,19 +333,13 @@ export function RuntimeDocumentHydrationRoutes(
       if (!workspaceId) return context.notFound()
       const sessionId = context.req.param("sessionId")
       const documentId = context.req.param("documentId")
-      const denied = await authorizeHostCapability(
-        context,
-        options,
-        "document_write",
-        sessionAccessContext(context),
-        sessionId,
-      )
+      const denied = await scope.authorizeSessionControl?.(context, sessionId)
       if (denied) return denied
       const parsedBody = Resolution.safeParse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
       const body = parsedBody.success ? parsedBody.data : undefined
       const key = `${sessionId}:${documentId}`
-      return await withDocumentLifecycle(key, async () => {
-        const document = documents.get(key)
+      return await state.documentWork(key, async () => {
+        const document = state.documents.get(key)
         if (!document || document.state !== "conflicted")
           return context.json({ error: "document_conflict_not_found" }, 404)
         const job = body?.job
@@ -359,35 +402,31 @@ export function RuntimeDocumentHydrationRoutes(
     })
 }
 
-export async function flushRuntimeDocument(sessionId: string, documentId: string) {
+async function flushDocument(state: HydrationState, sessionId: string, documentId: string) {
   const key = `${sessionId}:${documentId}`
-  const current = documents.get(key)
+  const current = state.documents.get(key)
   if (!current) throw new Error("Runtime document is not hydrated")
   if (current.state === "pending") throw new Error("Runtime document is not activated")
-  await withDocumentLifecycle(key, async () => {
-    const document = documents.get(key)
+  await state.documentWork(key, async () => {
+    const document = state.documents.get(key)
     if (!document) throw new Error("Runtime document is not hydrated")
     await enqueueSync(document)
   })
 }
 
-export async function flushRuntimeSessionDocuments(sessionId: string) {
-  await withSessionLifecycle(sessionId, async () => {
-    for (const [key, document] of documents) {
+async function flushSession(state: HydrationState, sessionId: string) {
+  await state.sessionWork(sessionId, async () => {
+    for (const [key, document] of state.documents) {
       if (key.startsWith(`${sessionId}:`)) await syncRuntimeDocument(document)
     }
   })
 }
 
-export async function disposeRuntimeSessionDocuments(sessionId: string) {
-  await withSessionLifecycle(sessionId, () => disposeRuntimeSessionDocumentsNow(sessionId))
-}
-
-async function disposeRuntimeSessionDocumentsNow(sessionId: string) {
+async function disposeSessionNow(state: HydrationState, sessionId: string) {
   const failures: unknown[] = []
-  for (const [key, document] of Array.from(documents)) {
+  for (const [key, document] of Array.from(state.documents)) {
     if (!key.startsWith(`${sessionId}:`)) continue
-    await withDocumentLifecycle(key, async () => {
+    await state.documentWork(key, async () => {
       if (!isCurrent(document)) return
       try {
         if (document.state !== "pending") await enqueueSync(document)
@@ -401,7 +440,7 @@ async function disposeRuntimeSessionDocumentsNow(sessionId: string) {
       } finally {
         if (isCurrent(document)) {
           close(document)
-          documents.delete(key)
+          state.documents.delete(key)
         }
       }
     })
@@ -409,17 +448,12 @@ async function disposeRuntimeSessionDocumentsNow(sessionId: string) {
   if (failures.length) throw new AggregateError(failures, `Runtime document disposal failed for ${sessionId}`)
 }
 
-export function forgetRuntimeDocuments() {
-  for (const document of documents.values()) close(document)
-  documents.clear()
-}
-
 function scheduleRenewal(document: RuntimeDocument) {
   if (!isCurrent(document) || document.state !== "active") return
   if (document.renewal) document.renewalTimer.clear(document.renewal)
   document.renewal = document.renewalTimer.set(
     () =>
-      void withDocumentLifecycle(document.key, async () => {
+      void document.hydration.documentWork(document.key, async () => {
         if (!isCurrent(document)) return
         try {
           await renew(document)
@@ -561,8 +595,7 @@ async function persistFromPath(document: RuntimeDocument) {
 async function persist(sessionId: string, documentId: string, document: RuntimeDocument) {
   if (!isCurrent(document)) return
   const manifestPath = path.join(path.dirname(path.dirname(document.path)), "manifest.json")
-  const previous = manifestTails.get(manifestPath) ?? Promise.resolve()
-  const run = previous.then(async () => {
+  await document.hydration.manifestWrites(manifestPath, async () => {
     if (!isCurrent(document)) return
     const existing = await fs.readFile(manifestPath, "utf8").then(
       (value) => Manifest.parse(JSON.parse(value)),
@@ -589,57 +622,17 @@ async function persist(sessionId: string, documentId: string, document: RuntimeD
     await handle.close()
     await fs.rename(temp, manifestPath)
   })
-  const tail = run.then(
-    () => undefined,
-    () => undefined,
-  )
-  manifestTails.set(manifestPath, tail)
-  try {
-    await run
-  } finally {
-    if (manifestTails.get(manifestPath) === tail) manifestTails.delete(manifestPath)
-  }
 }
 
 function isCurrent(document: RuntimeDocument) {
-  return documents.get(document.key) === document
+  return document.hydration.documents.get(document.key) === document
 }
 
 async function syncRuntimeDocument(document: RuntimeDocument) {
-  await withDocumentLifecycle(document.key, async () => {
+  await document.hydration.documentWork(document.key, async () => {
     if (!isCurrent(document)) return
     await enqueueSync(document)
   })
-}
-
-async function withSessionLifecycle<T>(sessionId: string, mutate: () => Promise<T>) {
-  const previous = sessionLifecycles.get(sessionId) ?? Promise.resolve()
-  const run = previous.then(mutate)
-  const tail = run.then(
-    () => undefined,
-    () => undefined,
-  )
-  sessionLifecycles.set(sessionId, tail)
-  try {
-    return await run
-  } finally {
-    if (sessionLifecycles.get(sessionId) === tail) sessionLifecycles.delete(sessionId)
-  }
-}
-
-async function withDocumentLifecycle<T>(key: string, mutate: () => Promise<T>) {
-  const previous = documentLifecycles.get(key) ?? Promise.resolve()
-  const run = previous.then(mutate)
-  const tail = run.then(
-    () => undefined,
-    () => undefined,
-  )
-  documentLifecycles.set(key, tail)
-  try {
-    return await run
-  } finally {
-    if (documentLifecycles.get(key) === tail) documentLifecycles.delete(key)
-  }
 }
 
 function close(document?: RuntimeDocument) {
@@ -661,7 +654,7 @@ function installWatcher(document: RuntimeDocument, afterCreated?: (watcher: FSWa
   })
   document.watcher = watcher
   watcher.on("error", (error) => {
-    void withDocumentLifecycle(document.key, async () => {
+    void document.hydration.documentWork(document.key, async () => {
       if (!isCurrent(document)) return
       document.state = "conflicted"
       await persistFromPath(document)

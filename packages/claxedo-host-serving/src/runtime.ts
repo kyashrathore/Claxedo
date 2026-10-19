@@ -29,6 +29,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { relayHostAuthFromEnv } from "@claxedo/workspace-runtime/relay"
+import { createDocumentHydration, documentHydrationContribution } from "@claxedo/documents/runtime"
 import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
 import {
@@ -128,7 +129,12 @@ export async function createHostWorkspaceRuntime(options: HostWorkspaceRuntimeOp
     storeRoot: options.storeRoot,
     placement: CONNECTED_HOST_PLACEMENT,
     ...(options.harness ? { harness: options.harness } : {}),
-    ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
+    routeContributions: [
+      documentHydrationContribution(createDocumentHydration(
+        process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {},
+      )),
+      ...(options.routeContributions ?? []),
+    ],
   })
   try {
     await applyRuntimeConfig(runtime, target)

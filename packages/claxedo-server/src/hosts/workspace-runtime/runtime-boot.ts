@@ -29,6 +29,7 @@ import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { createDocumentHydration, documentHydrationContribution } from "@claxedo/documents/runtime"
 import type { RuntimeHostPlugin } from "@claxedo/server-core/plugins/runtime-host"
 import { cloudTurnUsage } from "@claxedo/server-core/usage/cloud-turn-usage"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -275,6 +276,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // its apply route this way). Accepting them without forwarding them left
     // the sandbox image answering 404 to the provisioner.
     routeContributions: [
+      documentHydrationContribution(createDocumentHydration(
+        env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: env.CLAXEDO_CONTROL_PLANE_URL } : {},
+      )),
       ...(input.routeContributions ?? []),
       ...(sessionRows ? [sessionRows.routes] : []),
       ...(relayOptions.relayHostAuth ? [startPhases.routes, runtimeLeaseEnv(env)] : []),

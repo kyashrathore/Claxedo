@@ -363,7 +363,7 @@ describe("a share level narrows the authority's answer, not the runtime's questi
       "session_meta_write",
       "session_config_write",
       "worktree_write",
-      "document_write",
+      "contribution_write",
       "goal_start",
       "goal_pause",
       "goal_resume",

@@ -2,15 +2,16 @@ import { afterEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { RuntimeDocumentHydrationRoutes, forgetRuntimeDocuments } from "./document-hydration"
-import { fetchDouble, fetchUrl } from "../test-support/fetch-double"
+import { testHydrations } from "./test-support/hydrations"
+import { fetchDouble, fetchUrl } from "@claxedo/workspace-runtime/testing"
 
+const hydrations = testHydrations()
 const originalFetch = globalThis.fetch
 const roots: string[] = []
 afterEach(async () => {
   globalThis.fetch = originalFetch
   for (const root of roots.splice(0)) {
-    await forgetRuntimeDocuments()
+    hydrations.current.forget()
     await fs.rm(root, { recursive: true, force: true })
   }
 })
@@ -23,7 +24,7 @@ test("hydration refuses a revoked document before writing its content", async ()
     calls.push(fetchUrl(url))
     return new Response(null, { status: 404 })
   })
-  const routes = RuntimeDocumentHydrationRoutes({
+  const routes = hydrations.routes({
     workspaceId: "ws_1",
     workspaceRoot: root,
     controlPlaneOrigin: "https://control.test",

@@ -21,6 +21,7 @@ import { errorMessage } from "@claxedo/helpers"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../projection/runtime-event-hub"
 import { requestedSessionHarness } from "./session-harness-query"
+import { settleSessionTurn, type SessionLifecycleHooks } from "./session-lifecycle"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy, SessionTurnOrigin } from "../session-access-policy"
 import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
@@ -62,8 +63,8 @@ type MessageSnapshot = {
 export type SessionRoutesOptions = {
   bus: RuntimeBus
   placement: SessionPlacement
-  flushSessionDocuments?: (sessionId: string) => Promise<void>
-  disposeSessionDocuments?: (sessionId: string) => Promise<void>
+  /** Each host contribution's turn and delete boundaries, in contribution order. */
+  sessionLifecycle?: readonly SessionLifecycleHooks[]
   readAttachment?: AttachmentReader
   sessionStarts?: AgentSessionStarts
   eventHub?: RuntimeEventHub
@@ -318,7 +319,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       const pendingTurn = run
         .then(async () => {
           if (actualDelivery !== "start" || lease?.lost()) return
-          await options.flushSessionDocuments?.(input.sessionId).catch((error) => console.error("queued turn document flush failed", error))
+          await settleSessionTurn(options.sessionLifecycle, input.sessionId)
           const turnId = lostTurn.get()?.turnId
           if (!input.onSettled && turnId) await childSessions?.onTurnSettled(input.sessionId, input.directory, turnId)
         })
@@ -360,8 +361,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       ? (_c, directory, session) => options.afterCreateSession!({ directory: requiredDirectory(directory), session })
       : undefined,
     sessionIdWorkspace: options.placement.sessionIdWorkspace,
-    flushSessionDocuments: options.flushSessionDocuments,
-    disposeSessionDocuments: options.disposeSessionDocuments,
+    sessionLifecycle: options.sessionLifecycle,
     readAttachment: options.readAttachment,
     listSubagents: options.listSubagents
       ? (_c, directory, parentSessionId) => options.listSubagents!({ directory: requiredDirectory(directory), parentSessionId })

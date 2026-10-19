@@ -6,10 +6,9 @@ import os from "node:os"
 import path from "node:path"
 import {
   createWorkspaceRuntimeApp,
-  flushRuntimeDocument,
-  forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
 } from "../../../../../workspace-runtime/src/index"
+import { createDocumentHydration, documentHydrationContribution } from "@claxedo/documents/runtime"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { createHostedDocumentRuntimeBroker } from "./runtime-broker"
@@ -37,7 +36,9 @@ const entry = {
 async function relayedRuntime() {
   const relayKeys = await generateKeyPair("EdDSA")
   const asked: Array<{ operation: string | undefined; sessionId: string | undefined; actorId: string | undefined }> = []
+  const hydration = createDocumentHydration()
   const runtime = createWorkspaceRuntimeApp({
+    routeContributions: [documentHydrationContribution(hydration)],
     sessionIdWorkspace: () => undefined,
     exposure: relayWorkspaceRuntimeExposure({ key: relayKeys.publicKey, workspaceId: "ws_1", hostId: "host_1" }),
     placement: loopbackMachineLoginPolicy(),
@@ -58,7 +59,7 @@ async function relayedRuntime() {
     role: "editor", scope: "workspace", backing: "cloud-vm", parent_jti: "parent_1",
   }).setProtectedHeader({ alg: "EdDSA" }).setIssuer("workspace-relay").setAudience("workspace-host-service")
     .setIssuedAt().setExpirationTime("1m").setJti("relay_actor_1").sign(relayKeys.privateKey)
-  return { runtime, token, asked }
+  return { runtime, hydration, token, asked }
 }
 
 /** The stamps the relay puts on every request it forwards to a runtime. */
@@ -245,7 +246,7 @@ describe("hosted document runtime broker", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = root
     process.env.CLAXEDO_CONTROL_PLANE_URL = "https://control.test"
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(signing.publicKey)
-    const { runtime, token: runtimeToken, asked } = await relayedRuntime()
+    const { runtime, hydration, token: runtimeToken, asked } = await relayedRuntime()
     let canonical = "before"
     let version = "v1"
     const originalFetch = globalThis.fetch
@@ -285,11 +286,11 @@ describe("hosted document runtime broker", () => {
         registerCapability: async () => undefined,
       })
       await fs.writeFile(opened.path, "agent edit")
-      await flushRuntimeDocument("session_1", "document_1")
+      await hydration.flushDocument("session_1", "document_1")
       expect({ canonical, version }).toEqual({ canonical: "agent edit", version: "v2" })
-      expect(asked).toEqual([{ operation: "document_write", sessionId: "session_1", actorId: "actor_1" }])
+      expect(asked).toEqual([{ operation: "contribution_write", sessionId: "session_1", actorId: "actor_1" }])
     } finally {
-      forgetRuntimeDocuments()
+      hydration.forget()
       await runtime.host.dispose()
       globalThis.fetch = originalFetch
       if (previousRoot === undefined) delete process.env.WORKSPACE_RUNTIME_DIRECTORY
@@ -317,7 +318,7 @@ describe("hosted document runtime broker", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = root
     process.env.CLAXEDO_CONTROL_PLANE_URL = "https://control.test"
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(signing.publicKey)
-    const { runtime, token: runtimeToken, asked } = await relayedRuntime()
+    const { runtime, hydration, token: runtimeToken, asked } = await relayedRuntime()
     const order: string[] = []
     let canonical = "before"
     let version = "v1"
@@ -383,7 +384,7 @@ describe("hosted document runtime broker", () => {
         read: { markdown: canonical, version: version as never, modifiedAt: 1 },
       })
       await fs.writeFile(first.path, "dirty after runtime crash")
-      forgetRuntimeDocuments()
+      hydration.forget()
 
       const reopened = await broker.open({
         entry,
@@ -400,9 +401,9 @@ describe("hosted document runtime broker", () => {
       expect(reopened.path).toBe(first.path)
       expect({ canonical, version }).toEqual({ canonical: "dirty after runtime crash", version: "v2" })
       expect(order).toEqual(["hydrate", "hydrate", "register", "activate", "writeback"])
-      expect(asked).toEqual([{ operation: "document_write", sessionId: "session_1", actorId: "actor_1" }])
+      expect(asked).toEqual([{ operation: "contribution_write", sessionId: "session_1", actorId: "actor_1" }])
     } finally {
-      forgetRuntimeDocuments()
+      hydration.forget()
       await runtime.host.dispose()
       globalThis.fetch = originalFetch
       if (previousRoot === undefined) delete process.env.WORKSPACE_RUNTIME_DIRECTORY

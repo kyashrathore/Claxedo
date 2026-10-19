@@ -54,6 +54,7 @@ async function fixture(input: { mcp?: boolean; env?: NodeJS.ProcessEnv } = {}) {
       sessionDrivenOnlyBy: () => false,
       registerSessionTools: () => async () => {},
       unregisterSessionTools: () => async () => {},
+      authorizeSessionControl: async () => undefined,
     },
   })
   return { root, artifact, app }

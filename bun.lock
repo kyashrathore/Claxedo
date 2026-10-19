@@ -193,6 +193,23 @@
         "vite-plugin-solid": "2.11.10",
       },
     },
+    "packages/claxedo-documents": {
+      "name": "@claxedo/documents",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/helpers": "workspace:*",
+        "@claxedo/session-core": "workspace:*",
+        "hono": "4.12.34",
+        "jose": "6.0.11",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@claxedo/workspace-runtime": "workspace:*",
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "1.3.13",
+        "typescript": "catalog:",
+      },
+    },
     "packages/claxedo-helpers": {
       "name": "@claxedo/helpers",
       "version": "0.2.0",
@@ -223,6 +240,7 @@
       "name": "@claxedo/host-serving",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/documents": "workspace:*",
         "@claxedo/server-core": "workspace:*",
         "@claxedo/session-core": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
@@ -353,6 +371,7 @@
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/channels": "workspace:*",
         "@claxedo/connections": "workspace:*",
+        "@claxedo/documents": "workspace:*",
         "@claxedo/egress-broker": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
@@ -487,6 +506,7 @@
         "@claxedo/host-connector": "workspace:*",
         "@claxedo/host-serving": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
+        "@claxedo/server-core": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@tsconfig/node-lts": "22.0.4",
         "@types/bun": "catalog:",
@@ -1164,6 +1184,8 @@
     "@claxedo/connections": ["@claxedo/connections@workspace:packages/claxedo-connections"],
 
     "@claxedo/desktop": ["@claxedo/desktop@workspace:packages/claxedo-desktop"],
+
+    "@claxedo/documents": ["@claxedo/documents@workspace:packages/claxedo-documents"],
 
     "@claxedo/egress-broker": ["@claxedo/egress-broker@workspace:packages/egress-broker"],
 

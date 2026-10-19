@@ -60,7 +60,7 @@ Its workspace is the object's name, and placement comes from its own port.
 | `childSessions.deriveSessionId` | HMAC with `node:crypto` (`host/child-identity.ts`) | HMAC with Web Crypto, asynchronously | required |
 | `transports`, `launch` | the composed CLI and SDK transports, machine credentials | scripted in the fixture; in `SessionDO`, Pi in process with credentials, plugins and provider definitions held only for the turn they were delivered for (`launch.credentials()` answers none between turns) | required |
 | `readAttachment` | bounded filesystem reads that never follow a link (`host/attachment-files.ts` through `workspace-files/open-without-following.ts`) | not supplied: tool images answer unavailable | optional |
-| `flushSessionDocuments`, `disposeSessionDocuments` | Pages hydration (`routes/document-hydration.ts`) | not supplied | optional |
+| `sessionLifecycle` | each workspace-runtime route contribution's hooks (Documents hydration's write-back and disposal) | not supplied | optional |
 | Boot | `recoverBusySessions` when the store opens, then `recoverQueuedPrompts` once admitted | both, inside one `blockConcurrencyWhile` in the fixture; in `SessionDO`, inside `PiHarness`'s factory with lease adoption and `resumeDurableRuns` between them (see below) | required |
 
 Each core owns its bus. Durable Objects of one class share an isolate, so a

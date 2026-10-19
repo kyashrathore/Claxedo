@@ -1,28 +1,24 @@
-import { documentAuthorizedFetch } from "../test-support/document-authorized-fetch"
+import { documentAuthorizedFetch } from "./test-support/authorized-fetch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { fetchBodyJson, fetchUrl } from "../test-support/fetch-double"
+import { fetchBodyJson, fetchUrl } from "@claxedo/workspace-runtime/testing"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, test, mock, spyOn } from "bun:test"
-import {
-  disposeRuntimeSessionDocuments,
-  flushRuntimeDocument,
-  forgetRuntimeDocuments,
-  RuntimeDocumentHydrationRoutes,
-} from "./document-hydration"
+import { testHydrations } from "./test-support/hydrations"
 
+const hydrations = testHydrations()
 describe("runtime document hydration", () => {
   const originalFetch = globalThis.fetch
   beforeEach(() => { globalThis.fetch = documentAuthorizedFetch(originalFetch) })
   afterEach(() => {
-    forgetRuntimeDocuments()
+    hydrations.current.forget()
     globalThis.fetch = originalFetch
   })
 
   test("rejects declared and chunked oversized hydration bodies before JSON parsing", async () => {
-    const app = new Hono().route("/", RuntimeDocumentHydrationRoutes({ workspaceId: "ws_1" }))
+    const app = new Hono().route("/", hydrations.routes({ workspaceId: "ws_1" }))
     expect(
       (
         await app.request("/api/wr/documents/hydrate", {
@@ -51,7 +47,7 @@ describe("runtime document hydration", () => {
   })
 
   test("returns stable validation errors for malformed hydration and resolution bodies", async () => {
-    const hydration = new Hono().route("/", RuntimeDocumentHydrationRoutes({ workspaceId: "ws_1" }))
+    const hydration = new Hono().route("/", hydrations.routes({ workspaceId: "ws_1" }))
 
     for (const response of [
       await hydration.request("/api/wr/documents/hydrate", { method: "POST", body: "{" }),
@@ -68,7 +64,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response("conflict", { status: 409 })))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -103,7 +99,7 @@ describe("runtime document hydration", () => {
       })).json() as { path: string }
     await activateRuntimeDocument(app, "session_resolve", "document_resolve")
     await fs.writeFile(hydrated.path, "session draft")
-    await expect(flushRuntimeDocument("session_resolve", "document_resolve")).rejects.toThrow("conflicted")
+    await expect(hydrations.current.flushDocument("session_resolve", "document_resolve")).rejects.toThrow("conflicted")
 
     const response = await app.request("/api/wr/documents/session_resolve/document_resolve/resolve", {
       method: "POST",
@@ -137,7 +133,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(fetcher)
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -180,7 +176,7 @@ describe("runtime document hydration", () => {
       ),
     ).toBe(false)
     await fs.writeFile(opened.path, "agent edit")
-    await flushRuntimeDocument("session_1", "document_1")
+    await hydrations.current.flushDocument("session_1", "document_1")
     expect(fetcher).toHaveBeenCalledWith(
       expect.stringContaining("document_1/runtime-writeback"),
       expect.objectContaining({
@@ -195,7 +191,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response("conflict", { status: 409 })))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -228,7 +224,7 @@ describe("runtime document hydration", () => {
     const opened = (await response.json()) as { path: string }
     await activateRuntimeDocument(app, "session_1", "document_1")
     await fs.writeFile(opened.path, "session draft")
-    await expect(flushRuntimeDocument("session_1", "document_1")).rejects.toThrow("conflicted")
+    await expect(hydrations.current.flushDocument("session_1", "document_1")).rejects.toThrow("conflicted")
     expect(await fs.readFile(opened.path, "utf8")).toBe("session draft")
     expect(
       JSON.parse(
@@ -248,7 +244,7 @@ describe("runtime document hydration", () => {
     }))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -281,16 +277,16 @@ describe("runtime document hydration", () => {
       })).json() as { path: string }
     await activateRuntimeDocument(app, "session_dispose_conflict", "document_dispose_conflict")
     await fs.writeFile(hydrated.path, "preserved conflict draft")
-    await expect(flushRuntimeDocument("session_dispose_conflict", "document_dispose_conflict")).rejects.toThrow(
+    await expect(hydrations.current.flushDocument("session_dispose_conflict", "document_dispose_conflict")).rejects.toThrow(
       "conflicted",
     )
 
-    await expect(disposeRuntimeSessionDocuments("session_dispose_conflict")).rejects.toThrow(
+    await expect(hydrations.current.disposeSession("session_dispose_conflict")).rejects.toThrow(
       "Runtime document disposal failed",
     )
     expect(methods).toEqual(["PUT", "DELETE"])
     expect(timer.cleared(0)).toBe(true)
-    await expect(flushRuntimeDocument("session_dispose_conflict", "document_dispose_conflict")).rejects.toThrow(
+    await expect(hydrations.current.flushDocument("session_dispose_conflict", "document_dispose_conflict")).rejects.toThrow(
       "not hydrated",
     )
     expect(await fs.readFile(hydrated.path, "utf8")).toBe("preserved conflict draft")
@@ -315,7 +311,7 @@ describe("runtime document hydration", () => {
     }))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -349,13 +345,13 @@ describe("runtime document hydration", () => {
     await activateRuntimeDocument(app, "session_timeout", "document_timeout")
     await fs.writeFile(hydrated.path, "retry after timeout")
 
-    await expect(flushRuntimeDocument("session_timeout", "document_timeout")).rejects.toThrow("timed out")
-    await expect(flushRuntimeDocument("session_timeout", "document_timeout")).resolves.toBeUndefined()
+    await expect(hydrations.current.flushDocument("session_timeout", "document_timeout")).rejects.toThrow("timed out")
+    await expect(hydrations.current.flushDocument("session_timeout", "document_timeout")).resolves.toBeUndefined()
     const started = Date.now()
-    await expect(disposeRuntimeSessionDocuments("session_timeout")).rejects.toThrow("disposal failed")
+    await expect(hydrations.current.disposeSession("session_timeout")).rejects.toThrow("disposal failed")
     expect(Date.now() - started).toBeLessThan(1_000)
     expect(request).toBe(3)
-    await expect(flushRuntimeDocument("session_timeout", "document_timeout")).rejects.toThrow("not hydrated")
+    await expect(hydrations.current.flushDocument("session_timeout", "document_timeout")).rejects.toThrow("not hydrated")
     expect(await fs.readFile(hydrated.path, "utf8")).toBe("retry after timeout")
     await fs.rm(root, { recursive: true, force: true })
   })
@@ -371,7 +367,7 @@ describe("runtime document hydration", () => {
       globalThis.fetch = documentAuthorizedFetch(fetcher)
       const app = new Hono().route(
         "/",
-        RuntimeDocumentHydrationRoutes({
+        hydrations.routes({
           workspaceRoot: root,
           workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
@@ -389,10 +385,10 @@ describe("runtime document hydration", () => {
         await activateRuntimeDocument(app, "session_response_bound", "document_response_bound")
         await fs.writeFile(hydrated.path, "retry after bounded response failure")
 
-        await expect(flushRuntimeDocument("session_response_bound", "document_response_bound")).rejects.toThrow(
+        await expect(hydrations.current.flushDocument("session_response_bound", "document_response_bound")).rejects.toThrow(
           failure === "stalled" ? "timed out" : "too large",
         )
-        await expect(flushRuntimeDocument("session_response_bound", "document_response_bound")).resolves.toBeUndefined()
+        await expect(hydrations.current.flushDocument("session_response_bound", "document_response_bound")).resolves.toBeUndefined()
         expect(fetcher).toHaveBeenCalledTimes(2)
       } finally {
         await fs.rm(root, { recursive: true, force: true })
@@ -415,7 +411,7 @@ describe("runtime document hydration", () => {
     }))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -449,7 +445,7 @@ describe("runtime document hydration", () => {
         body: JSON.stringify(body),
       })
       await activateRuntimeDocument(app, "session_race", "document_race")
-      const disposing = disposeRuntimeSessionDocuments("session_race")
+      const disposing = hydrations.current.disposeSession("session_race")
       await releaseEntered.promise
       const replacing = app.request("/api/wr/documents/hydrate", {
         method: "POST",
@@ -478,7 +474,7 @@ describe("runtime document hydration", () => {
 
       expect(await fs.readFile(replacement.path, "utf8")).toBe("replacement")
       await fs.writeFile(replacement.path, "replacement edit")
-      await expect(flushRuntimeDocument("session_race", "document_race")).resolves.toBeUndefined()
+      await expect(hydrations.current.flushDocument("session_race", "document_race")).resolves.toBeUndefined()
       expect(timer.cleared(0)).toBe(true)
       expect(timer.cleared(1)).toBe(false)
       expect(
@@ -499,7 +495,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response(null, { status: 204 })))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -517,7 +513,7 @@ describe("runtime document hydration", () => {
         body: JSON.stringify(hydrationBody("session_admission", "document_admission")),
       })
       await writeEntered.promise
-      const disposing = disposeRuntimeSessionDocuments("session_admission")
+      const disposing = hydrations.current.disposeSession("session_admission")
       let disposalSettled = false
       void disposing.then(() => {
         disposalSettled = true
@@ -528,7 +524,7 @@ describe("runtime document hydration", () => {
       releaseWrite.resolve()
       const [response] = await Promise.all([hydrating, disposing])
       expect(response.status).toBe(200)
-      await expect(flushRuntimeDocument("session_admission", "document_admission")).rejects.toThrow("not hydrated")
+      await expect(hydrations.current.flushDocument("session_admission", "document_admission")).rejects.toThrow("not hydrated")
     } finally {
       releaseWrite.resolve()
       await fs.rm(root, { recursive: true, force: true })
@@ -551,7 +547,7 @@ describe("runtime document hydration", () => {
     }))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -565,10 +561,10 @@ describe("runtime document hydration", () => {
           body: JSON.stringify(hydrationBody("session_flush_dispose", "document_flush_dispose")),
         })).json() as { path: string }
       await activateRuntimeDocument(app, "session_flush_dispose", "document_flush_dispose")
-      const disposing = disposeRuntimeSessionDocuments("session_flush_dispose")
+      const disposing = hydrations.current.disposeSession("session_flush_dispose")
       await releaseEntered.promise
       await fs.writeFile(hydrated.path, "late manual edit")
-      const flushing = flushRuntimeDocument("session_flush_dispose", "document_flush_dispose")
+      const flushing = hydrations.current.flushDocument("session_flush_dispose", "document_flush_dispose")
       await new Promise((resolve) => setImmediate(resolve))
       expect(methods).toEqual(["DELETE"])
 
@@ -599,7 +595,7 @@ describe("runtime document hydration", () => {
     }))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -616,7 +612,7 @@ describe("runtime document hydration", () => {
           body: JSON.stringify(hydrationBody("session_watcher_dispose", "document_watcher_dispose")),
         })).json() as { path: string }
       await activateRuntimeDocument(app, "session_watcher_dispose", "document_watcher_dispose")
-      const disposing = disposeRuntimeSessionDocuments("session_watcher_dispose")
+      const disposing = hydrations.current.disposeSession("session_watcher_dispose")
       await releaseEntered.promise
       await fs.writeFile(hydrated.path, "late watcher edit")
       watcher?.emit("change", "change", path.basename(hydrated.path))
@@ -643,7 +639,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(fetcher)
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -676,13 +672,13 @@ describe("runtime document hydration", () => {
     await activateRuntimeDocument(app, "session_retry", "document_retry")
     await fs.writeFile(hydrated.path, "retry me")
 
-    await expect(flushRuntimeDocument("session_retry", "document_retry")).rejects.toThrow("503")
-    await expect(flushRuntimeDocument("session_retry", "document_retry")).resolves.toBeUndefined()
+    await expect(hydrations.current.flushDocument("session_retry", "document_retry")).rejects.toThrow("503")
+    await expect(hydrations.current.flushDocument("session_retry", "document_retry")).resolves.toBeUndefined()
     expect(fetcher).toHaveBeenCalledTimes(2)
 
     await fs.writeFile(hydrated.path, "now conflict")
-    await expect(flushRuntimeDocument("session_retry", "document_retry")).rejects.toThrow("conflicted")
-    await expect(flushRuntimeDocument("session_retry", "document_retry")).rejects.toThrow("conflicted")
+    await expect(hydrations.current.flushDocument("session_retry", "document_retry")).rejects.toThrow("conflicted")
+    await expect(hydrations.current.flushDocument("session_retry", "document_retry")).rejects.toThrow("conflicted")
     expect(fetcher).toHaveBeenCalledTimes(3)
     await fs.rm(root, { recursive: true, force: true })
   })
@@ -700,7 +696,7 @@ describe("runtime document hydration", () => {
     }))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -738,7 +734,7 @@ describe("runtime document hydration", () => {
     await waitFor(() => timer.delays().length === 2)
     expect(timer.delays()).toEqual([60_000, 240_000])
     await fs.writeFile(hydrated.path, "after renewal")
-    await flushRuntimeDocument("session_renew", "document_renew")
+    await hydrations.current.flushDocument("session_renew", "document_renew")
     expect(authorizations).toEqual(["Bearer initial-token", "Bearer rotated-token"])
     await fs.rm(root, { recursive: true, force: true })
   })
@@ -769,7 +765,7 @@ describe("runtime document hydration", () => {
       const error = spyOn(console, "error").mockImplementation(() => {})
       const app = new Hono().route(
         "/",
-        RuntimeDocumentHydrationRoutes({
+        hydrations.routes({
           workspaceRoot: root,
           workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
@@ -810,7 +806,7 @@ describe("runtime document hydration", () => {
         await waitFor(async () => JSON.parse(await fs.readFile(manifest, "utf8")).documents[0].state === "conflicted")
 
         expect(await fs.readFile(hydrated.path, "utf8")).toBe("preserved draft")
-        await expect(flushRuntimeDocument("session_failed_renew", "document_failed_renew")).rejects.toThrow(
+        await expect(hydrations.current.flushDocument("session_failed_renew", "document_failed_renew")).rejects.toThrow(
           "conflicted",
         )
         expect(fetcher).toHaveBeenCalledTimes(1)
@@ -835,7 +831,7 @@ describe("runtime document hydration", () => {
       }))
       const app = new Hono().route(
         "/",
-        RuntimeDocumentHydrationRoutes({
+        hydrations.routes({
           workspaceRoot: root,
           workspaceId: "ws_1",
           controlPlaneOrigin: "https://control.test",
@@ -867,7 +863,7 @@ describe("runtime document hydration", () => {
         })).json() as { path: string }
       await activateRuntimeDocument(app, "session_refresh", `document_${strategy}`)
       await fs.writeFile(hydrated.path, "session draft")
-      await expect(flushRuntimeDocument("session_refresh", `document_${strategy}`)).rejects.toThrow("conflicted")
+      await expect(hydrations.current.flushDocument("session_refresh", `document_${strategy}`)).rejects.toThrow("conflicted")
       const resolved = await app.request(`/api/wr/documents/session_refresh/document_${strategy}/resolve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -891,7 +887,7 @@ describe("runtime document hydration", () => {
       })
       expect(resolved.status).toBe(200)
       await fs.writeFile(hydrated.path, `${strategy} next edit`)
-      await expect(flushRuntimeDocument("session_refresh", `document_${strategy}`)).resolves.toBeUndefined()
+      await expect(hydrations.current.flushDocument("session_refresh", `document_${strategy}`)).resolves.toBeUndefined()
       expect(authorizations.at(-1)).toBe("Bearer fresh-token")
       expect(
         await fs.readFile(path.join(root, ".claxedo", "sessions", "session_refresh", "docs", "manifest.json"), "utf8"),
@@ -905,7 +901,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(mock(async () => new Response("conflict", { status: 409 })))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -937,7 +933,7 @@ describe("runtime document hydration", () => {
       })).json() as { path: string }
     await activateRuntimeDocument(app, "session_invalid", "document_invalid")
     await fs.writeFile(hydrated.path, "draft")
-    await expect(flushRuntimeDocument("session_invalid", "document_invalid")).rejects.toThrow("conflicted")
+    await expect(hydrations.current.flushDocument("session_invalid", "document_invalid")).rejects.toThrow("conflicted")
     expect(
       (
         await app.request("/api/wr/documents/session_invalid/document_invalid/resolve", {
@@ -962,13 +958,13 @@ describe("runtime document hydration", () => {
         })
       ).status,
     ).toBe(400)
-    await expect(flushRuntimeDocument("session_invalid", "document_invalid")).rejects.toThrow("conflicted")
+    await expect(hydrations.current.flushDocument("session_invalid", "document_invalid")).rejects.toThrow("conflicted")
     await fs.rm(root, { recursive: true, force: true })
   })
 
   test("fails closed without the relay-owned hydration transport", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-local-"))
-    const app = new Hono().route("/", RuntimeDocumentHydrationRoutes({ workspaceRoot: root }))
+    const app = new Hono().route("/", hydrations.routes({ workspaceRoot: root }))
     const response = await app.request("/api/wr/documents/hydrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1001,7 +997,7 @@ describe("runtime document hydration", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-origin-"))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -1040,7 +1036,7 @@ describe("runtime document hydration", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-document-job-auth-"))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -1087,7 +1083,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(fetcher)
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -1119,7 +1115,7 @@ describe("runtime document hydration", () => {
         body: JSON.stringify(body),
       })).json() as { path: string }
     await fs.writeFile(first.path, "dirty after crash")
-    forgetRuntimeDocuments()
+    hydrations.current.forget()
     const second = await app.request("/api/wr/documents/hydrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1147,7 +1143,7 @@ describe("runtime document hydration", () => {
     globalThis.fetch = documentAuthorizedFetch(callback)
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -1173,14 +1169,14 @@ describe("runtime document hydration", () => {
     await activationEntered.promise
     await fs.writeFile(hydrated.path, "edit while activation hangs")
     await Bun.sleep(150)
-    await expect(flushRuntimeDocument("session_pending", "document_pending")).rejects.toThrow("not activated")
+    await expect(hydrations.current.flushDocument("session_pending", "document_pending")).rejects.toThrow("not activated")
     expect(callback).not.toHaveBeenCalled()
     expect(timer.delays()).toEqual([])
 
     rejectActivation.resolve()
     expect((await activating).status).toBe(403)
     await Bun.sleep(150)
-    await expect(flushRuntimeDocument("session_pending", "document_pending")).rejects.toThrow("not activated")
+    await expect(hydrations.current.flushDocument("session_pending", "document_pending")).rejects.toThrow("not activated")
     expect(callback).not.toHaveBeenCalled()
     expect(timer.delays()).toEqual([])
     await fs.rm(root, { recursive: true, force: true })
@@ -1195,7 +1191,7 @@ describe("runtime document hydration", () => {
     }))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -1227,7 +1223,7 @@ describe("runtime document hydration", () => {
         body: JSON.stringify(body),
       })).json() as { path: string }
     await fs.writeFile(hydrated.path, "dirty from v1")
-    forgetRuntimeDocuments()
+    hydrations.current.forget()
 
     const restarted = await app.request("/api/wr/documents/hydrate", {
       method: "POST",
@@ -1258,7 +1254,7 @@ describe("runtime document hydration", () => {
     await fs.symlink(outside, path.join(root, ".claxedo"))
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",
@@ -1300,7 +1296,7 @@ describe("runtime document hydration", () => {
     await fs.writeFile(path.join(outside, "plan.md"), "outside")
     const app = new Hono().route(
       "/",
-      RuntimeDocumentHydrationRoutes({
+      hydrations.routes({
         workspaceRoot: root,
         workspaceId: "ws_1",
         controlPlaneOrigin: "https://control.test",

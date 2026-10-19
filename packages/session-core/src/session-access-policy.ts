@@ -104,7 +104,7 @@ export type SessionAccessOperation =
   | "agent_setup_write"
   | "worktree_read"
   | "worktree_write"
-  | "document_write"
+  | "contribution_write"
   | "goal_capabilities"
   | "goal_read"
   | "goal_start"
@@ -435,7 +435,7 @@ const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
   "goal_delete",
   "agent_setup_write",
   "worktree_write",
-  "document_write",
+  "contribution_write",
   "mcp_tools_list",
   "mcp_tool_call",
   "mcp_resource_read",

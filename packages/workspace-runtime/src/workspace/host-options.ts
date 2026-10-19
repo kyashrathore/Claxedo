@@ -1,7 +1,7 @@
 import type { AgentEventEnvelope, AgentTurnOutcome, ConnectionSecretResolver, DirectCredentialRefresh } from "@claxedo/agent-runtime-contract"
 import type { MachineLoginPolicy } from "@claxedo/harness/contract"
 import type { CustomHarnessProvider } from "@claxedo/harness/providers"
-import type { RuntimeEventEnvelope, RuntimeEventHub, RuntimeStore, SessionAccessPolicy, WorkspaceEventParents } from "@claxedo/session-core"
+import type { RuntimeEventEnvelope, RuntimeEventHub, RuntimeStore, SessionAccessPolicy, SessionLifecycleHooks, WorkspaceEventParents } from "@claxedo/session-core"
 import type { WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
 import type { RuntimeHarnessSelection } from "../routes/config"
 import type { WorkspaceTarget } from "../target"
@@ -31,6 +31,8 @@ export type WorkspaceHostOptions = {
   onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
   /** Parent lookup for scoping a subagent child's frames as its parent's; defaults to this host's own store. */
   sessionParents?: WorkspaceEventParents
+  /** The route contributions' turn and delete hooks, in contribution order. */
+  sessionLifecycle?: readonly SessionLifecycleHooks[]
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** The workspace that already holds a session id on this host; a create naming an id another workspace holds is refused before any harness launches. */

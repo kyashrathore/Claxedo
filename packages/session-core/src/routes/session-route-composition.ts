@@ -17,8 +17,7 @@ export type SessionRouteCheckpoint<Turn> = {
 export type SessionRouteMachine<Turn> = {
   checkpoint: SessionRouteCheckpoint<Turn>
   readAttachment: NonNullable<SessionRoutesOptions["readAttachment"]>
-  flushSessionDocuments: NonNullable<SessionRoutesOptions["flushSessionDocuments"]>
-  disposeSessionDocuments: NonNullable<SessionRoutesOptions["disposeSessionDocuments"]>
+  sessionLifecycle: NonNullable<SessionRoutesOptions["sessionLifecycle"]>
   sessionToolPrompt(sessionId: string): string | undefined
   afterCreateSession?: SessionRoutesOptions["afterCreateSession"]
 }
@@ -60,8 +59,7 @@ export function composeSessionRoutes<Turn>(input: SessionRouteCompositionInput<T
 function machineRouteOptions<Turn>(machine: SessionRouteMachine<Turn>) {
   const { checkpoint } = machine
   return {
-    flushSessionDocuments: machine.flushSessionDocuments,
-    disposeSessionDocuments: machine.disposeSessionDocuments,
+    sessionLifecycle: machine.sessionLifecycle,
     readAttachment: machine.readAttachment,
     createActiveTurnScope: (scope) => checkpoint.createActiveTurnScope(scope),
     transformPromptBody: ({ sessionId, body }) => {

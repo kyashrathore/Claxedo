@@ -1637,7 +1637,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     const app = directoryless(undefined, {
       runtime: runtimeDouble(runtime),
       publishGlobal: (event) => events.push(event),
-      flushSessionDocuments: async () => turnCleanedUp(),
+      sessionLifecycle: [{ turnSettled: async () => turnCleanedUp() }],
     })
 
     const res = await post(app, "/session/session_1/prompt_async", {

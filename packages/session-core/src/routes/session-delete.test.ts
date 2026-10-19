@@ -6,6 +6,7 @@ import { FakeTransport } from "../test-support/fake-transport"
 import { createHostFixture, LOOPBACK_ORIGIN, sessionCreate, type HostFixture } from "../test-support/host-fixture"
 import { testLaunch } from "../test-support/host-composition"
 import { createSessionRoutes } from "./session-core"
+import type { SessionLifecycleHooks } from "./session-lifecycle"
 
 const CODEX: SessionHarness = { id: "codex", access: "native" }
 const WORKSPACE = "/workspace"
@@ -25,7 +26,7 @@ const question = (sessionID: string): TurnRequest => ({
  * `holding` runs until the test releases it; a turn whose text is "ask" waits
  * on a question.
  */
-function deleteFixture(hooks: { beforeDeleteSession?: (sessionId: string) => void } = {}) {
+function deleteFixture(hooks: { beforeDeleteSession?: (sessionId: string) => void; sessionLifecycle?: readonly SessionLifecycleHooks[] } = {}) {
   const closed: string[] = []
   const events: AgentEventEnvelope[] = []
   const holding = new Map<string, () => void>()
@@ -52,6 +53,7 @@ function deleteFixture(hooks: { beforeDeleteSession?: (sessionId: string) => voi
     resolveWorkspaceId: () => "ws_1",
     publishGlobal: (event) => { events.push(event) },
     ...(hooks.beforeDeleteSession ? { beforeDeleteSession: (_c, _directory, sessionId) => hooks.beforeDeleteSession!(sessionId) } : {}),
+    ...(hooks.sessionLifecycle ? { sessionLifecycle: hooks.sessionLifecycle } : {}),
   })
   const seed = async (id: string, parentID?: string) => {
     await host.runtime.sessions.create({ ...sessionCreate({ id, workspaceId: "ws_1", directory: WORKSPACE, harness: CODEX }), ...(parentID ? { parentID } : {}) })
@@ -136,6 +138,32 @@ describe("DELETE /session/:id", () => {
     expect(f.store.getSession("child")).toBeNull()
     expect(f.store.getSession("parent")).not.toBeNull()
     expect(await f.remove("parent")).toMatchObject({ status: 500 })
+  })
+
+  test("each contribution prepares a session in contribution order before it is removed, and one that fails keeps it", async () => {
+    const prepared: string[] = []
+    const f = deleteFixture({
+      sessionLifecycle: [
+        { beforeSessionDelete: async (sessionId) => { prepared.push(`first:${sessionId}`) } },
+        { turnSettled: async () => {} },
+        {
+          beforeSessionDelete: async (sessionId) => {
+            prepared.push(`second:${sessionId}`)
+            if (sessionId === "parent") throw new Error("documents not written back")
+          },
+        },
+      ],
+    })
+    await f.seed("parent")
+    await f.seed("child", "parent")
+
+    expect(await f.remove("parent")).toEqual({
+      status: 500,
+      body: { error: { code: "session_delete_failed", message: "documents not written back", details: { sessionId: "parent", deletedSessionIds: ["child"] } } },
+    })
+    expect(prepared).toEqual(["first:child", "second:child", "first:parent", "second:parent"])
+    expect(f.store.getSession("child")).toBeNull()
+    expect(f.store.getSession("parent")).not.toBeNull()
   })
 
   test("a hook's own refusal keeps its status and still names what was removed", async () => {

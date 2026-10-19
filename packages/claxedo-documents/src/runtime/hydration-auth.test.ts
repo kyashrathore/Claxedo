@@ -1,14 +1,14 @@
-import { documentAuthorizedFetch } from "../test-support/document-authorized-fetch"
+import { documentAuthorizedFetch } from "./test-support/authorized-fetch"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { exportSPKI, generateKeyPair, SignJWT } from "jose"
-import { createWorkspaceRuntimeApp } from "../server"
-import { relayWorkspaceRuntimeExposure } from "../exposure"
+import { createWorkspaceRuntimeApp } from "@claxedo/workspace-runtime"
+import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
-import { flushRuntimeDocument, forgetRuntimeDocuments } from "./document-hydration"
-import { loopbackMachineLoginPolicy } from "../testing"
+import { createDocumentHydration, documentHydrationContribution } from "./index"
+import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"
 
 const target = { workspaceId: "ws_documents", hostId: "host_documents" }
 const sessionId = "session_docs"
@@ -29,7 +29,9 @@ async function fixture() {
   process.env.CLAXEDO_CONTROL_PLANE_URL = "https://control.test"
   process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(documentKeys.publicKey)
   const asked: Array<{ operation: string | undefined; sessionId: string | undefined; actorId: string | undefined }> = []
+  const hydration = createDocumentHydration()
   const runtime = createWorkspaceRuntimeApp({
+    routeContributions: [documentHydrationContribution(hydration)],
     sessionIdWorkspace: () => undefined,
     placement: loopbackMachineLoginPolicy(),
     exposure: relayWorkspaceRuntimeExposure({ key: relayKeys.publicKey, ...target }),
@@ -129,14 +131,14 @@ async function fixture() {
     })
   }
   async function close() {
-    forgetRuntimeDocuments()
+    hydration.forget()
     restoreEnv("WORKSPACE_RUNTIME_DIRECTORY", previous.directory)
     restoreEnv("CLAXEDO_CONTROL_PLANE_URL", previous.controlPlane)
     restoreEnv("CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM", previous.jobKey)
     await runtime.dispose()
     await fs.rm(workspaceDir, { recursive: true, force: true })
   }
-  return { runtime, workspaceDir, relay, documentJob, hydrate, activate, resolve, asked, close }
+  return { runtime, hydration, workspaceDir, relay, documentJob, hydrate, activate, resolve, asked, close }
 }
 
 function restoreEnv(key: string, value: string | undefined) {
@@ -178,14 +180,14 @@ describe("runtime document session authorization", () => {
           message: "Session access requires workspace ownership or session share authority",
         },
       })
-      expect(f.asked).toEqual([{ operation: "document_write", sessionId, actorId: viewer }])
+      expect(f.asked).toEqual([{ operation: "contribution_write", sessionId, actorId: viewer }])
 
       // A refused caller leaves the stored document pending: no watcher, no
       // write-back, and the hydration path is not observed.
-      await expect(flushRuntimeDocument(sessionId, documentId)).rejects.toThrow("not activated")
+      await expect(f.hydration.flushDocument(sessionId, documentId)).rejects.toThrow("not activated")
 
       expect((await f.activate(await f.relay(owner))).status).toBe(200)
-      expect(f.asked.at(-1)).toEqual({ operation: "document_write", sessionId, actorId: owner })
+      expect(f.asked.at(-1)).toEqual({ operation: "contribution_write", sessionId, actorId: owner })
     } finally {
       await f.close()
     }
@@ -220,8 +222,8 @@ describe("runtime document session authorization", () => {
       expect(allowed.status).toBe(404)
       await expect(allowed.json()).resolves.toEqual({ error: "document_conflict_not_found" })
       expect(f.asked).toEqual([
-        { operation: "document_write", sessionId, actorId: viewer },
-        { operation: "document_write", sessionId, actorId: owner },
+        { operation: "contribution_write", sessionId, actorId: viewer },
+        { operation: "contribution_write", sessionId, actorId: owner },
       ])
     } finally {
       await f.close()
@@ -237,7 +239,7 @@ describe("runtime document session authorization", () => {
       const opened = (await hydrated.json()) as { path: string }
       expect((await f.activate(await f.relay(owner))).status).toBe(200)
       await fs.writeFile(opened.path, "session draft")
-      await expect(flushRuntimeDocument(sessionId, documentId)).rejects.toThrow("conflicted")
+      await expect(f.hydration.flushDocument(sessionId, documentId)).rejects.toThrow("conflicted")
 
       const resolved = await f.resolve(
         await f.relay(owner),

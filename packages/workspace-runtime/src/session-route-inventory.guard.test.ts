@@ -36,11 +36,6 @@ describe("private-session route inventory", () => {
         "POST /resume",
         "POST /scrub",
       ],
-      "./routes/document-hydration.ts": [
-        "POST /api/wr/documents/:sessionId/:documentId/activate",
-        "POST /api/wr/documents/:sessionId/:documentId/resolve",
-        "POST /api/wr/documents/hydrate",
-      ],
       "./routes/pty.ts": [
         "DELETE /:ptyID",
         "GET /",

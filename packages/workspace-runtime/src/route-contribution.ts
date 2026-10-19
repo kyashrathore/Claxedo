@@ -1,4 +1,5 @@
-import type { Hono } from "hono"
+import type { Context, Hono } from "hono"
+import type { SessionLifecycleHooks } from "@claxedo/session-core"
 
 /**
  * The one seam through which a HOST adds routes to a Workspace Runtime.
@@ -36,6 +37,14 @@ import type { Hono } from "hono"
 export type WorkspaceRuntimeRouteContext = {
   /** Canonical ID of the workspace this runtime instance serves. */
   workspaceId: string
+  /** The workspace a relay-exposed runtime serves; absent for every other exposure. */
+  relayWorkspaceId?: string
+  /**
+   * Whether this request's caller may control the session's contributed
+   * state, as the runtime's session authority decides `contribution_write`:
+   * nothing when allowed, the refusal to answer with otherwise.
+   */
+  authorizeSessionControl: (c: Context, sessionId: string) => Promise<Response | undefined>
   /** Canonical workspace root; contributed state must remain in its own namespace. */
   directory: string
   /** Per-workspace runtime state root owned by the host, outside the checkout. */
@@ -115,6 +124,8 @@ export type WorkspaceRuntimeRouteContribution = {
    */
   id: string
   mount(context: WorkspaceRuntimeRouteContext): WorkspaceRuntimeRouteMount
+  /** Run at each session's turn and delete boundaries, in contribution order. */
+  sessionLifecycle?: SessionLifecycleHooks
 }
 
 export class WorkspaceRuntimeRouteContributionError extends Error {

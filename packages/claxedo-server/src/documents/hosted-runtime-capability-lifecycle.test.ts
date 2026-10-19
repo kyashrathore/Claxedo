@@ -4,8 +4,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
-import { flushRuntimeDocument, forgetRuntimeDocuments } from "../../../workspace-runtime/src"
-import { RuntimeDocumentHydrationRoutes } from "../../../workspace-runtime/src/routes/document-hydration"
+import { createDocumentHydration } from "@claxedo/documents/runtime"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -117,9 +116,8 @@ describe("hosted runtime capability lifecycle", () => {
     globalThis.fetch = documentAuthorizedFetch(callback)
     let hydratedPath = ""
     let capabilityToken = ""
-    const runtime = RuntimeDocumentHydrationRoutes({
+    const hydration = createDocumentHydration({
       workspaceRoot: root,
-      workspaceId: "ws_1",
       controlPlaneOrigin: "https://control.test",
       verifyJob: async (_token, expected) => {
         if (expected.operation !== "write") return {}
@@ -128,6 +126,7 @@ describe("hosted runtime capability lifecycle", () => {
         throw new Error("activation rejected")
       },
     })
+    const runtime = hydration.routes({ workspaceId: "ws_1" })
     const relay = async (input: string | URL | Request, init?: RequestInit) => {
       const pathname = new URL(fetchUrl(input)).pathname
       const runtimePath = pathname.slice(pathname.indexOf("/api/wr/"))
@@ -163,7 +162,7 @@ describe("hosted runtime capability lifecycle", () => {
       await activationEntered.promise
       await fs.writeFile(hydratedPath, "edit while activation hangs")
       await new Promise((resolve) => setTimeout(resolve, 150))
-      await expect(flushRuntimeDocument("session_1", "document_1")).rejects.toThrow("not activated")
+      await expect(hydration.flushDocument("session_1", "document_1")).rejects.toThrow("not activated")
       expect(callback).not.toHaveBeenCalled()
 
       rejectActivation.resolve()
@@ -192,7 +191,7 @@ describe("hosted runtime capability lifecycle", () => {
       expect(callback).not.toHaveBeenCalled()
     } finally {
       rejectActivation.resolve()
-      forgetRuntimeDocuments()
+      hydration.forget()
       globalThis.fetch = originalFetch
       await fs.rm(root, { recursive: true, force: true })
     }

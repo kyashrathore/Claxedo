@@ -49,10 +49,11 @@
     "@claxedo/host-connector": "workspace:*",
     "@claxedo/host-serving": "workspace:*",
     "@claxedo/process-ownership": "workspace:*",
+    "@claxedo/server-core": "workspace:*",
     "@tsconfig/bun": "catalog:",
+    "@tsconfig/node-lts": "22.0.4",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
-    "@typescript/native-preview": "catalog:",
-    "@tsconfig/node-lts": "22.0.4"
+    "@typescript/native-preview": "catalog:"
   }
 }
