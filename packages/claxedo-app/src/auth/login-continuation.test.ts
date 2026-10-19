@@ -1,5 +1,11 @@
 import { beforeEach, expect, test } from "bun:test"
-import { createOrgInvitationFlow, loginDestination, loginOAuthContinuation } from "./login-continuation"
+import {
+  createOrgInvitationFlow,
+  loginDestination,
+  loginOAuthContinuation,
+  markAuthorizationSignInStarted,
+  takeAuthorizationSignInStarted,
+} from "./login-continuation"
 import type { Auth } from "./store"
 import type { AuthState } from "./model"
 
@@ -110,4 +116,34 @@ test("a sign-in that continues an authorization request loads the authorize rout
 
 test("a plain sign-in stays in the app at its home", () => {
   expect(loginDestination(loginOAuthContinuation({ appOrigin: "https://claxedo.example", apiOrigin: "https://api.example", pathname: "/login", search: "" }))).toEqual({ navigate: "/" })
+})
+
+const AUTHORIZE_SEARCH = "?response_type=code&client_id=claxedo-cli&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=s"
+
+function continuationFor(extra: string) {
+  const continuation = loginOAuthContinuation({ appOrigin: "https://claxedo.example", apiOrigin: "https://api.example", pathname: "/login", search: `${AUTHORIZE_SEARCH}${extra}` })
+  if (!continuation) throw new Error("expected an authorization continuation")
+  return continuation
+}
+
+test("an authorization request asking to sign in again waits for a fresh sign-in and then forwards without the satisfied prompt", () => {
+  expect(continuationFor("").requiresFreshSignIn).toBe(false)
+  const relogin = continuationFor("&prompt=login%20consent&max_age=0&exp=1&sig=x")
+  expect(relogin.requiresFreshSignIn).toBe(true)
+  const forwarded = new URL(relogin.authorizationUrl).searchParams
+  expect(forwarded.get("prompt")).toBe("consent")
+  expect(forwarded.has("max_age")).toBe(false)
+  expect(forwarded.get("state")).toBe("s")
+  expect(new URL(continuationFor("&prompt=create").authorizationUrl).searchParams.has("prompt")).toBe(false)
+  expect(continuationFor("&max_age=300").requiresFreshSignIn).toBe(true)
+})
+
+test("only a sign-in this tab started for the same authorization request counts as fresh, once", () => {
+  const relogin = continuationFor("&prompt=login")
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(false)
+  markAuthorizationSignInStarted(continuationFor("&prompt=login&state=other"))
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(false)
+  markAuthorizationSignInStarted(relogin)
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(true)
+  expect(takeAuthorizationSignInStarted(relogin)).toBe(false)
 })
