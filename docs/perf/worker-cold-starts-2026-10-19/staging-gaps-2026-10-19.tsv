@@ -1,0 +1,127 @@
+ts	gap	conn	url	num_connects	connect	tls	ttfb	total	status	cf_ray	cf_placement	server_timing
+21:06:16	0	fresh	https://api.claxedo.dev/health	1	0.112945	0.226140	0.577431	0.577638	200	a4d2bee64c909b90-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:16	0	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.383301	0.383476	200	a4d2bee87e029b90-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:17	0	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.186523	0.383703	0.801571	0.801790	200	a4d2beed6984c6e5-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:17	0	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.358761	0.361076	200	a4d2bef00f14c6e5-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:18	0	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.140461	0.255620	0.665793	0.665914	200	a4d2bef3fc8a9c3b-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:18	0	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.850921	0.851107	200	a4d2bef68e0e9c3b-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=95.0, do;dur=0.0, total;dur=95.0
+21:06:20	0	fresh	https://api.claxedo.dev/health	1	0.180776	0.292614	0.703763	0.703957	200	a4d2befdda363d7d-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:20	0	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.368748	0.368841	200	a4d2bf006bbc3d7d-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:21	0	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.141020	0.258472	0.665437	0.665676	200	a4d2bf046fd2bcf3-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:21	0	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.388885	0.389157	200	a4d2bf06fa19bcf3-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:22	0	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.116811	0.230049	0.645436	0.645762	200	a4d2bf0ae9016141-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:22	0	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.520204	0.520316	200	a4d2bf0d8c676141-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=77.0, do;dur=0.0, total;dur=77.0
+21:06:23	0	fresh	https://api.claxedo.dev/health	1	0.106830	0.222719	0.565040	0.565125	200	a4d2bf124de0fd79-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:23	0	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.345354	0.345430	200	a4d2bf146952fd79-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:24	0	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.114037	0.230449	0.639483	0.639897	200	a4d2bf181df0fe00-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:24	0	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.803501	0.803733	200	a4d2bf1a9a75fe00-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:25	0	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.104380	0.228932	0.599116	0.599366	200	a4d2bf213c43fde6-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:25	0	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.475261	0.475496	200	a4d2bf237833fde6-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=94.0, do;dur=0.0, total;dur=94.0
+21:06:26	0	fresh	https://api.claxedo.dev/health	1	0.181027	0.295937	0.705853	0.706257	200	a4d2bf286a4efd61-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:26	0	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.362104	0.362384	200	a4d2bf2af87dfd61-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:27	0	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.143008	0.260740	0.666359	0.666615	200	a4d2bf2f0d4dc3b4-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:27	0	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.345615	0.346740	200	a4d2bf318ff2c3b4-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:29	0	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.158823	0.276182	0.745834	0.746038	200	a4d2bf358c0f938e-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=92.0, do;dur=0.0, total;dur=92.0
+21:06:29	0	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.367250	0.367549	200	a4d2bf3878b8938e-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:30	0	fresh	https://api.claxedo.dev/health	1	0.180891	0.295576	0.652917	0.653036	200	a4d2bf3cc8efd3c6-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:30	0	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.354714	0.354929	200	a4d2bf3efda6d3c6-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:31	0	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.105113	0.223085	0.628490	0.628723	200	a4d2bf42b8940bfb-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:31	0	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.378569	0.378659	200	a4d2bf453ccf0bfb-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:32	0	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.130570	0.247013	0.729018	0.729141	200	a4d2bf493b0b76b5-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=81.0, do;dur=0.0, total;dur=81.0
+21:06:32	0	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.486485	0.486573	200	a4d2bf4c481976b5-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=103.0, do;dur=0.0, total;dur=103.0
+21:06:33	0	fresh	https://api.claxedo.dev/health	1	0.117087	0.227931	0.577725	0.577814	200	a4d2bf50ca10ce01-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:33	0	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.417025	0.417125	200	a4d2bf52fc47ce01-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:34	0	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.106156	0.214798	0.564160	0.564233	200	a4d2bf570f8bfdb4-SIN	remote-IAD	auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:34	0	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.355878	0.357212	200	a4d2bf592b19fdb4-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:35	0	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.105653	0.224018	0.632194	0.632328	200	a4d2bf5cda858980-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:35	0	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.377689	0.377791	200	a4d2bf5f6c348980-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:37	1	fresh	https://api.claxedo.dev/health	1	0.171859	0.284143	0.699624	0.699829	200	a4d2bf69ee01cdf5-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:37	1	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.345888	0.347276	200	a4d2bf6c8903cdf5-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:39	1	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.198717	0.312444	0.725812	0.726246	200	a4d2bf770a9efcf8-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:39	1	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.360466	0.361008	200	a4d2bf799f4afcf8-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:41	1	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.198883	0.343811	0.826594	0.826754	200	a4d2bf8509ce8d32-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=78.0, do;dur=0.0, total;dur=78.0
+21:06:41	1	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.374373	0.374443	200	a4d2bf880eea8d32-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:44	1	fresh	https://api.claxedo.dev/health	1	0.175359	0.301797	0.701772	0.701870	200	a4d2bf94af5f55e4-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:44	1	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.368670	0.368904	200	a4d2bf972aff55e4-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:46	1	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.178689	0.301332	1.181077	1.184527	200	a4d2bfa25e28f8ec-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:46	1	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.460958	0.461206	200	a4d2bfa81815f8ec-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:49	1	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.110951	0.244490	0.627638	0.627737	200	a4d2bfb3ff3f3e4a-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:49	1	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.521350	0.521432	200	a4d2bfb658c63e4a-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=115.0, do;dur=0.0, total;dur=115.0
+21:06:51	1	fresh	https://api.claxedo.dev/health	1	0.195715	0.319408	0.724500	0.724705	200	a4d2bfc28b34fe1e-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:51	1	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.358245	0.358403	200	a4d2bfc50ff5fe1e-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:53	1	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.162567	0.275191	0.696733	0.696851	200	a4d2bfcf8d77f886-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:53	1	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.361795	0.519452	200	a4d2bfd229fff886-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:55	1	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.123421	0.234551	0.600651	0.600761	200	a4d2bfdd3f419d1e-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:55	1	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.370821	0.370969	200	a4d2bfdf88589d1e-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:57	1	fresh	https://api.claxedo.dev/health	1	0.313607	0.424976	0.780913	0.781076	200	a4d2bfeaeef5f8c8-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:06:57	1	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.669912	0.670025	200	a4d2bfed1a85f8c8-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:00	1	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.103563	0.268705	0.632675	0.632917	200	a4d2bff99caeeba0-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:00	1	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.391005	0.391134	200	a4d2bffbd863eba0-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:02	1	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.111140	0.300310	0.685613	0.685729	200	a4d2c0068f34fcf2-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:02	1	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.399030	0.399128	200	a4d2c008fb98fcf2-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:08	5	fresh	https://api.claxedo.dev/health	1	0.123236	0.239320	0.617881	0.617984	200	a4d2c02c7d84cdd1-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:08	5	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.362928	0.363124	200	a4d2c02edfedcdd1-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:14	5	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.114100	0.231869	0.644075	0.644296	200	a4d2c0520f9cfdc8-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:14	5	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.479398	0.479531	200	a4d2c0552cf4fdc8-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:20	5	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.104413	0.216277	0.607018	0.607127	200	a4d2c0785e30fd9f-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:20	5	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.371492	0.371613	200	a4d2c07ababdfd9f-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:26	5	fresh	https://api.claxedo.dev/health	1	0.131072	0.241198	0.657964	0.658090	200	a4d2c09e0fe1c6f6-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:26	5	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.356156	0.356252	200	a4d2c0a08b2dc6f6-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:32	5	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.103942	0.210105	0.584375	0.584553	200	a4d2c0c37c7bbd75-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:32	5	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.367248	0.369626	200	a4d2c0c5c968bd75-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:38	5	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.185681	0.295114	0.710676	0.710786	200	a4d2c0e94a9dfdc6-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:38	5	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	1.047971	1.048080	200	a4d2c0ebef15fdc6-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=90.0, do;dur=0.0, total;dur=90.0
+21:07:45	5	fresh	https://api.claxedo.dev/health	1	0.105038	0.226052	0.594402	0.594481	200	a4d2c1134b4cafe4-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:45	5	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.363237	0.363303	200	a4d2c1158f78afe4-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:51	5	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.126037	0.237132	1.163326	1.163547	200	a4d2c138a9419610-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:51	5	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.954828	0.954924	200	a4d2c13e6b919610-SIN		cold, compose, auth;dur=0.0, limit;dur=68.0, d1;dur=0.0, do;dur=0.0, total;dur=68.0
+21:07:58	5	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.101822	0.226230	0.593387	0.593479	200	a4d2c1652a27ff7d-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:07:58	5	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.378943	0.379017	200	a4d2c1677e3bff7d-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:04	5	fresh	https://api.claxedo.dev/health	1	0.104425	0.215098	0.569402	0.569525	200	a4d2c18a8d11fd04-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:04	5	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.355674	0.355780	200	a4d2c18cb8f6fd04-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:10	5	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.109675	0.221755	1.201154	1.202627	200	a4d2c1afbfb82ded-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:10	5	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.358824	0.359546	200	a4d2c1b5dcf22ded-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:17	5	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.162897	0.270165	0.644935	0.646559	200	a4d2c1d92a913fc5-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:17	5	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.462660	0.462760	200	a4d2c1db8c073fc5-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:48	30	fresh	https://api.claxedo.dev/health	1	0.103352	0.212975	0.590737	0.590960	200	a4d2c29b5b14a072-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:08:48	30	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.374854	0.375026	200	a4d2c29dbc49a072-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:09:19	30	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.102169	0.212742	1.009390	1.009519	200	a4d2c35d097840bc-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:09:19	30	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.900900	0.902934	200	a4d2c361fbda40bc-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:09:51	30	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.107026	0.216070	0.595613	0.595855	200	a4d2c424befefd0f-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:09:51	30	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	1.185418	1.185710	200	a4d2c4271ad6fd0f-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=117.0, do;dur=0.0, total;dur=117.0
+21:10:22	30	fresh	https://api.claxedo.dev/health	1	0.120171	0.229388	0.601848	0.601972	200	a4d2c4eb9c9accce-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:10:22	30	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.731186	0.731275	200	a4d2c4edf869ccce-SIN		cold, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:10:54	30	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.122687	0.232627	0.647532	0.647632	200	a4d2c5af8c396d97-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:10:54	30	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.525524	0.525620	200	a4d2c5b228ed6d97-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:11:25	30	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.106447	0.213703	1.494615	1.494736	200	a4d2c6726fbefdcb-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=110.0, do;dur=0.0, total;dur=110.0
+21:11:25	30	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.834335	0.834438	200	a4d2c67a68d6fdcb-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=86.0, do;dur=0.0, total;dur=86.0
+21:11:57	30	fresh	https://api.claxedo.dev/health	1	0.125896	0.243067	0.971115	0.971229	200	a4d2c73cdb503e5f-SIN		cold, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:11:57	30	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.711352	0.711460	200	a4d2c7415d753e5f-SIN		cold, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:12:29	30	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.141288	0.303660	0.830397	0.830504	200	a4d2c8034ccefce7-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:12:29	30	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.420003	0.420118	200	a4d2c8069a91fce7-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:13:00	30	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.105985	0.217052	1.137499	1.137708	200	a4d2c8c62e31fd91-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=92.0, do;dur=0.0, total;dur=92.0
+21:13:00	30	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.483497	0.483789	200	a4d2c8cbef96fd91-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=75.0, do;dur=0.0, total;dur=75.0
+21:13:32	30	fresh	https://api.claxedo.dev/health	1	0.107524	0.295615	0.654089	0.654440	200	a4d2c98c8cebfda3-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:13:32	30	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.750023	0.750178	200	a4d2c98ec98efda3-SIN		cold, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:14:03	30	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.324607	0.436005	0.855089	0.855280	200	a4d2ca51c966ff7f-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:14:03	30	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	1.250106	1.251661	200	a4d2ca546dabff7f-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:14:36	30	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.173458	0.287930	0.794493	0.794956	200	a4d2cb19aa29fe8f-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=86.0, do;dur=0.0, total;dur=86.0
+21:14:36	30	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	1.284531	1.284661	200	a4d2cb1cd833fe8f-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=83.0, do;dur=0.0, total;dur=83.0
+21:16:38	120	fresh	https://api.claxedo.dev/health	1	0.385106	0.494415	1.139572	1.139659	200	a4d2ce162981a24f-SIN		cold, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:16:38	120	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.347408	0.347480	200	a4d2ce1a2eb0a24f-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:18:39	120	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.106514	0.215129	0.614861	0.614960	200	a4d2d10bcfa1405a-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:18:39	120	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.405468	0.405537	200	a4d2d10e48a4405a-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:20:40	120	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.178880	0.293875	0.773477	0.773601	200	a4d2d400cc7dfcff-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=81.0, do;dur=0.0, total;dur=81.0
+21:20:40	120	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.369015	0.369115	200	a4d2d403ca14fcff-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:22:41	120	fresh	https://api.claxedo.dev/health	1	0.109698	0.233030	0.911662	0.911782	200	a4d2d6f5bd559cbd-SIN		cold, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:22:41	120	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.384644	0.384734	200	a4d2d6f9ef949cbd-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:24:43	120	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.175023	0.301053	1.119017	1.119136	200	a4d2d9ec5f589c83-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:24:43	120	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.774178	0.774343	200	a4d2d9f16a289c83-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:26:45	120	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.105993	0.212430	0.768423	0.768518	200	a4d2dce5baa0ce37-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=93.0, do;dur=0.0, total;dur=93.0
+21:26:45	120	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.389230	0.389307	200	a4d2dce93ea6ce37-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:28:46	120	fresh	https://api.claxedo.dev/health	1	0.105691	0.216112	0.597931	0.598127	200	a4d2dfdb1e01fd73-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:28:46	120	reused	https://api.claxedo.dev/health	0	0.000000	0.000000	0.805511	0.805631	200	a4d2dfdd79b8fd73-SIN		cold, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:30:47	120	fresh	https://api.claxedo.dev/api/claxedo/auth/descriptor	1	0.178608	0.295280	0.731544	0.731631	200	a4d2e2d288fc6d97-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:30:47	120	reused	https://api.claxedo.dev/api/claxedo/auth/descriptor	0	0.000000	0.000000	0.880975	0.881062	200	a4d2e2d54dde6d97-SIN		cold, compose, auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
+21:32:49	120	fresh	https://api.claxedo.dev/api/auth/get-session	1	0.239276	0.349160	0.834318	0.834736	200	a4d2e5cb0ef087e9-SIN		compose, auth;dur=0.0, limit;dur=0.0, d1;dur=74.0, do;dur=0.0, total;dur=74.0
+21:32:49	120	reused	https://api.claxedo.dev/api/auth/get-session	0	0.000000	0.000000	0.376580	0.376765	200	a4d2e5ce187587e9-SIN		auth;dur=0.0, limit;dur=0.0, d1;dur=0.0, do;dur=0.0, total;dur=0.0
