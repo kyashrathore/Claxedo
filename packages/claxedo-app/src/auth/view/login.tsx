@@ -1,12 +1,12 @@
 import { createEffect, createSignal, For, on, Show, type Accessor } from "solid-js"
-import { useLocation, useNavigate } from "@solidjs/router"
+import { useLocation } from "@solidjs/router"
 import { toAppError, useServer, type AppError } from "@/server"
 import type { BrowserAuthMethod, BrowserAuthSignInOptions } from "../browser-auth"
-import { createOrgInvitationFlow, loginDestination, loginOAuthContinuation } from "../login-continuation"
-import { apiOrigin, appOrigin } from "../origins"
+import { createOrgInvitationFlow } from "../login-continuation"
 import { useAuth } from "../provider"
 import { ClaxedoIcon as Icon } from "@/ui"
 import { AuthSplit } from "./auth-split"
+import { loginRedirect, type LoginRedirect } from "./login-redirect"
 import "./auth.css"
 
 const providerName = (method: "google" | "github") => (method === "google" ? "Google" : "GitHub")
@@ -34,26 +34,6 @@ export function OrgInvitationPage() {
   )
 }
 
-function loginRedirect() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const continuation = () =>
-    loginOAuthContinuation({
-      appOrigin: appOrigin(),
-      apiOrigin: apiOrigin(),
-      pathname: location.pathname,
-      search: location.search,
-    })
-  return {
-    target: () => continuation()?.signInRedirect ?? "/",
-    finish() {
-      const destination = loginDestination(continuation())
-      if ("assign" in destination) window.location.assign(destination.assign)
-      else navigate(destination.navigate, { replace: true })
-    },
-  }
-}
-
 async function acceptInvitation(accept: () => Promise<unknown>) {
   try {
     await accept()
@@ -77,6 +57,7 @@ function loginAction(input: SignInInput & {
   auth: ReturnType<typeof useAuth>
   invitation?: InvitationFlow
   action: Accessor<"signIn" | "signUp">
+  continuation: LoginRedirect
 }) {
   const [failure, setFailure] = createSignal<AppError>()
   return {
@@ -89,8 +70,12 @@ function loginAction(input: SignInInput & {
       const options = signInOptions(method, input)
       try {
         if (input.invitation) await input.invitation.authenticate(options, input.action())
-        else await input.auth.signIn(options)
+        else {
+          input.continuation.started()
+          await input.auth.signIn(options)
+        }
       } catch (cause) {
+        input.continuation.abandoned()
         if (input.invitation) console.error("Organization invitation authentication failed", toAppError(cause).class)
         else setFailure(toAppError(cause))
       }
@@ -114,7 +99,7 @@ function createLoginController(token?: string) {
   const [password, setPassword] = createSignal("")
   const [action, setAction] = createSignal<"signIn" | "signUp">(invitation ? "signUp" : "signIn")
   const redirect = loginRedirect()
-  const login = loginAction({ auth, invitation, action, email, password, redirect: redirect.target })
+  const login = loginAction({ auth, invitation, action, email, password, redirect: redirect.target, continuation: redirect })
   createEffect(
     on(auth.state, (state) => {
       if (state.kind !== "signedIn") return
@@ -140,6 +125,7 @@ function createLoginController(token?: string) {
     busy: () =>
       auth.state().kind === "signingIn" || ["authenticating", "accepting"].includes(invitation?.state().kind ?? "idle"),
     failure: login.failure,
+    reauthenticating: () => !invitation && redirect.freshSignInRequired() && auth.state().kind === "signedIn",
     socialMethods: () =>
       auth.methods().filter((method): method is "google" | "github" => method === "google" || method === "github"),
   }
@@ -156,6 +142,9 @@ function LoginForm(props: { invitationToken?: string }) {
     >
       <Show when={controller.auth.state().kind === "expired"}>
         <p role="status" class="auth-note">Your sign-in expired. Sign in again to continue.</p>
+      </Show>
+      <Show when={controller.reauthenticating()}>
+        <p role="status" class="auth-note">The app asking for access needs you to sign in again.</p>
       </Show>
       <Show when={controller.joined()} fallback={<LoginActions controller={controller} />}>
         <p class="auth-subtitle">You have joined the organization.</p>

@@ -24,7 +24,6 @@ evidence, is `docs/security-audit-revalidation-2026-09-20.md` at `98d3e5c88f`.
 | SI-4 — The MCP OAuth credential trusts introspection alone | Low today, High once MCP OAuth tools reach the control plane | `resolveOAuthMcpCredential` (`packages/claxedo-server/src/mcp/oauth-credential.ts`) runs no identity admission or session-evidence check, and an `offline_access` refresh token outlives the session it was issued in (`oauthRefreshToken.sessionId` is `on delete set null`). Contained while the first-party MCP tools re-enter with that bearer and `verifyNative` refuses it (`better-auth-d1-device-login.test.ts`). |
 | SI-5 — A credential quarantined after a descriptor change is never revoked | Low | `rejectHeld` renames the record to `.rejected-<uuid>` and keeps it; the refresh token in it stays live for its 30 days. Needs a revoke while the stored issuer still matches, and pruning. |
 | SI-6 — Packaged desktop builds honour `ELECTRON_RENDERER_URL` and a runtime `CLAXEDO_CORE_ORIGIN` | Low | Anyone who controls the launch environment can already inject code while SI-1 is open, so this becomes a boundary only after it. |
-| SI-7 — `/login` continuing an authorization request with `prompt=login`, `max_age` or `prompt=select_account` loops between the two pages | Low | The signed-in reader is forwarded to `/oauth2/authorize`, which sends that prompt back to `/login`. |
 
 ## Fixed, with part of the acceptance not run
 
