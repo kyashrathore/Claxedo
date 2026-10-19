@@ -20,6 +20,7 @@ export async function verifyDocumentJobCapability(token: string, expected: Docum
   const result = await jwtVerify(token, await importSPKI(pem, alg), {
     issuer: "claxedo-control-plane",
     audience: "document-relay-job",
+    algorithms: [alg],
   })
   const value = result.payload as Record<string, unknown>
   const operations = Array.isArray(value.operations) ? value.operations : []

@@ -15,14 +15,16 @@ import { SANDBOX_IMAGE } from "../image"
 
 function runner(output: Record<string, string> = {}) {
   const calls: string[][] = []
-  const fn: DockerCommandRunner = vi.fn(async (args) => {
+  const envs: Array<Record<string, string> | undefined> = []
+  const fn: DockerCommandRunner = vi.fn(async (args, _timeout, env) => {
     calls.push(args)
+    envs.push(env)
     if (args[0] === "create") return { stdout: output.create ?? "container-id\n" }
     if (args[0] === "port") return { stdout: output.port ?? "127.0.0.1:5330\n" }
     if (args[0] === "inspect") return { stdout: output.inspect ?? "container-id\n" }
     return { stdout: "" }
   })
-  return { calls, fn }
+  return { calls, envs, fn }
 }
 
 const input = {
@@ -174,31 +176,46 @@ describe("DockerSandboxDriver", () => {
     expect(docker.calls[0]).toEqual(
       expect.arrayContaining([
         "--env",
-        "WORKSPACE_RUNTIME_WORKSPACE_ID=ws_1",
+        "WORKSPACE_RUNTIME_WORKSPACE_ID",
         "--env",
-        "WORKSPACE_RUNTIME_HOST_ID=docker-host-ws_1",
+        "WORKSPACE_RUNTIME_HOST_ID",
         "--env",
-        "WORKSPACE_RUNTIME_DIRECTORY=/work/app",
+        "WORKSPACE_RUNTIME_DIRECTORY",
         "--env",
-        "WORKSPACE_RUNTIME_PORT=2593",
+        "WORKSPACE_RUNTIME_PORT",
         "--env",
-        "WORKSPACE_RUNTIME_HOST=0.0.0.0",
+        "WORKSPACE_RUNTIME_HOST",
         "--env",
-        "WORKSPACE_RUNTIME_NATIVE_HARNESS=opencode",
+        "WORKSPACE_RUNTIME_NATIVE_HARNESS",
         "--env",
-        "WORKSPACE_RUNTIME_SOURCE_KIND=git",
+        "WORKSPACE_RUNTIME_SOURCE_KIND",
         "--env",
-        "WORKSPACE_RUNTIME_GIT_REPO_URL=https://repo.test/app.git",
+        "WORKSPACE_RUNTIME_GIT_REPO_URL",
         "--env",
-        "WORKSPACE_RUNTIME_GIT_BRANCH=dev",
+        "WORKSPACE_RUNTIME_GIT_BRANCH",
         "--env",
-        "WORKSPACE_RUNTIME_LEASE_ID=lease-docker-host-ws_1",
+        "WORKSPACE_RUNTIME_LEASE_ID",
         "--env",
-        "WORKSPACE_RUNTIME_SANDBOX_ID=docker-host-ws_1",
+        "WORKSPACE_RUNTIME_SANDBOX_ID",
         "--env",
-        "CUSTOM_BOOT_FLAG=yes",
+        "CUSTOM_BOOT_FLAG",
       ]),
     )
+    expect(docker.calls[0].filter((arg) => /^[A-Z_]+=/.test(arg))).toEqual([])
+    expect(docker.envs[0]).toEqual({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
+      WORKSPACE_RUNTIME_HOST_ID: "docker-host-ws_1",
+      WORKSPACE_RUNTIME_DIRECTORY: "/work/app",
+      WORKSPACE_RUNTIME_PORT: "2593",
+      WORKSPACE_RUNTIME_HOST: "0.0.0.0",
+      WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode",
+      WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+      WORKSPACE_RUNTIME_GIT_REPO_URL: "https://repo.test/app.git",
+      WORKSPACE_RUNTIME_GIT_BRANCH: "dev",
+      WORKSPACE_RUNTIME_LEASE_ID: "lease-docker-host-ws_1",
+      WORKSPACE_RUNTIME_SANDBOX_ID: "docker-host-ws_1",
+      CUSTOM_BOOT_FLAG: "yes",
+    })
     expect(docker.calls[0].at(-1)).toContain("exec /usr/local/bin/workspace-runtime")
     expect(docker.calls[1]).toEqual(["start", "container-id"])
     expect(docker.calls[2]).toEqual(["port", "container-id", "2593/tcp"])
@@ -209,6 +226,28 @@ describe("DockerSandboxDriver", () => {
       driverResourceId: "container-id",
     })
     expect(result).not.toHaveProperty("runtimeUrl")
+  })
+
+  test("the docker CLI receives boot env values in its environment, never in its arguments", async () => {
+    const bin = await tempDir()
+    const record = path.join(bin, "record")
+    await fs.writeFile(path.join(bin, "docker"), [
+      "#!/bin/sh",
+      `if [ "$1" = create ]; then printf '%s\\n' "$@" > ${record}.args; printf '%s' "$CUSTOM_BOOT_SECRET" > ${record}.env; echo container-id; fi`,
+      'if [ "$1" = port ]; then echo 127.0.0.1:5330; fi',
+    ].join("\n"), { mode: 0o755 })
+    const previousPath = process.env.PATH
+    process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`
+    try {
+      const driver = createDockerSandboxDriver({ image: "claxedo-sandbox:test", syncLocalAuth: false, waitForHealth: false })
+      await driver.ensureHost({ ...input, env: { CUSTOM_BOOT_SECRET: "boot-secret-value" } })
+    } finally {
+      process.env.PATH = previousPath
+    }
+    const args = (await fs.readFile(`${record}.args`, "utf8")).split("\n")
+    expect(args).toContain("CUSTOM_BOOT_SECRET")
+    expect(args.join("\n")).not.toContain("boot-secret-value")
+    expect(await fs.readFile(`${record}.env`, "utf8")).toBe("boot-secret-value")
   })
 
   test("waits for mapped runtime health before returning a ready target", async () => {

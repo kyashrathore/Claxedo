@@ -30,6 +30,7 @@ import type { ControlPlaneCredentials } from "../authority/services"
 import { githubIntegrationForEnv } from "./github-oauth"
 import { createCredentialStoreAdapter } from "./credential-store-adapter"
 import { createConnectionStoreAdapter } from "./store-adapter"
+import { readableCodeHostRepository } from "./repository-access"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "./turn-credentials"
 
 export const CONNECTIONS_TOKEN_HEADER = "x-claxedo-connections"
@@ -131,20 +132,15 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
 
   async function repositoryForAuth(
     auth: SignedControlPlaneAuth | undefined,
-    id: string,
+    connectionId: string | undefined,
     fullName: string,
   ): Promise<RepositoryAccessResult> {
-    const visible = (await service.list(auth ? { owner: auth.user.subject } : {}))
-      .some((connection) => connection.id === id)
-    if (!visible) return { ok: false as const, status: 404, code: "connection_not_found" }
-    const listed = await service.listRepositories(id)
-    if (!listed.ok) return listed
-    const repository = listed.repositories.find((item) => item.fullName === fullName)
-    if (!repository) return { ok: false as const, status: 404, code: "repository_not_found" }
-    if (!repository.permissions.read) return { ok: false as const, status: 403, code: "repository_read_required" }
-    const token = await service.getToken(id, "code-host")
+    const connections = await service.list(auth ? { owner: auth.user.subject } : {})
+    const access = await readableCodeHostRepository(service, connections, connectionId, fullName)
+    if (!access.ok) return access
+    const token = await service.getToken(access.connectionId, "code-host")
     if (!token.ok) return token
-    return { ok: true as const, repository, token: token.response.token }
+    return { ok: true as const, repository: access.repository, token: token.response.token }
   }
 
   return {

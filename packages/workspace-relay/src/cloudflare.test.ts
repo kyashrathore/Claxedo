@@ -2367,11 +2367,12 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.status).toBe(101)
   })
 
-  test("strips upstream Set-Cookie and CORS grants from cloud HTTP responses", async () => {
+  test("strips upstream Set-Cookie and CORS grants from cloud HTTP responses and serves them as no document", async () => {
     const harness = await roomHarness({
-      fetch: (() => Promise.resolve(new Response("cloud-ok", {
+      fetch: (() => Promise.resolve(new Response("<script>cloud</script>", {
         headers: {
-          "content-type": "text/plain",
+          "content-type": "text/html",
+          "content-security-policy": "script-src *",
           "set-cookie": "session=abc; HttpOnly",
           "access-control-allow-origin": "*",
           "access-control-allow-credentials": "true",
@@ -2392,7 +2393,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.headers.get("set-cookie")).toBeNull()
     expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
     expect(res.headers.get("access-control-allow-credentials")).toBeNull()
-    expect(res.headers.get("content-type")).toBe("text/plain")
+    expect(res.headers.get("content-type")).toBe("text/html")
+    expect(res.headers.get("content-security-policy")).toBe("sandbox")
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff")
     // The relay owns what a browser may read off a relayed response, and lets
     // the app attribute the response's timing to its own origin.
     expect(res.headers.get("access-control-expose-headers")).toBe("X-Event-Cursor, X-Next-Cursor, X-Max-Event-Ordinal, Server-Timing, X-Claxedo-Trace-Id, X-Claxedo-Relay-Location-Hint")
@@ -2405,9 +2408,10 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     }))
     expect(noOrigin.headers.get("access-control-allow-origin")).toBeNull()
     expect(noOrigin.headers.get("set-cookie")).toBeNull()
+    expect(noOrigin.headers.get("content-security-policy")).toBe("sandbox")
   })
 
-  test("strips upstream Set-Cookie and CORS grants from tunnelled HTTP responses", async () => {
+  test("strips upstream Set-Cookie and CORS grants from tunnelled HTTP responses and serves them as no document", async () => {
     const harness = await roomHarness({ resolveTarget: "local-worktree" })
     await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
       headers: {
@@ -2431,7 +2435,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       request_id: requestMessage.request_id,
       status: 200,
       headers: {
-        "content-type": "text/plain",
+        "content-type": "text/html",
         "set-cookie": "session=abc; HttpOnly",
         "access-control-allow-origin": "*",
       },
@@ -2446,7 +2450,9 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(res.status).toBe(200)
     expect(res.headers.get("set-cookie")).toBeNull()
     expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
-    expect(res.headers.get("content-type")).toBe("text/plain")
+    expect(res.headers.get("content-type")).toBe("text/html")
+    expect(res.headers.get("content-security-policy")).toBe("sandbox")
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff")
   })
 
   test("rejects oversized streamed tunnelled request bodies without buffering them", async () => {

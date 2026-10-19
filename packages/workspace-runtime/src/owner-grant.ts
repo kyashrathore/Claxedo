@@ -4,6 +4,7 @@ import { bearerToken } from "@claxedo/session-core"
 import {
   loadWorkspaceRuntimeManagementVerificationKey,
   stringClaim,
+  WORKSPACE_RUNTIME_MANAGEMENT_ALGORITHM,
   type LoadWorkspaceRuntimeManagementKeyEnv,
   type WorkspaceRuntimeManagementVerifierKey,
 } from "./management-auth"
@@ -36,7 +37,11 @@ export function ownerGrantIdentity(input: { key: WorkspaceRuntimeManagementVerif
   return async (token) => {
     let payload: JWTPayload
     try {
-      const options = { issuer: WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER, audience: WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE }
+      const options = {
+        issuer: WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER,
+        audience: WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE,
+        algorithms: [WORKSPACE_RUNTIME_MANAGEMENT_ALGORITHM],
+      }
       payload = (typeof input.key === "function" ? await jwtVerify(token, input.key, options) : await jwtVerify(token, input.key, options)).payload
     } catch {
       return undefined
