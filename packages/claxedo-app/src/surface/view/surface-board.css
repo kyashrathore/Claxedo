@@ -1,0 +1,111 @@
+[data-slot="surface-board"] {
+  container: surface-board / inline-size;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+
+  &[data-layout="columns"] {
+    flex-direction: row;
+    align-items: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    padding-bottom: 4px;
+  }
+
+  &[data-layout="list"] {
+    flex-direction: column;
+  }
+}
+
+[data-slot="surface-board-lane"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-xl);
+  background: var(--v2-background-bg-layer-01);
+  transition: border-color 120ms ease;
+
+  &[data-drop-target="true"] {
+    border-color: var(--v2-border-border-focus);
+  }
+}
+
+[data-slot="surface-board"][data-layout="columns"] > [data-slot="surface-board-lane"] {
+  flex: 1 0 240px;
+  max-width: 360px;
+  scroll-snap-align: start;
+}
+
+[data-slot="surface-board"][data-layout="list"] > [data-slot="surface-board-lane"] {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+[data-slot="surface-board-lane-header"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+
+  > [data-slot="surface-actions"] {
+    margin-left: auto;
+  }
+}
+
+[data-slot="surface-board-lane-title"] {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  line-height: var(--line-height-20);
+  color: var(--v2-text-text-base);
+}
+
+[data-slot="surface-board-lane-count"] {
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-text-muted);
+}
+
+[data-slot="surface-board-items"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 40px;
+}
+
+[data-slot="surface-board-item"] {
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-lg);
+  background: var(--v2-background-bg-base);
+
+  &[data-movable="true"] {
+    cursor: grab;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 1px;
+  }
+
+  &[data-grabbed="true"] {
+    border-color: var(--v2-border-border-focus);
+    box-shadow: var(--v2-elevation-elements);
+    cursor: grabbing;
+  }
+
+  > [data-slot="surface-list-item"] {
+    margin: 0;
+    padding: 10px 0;
+  }
+}

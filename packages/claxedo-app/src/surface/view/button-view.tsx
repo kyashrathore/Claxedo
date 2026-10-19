@@ -39,7 +39,7 @@ export function ButtonView(props: SurfaceNodeProps<"Button">) {
       variant={variant()}
       title={iconOnly() ? label() : undefined}
       disabled={runtime.actionsDisabled()}
-      onClick={() => runtime.fire(props.def.action, props.def.id, props.scope)}
+      onClick={() => runtime.fire(props.def.action, props.def.id, props.scope, {})}
     >
       <Show when={icon()}>{(name) => <SurfaceIcon name={name()} size="small" />}</Show>
       <span data-slot="surface-button-label" classList={{ "sr-only": iconOnly() }}>

@@ -10,6 +10,8 @@ import "./surface.css"
 import "./surface-layout.css"
 import "./surface-fields.css"
 import "./surface-display.css"
+import "./surface-board.css"
+import "./surface-pickers.css"
 
 export type SurfaceViewProps = {
   readonly surface: Surface
@@ -20,14 +22,25 @@ export type SurfaceViewProps = {
 
 export function SurfaceView(props: SurfaceViewProps): JSX.Element {
   const state = (): SurfaceState => props.surface[surfaceState]
+  const reported = new Set<string>()
+  const actionsDisabled = () => props.actionsDisabled === true || props.onAction === undefined
   const runtime: SurfaceRuntime = {
     get state() {
       return state()
     },
-    actionsDisabled: () => props.actionsDisabled === true || props.onAction === undefined,
-    fire: (action, sourceComponentId, scope) => {
-      const event = surfaceActionEvent(action, { surfaceId: props.surface.surfaceId, sourceComponentId, scope }, state().data, new Date())
+    get source() {
+      return props.source
+    },
+    actionsDisabled,
+    fire: (action, sourceComponentId, scope, supplied) => {
+      if (action === undefined || actionsDisabled()) return
+      const event = surfaceActionEvent(action, { surfaceId: props.surface.surfaceId, sourceComponentId, scope }, state().data, new Date(), supplied)
       props.onAction?.(event)
+    },
+    reportOnce: (componentId, message, detail) => {
+      if (reported.has(componentId)) return
+      reported.add(componentId)
+      console.warn(message, { surfaceId: props.surface.surfaceId, componentId, ...detail })
     },
   }
   const drawn = () => state().lifecycle().kind === "live" && state().components.get(SURFACE_ROOT_ID) !== undefined

@@ -1,12 +1,15 @@
 import { createContext, useContext, type Accessor } from "solid-js"
 import type { SurfaceActionDefinition } from "@claxedo/plugin-api/surface"
+import type { SuppliedFields } from "../action"
 import { boundNumber, boundText, readDynamic, type Bindable } from "../binding"
-import type { DataPath, SurfaceState } from "../model"
+import type { DataPath, SurfaceSource, SurfaceState } from "../model"
 
 export type SurfaceRuntime = {
   readonly state: SurfaceState
+  readonly source: SurfaceSource
   readonly actionsDisabled: Accessor<boolean>
-  readonly fire: (action: SurfaceActionDefinition, sourceComponentId: string, scope: DataPath) => void
+  readonly fire: (action: SurfaceActionDefinition | undefined, sourceComponentId: string, scope: DataPath, supplied: SuppliedFields) => void
+  readonly reportOnce: (componentId: string, message: string, detail: Readonly<Record<string, unknown>>) => void
 }
 
 export type SurfaceReader = {

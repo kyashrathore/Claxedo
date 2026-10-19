@@ -590,9 +590,9 @@ Every S2–S5 change updates `packages/claxedo-plugin-api/src/surface/design-gui
 | Tab pages and icon | `SurfacePageDefinition.tab?: true; icon?: IconName` → `PageEntry.tab/icon` | `plugins/bindings/regions.ts` | Tasks shares the page tab with Marketplace, never splits (flow 12) |
 | Param routes without remount | `SurfaceProgram.navigated?(props: PageProps): void`; frame `surface.navigated { surfaceId, path, params }` | `plugins/surface-page/view.tsx`, `controller.ts`, `frame/host-surfaces.ts`, `frame/runtime/surfaces.ts` | `/tasks` ↔ `/tasks/:taskId` keeps page state |
 | Settings section as a surface | `SurfaceSettingsSection { id; title; icon?; order?; group?: "workspace" \| "app"; surface(channel): SurfaceProgram \| void }`; `SettingsApi.open(sectionId): void`; frame `Registration { kind: "settings"; surface: true }` | `bindings/regions.ts`, `surface-page/settings-view.tsx` | Settings → Presets; "Open preset settings" |
-| Open a session not listed yet | `SessionsApi.open(ref: SessionRef): Promise<void>` (re-reads the workspace catalog when the placement is unknown, then navigates) | `bindings/data.ts`; `locateSession` moves from `server/tasks.ts` to `server/workspaces.ts` | Start → open the new session; Open on a cloud task |
-| Cloud wake progress | `WorkspacesApi.followStart(workspaceId: string, onProgress: (text: string \| undefined) => void): Promise<{ kind: "running" } \| { kind: "failed"; message: string }>`; frame host→frame `{ type: "progress", id, text }` | new `bindings/workspaces.ts` (over `useWakeProgress`, `cloud.follow`, `cloud.runtime`) | Start on a Cloud preset |
-| Binary `server.fetch` on the web | `FrameResponse` gains `encoding: "utf8" \| "base64"`, base64 for non-text content types | `frame/protocol.ts`, `frame/host-calls.ts`, `frame/runtime/link.ts` | Attachment images on web |
+| Open a session not listed yet | `SessionsApi.open(ref: SessionRef): Promise<void>` (re-reads the workspace catalog when the placement is unknown, then navigates) | `bindings/data.ts`; `locateSession` moves from `server/tasks.ts` to `server/workspaces.ts`, served as `placements.locateSession` | Start → open the new session; Open on a cloud task |
+| Cloud wake progress | `WorkspacesApi.followStart(workspaceId: string, onProgress: (text: string \| undefined) => void): Promise<{ kind: "running" } \| { kind: "failed"; message: string }>`; frame host→frame `{ type: "progress", id, text }` | new `bindings/workspaces.ts` (over `useWakeProgress` and `cloud.followStart`, which `tasks.followRoot` became so Tasks and plugins share one follow) | Start on a Cloud preset |
+| Binary `server.fetch` on the web | `FrameResponse` gains `encoding: "utf8" \| "base64"`; utf8 only for a JSON, XML, JavaScript or `text/*` type in UTF-8, base64 otherwise | `frame/protocol.ts`, `frame/host-calls.ts`, `frame/response-body.ts`, `plugins/base64.ts` | Attachment images on web |
 | Transcript tool cards | `TranscriptApi.toolCards(templates: readonly ToolCardTemplate[]): Disposer` (below); frame `Registration { kind: "toolCards"; templates }` | shell registry `toolCards`, `transcript/claxedo-tool-view.ts` | Task and document cards outside the app |
 | Session start with preset/harness/model | Not added: the server's Start creates the session; add only when a plugin needs it | — | — |
 
@@ -641,7 +641,7 @@ Commands use the package scripts:
 
 Every new or changed flow records a red run, at desktop width and in `phone`. Every ceiling change is the exact measured number with its owner named in the adjacent comment.
 
-- [ ] **S0. Fresh mirror on `surface.open`.**
+- [x] **S0. Fresh mirror on `surface.open`.**
 - **Change:**
   - `frame/host-port.ts` `HostPortInput` gains `mirror: () => FrameMirror` and exposes `refreshMirror()`, which posts `{ type: "mirror", mirror: untrack(input.mirror) }`;
   - `frame/host-registrations.ts` `FrameEndpoints` gains `refreshMirror`;
@@ -652,24 +652,36 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - `surface-round-trip.test.ts`: switch project, open, and `surface()` sees the new id.
 - **Flow 61:** switch project, open the fixture page, and it names the new project. Red run: remove the `refreshMirror()` call.
 - **Checks:** app test (`src/plugins`), typecheck, check, e2e 61. No ratchet change.
-- Progress:
-- [ ] **S1. Composer document leftovers.**
+- Progress: done (app-plugin-host lane). A plugin page has a current project only when its route names one (`currentProjectId` reads the placement, else the page's `:projectId`), so the flow 61 fixture opens a second page, `/surface-fixture/projects/:projectId`, from a per-project Button; red run without `refreshMirror()` shows "No project". The app budget's "Web plugin frame" part (which counts its tests) rose to the measured 1337 and the total to 112850.
+- [x] **S1. Composer document leftovers.**
 - Delete or rename per §2(g); `slash-popover` keeps only file and mention options.
 - **Checks:** app test (`src/composer`), typecheck, check (budget for Composer drops), e2e `06-composer.spec.ts`, `34-live-plugin-desktop.spec.ts`, `35-live-plugin-web.spec.ts` (plugin mentions).
-- Progress:
-- [ ] **S2. Input events, `Image`, status glyphs.**
+- Progress: done (app-plugin-host lane). The `agent` AtOption had no producer and went with `document`; the mention row shows the source's group. Composer budget lowered to the measured 14031, total 112807. No new assertion: `/docs` was already filtered out of the slash list, so nothing a person sees changed. Flows 06 and 35 pass on web and phone, except 06's explicit-model case, which drives the machine's real `claude` CLI and read its label as "Haiku 4.5" where the spec expects "Haiku". Flow 34 is not verified (the desktop project cannot start Electron in this container; see S5).
+- [x] **S2. Input events, `Image`, status glyphs.**
 - Implement §3.0 and S2 in the catalog, spec check, renderer, design guide and `ui_guide`.
 - **Tests:** plugin-api spec tests (collisions, Image URL rule, agent-only refusals); app `src/surface` tests (supplied fields, change fires after the write, Image refusals).
 - **Flow 61 fixture:** an `Image` with a data: URL paints; an https URL shows the refused slot and makes no request; a `ChoicePicker.change` reaches the plugin.
 - **Checks:** plugin-api test and typecheck; app test, typecheck and check (raise the surface budget in `budget.ts` to the measured lines with its owner, no headroom); mcp test (`surfaces`); ratchets plus `bun run --cwd packages/claxedo-desktop verify:closure` (desktop-renderer modules grow by the new view files; record the exact number).
-- Progress:
-- [ ] **S3. `Board` with `move`.**
+- **As built:**
+  - `Image` takes its required `accessibility` (`label` required) in its own shape instead of a refinement, so the `ui_show` JSON Schema states it;
+  - `surfaceImageUrl(value, origin?)` refuses every `blob:` when the origin is absent or opaque (`"null"`), so the spec check refuses a literal blob and the desktop's `file:` renderer accepts none; Tasks images use `data:` (§4);
+  - `checkSurfaceSpec`'s `producer` option lands with the first plugin-only prop in S3; S2 adds none;
+  - the renderer adds `submit-key.ts` (Enter; Mod+Enter or Mod+S in `longText`) and `tab-strip.ts` `selectedTabIndex`;
+  - flow 61's phone arrange opens the drawer until the fixture row is in view: the shell's `navigated` event closes the drawer once the home workspace is chosen, which failed the phone project at the base commit.
+- Progress: done 2026-10-18 — input `change`/`submit` events, `Image` (data:/same-origin blob:) and the five status glyphs; desktop-renderer 1483 modules, surface budget 2430.
+- [x] **S3. `Board` with `move`.**
 - **Tests:** keyboard machine transitions, supplied move fields, the renderer never writes data, pending cleared by a patch to either column.
 - **Flow 61 fixture:** drag a card to another column; keyboard Space, ArrowRight, Space; the plugin patches and the card stays.
 - **Phone:** the board scrolls and the keyboard path works.
 - **Checks:** as S2.
-- Progress:
-- [ ] **S4. `FilePicker` and `Combobox`.**
+- **As built:**
+  - `SURFACE_PLUGIN_ONLY_EVENTS` (`events.ts`) names the plugin-only events, and `checkSurfaceSpec(value, { producer: "agent" })` refuses them at the prop's pointer; `ui_show` checks as the agent producer;
+  - the spec check also refuses a reused column key;
+  - the pending move settles on the producer's patches only: `SurfaceState.watchPatches` reports each `updateDataModel` path from the store, so a local input write never settles it; while a move is pending no other move starts;
+  - the view splits into `board-view.tsx`, `board-lane.tsx`, `board-interaction.ts` (lanes, pending, announcer) and `board-input.ts` (keyboard grab and pointer drop);
+  - `move` reports `fromIndex` in the source list and `toIndex` in the target list with the item taken out.
+- Progress: done 2026-10-19 — `Board` with pointer drag and the keyboard grab (Space/Enter, arrows, Escape), pending until the plugin's patch; desktop-renderer 1490 modules, surface budget 3073.
+- [x] **S4. `FilePicker` and `Combobox`.**
 - Move `image-drafts.ts` to `src/surface/image-fit.ts`; the Tasks create form imports it through `@/surface` until S10b.
 - **Tests:** accept/size/count/event caps, `fitImages` rounds, paste scope, debounce timing (fake clock), searching state.
 - **Flow 61 fixture:**
@@ -677,8 +689,14 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - an oversize file is refused;
   - typing in a `Combobox` streams options and selecting fires `change`.
 - **Checks:** as S2 (the no-polling check lists `search-debounce.ts` as the timer owner).
-- Progress:
-- [ ] **S5. Plugin API primitives and `AgentConfigurationPicker`.**
+- **As built:**
+  - `image-fit.ts` holds only the generic fit (type from the declared type or the name, `shrinkInRounds`, `canvasShrink`, `fitImage`, `blobBase64`, `imageDataUrl`); the Tasks bounds, refusal kinds and their copy moved into `src/tasks/view/image-queue.ts`, and the create form draws previews with `imageDataUrl`;
+  - `maxFiles` counts accepted files only; a file the browser cannot read is logged and refused as `type` (the plan's three reasons are kept);
+  - the Combobox's listbox sits in flow under its input (no overlay), and "searching" ends on the producer's next patch overlapping the bound options path (`data-path.ts` `pathsOverlap`, shared with the Board);
+  - an agent's FilePicker draws disabled and an agent's Combobox never searches; `checkSurfaceSpec(…, { producer: "agent" })` refuses `pick` and `search`;
+  - no e2e flow covers the Tasks create form's images; the moved code is covered by `image-fit.test.ts` and `src/tasks` tests.
+- Progress: done 2026-10-19 — `FilePicker` (choose, drop, paste; per-file, count and 12 MiB event caps; `fitImages`) and `Combobox` (local filter or 250 ms debounced `search`, `change`); `image-drafts.ts` moved to `src/surface/image-fit.ts`; desktop-renderer 1498 modules, surface budget 3957, Tasks 5014.
+- [x] **S5. Plugin API primitives and `AgentConfigurationPicker`.**
 - Implement the primitive table; move `cloud-configuration-picker.tsx`, `cloud-model.ts`, `cloud-catalog-*` to `src/composer/`.
 - **Tests:** bindings (tab entry, `navigated` without remount, settings surface, `sessions.open` re-reads the catalog once and navigates, `followStart` progress), frame protocol round trips (navigated, settings surface, progress, base64 body).
 - **Flow 61 fixture:**
@@ -687,7 +705,15 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - a settings surface section draws and `settings.open` reaches it;
   - binary fetch returns exact bytes.
 - **Checks:** app test, typecheck and check; plugin-api test; ratchets plus desktop `verify:closure`.
-- Progress:
+- Progress: done (app-plugin-host lane). Changes from the text above, from the code:
+  - `tasks.followRoot` became `cloud.followStart` (`server/cloud.ts`); the Tasks start and `workspaces.followStart` both use it, and `TasksApi` lost `followRoot` with `locateSession`.
+  - The frame's `surface.open` names its target, `{ kind: "page", pageId, path, params }` or `{ kind: "settings", sectionId }`; `surface.navigated` and settings `surface: true` are as planned. A `SurfaceSettingsSection` without `group` joins `app`.
+  - The host keeps its own standard base64 (`plugins/base64.ts`; `@claxedo/helpers` offers only base64url), so `bindings/data.ts` no longer imports `@claxedo/tasks`.
+  - `AgentConfigurationPicker` binds a value shaped by `surfaceAgentConfigurationSchema` (exported as `SurfaceAgentConfiguration`). The renderer draws it through a reference component the host passes in (`SurfaceReferencesProvider`): plugin surfaces get the composer's `AgentConfigurationPicker`, an agent reply gets none and draws a note, so it is inert there. Its `change` supplies `{ value }` through the §3.0 `supplied` argument of `surfaceActionEvent`. After the merge with S2–S4: `SURFACE_PLUGIN_ONLY_COMPONENTS` (`events.ts`) makes it plugin-only as a whole, since its `change` is optional, so `checkSurfaceSpec(…, { producer: "agent" })` refuses it at `/component`; the design guide (served by `ui_guide`) has an "Agent configuration" section, the `ui_show` description says it is refused there, and the transcript checks an agent's `ui_show` input as the agent producer (`surface-reply-spec.ts`).
+  - The whole configuration editor moved, not just the cloud pickers: `presets/configuration-editor.tsx` is `composer/agent-configuration/agent-configuration-picker.tsx`, with `rebaseConfiguration` applied inside the picker; the composer's type is the catalog's `SurfaceAgentConfiguration`, because app code may not declare `providerID`/`modelID`.
+  - Flow 61 adds a tab page with a param route, a surface settings section holding an `AgentConfigurationPicker`, and a byte fetch of a task attachment (fixture routes `/api/claxedo/tasks`). The phone opener now waits for the home redirect before opening the rail; a tap before it was closed by that navigation.
+  - Desktop-renderer modules 1481 → 1491 (the ten new owners named in `desktop.ts`). Budgets: Composer 14376, Plugin host 2650, Web plugin frame 1618, Surface renderer 2359, Tasks 4754, total 113505. Merged with S2–S4: desktop-renderer 1508 (their 1498 plus these ten), Surface renderer 4057, Tasks 4658, total 115118 (115107 at the merge, plus the transcript's agent-producer test); the picker's `change` is declared in `SURFACE_EVENT_FIELDS` and fires through S2's `supplied`; flow 61 holds both lanes' cases on one fixture page (the per-project buttons became `project-links`, since S4's Combobox owns `project`).
+  - Not verified here: flow 34 (desktop). This container runs as root and Electron exits with "Running as root without --no-sandbox is not supported"; `00-desktop-smoke` fails the same way at fixture setup.
 - [x] **S6. Server plugin contract and bootstrap capabilities.**
 - Add `server-core/src/plugins/server-plugin.ts`.
 - Local: `StartLocalServerOptions.plugins`. Interim builders `createLocalTasksPlugin` (from `local-server/src/tasks/`) and `createLocalDocumentsPlugin` (from `app/local-documents.ts`) wrap today's code in place.

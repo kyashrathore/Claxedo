@@ -7,6 +7,7 @@ const EYE = "M10 4.58C5.83 4.58 2.5 10 2.5 10s3.33 5.42 7.5 5.42S17.5 10 17.5 10
 const HEART = "M10 16.67s-6.67-3.92-6.67-8.75A3.75 3.75 0 0 1 10 5.42a3.75 3.75 0 0 1 6.67 2.5c0 4.83-6.67 8.75-6.67 8.75z"
 const STAR = "M10 2.5l2.2 4.7 5.1.5-3.8 3.4 1.1 5.1-4.6-2.6-4.6 2.6 1.1-5.1-3.8-3.4 5.1-.5z"
 const SLASH = "M3.33 3.33l13.34 13.34"
+const STATUS_RING = 7.08
 
 function Calendar(props: { readonly children?: JSX.Element }) {
   return (
@@ -33,6 +34,27 @@ export const SURFACE_GLYPHS: Readonly<Record<GlyphIconName, () => JSX.Element>> 
       <circle cx="10" cy="10" r="7.92" />
       <circle cx="10" cy="8.33" r="2.5" />
       <path d="M5.2 15.6c.95-1.9 2.7-3.1 4.8-3.1s3.85 1.2 4.8 3.1" />
+    </>
+  ),
+  alertCircle: () => (
+    <>
+      <circle cx="10" cy="10" r={STATUS_RING} />
+      <path d="M10 6.25v4.58" />
+      <circle cx="10" cy="13.54" r=".63" fill="currentColor" stroke="none" />
+    </>
+  ),
+  checkCircle: () => (
+    <>
+      <circle cx="10" cy="10" r={STATUS_RING} />
+      <path d="M6.88 10.21l2.08 2.08 4.17-4.37" />
+    </>
+  ),
+  circle: () => <circle cx="10" cy="10" r={STATUS_RING} />,
+  circleDashed: () => <circle cx="10" cy="10" r={STATUS_RING} stroke-dasharray="2.78 2.78" />,
+  circleHalf: () => (
+    <>
+      <circle cx="10" cy="10" r={STATUS_RING} />
+      <path d="M10 4.17a5.83 5.83 0 0 0 0 11.66z" fill="currentColor" stroke="none" />
     </>
   ),
   calendarToday: () => (

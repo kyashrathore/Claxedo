@@ -1,26 +1,24 @@
 import { Match, Show, Switch, createMemo, type JSX } from "solid-js"
-import type { ConfigurationSlot, HarnessReference, ModelReference } from "@claxedo/tasks"
-import { useTranslator } from "@/i18n"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { Select } from "@/ui"
-import { tasksDictionary } from "../i18n"
+import { useAgentConfigurationText } from "./i18n"
 import { useCloudCatalogModels, type CloudModelChoice, type CloudModelOffer } from "./cloud-catalog-models"
+import type { AgentHarnessReference, AgentModelReference } from "./model"
 
-const modelKey = (model: ModelReference) => `${model.providerID}/${model.modelID}`
+const modelKey = (model: AgentModelReference) => `${model.providerID}/${model.modelID}`
 
-function withSaved(choices: readonly CloudModelChoice[], saved: ModelReference | null): CloudModelChoice[] {
+function withSaved(choices: readonly CloudModelChoice[], saved: AgentModelReference | null): CloudModelChoice[] {
   if (!saved || choices.some((choice) => modelKey(choice.model) === modelKey(saved))) return [...choices]
   return [{ model: saved, provider: saved.providerID, name: saved.modelID }, ...choices]
 }
 
 export function CloudCatalogModelPicker(props: {
-  readonly slot: ConfigurationSlot
-  readonly harness: HarnessReference
-  readonly model: ModelReference | null
+  readonly harness: AgentHarnessReference
+  readonly model: AgentModelReference | null
   readonly disabled: boolean
-  readonly onModel: (model: ModelReference) => void
+  readonly onModel: (model: AgentModelReference) => void
 }): JSX.Element {
-  const t = useTranslator(tasksDictionary)
+  const t = useAgentConfigurationText()
   const models = useCloudCatalogModels(() => props.harness.id)
   const harness = () => harnessDisplayLabel(props.harness.id)
   const failure = () => {
@@ -33,12 +31,11 @@ export function CloudCatalogModelPicker(props: {
   })
   const options = createMemo(() => withSaved(offer()?.choices ?? [], props.model))
   const current = () => options().find((choice) => props.model !== null && modelKey(choice.model) === modelKey(props.model))
-  const hint = `preset-cloud-models-${props.slot}`
   return (
     <Switch>
-      <Match when={failure()}>{(message) => <p class="tsk-error" data-testid={hint}>{message()}</p>}</Match>
+      <Match when={failure()}>{(message) => <p role="alert" class="text-12-regular text-icon-critical-base">{message()}</p>}</Match>
       <Match when={!offer()}>
-        <p class="tsk-hint" data-testid={hint}>{t("tasks.preset.cloudModelsLoading", { harness: harness() })}</p>
+        <p class="text-12-regular text-text-weak">{t("agentConfiguration.cloudModelsLoading", { harness: harness() })}</p>
       </Match>
       <Match when={offer()}>
         <Show when={options().length > 0}>
@@ -48,19 +45,19 @@ export function CloudCatalogModelPicker(props: {
             value={(choice: CloudModelChoice) => modelKey(choice.model)}
             label={(choice: CloudModelChoice) => choice.name}
             groupBy={(choice: CloudModelChoice) => choice.provider}
-            placeholder={t("tasks.preset.modelPlaceholder")}
+            placeholder={t("agentConfiguration.modelPlaceholder")}
             disabled={props.disabled}
-            triggerProps={{ "data-testid": `preset-cloud-model-picker-${props.slot}`, "aria-label": t("tasks.preset.model") }}
+            triggerProps={{ "aria-label": t("agentConfiguration.model") }}
             onSelect={(choice) => {
               if (choice) props.onModel(choice.model)
             }}
           />
         </Show>
         <Show when={offer()?.planUnlisted}>
-          <p class="tsk-hint" data-testid={`preset-cloud-plan-${props.slot}`}>{t("tasks.preset.cloudPlanUnlisted", { harness: harness() })}</p>
+          <p class="text-12-regular text-text-weak">{t("agentConfiguration.cloudPlanUnlisted", { harness: harness() })}</p>
         </Show>
         <Show when={offer()?.choices.length === 0 && !offer()?.planUnlisted}>
-          <p class="tsk-error" data-testid={hint}>{t("tasks.preset.cloudNoAccount", { harness: harness() })}</p>
+          <p role="alert" class="text-12-regular text-icon-critical-base">{t("agentConfiguration.cloudNoAccount", { harness: harness() })}</p>
         </Show>
       </Match>
     </Switch>

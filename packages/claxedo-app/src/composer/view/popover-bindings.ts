@@ -9,7 +9,7 @@ import type { AtOption } from "./slash-popover"
 
 function atOption(item: AtItem): AtOption {
   if (item.kind === "file") return { type: "file", path: item.path, display: item.path }
-  return { type: "document", documentId: item.id, display: item.entry.label, originKind: "managed", placementKind: "local", status: item.entry.group }
+  return { type: "mention", mentionId: item.id, display: item.entry.label, group: item.entry.group }
 }
 
 function createAtOptions(items: () => readonly AtItem[], controller: ComposerController) {
@@ -92,7 +92,6 @@ export function createPromptPopoverBindings(input: {
     get popover() {
       return input.popover()
     },
-    documentPicker: false,
   }
   return mergeProps(shared, atPopoverBindings(input.composer, input.popover), slashPopoverBindings(input.composer, input.popover, input.keybind))
 }

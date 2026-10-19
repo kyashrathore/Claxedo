@@ -1,13 +1,8 @@
 import type { InfiniteData, QueryClient } from "@tanstack/solid-query"
-import { TASKS_ROUTE_PATH, taskSummaryOf, type Page, type SessionRef, type Task, type TaskSummary } from "@claxedo/tasks"
+import { TASKS_ROUTE_PATH, taskSummaryOf, type Page, type Task, type TaskSummary } from "@claxedo/tasks"
 import { createTasksClient, type TasksClient } from "@claxedo/tasks/client"
-import type { AppError } from "./types"
-import { placementId, sessionId, type PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
-import type { SessionLocation } from "./types"
-import type { WorkspaceWakes } from "./workspace-wakes"
-import type { Workspaces } from "./workspaces"
 
 export type TaskListKey = {
   readonly projectId: string
@@ -27,11 +22,7 @@ export type TasksApi = {
     readonly children: (taskId: string) => readonly unknown[]
   }
   readonly command: TasksClient["command"]
-  readonly locateSession: (ref: SessionRef) => Promise<Pick<SessionLocation, "placementId" | "sessionId">>
-  readonly followRoot: (workspaceId: string, following: (placementId: PlacementId) => void) => Promise<TaskRootRun>
 }
-
-export type TaskRootRun = { readonly kind: "running" } | { readonly kind: "notRunning"; readonly error?: AppError }
 
 type ChildPages = InfiniteData<Page<TaskSummary>, string | undefined>
 
@@ -42,7 +33,7 @@ function withCreatedChild(pages: ChildPages | undefined, task: Task): ChildPages
   return { ...pages, pages: [{ ...first, items: [summary, ...first.items] }, ...pages.pages.slice(1)] }
 }
 
-export function createTasksApi(transport: Transport, queryClient: QueryClient, workspaces: Workspaces, wakes: Pick<WorkspaceWakes, "follow" | "runtime">): TasksApi {
+export function createTasksApi(transport: Transport, queryClient: QueryClient): TasksApi {
   const scope = queryKeys.tasksAll(transport.serverUrl)
   const client = createTasksClient({ baseUrl: TASKS_ROUTE_PATH, request: (path, init) => transport.request(path, init) })
   const keys = {
@@ -63,20 +54,6 @@ export function createTasksApi(transport: Transport, queryClient: QueryClient, w
         queryClient.setQueryData<ChildPages>(keys.children(created.parentTaskId), (pages) => withCreatedChild(pages, created))
       }
       return response
-    },
-    locateSession: async (ref) => {
-      const location = { placementId: placementId(ref.workspaceId), sessionId: sessionId(ref.sessionId) }
-      if (!workspaces.byId(location.placementId) && !workspaces.shared.find(location)) await workspaces.refresh()
-      return location
-    },
-    followRoot: async (workspaceId, following) => {
-      await workspaces.refresh()
-      const id = placementId(workspaceId)
-      following(id)
-      await wakes.follow(id)
-      const runtime = wakes.runtime(id)
-      if (runtime.kind === "live") return { kind: "running" }
-      return runtime.kind === "wakeFailed" ? { kind: "notRunning", error: runtime.error } : { kind: "notRunning" }
     },
   }
 }

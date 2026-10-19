@@ -82,6 +82,10 @@ export function ChoicePickerView(props: SurfaceNodeProps<"ChoicePicker">) {
   const exclusive = () => props.def.variant !== "multipleSelection"
   const labelId = createUniqueId()
   const ownLabel = () => (exclusive() && displayStyle() === "checkbox" ? undefined : label())
+  const change = (values: string[]) => {
+    field.set(values)
+    runtime.fire(props.def.change, props.def.id, props.scope, { value: values })
+  }
   return (
     <div data-slot="surface-choice" role="group" aria-labelledby={ownLabel() ? labelId : undefined}>
       <Show when={ownLabel()}>
@@ -93,9 +97,9 @@ export function ChoicePickerView(props: SurfaceNodeProps<"ChoicePicker">) {
       </Show>
       <Show
         when={!exclusive()}
-        fallback={<ExclusiveChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={field.set} />}
+        fallback={<ExclusiveChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={change} />}
       >
-        <MultipleChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={field.set} />
+        <MultipleChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={change} />
       </Show>
     </div>
   )

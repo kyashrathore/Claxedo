@@ -15,6 +15,17 @@ describe("surfaceReplySpecInput", () => {
     expect(surfaceReplySpec(surfaceReplySpecInput(input))).toEqual({ title: "Status", components })
   })
 
+  test("checks an agent's reply as the agent producer: a plugin-only component or event draws nothing", () => {
+    const picker = [{ id: "root", component: "AgentConfigurationPicker", placement: "local", value: { path: "/primary" } }]
+    expect(surfaceReplySpec({ title: "Preset", components: picker, data: { primary: { harness: null, model: null, effort: null } } })).toBeUndefined()
+    const board = (move: Record<string, unknown>) => [
+      { id: "root", component: "Board", columns: [{ key: "todo", title: "To do", items: "/todo" }], item: "card", itemKey: "id", ...move },
+      { id: "card", component: "Text", text: { path: "title" } },
+    ]
+    expect(surfaceReplySpec({ title: "Board", components: board({ move: { event: { name: "moveCard" } } }), data: { todo: [] } })).toBeUndefined()
+    expect(surfaceReplySpec({ title: "Board", components: board({}), data: { todo: [] } })).toMatchObject({ title: "Board" })
+  })
+
   test("is absent for an input that is not a valid spec", () => {
     expect(surfaceReplySpec(surfaceReplySpecInput({ title: "Status", components: [{ id: "top", component: "Text", text: "x" }] }))).toBeUndefined()
   })

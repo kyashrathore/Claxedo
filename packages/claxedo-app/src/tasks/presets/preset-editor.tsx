@@ -1,4 +1,4 @@
-import { For, Show, createSignal, untrack, type JSX } from "solid-js"
+import { For, Show, createSignal, type JSX } from "solid-js"
 import {
   CONFIGURATION_SLOTS,
   PRESET_PLACEMENTS,
@@ -6,6 +6,7 @@ import {
   type ConfigurationSlot,
   type PresetPlacement,
 } from "@claxedo/tasks"
+import { AgentConfigurationPicker, type AgentConfiguration } from "@/composer"
 import { useTranslator } from "@/i18n"
 import { Button, Checkbox, Switch, TextField } from "@/ui"
 import { fieldReasonKey, type FieldReasons } from "../data/refusal"
@@ -14,13 +15,10 @@ import { SLOT_KEYS } from "../model"
 import { ProseField } from "../view/prose-field"
 import type { CapabilityCatalog } from "./capabilities"
 import { CapabilityNotice, CapabilityPicker } from "./capability-picker"
-import { ConfigurationEditor } from "./configuration-editor"
 import {
   EMPTY_CONFIGURATION,
   cloudHarnessProblem,
   parsePresetEditorDraft,
-  rebaseConfiguration,
-  type ConfigurationDraft,
   type FieldProblem,
   type PresetEditorDraft,
 } from "./draft"
@@ -83,19 +81,13 @@ function SlotEditor(props: {
   readonly draft: PresetEditorDraft
   readonly busy?: boolean
   readonly fieldText: FieldText
-  readonly onChange: (value: ConfigurationDraft) => void
+  readonly onChange: (value: AgentConfiguration) => void
 }): JSX.Element {
   const t = useTranslator(tasksDictionary)
   const entry = () => props.draft.configurations[props.slot] ?? EMPTY_CONFIGURATION
   return (
     <div class="tsk-stack" data-testid={`preset-editor-configuration-${props.slot}`}>
-      <ConfigurationEditor
-        slot={props.slot}
-        placement={props.draft.placement}
-        configuration={entry()}
-        disabled={props.busy === true}
-        onChange={(next) => untrack(() => props.onChange(rebaseConfiguration(entry(), next)))}
-      />
+      <AgentConfigurationPicker placement={props.draft.placement} value={entry()} disabled={props.busy === true} onChange={props.onChange} />
       <Show when={cloudHarnessProblem(props.draft, props.slot)}>
         {(problem) => (
           <span class="tsk-error" data-testid={`preset-editor-cloud-harness-${props.slot}`}>
@@ -120,7 +112,7 @@ function SlotEditor(props: {
 
 function Configurations(props: PresetEditorProps & { readonly fieldText: FieldText }): JSX.Element {
   const t = useTranslator(tasksDictionary)
-  const setConfiguration = (slot: ConfigurationSlot, value: ConfigurationDraft | null) =>
+  const setConfiguration = (slot: ConfigurationSlot, value: AgentConfiguration | null) =>
     props.onDraftChange({ ...props.draft, configurations: { ...props.draft.configurations, [slot]: value } })
   return (
     <section class="tsk-stack" aria-label={t("tasks.preset.configurations")}>

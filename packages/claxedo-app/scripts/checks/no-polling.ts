@@ -6,6 +6,7 @@ import { enclosingFunction, functionName, unwrap, walk } from "./lib/tree"
 const timerOwners: Readonly<Record<string, string>> = {
   "src/lib/age-clock.ts": "the app's one age clock: one timeout at the next instant a visible age label changes, none while the page is hidden",
   "src/lib/second-ticker.ts": "the clock's ref-counted 1 s tick, running only while a running tool's elapsed time or a retry countdown reads it",
+  "src/surface/search-debounce.ts": "a surface Combobox's search debounce: one timeout 250 ms after the last keystroke, replaced by the next keystroke and cancelled with the component",
 }
 const pacingOwners: Readonly<Record<string, string>> = {
   "src/transcript/message-part.tsx": "paced reveal of streamed text more than 512 chars behind, in 24 ms steps, as today; exp-stream owns any change to it",

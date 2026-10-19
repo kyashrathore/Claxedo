@@ -53,6 +53,7 @@ const en = {
   "plugins.boundary.retry": "Try again",
   "plugins.list.notOwner": "These app plugins belong to the machine's owner, so none run for you here.",
   "plugins.list.failed": "The app plugins could not be read: {{reason}}",
+  "plugins.workspaces.startFailed": "The workspace did not start",
 }
 
 export type PluginsKey = keyof typeof en

@@ -9,11 +9,13 @@ import type {
   ProjectSummary,
   SessionRef,
   SessionStatus,
+  SettingsGroup,
   SurfaceActionEvent,
   SurfaceMessage,
   ThemeDefinition,
   Toast,
   WorkbenchTab,
+  WorkspaceStartResult,
 } from "@claxedo/plugin-api"
 
 export const FRAME_BOOT = "claxedo:plugin-frame-boot"
@@ -53,8 +55,8 @@ export type FrameBoot = {
 
 export type Registration =
   | { readonly kind: "sidebar"; readonly id: string; readonly label: string; readonly pageId: string; readonly icon?: string; readonly order?: number }
-  | { readonly kind: "page"; readonly id: string; readonly path: string; readonly title: string; readonly surface?: true }
-  | { readonly kind: "settings"; readonly id: string; readonly title: string; readonly icon?: string; readonly order?: number }
+  | { readonly kind: "page"; readonly id: string; readonly path: string; readonly title: string; readonly surface?: true; readonly tab?: true; readonly icon?: string }
+  | { readonly kind: "settings"; readonly id: string; readonly title: string; readonly icon?: string; readonly order?: number; readonly surface?: true; readonly group?: SettingsGroup }
   | { readonly kind: "overlay"; readonly id: string; readonly keybinding: string }
   | { readonly kind: "command"; readonly id: string; readonly title: string; readonly keybinding?: string; readonly category?: string }
   | { readonly kind: "mention"; readonly id: string; readonly label: string }
@@ -65,11 +67,13 @@ export type FoundMention = { readonly item: MentionItem; readonly insert: Mentio
 export type HostCall =
   | { readonly method: "pages.open"; readonly pageId: string; readonly params?: Readonly<Record<string, string>> }
   | { readonly method: "overlays.open" | "overlays.close"; readonly overlayId: string }
+  | { readonly method: "settings.open"; readonly sectionId: string }
   | { readonly method: "commands.run"; readonly commandId: string }
   | { readonly method: "workbench.activate" | "workbench.close"; readonly tabId: string }
   | { readonly method: "workbench.move"; readonly tabId: string; readonly index: number }
   | { readonly method: "sessions.create"; readonly input: CreateSessionInput }
   | { readonly method: "sessions.open"; readonly ref: SessionRef }
+  | { readonly method: "workspaces.followStart"; readonly workspaceId: string }
   | { readonly method: "server.fetch"; readonly path: string; readonly init: FrameRequestInit }
   | { readonly method: "server.operation"; readonly name: string; readonly input: unknown }
   | { readonly method: "ui.toast"; readonly toast: Toast }
@@ -81,15 +85,23 @@ export type FrameRequestInit = {
   readonly body?: string
 }
 
+export type FrameBodyEncoding = "utf8" | "base64"
+
 export type FrameResponse = {
   readonly status: number
   readonly statusText: string
   readonly headers: readonly (readonly [string, string])[]
   readonly body: string
+  readonly encoding: FrameBodyEncoding
 }
 
+export type SurfaceTarget =
+  | { readonly kind: "page"; readonly pageId: string; readonly path: string; readonly params: Readonly<Record<string, string>> }
+  | { readonly kind: "settings"; readonly sectionId: string }
+
 export type SurfaceInvoke =
-  | { readonly method: "surface.open"; readonly pageId: string; readonly surfaceId: string; readonly path: string; readonly params: Readonly<Record<string, string>> }
+  | { readonly method: "surface.open"; readonly surfaceId: string; readonly target: SurfaceTarget }
+  | { readonly method: "surface.navigated"; readonly surfaceId: string; readonly path: string; readonly params: Readonly<Record<string, string>> }
   | { readonly method: "surface.action"; readonly surfaceId: string; readonly action: SurfaceActionEvent }
   | { readonly method: "surface.close"; readonly surfaceId: string }
 
@@ -103,6 +115,7 @@ export type SurfaceDelivery = { readonly type: "surface"; readonly surfaceId: st
 export type HostToFrame =
   | { readonly type: "mirror"; readonly mirror: FrameMirror }
   | { readonly type: "invoke"; readonly id: number; readonly invoke: FrameInvoke }
+  | { readonly type: "progress"; readonly id: number; readonly text: string | undefined }
   | { readonly type: "result"; readonly id: number; readonly ok: true; readonly value: unknown }
   | { readonly type: "result"; readonly id: number; readonly ok: false; readonly reason: string }
 
@@ -157,11 +170,23 @@ function isHeaderPair(value: unknown): value is readonly [string, string] {
   return Array.isArray(value) && value.length === 2 && typeof value[0] === "string" && typeof value[1] === "string"
 }
 
+function isBodyEncoding(value: unknown): value is FrameBodyEncoding {
+  return value === "utf8" || value === "base64"
+}
+
 export function frameResponseFromHost(value: unknown): FrameResponse {
-  if (!isRecord(value) || typeof value.status !== "number" || typeof value.statusText !== "string" || typeof value.body !== "string") throw new FrameProtocolError("a response")
+  if (!isRecord(value) || typeof value.status !== "number" || typeof value.statusText !== "string" || typeof value.body !== "string" || !isBodyEncoding(value.encoding)) {
+    throw new FrameProtocolError("a response")
+  }
   const { headers } = value
   if (!Array.isArray(headers) || !headers.every(isHeaderPair)) throw new FrameProtocolError("response headers")
-  return { status: value.status, statusText: value.statusText, headers, body: value.body }
+  return { status: value.status, statusText: value.statusText, headers, body: value.body, encoding: value.encoding }
+}
+
+export function workspaceStartFromHost(value: unknown): WorkspaceStartResult {
+  if (isRecord(value) && value.kind === "running") return { kind: "running" }
+  if (isRecord(value) && value.kind === "failed" && typeof value.message === "string") return { kind: "failed", message: value.message }
+  throw new FrameProtocolError("a workspace start")
 }
 
 export function sessionRefFromHost(value: unknown): SessionRef {

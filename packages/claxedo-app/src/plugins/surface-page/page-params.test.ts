@@ -1,0 +1,29 @@
+import { describe, expect, test } from "bun:test"
+import { createRoot, createSignal } from "solid-js"
+import { followPageParams, pageParams, type PageParams } from "./page-params"
+
+function followed(initial: PageParams) {
+  const [route, setRoute] = createSignal(initial)
+  const navigations: PageParams[] = []
+  const dispose = createRoot((disposeRoot) => {
+    followPageParams(pageParams(route), (params) => navigations.push(params))
+    return disposeRoot
+  })
+  return { setRoute, navigations, dispose }
+}
+
+describe("a surface page's route params", () => {
+  test("a param change reaches the open program; the params it opened with and a reparse with the same values do not", () => {
+    const { setRoute, navigations, dispose } = followed({})
+    setRoute({})
+    expect(navigations).toEqual([])
+    setRoute({ taskId: "tsk_1" })
+    setRoute({ taskId: "tsk_1" })
+    setRoute({ taskId: "tsk_2" })
+    setRoute({})
+    expect(navigations).toEqual([{ taskId: "tsk_1" }, { taskId: "tsk_2" }, {}])
+    dispose()
+    setRoute({ taskId: "tsk_3" })
+    expect(navigations).toHaveLength(3)
+  })
+})

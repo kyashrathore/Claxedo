@@ -1,9 +1,10 @@
+import { untrack } from "solid-js"
 import type { Disposer, PluginApi } from "@claxedo/plugin-api"
 import { failureReason } from "../failure"
 import { performCall } from "./host-calls"
 import { registerOnHost, type FrameEndpoints, type FrameSlots, type Invoke } from "./host-registrations"
 import { createSurfaceRoutes } from "./host-surfaces"
-import type { FrameToHost, HostToFrame, Registration } from "./protocol"
+import type { FrameMirror, FrameToHost, HostToFrame, Registration } from "./protocol"
 import { answerCall, createPendingCalls } from "./pending-calls"
 
 export type FrameControl = {
@@ -15,11 +16,13 @@ export type FrameControl = {
 export type HostPortInput = {
   readonly port: MessagePort
   readonly api: PluginApi
+  readonly mirror: () => FrameMirror
   readonly control?: FrameControl
 }
 
 export type HostPort = {
   readonly send: (message: HostToFrame) => void
+  readonly refreshMirror: () => void
   readonly dispose: () => void
 }
 
@@ -54,13 +57,17 @@ export function createHostPort(input: HostPortInput): HostPort {
     send({ type: "invoke", id, invoke: frameInvoke })
     return result
   }
+  const refreshMirror = () => send({ type: "mirror", mirror: untrack(input.mirror) })
   const surfaces = createSurfaceRoutes((error) => control?.failed(failureReason(error)))
-  const registrations = createFrameRegistrations(api, control, { invoke, surfaces })
+  const registrations = createFrameRegistrations(api, control, { invoke, surfaces, refreshMirror })
   const receive = (message: FrameToHost) => {
     if (message.type === "register") return registrations.register(message.key, message.registration)
     if (message.type === "unregister") return registrations.unregister(message.key)
     if (message.type === "surface") return surfaces.deliver(message)
-    if (message.type === "call") return void answerCall(send, message.id, () => performCall(api, message.call))
+    if (message.type === "call") {
+      const { id } = message
+      return void answerCall(send, id, () => performCall(api, message.call, (text) => send({ type: "progress", id, text })))
+    }
     if (message.type === "result") return requests.settle(message)
     if (message.type === "activated") return control?.activated()
     control?.failed(message.reason)
@@ -68,6 +75,7 @@ export function createHostPort(input: HostPortInput): HostPort {
   port.onmessage = (event: MessageEvent<FrameToHost>) => receive(event.data)
   return {
     send,
+    refreshMirror,
     dispose: () => {
       registrations.disposeAll()
       surfaces.detachAll()

@@ -40,10 +40,13 @@ export type SurfaceComponents = {
   readonly clear: () => void
 }
 
+export type SurfacePatchWatcher = (path: DataPath) => void
+
 export type SurfaceState = {
   readonly lifecycle: Accessor<SurfaceLifecycle>
   readonly components: SurfaceComponents
   readonly data: SurfaceData
+  readonly watchPatches: (watcher: SurfacePatchWatcher) => () => void
 }
 
 export const surfaceState: unique symbol = Symbol("surfaceState")

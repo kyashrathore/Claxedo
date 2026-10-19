@@ -1,5 +1,5 @@
 import { catchError, type Accessor } from "solid-js"
-import type { PageProps, SurfaceActionEvent, SurfaceMessage, SurfacePageDefinition, SurfaceProgram } from "@claxedo/plugin-api"
+import type { PageProps, SurfaceActionEvent, SurfaceChannel, SurfaceMessage, SurfaceProgram } from "@claxedo/plugin-api"
 import type { Surface } from "@/surface"
 import { surfacePageMachine, type SurfacePageState } from "./model"
 
@@ -10,15 +10,16 @@ export class SurfaceProgramError extends Error {
   }
 }
 
-export type SurfacePageInput = {
+export type PluginSurfaceInput = {
   readonly surface: Pick<Surface, "surfaceId" | "apply">
-  readonly page: SurfacePageDefinition
-  readonly props: PageProps
+  readonly label: string
+  readonly open: (channel: SurfaceChannel) => SurfaceProgram | void
 }
 
 export type SurfacePageController = {
   readonly state: Accessor<SurfacePageState>
   readonly action: (action: SurfaceActionEvent) => void
+  readonly navigated: (props: PageProps) => void
   readonly close: () => void
 }
 
@@ -28,7 +29,7 @@ function asError(surfaceId: string, error: unknown): Error {
 
 type PageMachine = ReturnType<typeof surfacePageMachine>
 
-function messageReceiver(surface: SurfacePageInput["surface"], machine: PageMachine, fail: (error: unknown) => void) {
+function messageReceiver(surface: PluginSurfaceInput["surface"], machine: PageMachine, fail: (error: unknown) => void) {
   return (messages: readonly SurfaceMessage[]) => {
     for (const message of messages) {
       if (machine.state().kind !== "open") return
@@ -41,35 +42,37 @@ function messageReceiver(surface: SurfacePageInput["surface"], machine: PageMach
   }
 }
 
-function runSurfaceAction(program: SurfaceProgram, action: SurfaceActionEvent, fail: (error: unknown) => void): void {
+function runProgram(work: () => void | Promise<void>, fail: (error: unknown) => void): void {
   try {
-    Promise.resolve(program.action?.(action)).catch(fail)
+    Promise.resolve(work()).catch(fail)
   } catch (error) {
     fail(error)
   }
 }
 
-export function openSurfacePage(input: SurfacePageInput): SurfacePageController {
+export function openPluginSurface(input: PluginSurfaceInput): SurfacePageController {
   const { surfaceId } = input.surface
   const machine = surfacePageMachine()
   const fail = (error: unknown) => machine.send({ type: "failed", error: asError(surfaceId, error) })
   const receive = messageReceiver(input.surface, machine, fail)
   let program: SurfaceProgram = {}
   catchError(() => {
-    program = input.page.surface({ surfaceId, send: (...messages) => receive(messages) }, input.props) ?? {}
+    program = input.open({ surfaceId, send: (...messages) => receive(messages) }) ?? {}
   }, fail)
+  const whileOpen = (work: () => void | Promise<void>) => {
+    if (machine.state().kind === "open") runProgram(work, fail)
+  }
   return {
     state: machine.state,
-    action: (action) => {
-      if (machine.state().kind === "open") runSurfaceAction(program, action, fail)
-    },
+    action: (action) => whileOpen(() => program.action?.(action)),
+    navigated: (props) => whileOpen(() => program.navigated?.(props)),
     close: () => {
       if (machine.state().kind === "closed") return
       machine.send({ type: "closed" })
       try {
         program.dispose?.()
       } catch (error) {
-        console.error(`Plugin page ${input.page.id} failed to close surface ${surfaceId}`, error)
+        console.error(`Plugin ${input.label} failed to close surface ${surfaceId}`, error)
       }
     },
   }

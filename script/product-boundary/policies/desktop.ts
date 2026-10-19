@@ -687,10 +687,12 @@ export const desktopRenderer: Policy = {
   // start are in flight, split from the start offers' wiring so it runs
   // without the UI kit (owner: the app's tasks domain,
   // `tasks/data/start-run.ts`). It adds no package edge.
-  // A cloud OpenCode preset's model picker and the models it offers from
-  // OpenCode's provider catalog read with no workspace (owner: the app's tasks
-  // domain, `tasks/presets/cloud-catalog-model-picker.tsx`,
-  // `tasks/presets/cloud-catalog-models.ts`). They add no package edge.
+  // The agent configuration picker a Tasks preset and a plugin surface's
+  // AgentConfigurationPicker draw: the local and cloud pickers, the models a
+  // cloud OpenCode configuration offers from OpenCode's provider catalog read
+  // with no workspace, the rules they share and their strings (owner: the
+  // app's composer domain, `composer/agent-configuration/`). They add no
+  // package edge.
   // The signed-out notice Organization, Team accounts and Sandbox providers
   // share, with its Sign in action (owner: the app's access domain,
   // `access/view/signed-out.tsx`). It adds no package edge.
@@ -727,12 +729,39 @@ export const desktopRenderer: Policy = {
   // (`surface/grid-columns.ts`, `surface/key-value.ts`, `surface/range-fill.ts`,
   // `surface/tab-strip.ts`,
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
-  // renderer. They add no package edge.
-  // 1481/36, no headroom.
+  // renderer, as do the Image view that draws only the URLs the catalog's
+  // rule admits (`surface/view/image-view.tsx`) and the key that fires a text
+  // field's submit event (`surface/submit-key.ts`). The Board, its lanes, its
+  // keyboard grab machine and pointer drop, and the pending move it draws until
+  // the producer's patch (`surface/view/board-view.tsx`,
+  // `surface/view/board-lane.tsx`, `surface/view/board-interaction.ts`,
+  // `surface/view/board-input.ts`, `surface/view/surface-board.css`,
+  // `surface/board-moves.ts`, `surface/board-pending.ts`) belong to the same
+  // renderer, as do the FilePicker with the file reading and image fitting it
+  // owns (`surface/view/file-picker-view.tsx`, `surface/file-read.ts`,
+  // `surface/image-fit.ts`, moved from the tasks domain's image drafts, which
+  // the Tasks create form now imports) and the Combobox with its options and
+  // search debounce (`surface/view/combobox-view.tsx`,
+  // `surface/view/combobox-state.ts`, `surface/view/combobox-list.tsx`,
+  // `surface/combobox-options.ts`, `surface/search-debounce.ts`,
+  // `surface/view/surface-pickers.css`). They add no package edge.
+  // The plugin API primitives a surface page and a surface settings section
+  // use (owner: the app's plugins domain): the route params a mounted page
+  // hands its program (`plugins/surface-page/page-params.ts`), the host
+  // component both draw with (`plugins/surface-page/drawn-surface.tsx`), a
+  // cloud workspace's start followed for a plugin
+  // (`plugins/bindings/workspaces.ts`), and the frame's response bodies over
+  // the host's base64 codec (`plugins/frame/response-body.ts`,
+  // `plugins/base64.ts`); with the renderer's reference components, the
+  // AgentConfigurationPicker view and the rule that reads its bound value
+  // (owner: the app's surface domain, `surface/view/surface-references.ts`,
+  // `surface/view/agent-configuration-view.tsx`, `surface/agent-configuration.ts`).
+  // They add no package edge.
+  // 1508/36, no headroom.
   // -1 module (owner: the app's server domain): `server/availability.ts`, the
   // Tasks route probe, is gone; the bootstrap's `deployment.capabilities`
-  // says which plugin capabilities the server offers. 1480/36, no headroom.
-  ceilings: { modules: 1480, packages: 36 },
+  // says which plugin capabilities the server offers. 1507/36, no headroom.
+  ceilings: { modules: 1507, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -42,7 +42,7 @@ function targetView(target: RenderTarget, entries: FrameEntries, link: FrameLink
   }
   if (target.kind === "settings") {
     const section = entries.settings.get(target.id)
-    if (!section) throw missing()
+    if (!section || "surface" in section) throw missing()
     return () => section.render()
   }
   const overlay = entries.overlays.get(target.id)
@@ -69,7 +69,7 @@ export async function startFrame(port: MessagePort, boot: FrameBoot): Promise<vo
     const api = createFrameApi({ link, context: boot.context, entries, dictionary, forward: !boot.target, signal: new AbortController().signal })
     await definition.activate(api)
     if (!boot.target) {
-      const surfaces = createFrameSurfaces(entries.pages, link.send)
+      const surfaces = createFrameSurfaces(entries, link.send)
       link.onInvoke((invoke) => answerInvoke(entries, surfaces, invoke))
       link.send({ type: "activated" })
       return

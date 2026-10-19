@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/solid-query"
-import type { ModelReference } from "@claxedo/tasks"
 import { useServer, type CatalogProvider } from "@/server"
+import type { AgentModelReference } from "./model"
 
-export type CloudModelChoice = { readonly model: ModelReference; readonly provider: string; readonly name: string }
+export type CloudModelChoice = { readonly model: AgentModelReference; readonly provider: string; readonly name: string }
 
 export type CloudModelOffer = { readonly choices: readonly CloudModelChoice[]; readonly planUnlisted: boolean }
 

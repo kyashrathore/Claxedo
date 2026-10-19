@@ -36,8 +36,41 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 | One of a few options | \`ChoicePicker\` with \`chips\`; a \`dropdown\` past about five |
 | A bounded continuous value | \`Slider\`; a small whole number is a number \`TextField\` |
 | Nothing to show yet | \`EmptyState\` |
+| A picture the producer has (a screenshot, an attachment, an avatar) | \`Image\` with a \`data:\` URL and an \`accessibility.label\` |
+| Items that move between states (a task board, a pipeline) | \`Board\`: one column per state, one \`item\` template; on a plugin page, \`move\` lets the person drag or key them across |
+| Files the person attaches (images, documents) | \`FilePicker\` (plugin pages only), with the picked images shown back as \`Image\`s |
+| One choice from a long or searched list (a project, a person) | \`Combobox\`; \`multiple\` for several |
+| A work item's status beside its title | A ListItem \`icon\` or an \`Icon\` of \`circleDashed\` (not started), \`circle\` (to do), \`circleHalf\` (in progress), \`checkCircle\` (done) or \`alertCircle\` (blocked), with the status word in a Badge |
 
 A Badge's \`variant\` may be bound, so a template row can carry its own tone: put the tone beside the status word in each item (\`{"status": "Failed", "tone": "danger"}\`) and bind both (\`"text": {"path": "status"}, "variant": {"path": "tone"}\`); an unknown tone draws neutral. The text still says the state, so colour is never the only signal.
+
+## Images
+
+- \`url\` is a \`data:\` URL of a base64 PNG, JPEG, GIF or WebP, at most 2 MiB decoded, usually bound from \`data\` (\`"url": {"path": "/shot"}\`). A plugin may also bind a \`blob:\` URL it made in the app's own document. Nothing else draws: no \`http(s)\`, no \`file:\`, no SVG. A surface never fetches.
+- \`accessibility.label\` is required and says what the picture shows ("Login page after the fix"), not "image". A refused url draws a dashed box with that label instead of the picture.
+- \`variant\` sets the size: \`icon\` 24 px, \`avatar\` a 40 px circle, \`smallFeature\`, \`mediumFeature\` and \`largeFeature\` up to 120, 240 and 480 px wide, \`header\` the full width at most 200 px tall. Without one the picture keeps its own size, never wider than its column. \`fit\` (\`contain\` by default, \`cover\`, \`fill\`, \`none\`, \`scaleDown\`) says how it fills that box.
+- Several pictures sit in a Grid; a picture beside text sits in a Row.
+
+## Boards
+
+- A Board draws \`columns\`, each \`{"key", "title", "items"}\` where \`items\` is the data path of that column's list, with one \`item\` template for every card (paths inside it are relative to the item). \`itemKey\` names the field that holds each item's stable id. A column may add \`headerActions\` (an "Add card" icon Button) and a \`footer\` ("Load more").
+- \`layout\`: \`columns\` (default) draws lanes side by side that scroll sideways on a narrow screen; \`list\` stacks the columns as titled groups, and a single column is a sortable list.
+- \`move\` is for app plugin pages only. With it, every item whose \`movable\` field is true (every item when \`movable\` is left out) can be dragged with a pointer, or focused and moved with the keyboard: Space or Enter picks it up, the arrow keys move it within and across columns, Space or Enter drops it, Escape cancels. The event adds \`itemId\`, \`fromColumn\`, \`fromIndex\`, \`toColumn\` and \`toIndex\` (the position in the target list once the item is taken out of its old one).
+- The app never changes your data: it draws the dropped item at its target until your next \`updateDataModel\` touching either column's list. Answer every \`move\` with a patch: the new lists when it succeeds, the old lists when you refuse it (then say why in a Callout).
+- Touch has no drag. Give each card another way to move, such as a status ChoicePicker \`dropdown\` whose \`change\` you answer the same way.
+- An agent reply may draw a Board without \`move\`; for a few short lanes the Board recipe below (a Grid of Sections) works too.
+
+## Files and search
+
+- A FilePicker is for app plugin pages only. It draws a "Choose" button and a drop area; \`paste: "self"\` also takes a paste while the picker has focus, \`paste: "section"\` while focus is anywhere in its Section or Card. \`accept\` lists types (\`image/png\`, \`image/*\`) or extensions (\`.pdf\`), \`maxBytes\` caps each file (at most 8 MiB) and \`maxFiles\` caps one pick (1 by default). \`fitImages\` re-encodes an image over \`maxBytes\` smaller before refusing it.
+- \`pick\` carries the bytes, never a path: \`files\` is \`[{"name", "mimeType", "size", "dataBase64"}]\` and \`refused\` is \`[{"name", "reason"}]\` with reason \`type\`, \`size\` or \`count\`. One pick carries at most 12 MiB; files past it are refused as \`size\`. Keep what you accept in your own state, show it back (an \`Image\` per picture, a ListItem per document, each with a remove Button), and name each refusal in a \`warning\` Callout.
+- A Combobox binds \`value\` (a string, or a list with \`multiple\`) and draws \`options\` (\`{"label", "value", "description"}\`, literal or bound). Without \`search\` it filters its options by the typed text itself. With \`search\` (plugin pages only) it sends \`{"query"}\` 250 ms after the last keystroke and shows "Searching…" until your next patch under the bound \`options\` path; answer with the matching options and drop answers to older queries. \`change\` sends \`{"value"}\` once the person picks.
+
+## Agent configuration
+
+- An AgentConfigurationPicker is for app plugin pages only. It draws the person's own harness, model and effort pickers over their own projects and accounts, so a plugin never lists harnesses or models itself.
+- Bind \`value\` to \`{"harness": {"id", "access"} | null, "model": {"providerID", "modelID"} | null, "effort": string | null}\`, all three null before anything is chosen. \`placement\`, literal or bound, is \`local\` (the harnesses and models of the person's first project) or \`cloud\` (a new cloud workspace, so no machine is asked; a harness that lists its models only from a running workspace runs its own default model).
+- The picker writes the bound \`value\` itself; \`change\` sends \`{"value"}\` after each pick, with the model and effort a switched harness carried over already cleared. Give each configuration its own Section and save them all from one Footer.
 
 ## Provenance
 
@@ -338,7 +371,9 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 
 ## Interaction rules
 
-- Only a Button sends anything. An input writes into the data model inside the app; nothing leaves the surface until a Button fires.
+- A Button sends its \`action\`. An input writes into the data model inside the app and sends nothing unless it declares an event: a TextField's \`submit\` (Enter in a one-line field; Mod+Enter or Mod+S in a \`longText\` field), the \`change\` of a ChoicePicker, CheckBox or Switch (after the new value is written), and the \`change\` of Tabs (bind \`selected\` to a number to read or set the open tab).
+- An input's event carries what the input supplies, added to its \`context\` under fixed names: \`value\` (the text, the list of chosen values, or the boolean) and, for Tabs, \`index\`. A \`context\` key with one of those names is refused; name your own entries differently.
+- In an agent reply every event asks the person before it is sent and arrives as a new user message, so an agent reply keeps to Buttons; \`change\` and \`submit\` are for plugin pages that answer each one with a patch (filters, inline edits, Save on Mod+S).
 - Bind every input a Button depends on into its \`context\` (\`"name": {"path": "/target/name"}\`). The receiver sees only the context, never the model.
 - Name the event for what it does, in camelCase (\`approveRelease\`, \`createDeployTarget\`). It is what the agent-reply confirmation shows ("Send “approveRelease” to the agent?") and what a plugin's \`action\` handler switches on.
 - Inside a template (\`children: {"componentId": ..., "path": ...}\`) a path without a leading \`/\` reads the current item (\`{"path": "title"}\`); one with \`/\` reads from the root. A Button in a template sends its item's key: \`"context": {"card": {"path": "id"}}\`.
@@ -376,6 +411,9 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 | Every row showing several text buttons and links in different styles | One \`primaryAction\` per row; the rest icon-only in \`actions\`, shown on hover |
 | A decorative Header icon | An icon that names the object type, or none |
 | Preformatted numbers in a Table ("1,204 ms") | JSON numbers, with the unit in the column title |
+| An Image pointing at an \`https\` URL | A \`data:\` URL in \`data\`, bound to \`url\` |
+| A status shown only as a coloured circle | The status glyph with its word in a Badge |
+| A Board \`move\` handler that only updates its own state | A patch of both columns' lists, old or new, for every move |
 
 ## Before you show it
 
@@ -395,4 +433,6 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 14. Each Callout has the tone that matches its meaning, a title, and an \`action\` when it is \`danger\`; at most one per Section.
 15. A view with inputs ends with a Footer.
 16. Each repeated row has at most one text action (\`primaryAction\`); every Button in its \`actions\` has an \`icon\`, and a destructive one uses \`delete\`.
+17. Every Image has a \`data:\` URL and an \`accessibility.label\` that says what it shows.
+18. A FilePicker's refusals are named back in a Callout, and a Combobox with \`search\` binds \`options\` so its answers can arrive.
 `

@@ -44,17 +44,18 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 | Primitive | Purpose |
 | --- | --- |
 | `sidebar.item` | A row in the main sidebar that opens a page |
-| `pages.register`, `pages.open` | A page in the page tab, with its own path |
+| `pages.register`, `pages.open` | A page with its own path, rendered or a surface page (`surface(channel, props)`). A surface page with `tab: true` opens in the page tab the app's own tab pages share, and `icon` names its glyph. A path with params (`/tasks/:taskId?`) keeps one program while the params change: the host calls `navigated(props)` instead of opening it again |
 | `panes.register`, `panes.open` | A pane kind in the workbench, with its restore state |
-| `settings.section` | A section in the settings sidebar and page |
+| `settings.section`, `settings.open` | A section in the settings sidebar and page, rendered (`render`) or a surface (`surface(channel)`, with an optional `group`, `workspace` or `app`); `open` shows one of the plugin's sections |
 | `overlays.register`, `overlays.open`, `overlays.close` | A keyboard-invoked overlay |
 | `commands.register`, `commands.run` | Commands with keybindings |
 | `mentions.register` | Items in the composer's `@` menu |
 | `workbench` | List tabs with status, activate, close, move |
 | `themes.register`, `icons.registerSkin` | Themes and icon skins |
-| `sessions` | Create with a prompt and attachments, status, open |
+| `sessions` | Create with a prompt and attachments, status, open (also a session the app has not listed yet: the host rereads the workspace catalog once, then navigates) |
+| `workspaces` | `followStart(workspaceId, onProgress)`: follow a cloud workspace's start, with each step in the words the session screen uses, until it runs or fails |
 | `projects` | List, and the current project's id |
-| `server` | `fetch` and `operation`, limited to what the manifest names |
+| `server` | `fetch` and `operation`, limited to what the manifest names; a response body arrives byte for byte on every platform |
 | `context` | Plugin id and version, platform, locale, current project and session, an abort signal disposed with the plugin |
 | `ui` | `toast`, `confirm` |
 | `i18n` | `t` |

@@ -5,7 +5,7 @@ import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { Account, AccountsApi, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
-import type { CloudCreateInput, CloudStopOutcome, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime } from "./cloud-types"
+import type { CloudCreateInput, CloudStopOutcome, CloudWorkspace, CodeHostRepositoryListing, WorkspaceRuntime, WorkspaceStartRun } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { AgentConnectionsApi, AgentConnectionsQueries } from "./agent-connections"
@@ -35,6 +35,7 @@ import type {
 import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { TasksApi } from "./tasks"
+import type { Workspaces } from "./workspaces"
 import type {
   MarketplaceCatalog,
   PluginActivationInput,
@@ -124,6 +125,7 @@ export type PlacementsApi = {
   readonly openable: () => ReadonlySet<PlacementId> | undefined
   readonly load: () => Promise<readonly Placement[]>
   readonly createWorktree: (root: PlacementId, input: WorktreeCreateInput) => Promise<Placement>
+  readonly locateSession: Workspaces["locateSession"]
 }
 
 export type TerminalsApi = {
@@ -148,6 +150,7 @@ export type CloudApi = {
   readonly start: (id: PlacementId) => Promise<void>
   readonly startFresh: (id: PlacementId) => Promise<void>
   readonly follow: (id: PlacementId) => Promise<void>
+  readonly followStart: (id: PlacementId, following: () => void) => Promise<WorkspaceStartRun>
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
   readonly stop: (id: PlacementId) => Promise<CloudStopOutcome>
   readonly remove: (id: PlacementId) => Promise<void>

@@ -1,12 +1,12 @@
 import { createStore, reconcile } from "solid-js/store"
 import type { FrameInvoke, FrameMirror, FrameToHost, HostCall, HostToFrame, Registration } from "../protocol"
-import { answerCall, createPendingCalls } from "../pending-calls"
+import { answerCall, createPendingCalls, type CallProgressListener } from "../pending-calls"
 
 export type InvokeHandler = (invoke: FrameInvoke) => unknown
 
 export type FrameLink = {
   readonly mirror: FrameMirror
-  readonly call: (call: HostCall) => Promise<unknown>
+  readonly call: (call: HostCall, progress?: CallProgressListener) => Promise<unknown>
   readonly register: (registration: Registration) => () => void
   readonly send: (message: FrameToHost) => void
   readonly onInvoke: (handler: InvokeHandler) => void
@@ -28,13 +28,14 @@ export function createFrameLink(port: MessagePort, initial: FrameMirror): FrameL
     const message = event.data
     if (message.type === "mirror") setMirror(reconcile(message.mirror))
     else if (message.type === "invoke") void answerCall(send, message.id, () => runInvoke(message.invoke))
+    else if (message.type === "progress") requests.progress(message.id, message.text)
     else requests.settle(message)
   }
 
   return {
     mirror,
-    call: (call) => {
-      const { id, result } = requests.open()
+    call: (call, progress) => {
+      const { id, result } = requests.open(progress)
       send({ type: "call", id, call })
       return result
     },

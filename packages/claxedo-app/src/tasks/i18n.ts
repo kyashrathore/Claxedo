@@ -155,16 +155,6 @@ const en = {
   "tasks.preset.nameTooLong": "Name is longer than {{max}} characters.",
   "tasks.preset.cloudHarnessElsewhere":
     "{{harness}} runs in its own session host on a cloud workspace, and a cloud task starts its session in the workspace's runtime. Choose another harness for a cloud preset.",
-  "tasks.preset.cloudModelsLoading": "Loading {{harness}}'s models…",
-  "tasks.preset.cloudNoAccount": "{{harness}} has no account to run a model on. Add one in Settings → Models.",
-  "tasks.preset.cloudPlanUnlisted": "A cloud preset can't run {{harness}} on a ChatGPT plan. Add an OpenAI API key in Settings → Models.",
-  "tasks.preset.model": "Model",
-  "tasks.preset.modelPlaceholder": "Choose a model",
-  "tasks.preset.cloudDefaultModel":
-    "Runs on {{harness}}'s default model. A harness lists its models only from a running workspace, and a cloud task starts in a new one.",
-  "tasks.preset.cloudSavedModel": "Runs on {{model}}.",
-  "tasks.preset.harness": "Harness",
-  "tasks.preset.harnessPlaceholder": "Choose a harness",
   "tasks.preset.chooseHarness": "Choose a harness.",
   "tasks.preset.chooseModel": "Choose a model for this harness.",
   "tasks.preset.primaryRequired": "The primary configuration is required.",
@@ -179,8 +169,6 @@ const en = {
   "tasks.preset.additionalConfigurations": "Additional configurations",
   "tasks.preset.labelsHint":
     "Labels describe intended use. They are settings you pick when starting a session, not stages that run on their own.",
-  "tasks.preset.loadingProjects": "Loading projects…",
-  "tasks.preset.addProjectFirst": "Add a project first: harness and model choices are read from a project's checkout.",
   "tasks.preset.instructions": "Instructions",
   "tasks.preset.instructionsLabel": "Preset instructions",
   "tasks.preset.instructionsPlaceholder": "What this agent should always do, whatever the task says",

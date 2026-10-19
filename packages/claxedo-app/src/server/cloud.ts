@@ -92,6 +92,14 @@ export function createCloudApi(
     start: wakes.start,
     startFresh: wakes.startFresh,
     follow: wakes.follow,
+    followStart: async (id, following) => {
+      await workspaces.refresh()
+      following()
+      await wakes.follow(id)
+      const runtime = wakes.runtime(id)
+      if (runtime.kind === "live") return { kind: "running" }
+      return runtime.kind === "wakeFailed" ? { kind: "notRunning", error: runtime.error } : { kind: "notRunning" }
+    },
     runtime: wakes.runtime,
     stop: async (id) => {
       const answer = await transport.json(at(id, "/lifecycle/stop"), jsonInit("POST", {}))

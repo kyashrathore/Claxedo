@@ -2,8 +2,9 @@
 import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
-import { placementId, projectId } from "./ids"
+import { placementId, projectId, sessionId } from "./ids"
 import type { Transport } from "./transport"
+import { cloudCatalog as listedCloudCatalog } from "./test-support/cloud-catalog"
 import { createWorkspaces } from "./workspaces"
 import { queryKeys } from "./query-keys"
 import { invalidateFor } from "./queries"
@@ -95,6 +96,28 @@ test("a machine stop the server tells of re-reads the catalog, so an open cloud 
     if (!event) throw new Error("the stop notice decoded to no event")
     expect(await rereadsAfter(event)).toBe(1)
     expect(cloud()).toMatchObject({ kind: "cloud", lifecycle: "asleep" })
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("a session in a workspace the catalog has not read yet is located only once the catalog has read it, so its route can open", async () => {
+  await createRoot(async (dispose) => {
+    const created = ["ws_known"]
+    const reads: string[] = []
+    const catalog = listedCloudCatalog(() => created, reads)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const workspaces = createWorkspaces(catalog, queryClient)
+    await workspaces.load()
+    created.push("ws_task_root")
+
+    const located = await workspaces.locateSession({ workspaceId: "ws_task_root", sessionId: "ses_tasks_1" })
+
+    expect(located).toEqual({ placementId: placementId("ws_task_root"), sessionId: sessionId("ses_tasks_1") })
+    expect(workspaces.byId(placementId("ws_task_root"))?.projectId).toBe(projectId("prj"))
+    const rereads = reads.length
+    await workspaces.locateSession({ workspaceId: "ws_known", sessionId: "ses_other" })
+    expect(reads.length).toBe(rereads)
     workspaces.dispose()
     dispose()
   })

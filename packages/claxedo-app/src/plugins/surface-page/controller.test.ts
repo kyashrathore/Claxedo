@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 import type { SurfaceActionEvent, SurfaceMessage, SurfacePageDefinition, SurfaceProgram } from "@claxedo/plugin-api"
 import { SURFACE_CATALOG_ID } from "@claxedo/plugin-api/surface"
-import { openSurfacePage } from "./controller"
+import { openPluginSurface } from "./controller"
 
 await mock.module("@/surface/view/surface-view", () => ({ SurfaceView: () => undefined }))
 const { createSurface, SurfaceMessageError } = await import("@/surface")
@@ -28,7 +28,8 @@ function surfacePage(surface: SurfacePageDefinition["surface"]): SurfacePageDefi
 }
 
 function open(page: SurfacePageDefinition, surface = recordingSurface().surface) {
-  return createRoot((dispose) => ({ controller: openSurfacePage({ surface, page, props: { path: "/counter", params: { team: "core" } } }), dispose }))
+  const props = { path: "/counter", params: { team: "core" } }
+  return createRoot((dispose) => ({ controller: openPluginSurface({ surface, label: `page ${page.id}`, open: (channel) => page.surface(channel, props) }), dispose }))
 }
 
 function settle() {
@@ -93,6 +94,31 @@ describe("a plugin surface page's actions", () => {
     expect(applied).toEqual([])
   })
 
+})
+
+describe("a plugin surface page's navigation", () => {
+  test("a param change reaches the same program until it is closed, and a throw fails the page", async () => {
+    const opened: string[] = []
+    const navigations: string[] = []
+    const { controller } = open(
+      surfacePage((_channel, props) => {
+        opened.push(props.params.team ?? "")
+        return {
+          navigated: (next) => {
+            navigations.push(next.params.team ?? "")
+            if (next.params.team === "broken") throw new Error("no such team")
+          },
+        }
+      }),
+    )
+    controller.navigated({ path: "/counter", params: { team: "infra" } })
+    controller.navigated({ path: "/counter", params: { team: "broken" } })
+    await settle()
+    expect(controller.state()).toMatchObject({ kind: "failed", error: { message: "no such team" } })
+    controller.navigated({ path: "/counter", params: { team: "late" } })
+    expect(opened).toEqual(["core"])
+    expect(navigations).toEqual(["infra", "broken"])
+  })
 })
 
 describe("closing a plugin surface page", () => {
