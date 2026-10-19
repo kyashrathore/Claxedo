@@ -406,7 +406,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       if (!authority.machineAuth) return unsupported(c, "Machine-signed enrollment")
       const bodyText = await c.req.text()
       const verified = await verifyMachineRequest(
-        { method: c.req.method, pathname: new URL(c.req.url).pathname, headers: c.req.raw.headers, bodyText },
+        { method: c.req.method, url: c.req.url, headers: c.req.raw.headers, bodyText },
         { ...authority.machineAuth, now },
       )
       if (!verified.ok) {

@@ -96,7 +96,10 @@ beforeAll(async () => {
   app = new Hono()
   // The Cloudflare edge stamps every request with its client address, and Better Auth budgets each address.
   app.use((c, next) => {
-    c.req.raw.headers.set("cf-connecting-ip", `10.0.${Math.floor(++requests / 250)}.${requests % 250}`)
+    ++requests
+    if (!c.req.raw.headers.has("cf-connecting-ip")) {
+      c.req.raw.headers.set("cf-connecting-ip", `10.0.${Math.floor(requests / 250)}.${requests % 250}`)
+    }
     return next()
   })
   app.all("/api/auth/*", (c) => composed.authHandler(c.req.raw))
@@ -448,5 +451,15 @@ describe("claxedo login on the Better Auth D1 composition", () => {
     expect(await impostor.json()).toMatchObject({ error: "invalid_client_metadata" })
     const hosted = await register({ client_name: "Claude", redirect_uris: ["https://claude.ai/api/mcp/auth_callback"] })
     expect(hosted.status, await hosted.clone().text()).toBe(201)
+  })
+
+  test("one address may register five clients a minute and no more", async () => {
+    const register = (address: string) => request("/api/auth/oauth2/register", json({
+      client_name: "Fixture MCP host", redirect_uris: ["http://127.0.0.1:51792/callback"], grant_types: ["authorization_code"],
+      response_types: ["code"], token_endpoint_auth_method: "none", application_type: "native",
+    }, { "cf-connecting-ip": address }))
+    for (let attempt = 0; attempt < 5; attempt++) expect((await register("203.0.113.7")).status).toBe(201)
+    expect((await register("203.0.113.7")).status).toBe(429)
+    expect((await register("203.0.113.8")).status).toBe(201)
   })
 })
