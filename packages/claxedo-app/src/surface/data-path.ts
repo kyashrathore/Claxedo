@@ -27,3 +27,11 @@ export function isBinding(value: unknown): value is SurfaceDataBinding {
 export function itemScope(listPath: DataPath, index: number): DataPath {
   return [...listPath, String(index)]
 }
+
+function isPathWithin(path: DataPath, prefix: DataPath): boolean {
+  return prefix.length <= path.length && prefix.every((segment, index) => path[index] === segment)
+}
+
+export function pathsOverlap(first: DataPath, second: DataPath): boolean {
+  return isPathWithin(first, second) || isPathWithin(second, first)
+}

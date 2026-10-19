@@ -729,7 +729,22 @@ export const desktopRenderer: Policy = {
   // (`surface/grid-columns.ts`, `surface/key-value.ts`, `surface/range-fill.ts`,
   // `surface/tab-strip.ts`,
   // `surface/table-alignment.ts`, `surface/tones.ts`) belong to the same
-  // renderer. They add no package edge.
+  // renderer, as do the Image view that draws only the URLs the catalog's
+  // rule admits (`surface/view/image-view.tsx`) and the key that fires a text
+  // field's submit event (`surface/submit-key.ts`). The Board, its lanes, its
+  // keyboard grab machine and pointer drop, and the pending move it draws until
+  // the producer's patch (`surface/view/board-view.tsx`,
+  // `surface/view/board-lane.tsx`, `surface/view/board-interaction.ts`,
+  // `surface/view/board-input.ts`, `surface/view/surface-board.css`,
+  // `surface/board-moves.ts`, `surface/board-pending.ts`) belong to the same
+  // renderer, as do the FilePicker with the file reading and image fitting it
+  // owns (`surface/view/file-picker-view.tsx`, `surface/file-read.ts`,
+  // `surface/image-fit.ts`, moved from the tasks domain's image drafts, which
+  // the Tasks create form now imports) and the Combobox with its options and
+  // search debounce (`surface/view/combobox-view.tsx`,
+  // `surface/view/combobox-state.ts`, `surface/view/combobox-list.tsx`,
+  // `surface/combobox-options.ts`, `surface/search-debounce.ts`,
+  // `surface/view/surface-pickers.css`). They add no package edge.
   // The plugin API primitives a surface page and a surface settings section
   // use (owner: the app's plugins domain): the route params a mounted page
   // hands its program (`plugins/surface-page/page-params.ts`), the host
@@ -742,8 +757,8 @@ export const desktopRenderer: Policy = {
   // (owner: the app's surface domain, `surface/view/surface-references.ts`,
   // `surface/view/agent-configuration-view.tsx`, `surface/agent-configuration.ts`).
   // They add no package edge.
-  // 1491/36, no headroom.
-  ceilings: { modules: 1491, packages: 36 },
+  // 1508/36, no headroom.
+  ceilings: { modules: 1508, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

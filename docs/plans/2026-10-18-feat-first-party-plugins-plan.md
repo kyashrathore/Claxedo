@@ -657,19 +657,31 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
 - Delete or rename per §2(g); `slash-popover` keeps only file and mention options.
 - **Checks:** app test (`src/composer`), typecheck, check (budget for Composer drops), e2e `06-composer.spec.ts`, `34-live-plugin-desktop.spec.ts`, `35-live-plugin-web.spec.ts` (plugin mentions).
 - Progress: done (app-plugin-host lane). The `agent` AtOption had no producer and went with `document`; the mention row shows the source's group. Composer budget lowered to the measured 14031, total 112807. No new assertion: `/docs` was already filtered out of the slash list, so nothing a person sees changed. Flows 06 and 35 pass on web and phone, except 06's explicit-model case, which drives the machine's real `claude` CLI and read its label as "Haiku 4.5" where the spec expects "Haiku". Flow 34 is not verified (the desktop project cannot start Electron in this container; see S5).
-- [ ] **S2. Input events, `Image`, status glyphs.**
+- [x] **S2. Input events, `Image`, status glyphs.**
 - Implement §3.0 and S2 in the catalog, spec check, renderer, design guide and `ui_guide`.
 - **Tests:** plugin-api spec tests (collisions, Image URL rule, agent-only refusals); app `src/surface` tests (supplied fields, change fires after the write, Image refusals).
 - **Flow 61 fixture:** an `Image` with a data: URL paints; an https URL shows the refused slot and makes no request; a `ChoicePicker.change` reaches the plugin.
 - **Checks:** plugin-api test and typecheck; app test, typecheck and check (raise the surface budget in `budget.ts` to the measured lines with its owner, no headroom); mcp test (`surfaces`); ratchets plus `bun run --cwd packages/claxedo-desktop verify:closure` (desktop-renderer modules grow by the new view files; record the exact number).
-- Progress:
-- [ ] **S3. `Board` with `move`.**
+- **As built:**
+  - `Image` takes its required `accessibility` (`label` required) in its own shape instead of a refinement, so the `ui_show` JSON Schema states it;
+  - `surfaceImageUrl(value, origin?)` refuses every `blob:` when the origin is absent or opaque (`"null"`), so the spec check refuses a literal blob and the desktop's `file:` renderer accepts none; Tasks images use `data:` (§4);
+  - `checkSurfaceSpec`'s `producer` option lands with the first plugin-only prop in S3; S2 adds none;
+  - the renderer adds `submit-key.ts` (Enter; Mod+Enter or Mod+S in `longText`) and `tab-strip.ts` `selectedTabIndex`;
+  - flow 61's phone arrange opens the drawer until the fixture row is in view: the shell's `navigated` event closes the drawer once the home workspace is chosen, which failed the phone project at the base commit.
+- Progress: done 2026-10-18 — input `change`/`submit` events, `Image` (data:/same-origin blob:) and the five status glyphs; desktop-renderer 1483 modules, surface budget 2430.
+- [x] **S3. `Board` with `move`.**
 - **Tests:** keyboard machine transitions, supplied move fields, the renderer never writes data, pending cleared by a patch to either column.
 - **Flow 61 fixture:** drag a card to another column; keyboard Space, ArrowRight, Space; the plugin patches and the card stays.
 - **Phone:** the board scrolls and the keyboard path works.
 - **Checks:** as S2.
-- Progress:
-- [ ] **S4. `FilePicker` and `Combobox`.**
+- **As built:**
+  - `SURFACE_PLUGIN_ONLY_EVENTS` (`events.ts`) names the plugin-only events, and `checkSurfaceSpec(value, { producer: "agent" })` refuses them at the prop's pointer; `ui_show` checks as the agent producer;
+  - the spec check also refuses a reused column key;
+  - the pending move settles on the producer's patches only: `SurfaceState.watchPatches` reports each `updateDataModel` path from the store, so a local input write never settles it; while a move is pending no other move starts;
+  - the view splits into `board-view.tsx`, `board-lane.tsx`, `board-interaction.ts` (lanes, pending, announcer) and `board-input.ts` (keyboard grab and pointer drop);
+  - `move` reports `fromIndex` in the source list and `toIndex` in the target list with the item taken out.
+- Progress: done 2026-10-19 — `Board` with pointer drag and the keyboard grab (Space/Enter, arrows, Escape), pending until the plugin's patch; desktop-renderer 1490 modules, surface budget 3073.
+- [x] **S4. `FilePicker` and `Combobox`.**
 - Move `image-drafts.ts` to `src/surface/image-fit.ts`; the Tasks create form imports it through `@/surface` until S10b.
 - **Tests:** accept/size/count/event caps, `fitImages` rounds, paste scope, debounce timing (fake clock), searching state.
 - **Flow 61 fixture:**
@@ -677,7 +689,13 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - an oversize file is refused;
   - typing in a `Combobox` streams options and selecting fires `change`.
 - **Checks:** as S2 (the no-polling check lists `search-debounce.ts` as the timer owner).
-- Progress:
+- **As built:**
+  - `image-fit.ts` holds only the generic fit (type from the declared type or the name, `shrinkInRounds`, `canvasShrink`, `fitImage`, `blobBase64`, `imageDataUrl`); the Tasks bounds, refusal kinds and their copy moved into `src/tasks/view/image-queue.ts`, and the create form draws previews with `imageDataUrl`;
+  - `maxFiles` counts accepted files only; a file the browser cannot read is logged and refused as `type` (the plan's three reasons are kept);
+  - the Combobox's listbox sits in flow under its input (no overlay), and "searching" ends on the producer's next patch overlapping the bound options path (`data-path.ts` `pathsOverlap`, shared with the Board);
+  - an agent's FilePicker draws disabled and an agent's Combobox never searches; `checkSurfaceSpec(…, { producer: "agent" })` refuses `pick` and `search`;
+  - no e2e flow covers the Tasks create form's images; the moved code is covered by `image-fit.test.ts` and `src/tasks` tests.
+- Progress: done 2026-10-19 — `FilePicker` (choose, drop, paste; per-file, count and 12 MiB event caps; `fitImages`) and `Combobox` (local filter or 250 ms debounced `search`, `change`); `image-drafts.ts` moved to `src/surface/image-fit.ts`; desktop-renderer 1498 modules, surface budget 3957, Tasks 5014.
 - [x] **S5. Plugin API primitives and `AgentConfigurationPicker`.**
 - Implement the primitive table; move `cloud-configuration-picker.tsx`, `cloud-model.ts`, `cloud-catalog-*` to `src/composer/`.
 - **Tests:** bindings (tab entry, `navigated` without remount, settings surface, `sessions.open` re-reads the catalog once and navigates, `followStart` progress), frame protocol round trips (navigated, settings surface, progress, base64 body).
@@ -694,7 +712,7 @@ Every new or changed flow records a red run, at desktop width and in `phone`. Ev
   - `AgentConfigurationPicker` binds a value shaped by `surfaceAgentConfigurationSchema` (exported as `SurfaceAgentConfiguration`). The renderer draws it through a reference component the host passes in (`SurfaceReferencesProvider`): plugin surfaces get the composer's `AgentConfigurationPicker`, an agent reply gets none and draws a note, so it is inert there. Its `change` supplies `{ value }` through the §3.0 `supplied` argument of `surfaceActionEvent`. Still open, for the catalog lane's §3.0 producer limits: `checkSurfaceSpec(…, { producer: "agent" })` must refuse it, and the design guide and `ui_guide` must describe it (both files are that lane's).
   - The whole configuration editor moved, not just the cloud pickers: `presets/configuration-editor.tsx` is `composer/agent-configuration/agent-configuration-picker.tsx`, with `rebaseConfiguration` applied inside the picker; the composer's type is the catalog's `SurfaceAgentConfiguration`, because app code may not declare `providerID`/`modelID`.
   - Flow 61 adds a tab page with a param route, a surface settings section holding an `AgentConfigurationPicker`, and a byte fetch of a task attachment (fixture routes `/api/claxedo/tasks`). The phone opener now waits for the home redirect before opening the rail; a tap before it was closed by that navigation.
-  - Desktop-renderer modules 1481 → 1491 (the ten new owners named in `desktop.ts`). Budgets: Composer 14376, Plugin host 2650, Web plugin frame 1618, Surface renderer 2359, Tasks 4754, total 113505.
+  - Desktop-renderer modules 1481 → 1491 (the ten new owners named in `desktop.ts`). Budgets: Composer 14376, Plugin host 2650, Web plugin frame 1618, Surface renderer 2359, Tasks 4754, total 113505. Merged with S2–S4: desktop-renderer 1508 (their 1498 plus these ten), Surface renderer 4057, Tasks 4658, total 115107; the picker's `change` is declared in `SURFACE_EVENT_FIELDS` and fires through S2's `supplied`; flow 61 holds both lanes' cases on one fixture page (the per-project buttons became `project-links`, since S4's Combobox owns `project`).
   - Not verified here: flow 34 (desktop). This container runs as root and Electron exits with "Running as root without --no-sandbox is not supported"; `00-desktop-smoke` fails the same way at fixture setup.
 - [ ] **S6. Server plugin contract and bootstrap capabilities.**
 - Add `server-core/src/plugins/server-plugin.ts`.

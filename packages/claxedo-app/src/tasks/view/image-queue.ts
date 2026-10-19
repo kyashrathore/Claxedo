@@ -1,7 +1,36 @@
 import { createSignal } from "solid-js"
-import { TASKS_BOUNDS, type TaskAttachmentDraft } from "@claxedo/tasks"
+import { TASKS_BOUNDS, isTaskAttachmentMime, type TaskAttachmentDraft } from "@claxedo/tasks"
+import { blobBase64, fitImage, imageTypeOf } from "@/surface"
 import type { TasksKey } from "../i18n"
-import { imageRefusalPhrase, isImageRefusal, readImageDraft } from "./image-drafts"
+
+export type ImageRefusal = { readonly filename: string; readonly reason: "not_an_image" | "too_large" | "unreadable" }
+
+async function readImageDraft(file: File): Promise<TaskAttachmentDraft | ImageRefusal> {
+  if (!imageTypeOf(file)) return { filename: file.name, reason: "not_an_image" }
+  const fitted = await fitImage(file, TASKS_BOUNDS.taskAttachmentMaxBytes)
+  if (!fitted || !isTaskAttachmentMime(fitted.type)) return { filename: file.name, reason: "too_large" }
+  try {
+    return { filename: fitted.name, mime: fitted.type, data: await blobBase64(fitted.blob) }
+  } catch (error) {
+    console.warn("A task image could not be read", { name: file.name, error })
+    return { filename: file.name, reason: "unreadable" }
+  }
+}
+
+function isImageRefusal(value: TaskAttachmentDraft | ImageRefusal): value is ImageRefusal {
+  return "reason" in value
+}
+
+const REFUSAL_KEYS: Readonly<Record<ImageRefusal["reason"], TasksKey>> = {
+  not_an_image: "tasks.image.notImage",
+  too_large: "tasks.image.tooLarge",
+  unreadable: "tasks.image.unreadable",
+}
+
+function imageRefusalPhrase(refusal: ImageRefusal) {
+  const limit = Math.round((TASKS_BOUNDS.taskAttachmentMaxBytes / 1024 / 1024) * 10) / 10
+  return { key: REFUSAL_KEYS[refusal.reason], params: { name: refusal.filename, limit } }
+}
 
 export type ImageNotice = { readonly key: TasksKey; readonly params: Readonly<Record<string, string | number>> }
 

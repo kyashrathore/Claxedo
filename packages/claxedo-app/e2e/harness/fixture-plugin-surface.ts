@@ -11,19 +11,20 @@ export const SURFACE_FIXTURE_NO_PROJECT = "No project"
 export const SURFACE_FIXTURE_SETTINGS = "Fixture surface settings"
 export const SURFACE_FIXTURE_ROUTES = [TASKS_ROUTE_PATH]
 export const SURFACE_FIXTURE_IMAGE = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0x80, 0xc3])
+export const SURFACE_FIXTURE_PICTURE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGNQTX5NEmIY1TCqYfhqAAB2SXMQ7mVTQgAAAABJRU5ErkJggg=="
+export const SURFACE_FIXTURE_REMOTE_PICTURE = "https://images.invalid/fixture.png"
 
-export function surfaceFixtureSource() {
-  return `import { definePlugin, type PluginApi, type SurfaceActionEvent, type SurfaceChannel, type SurfaceComponent } from "@claxedo/plugin-api"
-
-const CATALOG = "https://claxedo.dev/a2ui/v0.9/catalog.json"
-
-const button = (id: string, label: string, name: string, context: Record<string, unknown> = {}): SurfaceComponent[] => [
+const pageComponents = `const button = (id: string, label: string, name: string, context: Record<string, unknown> = {}): SurfaceComponent[] => [
   { id, component: "Button", child: id + "-label", action: { event: { name, context } } } as SurfaceComponent,
   { id: id + "-label", component: "Text", text: label },
 ]
 
 const itemComponents: SurfaceComponent[] = [
-  { id: "root", component: "Column", children: ["title", "selected", "search", "items", "add", "select", "projects", "settings", "fetch-path", "fetch", "fetched"] },
+  {
+    id: "root",
+    component: "Column",
+    children: ["title", "selected", "search", "items", "add", "select", "project-links", "settings", "fetch-path", "fetch", "fetched", "pictures", "order", "order-note", "board", "move-note", "attachments", "project", "project-note"],
+  },
   { id: "title", component: "Text", text: "Surface fixture", variant: "h2" },
   { id: "selected", component: "Text", text: { path: "/selected" } },
   { id: "search", component: "TextField", label: "Search items", value: { path: "/query" } },
@@ -32,13 +33,54 @@ const itemComponents: SurfaceComponent[] = [
   { id: "add", component: "Button", child: "add-label", variant: "primary", action: { event: { name: "addItem", context: { query: { path: "/query" } } } } },
   { id: "add-label", component: "Text", text: "Add item" },
   ...button("select", "Select the first item", "selectItem"),
-  { id: "projects", component: "List", children: { componentId: "project", path: "/projects" } },
-  { id: "project", component: "Button", child: "project-label", action: { event: { name: "openProject", context: { projectId: { path: "id" } } } } },
-  { id: "project-label", component: "Text", text: { path: "label" } },
+  { id: "project-links", component: "List", children: { componentId: "project-link", path: "/projectLinks" } },
+  { id: "project-link", component: "Button", child: "project-link-label", action: { event: { name: "openProjectPage", context: { projectId: { path: "id" } } } } },
+  { id: "project-link-label", component: "Text", text: { path: "label" } },
   ...button("settings", "Open the fixture settings", "openSettings"),
   { id: "fetch-path", component: "TextField", label: "Fetch path", value: { path: "/fetchPath" } },
   ...button("fetch", "Fetch bytes", "fetchBytes", { path: { path: "/fetchPath" } }),
   { id: "fetched", component: "Text", text: { path: "/fetched" } },
+  { id: "pictures", component: "Row", children: ["picture", "remote-picture"] },
+  { id: "picture", component: "Image", url: { path: "/picture" }, variant: "avatar", accessibility: { label: "Fixture swatch" } },
+  { id: "remote-picture", component: "Image", url: ${JSON.stringify(SURFACE_FIXTURE_REMOTE_PICTURE)}, variant: "mediumFeature", accessibility: { label: "Remote picture" } },
+  {
+    id: "order",
+    component: "ChoicePicker",
+    label: "Order",
+    displayStyle: "chips",
+    options: [{ label: "Oldest", value: "oldest" }, { label: "Newest", value: "newest" }],
+    value: { path: "/order" },
+    change: { event: { name: "orderItems" } },
+  },
+  { id: "order-note", component: "Text", text: { path: "/orderNote" } },
+  {
+    id: "board",
+    component: "Board",
+    columns: [{ key: "todo", title: "To do", items: "/todo" }, { key: "done", title: "Done", items: "/done" }],
+    item: "card",
+    itemKey: "id",
+    move: { event: { name: "moveCard" } },
+  },
+  { id: "card", component: "ListItem", title: { path: "title" } },
+  { id: "move-note", component: "Text", text: { path: "/moveNote" } },
+  { id: "attachments", component: "Section", title: "Attachments", child: "attachments-body" },
+  { id: "attachments-body", component: "Column", children: ["attach", "attached", "attach-note"] },
+  { id: "attach", component: "FilePicker", label: "Attach images", accept: ["image/png", "image/jpeg"], maxBytes: 4096, maxFiles: 3, paste: "section", pick: { event: { name: "attachImages" } } },
+  { id: "attached", component: "Grid", columns: 4, children: { componentId: "attached-image", path: "/attached" } },
+  { id: "attached-image", component: "Image", url: { path: "url" }, variant: "smallFeature", accessibility: { label: { path: "name" } } },
+  { id: "attach-note", component: "Text", text: { path: "/attachNote" } },
+  {
+    id: "project",
+    component: "Combobox",
+    label: "Project",
+    value: { path: "/project" },
+    options: { path: "/projects" },
+    query: { path: "/projectQuery" },
+    search: { event: { name: "findProjects" } },
+    change: { event: { name: "chooseProject" } },
+    placeholder: "Search projects",
+  },
+  { id: "project-note", component: "Text", text: { path: "/projectNote" } },
 ]
 
 const projectComponents: SurfaceComponent[] = [
@@ -52,7 +94,32 @@ const settingsComponents: SurfaceComponent[] = [
   { id: "title", component: "Text", text: ${JSON.stringify(`${SURFACE_FIXTURE_SETTINGS} body`)}, variant: "h2" },
   { id: "configuration", component: "AgentConfigurationPicker", placement: "local", value: { path: "/configuration" }, change: { event: { name: "configured" } } },
   { id: "configured", component: "Text", text: { path: "/configured" } },
+]`
+
+const pageRules = `const PROJECTS = [
+  { label: "Claxedo app", value: "app", description: "The desktop and web app" },
+  { label: "Docs site", value: "docs", description: "Guides and reference" },
+  { label: "Relay", value: "relay", description: "Workspace relay" },
 ]
+
+function attached(files: unknown) {
+  return (Array.isArray(files) ? files : []).map((file) => ({ name: String(file.name), url: "data:" + file.mimeType + ";base64," + file.dataBase64 }))
+}
+
+function refusals(refused: unknown) {
+  const list = Array.isArray(refused) ? refused : []
+  return list.length === 0 ? "Nothing refused" : list.map((file) => "Refused " + file.name + ": " + file.reason).join("; ")
+}
+
+function moveCard(lanes: Record<string, { id: string; title: string }[]>, context: Record<string, unknown>) {
+  const from = lanes[String(context.fromColumn)]
+  const to = lanes[String(context.toColumn)]
+  const index = from ? from.findIndex((card) => card.id === context.itemId) : -1
+  if (!from || !to || index === -1) return undefined
+  const [card] = from.splice(index, 1)
+  to.splice(Number(context.toIndex), 0, card)
+  return card.title + " is in " + String(context.toColumn) + " at " + (Number(context.toIndex) + 1)
+}
 
 function draw(channel: SurfaceChannel, components: SurfaceComponent[], value: Record<string, unknown>) {
   const { surfaceId } = channel
@@ -71,17 +138,40 @@ async function fetchedBytes(api: PluginApi, path: string) {
   const response = await api.server.fetch(path)
   const bytes = new Uint8Array(await response.arrayBuffer())
   return response.status + " " + response.headers.get("content-type") + " " + Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ")
+}`
+
+const pagePrograms = `function itemModel(api: PluginApi, itemId: string | undefined, lanes: Record<string, unknown>) {
+  const projectLinks = api.projects.list().map((project) => ({ id: project.id, label: "Open " + project.name }))
+  return {
+    query: "", items: [{ name: "First item" }], projectLinks, selected: "Selected: " + (itemId ?? "none"), fetchPath: "", fetched: "",
+    picture: ${JSON.stringify(SURFACE_FIXTURE_PICTURE)}, order: ["oldest"], orderNote: "Ordered oldest first", ...lanes, moveNote: "No card moved yet",
+    attached: [], attachNote: "No images yet", project: "", projectQuery: "", projects: PROJECTS, projectNote: "No project chosen",
+  }
 }
 
 function openItems(api: PluginApi, channel: SurfaceChannel, itemId: string | undefined) {
-  const items = [{ name: "First item" }]
-  const projects = api.projects.list().map((project) => ({ id: project.id, label: "Open " + project.name }))
-  draw(channel, itemComponents, { query: "", items, projects, selected: "Selected: " + (itemId ?? "none"), fetchPath: "", fetched: "" })
+  const lanes = { todo: [{ id: "c1", title: "First card" }, { id: "c2", title: "Second card" }], done: [{ id: "c3", title: "Third card" }] }
+  const model = itemModel(api, itemId, lanes)
+  const items = model.items
+  draw(channel, itemComponents, model)
   const act: Record<string, (action: SurfaceActionEvent) => unknown> = {
-    openProject: (action) => typeof action.context.projectId === "string" && api.pages.open("project", { projectId: action.context.projectId }),
+    openProjectPage: (action) => typeof action.context.projectId === "string" && api.pages.open("project", { projectId: action.context.projectId }),
     selectItem: () => api.pages.open("surface", { itemId: "first" }),
     openSettings: () => api.settings.open("settings"),
     fetchBytes: async (action) => patch(channel, "/fetched", await fetchedBytes(api, String(action.context.path))),
+    attachImages: (action) => {
+      patch(channel, "/attached", attached(action.context.files))
+      patch(channel, "/attachNote", refusals(action.context.refused))
+    },
+    findProjects: (action) => patch(channel, "/projects", PROJECTS.filter((project) => project.label.toLowerCase().includes(String(action.context.query).toLowerCase()))),
+    chooseProject: (action) => patch(channel, "/projectNote", "Chose " + String(action.context.value)),
+    moveCard: (action) => {
+      const note = moveCard(lanes, action.context)
+      patch(channel, "/todo", lanes.todo)
+      patch(channel, "/done", lanes.done)
+      patch(channel, "/moveNote", note ?? "The plugin refused the move")
+    },
+    orderItems: (action) => patch(channel, "/orderNote", "The plugin ordered by " + (Array.isArray(action.context.value) ? action.context.value.join(", ") : "nothing")),
     addItem: (action) => {
       const query = typeof action.context.query === "string" ? action.context.query.trim() : ""
       items.push({ name: query || "Item " + (items.length + 1) })
@@ -96,6 +186,12 @@ function openItems(api: PluginApi, channel: SurfaceChannel, itemId: string | und
   }
 }
 
+function openProject(api: PluginApi, channel: SurfaceChannel) {
+  const projectId = api.projects.currentId()
+  const project = api.projects.list().find((candidate) => candidate.id === projectId)
+  draw(channel, projectComponents, { project: project?.name ?? ${JSON.stringify(SURFACE_FIXTURE_NO_PROJECT)} })
+}
+
 function openSettings(channel: SurfaceChannel) {
   draw(channel, settingsComponents, { configuration: { harness: null, model: null, effort: null }, configured: "Harness: none" })
   return {
@@ -104,13 +200,18 @@ function openSettings(channel: SurfaceChannel) {
       if (action.name === "configured") patch(channel, "/configured", "Harness: " + (value?.harness?.id ?? "none"))
     },
   }
-}
+}`
 
-function openProject(api: PluginApi, channel: SurfaceChannel) {
-  const projectId = api.projects.currentId()
-  const project = api.projects.list().find((candidate) => candidate.id === projectId)
-  draw(channel, projectComponents, { project: project?.name ?? ${JSON.stringify(SURFACE_FIXTURE_NO_PROJECT)} })
-}
+export function surfaceFixtureSource() {
+  return `import { definePlugin, type PluginApi, type SurfaceActionEvent, type SurfaceChannel, type SurfaceComponent } from "@claxedo/plugin-api"
+
+const CATALOG = "https://claxedo.dev/a2ui/v0.9/catalog.json"
+
+${pageComponents}
+
+${pageRules}
+
+${pagePrograms}
 
 export default definePlugin({
   activate(api) {

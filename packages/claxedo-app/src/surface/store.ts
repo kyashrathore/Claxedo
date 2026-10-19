@@ -4,14 +4,16 @@ import { surfaceMessageSchema, surfaceMessageSurfaceId, type SurfaceMessage } fr
 import { machine, type Machine } from "@/lib/machine"
 import { createComponentRegistry } from "./component-registry"
 import { createSurfaceData } from "./data-model"
-import { parsePointer } from "./data-path"
+import { parsePointer, ROOT_PATH } from "./data-path"
 import {
   surfaceLifecycle,
   SurfaceMessageError,
   surfaceState,
   type Surface,
   type SurfaceLifecycle,
+  type DataPath,
   type SurfaceLifecycleEvent,
+  type SurfacePatchWatcher,
   type SurfaceState,
 } from "./model"
 
@@ -38,7 +40,9 @@ function requireLive(lifecycle: Machine<SurfaceLifecycle, SurfaceLifecycleEvent>
   if (lifecycle.state().kind !== "live") throw new SurfaceMessageError(`the surface ${surfaceId} has not been created`)
 }
 
-function applyTo(state: SurfaceState, lifecycle: Machine<SurfaceLifecycle, SurfaceLifecycleEvent>, surfaceId: string, message: SurfaceMessage) {
+type Patched = (path: DataPath) => void
+
+function applyTo(state: SurfaceState, lifecycle: Machine<SurfaceLifecycle, SurfaceLifecycleEvent>, surfaceId: string, message: SurfaceMessage, patched: Patched) {
   if ("createSurface" in message) {
     if (lifecycle.state().kind === "live") throw new SurfaceMessageError(`the surface ${surfaceId} already exists`)
     return lifecycle.send({ type: "created" })
@@ -47,23 +51,34 @@ function applyTo(state: SurfaceState, lifecycle: Machine<SurfaceLifecycle, Surfa
     requireLive(lifecycle, surfaceId)
     state.components.clear()
     state.data.clear()
+    patched(ROOT_PATH)
     return lifecycle.send({ type: "deleted" })
   }
   requireLive(lifecycle, surfaceId)
   if ("updateComponents" in message) return state.components.upsert(message.updateComponents.components)
-  state.data.write(parsePointer(message.updateDataModel.path ?? "/"), message.updateDataModel.value)
+  const path = parsePointer(message.updateDataModel.path ?? "/")
+  state.data.write(path, message.updateDataModel.value)
+  patched(path)
 }
 
 export function createSurface(surfaceId: string): Surface {
   const lifecycle = machine<SurfaceLifecycle, SurfaceLifecycleEvent>({ kind: "waiting" }, surfaceLifecycle)
-  const state: SurfaceState = { lifecycle: lifecycle.state, components: createComponentRegistry(), data: createSurfaceData() }
+  const watchers = new Set<SurfacePatchWatcher>()
+  const patched: Patched = (path) => {
+    for (const watcher of watchers) watcher(path)
+  }
+  const watchPatches = (watcher: SurfacePatchWatcher) => {
+    watchers.add(watcher)
+    return () => void watchers.delete(watcher)
+  }
+  const state: SurfaceState = { lifecycle: lifecycle.state, components: createComponentRegistry(), data: createSurfaceData(), watchPatches }
   return {
     surfaceId,
     apply: (message) => {
       const parsed = parsedMessage(message)
       const target = surfaceMessageSurfaceId(parsed)
       if (target !== surfaceId) throw new SurfaceMessageError(`a message for the surface ${target} reached the surface ${surfaceId}`)
-      batch(() => applyTo(state, lifecycle, surfaceId, parsed))
+      batch(() => applyTo(state, lifecycle, surfaceId, parsed, patched))
     },
     [surfaceState]: state,
   }

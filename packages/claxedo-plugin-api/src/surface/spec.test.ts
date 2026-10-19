@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test"
-import { checkSurfaceSpec, componentReferences, surfaceComponentSchema, surfaceMessageSchema, surfaceSpecMessages, SURFACE_CATALOG_ID } from "./index"
+import {
+  checkSurfaceSpec,
+  componentReferences,
+  isPluginOnlyEvent,
+  surfaceComponentEvents,
+  surfaceComponentSchema,
+  surfaceImageUrl,
+  surfaceMessageSchema,
+  surfaceSpecMessages,
+  SURFACE_CATALOG_ID,
+  SURFACE_EVENT_FIELDS,
+  SURFACE_FILE_MAX_BYTES,
+  SURFACE_IMAGE_MAX_DATA_URL_LENGTH,
+} from "./index"
 
 const form = {
   title: "Deploy settings",
@@ -59,7 +72,7 @@ describe("checkSurfaceSpec", () => {
   })
 
   test("refuses components outside the catalog's network and overlay rules", () => {
-    for (const component of ["Image", "Video", "AudioPlayer", "Modal"]) {
+    for (const component of ["Video", "AudioPlayer", "Modal"]) {
       const check = checkSurfaceSpec({ title: component, components: [{ id: "root", component, url: "https://example.com/a" }] })
       expect(check.ok).toBe(false)
     }
@@ -196,5 +209,231 @@ describe("surfaceMessageSchema", () => {
 
   test("accepts a data-model delete as an update with no value", () => {
     expect(surfaceMessageSchema.safeParse({ version: "v0.9", updateDataModel: { surfaceId: "s", path: "/items/3" } }).success).toBe(true)
+  })
+})
+
+const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+function image(url: unknown, extra: Record<string, unknown> = {}) {
+  return { title: "Image", components: [{ id: "root", component: "Image", url, accessibility: { label: "Build badge" }, ...extra }] }
+}
+
+describe("Image", () => {
+  test("accepts a base64 PNG, JPEG, GIF or WebP data: URL and a bound url", () => {
+    for (const mime of ["png", "jpeg", "gif", "webp"]) expect(checkSurfaceSpec(image(PIXEL.replace("png", mime))).ok).toBe(true)
+    expect(checkSurfaceSpec({ ...image({ path: "/shot" }), data: { shot: PIXEL } }).ok).toBe(true)
+    expect(checkSurfaceSpec(image(PIXEL, { fit: "cover", variant: "avatar" })).ok).toBe(true)
+  })
+
+  test("refuses a literal url by scheme, SVG or malformed payload, and a blob: with no origin to compare", () => {
+    const cases = ["https://example.com/a.png", "http://example.com/a.png", "file:///etc/a.png", "javascript:alert(1)", "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", "data:image/png,raw", "blob:https://app.example/1"]
+    const issues = cases.map((url) => {
+      const check = checkSurfaceSpec(image(url))
+      return check.ok ? [] : check.issues.map((issue) => issue.path)
+    })
+    expect(issues).toEqual(cases.map(() => ["/components/0/url"]))
+  })
+
+  test("requires an accessibility label and refuses an unknown fit or variant", () => {
+    const unlabelled = { title: "Image", components: [{ id: "root", component: "Image", url: PIXEL }] }
+    expect(checkSurfaceSpec(unlabelled).ok).toBe(false)
+    expect(checkSurfaceSpec(image(PIXEL, { accessibility: { description: "no label" } })).ok).toBe(false)
+    expect(checkSurfaceSpec(image(PIXEL, { fit: "stretch" })).ok).toBe(false)
+    expect(checkSurfaceSpec(image(PIXEL, { variant: "banner" })).ok).toBe(false)
+  })
+})
+
+describe("surfaceImageUrl", () => {
+  test("names why it refuses a url", () => {
+    expect(surfaceImageUrl("https://example.com/a.png")).toEqual({ ok: false, reason: "scheme" })
+    expect(surfaceImageUrl("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=")).toEqual({ ok: false, reason: "mime" })
+    expect(surfaceImageUrl(`data:image/png;base64,${"A".repeat(SURFACE_IMAGE_MAX_DATA_URL_LENGTH)}`)).toEqual({ ok: false, reason: "size" })
+    expect(surfaceImageUrl(PIXEL)).toEqual({ ok: true, url: PIXEL })
+  })
+
+  test("accepts a blob: only from the app's own non-opaque origin", () => {
+    expect(surfaceImageUrl("blob:http://127.0.0.1:4000/5b1e", "http://127.0.0.1:4000")).toEqual({ ok: true, url: "blob:http://127.0.0.1:4000/5b1e" })
+    expect(surfaceImageUrl("blob:null/5b1e", "http://127.0.0.1:4000")).toEqual({ ok: false, reason: "origin" })
+    expect(surfaceImageUrl("blob:https://other.example/5b1e", "http://127.0.0.1:4000")).toEqual({ ok: false, reason: "origin" })
+    expect(surfaceImageUrl("blob:file:///5b1e", "null")).toEqual({ ok: false, reason: "origin" })
+  })
+})
+
+describe("input events", () => {
+  const picker = (context: Record<string, unknown>) => ({
+    title: "Region",
+    components: [
+      {
+        id: "root",
+        component: "ChoicePicker",
+        options: [{ label: "EU", value: "eu" }],
+        value: { path: "/region" },
+        change: { event: { name: "pickRegion", context } },
+      },
+    ],
+    data: { region: ["eu"] },
+  })
+
+  test("accept a change, submit or tab change whose context names no supplied field", () => {
+    expect(checkSurfaceSpec(picker({ form: "deploy" })).ok).toBe(true)
+    const spec = {
+      title: "Events",
+      components: [
+        { id: "root", component: "Tabs", tabs: [{ title: "A", child: "name" }], selected: { path: "/tab" }, change: { event: { name: "showTab" } } },
+        { id: "name", component: "TextField", label: "Name", value: { path: "/name" }, submit: { event: { name: "rename", context: { previous: "api" } } } },
+      ],
+      data: { tab: 0, name: "api" },
+    }
+    expect(checkSurfaceSpec(spec).ok).toBe(true)
+  })
+
+  test("refuse a declared context key that collides with a supplied field, at that key's pointer", () => {
+    const check = checkSurfaceSpec(picker({ value: { path: "/region" } }))
+    expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual(["/components/0/change/event/context/value"])
+    const tabs = checkSurfaceSpec({
+      title: "Tabs",
+      components: [
+        { id: "root", component: "Tabs", tabs: [{ title: "A", child: "a" }], change: { event: { name: "showTab", context: { index: 1 } } } },
+        { id: "a", component: "Text", text: "A" },
+      ],
+    })
+    expect(tabs.ok ? [] : tabs.issues.map((issue) => issue.path)).toEqual(["/components/0/change/event/context/index"])
+  })
+
+  test("declare each component's supplied field names once", () => {
+    const component = surfaceComponentSchema.parse({ id: "s", component: "Switch", label: "On", value: true, change: { event: { name: "toggle" } } })
+    expect(surfaceComponentEvents(component)).toEqual([{ prop: "change", action: { event: { name: "toggle" } }, supplied: ["value"] }])
+    expect(SURFACE_EVENT_FIELDS.Tabs).toEqual({ change: ["index"] })
+    expect(surfaceComponentEvents(surfaceComponentSchema.parse({ id: "c", component: "CheckBox", label: "On", value: true }))).toEqual([])
+  })
+})
+
+const board = {
+  title: "Sprint board",
+  components: [
+    {
+      id: "root",
+      component: "Board",
+      columns: [
+        { key: "todo", title: "To do", items: "/todo", headerActions: ["add"], footer: "more" },
+        { key: "done", title: "Done", items: "/done" },
+      ],
+      item: "card",
+      itemKey: "id",
+      movable: "movable",
+      move: { event: { name: "moveCard", context: { board: "sprint" } } },
+    },
+    { id: "card", component: "Text", text: { path: "title" } },
+    { id: "add", component: "Button", child: "add-label", icon: "add", action: { event: { name: "addCard" } } },
+    { id: "add-label", component: "Text", text: "Add card" },
+    { id: "more", component: "Button", child: "more-label", variant: "borderless", action: { event: { name: "loadMore" } } },
+    { id: "more-label", component: "Text", text: "Load more" },
+  ],
+  data: { todo: [{ id: "a", title: "A", movable: true }], done: [] },
+}
+
+describe("Board", () => {
+  test("accepts columns with header actions and a footer, and names every id it references", () => {
+    expect(checkSurfaceSpec(board).ok).toBe(true)
+    expect(componentReferences(surfaceComponentSchema.parse(board.components[0]))).toEqual([
+      { path: "/item", id: "card" },
+      { path: "/columns/0/headerActions/0", id: "add" },
+      { path: "/columns/0/footer", id: "more" },
+    ])
+  })
+
+  test("refuses a dangling item template, a reused column key and a move context naming a supplied field", () => {
+    const [root, ...rest] = board.components
+    const broken = {
+      ...board,
+      components: [
+        { ...root, item: "gone", columns: [...board.components[0].columns!, { key: "todo", title: "Again", items: "/again" }], move: { event: { name: "moveCard", context: { toColumn: "x" } } } },
+        ...rest,
+      ],
+    }
+    const check = checkSurfaceSpec(broken)
+    expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual(["/components/0/item", "/components/0/move/event/context/toColumn", "/components/0/columns/2/key"])
+  })
+
+  test("is plugin-only when it moves: an agent's spec is refused at move, and a Board without move is accepted", () => {
+    const agent = checkSurfaceSpec(board, { producer: "agent" })
+    expect(agent.ok ? [] : agent.issues).toEqual([{ path: "/components/0/move", message: "the Board's move event is for app plugin pages; an agent reply leaves it out" }])
+    const { move: _move, ...still } = board.components[0]
+    expect(checkSurfaceSpec({ ...board, components: [still, ...board.components.slice(1)] }, { producer: "agent" }).ok).toBe(true)
+    expect(isPluginOnlyEvent("Board", "move")).toBe(true)
+    expect(isPluginOnlyEvent("ChoicePicker", "change")).toBe(false)
+  })
+
+  test("refuses no columns, more than 12, and an unknown layout", () => {
+    const root = board.components[0]
+    for (const change of [{ columns: [] }, { columns: Array.from({ length: 13 }, (_, index) => ({ key: `c${index}`, title: "C", items: "/c" })) }, { layout: "grid" }]) {
+      expect(checkSurfaceSpec({ ...board, components: [{ ...root, ...change }, ...board.components.slice(1)] }).ok).toBe(false)
+    }
+  })
+})
+
+const attach = (props: Record<string, unknown> = {}) => ({
+  title: "Attach",
+  components: [{ id: "root", component: "FilePicker", label: "Images", accept: ["image/png", ".jpg", "image/*"], maxBytes: 1_572_864, maxFiles: 6, fitImages: true, paste: "section", pick: { event: { name: "attach" } }, ...props }],
+})
+
+const project = (props: Record<string, unknown> = {}) => ({
+  title: "Project",
+  components: [
+    {
+      id: "root",
+      component: "Combobox",
+      label: "Project",
+      value: { path: "/project" },
+      options: { path: "/projects" },
+      query: { path: "/query" },
+      search: { event: { name: "findProjects" } },
+      change: { event: { name: "chooseProject" } },
+      placeholder: "Search projects",
+      emptyText: "No project matches",
+      ...props,
+    },
+  ],
+  data: { project: "", projects: [{ label: "Claxedo", value: "p1", description: "kyashrathore/Claxedo" }], query: "" },
+})
+
+describe("FilePicker", () => {
+  test("accepts types and extensions, a per-file cap up to 8 MiB and up to 16 files", () => {
+    expect(checkSurfaceSpec(attach()).ok).toBe(true)
+    expect(checkSurfaceSpec(attach({ maxBytes: SURFACE_FILE_MAX_BYTES, maxFiles: 16 })).ok).toBe(true)
+  })
+
+  test("refuses a malformed accept entry, a cap past 8 MiB, more than 16 files and a missing pick", () => {
+    for (const props of [{ accept: ["png"] }, { accept: ["Image/PNG"] }, { accept: [] }, { maxBytes: SURFACE_FILE_MAX_BYTES + 1 }, { maxFiles: 17 }, { paste: "page" }, { pick: undefined }]) {
+      expect(checkSurfaceSpec(attach(props)).ok).toBe(false)
+    }
+  })
+
+  test("is plugin-only, and its pick context may not name files or refused", () => {
+    const agent = checkSurfaceSpec(attach(), { producer: "agent" })
+    expect(agent.ok ? [] : agent.issues.map((issue) => issue.path)).toEqual(["/components/0/pick"])
+    const clash = checkSurfaceSpec(attach({ pick: { event: { name: "attach", context: { files: [] } } } }))
+    expect(clash.ok ? [] : clash.issues.map((issue) => issue.path)).toEqual(["/components/0/pick/event/context/files"])
+  })
+})
+
+describe("Combobox", () => {
+  test("accepts bound or literal options, one or many values", () => {
+    expect(checkSurfaceSpec(project()).ok).toBe(true)
+    expect(checkSurfaceSpec(project({ multiple: true, options: [{ label: "A", value: "a" }], search: undefined })).ok).toBe(true)
+  })
+
+  test("refuses a literal value, more than 200 literal options and an unknown option field", () => {
+    for (const props of [{ value: "p1" }, { options: Array.from({ length: 201 }, (_, index) => ({ label: "O", value: String(index) })) }, { options: [{ label: "A", value: "a", icon: "add" }] }]) {
+      expect(checkSurfaceSpec(project(props)).ok).toBe(false)
+    }
+  })
+
+  test("is plugin-only when it searches; change stays open to agents, and neither may reuse query or value", () => {
+    const agent = checkSurfaceSpec(project(), { producer: "agent" })
+    expect(agent.ok ? [] : agent.issues.map((issue) => issue.path)).toEqual(["/components/0/search"])
+    expect(checkSurfaceSpec(project({ search: undefined }), { producer: "agent" }).ok).toBe(true)
+    const clash = checkSurfaceSpec(project({ search: { event: { name: "find", context: { query: "x" } } }, change: { event: { name: "pick", context: { value: "x" } } } }))
+    expect(clash.ok ? [] : clash.issues.map((issue) => issue.path)).toEqual(["/components/0/search/event/context/query", "/components/0/change/event/context/value"])
   })
 })

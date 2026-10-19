@@ -21,12 +21,14 @@ export function resolveActionContext(
   return resolved
 }
 
+export type SuppliedFields = Readonly<Record<string, JsonValue>>
+
 export function surfaceActionEvent(
   action: SurfaceActionDefinition,
   source: ActionSource,
   data: SurfaceData,
   now: Date,
-  supplied: Readonly<Record<string, JsonValue>> = {},
+  supplied: SuppliedFields,
 ): SurfaceActionEvent {
   return {
     name: action.event.name,

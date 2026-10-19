@@ -17,11 +17,11 @@ export function AgentConfigurationPickerView(props: SurfaceNodeProps<"AgentConfi
   const path = () => resolvePath(props.def.value.path, props.scope)
   const change = (value: SurfaceAgentConfiguration) => {
     runtime.state.data.write(untrack(path), value)
-    const action = untrack(() => props.def.change)
-    if (action) runtime.fire(action, props.def.id, untrack(() => props.scope), { value })
+    runtime.fire(untrack(() => props.def.change), props.def.id, untrack(() => props.scope), { value })
   }
+  const drawn = () => (runtime.source.kind === "agent" ? undefined : references)
   return (
-    <Show when={references} fallback={<p class="text-12-regular text-text-weak">{t("surface.reference.unavailable")}</p>}>
+    <Show when={drawn()} fallback={<p class="text-12-regular text-text-weak">{t("surface.reference.unavailable")}</p>}>
       {(drawn) => (
         <Dynamic
           component={drawn().AgentConfigurationPicker}
