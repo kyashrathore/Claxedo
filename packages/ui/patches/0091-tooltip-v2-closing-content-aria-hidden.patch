@@ -1,0 +1,41 @@
+Subject: tooltip-v2: a closing tooltip is hidden from assistive tech while it fades out
+
+What: TooltipV2's content carries aria-hidden="true" whenever the tooltip is closed, which is
+only while Kobalte keeps it mounted for its exit animation, and the open state the root and the
+content read is one shown() accessor.
+Why: Kobalte leaves closed content in the page as role="tooltip" for the 80 ms of
+tooltipV2Out. A tooltip closed by a scroll (Kobalte's own scroll handler) starts the 300 ms
+skip-delay window, so the next trigger opens at once, and for that overlap two tooltips were
+exposed side by side: on a phone the settings page's scroll anchoring closed the "Cloud
+workspaces" tooltip just after it opened, and the Check button's tooltip opened beside it.
+
+diff --git a/src/v2/components/tooltip-v2.tsx b/src/v2/components/tooltip-v2.tsx
+index 58805cf160..b8d79ae85b 100644
+--- a/src/v2/components/tooltip-v2.tsx
++++ b/src/v2/components/tooltip-v2.tsx
+@@ -33,6 +33,7 @@ export function TooltipV2(props: TooltipV2Props) {
+     "value",
+   ])
+ 
++  const shown = () => !!local.forceOpen || state.open
+   const close = () => setState("open", false)
+ 
+   const inside = () => {
+@@ -112,7 +113,7 @@ export function TooltipV2(props: TooltipV2Props) {
+                 {...others}
+                 closeDelay={0}
+                 ignoreSafeArea={local.ignoreSafeArea ?? true}
+-                open={local.forceOpen || state.open}
++                open={shown()}
+                 onOpenChange={(open) => {
+                   if (local.forceOpen) return
+                   if (state.block && open) return
+@@ -133,6 +134,8 @@ export function TooltipV2(props: TooltipV2Props) {
+                     data-component="tooltip-v2"
+                     data-placement={props.placement}
+                     data-force-open={local.forceOpen}
++                    // Kobalte keeps closed content mounted as role="tooltip" until its exit animation ends, beside any tooltip opened meanwhile.
++                    aria-hidden={shown() ? undefined : "true"}
+                     class={local.contentClass}
+                     style={local.contentStyle}
+                     onPointerDownOutside={(e) => {

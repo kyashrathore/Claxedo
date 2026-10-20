@@ -33,6 +33,7 @@ export function TooltipV2(props: TooltipV2Props) {
     "value",
   ])
 
+  const shown = () => !!local.forceOpen || state.open
   const close = () => setState("open", false)
 
   const inside = () => {
@@ -112,7 +113,7 @@ export function TooltipV2(props: TooltipV2Props) {
                 {...others}
                 closeDelay={0}
                 ignoreSafeArea={local.ignoreSafeArea ?? true}
-                open={local.forceOpen || state.open}
+                open={shown()}
                 onOpenChange={(open) => {
                   if (local.forceOpen) return
                   if (state.block && open) return
@@ -133,6 +134,8 @@ export function TooltipV2(props: TooltipV2Props) {
                     data-component="tooltip-v2"
                     data-placement={props.placement}
                     data-force-open={local.forceOpen}
+                    // Kobalte keeps closed content mounted as role="tooltip" until its exit animation ends, beside any tooltip opened meanwhile.
+                    aria-hidden={shown() ? undefined : "true"}
                     class={local.contentClass}
                     style={local.contentStyle}
                     onPointerDownOutside={(e) => {
