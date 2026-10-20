@@ -55,3 +55,23 @@ export function readD1Bookmarks(header: string): [D1BookmarkName, string][] {
 export function writeD1Bookmarks(entries: Iterable<readonly [D1BookmarkName, string]>): string {
   return [...entries].map(([name, bookmark]) => `${name}=${bookmark}`).join(", ")
 }
+
+/** The bookmark a live-sync frame announces, past the write it rings for. */
+export function announcedD1Bookmark(frame: unknown): string | undefined {
+  const bookmark = typeof frame === "object" && frame !== null ? Reflect.get(frame, "d1Bookmark") : undefined
+  return isD1Bookmark(bookmark) ? bookmark : undefined
+}
+
+const CONTROL_COOKIE = `${D1_BOOKMARK_COOKIE_PREFIX}control=`
+
+/**
+ * Raises the control-plane bookmark a browser's cookie jar (`document`)
+ * sends with every request to `bookmark`, so the re-reads a notice sets off
+ * are answered by a replica that holds the change it announces. The jar is
+ * every tab's, so a newer bookmark is never lowered.
+ */
+export function raiseD1BookmarkCookie(jar: { cookie: string }, bookmark: string) {
+  const held = jar.cookie.split(";").map((pair) => pair.trim()).find((pair) => pair.startsWith(CONTROL_COOKIE))?.slice(CONTROL_COOKIE.length)
+  if (isD1Bookmark(held) && held >= bookmark) return
+  jar.cookie = d1BookmarkCookie("control", bookmark)
+}

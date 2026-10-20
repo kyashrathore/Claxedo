@@ -1,6 +1,6 @@
+import { announcedD1Bookmark, raiseD1BookmarkCookie } from "@claxedo/agent-runtime-contract"
 import type { AccountEvents, ServerConfig } from "./config"
 import type { ConnectionState } from "./events"
-import { raiseD1Bookmark } from "./d1-bookmark"
 import { openEventStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
 import type { BootstrapDeclaration } from "./wire/placements"
@@ -87,7 +87,8 @@ function openEventsAt(input: StreamsInput, path: string, socket: boolean, report
       return transport.request(path, { headers, signal })
     },
     onFrame: (frame) => {
-      if (input.config.cookies) raiseD1Bookmark(frame, document)
+      const bookmark = announcedD1Bookmark(frame)
+      if (bookmark && input.config.cookies) raiseD1BookmarkCookie(document, bookmark)
       input.onFrame(frame)
     },
     onGap: input.onGap,

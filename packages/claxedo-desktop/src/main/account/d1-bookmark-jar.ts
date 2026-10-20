@@ -1,7 +1,7 @@
 import {
+  announcedD1Bookmark,
   D1_BOOKMARK_MAX_AGE_SECONDS,
   D1_BOOKMARKS_HEADER,
-  isD1Bookmark,
   newerD1Bookmark,
   readD1Bookmarks,
   writeD1Bookmarks,
@@ -40,7 +40,7 @@ export function d1BookmarkJar(now: () => number) {
         partial = lines.pop() ?? ""
         for (const line of lines) {
           if (!line.startsWith("data:")) continue
-          const bookmark = announcedBookmark(line.slice("data:".length))
+          const bookmark = announcedD1Bookmark(eventStreamFrame(line.slice("data:".length)))
           if (bookmark) raise(origin, "control", bookmark)
         }
       }
@@ -48,11 +48,9 @@ export function d1BookmarkJar(now: () => number) {
   }
 }
 
-function announcedBookmark(data: string) {
+function eventStreamFrame(data: string): unknown {
   try {
-    const frame: unknown = JSON.parse(data)
-    const bookmark = typeof frame === "object" && frame !== null ? Reflect.get(frame, "d1Bookmark") : undefined
-    return isD1Bookmark(bookmark) ? bookmark : undefined
+    return JSON.parse(data)
   } catch {
     return undefined
   }
