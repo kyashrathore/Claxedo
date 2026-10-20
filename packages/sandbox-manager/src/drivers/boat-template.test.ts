@@ -104,7 +104,7 @@ function options(boat: ReturnType<typeof fakeBoat>, overrides: Partial<BoatRunti
     image: IMAGE,
     fetchImpl: boat.fetchImpl,
     pollIntervalMs: 0,
-    driver: { provisionIntervalMs: 0, healthIntervalMs: 0 },
+    driver: { statePollMs: { firstMs: 0, maxMs: 0 }, healthIntervalMs: 0 },
     ...overrides,
   }
 }

@@ -265,7 +265,10 @@ export function createCloudflareSandboxDriver(
       if (error instanceof Error && error.name === "TimeoutError") return undefined
       throw error
     })
-    if (!response) return { provisioning: true as const, retryAfterMs: 2_000 }
+    // ensure-runtime is itself the wait: the Worker answers it once the
+    // runtime is healthy, and answers 503 only after a runtime still preparing
+    // spent the Worker's whole health window, so the next step asks again at once.
+    if (!response) return { provisioning: true as const, retryAfterMs: 0 }
     const { status, data } = response
     // The sandbox Worker uses 503 for the one retryable readiness condition.
     // Do not launder every server-side configuration or runtime failure into
@@ -273,7 +276,7 @@ export function createCloudflareSandboxDriver(
     // by polling and must reach the caller as the authoritative error.
     const runtimeUrl = text(data.url)
     if (status === 503 && data.error === "workspace-runtime did not become ready") {
-      return { provisioning: true as const, retryAfterMs: 2_000 }
+      return { provisioning: true as const, retryAfterMs: 0 }
     }
     if (data.exited === true) throw new SandboxRuntimeBootError(text(data.error) ?? "The workspace runtime exited before it was ready")
     // A checkpoint the Worker cannot restore refuses every start until the person starts the workspace fresh, so polling it again cannot heal it.

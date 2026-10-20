@@ -20,6 +20,12 @@ const DEFAULT_TIMEOUT_MS = 120_000
 // ends, so the request must outlast the command it carries.
 const DEFAULT_COMMAND_SECONDS = 30
 const COMMAND_RESPONSE_MARGIN_MS = 30_000
+// Boat holds a command sent while the sandbox starts for up to 60 s and runs
+// it once the sandbox is ready, then refuses it as still starting
+// (docs.boat.dev/readiness). The readiness page names that refusal
+// `sandbox_starting`, the command reference `boat_starting`.
+const START_HOLD_MS = 60_000
+const STILL_STARTING_CODES: ReadonlySet<string> = new Set(["sandbox_starting", "boat_starting"])
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const SANDBOX_STATES = new Set<string>(["init", "provisioning", "provisioned", "cloning", "ready", "idle", "running", "archiving", "archived", "error", "cancelled"])
 
@@ -211,6 +217,20 @@ export function createBoatClient(options: BoatClientOptions) {
     async writeFile(id: string, input: { path: string; content: string }) {
       const body = await api(`${path(id)}/files`, ["file.written"], { method: "PUT", body: { ...input, encoding: "utf8" } })
       if (body.success !== true) invalid()
+    },
+    /** `ready` once a command runs, which Boat answers the moment the sandbox is ready; `starting` when Boat's hold ended first. */
+    async whenReady(id: string): Promise<"ready" | "starting"> {
+      try {
+        await api(`${path(id)}/commands`, ["command.finished"], {
+          method: "POST",
+          body: { command: "true", timeoutSeconds: 1 },
+          timeoutMs: START_HOLD_MS + COMMAND_RESPONSE_MARGIN_MS,
+        })
+        return "ready"
+      } catch (err) {
+        if (err instanceof BoatApiError && STILL_STARTING_CODES.has(err.code)) return "starting"
+        throw err
+      }
     },
     async command(id: string, input: { command: string; timeoutSeconds?: number }): Promise<BoatCommandResult> {
       const timeoutMs = (input.timeoutSeconds ?? DEFAULT_COMMAND_SECONDS) * 1000 + COMMAND_RESPONSE_MARGIN_MS

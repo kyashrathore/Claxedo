@@ -250,6 +250,14 @@ describe("a sandbox start on workerd", () => {
     expect(await driverCalls("ws_poll_2")).toBe(3)
   })
 
+  test("a driver whose step is a wait is stepped again at once, while a poll that joins is told the start's own wait, not the step's", async () => {
+    expect(await start("ws_wait_3")).toMatchObject({ status: "provisioning", retryAfterMs: 100 })
+    await until(() => driverCalls("ws_wait_3"), (calls) => calls >= 2)
+    expect(await inFlight("ws_wait_3")).toMatchObject({ status: "provisioning", retryAfterMs: 100, joined: true })
+    await until(() => target("ws_wait_3"), (lease) => lease.status === "ready")
+    expect(await driverCalls("ws_wait_3")).toBe(4)
+  })
+
   test("a runtime whose boot failed ends the start failed with the boot's reason, and is not retried", async () => {
     expect(await start("ws_boot_fail")).toMatchObject({ status: "provisioning", epoch: 1 })
     const failed = await until(() => start("ws_boot_fail"), (answer) => answer.status !== "provisioning")

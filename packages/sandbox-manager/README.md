@@ -141,6 +141,16 @@ a healthy runtime, with a public repository checked out:
 | wake of a sandbox created from the template | 14.7, 17.2, 12.3 s | `machine_ready` 5 s, `image_ready` 1–3 s, then the runtime |
 | wake of a seeded sandbox | 8–20 s | the same phases, with no record of what the runtime reads first |
 
+The driver waits on Boat itself rather than reading the sandbox on a timer.
+Boat holds a command sent while a sandbox starts and runs it once the sandbox
+is ready, for up to 60 s, then refuses it as still starting
+([readiness](https://docs.boat.dev/readiness)), so the first command after a
+create or resume returns the moment the machine is ready and is sent again at
+once after a refusal. The runtime's health is probed inside the machine every
+100 ms by one command per 50 s window, which ends at the first answer or when
+the container leaves `running`/`paused`. A sandbox still archiving from a stop,
+which Boat offers no wait for, is read again after 250 ms, doubling to 2 s.
+
 A wake that pulled (before the stub) took 57–77 s, and failed when ghcr reset
 the connection. An image update re-seeds:
 the new image is pulled and seeded as above, its stub replaces the old one, and

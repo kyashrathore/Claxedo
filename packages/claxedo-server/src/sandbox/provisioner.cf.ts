@@ -3,7 +3,13 @@ import { sandboxLeaseEndedUnderStart, sandboxProviderRateLimit, sandboxRuntimeBo
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import type { SandboxFollowUps, SandboxStartAnswer, SandboxStartDrive, SandboxStartRequest } from "../workspace/sandbox-start"
 
-/** `failure` is the error of the last step that failed and is being retried; a step that succeeds or ends the run clears it. */
+/**
+ * `retryAfterMs` is how long a poller that joins the run waits before asking
+ * again, set when the run begins: a driver whose step is itself a wait asks for
+ * its next step at once, which is no time for a poller to come back.
+ * `failure` is the error of the last step that failed and is being retried; a
+ * step that succeeds or ends the run clears it.
+ */
 type Run = { workspaceId: string; epoch: number; homeRegion: string; startedAt: number; retryAfterMs: number; failure?: string }
 type Outcome = { epoch: number; answer: SandboxStartAnswer; settledAt: number }
 /** A step the alarm owes a serving sandbox: when it is next due, and how many steps in a row threw before it. */
@@ -278,7 +284,7 @@ export function sandboxProvisionerClass<Env>(drive: (env: Env) => SandboxStartDr
           // A failed step's retry runs on the fresh epoch its answer names.
           const epoch = "epoch" in answer && answer.epoch !== undefined ? answer.epoch : run.epoch
           const failure = answer.status === "unavailable" ? answer.error : undefined
-          const continuing: Run = { workspaceId: run.workspaceId, homeRegion: run.homeRegion, startedAt: run.startedAt, epoch, retryAfterMs, ...(failure ? { failure } : {}) }
+          const continuing: Run = { workspaceId: run.workspaceId, homeRegion: run.homeRegion, startedAt: run.startedAt, epoch, retryAfterMs: run.retryAfterMs, ...(failure ? { failure } : {}) }
           await storage.put("run", continuing)
           await storage.setAlarm(Date.now() + retryAfterMs)
           return

@@ -12,7 +12,7 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { RUNTIME_DIR } from "../defaults"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { record } from "../json"
-import { isTransientDriverError } from "./transient-error"
+import { isTransientDriverError, TRANSIENT_DRIVER_RETRY_MS } from "./transient-error"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 type VercelSnapshotLike = { snapshotId: string }
@@ -448,7 +448,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       if (transientDriverError(err)) return undefined
       throw err
     })
-    if (!sandbox) return { provisioning: true as const, retryAfterMs: 2_000 }
+    if (!sandbox) return { provisioning: true as const, retryAfterMs: TRANSIENT_DRIVER_RETRY_MS }
     await input.onImageReady?.()
     if (input.secrets?.length) {
       // Inject brokered credentials at the firewall — the raw values never

@@ -9,7 +9,7 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { record } from "../json"
-import { isTransientDriverError } from "./transient-error"
+import { isTransientDriverError, TRANSIENT_DRIVER_RETRY_MS } from "./transient-error"
 
 type ModalAppLike = unknown
 type ModalImageLike = { imageId?: string }
@@ -177,7 +177,8 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
       throw error
     })
     const tunnel = tunnels?.[runtimePort]
-    if (!tunnel?.url) return { provisioning: true as const, retryAfterMs: 2_000 }
+    // `tunnels` waited the whole tunnel window for them, so the next step asks again at once.
+    if (!tunnel?.url) return { provisioning: true as const, retryAfterMs: 0 }
     return {
       workspaceId: input.workspaceId,
       sandboxId: sandbox.sandboxId,
@@ -219,7 +220,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
       if (transientDriverError(err)) return undefined
       throw err
     })
-    if (!sandbox) return { provisioning: true as const, retryAfterMs: 2_000 }
+    if (!sandbox) return { provisioning: true as const, retryAfterMs: TRANSIENT_DRIVER_RETRY_MS }
     return readyTarget(input, sandbox, hostId)
   }
 
