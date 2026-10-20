@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
 import { transcriptMarkdownExtensions } from "@/ui/utils"
-import { blockEntry, enhanceTextBlock, entryBase, initialResult, type RenderedBlock } from "./markdown-blocks"
+import { blockEntry, enhanceTextBlock, entryBase, initialResult, settledBlock, syncBlock, type RenderedBlock } from "./markdown-blocks"
 import { getCachedMarkdown, touchCachedMarkdown } from "./markdown-cache"
 import { project } from "./markdown-stream"
+import { markdownBlockKey } from "./markdown-worker-protocol"
 
 const parser = new Marked(...transcriptMarkdownExtensions)
 
@@ -99,5 +100,40 @@ describe("a part's first paint from the block cache", () => {
       expect.not.stringMatching(/^<p>cached/),
     ])
     expect(painted.map((block) => block.key)).toEqual(projection.blocks.map((block, index) => `reply:${key}:${index}:${block.mode}`))
+  })
+})
+
+describe("a streaming reply's settled blocks", () => {
+  const key = "part-streaming"
+  const earlier = ["# Report", "First finished paragraph.", "```ts\nconst a = 1\n```", "A paragraph still"].join("\n\n")
+  const later = `${earlier} growing.\n\n\`\`\`py\nprint(1)`
+  const settledOf = (text: string) => project(undefined, text, true).blocks.map((block, index) => syncBlock("reply", key, index, block))
+
+  test("the next update keeps every block that finished and renders again only the ones that grew or are still open", () => {
+    const settled = settledOf(earlier)
+    const next = project(undefined, later, true).blocks
+
+    const kept = next.map((block, index) => settledBlock(settled[index], markdownBlockKey("reply", key, index, block.mode), block) !== undefined)
+
+    expect(next.map((block) => block.mode)).toEqual(["full", "full", "code", "full", "code"])
+    expect(kept).toEqual([true, true, true, false, false])
+  })
+
+  test("an unchanged block that is still open or still awaits its math is rendered again", () => {
+    const text = ["The sum $$x^2$$ closes.", "Plain words.", "```py\nprint("].join("\n\n")
+    const settled = settledOf(text)
+    const next = project(undefined, text, true).blocks
+
+    const kept = next.map((block, index) => settledBlock(settled[index], markdownBlockKey("reply", key, index, block.mode), block) !== undefined)
+
+    expect(next.map((block) => block.mode)).toEqual(["full", "full", "code"])
+    expect(kept).toEqual([false, true, false])
+  })
+
+  test("a block settled under another part's key is rendered again", () => {
+    const [heading] = settledOf(earlier)
+    const [block] = project(undefined, later, true).blocks
+
+    expect(settledBlock(heading, markdownBlockKey("reply", "another-part", 0, "full"), block)).toBeUndefined()
   })
 })

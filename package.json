@@ -121,6 +121,7 @@
     "@tanstack/solid-query@5.99.2": "patches/@tanstack%2Fsolid-query@5.99.2.patch",
     "@tanstack/virtual-core@3.17.8": "patches/@tanstack%2Fvirtual-core@3.17.8.patch",
     "@kobalte/core@0.13.12": "patches/@kobalte%2Fcore@0.13.12.patch",
+    "@internationalized/number@3.6.7": "patches/@internationalized%2Fnumber@3.6.7.patch",
     "tokentracker-cli@0.91.0": "patches/tokentracker-cli@0.91.0.patch",
     "@opencode-ai/sdk@0.0.0-beta-19271": "patches/@opencode-ai%2Fsdk@0.0.0-beta-19271.patch",
     "@opencode-ai/client@0.0.0-beta-19271": "patches/@opencode-ai%2Fclient@0.0.0-beta-19271.patch",

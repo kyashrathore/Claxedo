@@ -24,7 +24,7 @@ async function main() {
   const browser = await chromium.launch({ channel: "chromium" })
   let target: Target | undefined
   try {
-    if (options.target === "local") target = await localTarget({ seedTurns: options.seedTurns, railSessions: options.railSessions, longMiB: options.longMiB, streamSessions: options.stream ? options.reps * options.profiles.length : 0, log })
+    if (options.target === "local") target = await localTarget({ seedTurns: options.seedTurns, railSessions: options.railSessions, longMiB: options.longMiB, streamSessions: options.stream ? options.reps * options.profiles.length : 0, dist: options.dist, log })
     else {
       const partial = await urlTarget({ url: options.target, cookieFile: options.cookies ?? "" })
       target = { ...partial, sessions: await discoverSessions(browser, partial) }
@@ -36,7 +36,7 @@ async function main() {
       for (const [profileIndex, name] of options.profiles.entries()) {
         const profile = PROFILES[name]
         target.useProfile(profile)
-        const run = await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, stacks: options.stacks, census: options.census, onboardingOnly: options.onboardingOnly, log }, rep * options.profiles.length + profileIndex)
+        const run = await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, stacks: options.stacks, census: options.census, streamReply: options.stream, onboardingOnly: options.onboardingOnly, log }, rep * options.profiles.length + profileIndex)
         results.push(...run.results)
         failures.push(...run.failures)
       }

@@ -30,7 +30,7 @@ async function joinedAsAdmin(signed: SignedStack, name: string) {
   return { cookies: [sessionCookie(signed.url, person)], repositoryUrl: signed.hosted.gitUrl }
 }
 
-export type LocalTargetInput = { readonly seedTurns: number; readonly railSessions: number; readonly longMiB: readonly number[]; readonly streamSessions: number; readonly log: (line: string) => void }
+export type LocalTargetInput = { readonly seedTurns: number; readonly railSessions: number; readonly longMiB: readonly number[]; readonly streamSessions: number; readonly dist: string | undefined; readonly log: (line: string) => void }
 
 export async function localTarget(input: LocalTargetInput): Promise<Target> {
   const started = Date.now()
@@ -38,8 +38,8 @@ export async function localTarget(input: LocalTargetInput): Promise<Target> {
   const frontPort = await reservePort()
   const relayPort = await reservePort()
   const ports = [frontPort, relayPort]
-  const build = await ensureAppBuilt({ outDir: DIST_DIR })
-  input.log(`app ${build.built ? `built in ${build.ms} ms` : "already current"} at ${build.distDir}`)
+  const build = input.dist ? { distDir: path.resolve(input.dist), built: false, ms: 0 } : await ensureAppBuilt({ outDir: DIST_DIR })
+  input.log(input.dist ? `app served as built at ${build.distDir}` : `app ${build.built ? `built in ${build.ms} ms` : "already current"} at ${build.distDir}`)
   const bytes = await analyzeDist(build.distDir)
   input.log(`${bytes.chunks.length} dist files compressed (br 11, gzip 6) in ${bytes.compressMs} ms`)
   let profile: Profile = PROFILES.none

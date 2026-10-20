@@ -2,6 +2,8 @@ import os from "node:os"
 import path from "node:path"
 import { PROFILE_NAMES, type ProfileName } from "./profiles"
 
+export type StreamReply = "report" | "long-reply"
+
 export type Options = {
   readonly target: string
   readonly cookies: string | undefined
@@ -13,13 +15,22 @@ export type Options = {
   readonly seedTurns: number
   readonly railSessions: number
   readonly longMiB: readonly number[]
-  readonly stream: boolean
+  readonly stream: StreamReply | undefined
   readonly census: boolean
   readonly stacks: boolean
   readonly onboardingOnly: boolean
+  readonly dist: string | undefined
 }
 
 const LOCAL_PROFILES: readonly ProfileName[] = ["fast", "india-staging"]
+
+function streamReply(argv: readonly string[]): StreamReply | undefined {
+  if (argv.includes("--stream")) return "report"
+  const named = argv.find((arg) => arg.startsWith("--stream="))?.slice("--stream=".length)
+  if (named === undefined) return undefined
+  if (named !== "report" && named !== "long-reply") throw new Error(`unknown --stream=${named}; the replies are report and long-reply`)
+  return named
+}
 
 function isProfileName(value: string): value is ProfileName {
   return (PROFILE_NAMES as readonly string[]).includes(value)
@@ -32,7 +43,8 @@ export function readOptions(argv: readonly string[]): Options {
     if (!isProfileName(name)) throw new Error(`unknown profile ${name}; the profiles are ${PROFILE_NAMES.join(", ")}`)
     return name
   })
-  if (target !== "local" && (value("long") || argv.includes("--stream"))) throw new Error("--long and --stream seed their sessions, so they need the local target")
+  if (target !== "local" && (value("long") || streamReply(argv))) throw new Error("--long and --stream seed their sessions, so they need the local target")
+  if (target !== "local" && value("dist")) throw new Error("--dist serves a built app from the local stack, so it needs the local target")
   if (target !== "local" && !value("cookies")) throw new Error("--target=<url> needs --cookies=<file> with the browser's exported cookies for that origin")
   return {
     target,
@@ -45,9 +57,10 @@ export function readOptions(argv: readonly string[]): Options {
     seedTurns: Number(value("seed-turns") ?? "12"),
     railSessions: Number(value("rail-sessions") ?? "8"),
     longMiB: value("long")?.split(",").map(Number) ?? [],
-    stream: argv.includes("--stream"),
+    stream: streamReply(argv),
     census: argv.includes("--census"),
     stacks: argv.includes("--stacks"),
     onboardingOnly: argv.includes("--onboarding-only"),
+    dist: value("dist"),
   }
 }

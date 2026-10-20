@@ -1,7 +1,7 @@
 import { checksum, markdownEnhances } from "@/ui/utils"
 import { codeThemeName } from "./code-theme-name"
 import { MARKDOWN_CODE_LANGUAGES } from "./markdown-code-languages"
-import { transcriptMarked, type Block, type Projection } from "./markdown-stream"
+import { canReusePendingBlock, transcriptMarked, type Block, type Projection } from "./markdown-stream"
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { getCachedCodeHighlight } from "./markdown-code-cache"
@@ -164,4 +164,31 @@ export async function enhanceTextBlock(input: {
   const safe = sanitizeMarkdown(parsed)
   if (entry) touchCachedMarkdown(entry, { raw: block.raw, hash, html: safe })
   return { key, mode, raw: block.raw, hash, html: safe, final: true }
+}
+
+export function settledBlock(settled: RenderedBlock | undefined, key: string, block: Block): RenderedBlock | undefined {
+  if (settled?.key !== key || settled.raw !== block.raw || settled.mode !== block.mode) return undefined
+  if (settled.mode === "code") return block.complete && settled.complete ? settled : undefined
+  return settled.mode === "full" && settled.final ? settled : undefined
+}
+
+export function pendingBlocks(
+  result: RenderResult | undefined,
+  projection: Projection | undefined,
+  streaming: boolean | undefined,
+  renderSync: (index: number, block: Block) => RenderedBlock,
+) {
+  if (!result) return []
+  if (!projection || result.text === projection.text) return result.blocks
+  if (!streaming) return []
+  const initial = result.blocks.length === 1 && result.blocks[0]?.key === "initial"
+  return projection.blocks.map((block, index) => {
+    const current = initial ? undefined : result.blocks[index]
+    if (block.mode === "code") {
+      if (current?.mode === "code" && canReusePendingBlock(current, block)) return current
+      return renderSync(index, block)
+    }
+    if (current && current.mode !== "code" && current.raw === block.raw && "html" in current) return current
+    return renderSync(index, block)
+  })
 }
