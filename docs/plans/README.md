@@ -14,6 +14,12 @@ doc or package README that owns it.
   today's server contracts, with e2e tests only. The transcript is moved, not rebuilt. The plan
   keeps phone layouts, gives every project an id, and has four first-party plugins and a
   benchmark gate against today's app.
+- [App plugins and agent replies: declarative UI, sandboxed logic](./2026-09-25-001-app-plugins-declarative-ui-plan.md)
+  — planned, not started. Plugin logic in a sandboxed worker and plugin and agent-reply UI drawn natively from one
+  catalog, in A2UI v0.9 with our own Solid renderer (owner, 2026-10-18); P1 prototypes and measures it, with an agent-reply fixture.
+- [Claxedo as an MCP Apps host](./2026-10-18-feat-mcp-apps-host-plan.md)
+  — planned, not started. One sandboxed frame host speaking the MCP Apps bridge, app snapshots on the tool part,
+  and a harness MCP operation group: Pi first, then Codex and Claude Code; Cursor, OpenCode and ACP keep plain tool rows.
 - [Steering admission and transcript reconciliation](./2026-09-20-harness-steering-admission.md)
   — queue execution and admission safety implemented; provider incorporation,
   transcript placement and the acceptance matrix remain.
