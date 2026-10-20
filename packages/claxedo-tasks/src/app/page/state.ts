@@ -1,6 +1,6 @@
-import type { ConfigurationSlot, Preset, Task, TaskCreateStatus, TaskDetailResponse, TaskStatus, TaskSummary } from "../../contracts"
+import type { ConfigurationSlot, Preset, Task, TaskCreateStatus, TaskDetailResponse, TaskSummary } from "../../contracts"
 import type { TasksRefusal } from "../refusal"
-import type { TaskCollection, TaskDateField } from "./model"
+import type { TaskCollection } from "./model"
 import { START_IDLE, type StartProgress } from "./start-run"
 
 export type TaskList =
@@ -62,10 +62,6 @@ export type PageState = {
   readonly chosenProjectId?: string
   readonly collection: TaskCollection
   readonly view: "list" | "board"
-  readonly statusFilter: TaskStatus | null
-  readonly showChildren: boolean
-  readonly grouped: boolean
-  readonly dateField: TaskDateField
   readonly list: TaskList
   readonly presets: PresetList
   readonly startWith?: string
@@ -82,10 +78,6 @@ export const INITIAL_PAGE_STATE: PageState = {
   route: { kind: "list" },
   collection: "active",
   view: "list",
-  statusFilter: null,
-  showChildren: true,
-  grouped: true,
-  dateField: "updated",
   list: { kind: "idle" },
   presets: { kind: "loading" },
   create: { kind: "closed" },

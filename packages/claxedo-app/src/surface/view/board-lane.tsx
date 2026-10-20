@@ -4,7 +4,7 @@ import { useTranslator } from "@/i18n"
 import { surfaceDictionary } from "../i18n"
 import type { DataPath } from "../model"
 import type { BoardInteraction } from "./board-interaction"
-import { RepeatedProvider } from "./row-actions"
+import { RepeatedProvider, RowActionRoleProvider } from "./row-actions"
 import { SurfaceGroup } from "./surface-children"
 import { SurfaceNode } from "./surface-node"
 import { useSurfaceReader } from "./surface-runtime"
@@ -64,7 +64,9 @@ export function BoardLaneView(props: BoardLaneProps) {
       <header data-slot="surface-board-lane-header">
         <h3 data-slot="surface-board-lane-title">{title()}</h3>
         <span data-slot="surface-board-lane-count">{ids().length}</span>
-        <SurfaceGroup ids={props.column.headerActions} scope={props.scope} slot="surface-actions" />
+        <RowActionRoleProvider value="row-secondary">
+          <SurfaceGroup ids={props.column.headerActions} scope={props.scope} slot="surface-actions" />
+        </RowActionRoleProvider>
       </header>
       <div
         data-slot="surface-board-items"

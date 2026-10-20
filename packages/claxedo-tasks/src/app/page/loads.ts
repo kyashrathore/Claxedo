@@ -8,7 +8,7 @@ import type { AttachmentImage, DetailLoad, TaskDetail } from "./state"
 
 function listQuery(model: PageModel, projectId: string) {
   const state = model.state()
-  return { projectId, status: state.statusFilter, parent: state.showChildren ? ("any" as const) : ("root" as const), includeArchived: state.collection === "all" }
+  return { projectId, status: null, parent: "any" as const, includeArchived: state.collection === "all" }
 }
 
 export function createListLoads(model: PageModel) {

@@ -1,0 +1,120 @@
+[data-slot="surface-dialog-overlay"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background-color: var(--v2-overlay-simple-overlay-scrim);
+  animation: surface-dialog-fade 120ms ease-out;
+}
+
+[data-slot="surface-dialog-position"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+}
+
+[data-component="surface"][data-placement="dialog"] {
+  box-sizing: border-box;
+  gap: 10px;
+  width: min(100%, 680px);
+  padding: 12px 18px 14px;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--v2-background-bg-layer-01);
+  box-shadow:
+    var(--v2-elevation-overlay),
+    0 0 0 0.5px var(--v2-border-border-base);
+  pointer-events: auto;
+  animation: surface-dialog-rise 140ms ease-out;
+
+  &:focus-visible {
+    outline: none;
+  }
+
+  [data-slot="surface-footer"] {
+    margin-top: 2px;
+    padding-top: 12px;
+    border-top: 1px solid var(--v2-border-border-muted);
+  }
+}
+
+[data-slot="surface-dialog-head"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+
+  [data-slot="surface-source"] {
+    margin-bottom: 0;
+  }
+}
+
+[data-slot="surface-dialog-close"] {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--v2-icon-icon-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+    color: var(--v2-icon-icon-base);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 1px;
+  }
+}
+
+@media (max-width: 480px) {
+  [data-slot="surface-dialog-position"] {
+    padding: 0;
+  }
+
+  [data-component="surface"][data-placement="dialog"] {
+    width: 100%;
+    min-height: 100%;
+    padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+    border-radius: 0;
+  }
+
+  [data-component="surface"][data-placement="dialog"] > [data-slot="surface-flex"] {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="surface-dialog-overlay"],
+  [data-component="surface"][data-placement="dialog"] {
+    animation: none;
+  }
+}
+
+@keyframes surface-dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes surface-dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}

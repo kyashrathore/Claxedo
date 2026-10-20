@@ -4,7 +4,7 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 
 ## Principles
 
-- One primary action per view: exactly one \`primary\` Button. The rest are \`default\`, or \`borderless\` for low-stakes ones (Details, Cancel).
+- One primary action per view: exactly one \`primary\` Button. The rest are \`default\`, or \`borderless\` for low-stakes ones (Details, Cancel). A Dialog is a view of its own, with its own primary.
 - Hierarchy is Header → Section → content. A view opens with one Header, or with one Callout for a short agent result. Each group of related content is a titled Section. Never fake headings with Text h1/h2 in a Column.
 - Group related fields in one Section and lay them out with a Grid, so the form reads left to right, top to bottom.
 - Say state in words: a status is a Badge with a word ("Failing", "Merged") and a tone; an outcome or warning is a Callout. Never colour or an Icon alone.
@@ -40,6 +40,12 @@ A surface is A2UI v0.9 that the Claxedo app draws with its own components: an ag
 | Items that move between states (a task board, a pipeline) | \`Board\`: one column per state, one \`item\` template; on a plugin page, \`move\` lets the person drag or key them across |
 | Files the person attaches (images, documents) | \`FilePicker\` (plugin pages only), with the picked images shown back as \`Image\`s |
 | One choice from a long or searched list (a project, a person) | \`Combobox\`; \`multiple\` for several |
+| A row that opens its record (a task, a pull request) | A ListItem with an \`action\`: the whole row is the click target, so it needs no Open button |
+| A property changed in place (a status, a project, an assignee) | ChoicePicker \`menu\`: a compact chip that opens a menu; \`iconOnly\` for a row's status glyph |
+| A switch between two or three views (List, Board) | ChoicePicker \`chips\` with \`iconOnly\` and an \`icon\` per option |
+| A document's title and body (a task, a note, instructions) | TextField \`title\`, then a RichTextEditor |
+| A record's document beside its properties | A Grid with \`layout: "sidebar"\`, the properties a KeyValue whose items may hold a chip |
+| A short flow over the page (create a record) | Dialog (plugin pages only) |
 | A work item's status beside its title | A ListItem \`icon\` or an \`Icon\` of \`circleDashed\` (not started), \`circle\` (to do), \`circleHalf\` (in progress), \`checkCircle\` (done) or \`alertCircle\` (blocked), with the status word in a Badge |
 
 A Badge's \`variant\` may be bound, so a template row can carry its own tone: put the tone beside the status word in each item (\`{"status": "Failed", "tone": "danger"}\`) and bind both (\`"text": {"path": "status"}, "variant": {"path": "tone"}\`); an unknown tone draws neutral. The text still says the state, so colour is never the only signal.
@@ -48,8 +54,9 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 
 - \`url\` is a \`data:\` URL of a base64 PNG, JPEG, GIF or WebP, at most 2 MiB decoded, usually bound from \`data\` (\`"url": {"path": "/shot"}\`). A plugin may also bind a \`blob:\` URL it made in the app's own document. Nothing else draws: no \`http(s)\`, no \`file:\`, no SVG. A surface never fetches.
 - \`accessibility.label\` is required and says what the picture shows ("Login page after the fix"), not "image". A refused url draws a dashed box with that label instead of the picture.
-- \`variant\` sets the size: \`icon\` 24 px, \`avatar\` a 40 px circle, \`smallFeature\`, \`mediumFeature\` and \`largeFeature\` up to 120, 240 and 480 px wide, \`header\` the full width at most 200 px tall. Without one the picture keeps its own size, never wider than its column. \`fit\` (\`contain\` by default, \`cover\`, \`fill\`, \`none\`, \`scaleDown\`) says how it fills that box.
-- Several pictures sit in a Grid; a picture beside text sits in a Row.
+- \`variant\` sets the size: \`icon\` 24 px, \`avatar\` a 40 px circle, \`thumbnail\` a 64 px square for an attachment strip, \`smallFeature\`, \`mediumFeature\` and \`largeFeature\` up to 120, 240 and 480 px wide, \`header\` the full width at most 200 px tall. Without one the picture keeps its own size, never wider than its column. \`fit\` (\`contain\` by default, \`cover\`, \`fill\`, \`none\`, \`scaleDown\`) says how it fills that box.
+- Several pictures sit in a Grid, or a horizontal List of \`thumbnail\`s; a picture beside text sits in a Row.
+- \`actions\` are icon-only Buttons drawn over the picture's corner, shown on hover or keyboard focus with a mouse and always on touch: a thumbnail's remove (\`"icon": "close"\`).
 
 ## Boards
 
@@ -62,9 +69,30 @@ A Badge's \`variant\` may be bound, so a template row can carry its own tone: pu
 
 ## Files and search
 
-- A FilePicker is for app plugin pages only. It draws a "Choose" button and a drop area; \`paste: "self"\` also takes a paste while the picker has focus, \`paste: "section"\` while focus is anywhere in its Section or Card. \`accept\` lists types (\`image/png\`, \`image/*\`) or extensions (\`.pdf\`), \`maxBytes\` caps each file (at most 8 MiB) and \`maxFiles\` caps one pick (1 by default). \`fitImages\` re-encodes an image over \`maxBytes\` smaller before refusing it.
+- A FilePicker is for app plugin pages only. It draws a "Choose" button and a drop area, or with \`variant: "button"\` only an icon button whose \`label\` is its accessible name (an attach button in a Dialog's property bar); \`paste: "self"\` also takes a paste while the picker has focus, \`paste: "section"\` a paste or a drop anywhere in its Section, Card or Dialog. \`accept\` lists types (\`image/png\`, \`image/*\`) or extensions (\`.pdf\`), \`maxBytes\` caps each file (at most 8 MiB) and \`maxFiles\` caps one pick (1 by default). \`fitImages\` re-encodes an image over \`maxBytes\` smaller before refusing it.
 - \`pick\` carries the bytes, never a path: \`files\` is \`[{"name", "mimeType", "size", "dataBase64"}]\` and \`refused\` is \`[{"name", "reason"}]\` with reason \`type\`, \`size\` or \`count\`. One pick carries at most 12 MiB; files past it are refused as \`size\`. Keep what you accept in your own state, show it back (an \`Image\` per picture, a ListItem per document, each with a remove Button), and name each refusal in a \`warning\` Callout.
 - A Combobox binds \`value\` (a string, or a list with \`multiple\`) and draws \`options\` (\`{"label", "value", "description"}\`, literal or bound). Without \`search\` it filters its options by the typed text itself. With \`search\` (plugin pages only) it sends \`{"query"}\` 250 ms after the last keystroke and shows "Searching…" until your next patch under the bound \`options\` path; answer with the matching options and drop answers to older queries. \`change\` sends \`{"value"}\` once the person picks.
+
+## Rows that open, and chips
+
+- A ListItem with an \`action\` is one click target: a click anywhere on it, or Enter on its title, sends the action. Its \`leading\` control (a status chip), its meta and its actions stay their own targets. Give it no Open button.
+- \`identifier\` is the record's short key ("CHK-12"), drawn in muted monospace before the title. \`layout: "inline"\` draws the row on one line, the meta right-aligned, as a dense list; in a narrow row (a phone, a board card) it stacks: the key, the title, then the meta.
+- A ChoicePicker \`menu\` draws its chosen option as a compact chip (its \`icon\`, then its label) that opens a menu of the options; its \`label\` is the accessible name ("Status: In progress"), never drawn. \`iconOnly\` draws only the icon, so every option needs an \`icon\`; use it for a row's status, inside a group that already names the status (a Board lane), and say the status in words elsewhere. A \`menu\` picks one option.
+- A KeyValue item may hold \`child\`, the id of a component drawn as its value (a status chip), in place of \`value\`, in a literal list only.
+- A Grid with \`layout: "sidebar"\` lists the main column's blocks by id, then the sidebar last: the first block heads the main column, the sidebar is a 260 px column on the right, and under 720 px it moves under the first block. Use it for a record's document beside its properties.
+
+## Writing
+
+- A TextField \`title\` is a borderless, large, wrapping title (a document's or a new record's); \`inline\` is a borderless one-line field that reads as a row ("Add subtask…"). Both show their \`placeholder\`, and their \`label\` is the accessible name only. A title submits on Enter or Mod+S and never holds a line break.
+- A RichTextEditor edits Markdown bound to \`value\` with headings, lists, to-dos, quotes, code, links and dividers; typing "/" opens a menu of those blocks, and \`placeholder\` shows while it is empty ("Add description… Press '/' for commands"). It writes the bound Markdown 250 ms after the last keystroke and when it loses focus. Markdown it cannot keep as written (a table, raw HTML) opens in a source mode instead, a plain Markdown textarea, so a document is never rewritten by opening it. \`submit\` fires on Mod+Enter or Mod+S with \`{"value"}\`.
+- The \`change\` of a TextField or a RichTextEditor is for app plugin pages only: it sends \`{"value"}\` 250 ms after the last keystroke and when focus leaves, so the page can show that there are unsaved edits (a \`sticky\` Footer with Save) without reading every keystroke.
+- A Footer with \`sticky\` floats at the bottom of the page while it is shown: a page's Save and Discard, added only while there are unsaved edits.
+
+## Dialogs
+
+- A Dialog is for app plugin pages only. It draws its \`child\` in a centred modal over the page (a full-screen sheet on a phone) while the boolean at \`open\` is true, under the producer's source line, with a close button. Its \`title\` is its accessible name.
+- Focus moves to its first text field and stays inside while it is open; Escape, the close button or a click outside sets \`open\` to false and sends \`close\`, and focus returns to where it was. Answer \`close\` by dropping the dialog's draft.
+- Keep a Dialog to one short flow ending in a Footer: Cancel in \`start\`, the primary in \`end\`.
 
 ## Agent configuration
 
@@ -346,6 +374,50 @@ A plugin page adds a \`borderless\` Cancel in the Footer's \`start\`. An agent r
 }
 ~~~
 
+### Plugin page: rows that open, a property chip, a New dialog
+
+~~~json
+{
+  "title": "Checkout tasks",
+  "components": [
+    {"id": "root", "component": "Column", "children": ["header", "tasks", "new-task"]},
+    {"id": "header", "component": "Header", "title": "Tasks", "badges": ["project"], "actions": ["view", "new"]},
+    {"id": "project", "component": "ChoicePicker", "label": "Project", "displayStyle": "menu", "options": [{"label": "checkout-api", "value": "checkout-api", "icon": "folder"}, {"label": "web-app", "value": "web-app", "icon": "folder"}], "value": {"path": "/project"}, "change": {"event": {"name": "chooseProject"}}},
+    {"id": "view", "component": "ChoicePicker", "label": "View", "displayStyle": "chips", "iconOnly": true, "options": [{"label": "List", "value": "list", "icon": "viewList"}, {"label": "Board", "value": "board", "icon": "viewBoard"}], "value": {"path": "/view"}, "change": {"event": {"name": "chooseView"}}},
+    {"id": "new", "component": "Button", "variant": "primary", "icon": "add", "child": "new-label", "action": {"event": {"name": "openNewTask"}}},
+    {"id": "new-label", "component": "Text", "text": "New task"},
+    {"id": "tasks", "component": "List", "children": {"componentId": "task", "path": "/tasks"}},
+    {"id": "task", "component": "ListItem", "layout": "inline", "identifier": {"path": "key"}, "title": {"path": "title"}, "leading": "task-status", "meta": ["task-age"], "actions": ["task-archive"], "action": {"event": {"name": "openTask", "context": {"task": {"path": "key"}}}}},
+    {"id": "task-status", "component": "ChoicePicker", "label": "Status", "displayStyle": "menu", "iconOnly": true, "options": [{"label": "To do", "value": "todo", "icon": "circle"}, {"label": "In progress", "value": "doing", "icon": "circleHalf"}, {"label": "Done", "value": "done", "icon": "checkCircle"}], "value": {"path": "status"}, "change": {"event": {"name": "setTaskStatus", "context": {"task": {"path": "key"}}}}},
+    {"id": "task-age", "component": "Text", "variant": "caption", "text": {"path": "age"}},
+    {"id": "task-archive", "component": "Button", "variant": "borderless", "icon": "archive", "child": "task-archive-label", "action": {"event": {"name": "archiveTask", "context": {"task": {"path": "key"}}}}},
+    {"id": "task-archive-label", "component": "Text", "text": "Archive"},
+    {"id": "new-task", "component": "Dialog", "title": "New task", "open": {"path": "/draft/open"}, "child": "draft", "close": {"event": {"name": "closeNewTask"}}},
+    {"id": "draft", "component": "Column", "children": ["draft-title", "draft-description", "draft-properties", "draft-footer"]},
+    {"id": "draft-title", "component": "TextField", "variant": "title", "label": "Task title", "placeholder": "Task title", "value": {"path": "/draft/title"}, "submit": {"event": {"name": "createTask", "context": {"description": {"path": "/draft/description"}, "status": {"path": "/draft/status"}}}}},
+    {"id": "draft-description", "component": "RichTextEditor", "label": "Description", "placeholder": "Add description… Press '/' for commands", "value": {"path": "/draft/description"}},
+    {"id": "draft-properties", "component": "Row", "children": ["draft-status"]},
+    {"id": "draft-status", "component": "ChoicePicker", "label": "Status", "displayStyle": "menu", "options": [{"label": "Backlog", "value": "backlog", "icon": "circleDashed"}, {"label": "To do", "value": "todo", "icon": "circle"}], "value": {"path": "/draft/status"}},
+    {"id": "draft-footer", "component": "Footer", "start": ["draft-cancel"], "end": ["draft-create"]},
+    {"id": "draft-cancel", "component": "Button", "variant": "borderless", "child": "draft-cancel-label", "action": {"event": {"name": "closeNewTask"}}},
+    {"id": "draft-cancel-label", "component": "Text", "text": "Cancel"},
+    {"id": "draft-create", "component": "Button", "variant": "primary", "child": "draft-create-label", "action": {"event": {"name": "createTask", "context": {"title": {"path": "/draft/title"}, "description": {"path": "/draft/description"}, "status": {"path": "/draft/status"}}}}},
+    {"id": "draft-create-label", "component": "Text", "text": "Create task"}
+  ],
+  "data": {
+    "project": ["checkout-api"],
+    "view": ["list"],
+    "tasks": [
+      {"key": "CHK-12", "title": "Retry the payment provider on 504", "status": ["doing"], "age": "2h"},
+      {"key": "CHK-14", "title": "Raise the cart lock timeout to 5 s", "status": ["todo"], "age": "1d"}
+    ],
+    "draft": {"open": true, "title": "", "description": "", "status": ["todo"]}
+  }
+}
+~~~
+
+The status chip changes a task in place and the page answers with a patch; the row itself opens the task. The Dialog is drawn only while \`/draft/open\` is true.
+
 ### Agent result: a Callout, the facts, the next step
 
 ~~~json
@@ -371,7 +443,7 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 
 ## Interaction rules
 
-- A Button sends its \`action\`. An input writes into the data model inside the app and sends nothing unless it declares an event: a TextField's \`submit\` (Enter in a one-line field; Mod+Enter or Mod+S in a \`longText\` field), the \`change\` of a ChoicePicker, CheckBox or Switch (after the new value is written), and the \`change\` of Tabs (bind \`selected\` to a number to read or set the open tab).
+- A Button, and a ListItem with an \`action\`, sends its \`action\`. An input writes into the data model inside the app and sends nothing unless it declares an event: a TextField's \`submit\` (Enter in a one-line field; Mod+Enter or Mod+S in a \`longText\` field; Enter or Mod+S in a \`title\`), a RichTextEditor's \`submit\` (Mod+Enter or Mod+S), the \`change\` of a ChoicePicker, CheckBox or Switch (after the new value is written), the \`change\` of Tabs (bind \`selected\` to a number to read or set the open tab), and on plugin pages the settled \`change\` of a TextField or RichTextEditor.
 - An input's event carries what the input supplies, added to its \`context\` under fixed names: \`value\` (the text, the list of chosen values, or the boolean) and, for Tabs, \`index\`. A \`context\` key with one of those names is refused; name your own entries differently.
 - In an agent reply every event asks the person before it is sent and arrives as a new user message, so an agent reply keeps to Buttons; \`change\` and \`submit\` are for plugin pages that answer each one with a patch (filters, inline edits, Save on Mod+S).
 - Bind every input a Button depends on into its \`context\` (\`"name": {"path": "/target/name"}\`). The receiver sees only the context, never the model.
@@ -397,6 +469,9 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 | Inputs scattered across Rows | A Grid, usually \`"columns": 2\`; it falls back to one column when narrow |
 | One giant Card holding everything | One Section per group; a Card only for a single standalone item |
 | Status as a coloured Icon or Text | A Badge or Callout with a word and a tone |
+| An Open button on every row | An \`action\` on the ListItem, so the row is the click target |
+| A create form drawn inline above a list | A Dialog opened by the page's New button (plugin pages) |
+| A row of labelled dropdowns for a record's properties | ChoicePicker \`menu\` chips |
 | Paragraphs of Text listing facts ("Region: eu-west-1. Owner: …") | KeyValue for one record, Table for many |
 | More than 7 blocks directly under the root | Tabs for parallel views, Collapsible for secondary detail |
 | Text h1/h2 as page and group headings | Header and Section titles |
@@ -435,4 +510,5 @@ A failure has the same shape: a \`danger\` Callout that says what failed and why
 16. Each repeated row has at most one text action (\`primaryAction\`); every Button in its \`actions\` has an \`icon\`, and a destructive one uses \`delete\`.
 17. Every Image has a \`data:\` URL and an \`accessibility.label\` that says what it shows.
 18. A FilePicker's refusals are named back in a Callout, and a Combobox with \`search\` binds \`options\` so its answers can arrive.
+19. A row that opens a record carries an \`action\` instead of an Open button, and a Dialog ends in a Footer with its own primary.
 `

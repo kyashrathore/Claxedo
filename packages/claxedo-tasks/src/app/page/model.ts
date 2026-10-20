@@ -35,9 +35,6 @@ export const LIVENESS_KEYS: Readonly<Record<SessionLiveness, TasksKey>> = {
   unavailable: "claxedo-tasks.liveness.unavailable",
 }
 
-export const TASK_DATE_FIELDS = ["updated", "created"] as const
-export type TaskDateField = (typeof TASK_DATE_FIELDS)[number]
-
 export function inCollection(task: TaskSummary, collection: TaskCollection): boolean {
   if (collection === "all") return true
   return task.archivedAt === null && COLLECTION_STATUSES[collection].includes(task.status)
@@ -53,15 +50,6 @@ export function projectKey(projectName: string): string {
 export function taskKey(projectName: string, task: Pick<Task, "number" | "childNumber">): string {
   const key = projectKey(projectName)
   return key.length === 0 ? `#${taskNumber(task)}` : `${key}-${taskNumber(task)}`
-}
-
-export function nextStatus(status: TaskStatus): TaskStatus | undefined {
-  return TASK_STATUSES[TASK_STATUSES.indexOf(status) + 1]
-}
-
-export function previousStatus(status: TaskStatus): TaskStatus | undefined {
-  const index = TASK_STATUSES.indexOf(status)
-  return index > 0 ? TASK_STATUSES[index - 1] : undefined
 }
 
 export type TaskLinkGroup = {

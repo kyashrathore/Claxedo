@@ -28,7 +28,7 @@ export function PluginSurface(props: PluginSurfaceProps & { readonly opened?: (c
       {failure()}
       <TranscriptKitProviders>
         <SurfaceReferencesProvider value={PLUGIN_REFERENCES}>
-          <SurfaceView surface={surface} source={{ kind: "plugin", label: props.pluginName }} onAction={controller.action} />
+          <SurfaceView surface={surface} source={{ kind: "plugin", label: props.pluginName }} placement="page" onAction={controller.action} />
         </SurfaceReferencesProvider>
       </TranscriptKitProviders>
     </>

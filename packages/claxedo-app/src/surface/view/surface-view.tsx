@@ -10,15 +10,21 @@ import "./surface.css"
 import "./surface-layout.css"
 import "./surface-fields.css"
 import "./surface-display.css"
+import "./surface-list-item.css"
 import "./surface-board.css"
 import "./surface-pickers.css"
+import "./surface-editor.css"
+import "./surface-dialog.css"
 
 export type SurfaceViewProps = {
   readonly surface: Surface
   readonly source: SurfaceSource
   readonly onAction?: (action: SurfaceActionEvent) => void
   readonly actionsDisabled?: boolean
+  readonly placement?: SurfacePlacement
 }
+
+export type SurfacePlacement = "inline" | "page"
 
 export function SurfaceView(props: SurfaceViewProps): JSX.Element {
   const state = (): SurfaceState => props.surface[surfaceState]
@@ -46,7 +52,7 @@ export function SurfaceView(props: SurfaceViewProps): JSX.Element {
   const drawn = () => state().lifecycle().kind === "live" && state().components.get(SURFACE_ROOT_ID) !== undefined
   return (
     <Show when={drawn()}>
-      <section data-component="surface" data-source={props.source.kind} data-claxedo-compact-touch aria-label={props.source.label}>
+      <section data-component="surface" data-source={props.source.kind} data-placement={props.placement ?? "inline"} data-claxedo-compact-touch aria-label={props.source.label}>
         <SurfaceSourceMark source={props.source} />
         <SurfaceRuntimeProvider value={runtime}>
           <SurfaceNode id={SURFACE_ROOT_ID} scope={ROOT_PATH} />

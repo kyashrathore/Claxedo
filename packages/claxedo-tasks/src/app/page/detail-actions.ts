@@ -29,12 +29,22 @@ function editValues(action: SurfaceActionEvent): { readonly title: string; reado
   return { title: contextText(action, "title"), description: contextText(action, "description") }
 }
 
+function observeEdits(model: PageModel, values: { readonly title: string; readonly description: string }) {
+  observeText(model, "/detail/title", values.title)
+  observeText(model, "/detail/description", values.description)
+}
+
 function editAction(handlers: DetailHandlers, action: SurfaceActionEvent, task: Task): boolean {
   const { model, commands } = handlers
+  if (action.name === PAGE_EVENTS.edited) {
+    const values = editValues(action)
+    observeEdits(model, values)
+    model.patch((state) => (state.detail ? { detail: { ...state.detail, edit: values } } : {}))
+    return true
+  }
   if (action.name === PAGE_EVENTS.save || action.name === PAGE_EVENTS.discard) {
     const values = editValues(action)
-    observeText(model, "/detail/title", values.title)
-    observeText(model, "/detail/description", values.description)
+    observeEdits(model, values)
     if (action.name === PAGE_EVENTS.save) void commands.save(task, values.title, values.description)
     else model.patch((state) => (state.detail ? { detail: { ...state.detail, conflictTitle: undefined, error: undefined, edit: { title: task.title, description: task.description }, revision: task.revision } } : {}))
     return true

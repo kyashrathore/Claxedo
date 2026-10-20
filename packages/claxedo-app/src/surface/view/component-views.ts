@@ -8,6 +8,8 @@ import { ComboboxView } from "./combobox-view"
 import { ChoicePickerView } from "./choice-picker-view"
 import { CardView, CollapsibleView, TabsView } from "./container-views"
 import { CheckBoxView, SwitchView, TextFieldView } from "./field-views"
+import { DialogView } from "./dialog-view"
+import { RichTextEditorView } from "./rich-text-editor-view"
 import { FilePickerView } from "./file-picker-view"
 import { ColumnView, DividerView, GridView, SurfaceListView, RowView } from "./layout-views"
 import { ListItemView } from "./list-item-view"
@@ -38,6 +40,7 @@ export const SURFACE_VIEWS: SurfaceViews = {
   Divider: DividerView,
   Button: ButtonView,
   TextField: TextFieldView,
+  RichTextEditor: RichTextEditorView,
   CheckBox: CheckBoxView,
   Switch: SwitchView,
   ChoicePicker: ChoicePickerView,
@@ -60,4 +63,5 @@ export const SURFACE_VIEWS: SurfaceViews = {
   Board: BoardView,
   FilePicker: FilePickerView,
   Combobox: ComboboxView,
+  Dialog: DialogView,
 }

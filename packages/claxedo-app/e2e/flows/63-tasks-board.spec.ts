@@ -35,31 +35,42 @@ async function pasteImage(field: Locator, name: string) {
 }
 
 async function createWithImages(app: Page, surface: Locator) {
-  await surface.getByRole("button", { name: "New task", exact: true }).click()
-  const form = surface.getByRole("region", { name: "New task" })
-  await form.getByRole("textbox", { name: "Title" }).fill("Ship the board")
-  await form.getByRole("group", { name: "Images" }).locator('input[type="file"]').setInputFiles({ name: "picked.png", mimeType: "image/png", buffer: Buffer.from(SWATCH, "base64") })
-  await pasteImage(form.getByRole("textbox", { name: "Description" }), "pasted.png")
-  await expect(form.getByRole("img", { name: "picked.png" })).toBeVisible()
-  await expect(form.getByRole("img", { name: "pasted.png" })).toBeVisible()
-  await form.getByRole("button", { name: "Create task", exact: true }).click()
+  const newTask = surface.getByRole("button", { name: "New task", exact: true })
+  await newTask.click()
+  const dialog = app.getByRole("dialog", { name: "New task" })
+  await dialog.getByRole("textbox", { name: "Task title" }).fill("Thrown away")
+  await app.keyboard.press("Escape")
+  await expect(dialog).toHaveCount(0)
+  await expect(newTask).toBeFocused()
+  await newTask.click()
+  await expect(dialog.getByRole("textbox", { name: "Task title" })).toHaveValue("")
+  await dialog.getByRole("group", { name: "Attach images, up to 6" }).locator('input[type="file"]').setInputFiles({ name: "picked.png", mimeType: "image/png", buffer: Buffer.from(SWATCH, "base64") })
+  await pasteImage(dialog.getByRole("textbox", { name: "Description" }), "pasted.png")
+  await expect(dialog.getByRole("img", { name: "picked.png" })).toBeVisible()
+  await expect(dialog.getByRole("img", { name: "pasted.png" })).toBeVisible()
+  await dialog.getByRole("textbox", { name: "Task title" }).fill("Ship the board")
+  await app.keyboard.press("Enter")
   await expect(app).toHaveURL(/\/tasks\/tsk_[^/]+$/)
   return decodeURIComponent(app.url().split("/tasks/")[1] ?? "")
 }
 
+function card(lane: Locator) {
+  return lane.locator('[data-slot="surface-board-item"]').filter({ hasText: "Ship the board" })
+}
+
 async function moveOnTheBoard(app: Page, surface: Locator, serverUrl: string, taskId: string, isMobile: boolean) {
-  await surface.getByRole("button", { name: "All tasks", exact: true }).first().click()
+  await surface.getByRole("button", { name: "Tasks", exact: true }).first().click()
   await expect(app).toHaveURL(/\/tasks$/)
   await surface.getByRole("button", { name: "Board", exact: true }).click()
   const todo = surface.getByRole("region", { name: "To do" })
   const doing = surface.getByRole("region", { name: "In progress" })
-  const card = (lane: Locator) => lane.locator('[data-slot="surface-board-item"]').filter({ hasText: "Ship the board" })
   if (!isMobile) {
     await card(todo).dragTo(doing.locator('[data-slot="surface-board-items"]'))
     await expect(card(doing)).toBeVisible()
     await expect.poll(async () => (await tasksClient(serverUrl).getTask(taskId)).task.status).toBe("doing")
   } else {
-    await card(todo).getByRole("button", { name: "Move Ship the board to In progress" }).click()
+    await card(todo).getByRole("button", { name: "Status: To do" }).click()
+    await app.getByRole("menuitemradio", { name: "In progress", exact: true }).click()
     await expect(card(doing)).toBeVisible()
   }
   await card(doing).focus()
@@ -71,32 +82,36 @@ async function moveOnTheBoard(app: Page, surface: Locator, serverUrl: string, ta
 }
 
 async function editAndConflict(app: Page, surface: Locator, serverUrl: string, taskId: string) {
-  await surface.locator('[data-slot="surface-board-item"]').filter({ hasText: "Ship the board" }).getByRole("button", { name: "Open", exact: true }).click()
+  await card(surface.getByRole("region", { name: "Needs you" })).getByRole("button", { name: "Ship the board", exact: true }).click()
   await expect(app).toHaveURL(new RegExp(`/tasks/${taskId}$`))
-  const details = surface.getByRole("region", { name: "Details" })
-  await details.getByRole("textbox", { name: "Title" }).fill("Ship the board today")
-  await details.getByRole("button", { name: "Save changes", exact: true }).click()
-  await expect(surface.getByRole("heading", { name: "Ship the board today" })).toBeVisible()
+  const save = surface.getByRole("button", { name: "Save changes", exact: true })
+  await expect(surface.getByRole("textbox", { name: "Task title" })).toHaveValue("Ship the board")
+  await expect(save).toHaveCount(0)
+  await surface.getByRole("textbox", { name: "Task title" }).fill("Ship the board today")
+  await save.click()
+  await expect(save).toHaveCount(0)
+  await expect.poll(async () => (await tasksClient(serverUrl).getTask(taskId)).task.title).toBe("Ship the board today")
   const current = (await tasksClient(serverUrl).getTask(taskId)).task
   await tasksClient(serverUrl).command({ clientRequestId: crypto.randomUUID(), command: { type: "task.edit", input: { taskId, revision: current.revision, title: "Renamed elsewhere", description: current.description, workspaceId: current.workspaceId } } })
-  await details.getByRole("textbox", { name: "Description" }).fill("Mine")
-  await details.getByRole("button", { name: "Save changes", exact: true }).click()
+  const description = surface.getByRole("textbox", { name: "Description" })
+  await description.fill("Mine")
+  await save.click()
   await expect(surface.getByText("This task changed elsewhere", { exact: true })).toBeVisible()
-  await expect(details.getByRole("textbox", { name: "Description" })).toHaveValue("Mine")
-  await details.getByRole("button", { name: "Save changes", exact: true }).click()
+  await expect(description).toHaveText("Mine")
+  await save.click()
   await expect.poll(async () => (await tasksClient(serverUrl).getTask(taskId)).task.description).toBe("Mine")
 }
 
-async function addSubtask(surface: Locator, serverUrl: string, taskId: string) {
+async function addSubtask(app: Page, surface: Locator, serverUrl: string, taskId: string) {
   const subtasks = surface.getByRole("region", { name: "Subtasks" })
   await subtasks.getByRole("textbox", { name: "New subtask" }).fill("Write the release note")
-  await subtasks.getByRole("button", { name: "Add subtask", exact: true }).click()
-  await expect(subtasks.getByText("Write the release note", { exact: true })).toBeVisible()
+  await app.keyboard.press("Enter")
+  await expect(subtasks.getByRole("button", { name: "Write the release note", exact: true })).toBeVisible()
   await expect(subtasks.getByRole("textbox", { name: "New subtask" })).toHaveValue("")
   expect((await tasksClient(serverUrl).listChildren(taskId)).items.map((child) => child.title)).toEqual(["Write the release note"])
 }
 
-test("63 Tasks: create with a picked and a pasted image, move on the board by drag and keyboard, edit through a conflict, add a subtask and Start a local preset", async ({ stack, app, isMobile }) => {
+test("63 Tasks: a New task dialog that Escape closes, create with a picked and a pasted image, move on the board by drag, status chip and keyboard, open a card, edit through a conflict, add a subtask and Start a local preset", async ({ stack, app, isMobile }) => {
   await stack.daemon.makeWorkspace("tasks", "Tasks project")
   await seedPreset(stack.url)
   await app.goto(stack.url)
@@ -107,11 +122,12 @@ test("63 Tasks: create with a picked and a pasted image, move on the board by dr
 
   const taskId = await createWithImages(app, surface)
   await expect(surface.getByRole("region", { name: "Images" }).getByRole("img")).toHaveCount(2)
+  await expect(surface.getByText("Tasks project › TP-1", { exact: true })).toBeVisible()
   expect((await tasksClient(stack.url).getTask(taskId)).attachments.map((attachment) => attachment.filename).sort()).toEqual(["pasted.png", "picked.png"])
 
   await moveOnTheBoard(app, surface, stack.url, taskId, isMobile)
   await editAndConflict(app, surface, stack.url, taskId)
-  await addSubtask(surface, stack.url, taskId)
+  await addSubtask(app, surface, stack.url, taskId)
 
   const sessions = surface.getByRole("region", { name: "Sessions" })
   await sessions.getByRole("button", { name: "Start", exact: true }).click()

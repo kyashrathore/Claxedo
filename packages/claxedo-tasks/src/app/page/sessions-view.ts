@@ -34,27 +34,23 @@ function sessionSlotNotice(view: SlotsView, slot: ConfigurationSlot): SurfaceCom
   return []
 }
 
-function slotControls(view: SlotsView, slot: ConfigurationSlot): SurfaceComponent[] {
+function slotControls(view: SlotsView, slot: ConfigurationSlot): { readonly actions: readonly string[]; readonly parts: SurfaceComponent[] } {
   const { t, task } = view
   const next = slotAttempt(view.groups, slot)
-  if (next.open) return surfaceButton(`slot-${slot}-controls`, t("claxedo-tasks.slot.openSession"), PAGE_EVENTS.slotOpen, { icon: "visibility", context: { slot } })
+  if (next.open) return { actions: [`slot-${slot}-open`], parts: surfaceButton(`slot-${slot}-open`, t("claxedo-tasks.slot.openSession"), PAGE_EVENTS.slotOpen, { icon: "visibility", context: { slot } }) }
   const offered = presetsForSlot(view.presets, slot)
-  if (offered.length === 0) {
-    return [
-      surfaceColumn(`slot-${slot}-controls`, [`slot-${slot}-none`, `slot-${slot}-create-preset`]),
-      { id: `slot-${slot}-none`, component: "Text", variant: "caption", text: t("claxedo-tasks.slot.noPreset", { slot: t(SLOT_KEYS[slot]) }) },
-      ...surfaceButton(`slot-${slot}-create-preset`, t("claxedo-tasks.page.createPreset"), PAGE_EVENTS.openPresets, { icon: "settings" }),
-    ]
-  }
+  if (offered.length === 0) return { actions: [`slot-${slot}-create-preset`], parts: surfaceButton(`slot-${slot}-create-preset`, t("claxedo-tasks.page.createPreset"), PAGE_EVENTS.openPresets, { icon: "settings" }) }
   const continuable = next.again && next.current?.liveness !== "deleted" && offered.some((preset) => preset.id === next.current?.presetId)
   const archived = task.archivedAt !== null
-  const buttons = archived ? [] : [`slot-${slot}-start`, ...(continuable ? [`slot-${slot}-continue`] : [])]
-  return [
-    { id: `slot-${slot}-controls`, component: "Row", align: "end", children: [`slot-${slot}-preset`, ...buttons] },
-    { id: `slot-${slot}-preset`, component: "ChoicePicker", weight: 1, label: t("claxedo-tasks.slot.preset"), variant: "mutuallyExclusive", displayStyle: "dropdown", options: offered.map((preset) => ({ label: preset.name, value: preset.id })), value: bound(`/detail/slots/${slot}/preset`), change: { event: { name: PAGE_EVENTS.slotPreset, context: { slot } } } },
-    ...surfaceButton(`slot-${slot}-start`, t(next.again ? "claxedo-tasks.slot.startAgain" : "claxedo-tasks.slot.start"), PAGE_EVENTS.slotStart, { icon: "play", context: { slot, preset: bound(`/detail/slots/${slot}/preset`) } }),
-    ...(continuable ? surfaceButton(`slot-${slot}-continue`, t("claxedo-tasks.slot.continue"), PAGE_EVENTS.slotContinue, { variant: "borderless", context: { slot } }) : []),
-  ]
+  const buttons = archived ? [] : [...(continuable ? [`slot-${slot}-continue`] : []), `slot-${slot}-start`]
+  return {
+    actions: [`slot-${slot}-preset`, ...buttons],
+    parts: [
+      { id: `slot-${slot}-preset`, component: "ChoicePicker", label: t("claxedo-tasks.slot.preset"), variant: "mutuallyExclusive", displayStyle: "menu", options: offered.map((preset) => ({ label: preset.name, value: preset.id, icon: "settings" as const })), value: bound(`/detail/slots/${slot}/preset`), change: { event: { name: PAGE_EVENTS.slotPreset, context: { slot } } } },
+      ...surfaceButton(`slot-${slot}-start`, t(next.again ? "claxedo-tasks.slot.startAgain" : "claxedo-tasks.slot.start"), PAGE_EVENTS.slotStart, { icon: "play", context: { slot, preset: bound(`/detail/slots/${slot}/preset`) } }),
+      ...(continuable ? surfaceButton(`slot-${slot}-continue`, t("claxedo-tasks.slot.continue"), PAGE_EVENTS.slotContinue, { variant: "borderless", context: { slot } }) : []),
+    ],
+  }
 }
 
 function slotProgress(view: SlotsView, slot: ConfigurationSlot): SurfaceComponent[] {
@@ -72,22 +68,29 @@ function slotAttempts(view: SlotsView, slot: ConfigurationSlot): SurfaceComponen
   ]
 }
 
-function sessionSlotSection(view: SlotsView, slot: ConfigurationSlot): SurfaceComponent[] {
+function sessionSlot(view: SlotsView, slot: ConfigurationSlot): SurfaceComponent[] {
   const { t } = view
   const current = slotAttempt(view.groups, slot).current
-  const description = current ? t("claxedo-tasks.slot.attempt", { attempt: current.attempt, liveness: t(LIVENESS_KEYS[current.liveness]) }) : t("claxedo-tasks.slot.noSession")
-  const parts = [...sessionSlotNotice(view, slot), ...slotControls(view, slot), ...slotProgress(view, slot), ...slotAttempts(view, slot)]
-  const children = [`slot-${slot}-notice`, `slot-${slot}-controls`, `slot-${slot}-progress`, `slot-${slot}-attempts`].filter((id) => parts.some((part) => part.id === id))
-  return [surfaceSection(`slot-${slot}`, `slot-${slot}-body`, { title: t(SLOT_KEYS[slot]), description, plain: true }), surfaceColumn(`slot-${slot}-body`, children), ...parts]
+  const subtitle = current ? t("claxedo-tasks.slot.attempt", { attempt: current.attempt, liveness: t(LIVENESS_KEYS[current.liveness]) }) : t("claxedo-tasks.slot.noSession")
+  const controls = slotControls(view, slot)
+  const parts = [...sessionSlotNotice(view, slot), ...slotProgress(view, slot), ...slotAttempts(view, slot)]
+  const children = [`slot-${slot}-row`, ...[`slot-${slot}-notice`, `slot-${slot}-progress`, `slot-${slot}-attempts`].filter((id) => parts.some((part) => part.id === id))]
+  return [
+    surfaceColumn(`slot-${slot}`, children),
+    { id: `slot-${slot}-row`, component: "ListItem", title: t(SLOT_KEYS[slot]), subtitle, icon: current?.liveness === "live" ? "circleHalf" : "circle", actions: [...controls.actions] },
+    ...controls.parts,
+    ...parts,
+  ]
 }
 
 export function sessionsComponents(view: SlotsView): SurfaceComponent[] {
   const { t } = view
   const slots = shownSlots(view)
   return [
-    surfaceSection("detail-sessions", "detail-sessions-body", { title: t("claxedo-tasks.sessions.title"), description: t("claxedo-tasks.sessions.description") }),
+    surfaceSection("detail-sessions", "detail-sessions-body", { title: t("claxedo-tasks.sessions.title"), actions: ["detail-presets"], plain: true }),
+    ...surfaceButton("detail-presets", t("claxedo-tasks.page.presets"), PAGE_EVENTS.openPresets, { variant: "borderless", icon: "settings" }),
     surfaceColumn("detail-sessions-body", slots.map((slot) => `slot-${slot}`)),
-    ...slots.flatMap((slot) => sessionSlotSection(view, slot)),
+    ...slots.flatMap((slot) => sessionSlot(view, slot)),
     { id: "attempt-row", component: "ListItem", title: bound("title"), subtitle: bound("subtitle"), meta: ["attempt-badges"], actions: ["attempt-tools"] },
     { id: "attempt-badges", component: "List", direction: "horizontal", children: { componentId: "attempt-badge", path: "badges" } },
     { id: "attempt-badge", component: "Badge", text: bound("text"), variant: bound("tone") },

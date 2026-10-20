@@ -419,7 +419,7 @@ export const desktopRenderer: Policy = {
   // `surface/image-fit.ts`) and the Combobox with its options and
   // search debounce (`surface/view/combobox-view.tsx`,
   // `surface/view/combobox-state.ts`, `surface/view/combobox-list.tsx`,
-  // `surface/combobox-options.ts`, `surface/search-debounce.ts`,
+  // `surface/combobox-options.ts`, `surface/input-debounce.ts`,
   // `surface/view/surface-pickers.css`). They add no package edge.
   // The plugin API primitives a surface page and a surface settings section
   // use (owner: the app's plugins domain): the route params a mounted page
@@ -537,8 +537,22 @@ export const desktopRenderer: Policy = {
   // carry it inline and paint it before the bundle's stylesheets arrive; the
   // renderer still takes it from the bundle (owner: the app's shell,
   // `shell/styles/startup.css`). It adds no package edge.
-  // 1548/37, no headroom.
-  ceilings: { modules: 1548, packages: 37 },
+  // The catalog's RichTextEditor, Dialog, menu chip and borderless fields
+  // (owner: the app's surface renderer,
+  // `surface/view/rich-text-editor-view.tsx`, `surface/view/rich-text-host.tsx`,
+  // `surface/view/slash-menu.tsx`, `surface/view/dialog-view.tsx`,
+  // `surface/view/choice-menu.tsx`, `surface/view/borderless-field-views.tsx`,
+  // `surface/view/text-field-events.ts`, `surface/dialog-focus.ts`,
+  // `surface/rich-text-mode.ts`, and the stylesheets
+  // `surface/view/surface-editor.css`, `surface/view/surface-dialog.css` and
+  // `surface/view/surface-list-item.css`), and behind the editor's one dynamic import
+  // (`surface/rich-text/module.ts`) the Tiptap editor it loads on first use:
+  // `surface/rich-text/*` over @tiptap/core, @tiptap/pm, @tiptap/starter-kit,
+  // @tiptap/extensions, @tiptap/extension-list, @tiptap/markdown and
+  // @tiptap/suggestion, which a plugin page's rich text fields need and no
+  // other part of the app draws.
+  // 1567/44, no headroom.
+  ceilings: { modules: 1567, packages: 44 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

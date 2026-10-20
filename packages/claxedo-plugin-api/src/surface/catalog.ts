@@ -3,12 +3,12 @@ import { z } from "zod"
 export const SURFACE_CATALOG_ID = "https://claxedo.dev/a2ui/v0.9/catalog.json"
 
 export const SURFACE_ICON_NAMES = [
-  "accountCircle", "add", "alertCircle", "arrowBack", "arrowForward", "calendarToday", "check", "checkCircle", "circle",
+  "accountCircle", "add", "alertCircle", "archive", "arrowBack", "arrowForward", "calendarToday", "check", "checkCircle", "checklist", "circle",
   "circleDashed", "circleHalf", "close", "delete", "download", "edit",
   "event", "error", "fastForward", "favorite", "favoriteOff", "folder", "help", "home", "info", "locationOn", "lock",
   "lockOpen", "mail", "menu", "moreVert", "moreHoriz", "notificationsOff", "notifications", "pause", "payment", "person",
   "photo", "play", "refresh", "rewind", "search", "send", "settings", "share", "shoppingCart", "skipNext", "skipPrevious",
-  "star", "starOff", "stop", "upload", "visibility", "visibilityOff", "warning",
+  "star", "starOff", "stop", "upload", "viewBoard", "viewList", "visibility", "visibilityOff", "warning",
 ] as const
 
 const MAX_TEXT = 100_000
@@ -22,7 +22,10 @@ const dynamicValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.jso
 const componentId = z.string().min(1).max(256).meta({ id: "ComponentId" })
 const componentIdList = z.array(componentId).meta({ id: "ComponentIdList" })
 const iconName = z.enum(SURFACE_ICON_NAMES).meta({ id: "IconName" })
-const keyValueItem = z.object({ label: dynamicString, value: dynamicString }).strict().meta({ id: "KeyValueItem" })
+const keyValueItem = z.union([
+  z.object({ label: dynamicString, value: dynamicString }).strict(),
+  z.object({ label: dynamicString, child: componentId }).strict(),
+]).meta({ id: "KeyValueItem" })
 const childList = z.union([
   z.array(componentId),
   z.object({ componentId, path: z.string().max(1024) }).strict(),
@@ -67,7 +70,7 @@ const comboOption = z
   .meta({ id: "ComboboxOption" })
 
 export const SURFACE_IMAGE_FITS = ["contain", "cover", "fill", "none", "scaleDown"] as const
-export const SURFACE_IMAGE_VARIANTS = ["icon", "avatar", "smallFeature", "mediumFeature", "largeFeature", "header"] as const
+export const SURFACE_IMAGE_VARIANTS = ["icon", "avatar", "thumbnail", "smallFeature", "mediumFeature", "largeFeature", "header"] as const
 
 export const SURFACE_BADGE_TONES = ["neutral", "accent", "success", "warning", "danger"] as const
 const badgeTone = z.enum(SURFACE_BADGE_TONES).meta({ id: "BadgeTone" })
@@ -97,6 +100,7 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     url: dynamicString,
     fit: z.enum(SURFACE_IMAGE_FITS).optional(),
     variant: z.enum(SURFACE_IMAGE_VARIANTS).optional(),
+    actions: componentIdList.optional(),
   }).strict(),
   catalogComponent("Row", { children: childList, justify: justify.optional(), align: align.optional() }),
   catalogComponent("Column", { children: childList, justify: justify.optional(), align: align.optional() }),
@@ -118,18 +122,28 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
   catalogComponent("TextField", {
     label: dynamicString,
     value: dynamicString.optional(),
-    variant: z.enum(["longText", "number", "shortText", "obscured"]).optional(),
+    variant: z.enum(["longText", "number", "shortText", "obscured", "title", "inline"]).optional(),
+    placeholder: dynamicString.optional(),
     validationRegexp: z.string().max(1024).optional(),
     submit: surfaceActionSchema.optional(),
+    change: surfaceActionSchema.optional(),
+  }),
+  catalogComponent("RichTextEditor", {
+    label: dynamicString,
+    value: dataBindingSchema,
+    placeholder: dynamicString.optional(),
+    submit: surfaceActionSchema.optional(),
+    change: surfaceActionSchema.optional(),
   }),
   catalogComponent("CheckBox", { label: dynamicString, value: dynamicBoolean, change: surfaceActionSchema.optional() }),
   catalogComponent("Switch", { label: dynamicString, value: dynamicBoolean, change: surfaceActionSchema.optional() }),
   catalogComponent("ChoicePicker", {
     label: dynamicString.optional(),
     variant: z.enum(["multipleSelection", "mutuallyExclusive"]).optional(),
-    options: z.array(z.object({ label: dynamicString, value: z.string() }).strict()).min(1),
+    options: z.array(z.object({ label: dynamicString, value: z.string(), icon: iconName.optional() }).strict()).min(1),
     value: dynamicStringList,
-    displayStyle: z.enum(["checkbox", "chips", "dropdown"]).optional(),
+    displayStyle: z.enum(["checkbox", "chips", "dropdown", "menu"]).optional(),
+    iconOnly: z.boolean().optional(),
     change: surfaceActionSchema.optional(),
   }),
   catalogComponent("Slider", { label: dynamicString.optional(), min: z.number().optional(), max: z.number(), step: z.number().positive().optional(), value: dynamicNumber }),
@@ -170,11 +184,20 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     tone: z.enum(["neutral", "positive", "negative", "warning"]).optional(),
     caption: dynamicString.optional(),
   }),
-  catalogComponent("Grid", { children: childList, columns: z.number().int().min(1).max(6).optional(), gap: z.enum(["small", "medium", "large"]).optional() }),
+  catalogComponent("Grid", {
+    children: childList,
+    columns: z.number().int().min(1).max(6).optional(),
+    gap: z.enum(["small", "medium", "large"]).optional(),
+    layout: z.enum(["even", "sidebar"]).optional(),
+  }),
   catalogComponent("ListItem", {
     title: dynamicString,
     subtitle: dynamicString.optional(),
+    identifier: dynamicString.optional(),
     icon: z.union([iconName, dataBindingSchema]).optional(),
+    leading: componentId.optional(),
+    layout: z.enum(["stacked", "inline"]).optional(),
+    action: surfaceActionSchema.optional(),
     meta: componentIdList.optional(),
     primaryAction: componentId.optional(),
     actions: componentIdList.optional(),
@@ -187,7 +210,7 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     action: componentId.optional(),
     dismissible: z.boolean().optional(),
   }),
-  catalogComponent("Footer", { start: componentIdList.optional(), end: componentIdList }),
+  catalogComponent("Footer", { start: componentIdList.optional(), end: componentIdList, sticky: z.boolean().optional() }),
   catalogComponent("KeyValue", { items: z.union([z.array(keyValueItem), dataBindingSchema]) }),
   catalogComponent("Board", {
     columns: z.array(boardColumn).min(1).max(12),
@@ -204,6 +227,7 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     maxFiles: z.number().int().min(1).max(16).optional(),
     fitImages: z.boolean().optional(),
     paste: z.enum(["self", "section"]).optional(),
+    variant: z.enum(["dropzone", "button"]).optional(),
     pick: surfaceActionSchema,
   }),
   catalogComponent("Combobox", {
@@ -217,6 +241,7 @@ export const surfaceComponentSchema = z.discriminatedUnion("component", [
     placeholder: dynamicString.optional(),
     emptyText: dynamicString.optional(),
   }),
+  catalogComponent("Dialog", { title: dynamicString, open: dataBindingSchema, child: componentId, close: surfaceActionSchema.optional() }),
   catalogComponent("AgentConfigurationPicker", {
     placement: z.union([z.enum(["local", "cloud"]), dataBindingSchema]),
     value: dataBindingSchema,

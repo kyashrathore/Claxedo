@@ -1,0 +1,271 @@
+[data-slot="surface-list-item"] {
+  container: surface-item / inline-size;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 8px;
+  margin: 0 -8px;
+  border-radius: var(--radius-lg);
+
+  & + & {
+    border-top: 1px solid var(--v2-border-border-muted);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  &[aria-current="true"] {
+    background: color-mix(in srgb, var(--v2-background-bg-accent) 7%, transparent);
+  }
+
+  &[data-opens="true"] {
+    cursor: pointer;
+    transition: background-color 80ms ease-out;
+  }
+
+  &[data-opens="true"]:hover {
+    background: color-mix(in srgb, var(--v2-text-text-base) 4%, transparent);
+  }
+
+  &[data-opens="true"]:has(> [data-slot="surface-list-item-body"] [data-opens="true"]:focus-visible) {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: -2px;
+  }
+}
+
+button[data-slot="surface-list-item-title"] {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  text-align: left;
+  cursor: pointer;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+[data-slot="surface-list-item"]
+  :is([data-slot="surface-list-item-leading"], [data-slot="surface-meta"], [data-slot="surface-actions"], [data-slot="surface-list-item-subtitle"] a) {
+  position: relative;
+  z-index: 1;
+}
+
+[data-slot="surface-list-item-leading"] {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  margin-top: -2px;
+}
+
+[data-slot="surface-list-item-identifier"] {
+  flex-shrink: 0;
+  color: var(--v2-text-text-muted);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+@container surface-item (min-width: 420px) {
+  [data-slot="surface-list-item"][data-layout="inline"] {
+    align-items: center;
+    padding-block: 5px;
+
+    > [data-slot="surface-list-item-leading"],
+    > [data-slot="surface-list-item-icon"] {
+      margin-top: 0;
+    }
+
+    [data-slot="surface-list-item-body"] {
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+
+    [data-slot="surface-list-item-text"] {
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }
+
+    [data-slot="surface-list-item-identifier"] {
+      min-width: 7ch;
+    }
+
+    [data-slot="surface-list-item-title"] {
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+
+    [data-slot="surface-list-item-subtitle"] {
+      flex: 0 1 auto;
+      min-width: 0;
+      -webkit-line-clamp: 1;
+      line-clamp: 1;
+    }
+
+    [data-slot="surface-list-item-text"] > [data-slot="surface-meta"] {
+      flex-wrap: nowrap;
+      margin-top: 0;
+      margin-left: auto;
+      padding-left: 12px;
+    }
+
+    [data-slot="surface-list-item-body"] > [data-slot="surface-actions"] {
+      margin-top: 0;
+    }
+  }
+}
+
+[data-slot="surface-list-item-icon"] {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-top: -2px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-md);
+  background: var(--v2-background-bg-base);
+  color: var(--v2-icon-icon-base);
+}
+
+[data-slot="surface-list-item-body"] {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+[data-slot="surface-list-item-text"] {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+
+  > [data-slot="surface-meta"] {
+    margin-top: 6px;
+  }
+}
+
+[data-slot="surface-list-item-title"],
+[data-slot="surface-list-item-subtitle"] {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+}
+
+[data-slot="surface-list-item-title"] {
+  font-weight: var(--font-weight-medium);
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+[data-slot="surface-list-item-subtitle"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  line-height: 18px;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+@container surface-item (max-width: 419px) {
+  [data-slot="surface-list-item-title"] {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+}
+
+[data-slot="surface-list-item-body"] > [data-slot="surface-actions"] {
+  flex-shrink: 1;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin-top: -2px;
+  margin-left: auto;
+}
+
+@container surface-item (max-width: 419px) {
+  [data-slot="surface-list-item-body"] {
+    align-items: flex-start;
+    row-gap: 0;
+  }
+
+  [data-slot="surface-list-item-text"] {
+    display: contents;
+  }
+
+  [data-slot="surface-list-item-identifier"],
+  [data-slot="surface-list-item-title"],
+  [data-slot="surface-list-item-subtitle"] {
+    flex: 0 0 100%;
+  }
+
+  [data-slot="surface-list-item-text"] > [data-slot="surface-meta"] {
+    margin-top: 8px;
+  }
+
+  [data-slot="surface-list-item-body"] > [data-slot="surface-actions"] {
+    margin-top: 2px;
+  }
+
+  [data-slot="surface-list-item-text"]:not(:has(> [data-slot="surface-meta"])) ~ [data-slot="surface-actions"] {
+    margin-top: 6px;
+  }
+
+  [data-slot="surface-list-item-text"] > [data-slot="surface-meta"] {
+    flex-shrink: 1;
+  }
+}
+
+[data-slot="surface-row-primary"],
+[data-slot="surface-row-secondary"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-slot="surface-row-secondary"] {
+  gap: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-slot="surface-list-item"][data-repeated="true"] [data-slot="surface-row-secondary"] {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-out;
+  }
+
+  [data-slot="surface-list-item"][data-repeated="true"]:is(:hover, :focus-within) [data-slot="surface-row-secondary"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+

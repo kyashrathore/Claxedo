@@ -1,28 +1,46 @@
 import { createMemo, createUniqueId, For, Match, Show, Switch } from "solid-js"
 import { Checkbox, RadioGroup, RadioItem, Select } from "@/ui"
 import { boundTextList, createBoundValue } from "../binding"
+import { surfaceIconName } from "../icon-names"
 import type { SurfaceNodeProps } from "../model"
+import { ChoiceMenu, type MenuChoice } from "./choice-menu"
+import { SurfaceIcon } from "./surface-icon"
 import { useSurfaceReader, useSurfaceRuntime } from "./surface-runtime"
 
 type DisplayStyle = NonNullable<SurfaceNodeProps<"ChoicePicker">["def"]["displayStyle"]>
 
-type Choice = { readonly value: string; readonly label: string }
-
 type ChoiceProps = {
   readonly label: string | undefined
-  readonly choices: readonly Choice[]
+  readonly choices: readonly MenuChoice[]
   readonly selected: readonly string[]
   readonly displayStyle: DisplayStyle
+  readonly iconOnly: boolean
   readonly onChange: (values: string[]) => void
 }
 
-function ChipToggles(props: { readonly label: string | undefined; readonly choices: readonly Choice[]; readonly isOn: (value: string) => boolean; readonly onToggle: (value: string) => void }) {
+type ChipTogglesProps = {
+  readonly label: string | undefined
+  readonly choices: readonly MenuChoice[]
+  readonly iconOnly: boolean
+  readonly isOn: (value: string) => boolean
+  readonly onToggle: (value: string) => void
+}
+
+function ChipToggles(props: ChipTogglesProps) {
   return (
-    <div data-slot="surface-chips" role="group" aria-label={props.label}>
+    <div data-slot="surface-chips" data-icon-only={props.iconOnly ? "true" : "false"} role="group" aria-label={props.label}>
       <For each={props.choices}>
         {(choice) => (
-          <button type="button" data-slot="surface-chip" aria-pressed={props.isOn(choice.value)} onClick={() => props.onToggle(choice.value)}>
-            {choice.label}
+          <button
+            type="button"
+            data-slot="surface-chip"
+            aria-pressed={props.isOn(choice.value)}
+            aria-label={props.iconOnly ? choice.label : undefined}
+            title={props.iconOnly ? choice.label : undefined}
+            onClick={() => props.onToggle(choice.value)}
+          >
+            <Show when={choice.icon}>{(icon) => <SurfaceIcon name={icon()} size="small" />}</Show>
+            <Show when={!props.iconOnly}>{choice.label}</Show>
           </button>
         )}
       </For>
@@ -45,7 +63,10 @@ function ExclusiveChoice(props: ChoiceProps) {
         />
       </Match>
       <Match when={props.displayStyle === "chips"}>
-        <ChipToggles label={props.label} choices={props.choices} isOn={(value) => current() === value} onToggle={(value) => props.onChange([value])} />
+        <ChipToggles label={props.label} choices={props.choices} iconOnly={props.iconOnly} isOn={(value) => current() === value} onToggle={(value) => props.onChange([value])} />
+      </Match>
+      <Match when={props.displayStyle === "menu"}>
+        <ChoiceMenu label={props.label} choices={props.choices} current={current()} iconOnly={props.iconOnly} onPick={(value) => props.onChange([value])} />
       </Match>
       <Match when={props.displayStyle === "checkbox"}>
         <RadioGroup label={props.label} value={current() ?? ""} onChange={(value) => props.onChange([value])}>
@@ -67,7 +88,7 @@ function MultipleChoice(props: ChoiceProps) {
         <For each={props.choices}>{(choice) => <Checkbox label={choice.label} checked={isOn(choice.value)} onChange={(on: boolean) => toggle(choice.value, on)} />}</For>
       }
     >
-      <ChipToggles label={props.label} choices={props.choices} isOn={isOn} onToggle={(value) => toggle(value, !isOn(value))} />
+      <ChipToggles label={props.label} choices={props.choices} iconOnly={props.iconOnly} isOn={isOn} onToggle={(value) => toggle(value, !isOn(value))} />
     </Show>
   )
 }
@@ -76,18 +97,19 @@ export function ChoicePickerView(props: SurfaceNodeProps<"ChoicePicker">) {
   const runtime = useSurfaceRuntime()
   const read = useSurfaceReader()
   const field = createBoundValue(() => props.def.value, () => props.scope, runtime.state.data, boundTextList)
-  const choices = createMemo(() => props.def.options.map((option) => ({ value: option.value, label: read.text(option.label, props.scope) })))
+  const choices = createMemo(() => props.def.options.map((option) => ({ value: option.value, label: read.text(option.label, props.scope), icon: surfaceIconName(option.icon) })))
   const label = () => (props.def.label === undefined ? undefined : read.text(props.def.label, props.scope))
   const displayStyle = () => props.def.displayStyle ?? "checkbox"
   const exclusive = () => props.def.variant !== "multipleSelection"
   const labelId = createUniqueId()
-  const ownLabel = () => (exclusive() && displayStyle() === "checkbox" ? undefined : label())
+  const iconOnly = () => props.def.iconOnly === true
+  const ownLabel = () => (exclusive() && (displayStyle() === "checkbox" || displayStyle() === "menu") ? undefined : iconOnly() ? undefined : label())
   const change = (values: string[]) => {
     field.set(values)
     runtime.fire(props.def.change, props.def.id, props.scope, { value: values })
   }
   return (
-    <div data-slot="surface-choice" role="group" aria-labelledby={ownLabel() ? labelId : undefined}>
+    <div data-slot="surface-choice" data-display={displayStyle()} role="group" aria-labelledby={ownLabel() ? labelId : undefined} aria-label={ownLabel() ? undefined : label()}>
       <Show when={ownLabel()}>
         {(text) => (
           <span id={labelId} data-slot="surface-input-label">
@@ -97,9 +119,9 @@ export function ChoicePickerView(props: SurfaceNodeProps<"ChoicePicker">) {
       </Show>
       <Show
         when={!exclusive()}
-        fallback={<ExclusiveChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={change} />}
+        fallback={<ExclusiveChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} iconOnly={iconOnly()} onChange={change} />}
       >
-        <MultipleChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} onChange={change} />
+        <MultipleChoice label={label()} choices={choices()} selected={field.value()} displayStyle={displayStyle()} iconOnly={iconOnly()} onChange={change} />
       </Show>
     </div>
   )
