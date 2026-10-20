@@ -3,13 +3,10 @@ import { createSignal } from "solid-js"
 import type { PageEntry, Registry, SettingsSection } from "@/shell"
 import { createRegistrationSink } from "../registrations"
 import type { BindingScope } from "./services"
+import { shellRoutes } from "./test-support/shell-routes"
 
 const drawn: string[] = []
-await mock.module("@/shell", () => ({
-  fillPattern: (pattern: string) => pattern,
-  sessionPath: (ref: { placementId: string; sessionId: string }) => `${ref.placementId}/${ref.sessionId}`,
-  settingsPath: (section: string) => `/settings/${encodeURIComponent(section)}`,
-}))
+await mock.module("@/shell", () => shellRoutes)
 await mock.module("../boundary", () => ({ boundedView: (_name: string, view: unknown) => view }))
 await mock.module("../surface-page/view", () => ({
   PluginSurfacePage: (props: { readonly page: { readonly id: string } }) => void drawn.push(`page ${props.page.id}`),
