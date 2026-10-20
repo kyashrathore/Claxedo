@@ -72,7 +72,12 @@ describe("the Tasks page surface", () => {
     await page.fire("openCreateTask")
     expect(page.surface.component("page-header")).toMatchObject({ actions: ["page-presets"] })
     await page.fire("createImagesPicked", { files: [{ name: "shot.png", mimeType: "image/png", size: 70, dataBase64: PIXEL }], refused: [{ name: "notes.txt", reason: "type" }] })
-    expect(page.surface.read("/create/images")).toMatchObject([{ name: "shot.png", url: `data:image/png;base64,${PIXEL}` }])
+    expect(page.surface.check()).toMatchObject({ ok: true })
+    expect(page.surface.component("create-body")).toMatchObject({ children: ["create-notice", "create-title", "create-description", "create-grid", "create-images", "create-images-hint", "create-image-list", "create-footer"] })
+    expect(page.surface.component("create-grid")).toMatchObject({ children: ["create-project", "create-status"] })
+    expect(page.surface.component("create-status")).toMatchObject({ label: "Status", displayStyle: "dropdown" })
+    expect(page.surface.component("create-images-hint")).toMatchObject({ text: "PNG, JPEG, GIF or WebP, up to 6. Paste them anywhere in this form." })
+    expect(page.surface.read("/create/images")).toMatchObject([{ name: "shot.png", removeLabel: "Remove shot.png", url: `data:image/png;base64,${PIXEL}` }])
     expect(page.surface.component("create-notice")).toMatchObject({ tone: "warning", text: "notes.txt is not a PNG, JPEG, GIF or WebP image" })
     await page.fire("createTask", { title: "Ship the board", description: "With images", status: ["backlog"], project: "project-alpha" })
     const [task] = (await page.server.client.listTasks({ projectId: "project-alpha", includeArchived: true })).items

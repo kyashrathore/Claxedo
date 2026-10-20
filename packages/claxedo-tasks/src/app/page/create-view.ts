@@ -3,7 +3,7 @@ import { TASK_ATTACHMENT_MIMES, TASK_CREATE_STATUSES, TASKS_BOUNDS } from "../..
 import type { Translate } from "../dictionary"
 import { fieldReason } from "../refusal"
 import type { JsonObject } from "../surface/json"
-import { bound, callout, footer, surfaceButton, surfaceColumn, surfaceSection } from "../surface/parts"
+import { bound, callout, footer, surfaceButton, surfaceColumn, surfaceSection, surfaceText } from "../surface/parts"
 import { PAGE_EVENTS } from "./events"
 import { STATUS_LOOKS } from "./model"
 import type { CreateForm } from "./state"
@@ -52,10 +52,11 @@ function imageParts(t: Translate, form: OpenForm): SurfaceComponent[] {
       paste: "section",
       pick: { event: { name: PAGE_EVENTS.createImages } },
     },
-    { id: "create-previews", component: "Grid", columns: 4, gap: "small", children: { componentId: "create-preview", path: "/create/images" } },
-    surfaceColumn("create-preview", ["create-preview-image", "create-preview-remove"]),
-    { id: "create-preview-image", component: "Image", url: bound("url"), variant: "smallFeature", fit: "cover", accessibility: { label: bound("name") } },
-    ...surfaceButton("create-preview-remove", t("claxedo-tasks.create.removeImage"), PAGE_EVENTS.removeImage, { variant: "borderless", icon: "close", context: { key: bound("key") } }),
+    surfaceText("create-images-hint", t("claxedo-tasks.create.imagesHint", { max: TASKS_BOUNDS.taskAttachmentsMax }), "caption"),
+    { id: "create-image-list", component: "List", children: { componentId: "create-image", path: "/create/images" } },
+    { id: "create-image", component: "ListItem", title: bound("name"), meta: ["create-image-thumb"], actions: ["create-image-remove"] },
+    { id: "create-image-thumb", component: "Image", url: bound("url"), variant: "icon", fit: "cover", accessibility: { label: bound("name") } },
+    ...surfaceButton("create-image-remove", bound("removeLabel"), PAGE_EVENTS.removeImage, { variant: "borderless", icon: "delete", context: { key: bound("key") } }),
   ]
 }
 
@@ -64,13 +65,13 @@ export function createComponents(t: Translate, form: OpenForm, projects: readonl
   const statuses = TASK_CREATE_STATUSES.map((status) => ({ label: t(STATUS_LOOKS[status].key), value: status }))
   return [
     surfaceSection("create", "create-body", { title: t("claxedo-tasks.create.title") }),
-    surfaceColumn("create-body", [...notice.map((part) => part.id), "create-title", "create-description", "create-grid", "create-images", "create-previews", "create-footer"]),
+    surfaceColumn("create-body", [...notice.map((part) => part.id), "create-title", "create-description", "create-grid", "create-images", "create-images-hint", "create-image-list", "create-footer"]),
     ...notice,
     { id: "create-title", component: "TextField", label: t("claxedo-tasks.create.taskTitle"), value: bound("/create/title"), submit: { event: { name: PAGE_EVENTS.submitCreate, context: { description: bound("/create/description"), status: bound("/create/status"), project: bound("/create/project") } } } },
     { id: "create-description", component: "TextField", label: t("claxedo-tasks.create.description"), variant: "longText", value: bound("/create/description") },
-    { id: "create-grid", component: "Grid", columns: 2, children: ["create-status", "create-project"] },
-    { id: "create-status", component: "ChoicePicker", label: t("claxedo-tasks.create.status"), variant: "mutuallyExclusive", displayStyle: "chips", options: statuses, value: bound("/create/status") },
+    { id: "create-grid", component: "Grid", columns: 2, children: ["create-project", "create-status"] },
     { id: "create-project", component: "Combobox", label: t("claxedo-tasks.create.project"), value: bound("/create/project"), options: projects.map((project) => ({ label: project.name, value: project.id })), placeholder: t("claxedo-tasks.toolbar.projectSearch") },
+    { id: "create-status", component: "ChoicePicker", label: t("claxedo-tasks.create.status"), variant: "mutuallyExclusive", displayStyle: "dropdown", options: statuses, value: bound("/create/status") },
     ...imageParts(t, form),
     ...closing(t, form),
   ]
@@ -83,6 +84,6 @@ export function createData(t: Translate, form: OpenForm, projectId: string | und
     description: "",
     status: [form.status],
     project: projectId ?? "",
-    images: form.images.map((image) => ({ key: image.key, name: image.filename, url: `data:${image.mime};base64,${image.data}` })),
+    images: form.images.map((image) => ({ key: image.key, name: image.filename, removeLabel: t("claxedo-tasks.create.removeImage", { name: image.filename }), url: `data:${image.mime};base64,${image.data}` })),
   }
 }
