@@ -47,6 +47,25 @@ test("54 shell: sign-in shows the artwork beside the form on the web and the for
   expect(((await session.json()) as { user: { email: string } }).user.email).toBe(signed.owner.email)
 })
 
+test("54 shell: Continue with GitHub leaves for GitHub's consent and its redirect back signs the person in", async ({ signed, page }) => {
+  const authorize: URL[] = []
+  await page.route(/^https:\/\/github\.com\/login\/oauth\/authorize/, async (route) => {
+    const asked = new URL(route.request().url())
+    authorize.push(asked)
+    const callback = new URL(asked.searchParams.get("redirect_uri") ?? "")
+    callback.searchParams.set("state", asked.searchParams.get("state") ?? "")
+    callback.searchParams.set("code", "hosted-person-a")
+    await route.fulfill({ status: 302, headers: { location: callback.toString() } })
+  })
+  await page.goto(`${signed.url}/login`)
+  await page.getByRole("button", { name: "Continue with GitHub" }).click()
+  await expect(page).not.toHaveURL(/\/login/)
+  expect(authorize).toHaveLength(1)
+  expect(new URL(authorize[0].searchParams.get("redirect_uri") ?? "").pathname).toBe("/api/auth/callback/github")
+  const session = await page.request.get(`${signed.url}/api/auth/get-session`)
+  expect(((await session.json()) as { user: { email: string } }).user.email).toBe("hosted-person-101@example.test")
+})
+
 test("54 shell: rows are one line whose hover trades the age for the machine and Settle, the home screen offers only the composer, the account menu holds Usage and Settings but not the name, and logout stays in the menu until it is done", async ({ signed, page, isMobile }, testInfo) => {
   await sessionsIn(signed, ["Fix the login redirect"])
   await signed.signIn(page, signed.owner)
