@@ -90,6 +90,10 @@ A failed build is not retried until a new build arrives or the plugin is switche
 
 `api.ts` is the host's only way to the server: `server.request` for a plugin's `server.fetch` (after the manifest check), the adapter's live plugin list, bundle and removal. `server.operation` goes to the adapter's `operation`, the one routing owner for the `documents.*` operations: on the web and the unsigned desktop they go to the connected server's `/documents` routes (the daemon's unsigned, the control plane's when signed on the web); on a signed desktop they cross Electron main by name, as today's app runs them through its account bridge. A plugin's requests carry the viewing user's credentials and nothing else, and the server applies that user's access.
 
+## Unit tests
+
+The binding tests stand in for `@/shell`, whose barrel does not load under `bun test`. Bun keeps a `mock.module` for the whole run, across files, and a later mock of the same module cannot add an export the first one lacked: the importing file then fails to load. The order of files follows the directory listing, which differs between machines, so a partial mock fails on one machine and passes on another. Every binding test therefore mocks `@/shell` with the one `shellRoutes` in `bindings/test-support/shell.ts`.
+
 ## Flows
 
 12 a task row draws its card from a cold open, 34 live plugin on desktop, 35 live plugin on the web, 36 the built-in Tasks plugin, 37 the network lock, 40 the app plugin tools, 61 a plugin surface page, 63 the Tasks page and Settings → Presets.

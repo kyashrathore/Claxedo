@@ -1,13 +1,10 @@
 import { describe, expect, mock, test } from "bun:test"
 import type { BindingScope } from "./services"
+import { shellRoutes } from "./test-support/shell"
 
 let activity = "working"
 await mock.module("@/session", () => ({ sessionActivity: () => activity }))
-await mock.module("@/shell", () => ({
-  fillPattern: (pattern: string) => pattern,
-  sessionPath: (ref: { placementId: string; sessionId: string }) => `${ref.placementId}/${ref.sessionId}`,
-  settingsPath: (section: string) => `/settings/${encodeURIComponent(section)}`,
-}))
+await mock.module("@/shell", () => shellRoutes)
 const { dataBindings } = await import("./data")
 
 function fixture() {

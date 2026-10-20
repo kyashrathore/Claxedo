@@ -4,10 +4,9 @@ import type { ToolCardTemplate } from "@claxedo/plugin-api"
 import type { PageEntry, Registry, ToolCardEntry } from "@/shell"
 import { createRegistrationSink } from "../registrations"
 import type { BindingScope } from "./services"
+import { shellRoutes } from "./test-support/shell"
 
-await mock.module("@/shell", () => ({
-  fillPattern: (pattern: string, params: Readonly<Record<string, string>>) => pattern.replace(":taskId?", params.taskId ?? ""),
-}))
+await mock.module("@/shell", () => shellRoutes)
 const { transcriptBinding } = await import("./transcript")
 
 function registry<Entry>(initial: readonly Entry[] = []): Registry<Entry> {
