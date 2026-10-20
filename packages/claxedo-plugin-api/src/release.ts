@@ -45,15 +45,21 @@ export type PluginRelease = {
 
 export type SignedPluginRelease = { release: PluginRelease; signature: string; keyId: string }
 
-const toolDeclarationSchema = z
+export const pluginToolDeclarationSchema = z
   .object({
     name: z.string().regex(PLUGIN_TOOL_NAME_PATTERN),
     title: z.string().trim().min(1).max(80),
     description: z.string().trim().min(1).max(2048),
-    inputSchema: z.record(z.string(), z.unknown()),
+    inputSchema: z.record(z.string(), z.unknown()).refine((schema) => schema.type === "object", "an MCP tool's input schema is a JSON Schema object"),
     access: z.enum(["read", "write"]),
   })
   .strict()
+
+export const pluginToolDeclarationsSchema = z
+  .array(pluginToolDeclarationSchema)
+  .min(1)
+  .max(64)
+  .refine((tools) => new Set(tools.map((tool) => tool.name)).size === tools.length, "tool names must be distinct")
 
 const blobSchema = z.object({ sha256: z.string().regex(SHA256_PATTERN), size: z.number().int().positive().max(PLUGIN_BUNDLE_MAX_BYTES) }).strict()
 
@@ -65,7 +71,7 @@ export const pluginReleaseSchema = z
     app: blobSchema,
     backend: blobSchema.optional(),
     storage: z.number().int().nonnegative(),
-    tools: z.array(toolDeclarationSchema).max(64).refine((tools) => new Set(tools.map((tool) => tool.name)).size === tools.length, "tool names must be distinct").optional(),
+    tools: pluginToolDeclarationsSchema.optional(),
     builtAt: z.iso.datetime(),
   })
   .strict()

@@ -65,12 +65,36 @@ describe("buildPluginRelease", () => {
     expect((await verifyPluginIndex(await signPluginIndex(index, pair.privateKey, "test"), { test: publicKey })).entries.map((entry) => entry.latest)).toEqual(["1.10.0"])
   })
 
-  test("refuses a plugin that declares agent tools, whose declarations a release cannot carry yet", async () => {
-    const dir = await writePlugin("with-tools", true)
+  async function withTools(name: string, definitions: string) {
+    const dir = await writePlugin(name, true)
     const packageJson = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as { claxedo: { backend: Record<string, unknown> } }
-    packageJson.claxedo.backend.tools = { group: { id: "with-tools", label: "With tools" }, definitions: "./src/backend.ts" }
+    packageJson.claxedo.backend.tools = { group: { id: name, label: "With tools" }, definitions: "./src/tools.ts" }
     await fs.writeFile(path.join(dir, "package.json"), JSON.stringify(packageJson))
-    expect(await buildPluginRelease({ rootDir: dir }).catch((error: unknown) => error)).toBeInstanceOf(PluginBuildError)
+    await fs.writeFile(path.join(dir, "src", "tools.ts"), definitions)
+    return dir
+  }
+
+  const NOTE_LIST = { name: "note_list", title: "List notes", description: "Lists the project's notes", inputSchema: { type: "object", properties: { limit: { type: "number" } } }, access: "read" }
+
+  test("copies the tool declarations the definitions module exports into the release, and the release verifies", async () => {
+    const dir = await withTools("with-tools", `const limit = { type: "number" }\nexport default [{ name: "note_list", title: "List notes", description: "Lists the project's notes", inputSchema: { type: "object", properties: { limit } }, access: "read" }]\n`)
+    const { release } = await buildPluginRelease({ rootDir: dir })
+    expect(release.tools).toEqual([NOTE_LIST])
+    const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair
+    const publicKey = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey))))
+    expect((await verifyPluginRelease(await signPluginRelease(release, pair.privateKey, "test"), { test: publicKey })).tools).toEqual([NOTE_LIST])
+  })
+
+  test("refuses tool declarations whose names break the pattern or repeat, and a definitions module outside the package", async () => {
+    for (const [name, tools] of [["bad-name", [{ ...NOTE_LIST, name: "Note-List" }]], ["repeated", [NOTE_LIST, NOTE_LIST]], ["none", []]] as const) {
+      const dir = await withTools(name, `export default ${JSON.stringify(tools)}\n`)
+      expect(await buildPluginRelease({ rootDir: dir }).catch((error: unknown) => error), name).toBeInstanceOf(PluginBuildError)
+    }
+    const outside = await withTools("outside", "export default []\n")
+    const packageJson = JSON.parse(await fs.readFile(path.join(outside, "package.json"), "utf8")) as { claxedo: { backend: { tools: { definitions: string } } } }
+    packageJson.claxedo.backend.tools.definitions = "../with-tools/src/tools.ts"
+    await fs.writeFile(path.join(outside, "package.json"), JSON.stringify(packageJson))
+    expect(await buildPluginRelease({ rootDir: outside }).catch((error: unknown) => error)).toBeInstanceOf(PluginBuildError)
   })
 
   test("carries no backend for an app-only plugin", async () => {
