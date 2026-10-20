@@ -8,7 +8,7 @@ import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
 import { useAccess, type SessionControls } from "@/access"
 import { useSessionStores, type SessionView } from "@/session"
-import { loadCodeViews, loadSurfaceReply } from "@/transcript"
+import { loadCodeViews, loadSurfaceReply, loadToolMotion } from "@/transcript"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { DockLayout, useDialog } from "@/ui"
 import { holdPaneReveal, useWorkbench } from "@/workbench"
@@ -257,6 +257,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
 }
 
 export function SessionScreen(props: PaneProps<SessionLocation>) {
-  prefetchWhenSettled(() => Promise.all([loadCodeViews(), loadSessionDocks(), loadSurfaceReply()]), "The code views, docks and reply surfaces could not be fetched ahead; they load when first shown")
+  prefetchWhenSettled(() => Promise.all([loadCodeViews(), loadSessionDocks(), loadSurfaceReply(), loadToolMotion()]), "The code views, docks, reply surfaces and tool motion could not be fetched ahead; they load when first shown")
   return <SessionSurface sessionRef={props.state} active={props.active} />
 }

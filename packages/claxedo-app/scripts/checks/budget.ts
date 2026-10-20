@@ -31,7 +31,7 @@ const parts: readonly Part[] = [
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 114956
+const totalBudget = 114919
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))

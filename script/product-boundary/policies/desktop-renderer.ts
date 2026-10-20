@@ -543,8 +543,11 @@ export const desktopRenderer: Policy = {
   // app's plugin host, `plugins/bindings/tool-card-intake.ts`,
   // `tool-card-check.ts`) and the plugin surface pages' lazy views
   // (`plugins/surface-page/view-lazy.ts`). They add no package edge.
-  // 1551/37, no headroom.
-  ceilings: { modules: 1551, packages: 37 },
+  // The transcript's loader of motion's `animate`, which keeps it out of the
+  // web boot (owner: the app's transcript domain, `transcript/tool-motion.ts`).
+  // It adds no package edge.
+  // 1552/37, no headroom.
+  ceilings: { modules: 1552, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

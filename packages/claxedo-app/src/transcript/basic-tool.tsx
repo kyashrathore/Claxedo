@@ -13,7 +13,6 @@ import {
   type JSX,
   type ResolvedChildren,
 } from "solid-js"
-import { animate, type AnimationPlaybackControls } from "motion"
 import { canonicalToolName } from "@claxedo/agent-runtime-contract"
 import { useTranscriptI18n, type TranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { createStore } from "solid-js/store"
@@ -51,7 +50,6 @@ export interface BasicToolProps {
   forceOpen?: boolean
   defer?: boolean
   locked?: boolean
-  animated?: boolean
   onSubtitleClick?: (event: MouseEvent) => void
   onTriggerClick?: JSX.EventHandlerUnion<HTMLElement, MouseEvent>
   onTriggerKeyDown?: JSX.EventHandlerUnion<HTMLElement, KeyboardEvent>
@@ -62,7 +60,6 @@ export interface BasicToolProps {
   bodyPending?: boolean
 }
 
-const SPRING = { type: "spring" as const, visualDuration: 0.35, bounce: 0 }
 const deferredMounts: Array<{ active: boolean; fn: () => void }> = []
 let deferredFrame: number | undefined
 
@@ -193,37 +190,6 @@ export function BasicTool(props: BasicToolProps) {
     ),
   )
 
-  let contentRef: HTMLDivElement | undefined
-  let heightAnim: AnimationPlaybackControls | undefined
-  const initialOpen = open()
-
-  createEffect(
-    on(
-      open,
-      (isOpen) => {
-        if (!props.animated || !contentRef) return
-        heightAnim?.stop()
-        if (isOpen) {
-          contentRef.style.overflow = "hidden"
-          heightAnim = animate(contentRef, { height: "auto" }, SPRING)
-          void heightAnim.finished.then(() => {
-            if (!contentRef || !open()) return
-            contentRef.style.overflow = "visible"
-            contentRef.style.height = "auto"
-          })
-        } else {
-          contentRef.style.overflow = "hidden"
-          heightAnim = animate(contentRef, { height: "0px" }, SPRING)
-        }
-      },
-      { defer: true },
-    ),
-  )
-
-  onCleanup(() => {
-    heightAnim?.stop()
-  })
-
   const handleOpenChange = (value: boolean) => {
     if (props.locked && !value) return
     setOpen(value)
@@ -335,20 +301,7 @@ export function BasicTool(props: BasicToolProps) {
           {trigger()}
         </Collapsible.Trigger>
       </Show>
-      <Show when={props.animated && hasChildren() && !props.hideDetails}>
-        <div
-          ref={contentRef}
-          data-slot="collapsible-content"
-          data-animated
-          style={{
-            height: initialOpen ? "auto" : "0px",
-            overflow: initialOpen ? "visible" : "hidden",
-          }}
-        >
-          {content()}
-        </div>
-      </Show>
-      <Show when={!props.animated && hasChildren() && !props.hideDetails}>
+      <Show when={hasChildren() && !props.hideDetails}>
         <Collapsible.Content>
           {content()}
         </Collapsible.Content>
