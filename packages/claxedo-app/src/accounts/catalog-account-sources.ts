@@ -5,7 +5,7 @@ import { piProviderAccountIds, toAppError, useServer } from "@/server"
 import { showToast } from "@/ui"
 import { useAccountsText } from "./i18n"
 
-export function createCatalogAccountSources(harness: () => string, refreshCatalog: () => Promise<unknown>) {
+export function createCatalogAccountSources(harness: () => string) {
   const server = useServer()
   const t = useAccountsText()
   const enabled = () => harness() === "pi" && server.capabilities() !== undefined
@@ -21,7 +21,6 @@ export function createCatalogAccountSources(harness: () => string, refreshCatalo
     setWriting(providerId)
     try {
       await server.accounts.setSource(piProviderAccountIds(providerId), chosen)
-      await refreshCatalog()
     } catch (error) {
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     } finally {

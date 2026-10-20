@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, expect, test } from "bun:test"
-import { QueryClient } from "@tanstack/solid-query"
+import { QueryClient, QueryObserver } from "@tanstack/solid-query"
 import { createHostedAccount } from "./account"
 import { accountQueries, createAccountsApi } from "./accounts"
 import { createTransport } from "./transport"
@@ -109,6 +109,53 @@ test("accounts: a refresh rereads the stored accounts and scans no machine", asy
   expect(seen.map((request) => request.path)).toEqual(["/api/claxedo/credentials", "/api/claxedo/credentials"])
 })
 
+const watched = (client: QueryClient, options: object) => new QueryObserver(client, options as never).subscribe(() => undefined)
+
+test("accounts: a write rereads the accounts and the provider catalogs together, and settles only once both are read", async () => {
+  const { seen, transport } = serve((request) => {
+    if (request.path === "/api/claxedo/credentials") return Response.json({ credentials: [] })
+    return Response.json({ sources: { "claude-sdk": "own" } })
+  })
+  const client = new QueryClient()
+  const slow = <T,>(read: () => Promise<T>) => async () => (await new Promise((resolve) => setTimeout(resolve, 40)), read())
+  const list = accountQueries(transport, undefined).list()
+  const accounts = { queryKey: list.queryKey, queryFn: slow(() => client.fetchQuery({ ...list, queryKey: ["direct"] })) }
+  const catalog = { queryKey: ["server", transport.serverUrl, "providerCatalog", "pi", ""], queryFn: slow(async () => "catalog") }
+  const stops = [watched(client, accounts), watched(client, catalog)]
+  await Promise.all([client.fetchQuery(accounts), client.fetchQuery(catalog)])
+  const started = performance.now()
+  await createAccountsApi(transport, client, undefined).setSource(["claude-sdk"], "own")
+  expect(performance.now() - started, "the catalog's reread ran beside the accounts' instead of after it").toBeLessThan(75)
+  expect(client.getQueryState(catalog.queryKey)?.dataUpdateCount).toBe(2)
+  expect(client.getQueryState(accounts.queryKey)?.dataUpdateCount).toBe(2)
+  expect(seen.some((request) => request.method === "PUT")).toBe(true)
+  for (const stop of stops) stop()
+})
+
+test("accounts: choosing one of the person's own accounts writes the source and the choice, then rereads once", async () => {
+  const { seen, transport } = serve((request) => {
+    if (request.path === "/api/claxedo/credentials" && request.method === "GET") return Response.json({ credentials: [] })
+    if (request.path.endsWith("/activate")) return Response.json({ credentials: [] })
+    return Response.json({ sources: { "claude-sdk": "own" } })
+  })
+  const client = new QueryClient()
+  const accounts = accountQueries(transport, undefined).list()
+  const stop = watched(client, accounts)
+  await client.fetchQuery(accounts)
+  const api = createAccountsApi(transport, client, undefined)
+  await api.select(["claude-sdk"], ["cred-a"])
+  await api.selectMachineLogin(["codex-app-server"])
+  expect(seen.slice(1).map((request) => `${request.method} ${request.path} ${JSON.stringify(request.body ?? null)}`)).toEqual([
+    'PUT /api/claxedo/credentials/account-sources {"provider_ids":["claude-sdk"],"source":"own"}',
+    'POST /api/claxedo/credentials/activate {"ids":["cred-a"]}',
+    "GET /api/claxedo/credentials null",
+    'PUT /api/claxedo/credentials/account-sources {"provider_ids":["codex-app-server"],"source":"own"}',
+    'POST /api/claxedo/credentials/activate {"machine_login":{"provider_ids":["codex-app-server"]}}',
+    "GET /api/claxedo/credentials null",
+  ])
+  stop()
+})
+
 test("accounts: a refused removal rereads the accounts, so a row another tab already removed corrects itself", async () => {
   const { transport } = serve(() => Response.json({ error: { code: "credential_not_found", message: "No such account" } }, { status: 404 }))
   const client = new QueryClient()
@@ -174,13 +221,14 @@ test("accounts: with a hosted account, account sources, organization accounts an
 test("accounts: with a hosted account the sandbox keys, their saves, checks, removals and default driver are the account's, since its cloud workspaces start on them", async () => {
   const { seen, calls, client, queries, api } = serverAndAccount()
   expect(await client.fetchQuery(queries.sandbox())).toMatchObject({ kind: "listed", defaultDriver: "modal", keys: [expect.objectContaining({ id: "cred-sandbox" })] })
-  expect(await api.saveSandboxKey("modal", { token: "mo-1" })).toMatchObject({ id: "cred-sandbox-2" })
+  expect(await api.saveSandboxKey("modal", { token: "mo-1" })).toEqual({ key: expect.objectContaining({ id: "cred-sandbox-2" }), check: { verdict: "auth_failed" } })
   await api.chooseSandboxDriver(null)
   expect(await api.checkSandboxKey("cred-sandbox")).toEqual({ verdict: "auth_failed" })
   await api.removeSandboxKey("cred-sandbox")
   expect(calls).toEqual([
     { operation: "credentials.sandbox.read" },
     { operation: "credentials.save", input: { provider_id: "modal", kind: "sandbox_driver", source: "managed", secret: JSON.stringify({ token: "mo-1" }) } },
+    { operation: "credentials.verify", input: { id: "cred-sandbox-2" } },
     { operation: "credentials.sandbox.choose", input: { driver: null } },
     { operation: "credentials.verify", input: { id: "cred-sandbox" } },
     { operation: "credentials.remove", input: { id: "cred-sandbox" } },

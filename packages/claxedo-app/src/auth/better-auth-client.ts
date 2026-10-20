@@ -12,7 +12,7 @@ export type BetterAuthSessionData = {
 export type BetterAuthBrowserClient = {
   getSession(): ClientResult<BetterAuthSessionData>
   signIn: {
-    social(input: { provider: "google" | "github"; callbackURL: string }): ClientResult<unknown>
+    social(input: { provider: "google" | "github"; callbackURL: string; disableRedirect: true }): ClientResult<{ url?: unknown }>
     email(input: { email: string; password: string; callbackURL: string }): ClientResult<unknown>
   }
   signUp: {

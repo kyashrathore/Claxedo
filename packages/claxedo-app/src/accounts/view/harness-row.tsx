@@ -104,7 +104,6 @@ function useConnect(props: HarnessRowProps) {
           {...(credentialId ? { credentialId } : {})}
           {...(org ? { organization: org } : {})}
           replaces={replaces}
-          onConnected={() => props.accounts.rescan()}
         />
       ),
       () => setConnecting(false),

@@ -7,8 +7,10 @@ export type AccountWrites = { readonly refresh: () => Promise<void>; readonly wr
 
 export function accountWrites(queryClient: QueryClient, server: string): AccountWrites {
   const refresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
-    await queryClient.invalidateQueries({ queryKey: queryKeys.providerCatalogs(server) })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.providerCatalogs(server) }),
+    ])
   }
   const write: AccountWrite = async (run) => {
     try {

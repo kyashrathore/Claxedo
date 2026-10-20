@@ -1,7 +1,7 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { HostedAccount } from "./account"
 import { accountCheckAnswer, accountRemovalAnswer } from "./account-answers"
-import type { AccountsApi, SandboxKeys } from "./account-types"
+import type { AccountsApi, SandboxKeys, SavedSandboxKey } from "./account-types"
 import type { AccountWrite } from "./account-writes"
 import { contractMismatch, toAppError } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -71,11 +71,12 @@ export function sandboxKeyQueries(server: string, plane: SandboxKeyPlane) {
 export function createSandboxKeyWrites(plane: SandboxKeyPlane, write: AccountWrite): Pick<AccountsApi, "saveSandboxKey" | "chooseSandboxDriver" | "checkSandboxKey" | "removeSandboxKey"> {
   return {
     saveSandboxKey: (driver, fields) =>
-      write(async () => {
+      write(async (): Promise<SavedSandboxKey> => {
         const body = { provider_id: driver, kind: "sandbox_driver", source: "managed", secret: JSON.stringify(fields) }
-        const saved = accountFromWire(asRecord(await plane.save(body))?.credential)
-        if (!saved) throw contractMismatch("sandbox key")
-        return saved
+        const key = accountFromWire(asRecord(await plane.save(body))?.credential)
+        if (!key) throw contractMismatch("sandbox key")
+        const check = await plane.verify(key.id).then(accountCheckAnswer, (error: unknown) => ({ error }))
+        return { key, check }
       }),
     chooseSandboxDriver: (driver) => write(async () => void (await plane.choose(driver))),
     checkSandboxKey: (id) => write(async () => accountCheckAnswer(await plane.verify(id))),

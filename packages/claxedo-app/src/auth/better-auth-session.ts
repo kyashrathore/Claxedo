@@ -18,7 +18,7 @@ type DescriptorRequest = (input: string, init?: RequestInit) => Promise<Response
 
 export type BetterAuthSession = ReturnType<typeof createBetterAuthSession>
 
-export function createBetterAuthSession(input: { request?: DescriptorRequest; createClient: BetterAuthClientFactory }) {
+export function createBetterAuthSession(input: { request?: DescriptorRequest; createClient: BetterAuthClientFactory; leave?: (url: string) => void }) {
   const [descriptor, setDescriptor] = createSignal<BrowserAuthDescriptor | null>(null)
   const [user, setUser] = createSignal<AuthUser | null>(null)
   const [loading, setLoading] = createSignal(false)
@@ -39,6 +39,7 @@ export function createBetterAuthSession(input: { request?: DescriptorRequest; cr
     disconnect: () => (connection = undefined),
     loadDescriptor,
     readSession,
+    leave: input.leave ?? ((url: string) => window.location.assign(url)),
   }
 }
 
