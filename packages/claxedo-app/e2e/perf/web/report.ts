@@ -17,7 +17,7 @@ export type RunMeta = {
   readonly failures: readonly string[]
 }
 
-const MARK_COLUMNS = ["fcp", "shell", "rail", "session-text", "session-fold", "session-two-screens", "session-settled", "composer", "login", "marketplace", "settings", "onboarding", "draft"] as const
+const MARK_COLUMNS = ["fp", "fcp", "shell", "rail", "session-text", "session-fold", "session-two-screens", "session-settled", "composer", "login", "marketplace", "settings", "onboarding", "draft"] as const
 
 function fmt(value: number | undefined, digits = 0) {
   return value === undefined || !Number.isFinite(value) ? "—" : value.toFixed(digits)
@@ -62,6 +62,7 @@ function readinessTable(results: readonly StepResult[]) {
       `${first.primary.name.replace(/:ses_.*$/, "")} ${fmt(med((result) => result.primary.ms))}`,
       ...MARK_COLUMNS.map((column) => fmt(med((result) => markValue(result, column)))),
       fmt(med((result) => result.lcp?.at)),
+      fmt(med((result) => result.layoutShift), 3),
       fmt(med((result) => result.waterfall.requests)), fmt(med((result) => result.waterfall.protocols.h2 ?? 0)), kb(med((result) => result.waterfall.transferBytes)), fmt(med((result) => result.waterfall.waves)),
       fmt(med((result) => result.mainThread?.busyMs)), fmt(med((result) => result.mainThread?.tbtMs)), fmt(med((result) => result.mainThread?.longTasks.length)),
       `${fmt(med((result) => result.mainThread?.render.styleRecalcs))} / ${fmt(med((result) => result.mainThread?.render.styleMs), 1)}`,
@@ -71,7 +72,7 @@ function readinessTable(results: readonly StepResult[]) {
       first.keys ? `${fmt(med((result) => result.keys?.p50), 1)} / ${fmt(med((result) => result.keys?.p95), 1)} / ${fmt(med((result) => result.keys?.max), 1)}` : "—",
     ]
   })
-  return table(["scenario", "profile", "cache", "n", "headline ms", ...MARK_COLUMNS, "lcp", "requests", "h2", "kB", "waves", "busy ms", "TBT ms", "long tasks", "style n / ms", "layout n / ms", "forced n / ms", "paint ms", "key p50/p95/max"], rows)
+  return table(["scenario", "profile", "cache", "n", "headline ms", ...MARK_COLUMNS, "lcp", "cls", "requests", "h2", "kB", "waves", "busy ms", "TBT ms", "long tasks", "style n / ms", "layout n / ms", "forced n / ms", "paint ms", "key p50/p95/max"], rows)
 }
 
 function waterfallRows(rows: readonly WaterfallRow[]) {

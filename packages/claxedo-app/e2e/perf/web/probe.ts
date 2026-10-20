@@ -22,6 +22,7 @@ export type ProbeState = {
   readonly navigation: ProbeNavigation | undefined
   readonly marks: readonly ProbeMark[]
   readonly lcp: { readonly at: number; readonly size: number; readonly element: string } | undefined
+  readonly layoutShift: number
   readonly railRows: number
   readonly longTasks: readonly { readonly start: number; readonly duration: number }[]
   readonly loafs: readonly ProbeLoaf[]
@@ -46,6 +47,7 @@ export function installWebProbe() {
   const state = {
     marks: [] as { name: string; at: number }[],
     lcp: undefined as { at: number; size: number; element: string } | undefined,
+    layoutShift: 0,
     railRows: 0,
     longTasks: [] as { start: number; duration: number }[],
     loafs: [] as ProbeLoaf[],
@@ -178,7 +180,12 @@ export function installWebProbe() {
   }, { capture: true })
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
+      if (entry.entryType === "paint" && entry.name === "first-paint") mark("fp", entry.startTime)
       if (entry.entryType === "paint" && entry.name === "first-contentful-paint") mark("fcp", entry.startTime)
+      if (entry.entryType === "layout-shift") {
+        const shift = entry as PerformanceEntry & { value?: number; hadRecentInput?: boolean }
+        if (!shift.hadRecentInput) state.layoutShift += shift.value ?? 0
+      }
       if (entry.entryType === "largest-contentful-paint") {
         const candidate = entry as PerformanceEntry & { size?: number; element?: Element | null }
         state.lcp = { at: entry.startTime, size: candidate.size ?? 0, element: candidate.element?.tagName.toLowerCase() ?? "" }
@@ -193,14 +200,14 @@ export function installWebProbe() {
       }
     }
   })
-  for (const type of ["paint", "largest-contentful-paint", "longtask", "long-animation-frame"]) observer.observe({ type, buffered: true })
+  for (const type of ["paint", "largest-contentful-paint", "layout-shift", "longtask", "long-animation-frame"]) observer.observe({ type, buffered: true })
   window.__webPerf = {
     read: () => {
       const [entry] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[]
       return {
         timeOrigin: performance.timeOrigin,
         navigation: entry ? { fetchStart: entry.fetchStart, requestStart: entry.requestStart, responseStart: entry.responseStart, responseEnd: entry.responseEnd, domContentLoaded: entry.domContentLoadedEventEnd, loadEventEnd: entry.loadEventEnd, transferSize: entry.transferSize } : undefined,
-        marks: [...state.marks], lcp: state.lcp, railRows: state.railRows, longTasks: [...state.longTasks], loafs: [...state.loafs], inputs: [...state.inputs], keys: [...state.keys], frames: state.frames,
+        marks: [...state.marks], lcp: state.lcp, layoutShift: state.layoutShift, railRows: state.railRows, longTasks: [...state.longTasks], loafs: [...state.loafs], inputs: [...state.inputs], keys: [...state.keys], frames: state.frames,
         census: census ? { ...census } : undefined,
       }
     },

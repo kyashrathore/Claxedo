@@ -24,6 +24,7 @@ export type StepResult = {
   readonly primary: { readonly name: string; readonly ms: number }
   readonly marks: Readonly<Record<string, number>>
   readonly lcp: ProbeState["lcp"]
+  readonly layoutShift: number | undefined
   readonly railRows: number
   readonly keys: { readonly p50: number; readonly p95: number; readonly max: number; readonly n: number } | undefined
   readonly waterfall: Waterfall
@@ -170,7 +171,7 @@ export async function summarizeStep(input: RunInput, session: Session, spec: Mea
   const result: StepResult = {
     scenario: spec.scenario, step: spec.step, profile: input.profile.name, cache: spec.cache, rep: input.rep, reference: spec.reference,
     primary: first ? { name: first, ms: marks[first] ?? Number.NaN } : span ? { name: "end", ms: round(span.endMs) } : { name: "key p50", ms: round(quantile(keys, 0.5)) },
-    marks, lcp: spec.reference === "navigation" ? state.lcp : undefined, railRows: state.railRows,
+    marks, lcp: spec.reference === "navigation" ? state.lcp : undefined, layoutShift: spec.reference === "navigation" ? state.layoutShift : undefined, railRows: state.railRows,
     keys: keys.length > 0 ? { p50: round(quantile(keys, 0.5)), p95: round(quantile(keys, 0.95)), max: round(Math.max(...keys)), n: keys.length } : undefined,
     waterfall, lazyChunks, mainThread, cpu,
     probeLongTasks: { count: longTasks.length, tbtMs: round(longTasks.reduce((sum, task) => sum + Math.max(0, task.duration - 50), 0)) },
