@@ -220,6 +220,8 @@ export function createHostedAgentPluginsComposition(input: {
   egressBroker?: HostedEgressBroker
   /** The start run a workspace's sandbox has in flight; absent on a plane that hosts no sandboxes. */
   sandboxInFlight?: SandboxInFlight
+  /** What calls to MCP authorization servers and connection providers go out through; the global fetch when absent. */
+  fetch?: typeof fetch
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -263,7 +265,7 @@ export function createHostedAgentPluginsComposition(input: {
   // client and a client-id-metadata-document client one identity rather than
   // two drifting ones.
   const { client_id: _published, ...registrationMetadata } = clientMetadata.document
-  const oauthFetch = oauthMetadataEdgeCachedFetch({ cache: edgeCache })
+  const oauthFetch = oauthMetadataEdgeCachedFetch({ cache: edgeCache, ...(input.fetch ? { fetch: input.fetch } : {}) })
   const oauth = {
     callbackUrl: clientMetadata.redirectUri,
     // Discovery's well-known reads are cached at the edge across isolates
@@ -315,6 +317,7 @@ export function createHostedAgentPluginsComposition(input: {
     authenticate: hostedConnectionsAuthenticate({ authentication: input.authentication, services }),
     dynamicIntegrations: hostedAgentPluginConnectionIntegrations({ activations, artifacts, oauth }),
     credentials: orgCredentials,
+    ...(input.fetch ? { fetch: input.fetch } : {}),
   }
   const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
   const repositoryClone = createHostedRepositoryClone(connectionsInput)

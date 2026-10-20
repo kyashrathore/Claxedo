@@ -83,6 +83,23 @@ describe("Better Auth D1 Worker", () => {
     expect(mocks.coreFetch).toHaveBeenCalledTimes(1)
   })
 
+  test("retires expired verification rows after the response of a request that consumed one, and of no other", async () => {
+    const run = vi.fn(async () => ({ meta: { changes: 0 } }))
+    const authDatabase = { prepare: vi.fn(() => ({ bind: () => ({ run }) })) }
+    const kept: Promise<unknown>[] = []
+    const context = { waitUntil: (work: Promise<unknown>) => void kept.push(work), passThroughOnException: () => undefined }
+    const send = (path: string) => worker.fetch(new Request(`https://api.example.test${path}`), { ...env(), AUTH_DB: authDatabase as never }, context as never)
+    await send("/api/auth/get-session")
+    await send("/api/auth/sign-in/social")
+    await Promise.all(kept)
+    expect(authDatabase.prepare).not.toHaveBeenCalled()
+    await send("/api/auth/callback/github?code=granted&state=state")
+    await send("/api/auth/reset-password/token")
+    await Promise.all(kept)
+    expect(authDatabase.prepare).toHaveBeenCalledWith(`delete from "verification" where "expiresAt" < ?`)
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
   test("refuses a request for another origin before composing", async () => {
     const response = await worker.fetch(new Request("https://other.example.test/api/claxedo/mode"), env())
     expect(response.status).toBe(503)

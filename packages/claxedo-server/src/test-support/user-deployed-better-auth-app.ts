@@ -63,6 +63,10 @@ async function migrateAuth(database: D1Database) {
  */
 export async function userDeployedBetterAuthApp(
   databases: { auth?: (database: D1Database) => D1Database; controlPlane?: (database: D1Database) => D1Database } = {},
+  options: {
+    /** Offers GitHub sign-in too, its provider calls going out through this fetch. */
+    github?: typeof fetch
+  } = {},
 ): Promise<UserDeployedBetterAuthApp> {
   const instance = new Miniflare({ modules: true, script: "export default { fetch() { return new Response('ok') } }", compatibilityDate: "2025-05-01", d1Databases: ["AUTH_DB"] })
   const authDatabase = await instance.getD1Database("AUTH_DB")
@@ -79,7 +83,8 @@ export async function userDeployedBetterAuthApp(
       CLAXEDO_SANDBOX_POSTURE: "control-plane-only",
       CLAXEDO_DEPLOYMENT_ID: USER_DEPLOYED_DEPLOYMENT_ID,
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
-      CLAXEDO_AUTH_METHODS: "email-password",
+      CLAXEDO_AUTH_METHODS: options.github ? "email-password,github" : "email-password",
+      ...(options.github ? { GITHUB_CLIENT_ID: "github-client", GITHUB_CLIENT_SECRET: "github-secret" } : {}),
       CLAXEDO_AUTH_CONFIGURATION_ID: "sha256:auth-configuration",
       BETTER_AUTH_URL: USER_DEPLOYED_ORIGIN,
       BETTER_AUTH_SECRET,
@@ -93,6 +98,7 @@ export async function userDeployedBetterAuthApp(
     authDatabase: databases.auth?.(authDatabase) ?? authDatabase,
     controlPlaneDatabase: databases.controlPlane?.(controlPlane.database) ?? controlPlane.database,
     descriptorExpiresAt: Date.now() + 3_600_000,
+    ...(options.github ? { fetch: options.github } : {}),
     product: { kind: "user-deployed", organization: { id: "org_deployment", name: "Deployment" }, ownerBootstrap: "one-use-claim" },
   })
   await composed.authReady

@@ -67,10 +67,18 @@ function orgSandboxDriverKeys(
  */
 export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
   const credentials = orgRoutedCredentials(input.credentials, input.change)
-  const signed = async (request: Request) => {
-    const auth = await controlPlaneAuthContext(request, { authentication: input.authentication, config: input.authConfig })
-    if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed authentication is required")
-    return auth
+  // One auth object per request: the authority remembers a verified principal
+  // per auth object, so the organization, the manage check and the write a
+  // request makes read the principal once between them.
+  const signedOnce = new WeakMap<Request, Promise<SignedControlPlaneAuth>>()
+  const signed = (request: Request) => {
+    const known = signedOnce.get(request) ?? (async () => {
+      const auth = await controlPlaneAuthContext(request, { authentication: input.authentication, config: input.authConfig })
+      if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed authentication is required")
+      return auth
+    })()
+    signedOnce.set(request, known)
+    return known
   }
   const resolveOrg = async (request: Request) => await input.resolveOrgId(await signed(request))
   const auth = { authentication: input.authentication, authConfig: input.authConfig, resolveOrg }

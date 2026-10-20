@@ -25,12 +25,12 @@ async function signedReader(workspace = true) {
       relay: { relayUrl: "https://relay.test", runtimeAccessTokenSigner: async () => ({ runtimeAccessToken: "runtime-token", tokenExpiresAt: Date.now() + 60_000, jti: `jti_${Date.now()}` }) },
       sandbox: { sandboxManager: { target: async () => READY } },
     } as never,
-    routes: ({ authority, database }) => ({
+    routes: ({ database }) => ({
       productWorkspace: { sandboxStart: async () => READY },
       accountSetup: {
         change: UNDELIVERED_CREDENTIAL_CHANGE,
         administers: hostedOrgAdministers(database),
-        sandboxDriverKeys: hostedSandboxDriverKeys({ database, authority, drivers: ["boat"], hostedBroker: true, leaseStore: createD1SandboxLeaseStore({ database }) }),
+        sandboxDriverKeys: hostedSandboxDriverKeys({ database, drivers: ["boat"], hostedBroker: true, leaseStore: createD1SandboxLeaseStore({ database }) }),
       },
     }),
   })
@@ -46,8 +46,8 @@ async function signedReader(workspace = true) {
     expect(response.status, `${method} ${path} ${JSON.stringify(response.body)}`).toBe(200)
     return { rounds: counted!.rounds(), statements: counted!.statements() }
   }
-  const traced = async (method: string, path: string) => {
-    const measured = await rounds(method, path)
+  const traced = async (method: string, path: string, body?: unknown) => {
+    const measured = await rounds(method, path, body)
     return { ...measured, trace: counted!.trace().map((entry) => `${entry.round}: ${entry.sql}`) }
   }
   return { app, alice, orgId, rounds, traced }
@@ -114,11 +114,11 @@ test("a workspace connection read off a serving machine pays four control-plane 
  * Settings → Models reads the person's accounts, the ones in use and their
  * account sources at once, and the Add dialog reads the sign-in methods, so the
  * deepest of those chains is the time the page waits. Every one pays one round
- * for the principal row and the caller's organizations together; the accounts'
- * own reads follow it one at a time (list, then the organization's sandbox
- * driver for the reach of each row), while the account sources read the
- * selections, the organization's rows and whether the caller manages them at
- * once. The sign-in methods are a table in the Worker and read nothing.
+ * for the principal row and the caller's organizations together, then one for
+ * its own reads together: the list beside the organization's sandbox driver
+ * that decides each row's reach, the selections beside the accounts in use,
+ * and the selections, the organization's rows and whether the caller manages
+ * them. The sign-in methods are a table in the Worker and read nothing.
  */
 test("the account reads Settings → Models makes answer in few serial control-plane rounds", async () => {
   const { app, alice, traced } = await signedReader(false)
@@ -131,9 +131,24 @@ test("the account reads Settings → Models makes answer in few serial control-p
     signInMethods: await traced("GET", "/api/claxedo/agent-config/providers/auth?nativeHarness=claude"),
   }
   expect(Object.fromEntries(Object.entries(measured).map(([route, { rounds, statements }]) => [route, { rounds, statements }]))).toEqual({
-    accounts: { rounds: 3, statements: 4 },
-    effective: { rounds: 3, statements: 4 },
+    accounts: { rounds: 2, statements: 4 },
+    effective: { rounds: 2, statements: 4 },
     sources: { rounds: 2, statements: 6 },
     signInMethods: { rounds: 0, statements: 0 },
   })
+})
+
+/**
+ * Adding the organization's sandbox provider key, as the Where step does: the
+ * save pays the principal round, the manage check, the row's lookup, its write,
+ * then the leases whose failed starts the new key may fix. The listing reads the rows, the manage check and the chosen driver
+ * together; choosing the default reads the manage check beside the rows, writes
+ * the choice, then lists.
+ */
+test("a sandbox provider key's save, listing and default choice pay few serial control-plane rounds", async () => {
+  const { traced } = await signedReader(false)
+  const save = await traced("PUT", "/api/claxedo/credentials", { provider_id: "boat", kind: "sandbox_driver", source: "managed", secret: JSON.stringify({ api_key: "boat-key" }) })
+  const listing = await traced("GET", "/api/claxedo/credentials/sandbox-drivers")
+  const chosen = await traced("PUT", "/api/claxedo/credentials/sandbox-drivers/default", { driver: "boat" })
+  expect({ save: save.rounds, listing: listing.rounds, chosen: chosen.rounds }, JSON.stringify({ save: save.trace, chosen: chosen.trace }, null, 1)).toEqual({ save: 5, listing: 2, chosen: 4 })
 })

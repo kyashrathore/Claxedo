@@ -14,6 +14,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { betterAuthD1Adapter } from "./better-auth-d1-adapter"
 import { betterAuthD1AuthenticationEvidenceHooks } from "./better-auth-d1-authentication-evidence"
 import type { BetterAuthConfiguration } from "./better-auth-configuration"
+import { githubUserInfo } from "./github-user-info"
 import {
   CLAXEDO_MCP_OAUTH_SCOPES,
   CLAXEDO_MCP_RESOURCE_SCOPES,
@@ -66,6 +67,8 @@ export type BetterAuthD1FoundationInput = {
   configuration: BetterAuthConfiguration
   resource: string
   databaseHooks?: BetterAuthOptions["databaseHooks"]
+  /** What the sign-in providers' calls go out through; the global fetch when absent. */
+  fetch?: typeof fetch
 }
 
 export type BetterAuthD1RuntimeInput = Omit<BetterAuthD1FoundationInput, "database"> & {
@@ -88,7 +91,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
     baseURL: input.configuration.public.origin,
     secret: input.configuration.private.secret,
     trustedOrigins: [...input.configuration.public.trustedOrigins],
-    socialProviders: input.configuration.private.socialProviders,
+    socialProviders: socialProviders(input.configuration.private.socialProviders, input.fetch ?? ((url, init) => fetch(url, init))),
     emailAndPassword: emailPasswordEnabled
       ? {
           enabled: true,
@@ -138,7 +141,21 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
        * account.
        */
       storeStateStrategy: "database",
+      /**
+       * Better Auth writes the provider's tokens onto the linked account at
+       * every sign-in, one more database round on the callback, and nothing in
+       * this deployment reads them: the GitHub connection a workspace clones
+       * through is its own device grant (`connections/`).
+       */
+      updateAccountOnSignIn: false,
     },
+    /**
+     * Better Auth deletes every expired verification row inside each lookup,
+     * two statements on the OAuth callback's path before the provider is even
+     * asked; `retireExpiredVerifications` runs that deletion after the
+     * response instead (`better-auth-d1-worker.cf.ts`).
+     */
+    verification: { disableCleanup: true },
     /**
      * Better Auth gates its rate limiter on NODE_ENV=production, which a
      * workerd isolate never sets — left to the default, the auth adapter's own
@@ -292,6 +309,23 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
       deviceApprovalTransaction(),
     ],
   } satisfies BetterAuthOptions
+}
+
+function socialProviders(configured: BetterAuthConfiguration["private"]["socialProviders"], request: (url: string, init: RequestInit) => Promise<Response>) {
+  return {
+    ...configured,
+    ...(configured.github ? { github: { ...configured.github, getUserInfo: githubUserInfo(request) } } : {}),
+  }
+}
+
+/**
+ * What Better Auth's verification lookup deleted inline before
+ * `verification.disableCleanup`: every row past its expiry. The table is a
+ * retention concern, not an answer, so the Worker runs this after the response
+ * of a request that consumed a row.
+ */
+export async function retireExpiredVerifications(database: D1Database, now = Date.now()) {
+  await database.prepare(`delete from "verification" where "expiresAt" < ?`).bind(new Date(now).toISOString()).run()
 }
 
 export function createBetterAuthD1Foundation(input: BetterAuthD1RuntimeInput) {
