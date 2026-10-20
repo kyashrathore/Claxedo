@@ -16,8 +16,11 @@ import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import type { WorkspaceRuntimeContext } from "../../workspace/route-support"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
-import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
+import { PLUGIN_REGISTRY_KEYS } from "@claxedo/plugin-api/release"
 import type { PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
+import { hostedOrgAdministers } from "../../credentials/worker/org-administers"
+import { hostedAppPluginRoutes } from "../../plugin-backends/compose"
+import { DEFAULT_APP_PLUGIN_REGISTRY_URL } from "../../plugin-backends/registry"
 import { PluginOutbound, PluginPlatform } from "@claxedo/plugin-runtime/entrypoints"
 import { PluginSupervisor } from "../../plugin-backends/supervisor.cf"
 import { timedAuthentication, timedD1, timedFetch } from "../../platform/http/server-timing"
@@ -68,11 +71,22 @@ export function composeBetterAuthD1AgentPlugins(
   if (!env.PLUGIN_SUPERVISOR) {
     throw new HostedWorkerCompositionError("hosted_dependency_missing", "The Agent Plugins Worker requires the PLUGIN_SUPERVISOR binding")
   }
-  const pluginBackends = pluginBackendRouteContribution({
+  if (!env.CLAXEDO_AGENT_PLUGINS) {
+    throw new HostedWorkerCompositionError("hosted_dependency_missing", "The Agent Plugins Worker requires the CLAXEDO_AGENT_PLUGINS bucket")
+  }
+  const appPlugins = hostedAppPluginRoutes({
     authentication,
     authority,
-    supervisors: env.PLUGIN_SUPERVISOR,
     services: base.plane.services,
+    database,
+    bucket: env.CLAXEDO_AGENT_PLUGINS,
+    supervisors: env.PLUGIN_SUPERVISOR,
+    administers: hostedOrgAdministers(database),
+    registry: {
+      url: signingEnv.CLAXEDO_APP_PLUGIN_REGISTRY_URL?.trim() || DEFAULT_APP_PLUGIN_REGISTRY_URL,
+      keys: PLUGIN_REGISTRY_KEYS,
+      fetch: timedFetch(),
+    },
   })
   const tasks = composeHostedTasksPlugin({
     services: base.plane.services,
@@ -143,7 +157,7 @@ export function composeBetterAuthD1AgentPlugins(
       ...base.options,
       sandboxPasses: passes,
       ...(sessionRowsPasses ? { sessionRowsPasses } : {}),
-      routeContributions: [...feature.routeContributions, pluginBackends],
+      routeContributions: [...feature.routeContributions, ...appPlugins],
       plugins,
       integrationRoutes: feature.integrationRoutes,
       sessionHostPlugins: feature.sessionHostPlugins,

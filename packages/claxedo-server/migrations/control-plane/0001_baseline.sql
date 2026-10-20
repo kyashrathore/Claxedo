@@ -105,6 +105,49 @@ CREATE TABLE agent_plugin_user_defaults (
   primary key (org_id, owner_user_id, plugin_instance_id, harness_id)
 );
 
+CREATE TABLE app_plugin_enablements (
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  user_id text not null references users (user_id) deferrable initially deferred,
+  plugin_id text not null,
+  enabled integer not null check (enabled in (0, 1)),
+  changed_at integer not null,
+  primary key (org_id, user_id, plugin_id),
+  foreign key (org_id, plugin_id) references app_plugin_installs (org_id, plugin_id) deferrable initially deferred
+);
+
+CREATE TABLE app_plugin_epochs (
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  plugin_id text not null,
+  epoch integer not null check (epoch >= 1),
+  primary key (org_id, plugin_id)
+);
+
+CREATE TABLE app_plugin_installs (
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  plugin_id text not null,
+  version text not null,
+  active integer not null check (active in (0, 1)),
+  app_sha256 text not null check (length(app_sha256) = 64 and app_sha256 not glob '*[^0-9a-f]*'),
+  backend_sha256 text check (backend_sha256 is null or (length(backend_sha256) = 64 and backend_sha256 not glob '*[^0-9a-f]*')),
+  manifest_json text not null check (json_valid(manifest_json)),
+  release_json text not null check (json_valid(release_json)),
+  signature text not null,
+  key_id text not null,
+  installed_by text not null references users (user_id) deferrable initially deferred,
+  changed_by text not null references users (user_id) deferrable initially deferred,
+  changed_at integer not null,
+  primary key (org_id, plugin_id),
+  foreign key (org_id, plugin_id) references app_plugin_epochs (org_id, plugin_id) deferrable initially deferred
+);
+
+CREATE TABLE app_plugin_org_defaults (
+  org_id text not null references orgs (org_id) deferrable initially deferred,
+  plugin_id text not null,
+  enabled integer not null check (enabled = 1),
+  primary key (org_id, plugin_id),
+  foreign key (org_id, plugin_id) references app_plugin_installs (org_id, plugin_id) deferrable initially deferred
+);
+
 CREATE TABLE "auth_identities" (
   adapter text not null check (adapter in ('better-auth', 'custom')),
   issuer text not null,
@@ -373,18 +416,6 @@ CREATE TABLE orgs (
   deleted_at integer,
   sandbox_driver text,
   check ((kind = 'deployment') = (deployment_id is not null))
-);
-
-CREATE TABLE plugin_backend_activations (
-  org_id text not null references orgs (org_id) deferrable initially deferred,
-  plugin_id text not null,
-  epoch integer not null check (epoch >= 1),
-  active integer not null check (active in (0, 1)),
-  bundle_hash text not null check (length(bundle_hash) = 64 and bundle_hash not glob '*[^0-9a-f]*'),
-  manifest_json text not null check (json_valid(manifest_json)),
-  changed_by text not null references users (user_id) deferrable initially deferred,
-  changed_at integer not null,
-  primary key (org_id, plugin_id)
 );
 
 CREATE TABLE project_memberships (

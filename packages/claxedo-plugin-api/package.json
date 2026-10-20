@@ -38,6 +38,11 @@
       "development": "./src/manifest-schema.ts",
       "default": "./src/manifest-schema.ts"
     },
+    "./release": {
+      "types": "./src/release.ts",
+      "development": "./src/release.ts",
+      "default": "./src/release.ts"
+    },
     "./runtime": {
       "types": "./src/runtime.ts",
       "development": "./src/runtime.ts",

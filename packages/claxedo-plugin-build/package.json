@@ -20,6 +20,9 @@
     "./app-bundle-cli": {
       "development": "./src/app-bundle-cli.ts"
     },
+    "./release-cli": {
+      "development": "./src/release-cli.ts"
+    },
     "./bundle-hash": {
       "types": "./src/bundle-hash.ts",
       "development": "./src/bundle-hash.ts",

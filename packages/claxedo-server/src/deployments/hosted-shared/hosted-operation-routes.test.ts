@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest"
+import { expect, test } from "vitest"
 import { hostedOperationTable } from "@claxedo/account-contract"
 import { DOCUMENTS_OPERATIONS } from "@claxedo/documents/operations"
 import { createIntegrationsRoutes } from "@claxedo/connections"
@@ -9,14 +9,11 @@ import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedAgentPluginsModule } from "../../agent-plugins/module"
 import { HostedAgentPluginSourceRoutes } from "../../agent-plugins/sources/routes"
-import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
+import { hostedAppPluginRoutes } from "../../plugin-backends/compose"
 import { composeHostedDocumentsPlugin } from "../../documents/compose"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 
-// The supervisor extends Cloudflare's DurableObject, which only workerd provides.
-vi.mock("../../plugin-backends/supervisor.cf", () => ({ pluginSupervisor: vi.fn() }))
-
-/** The routes the full hosted product serves: the core app with Pages, Agent Plugins, plugin backends and the account setup the Worker composition always mounts (`better-auth-d1-compose.ts`), which holds the credential routes. */
+/** The routes the full hosted product serves: the core app with Pages, Agent Plugins, app plugins and their backends and the account setup the Worker composition always mounts (`better-auth-d1-compose.ts`), which holds the credential routes. */
 function hostedRoutes() {
   const services = {
     auth: { config: { enabled: true }, native: {} },
@@ -65,10 +62,14 @@ function hostedRoutes() {
         path: `${AGENT_PLUGINS_ROUTE_PATH}/sources`,
         routes: HostedAgentPluginSourceRoutes({ services } as never),
       },
-      pluginBackendRouteContribution({
+      ...hostedAppPluginRoutes({
         authentication,
         authority: { resolveOrgId: async () => asOrgId("org") },
+        database: {} as never,
+        bucket: {} as never,
         supervisors: {} as never,
+        registry: {} as never,
+        administers: async () => true,
       }),
     ],
   })

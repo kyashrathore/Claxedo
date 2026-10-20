@@ -65,6 +65,10 @@ A plugin is a package whose `package.json` carries a `claxedo` block:
 
 `@claxedo/plugin-api/surface` is the A2UI v0.9 contract an agent's `ui_show` reply and a plugin's surface page share: the catalog (`catalog.ts`), the messages (`messages.ts`), the spec check (`spec.ts`), and `SURFACE_DESIGN_GUIDE` (`design-guide.ts`), the design guidance the `ui_guide` MCP tool serves. Every recipe in the guide is a complete spec that `design-guide.test.ts` checks.
 
+## Releases
+
+`@claxedo/plugin-api/release` is what the registry publishes and a hosted Worker installs: `PluginRelease` (`id`, `version`, the validated `manifest`, `app` and an optional `backend` as `{ sha256, size }` with the full 64-hex SHA-256, a forward-only `storage` generation, `builtAt`) and `SignedPluginRelease` (`release`, a base64 Ed25519 `signature` over `canonicalJsonText(release)`, `keyId`). `verifyPluginRelease(signed, keys)` verifies the signature under the named key, then parses the release and checks that its manifest names the same id and version and declares a backend exactly when a backend bundle is present. `PLUGIN_REGISTRY_KEYS` pins the registry's public keys; it is empty until the registry's production key is issued. `PLUGIN_BUNDLE_MAX_BYTES` (10 MiB) bounds each bundle.
+
 ## CLI commands
 
 `@claxedo/plugin-api/cli` declares `CliCommand` (`name`, `usage`, `run(args, context)`) and `CliCommandContext`, which the `claxedo` CLI hands a first-party plugin's command: the signed-in control plane's URL, its request path, the access token and the environment, so a command carries no credential handling of its own. The CLI composes them in `cli/src/plugin-commands.ts`; Documents contributes `claxedo documents`.

@@ -4,6 +4,7 @@ const VERSION = "counter-v1"
 
 export class Counter extends DurableObject {
   async fetch(request) {
+    if (new URL(request.url).pathname === "/name") return Response.json({ name: request.headers.get("x-claxedo-object-name") })
     if (new URL(request.url).pathname === "/instance") {
       this.instance ??= crypto.randomUUID()
       return Response.json({ instance: this.instance })
@@ -23,6 +24,7 @@ export default {
     if (url.pathname === "/") return Response.json({ root: true })
     if (url.pathname === "/active") return Response.json({ active: await env.PLATFORM.active() })
     if (url.pathname === "/count" || url.pathname === "/instance") return env.PLATFORM.object("Counter", "main", request)
+    if (url.pathname === "/name") return env.PLATFORM.object("Counter", "named-object", request)
     if (url.pathname === "/whoami") {
       const handle = request.headers.get("x-claxedo-caller")
       return Response.json({ handle, caller: await env.PLATFORM.caller(handle), userIdHeader: request.headers.get("x-claxedo-user-id") })

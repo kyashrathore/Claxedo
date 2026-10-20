@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers"
 import type { DurableObjectState, Fetcher, WorkerLoader, WorkerStub } from "@cloudflare/workers-types"
 import { pluginBackendRouteAllowed } from "@claxedo/plugin-api/manifest"
-import { PLUGIN_CALLER_HEADER, PluginCallerHandles } from "./caller-handles"
+import { PluginCallerHandles } from "./caller-handles"
+import { PLUGIN_CALLER_HEADER, PLUGIN_OBJECT_NAME_HEADER } from "./headers"
 import { activationGeneration, verifiedBundle } from "./digest"
 import type { PluginBackendActivation, PluginCaller, PluginCallerRecord, PluginHostPort, PluginRunScope, PluginScope } from "./host-port"
 import { pluginRefusal } from "./refusal"
@@ -67,9 +68,13 @@ export function pluginSupervisorClass<Env extends PluginRuntimeEnv>(hostPort: (e
     constructor(ctx: DurableObjectState, env: Env) {
       super(ctx, env)
       this.#port = hostPort(env)
-      // Every facet this plugin ever started, so a later deletion reaches the
-      // ones no run of this isolate started.
-      ctx.storage.sql.exec("create table if not exists plugin_facets (name text primary key, class_name text not null, created_at integer not null)")
+      this.#createSchema()
+    }
+
+    // Every facet this plugin ever started, so a purge reaches the ones no
+    // run of this isolate started.
+    #createSchema() {
+      this.ctx.storage.sql.exec("create table if not exists plugin_facets (name text primary key, class_name text not null, created_at integer not null)")
     }
 
     async request(caller: PluginCaller, request: Request): Promise<Response> {
@@ -118,7 +123,12 @@ export function pluginSupervisorClass<Env extends PluginRuntimeEnv>(hostPort: (e
             Date.now(),
           )
           track(facet)
-          return fetchThrough(this.ctx.facets.get(facet, () => ({ class: worker.getDurableObjectClass(className) })), request)
+          // Every facet's `ctx.id` is the supervisor's, so the object learns
+          // which of the plugin's objects it is only from this header.
+          const headers = new Headers(request.headers)
+          headers.set(PLUGIN_OBJECT_NAME_HEADER, name)
+          const named = new Request(request, { headers })
+          return fetchThrough(this.ctx.facets.get(facet, () => ({ class: worker.getDurableObjectClass(className) })), named)
         },
       })
     }
@@ -134,6 +144,19 @@ export function pluginSupervisorClass<Env extends PluginRuntimeEnv>(hostPort: (e
 
     async refresh(scope: PluginScope): Promise<void> {
       await this.#runsFor(scope).current()
+    }
+
+    async purge(scope: PluginScope): Promise<void> {
+      if (await this.#runsFor(scope).current()) {
+        throw new Error(`plugin ${scope.pluginId} is still active in ${scope.orgId}; its storage is not purged`)
+      }
+      // A facet that is still running keeps serving its rows after the
+      // supervisor's `deleteAll` (Cloudflare gate, 2026-10-20), so each one is
+      // deleted by name first.
+      const facets = this.ctx.storage.sql.exec<{ name: string }>("select name from plugin_facets").toArray()
+      for (const { name } of facets) this.ctx.facets.delete(name)
+      await this.ctx.storage.deleteAll()
+      this.#createSchema()
     }
 
     #runsFor(scope: PluginScope): PluginBackendRuns<WorkerStub> {

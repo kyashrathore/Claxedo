@@ -1,13 +1,11 @@
+import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
 import { isPluginId } from "@claxedo/plugin-api/id"
 import { PLUGIN_BACKEND_METHODS } from "@claxedo/plugin-api/manifest"
 import { pluginRefusal, pluginSupervisor, type PluginSupervisorNamespace } from "@claxedo/plugin-runtime"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
-import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
-import type { ControlPlaneServices } from "../authority/services"
-import { signedOrError } from "../workspace/route-support"
+import { readAppPluginAccess } from "./installs"
+import { orgCallerOrRefusal, type OrgCallerInput } from "./org-caller"
 
 export const PLUGIN_BACKEND_ROUTE_PREFIX = "/api/plugins"
 
@@ -23,21 +21,18 @@ const PLUGIN_ANSWER_HEADERS = {
   "content-security-policy": "sandbox",
 }
 
-export type PluginBackendRouteInput = {
-  authentication: RequestAuthenticationAdapter
-  authority: Pick<WorkspaceAuthority, "resolveOrgId">
-  supervisors: PluginSupervisorNamespace
-  services?: ControlPlaneServices
-}
+export type PluginBackendRouteInput = OrgCallerInput &
+  Readonly<{
+    database: D1Database
+    supervisors: PluginSupervisorNamespace
+  }>
 
 /**
  * `/api/plugins/:pluginId/*`: the signed caller's organization is resolved
- * here, through the same signed principal every control-plane route reads, and
- * the request goes to that organization's supervisor with the plugin path. The
- * caller never names an organization, so another organization's plugin is
- * unreachable by construction. Only the body and its content type cross to the
- * plugin, and only the status, body and content type come back, under
- * `PLUGIN_ANSWER_HEADERS`.
+ * here, and the request goes to that organization's supervisor for the plugin
+ * only while the organization has it installed and active and the caller has
+ * it enabled. Only the body and its content type cross to the plugin, and only
+ * the status, body and content type come back, under `PLUGIN_ANSWER_HEADERS`.
  */
 export function pluginBackendRouteContribution(input: PluginBackendRouteInput): ControlPlaneRouteContribution {
   const routes = new Hono()
@@ -48,17 +43,14 @@ export function pluginBackendRouteContribution(input: PluginBackendRouteInput): 
     if (!(PLUGIN_BACKEND_METHODS as readonly string[]).includes(method)) {
       return pluginRefusal(405, "plugin_method_not_allowed", `Plugin routes do not answer ${method}`)
     }
-    const signed = await signedOrError(context.req.raw, { authentication: input.authentication, requireSigned: true }, input.services)
-    if ("error" in signed) return Response.json(signed.error, { status: signed.status })
-    const principal = signed.auth?.principal
-    if (!signed.auth || !principal) return pluginRefusal(401, "unauthorized", "A signed caller is required")
-    let orgId: string
-    try {
-      orgId = await input.authority.resolveOrgId(signed.auth)
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError) return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
-      throw error
+    const caller = await orgCallerOrRefusal(context.req.raw, input)
+    if (caller instanceof Response) return caller
+    const scope = { orgId: caller.orgId, pluginId }
+    const access = await readAppPluginAccess(input.database, scope, caller.userId)
+    if (access === "not_installed" || access === "inactive") {
+      return pluginRefusal(404, "plugin_not_activated", `This organization has not activated plugin ${pluginId}`)
     }
+    if (access === "not_enabled") return pluginRefusal(404, "plugin_not_enabled", `Plugin ${pluginId} is not enabled for you`)
     const url = new URL(context.req.url)
     const path = url.pathname.slice(`${PLUGIN_BACKEND_ROUTE_PREFIX}/${pluginId}`.length)
     const contentType = context.req.header("content-type")
@@ -69,7 +61,7 @@ export function pluginBackendRouteContribution(input: PluginBackendRouteInput): 
     })
     let answer: Response
     try {
-      answer = await pluginSupervisor(input.supervisors, { orgId, pluginId }).request({ orgId, pluginId, userId: principal.userId }, forwarded)
+      answer = await pluginSupervisor(input.supervisors, scope).request({ ...scope, userId: caller.userId }, forwarded)
     } catch (error) {
       console.error(`[plugin-backends] ${pluginId} failed`, error)
       return pluginRefusal(502, "plugin_backend_failed", `Plugin ${pluginId} failed to answer`)

@@ -1,8 +1,5 @@
 import type { PluginCallerRecord } from "./host-port"
 
-/** The one header a backend's request carries about its caller: an opaque handle it resolves through `env.PLATFORM.caller`. */
-export const PLUGIN_CALLER_HEADER = "x-claxedo-caller"
-
 /** How long a handle outlives the request it was minted for, so work the request started can still act as its caller. */
 export const PLUGIN_CALLER_HANDLE_TTL_MS = 10 * 60_000
 

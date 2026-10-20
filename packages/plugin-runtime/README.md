@@ -50,12 +50,14 @@ A backend never receives a user id it could replay. The supervisor mints a 128-b
 
 Everything a loaded backend reaches beyond its own facet's storage is bound to one organization, plugin and activation epoch, and refused once that epoch is not the current one (`entrypoints.cf.ts`):
 
-- `env.PLATFORM.object(className, name, request)` refuses an ended epoch (409 `plugin_backend_replaced`), a class the manifest does not declare (404 `plugin_object_not_declared`) and a name outside 1 to 256 characters, and runs the class as the facet `[className, name]`. A facet has its own SQLite database inside the supervisor, so no plugin can address another plugin's or organization's objects.
+- `env.PLATFORM.object(className, name, request)` refuses an ended epoch (409 `plugin_backend_replaced`), a class the manifest does not declare (404 `plugin_object_not_declared`) and a name outside 1 to 256 characters, and runs the class as the facet `[className, name]`. A facet has its own SQLite database inside the supervisor, so no plugin can address another plugin's or organization's objects. Every facet's `ctx.id` is the supervisor's, so an object cannot tell itself from its siblings by it: every request it receives carries its own name in `x-claxedo-object-name` instead.
 - `env.PLATFORM.active()` answers whether the epoch is still current.
 - `env.PLATFORM.caller(handle)`, above.
 - `fetch` goes through `PluginOutbound`, which allows https on the default port to the manifest's `outbound` hosts, and only while the epoch is current (otherwise 403 `plugin_backend_replaced`).
 
 The supervisor records every facet it starts in its own SQLite table `plugin_facets(name, class_name, created_at)`, so a deletion reaches facets no run of the current isolate started.
+
+`purge(scope)` deletes everything the plugin stored, once the host has removed its install: it refuses while the host still answers an active backend, ends the run, deletes each recorded facet with `ctx.facets.delete`, and only then the supervisor's own storage with `deleteAll`, because a running facet outlives `deleteAll` (below). `supervisor-purge.test.ts` pins that order.
 
 ## Epochs and runs
 
@@ -102,4 +104,4 @@ Inside a facet, `ctx.id` is the supervisor's id: every facet reported the same i
 
 ## Tests
 
-`bun test src` runs `runs.test.ts` (the run transitions with controlled reads and loads) and `caller-handles.test.ts` (handle lifetime, epochs and expiry over a controlled clock). The runtime on workerd is tested through the hosted adapter's suite, `packages/claxedo-server/src/plugin-backends/plugin-backends.workerd.test.ts`.
+`bun test src` runs `runs.test.ts` (the run transitions with controlled reads and loads), `caller-handles.test.ts` (handle lifetime, epochs and expiry over a controlled clock) and `supervisor-purge.test.ts` (the purge's order and refusals, against the supervisor class over a recording `ctx`). The runtime on workerd is tested through the hosted adapter's suite, `packages/claxedo-server/src/plugin-backends/plugin-backends.workerd.test.ts`.

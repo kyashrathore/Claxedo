@@ -458,11 +458,42 @@ Every ceiling change is the exact measured number, with its owner named in the a
   - The supervisor is `org:<orgId>:plugin:<pluginId>`, so `PluginBackendRuns` holds one plugin's run. Facets are named `[className, name]` and recorded in the supervisor's `plugin_facets(name, class_name, created_at)`.
   - Caller handles: the backend gets `x-claxedo-caller` and resolves it with `env.PLATFORM.caller(handle)`, which answers `{ userId, orgId }` or null. A handle lives while its request is open and 10 minutes after, only under its epoch, only in its plugin's supervisor. §3.1's `identity.caller` builds on it in P3. Expiry is tested over a controlled clock in `caller-handles.test.ts`; the workerd suite covers the forged headers, a handle outliving its request, another plugin, and a reactivation.
   - Closures: Agent Plugins 227 modules and 27 packages, full-hosted 239 and 28 (`cloudflare:workers` moved into the runtime with the supervisor; the full-hosted provisioner still imports it). `@claxedo/plugin-runtime` joins `SERVER_DEPENDENCY_PREFIXES` in `script/ci-changes.mjs`.
-- [ ] **P2. Hosted installs and registry.**
+- [x] **P2. Hosted installs and registry.**
 - D1 tables (§4, replacing `plugin_backend_activations`); `host/registry.ts`, signature verify and copy; `/api/claxedo/app-plugins/*`; the enablement gate on `/api/plugins/:id/*`; uninstall deletion; `PLUGIN_REGISTRY_KEYS` plus the test key; the fixture `counter` plugin (`plugin-backends/fixtures/counter`) published to a test registry by a harness script.
 - Tests (workerd): install, then enable per user, then route; non-enabled member gets 404; non-admin install gets 403; tampered blob or signature refused; uninstall deletes facets and blobs; update raises the epoch.
 - Checks: server test; `d1:baseline:generate` then `d1:baseline:check`; `typecheck:auth-d1`; `smoke:workerd-boundary`; ratchets; server `verify:closure`.
 - **Staging D1 reset after merge** (§4).
+- **As built.** The adapter stays flat in `claxedo-server/src/plugin-backends/`: `installs.ts`, `registry.ts`, `lifecycle.ts`, `app-plugin-routes.ts`, `routes.ts` (with the gate), `org-caller.ts`, `bundles.ts` and `compose.ts`. `packages/claxedo-server/src/plugin-backends/README.md` documents the routes and their answers. The choices where this plan was open, or where the build differs from it:
+  - **The epoch is its own table.** `app_plugin_epochs(org_id, plugin_id, epoch)` holds the fence, and an uninstall never deletes it. `app_plugin_installs` (`version, active, app_sha256, backend_sha256, manifest_json, release_json, signature, key_id, installed_by, changed_by, changed_at`) has no epoch column. A deleted install row would restart the epoch at 1, and a supervisor that still remembered the uninstalled run would read the reinstall as stale. Every install, update, disable, re-enable and uninstall raises the epoch in the same D1 batch as its change.
+  - **Org defaults are positive only.** `app_plugin_org_defaults.enabled` is constrained to 1. Enablement resolves in order: the member's row, then the default, then off.
+  - **Routes the plan did not name.**
+    - The org switch back on is `DELETE /:id/disable`.
+    - The org default is `POST` and `DELETE /:id/default`.
+    - Members discover installed but not enabled plugins through `GET /installed`, which answers each install with `enabledForMe` and `orgDefault`.
+    - `GET /catalog` (§1.7) is left to P4: it merges the registry's signed `index.json`, and P2 publishes no index format.
+    - `POST /` refuses an installed plugin with 409 `app_plugin_installed`; a new version goes through `/:id/update`.
+  - **Refusal codes.**
+    - 403 `app_plugin_admin_required`.
+    - 404: `app_plugin_not_installed` and `app_plugin_bundle_not_found`.
+    - 409: `app_plugin_storage_downgrade` and `app_plugin_platform_unavailable`.
+    - 422 `app_plugin_release_invalid`; 502 `app_plugin_release_unavailable`.
+    - On `/api/plugins/:id/*`: 404 `plugin_not_activated` when the plugin is not installed or is disabled, and 404 `plugin_not_enabled` when the caller has not enabled it.
+  - **Registry.**
+    - `CLAXEDO_APP_PLUGIN_REGISTRY_URL` overrides the default `https://plugins.claxedo.dev`. Reads are not edge-cached, and a Worker cannot read `file://`.
+    - `PLUGIN_REGISTRY_KEYS` is empty: a deployed Worker installs nothing until the registry's production key is issued and its public key pinned (owner action).
+    - `registry-test-key.ts` reads `CLAXEDO_APP_PLUGIN_REGISTRY_TEST_KEY`. Only the fixture Worker imports it, and `deployment-closures.test.ts` fails any deployed entry that reaches it. The hosted e2e harness boots the production entry, so P4's flow 64 needs a test composition of its own.
+  - **Release format.** `@claxedo/plugin-api/release` has no `tools` and the manifest has no `permissions`; both arrive with P3.
+    - The signature covers `canonicalJsonText(release)` as published, before manifest defaults are filled.
+    - `@claxedo/plugin-build` adds `buildPluginRelease`, `signPluginRelease` and `release-cli.ts`, which writes a signed registry tree. The workerd suite signs its releases in process with a generated key; it does not shell out to the CLI.
+  - **Bundles.** `plugin-apps/<sha256>.js` and `plugin-backends/<sha256>.js` in `CLAXEDO_AGENT_PLUGINS`, both stored before the row names them.
+  - **Uninstall.**
+    - It deletes the install, every enablement and the default, then calls `supervisor.purge`. The purge refuses while the host still answers an active backend, ends the run, `ctx.facets.delete`s every facet `plugin_facets` names, and only then runs `deleteAll` (the P0 finding). It runs even when no install was found, so a failed uninstall completes on retry.
+    - Locally, `deleteAll` alone also passes the workerd test, because the run's facets are aborted first. So the order is pinned by `plugin-runtime/src/supervisor-purge.test.ts` over a recording `ctx`, red-checked without the per-facet loop.
+    - Blob prefixes, links, origin rows and grants do not exist yet (P3, P6).
+  - **Facet ids.** Every facet shares the supervisor's `ctx.id` (P0), so each request a facet receives carries `x-claxedo-object-name`.
+  - **Where it runs.** Only the Agent Plugins entries mount the routes; they always have `PLUGIN_SUPERVISOR`, so `app_plugin_platform_unavailable` is reachable only from a composition without one. The base artifact serves no app-plugin route, and the app reads that 404 as "no app plugins" (R3).
+  - **Cost.** The gate adds one D1 read to each backend request, beside the supervisor's own state read.
+  - **Closures.** Agent Plugins is 232 modules and 27 packages, full-hosted 244 and 28. The base Worker is unchanged at 177 and 23.
 - [ ] **P3. Platform API v1 (hosted):** identity, projects, blobs, events, schedule, links; `@claxedo/plugin-api/backend` and `definePluginBackend`; manifest `permissions` and `tools` schema (`manifest-schema.ts`).
 - Tests: per call, the undeclared-permission refusal, the dead-epoch refusal and the caller-scoped authorization; a wake fires once with a system handle; a link resolves anonymously and stops after revoke; the blob quota.
 - Checks: plugin-api, plugin-runtime and server tests; typecheck; ratchets.

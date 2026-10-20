@@ -10,6 +10,8 @@ The five host modules (`solid-js`, `solid-js/web`, `solid-js/store`, `@claxedo/p
 
 `buildPluginBackend({ rootDir })` bundles `claxedo.backend.entry` into the one ES module the hosted Worker loads, with only `cloudflare:*` left external, and returns `{ manifest, code }`. It refuses a bundle that does not export `default` and every class `claxedo.backend.objects` names.
 
+`buildPluginRelease({ rootDir, storage?, builtAt? })` builds the app bundle (minified) and, when the manifest declares one, the backend, and returns `{ release, blobs }`: an unsigned `PluginRelease` (`@claxedo/plugin-api/release`) whose bundles are named by their full SHA-256 and byte size, and each bundle's code by that hash. `storage` defaults to 1. `signPluginRelease(release, privateKey, keyId)` signs it with an Ed25519 key. `./release-cli` does both and writes a registry tree: `CLAXEDO_APP_PLUGIN_REGISTRY_SIGNING_KEY=<base64 PKCS#8> CLAXEDO_APP_PLUGIN_REGISTRY_KEY_ID=<id> bun release-cli.ts <plugin folder> <registry folder>` writes `releases/<id>/<version>.json` and `blobs/<sha256>`.
+
 `checkPluginApp({ rootDir })` reads the manifest, typechecks the folder, then builds the app and, when the manifest declares one, the backend, and answers `{ ok, manifest?, hash?, diagnostics }`. The typecheck runs this package's TypeScript compiler over a config written to a temporary folder, so the plugin needs no `node_modules`, `tsconfig.json` or install step, and nothing is written into it:
 
 - `@claxedo/plugin-api` and Solid resolve to the copies this package depends on, so a plugin is checked against the API the daemon serves.

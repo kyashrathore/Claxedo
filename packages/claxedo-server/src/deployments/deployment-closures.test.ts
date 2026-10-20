@@ -168,9 +168,12 @@ const ENTRIES = [
   // Every entry's GitHub sign-in reads the person's profile and address list
   // together (`platform/auth/github-user-info.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 177, packages: 23 },
-  // Both Agent Plugins entries carry the plugin-backend platform: the hosted
-  // adapter in `src/plugin-backends/` (four modules: the route, the D1 row,
-  // the R2 bundles and the supervisor over that host port), the runtime
+  // Both Agent Plugins entries carry the app-plugin platform: the hosted
+  // adapter in `src/plugin-backends/` (nine modules: the backend route and the
+  // `/api/claxedo/app-plugins` routes with their composition, the signed
+  // caller's organization they share, the D1 installs, the install lifecycle,
+  // the registry client that verifies a release and its blobs, the R2 bundles
+  // and the supervisor over that host port), the runtime
   // itself as `@claxedo/plugin-runtime`, whose supervisor and entrypoints are
   // the entry's only `cloudflare:workers` import until the full-hosted
   // sandbox provisioner adds its own, and `@claxedo/plugin-api` for the
@@ -197,7 +200,7 @@ const ENTRIES = [
   // The hosted connections setup picks which code-host connection can read a
   // pasted repository by the rule the local connections host shares
   // (`connections/repository-access.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 227, packages: 27 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 232, packages: 27 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
@@ -214,7 +217,7 @@ const ENTRIES = [
   // has cloud runtimes to lose. Its provisioner imports `cloudflare:workers`
   // itself, so `@claxedo/plugin-runtime` is one package more here than in the
   // Agent Plugins entry.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 239, packages: 28 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 244, packages: 28 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
@@ -319,6 +322,18 @@ describe("server deployment entry closures", () => {
       // broke at runtime with a clean import graph the whole time.
       expect(result.opaque, `${name} has an import the walk cannot follow`).toEqual([])
     }
+  })
+
+  it("lets no deployed Worker trust the app-plugin registry's test key", () => {
+    // The test key module adds a signer from the environment; a deployment
+    // that reached it would install any release its environment's key signs.
+    const offenders = ENTRIES.flatMap(({ name, entry }) =>
+      closure(entry)
+        .modules.map((module) => module.relative)
+        .filter((file) => file === "src/plugin-backends/registry-test-key.ts")
+        .map((file) => `${name} -> ${file}`),
+    )
+    expect(offenders).toEqual([])
   })
 
   it("keeps the desktop package out of every Worker entry", () => {

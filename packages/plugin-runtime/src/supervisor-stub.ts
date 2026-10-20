@@ -8,6 +8,11 @@ export type PluginSupervisorStub = {
   caller(scope: PluginRunScope, handle: string): Promise<PluginCallerRecord | null>
   /** Reads the install again, so a run the change ended stops now rather than at the next request. */
   refresh(scope: PluginScope): Promise<void>
+  /**
+   * Deletes every object the plugin stored, once the host has removed its
+   * install. Refused while the host still answers an active backend.
+   */
+  purge(scope: PluginScope): Promise<void>
 }
 
 export interface PluginSupervisorNamespace {

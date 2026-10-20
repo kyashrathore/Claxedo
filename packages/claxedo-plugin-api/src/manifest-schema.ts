@@ -13,7 +13,7 @@ import {
 
 const STATUS_HOOKS_REFUSAL = "status hook templates are honored only from Claxedo's bundled status-hooks plugin"
 
-const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
+export const PLUGIN_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 const ENTRY_PATTERN = /^\.\/[^\0]+\.(?:tsx|ts|jsx|js)$/
 const OPERATION_PATTERN = /^[a-z][a-zA-Z0-9]*\.(?:\*|[a-z][a-zA-Z0-9]*)$/
 const BACKEND_OBJECT_PATTERN = /^[A-Z][A-Za-z0-9]*$/
@@ -47,7 +47,7 @@ export const pluginManifestSchema = z
   .object({
     id: z.string().min(1).max(PLUGIN_ID_MAX_LENGTH).regex(PLUGIN_ID_PATTERN),
     name: z.string().trim().min(1).max(PLUGIN_NAME_MAX_LENGTH),
-    version: z.string().regex(VERSION_PATTERN),
+    version: z.string().regex(PLUGIN_VERSION_PATTERN),
     app: z.string().regex(ENTRY_PATTERN),
     requires: z.array(z.string().max(PLUGIN_CAPABILITY_MAX_LENGTH).regex(PLUGIN_CAPABILITY_PATTERN)).default([]),
     server: pluginServerAccessSchema.default({ routes: [], operations: [] }),
