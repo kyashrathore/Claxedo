@@ -48,14 +48,17 @@ describe("the App plugins directory", () => {
     expect(appPluginStatus(appPluginEntries([], catalog).find((entry) => entry.id === "relay")!)?.key).toBe("marketplace.app.status.unavailable")
   })
 
-  test("names everything the manifest lets the plugin do: its frame, its backend and each host, route and operation", () => {
+  test("names everything the manifest lets the plugin do: its frame, its backend, each platform permission, and each host, route and operation", () => {
     const access = appPluginAccess(manifest("counter", "0.1.0", {
       server: { routes: ["/api/claxedo/plugins"], operations: ["documents.list"] },
       backend: { entry: "./src/backend.js", objects: [], outbound: ["api.example.com"], routes: ["GET /count"] },
+      permissions: ["projects.read", "session-files"],
     }))
     expect(access).toEqual([
       { key: "marketplace.app.access.frame" },
       { key: "marketplace.app.access.backend" },
+      { key: "marketplace.app.permission.projectsRead" },
+      { key: "marketplace.app.permission.sessionFiles" },
       { key: "marketplace.app.access.outbound", params: { host: "api.example.com" } },
       { key: "marketplace.app.access.route", params: { route: "/api/claxedo/plugins" } },
       { key: "marketplace.app.access.operation", params: { operation: "documents.list" } },
