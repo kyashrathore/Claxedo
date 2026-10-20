@@ -182,7 +182,6 @@ describe("@claxedo/local-server closure", () => {
     //    narrows through instead of writing its own `record`/`text` pair.
     //  - `shell/event-stream-response.ts` — the one writer that serves the
     //    daemon's `cp/events` over HTTP SSE or a loopback WebSocket alike.
-    //  - `app/local-documents.ts` — the desktop composition of shared Documents.
     //  - `credentials/broker.ts` — the credential authority that derives a
     //    binding per active registry row and hands the loopback broker its
     //    handler. The table naming each provider's vendor host, methods, paths

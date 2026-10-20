@@ -17,6 +17,10 @@ doc or package README that owns it.
 - [App plugins and agent replies: declarative UI, sandboxed logic](./2026-09-25-001-app-plugins-declarative-ui-plan.md)
   — in progress on `plan/a2ui-surfaces-and-mcp-apps`. The A2UI v0.9 renderer and catalog, agent `ui_show` replies and
   plugin surface pages are built with flows 60 and 61; the P1 measurements, the worker sandbox and the cut-over remain.
+- [Tasks and Documents as first-party plugins](./2026-10-18-feat-first-party-plugins-plan.md)
+  — done on `plan/a2ui-surfaces-and-mcp-apps` (S0–S12), awaiting merge. Tasks and Documents live in
+  `packages/claxedo-tasks` and `packages/claxedo-documents`, which the hosts compose; the app ships both as
+  bundled plugins. Delete the plan once it merges: the package READMEs and DECISIONS hold what stays true.
 - [Claxedo as an MCP Apps host](./2026-10-18-feat-mcp-apps-host-plan.md)
   — in progress on `plan/a2ui-surfaces-and-mcp-apps`. P1 and P2 are built on Pi (flow 62): snapshots on the tool part,
   the frame host and its consent rules; Codex, Claude Code, model context and the web sandbox proxy remain.

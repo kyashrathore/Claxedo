@@ -62,7 +62,7 @@ Owner: the orchestrating session. Base: `dev` 60fe7c6385 (f69c8ec42d reverted, r
   - refuses a working/awaiting session in the tree;
   - one delete path in `session-core/src/routes/session-delete.ts`: hold idle on the root + its sorted descendants, delete leaf-first, and on a hook failure abort and report the ids deleted.
 - Re-implement three good parts of f69c8ec42d as separate commits:
-  - per-user/org revocation in `claxedo-server/src/tasks/grant-withdrawal.ts`;
+  - per-user/org revocation in `claxedo-server/src/agent-plugins/runtime/grant-withdrawal.ts`;
   - the `source-closure.ts` scanner fix (product-boundary ratchet);
   - removing team-recipient expansion from session share fan-out (access ruling).
   - Each part gets its own test, red without it.
