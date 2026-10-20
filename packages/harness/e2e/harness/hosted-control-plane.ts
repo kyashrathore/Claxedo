@@ -80,7 +80,7 @@ function requestProvisioning(child: ChildProcess, input: Record<string, string>,
 
 export async function startHostedControlPlane(input: Input) {
   const credentials = input.credentials
-  const config = await writeHostedE2eWranglerConfig()
+  const config = await writeHostedE2eWranglerConfig(HOSTED_E2E_PUBLIC_HOSTNAME)
   const attemptsFile = path.join(input.root, "hosted-outbound-attempts.jsonl")
   const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", [
     "--import", "tsx", "scripts/e2e/hosted-miniflare.ts",

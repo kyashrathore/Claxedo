@@ -12,7 +12,7 @@ export type HostedWranglerConfig = {
   e2e: string
 }
 
-export function renderHostedE2eWranglerConfig(): HostedWranglerConfig {
+export function renderHostedE2eWranglerConfig(publicOriginHost: string): HostedWranglerConfig {
   const production = renderWorkerWranglerConfig({
     workerName: "claxedo-hosted-e2e",
     artifact: certifiedHostedWorkerArtifact("user-deployed-better-auth-d1-agent-plugins-full-hosted"),
@@ -23,6 +23,7 @@ export function renderHostedE2eWranglerConfig(): HostedWranglerConfig {
     requestLimiterNamespaceId: "1930000001",
     documentsBucket: "claxedo-documents-e2e",
     agentPluginsBucket: "claxedo-agent-plugins-e2e",
+    publicOriginHost,
     variables: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
       CLAXEDO_PRODUCT_POSTURE: "user-deployed",
@@ -32,9 +33,9 @@ export function renderHostedE2eWranglerConfig(): HostedWranglerConfig {
   return { production, e2e: production }
 }
 
-export async function writeHostedE2eWranglerConfig() {
+export async function writeHostedE2eWranglerConfig(publicOriginHost: string) {
   const file = path.join(CONFIG_DIRECTORY, `.wrangler-hosted-e2e-${randomUUID()}.toml`)
-  const { e2e } = renderHostedE2eWranglerConfig()
+  const { e2e } = renderHostedE2eWranglerConfig(publicOriginHost)
   await fs.writeFile(file, e2e, { flag: "wx", mode: 0o600 })
   return file
 }
