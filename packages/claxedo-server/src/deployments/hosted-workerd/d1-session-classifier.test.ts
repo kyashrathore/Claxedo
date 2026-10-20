@@ -4,6 +4,7 @@ import { createBetterAuthD1Foundation } from "../../platform/auth/better-auth-d1
 import { resolveBetterAuthConfiguration } from "../../platform/auth/better-auth-configuration"
 import { betterAuthNativeResource } from "../../platform/auth/better-auth-native-clients"
 import { createHostedCoreApp } from "../hosted-shared/hosted-core-app"
+import { composeHostedDocumentsPlugin } from "../../documents/compose"
 import { composeBetterAuthD1AgentPlugins, stringEnvironment } from "./better-auth-d1-worker.agent-plugins.cf"
 import { d1SessionStart, PRIMARY_READS } from "./better-auth-d1-worker.cf"
 import { composeWithCloudSandbox } from "./full-hosted-sandbox"
@@ -111,7 +112,6 @@ const REPLICA_READS: Readonly<Record<string, string>> = {
   "/api/auth/oauth2/get-client": "read",
   "/api/auth/oauth2/get-clients": "read",
   "/api/auth/.well-known/openid-configuration": "static",
-  "/api/auth/jwks": "read",
   "/api/auth/.well-known/oauth-authorization-server": "static",
   "/api/auth/admin/oauth2/resources": "read",
   "/api/auth/admin/oauth2/resources/:identifier": "read",
@@ -151,12 +151,19 @@ beforeAll(async () => {
     (extra) => composeBetterAuthD1AgentPlugins(env, extra),
   )
   await composed.authReady
+  const documents = composeHostedDocumentsPlugin({
+    bucket: { get: async () => null, put: async () => null, delete: async () => undefined, list: async () => ({ objects: [] }) } as never,
+    plane: composed.plane,
+    access: composed.documentAccess,
+    authentication: composed.options.authentication,
+    rateLimit: async () => true,
+  })
   const app = createHostedCoreApp(composed.plane, {
     ...composed.options,
+    plugins: [documents, ...(composed.options.plugins ?? [])],
     idempotency: {} as never,
     liveSyncRoom: room,
     sharedRateLimitStore: { periodSeconds: 60, check: async () => ({ allowed: true }) },
-    documents: {} as never,
   })
   const core = app.routes.filter((route) => (route.method === "GET" || route.method === "ALL") && !route.path.endsWith("/*") || route.path === "/api/plugins/:pluginId/*")
     .map((route) => route.path)
@@ -182,6 +189,7 @@ test("every GET route the Worker serves is either reviewed as a replica read or 
   expect(unclassified).toEqual([])
   const reviewedTwice = routes.filter((route) => routeIn(PRIMARY_READS, route) && route in REPLICA_READS)
   expect(reviewedTwice).toEqual([])
+  expect(Object.keys(REPLICA_READS).filter((route) => !routes.includes(route))).toEqual([])
 })
 
 test("a signed browser's GET starts where its classification says, and so does the same route on a bearer token or with no credential", () => {
