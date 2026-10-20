@@ -10,13 +10,18 @@ function servedHash(row: LivePlugin): string | undefined {
   return row.status === "failed" ? `unbuilt:${row.lastError ?? ""}` : undefined
 }
 
+function liveLoadKey(row: LivePlugin, hash: string): string {
+  return `${hash}\n${row.lastError ?? ""}`
+}
+
 export function createLiveReconciler(host: PluginHost, loadBuild: (row: LiveRow) => Promise<PluginBuild>): LiveReconciler {
   const requested = new Map<string, string>()
 
   const load = async (row: LivePlugin, hash: string) => {
-    requested.set(row.id, hash)
+    const loadKey = liveLoadKey(row, hash)
+    requested.set(row.id, loadKey)
     const build = row.hash ? await loadBuild({ ...row, hash: row.hash }) : failingBuild(row, hash, new Error(row.lastError ?? row.status))
-    if (requested.get(row.id) === hash) host.put(build)
+    if (requested.get(row.id) === loadKey) host.put(build)
   }
 
   return {
@@ -35,7 +40,7 @@ export function createLiveReconciler(host: PluginHost, loadBuild: (row: LiveRow)
         const origin = current && liveOriginOf(current)
         const loaded = origin?.hash === hash
         if (loaded && origin.buildError === (row.lastError ?? undefined)) continue
-        if (requested.get(row.id) === hash && !loaded) continue
+        if (requested.get(row.id) === liveLoadKey(row, hash) && !loaded) continue
         void load(row, hash)
       }
     },

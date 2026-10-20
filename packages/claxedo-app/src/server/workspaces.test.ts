@@ -62,7 +62,7 @@ async function cloudCatalog(status: { current: string }) {
   await workspaces.load()
   const rereadsAfter = async (event: ServerEvent) => {
     const before = reads.length
-    invalidateFor(queryClient, server.serverUrl, event, false)
+    void invalidateFor(queryClient, server.serverUrl, event, false)
     for (let tick = 0; tick < 50 && reads.length === before; tick += 1) await Bun.sleep(1)
     await Bun.sleep(1)
     return reads.length - before

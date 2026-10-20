@@ -4,7 +4,8 @@ import type { PluginManifest } from "@claxedo/plugin-api"
 import type { LivePlugin } from "@/server"
 import type { Approval } from "./approval"
 import { createPluginHost, type PluginHost } from "./host"
-import type { PluginBuild, PluginOrigin } from "./model"
+import type { LiveRow } from "./live/load"
+import { liveOriginOf, type PluginBuild, type PluginOrigin } from "./model"
 import type { PluginPreferences } from "./preferences"
 
 await mock.module("./live/load", () => ({ failingBuild: () => undefined }))
@@ -111,5 +112,36 @@ describe("a bundled plugin beside live plugins", () => {
     reconciler.reconcile([] satisfies LivePlugin[])
     await settle()
     expect(host.plugins().map((plugin) => plugin.id)).toEqual(["claxedo-tasks"])
+  })
+})
+
+describe("the live reconciler", () => {
+  const hash = "f120b7059bc761c2"
+  const buildError = "src/app.tsx:1:1: Expected expression"
+
+  function daemonRow(status: LivePlugin["status"], lastError: string | null): LivePlugin {
+    return { id: "fixture", name: "fixture", version: "1.0.0", directory: "/tmp/fixture", status, hash, manifest: manifest("fixture"), builtAt: "2026-10-20T00:00:00.000Z", lastError }
+  }
+
+  function loadedBuild(row: LiveRow): PluginBuild {
+    return build(row.id, { kind: "live", hash: row.hash, directory: row.directory, ...(row.lastError ? { buildError: row.lastError } : {}) })
+  }
+
+  test("a build error the daemon reports while that build's bundle is still loading reaches the loaded plugin", async () => {
+    const { host } = hostWith()
+    const loads: Array<{ readonly done: Promise<PluginBuild>; readonly finish: () => void }> = []
+    const reconciler = createLiveReconciler(host, (row) => {
+      let finish: () => void = () => undefined
+      const done = new Promise<PluginBuild>((resolve) => {
+        finish = () => resolve(loadedBuild(row))
+      })
+      loads.push({ done, finish })
+      return done
+    })
+    reconciler.reconcile([daemonRow("building", null)])
+    reconciler.reconcile([daemonRow("failed", buildError)])
+    for (const load of loads) load.finish()
+    await Promise.all(loads.map((load) => load.done))
+    expect(host.plugins().map((plugin) => liveOriginOf(plugin)?.buildError)).toEqual([buildError])
   })
 })
