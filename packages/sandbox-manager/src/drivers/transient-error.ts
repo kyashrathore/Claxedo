@@ -37,3 +37,6 @@ export function isTransientDriverError(err: unknown, markers: readonly string[])
   if (status !== undefined && status >= 500) return true
   return markers.some((marker) => text.includes(marker))
 }
+
+/** How long a driver waits before asking a provider again after a failure `isTransientDriverError` admits, so a provider in trouble is not asked at once. */
+export const TRANSIENT_DRIVER_RETRY_MS = 2_000

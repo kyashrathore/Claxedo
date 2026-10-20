@@ -42,7 +42,9 @@ async function fixKey(database: D1Database, workspaceId: string) {
 
 /**
  * A driver scripted by the workspace id: `ws_slow_<ms>` becomes ready after
- * that long, `ws_poll_<n>` asks to be polled n times first, `ws_boot_fail`
+ * that long, `ws_poll_<n>` asks to be polled n times first, `ws_wait_<n>`
+ * spends 300 ms of each of its first n steps waiting and asks for the next at
+ * once, as a driver whose step is a provider-side wait does, `ws_boot_fail`
  * exits before it is ready, `ws_flaky` fails once at the provider and
  * `ws_flaky_<n>` n times, `ws_key_refused` has its key refused until `/fix-key`,
  * `ws_day_limited_<n>` is refused at its provider's daily start limit n times,
@@ -64,6 +66,11 @@ function scriptedDriver(database: D1Database): SandboxDriver {
     if (slow) await new Promise((resolve) => setTimeout(resolve, Number(slow[1])))
     const poll = /^ws_poll_(\d+)/.exec(input.workspaceId)
     if (poll && calls <= Number(poll[1])) return { provisioning: true as const, retryAfterMs: 100 }
+    const wait = /^ws_wait_(\d+)/.exec(input.workspaceId)
+    if (wait && calls <= Number(wait[1])) {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      return { provisioning: true as const, retryAfterMs: 0 }
+    }
     if (input.workspaceId.startsWith("ws_boot_fail")) throw new SandboxRuntimeBootError("the image has no runtime")
     if (input.workspaceId.startsWith("ws_key_refused") && !(await keyFixed(database, input.workspaceId))) {
       throw new SandboxProviderKeyRefusedError("the key was rejected (unauthorized)")

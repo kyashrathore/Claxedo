@@ -234,14 +234,14 @@ describe("CloudflareSandboxDriver", () => {
     })
   })
 
-  test("the Worker's explicit readiness 503 is reported as provisioning", async () => {
+  test("the Worker's explicit readiness 503, which ends its own health window, is reported as provisioning to be asked again at once", async () => {
     const { fetch } = harness(() => ({
       status: 503,
       json: { error: "workspace-runtime did not become ready" },
     }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     const result = await driver.ensureHost(createInput)
-    expect(result).toEqual({ provisioning: true, retryAfterMs: 2_000 })
+    expect(result).toEqual({ provisioning: true, retryAfterMs: 0 })
   })
 
   test("a runtime whose boot exited is a failed ensure carrying the boot's reason, not one still provisioning", async () => {
@@ -260,7 +260,7 @@ describe("CloudflareSandboxDriver", () => {
     await expect(driver.ensureHost(createInput)).rejects.toThrow(/egress broker requires EGRESS_SECRETS/)
   })
 
-  test("timed-out ensure is reported as provisioning so callers can retry", async () => {
+  test("a timed-out ensure is reported as provisioning, to be asked again at once", async () => {
     const fetch = vi.fn((_url: unknown, init: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
         init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
@@ -268,7 +268,7 @@ describe("CloudflareSandboxDriver", () => {
     ) as unknown as typeof globalThis.fetch
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch, timeoutMs: 5 })
 
-    expect(await driver.ensureHost(createInput)).toEqual({ provisioning: true, retryAfterMs: 2_000 })
+    expect(await driver.ensureHost(createInput)).toEqual({ provisioning: true, retryAfterMs: 0 })
   })
 
   test("the default ensure deadline spans the provider cold-start budget", async () => {

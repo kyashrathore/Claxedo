@@ -15,7 +15,7 @@ import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE, assertSandboxImageReference } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
-import { isTransientDriverError } from "./transient-error"
+import { isTransientDriverError, TRANSIENT_DRIVER_RETRY_MS } from "./transient-error"
 import { withDeadlineSignal } from "@claxedo/helpers/deadline"
 
 type SandboxEnv = Record<string, string | undefined>
@@ -301,7 +301,7 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
       if (transientDriverError(err)) return undefined
       throw err
     })
-    if (!created) return { provisioning: true as const, retryAfterMs: 2_000 }
+    if (!created) return { provisioning: true as const, retryAfterMs: TRANSIENT_DRIVER_RETRY_MS }
 
     const sandboxId = String(created.stdout ?? "").trim() || hostId
     await stageLocalAgentAuth(sandboxId, { authHome, syncLocalAuth, docker: dockerCommand, timeoutMs })

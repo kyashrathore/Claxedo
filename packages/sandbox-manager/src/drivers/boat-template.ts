@@ -16,7 +16,7 @@ export type BoatRuntimeTemplateOptions = BoatClientOptions & {
   hydrationTimeoutMs?: number
   stopTimeoutMs?: number
   saveTimeoutMs?: number
-  driver?: Pick<BoatSandboxDriverOptions, "provisionIntervalMs" | "provisionTimeoutMs" | "healthIntervalMs" | "healthTimeoutMs">
+  driver?: Pick<BoatSandboxDriverOptions, "statePollMs" | "provisionTimeoutMs" | "healthIntervalMs" | "healthTimeoutMs">
 }
 
 const DEFAULT_PREFIX = "claxedo-rt-"

@@ -14,8 +14,8 @@ import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { assertSandboxImageReference } from "../image-name"
 import { sandboxDriverCatalog } from "../driver-catalog"
-import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
-import { isTransientDriverError } from "./transient-error"
+import { BoatApiError, createBoatClient, type BoatFetch, type BoatSandboxState } from "./boat-client"
+import { isTransientDriverError, TRANSIENT_DRIVER_RETRY_MS } from "./transient-error"
 import { record } from "../json"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
@@ -73,7 +73,8 @@ export type BoatSandboxDriverOptions = {
   runtimeTemplate?: BoatRuntimeTemplate
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   provisionTimeoutMs?: number
-  provisionIntervalMs?: number
+  /** The first and the longest wait between two reads of a sandbox's state, where Boat offers no wait. */
+  statePollMs?: { firstMs: number; maxMs: number }
   healthTimeoutMs?: number
   healthIntervalMs?: number
   operationTimeoutMs?: number
@@ -84,11 +85,22 @@ const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_WORKSPACE_DIR = "/workspace"
 const DEFAULT_CONTAINER_NAME = "claxedo-runtime"
 const DEFAULT_PROVISION_TIMEOUT_MS = 120_000
-const DEFAULT_PROVISION_INTERVAL_MS = 2_000
+// Boat's stop has no blocking form or stream (docs.boat.dev/snapshots/stop),
+// and an archive took 13–27 s (2026-10-15), so a stop under way is read
+// again from a short first wait growing to 2 s: 30 reads a minute against
+// Boat's 1,000 requests a minute per IP (docs.boat.dev/limits), which every
+// organization's sandboxes share from the control plane's addresses.
+const DEFAULT_STATE_POLL_MS = { firstMs: 250, maxMs: 2_000 }
 // The runtime listens only after its checkout and the repository's own
 // scripts; a container that exited ends the wait at once instead.
 const DEFAULT_HEALTH_TIMEOUT_MS = 10 * 60_000
-const DEFAULT_HEALTH_INTERVAL_MS = 1_000
+// Probed inside the VM, so a probe costs a local curl and a `docker inspect`,
+// and no Boat request.
+const DEFAULT_HEALTH_INTERVAL_MS = 100
+// One health command probes for this long before it answers; a longer one
+// would only delay a timed-out wait's diagnostics.
+const HEALTH_PROBE_WINDOW_SECONDS = 50
+const HEALTH_PROBE_MARGIN_SECONDS = 10
 // Boat pauses a new sandbox's containers for about a second while it takes the
 // sandbox's first snapshot, 2 s into the runtime's start; the runtime resumes on its own.
 const BOOTING_CONTAINER_STATES: ReadonlySet<string> = new Set(["running", "paused"])
@@ -313,7 +325,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const containerName = options.containerName ?? DEFAULT_CONTAINER_NAME
   const provisionTimeoutMs = options.provisionTimeoutMs ?? DEFAULT_PROVISION_TIMEOUT_MS
-  const provisionIntervalMs = options.provisionIntervalMs ?? DEFAULT_PROVISION_INTERVAL_MS
+  const statePollMs = options.statePollMs ?? DEFAULT_STATE_POLL_MS
   const healthTimeoutMs = options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS
   const healthIntervalMs = options.healthIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
 
@@ -362,16 +374,38 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     return result
   }
 
+  /**
+   * Boat holds a command sent while the sandbox starts and runs it once the
+   * sandbox is ready, so the first command that runs is the readiness Boat
+   * itself knows, with no read between. A command Boat refuses outright finds
+   * a sandbox that is not starting; its state says whether it is still coming,
+   * and one that reads as coming is asked again at the slowest state read's pace.
+   */
   async function waitUntilReady(sandboxId: string): Promise<boolean> {
     const until = Date.now() + provisionTimeoutMs
     for (;;) {
-      const sandbox = await client.get(sandboxId).catch(hostGoneOrThrow)
-      if (READY_STATES.has(sandbox.state)) return true
-      if (!PENDING_STATES.has(sandbox.state)) {
-        throw new BoatDriverError(`Boat ${sandboxId} entered non-ready state: ${sandbox.state}`)
-      }
+      const answer = await client.whenReady(sandboxId).catch(async (err: unknown) => {
+        if (!(err instanceof BoatApiError && NOT_RUNNING_CODES.has(err.code))) hostGoneOrThrow(err)
+        const { state } = await client.get(sandboxId).catch(hostGoneOrThrow)
+        if (!READY_STATES.has(state) && !PENDING_STATES.has(state)) throw new BoatDriverError(`Boat ${sandboxId} entered non-ready state: ${state}`)
+        await sleep(statePollMs.maxMs)
+        return "starting" as const
+      })
+      if (answer === "ready") return true
       if (Date.now() >= until) return false
-      await sleep(provisionIntervalMs)
+    }
+  }
+
+  /** The sandbox's state once Boat has finished archiving it; nothing when the archive outlasts the provisioning window. */
+  async function stateAfterArchiving(sandboxId: string): Promise<BoatSandboxState | undefined> {
+    const until = Date.now() + provisionTimeoutMs
+    let wait = statePollMs.firstMs
+    for (;;) {
+      const { state } = await client.get(sandboxId).catch(hostGoneOrThrow)
+      if (state !== "archiving") return state
+      if (Date.now() >= until) return undefined
+      await sleep(wait)
+      wait = Math.min(wait * 2, statePollMs.maxMs)
     }
   }
 
@@ -490,14 +524,30 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     }
   }
 
+  /**
+   * Probes inside the VM until the runtime answers, its container leaves the
+   * booting states, or the probe's window ends, then prints the last health
+   * code and container state: the wait ends within one probe interval of the
+   * runtime's first answer, at one Boat command per window.
+   */
+  function healthProbe(port: number, windowSeconds: number) {
+    const booting = [...BOOTING_CONTAINER_STATES].join("|")
+    return `end=$(($(date +%s) + ${windowSeconds})); while :; do `
+      + `code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/global/health); [ "$code" = 200 ] && break; `
+      + `state=$(docker inspect --format '{{.State.Status}}' ${shell(containerName)} 2>/dev/null || echo missing); `
+      + `case "$state" in ${booting}) ;; *) break ;; esac; `
+      + `[ "$(date +%s)" -lt "$end" ] || break; sleep ${healthIntervalMs / 1000}; done; echo "$code"; echo "$state"`
+  }
+
   async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput, secrets: readonly string[]) {
     const port = runtimePort(input)
     const until = Date.now() + healthTimeoutMs
     let last = "workspace runtime not ready"
     while (Date.now() < until) {
+      const windowSeconds = Math.max(1, Math.min(HEALTH_PROBE_WINDOW_SECONDS, Math.ceil((until - Date.now()) / 1000)))
       const probe = await client.command(sandboxId, {
-        command: `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/global/health || true; echo; `
-          + `docker inspect --format '{{.State.Status}}' ${shell(containerName)} 2>/dev/null || echo missing`,
+        command: healthProbe(port, windowSeconds),
+        timeoutSeconds: windowSeconds + HEALTH_PROBE_MARGIN_SECONDS,
       })
       const [code, state] = probe.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
       if (code === "200") return
@@ -506,7 +556,6 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
         last = `the runtime container is ${state}`
         break
       }
-      await sleep(healthIntervalMs)
     }
     let diagnostic: string
     try {
@@ -637,7 +686,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
         if (isTransientDriverError(err, TRANSIENT_MARKERS)) return undefined
         throw err
       })
-    if (!created) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    if (!created) return { provisioning: true as const, retryAfterMs: TRANSIENT_DRIVER_RETRY_MS }
     const resource = { sandboxId: created.id, hostId, driverResourceId: created.id, labels: input.labels }
     const failures: unknown[] = []
     try {
@@ -652,8 +701,9 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, `Boat ${created.id} resource handoff and deletion failed`)
+    // The step itself waited the whole provisioning window, so the next one begins its wait at once.
     const ready = await waitUntilReady(created.id)
-    if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    if (!ready) return { provisioning: true as const, retryAfterMs: 0 }
     return boot(created.id, input, hostId)
   }
 
@@ -665,8 +715,8 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // The lease does not say whether its sandbox is archived: one stopped
     // after serving is, one whose boot failed was stopped too, and one a
     // provider error interrupted still runs.
-    const state = (await client.get(sandboxId).catch(hostGoneOrThrow)).state
-    if (state === "archiving") return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    const state = await stateAfterArchiving(sandboxId)
+    if (state === undefined) return { provisioning: true as const, retryAfterMs: 0 }
     // Only a resume can move a sandbox to another size (docs.boat.dev/machines/change-size); a running one keeps its machine.
     if (state === "archived") {
       await client.resume(sandboxId, {
@@ -679,7 +729,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       })
     }
     const ready = await waitUntilReady(sandboxId)
-    if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    if (!ready) return { provisioning: true as const, retryAfterMs: 0 }
     return boot(sandboxId, input.ensure, hostId)
   }
 

@@ -165,7 +165,7 @@ describe("ModalSandboxDriver", () => {
     })
   })
 
-  test("missing tunnel and transient driver errors are reported as provisioning", async () => {
+  test("a missing tunnel, which `tunnels` waited for, is asked again at once, and a transient driver error after the transient retry", async () => {
     const noTunnel = sandbox({ tunnels: vi.fn(async () => ({})) })
     const driver = createModalSandboxDriver({
       ...baseOptions,
@@ -176,7 +176,7 @@ describe("ModalSandboxDriver", () => {
         },
       }),
     })
-    expect(await driver.ensureHost(input)).toEqual({ provisioning: true, retryAfterMs: 2_000 })
+    expect(await driver.ensureHost(input)).toEqual({ provisioning: true, retryAfterMs: 0 })
 
     const unavailable = createModalSandboxDriver({
       ...baseOptions,

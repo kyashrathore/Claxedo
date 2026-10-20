@@ -23,8 +23,11 @@ seams supplied by the caller:
   commit replaced, the one a fenced commit never referenced, and the last one
   when the workspace is destroyed. `ensureHost`/`resumeHost` return
   either a `SandboxTarget` (`sandboxId`, `url`, `hostId`, …) or
-  `{ provisioning: true, retryAfterMs }` for drivers whose sandboxes take a
-  poll loop to come up.
+  `{ provisioning: true, retryAfterMs }` when the sandbox is not up yet:
+  `retryAfterMs` is how long to wait before the next call. A call that is
+  itself a provider-side wait (Cloudflare's `ensure-runtime`, Modal's
+  `tunnels`, Boat's held command) answers `0`, since the wait already ran;
+  a transient provider error answers `TRANSIENT_DRIVER_RETRY_MS` (2 s).
 
 `createSandboxManager` returns a `SandboxManager` with `ensure`, `register`,
 `heartbeat`, `target`, `touch`, `snapshot`, `stop`, `destroy`, `release`,
@@ -84,8 +87,8 @@ epoch with no start recorded.
 
 `provision()` ends `lease_decision` when it begins a start, `provider_ready`
 when the driver calls `onResource`, `machine_ready` when a driver whose machine
-takes commands before its image is prepared calls `onMachineReady` (Boat, once a
-created or resumed sandbox reports ready), `image_ready` when a driver that can
+takes commands before its image is prepared calls `onMachineReady` (Boat, once
+it runs the first command, which it holds while a created or resumed sandbox starts), `image_ready` when a driver that can
 tell calls `onImageReady`, and `runtime_ready` when the driver returns a
 serving target. Each phase is timed from the one before, written into `lease.start` as
 it ends and emitted through the `onStartPhase` option, so `target()` of a lease
