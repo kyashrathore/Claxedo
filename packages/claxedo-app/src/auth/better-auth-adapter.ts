@@ -7,9 +7,10 @@ export function createBetterAuthBrowserAdapter(
   input: {
     request?: (input: string, init?: RequestInit) => Promise<Response>
     createClient?: BetterAuthClientFactory
+    leave?: (url: string) => void
   } = {},
 ): BrowserAuthAdapter {
-  const session = createBetterAuthSession({ request: input.request, createClient: input.createClient ?? productionClientFactory })
+  const session = createBetterAuthSession({ request: input.request, createClient: input.createClient ?? productionClientFactory, ...(input.leave ? { leave: input.leave } : {}) })
   const { descriptor, user, loading, unavailable } = session.state
   return {
     adapter: "better-auth",

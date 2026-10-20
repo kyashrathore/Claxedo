@@ -41,4 +41,4 @@ export function finishBlock(plan: ExecutionPlan, facts: ExecutionFacts, source: 
 
 export type Created =
   | { readonly kind: "project"; readonly project: Project }
-  | { readonly kind: "workspace"; readonly placementId: PlacementId }
+  | { readonly kind: "workspace"; readonly placementId: PlacementId; readonly started?: true }

@@ -7,9 +7,12 @@ export type Placing = { readonly draft: OnboardingDraft; readonly plan: Executio
 async function accountCloudWorkspace(server: Server, draft: OnboardingDraft, plan: Extract<ExecutionPlan, { kind: "cloud" }>, t: OnboardingText, hold: (created: Created) => void): Promise<Created> {
   const source = draft.source
   if (source.kind === "folder") throw new ServerError({ class: "invalid", message: t("onboarding.reason.execution.folder") })
-  const onCreated = (id: PlacementId) => hold({ kind: "workspace", placementId: id })
+  const onCreated = (id: PlacementId) => {
+    hold({ kind: "workspace", placementId: id })
+    return server.cloud.start(id)
+  }
   const workspace = await server.cloud.create({ source, name: plan.name, onCreated, ...(plan.machineClass ? { machineClass: plan.machineClass } : {}) })
-  return { kind: "workspace", placementId: workspace.id }
+  return { kind: "workspace", placementId: workspace.id, started: true }
 }
 
 export async function createOnboardingTarget(server: Server, t: OnboardingText, placing: Placing, hold: (created: Created) => void): Promise<Created> {
@@ -19,7 +22,7 @@ export async function createOnboardingTarget(server: Server, t: OnboardingText, 
 }
 
 export async function startCreated(server: Server, created: Created): Promise<void> {
-  if (created.kind === "workspace") await server.cloud.start(created.placementId)
+  if (created.kind === "workspace" && !created.started) await server.cloud.start(created.placementId)
 }
 
 export function openedPlacement(t: OnboardingText, created: Created, placementOf: (project: ProjectId) => PlacementId | undefined): PlacementId {

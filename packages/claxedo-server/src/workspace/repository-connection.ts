@@ -99,9 +99,14 @@ async function pastedRepositoryConnection(
 ): Promise<ConnectedRepository | RepositoryConnectionRefusal | undefined> {
   const fullName = githubRepositoryFullName(repoUrl)
   if (!fullName) return undefined
-  const access = await connections.repositoryForAuth(auth, undefined, fullName)
+  // Asked together, so a create waits for the longer of the connection lookup
+  // (several control-plane reads) and GitHub's anonymous answer, not both; the
+  // answer is unused when a connection can read the repository.
+  const [access, visible] = await Promise.all([
+    connections.repositoryForAuth(auth, undefined, fullName),
+    visibility(fullName).catch(() => undefined),
+  ])
   if (access.ok) return access
-  const visible = await visibility(fullName).catch(() => undefined)
   if (visible === "public") return undefined
   if (!visible) {
     return {

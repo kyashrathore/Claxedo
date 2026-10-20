@@ -84,6 +84,8 @@ export type HostedD1ConnectionsSetupInput = Readonly<{
    */
   sweepSample?: () => boolean
   now?: () => number
+  /** What the built-in integrations' provider calls go out through; the global fetch when absent. */
+  fetch?: typeof fetch
 }>
 
 /** The membership verdict every hosted Connections request is authorized against. */
@@ -148,7 +150,7 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
     const denied = await input.requireEntitlement?.(membership.orgId)
     if (denied) return c.json(denied.body, denied.status)
 
-    const attempts = input.attempts ?? d1Attempts(input)
+    const attempts = ownershipReadOnce(input.attempts ?? d1Attempts(input))
     // The kit's `GET /attempts/:state` refuses an attempt whose owner is not
     // one of the caller's partition keys, but a personal `user:` key is the
     // same in every org the user belongs to. The routing frozen at start names
@@ -164,14 +166,17 @@ export function createHostedD1ConnectionsSetup(input: HostedD1ConnectionsSetupIn
 
     const integrationId = /^\/([^/]+)\/connect$/.exec(subpath)?.[1]
     const capability = c.req.method === "GET" && subpath === "/" ? c.req.query("capability") : undefined
+    // A poll only advances a device grant or reads an attempt's status, and
+    // only built-in integrations hold device grants: the feature-owned MCP
+    // integrations a request otherwise resolves (every retained server's
+    // discovery) decide nothing a poll answers.
     const service = await hostedConnectionsService(input, {
       ownerUserId: membership.userId,
       orgId: membership.orgId,
       attempts,
       ...(integrationId ? { integrationId } : {}),
       ...(capability ? { capability } : {}),
-      auth,
-      request: c.req.raw,
+      ...(attemptState === undefined ? { auth, request: c.req.raw } : { builtInOnly: true }),
     })
     // NOT disposed: `service.dispose()` disposes the ATTEMPT store, and on this
     // path the attempt that was just created has to outlive the request that
@@ -412,12 +417,12 @@ async function hostedMembership(
   const authority: WorkspaceAuthority | undefined = input.services.authority
   if (!authority) return undefined
   try {
-    const me = asRecord(await authority.usersMe(auth))
+    const [person, orgs] = await Promise.all([authority.usersMe(auth), authority.listOrgs(auth)])
+    const me = asRecord(person)
     const userId = textValue(me?.user_id)
     if (!userId) return undefined
     const orgId = textValue(me?.org_id) ?? textValue(await authority.resolveOrgId(auth))
     if (!orgId) return undefined
-    const orgs = await authority.listOrgs(auth)
     const membership = Array.isArray(orgs)
       ? orgs.map(asRecord).find((row) => textValue(row?.org_id) === orgId)
       : undefined
@@ -428,6 +433,21 @@ async function hostedMembership(
     if (cause instanceof ControlPlaneAuthError) return undefined
     throw cause
   }
+}
+
+/**
+ * The attempt store with its ownership read answered once per request: the
+ * hosted org check above and the kit's own owner check read the same row
+ * before anything writes it.
+ */
+function ownershipReadOnce(attempts: HostedConnectionAttempts): HostedConnectionAttempts {
+  const read = new Map<string, ReturnType<HostedConnectionAttempts["ownership"]>>()
+  const ownership = (state: string) => {
+    const known = read.get(state) ?? attempts.ownership(state)
+    read.set(state, known)
+    return known
+  }
+  return { ...attempts, ownership }
 }
 
 function d1Attempts(input: HostedD1ConnectionsSetupInput) {
@@ -450,6 +470,8 @@ type HostedConnectionsServiceRequest = Readonly<{
   /** The partition an attempt froze. Absent for runtime resolution, which selects it below. */
   owner?: string
   capability?: string
+  /** Registers the deployment's own integrations and none of the feature-owned ones. */
+  builtInOnly?: boolean
 }>
 
 async function hostedConnectionsService(
@@ -478,10 +500,11 @@ async function hostedConnectionsService(
   }
   const existing = await existingFor()
   const registry = createIntegrationRegistry()
-  for (const integration of input.integrations ?? [githubIntegrationForEnv(input.env), linearIntegration(), atlassianIntegration()]) {
+  const fetchImpl = input.fetch ? { fetchImpl: input.fetch } : {}
+  for (const integration of input.integrations ?? [githubIntegrationForEnv(input.env, fetchImpl), linearIntegration(fetchImpl), atlassianIntegration(fetchImpl)]) {
     registry.register(integration.decl, integration.impl)
   }
-  for (const integration of await input.dynamicIntegrations?.({
+  for (const integration of request.builtInOnly ? [] : await input.dynamicIntegrations?.({
     ownerUserId,
     orgId,
     ...(integrationId ? { integrationId } : {}),

@@ -88,7 +88,6 @@ describe("control-plane provider auth", () => {
     const service = createProviderAuthService(c.registry, {
       now: () => 1_000,
       sleep: async () => {},
-      pollingSafetyMs: 0,
       fetch: (async (input, init) => {
         const url = requestUrl(input)
         calls.push(`${init?.method ?? "GET"} ${url}`)

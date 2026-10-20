@@ -76,7 +76,6 @@ function service(registry: ControlPlaneCredentials, seed = { userCode: "ABCD-EFG
   return createProviderAuthService(registry, {
     now: () => 1_000,
     sleep: async () => {},
-    pollingSafetyMs: 0,
     fetch: upstream(seed),
   })
 }
@@ -125,7 +124,6 @@ describe("a started sign-in opens only for the tenant and person who started it"
     const auth = createProviderAuthService(c.registry, {
       now: () => 1_000,
       sleep: async () => {},
-      pollingSafetyMs: 0,
       fetch: (async (input: string | URL, init?: RequestInit) => {
         const url = input.toString()
         if (url.endsWith("/api/accounts/deviceauth/usercode")) {
@@ -186,7 +184,6 @@ describe("a started sign-in opens only for the tenant and person who started it"
     const auth = createProviderAuthService(c.registry, {
       now: () => now,
       sleep: async () => {},
-      pollingSafetyMs: 0,
       pendingTtlMs: 60_000,
       fetch: upstream({ userCode: "ABCD-EFGH", accessToken: "access_token" }),
     })
@@ -201,6 +198,25 @@ describe("a started sign-in opens only for the tenant and person who started it"
 })
 
 describe("device polling cannot hold a callback open forever", () => {
+  test("polls again exactly the interval OpenAI names after each pending answer", async () => {
+    const c = credentials()
+    const waited: number[] = []
+    let polls = 0
+    const auth = createProviderAuthService(c.registry, {
+      now: () => 1_000,
+      sleep: async (ms) => void waited.push(ms),
+      fetch: (async (input: string | URL) => {
+        const url = input.toString()
+        if (url.endsWith("/api/accounts/deviceauth/usercode")) return json({ device_auth_id: "dev", user_code: "CODE", interval: "5" })
+        if (url.endsWith("/api/accounts/deviceauth/token")) return ++polls < 3 ? json({}, 403) : json({ authorization_code: "auth_code", code_verifier: "verifier" })
+        return json({ access_token: "access_token", refresh_token: "refresh_token", expires_in: 3600 })
+      }) as typeof fetch,
+    })
+    const { attempt } = (await auth.authorize({ owner: "A", providerId: "codex-app-server", org: "org-a" }))!
+    expect(await auth.callback({ owner: "A", providerId: "codex-app-server", org: "org-a", attempt })).toBe(true)
+    expect(waited).toEqual([5_000, 5_000])
+  })
+
   /** Upstream that issues a code, then answers "still pending" forever, clock ticking one interval per poll. */
   function neverApproved(tick: () => void) {
     return (async (input: string | URL) => {
@@ -223,7 +239,6 @@ describe("device polling cannot hold a callback open forever", () => {
     const auth = createProviderAuthService(c.registry, {
       now: () => now,
       sleep: async () => {},
-      pollingSafetyMs: 0,
       pendingTtlMs: 10_000,
       fetch: neverApproved(() => {
         polls += 1
@@ -247,7 +262,6 @@ describe("device polling cannot hold a callback open forever", () => {
       now: () => 1_000,
       // Never resolves: only the abort can release the wait between polls.
       sleep: () => new Promise<void>(() => {}),
-      pollingSafetyMs: 0,
       pendingTtlMs: 60_000,
       fetch: (async (input: string | URL) => {
         const url = input.toString()
@@ -275,7 +289,6 @@ describe("device polling cannot hold a callback open forever", () => {
     const auth = createProviderAuthService(c.registry, {
       now: () => now,
       sleep: async () => {},
-      pollingSafetyMs: 0,
       pendingTtlMs: 60_000,
       fetch: upstream({ userCode: "ABCD-EFGH", accessToken: "access_token" }),
     })
@@ -367,7 +380,6 @@ describe("what a completed ChatGPT sign-in leaves behind", () => {
     const auth = createProviderAuthService(c.registry, {
       now: () => 1_000,
       sleep: async () => {},
-      pollingSafetyMs: 0,
       fetch: chatgpt({ email: "person@example.com", chatgpt_account_id: "acct_9" }),
     })
 
@@ -395,7 +407,6 @@ describe("what a completed ChatGPT sign-in leaves behind", () => {
     const auth = createProviderAuthService(c.registry, {
       now: () => 1_000,
       sleep: async () => {},
-      pollingSafetyMs: 0,
       fetch: chatgpt({ chatgpt_account_id: "acct_9" }),
     })
 

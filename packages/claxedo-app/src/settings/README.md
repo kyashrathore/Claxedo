@@ -16,6 +16,8 @@ Owns: the settings sections the shell's settings page shows. The shell owns the 
 | Sound effects | app | per alert a sound (Alert 01) or None; highlighting or choosing one plays it | `preferences.tsx` (`alerts.sound`), read by `@/notifications` |
 | Keyboard shortcuts | app | every command's shortcut; record, clear with Backspace, reset all | the shell palette's overrides (`useCommands`) |
 
+A connect that needs the provider's approval waits on `server.integrations.awaitGrant`, which reads the attempt again at the grant's interval (5 s unless the provider names one). A redirect grant (an MCP server's sign-in) settles on the deployment's callback page in the tab the sign-in opened, so the read also goes out the moment the person comes back to the app (the page turning visible or the window taking focus) instead of up to an interval later; a device grant (GitHub) waits out the provider's interval whatever happens, since polling sooner earns a `slow_down` that lengthens it.
+
 `settingsSections` includes the Usage and Organization sections from their own domains. Settings → Models comes from `@/accounts` and is registered by the shell next to this array.
 
 ## Keyboard shortcuts

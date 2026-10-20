@@ -1,4 +1,4 @@
-import { createSignal, For, onMount, Show } from "solid-js"
+import { createSignal, Index, onMount, Show } from "solid-js"
 import { useAccess } from "@/access"
 import { harnessConnectContext, harnessIcon } from "@/lib/harness-catalog"
 import { useI18n } from "@/i18n"
@@ -32,18 +32,18 @@ function AccountGroups(props: { readonly rows: readonly AccountWords[]; readonly
   const t = useAccountsText()
   const groups = () => groupAccounts(props.rows)
   return (
-    <For each={groups()}>
+    <Index each={groups()}>
       {(group) => (
         <div class="flex flex-col gap-1.5">
           <Show when={groups().length > 1}>
-            <span class="px-0.5 text-12-medium text-text-weak">{t(GROUP_LABEL[group.group])}</span>
+            <span class="px-0.5 text-12-medium text-text-weak">{t(GROUP_LABEL[group().group])}</span>
           </Show>
           <SettingsList>
-            <For each={group.rows}>{(account) => <AccountItem account={account} row={props.row} selected={props.selected === account.key} openConnect={props.openConnect} />}</For>
+            <Index each={group().rows}>{(account) => <AccountItem account={account()} row={props.row} selected={props.selected === account().key} openConnect={props.openConnect} />}</Index>
           </SettingsList>
         </div>
       )}
-    </For>
+    </Index>
   )
 }
 
@@ -104,7 +104,6 @@ function useConnect(props: HarnessRowProps) {
           {...(credentialId ? { credentialId } : {})}
           {...(org ? { organization: org } : {})}
           replaces={replaces}
-          onConnected={() => props.accounts.rescan()}
         />
       ),
       () => setConnecting(false),

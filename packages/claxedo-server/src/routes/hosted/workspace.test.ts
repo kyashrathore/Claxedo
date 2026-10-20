@@ -1628,7 +1628,6 @@ describe("hosted cloud workspace create (POST /create)", () => {
         const run = pasted(repoUrl, { ok: true, repository: widgets, connectionId: "conn_personal" })
         expect((await run.response).status).toBe(200)
         expect(run.repositoryForAuth).toHaveBeenCalledWith(expect.anything(), undefined, "acme/widgets")
-        expect(run.repositoryVisibility).not.toHaveBeenCalled()
         expect(run.created()).toMatchObject({ repoUrl: widgets.cloneUrl, repoConnectionId: "conn_personal" })
       }
     })
@@ -1679,6 +1678,52 @@ describe("hosted cloud workspace create (POST /create)", () => {
       const res = await app.fetch(post("/create", { workspaceName: "Widgets", repoUrl: "https://github.com/acme/widgets" }))
       expect(res.status).toBe(502)
       await expect(res.json()).resolves.toMatchObject({ error: { code: "repository_visibility_unavailable" } })
+      expect(createCloudWorkspace).not.toHaveBeenCalled()
+    })
+
+    test("is checked for its destination, its connection, whether GitHub serves it to anyone and the organization's driver at once, and written once every check has answered", async () => {
+      const asked: string[] = []
+      let answer: () => void = () => undefined
+      const answered = new Promise<void>((resolve) => { answer = resolve })
+      const after = async <T>(check: string, value: T) => {
+        asked.push(check)
+        await answered
+        return value
+      }
+      const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+      const { app } = buildApp({
+        authority: fakeAuthority({ createCloudWorkspace }),
+        sandboxManager: { ensure: vi.fn() } as unknown as SandboxManager,
+        orgDriver: () => after("driver", { id: "boat", metadata: {} } as unknown as SandboxDriver),
+        options: {
+          resolveRepoAddresses: () => after("destination", ["140.82.112.3"]),
+          connections: { repositoryForAuth: () => after("connection", { ok: false as const, status: 404 as const, code: "repository_not_found" }) },
+          repositoryVisibility: () => after("github", "public" as const),
+        },
+      })
+      const response = app.fetch(post("/create", { workspaceName: "Widgets", repoUrl: "https://github.com/acme/widgets" }))
+      await vi.waitFor(() => expect(asked.toSorted()).toEqual(["connection", "destination", "driver", "github"]))
+      expect(createCloudWorkspace).not.toHaveBeenCalled()
+      answer()
+      expect((await response).status).toBe(200)
+      expect((createCloudWorkspace.mock.calls[0] as unknown[])[1]).toMatchObject({ repoUrl: "https://github.com/acme/widgets" })
+    })
+
+    test("whose destination is refused says so ahead of the connection and driver refusals checked beside it, and writes nothing", async () => {
+      const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+      const { app } = buildApp({
+        authority: fakeAuthority({ createCloudWorkspace }),
+        sandboxManager: { ensure: vi.fn() } as unknown as SandboxManager,
+        orgDriver: async () => { throw new SandboxProviderKeyMissingError() },
+        options: {
+          resolveRepoAddresses: async () => ["10.0.0.5"],
+          connections: { repositoryForAuth: async () => ({ ok: false as const, status: 404 as const, code: "connection_not_found" }) },
+          repositoryVisibility: async () => "unreadable" as const,
+        },
+      })
+      const res = await app.fetch(post("/create", { workspaceName: "Widgets", repoUrl: "https://github.com/acme/widgets" }))
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "repo_url_invalid" } })
       expect(createCloudWorkspace).not.toHaveBeenCalled()
     })
 

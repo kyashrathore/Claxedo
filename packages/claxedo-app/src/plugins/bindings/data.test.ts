@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
 import type { BindingScope } from "./services"
-import { shellRoutes } from "./test-support/shell"
+import { shellRoutes } from "./test-support/shell-routes"
 
 let activity = "working"
 await mock.module("@/session", () => ({ sessionActivity: () => activity }))

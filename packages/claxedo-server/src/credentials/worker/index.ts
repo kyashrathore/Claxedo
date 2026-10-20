@@ -202,11 +202,15 @@ export function hostedOrgCredentials(
    * an account the vendor refused becomes the one spent. Only
    * `setActiveCredentials` switches an origin between spendable accounts.
    */
-  const savedMark = async (row: { owner: string | null; provider_id: string; kind: CredentialKind }, id: string, timestamp: number) => {
+  const savedMark = async (row: { owner: string | null; provider_id: string; kind: CredentialKind }, id: string, stored: boolean, timestamp: number) => {
     if (!fanoutEligibleAuth(row.kind, row.provider_id)) return null
-    const current = (await readCredential(id))?.activated_at ?? null
     const origin = deliveryOrigin(row)
-    const held = origin !== undefined && (await ownedAccounts(row.owner, id)).some((other) => other.is_active && spentAt(other, origin))
+    const [existing, others] = await Promise.all([
+      stored ? readCredential(id) : undefined,
+      origin === undefined ? [] : ownedAccounts(row.owner, id),
+    ])
+    const current = existing?.activated_at ?? null
+    const held = origin !== undefined && others.some((other) => other.is_active && spentAt(other, origin))
     return held ? current : (current ?? timestamp)
   }
 
@@ -246,11 +250,12 @@ export function hostedOrgCredentials(
     if (row && credentialUndeliverable(row)) await handOffMark(row)
   }
 
-  const upsert = async (input: CredentialWrite, id: string) => {
+  /** `stored` says whether a row with this id was found; a fresh id has no mark to keep. */
+  const upsert = async (input: CredentialWrite, id: string, stored: boolean) => {
     const timestamp = now()
     const owner = input.owner
     const kind = storedCredentialKind(input)
-    const mark = await savedMark({ owner, provider_id: input.provider_id, kind }, id, timestamp)
+    const mark = await savedMark({ owner, provider_id: input.provider_id, kind }, id, stored, timestamp)
     const guard = administeredGuard(input)
     const values = "?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?"
     const row = await database
@@ -361,14 +366,14 @@ export function hostedOrgCredentials(
     openSealedCredentialSecret: (sealed) => cipher.open(sealed.credentialId, sealed.sealed),
     putCredential: async (input: CredentialWrite) => {
       const found = await existingId(input.owner, input.provider_id)
-      const inserted = await upsert(input, found ?? crypto.randomUUID())
+      const inserted = await upsert(input, found ?? crypto.randomUUID(), found !== undefined)
       if (inserted) return inserted
       const unwritten = () => administeredGuard(input)
         ? new OrgAccountWriteRefusedError()
         : new PublicApiError("resource_conflict", "Credential owner changed concurrently")
       const winner = await existingId(input.owner, input.provider_id)
       if (!winner) throw unwritten()
-      const updated = await upsert(input, winner)
+      const updated = await upsert(input, winner, true)
       if (!updated) throw unwritten()
       return updated
     },

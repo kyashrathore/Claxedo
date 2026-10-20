@@ -92,7 +92,7 @@ A failed build is not retried until a new build arrives or the plugin is switche
 
 ## Unit tests
 
-The binding tests stand in for `@/shell`, whose barrel does not load under `bun test`. Bun keeps a `mock.module` for the whole run, across files, and a later mock of the same module cannot add an export the first one lacked: the importing file then fails to load. The order of files follows the directory listing, which differs between machines, so a partial mock fails on one machine and passes on another. Every binding test therefore mocks `@/shell` with the one `shellRoutes` in `bindings/test-support/shell.ts`.
+The binding tests stand in for `@/shell`, whose barrel does not load under `bun test`. Bun keeps a `mock.module` for the whole run, across files, and a later mock of the same module cannot add an export the first one lacked: the importing file then fails to load. The order of files follows the directory listing, which differs between machines, so a partial mock fails on one machine and passes on another. Every binding test therefore mocks `@/shell` with the one `shellRoutes` in `bindings/test-support/shell-routes.ts`.
 
 ## Flows
 

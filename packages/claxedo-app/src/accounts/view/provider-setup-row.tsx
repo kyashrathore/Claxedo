@@ -4,14 +4,14 @@ import { useDialog, Button, ProviderIcon } from "@/ui"
 import { useAccountsText } from "../i18n"
 import { DrawerProviderConnect } from "./connect-drawer"
 
-export function ProviderSetupRow(props: { readonly id: string; readonly name: string; readonly harness: string; readonly note: string | undefined; readonly onConnected: () => Promise<void>; readonly children?: JSX.Element }) {
+export function ProviderSetupRow(props: { readonly id: string; readonly name: string; readonly harness: string; readonly note: string | undefined; readonly children?: JSX.Element }) {
   const t = useAccountsText()
   const dialog = useDialog()
   const [connecting, setConnecting] = createSignal(false)
   const openConnect = () => {
     setConnecting(true)
     const context = connectContextFor({ providerId: props.id, engine: props.harness, vendor: props.name })
-    void dialog.show(() => <DrawerProviderConnect provider={props.id} context={context} harness={props.harness} onConnected={props.onConnected} />, () => setConnecting(false))
+    void dialog.show(() => <DrawerProviderConnect provider={props.id} context={context} harness={props.harness} />, () => setConnecting(false))
   }
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>

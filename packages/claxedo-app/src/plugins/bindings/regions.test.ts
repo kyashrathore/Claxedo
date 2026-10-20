@@ -3,7 +3,7 @@ import { createSignal } from "solid-js"
 import type { PageEntry, Registry, SettingsSection } from "@/shell"
 import { createRegistrationSink } from "../registrations"
 import type { BindingScope } from "./services"
-import { shellRoutes } from "./test-support/shell"
+import { shellRoutes } from "./test-support/shell-routes"
 
 const drawn: string[] = []
 await mock.module("@/shell", () => shellRoutes)

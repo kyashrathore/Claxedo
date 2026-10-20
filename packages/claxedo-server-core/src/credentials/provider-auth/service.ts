@@ -83,7 +83,6 @@ export type ProviderAuthOptions = {
   fetch?: typeof fetch
   now?: () => number
   sleep?: (ms: number) => Promise<void>
-  pollingSafetyMs?: number
   /** How long an unclaimed in-flight authorization stays claimable. */
   pendingTtlMs?: number
 }
@@ -113,7 +112,6 @@ export function createProviderAuthService(
   const request = options.fetch ?? globalThis.fetch
   const clock = options.now ?? Date.now
   const wait = options.sleep ?? sleep
-  const pollingSafetyMs = options.pollingSafetyMs ?? 3_000
   const pendingTtlMs = options.pendingTtlMs ?? DEFAULT_PENDING_TTL_MS
 
   const methods = () => providerAuthMethods(options.reach)
@@ -191,7 +189,7 @@ export function createProviderAuthService(
     if (clock() > deadline) {
       throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has expired — start it again")
     }
-    const tokens = await exchangeDeviceTokens(request, item, wait, pollingSafetyMs, {
+    const tokens = await exchangeDeviceTokens(request, item, wait, {
       clock,
       deadline,
       signal: input.signal,
@@ -243,7 +241,6 @@ async function exchangeDeviceTokens(
   request: typeof fetch,
   pending: CodexPending,
   wait: (ms: number) => Promise<void>,
-  pollingSafetyMs: number,
   bounds: { clock: () => number; deadline: number; signal?: AbortSignal },
 ): Promise<TokenResponse> {
   // Two things end a device poll: the caller disconnecting and the
@@ -287,7 +284,10 @@ async function exchangeDeviceTokens(
         if (codeResponse.status === 403 || codeResponse.status === 404) {
           const remaining = bounds.deadline - bounds.clock()
           if (remaining <= 0) throw ended()
-          await pause(Math.min(pending.intervalMs + pollingSafetyMs, remaining), wait, poll.signal)
+          // OpenAI's own Codex login waits exactly the interval between polls
+          // (codex-rs/login/src/device_code_auth.rs); any margin on top is
+          // time an approved sign-in sits unnoticed.
+          await pause(Math.min(pending.intervalMs, remaining), wait, poll.signal)
           continue
         }
         throw new ProviderAuthError("provider_auth_callback_failed", `Device token polling failed: ${codeResponse.status}`)

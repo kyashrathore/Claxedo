@@ -19,6 +19,7 @@ import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { pluginBackendRouteContribution } from "../../plugin-backends/routes"
 import { PluginSupervisor, type PluginSupervisorNamespace } from "../../plugin-backends/supervisor.cf"
 import { PluginOutbound, PluginPlatform } from "../../plugin-backends/entrypoints.cf"
+import { timedAuthentication, timedD1, timedFetch } from "../../platform/http/server-timing"
 
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
@@ -56,7 +57,9 @@ export function composeBetterAuthD1AgentPlugins(
     ...input,
   })
   const signingEnv = stringEnvironment(env)
-  const passes = createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB })
+  const database = timedD1(env.CONTROL_PLANE_DB)
+  const authentication = timedAuthentication(base.options.authentication)
+  const passes = createD1SandboxPassRegister({ database })
   const authority = requireAuthority(base.plane.services)
   if (!authority.resolveWorkspaceOwner) {
     throw new Error("Enabled Agent Plugins build requires an authority that resolves workspace owners")
@@ -65,15 +68,15 @@ export function composeBetterAuthD1AgentPlugins(
     throw new HostedWorkerCompositionError("hosted_dependency_missing", "The Agent Plugins Worker requires the PLUGIN_SUPERVISOR binding")
   }
   const pluginBackends = pluginBackendRouteContribution({
-    authentication: base.options.authentication,
+    authentication,
     authority,
     supervisors: env.PLUGIN_SUPERVISOR,
     services: base.plane.services,
   })
   const tasks = composeHostedTasksPlugin({
     services: base.plane.services,
-    database: env.CONTROL_PLANE_DB,
-    authentication: base.options.authentication,
+    database,
+    authentication,
     ...(base.options.productWorkspace?.sandboxStart ? { sandboxStart: base.options.productWorkspace.sandboxStart } : {}),
     cloudCreateAdmission: {
       // The same entitlement gate the create route answers through, so a
@@ -111,8 +114,9 @@ export function composeBetterAuthD1AgentPlugins(
     toolGroups: hostedMcpToolGroups(plugins),
     env,
     plane: base.plane,
-    database: env.CONTROL_PLANE_DB,
-    authentication: base.options.authentication,
+    database,
+    authentication,
+    fetch: timedFetch(),
     rootGrants: plugins.flatMap((plugin) => plugin.rootGrants ?? []),
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
     passes,

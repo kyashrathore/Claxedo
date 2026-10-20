@@ -60,15 +60,20 @@ function startSettled(events: ServerEvents, id: PlacementId): StartSettled {
 
 async function driveWake(run: Run, followed: boolean, workspaces: Workspaces, id: PlacementId, settled: StartSettled, send: (event: WakeEvent) => void, now: () => number) {
   send({ type: "wakeStarted", ...(followed ? { followed: true } : {}) })
+  let noticed = false
+  const stopNoticing = settled(() => {
+    noticed = true
+  })
   try {
-    const { workspaceId } = await workspaces.locate(id)
-    await run(workspaceId, { onProgress: ({ kind: _kind, ...progress }) => send({ type: "provisioning", ...progress }), settled })
-    await workspaces.refresh()
+    await run(id, { onProgress: ({ kind: _kind, ...progress }) => send({ type: "provisioning", ...progress }), settled })
+    await (noticed ? workspaces.load() : workspaces.refresh())
     send({ type: "woke" })
   } catch (cause) {
     const retryAfterMs = startRetryAfterMs(cause)
     send({ type: "wakeFailed", error: toAppError(cause), ...(retryAfterMs !== undefined ? { retryAt: now() + retryAfterMs } : {}) })
     throw cause
+  } finally {
+    stopNoticing()
   }
 }
 

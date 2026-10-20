@@ -33,7 +33,7 @@ function world(serverKind: "daemon" | "hosted") {
   } as unknown as Workspaces
   const createCloudWorkspace = async (input: CloudSourceCreateInput): Promise<CloudWorkspace> => {
     created.push(input)
-    input.onCreated?.(placementId("ws_new"))
+    await input.onCreated?.(placementId("ws_new"))
     return { id: placementId("ws_new"), projectId: accountProject.id } as CloudWorkspace
   }
   const queryClient = new QueryClient()

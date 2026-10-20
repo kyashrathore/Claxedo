@@ -7,14 +7,28 @@ function assertAvailable(session: BetterAuthSession) {
   if (reason) throw new Error(reason)
 }
 
+async function leaveForProvider(session: BetterAuthSession, provider: "google" | "github", callbackURL: string, live: Promise<unknown>) {
+  const [, started] = await Promise.all([live, clientResult("sign-in", session.connected().client.signIn.social({ provider, callbackURL, disableRedirect: true }))])
+  selectedMethod(session, provider)
+  const url = started?.url
+  if (typeof url !== "string" || new URL(url).protocol !== "https:") throw new Error("Better Auth sign-in returned no provider address")
+  session.leave(url)
+}
+
 export async function signIn(session: BetterAuthSession, options?: BrowserAuthSignInOptions) {
   assertAvailable(session)
-  await reloadDescriptor(session)
-  const method = selectedMethod(session, options?.method)
   const { client, origin } = session.connected()
   const redirect = callbackUrl(options?.redirectUrl, origin)
-  if (method !== "email-password") {
-    await clientResult("sign-in", client.signIn.social({ provider: method, callbackURL: redirect }))
+  const offered = session.state.descriptor()?.methods ?? []
+  const requested = options?.method ?? (offered.length === 1 ? offered[0] : undefined)
+  if ((requested === "google" || requested === "github") && offered.includes(requested)) {
+    await leaveForProvider(session, requested, redirect, reloadDescriptor(session))
+    return
+  }
+  await reloadDescriptor(session)
+  const method = selectedMethod(session, options?.method)
+  if (method === "google" || method === "github") {
+    await leaveForProvider(session, method, redirect, Promise.resolve())
     return
   }
   const credentials = options?.method === "email-password" ? options : { email: "", password: "" }
