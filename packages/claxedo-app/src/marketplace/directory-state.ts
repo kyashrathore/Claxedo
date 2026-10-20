@@ -66,13 +66,22 @@ function createCounts(input: {
   }
 }
 
+type SelectedPlugin = { readonly kind: "agent" | "app"; readonly id: string }
+
 export function createSelection(input: { readonly candidates: () => readonly PluginCandidate[] }) {
-  const [selectedId, setSelectedId] = createSignal<string>()
+  const [selection, setSelection] = createSignal<SelectedPlugin>()
+  const idOf = (kind: SelectedPlugin["kind"]) => {
+    const current = selection()
+    return current?.kind === kind ? current.id : undefined
+  }
+  const selectedId = () => idOf("agent")
   const selected = createMemo(() => input.candidates().find((plugin) => plugin.pluginInstanceId === selectedId()))
   return {
     selectedId,
     selected,
-    openPlugin: (id: string) => setSelectedId(id),
-    closePlugin: () => setSelectedId(undefined),
+    selectedAppId: () => idOf("app"),
+    openPlugin: (id: string) => setSelection({ kind: "agent", id }),
+    openAppPlugin: (id: string) => setSelection({ kind: "app", id }),
+    closePlugin: () => setSelection(undefined),
   }
 }

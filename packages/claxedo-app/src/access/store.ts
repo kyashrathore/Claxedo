@@ -32,6 +32,8 @@ export function useAccess(): Access {
           return facts?.canManageOrgAccounts === true
         case "sandbox.manage":
           return facts?.canManageSandboxKeys === true
+        case "appPlugins.manage":
+          return facts?.canManageAppPlugins === true
         case "usage.teamSpend":
           return isOrgManager(facts?.role)
         default:

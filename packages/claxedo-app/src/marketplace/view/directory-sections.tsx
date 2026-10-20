@@ -6,9 +6,9 @@ import { pluginStatus } from "../model"
 import type { DirectorySection } from "../sections"
 import { DirectoryCard, type CardAction } from "./card"
 
-const GRID = "grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]"
+export const DIRECTORY_GRID = "grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]"
 
-function SectionHeading(props: {
+export function SectionHeading(props: {
   readonly title: string
   readonly count: number
   readonly note?: string
@@ -24,7 +24,7 @@ function SectionHeading(props: {
 
 export function CatalogSkeleton(): JSX.Element {
   return (
-    <div aria-hidden="true" class={GRID}>
+    <div aria-hidden="true" class={DIRECTORY_GRID}>
       <For each={[0, 1, 2]}>
         {() => (
           <div class="flex h-16 items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3">
@@ -57,7 +57,7 @@ export function PluginSectionList(props: {
             count={section.plugins.length}
             note={section.note ? t(section.note) : undefined}
           />
-          <div class={GRID}>
+          <div class={DIRECTORY_GRID}>
             <For each={section.plugins}>
               {(plugin) => (
                 <DirectoryCard
