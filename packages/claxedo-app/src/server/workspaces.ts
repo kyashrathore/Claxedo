@@ -229,9 +229,8 @@ function sessionLocator(workspaces: Pick<Workspaces, "byId" | "shared" | "refres
 function catalogRefresh(rereadBoth: () => Promise<unknown>, relearned: Set<string>, shared: SharedSessions, queryClient: QueryClient, serverUrl: string) {
   return async () => {
     relearned.clear()
-    await rereadBoth()
+    await Promise.all([rereadBoth(), shared.refresh()])
     await invalidatePlacementReads(queryClient, serverUrl)
-    await shared.refresh()
   }
 }
 

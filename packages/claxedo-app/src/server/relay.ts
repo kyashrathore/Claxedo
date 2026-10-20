@@ -5,6 +5,7 @@ import { workspaceStopped, type RelayConnection, type WorkspaceConnections } fro
 export type Relay = {
   readonly fetch: (workspaceId: string, path: string, init?: RequestInit, sessionId?: string) => Promise<Response>
   readonly webSocket: (workspaceId: string, path: string, sessionId?: string) => Promise<WebSocket>
+  readonly preload: (workspaceId: string, path: string, sessionId?: string) => boolean
   readonly adopt: (link: RelayConnection) => void
 }
 
@@ -127,16 +128,54 @@ function relayConnections(read: WorkspaceConnections["read"], links: RelayLinkSt
       const at = key(workspaceId, sessionId)
       return minting.get(at) ?? (force ? undefined : kept(at)) ?? mint(at, workspaceId, sessionId)
     },
+    held: (workspaceId: string, sessionId?: string) => (minting.has(key(workspaceId, sessionId)) ? undefined : kept(key(workspaceId, sessionId))),
     adopt: (link: RelayConnection) => void settle(key(link.workspaceId, link.sessionId), link, true),
   }
 }
 
+function isPlainGet(init: RequestInit | undefined) {
+  return init === undefined || ((init.method === undefined || init.method.toUpperCase() === "GET") && init.body === undefined && init.headers === undefined)
+}
+
+function preloads(relayUrl: string | undefined) {
+  const parked = new Map<string, Promise<Response>>()
+  const name = (at: string, path: string) => `${at}\u0000${path}`
+  return {
+    start: (at: string, link: RelayConnection, path: string) => {
+      const under = name(at, path)
+      if (parked.has(under)) return
+      const sent = sendThroughRelay(link, path, undefined, relayUrl)
+      parked.set(under, sent)
+      sent.catch((error: unknown) => {
+        if (parked.get(under) !== sent) return
+        parked.delete(under)
+        console.warn("A preloaded runtime read failed before its reader asked, so the reader sends its own", { workspaceId: link.workspaceId, path, error })
+      })
+    },
+    take: (at: string, path: string, init: RequestInit | undefined) => {
+      if (!isPlainGet(init)) return undefined
+      const under = name(at, path)
+      const sent = parked.get(under)
+      parked.delete(under)
+      return sent
+    },
+  }
+}
+
 export function createRelay(read: WorkspaceConnections["read"], links?: RelayLinkStorage, relayUrl?: string): Relay {
-  const { connection, adopt } = relayConnections(read, links)
+  const { connection, held, adopt } = relayConnections(read, links)
+  const ahead = preloads(relayUrl)
   return {
     fetch: async (workspaceId, path, init, sessionId) => {
-      const response = await sendThroughRelay(await connection(workspaceId, sessionId), path, init, relayUrl)
+      const response = await (ahead.take(key(workspaceId, sessionId), path, init) ?? sendThroughRelay(await connection(workspaceId, sessionId), path, init, relayUrl))
       return response.status === 401 ? sendThroughRelay(await connection(workspaceId, sessionId, true), path, init, relayUrl) : response
+    },
+    preload: (workspaceId, path, sessionId) => {
+      const scoped = sessionId === undefined ? undefined : held(workspaceId, sessionId)
+      const link = scoped ?? held(workspaceId)
+      if (!link) return false
+      ahead.start(scoped ? key(workspaceId, sessionId) : key(workspaceId), link, path)
+      return true
     },
     webSocket: async (workspaceId, path, sessionId) => {
       const link = await connection(workspaceId, sessionId)

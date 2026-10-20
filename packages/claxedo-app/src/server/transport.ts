@@ -24,6 +24,7 @@ export type Transport = {
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly runtime: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<Response>
   readonly runtimeSocket: (route: RuntimeRoute, path: string) => Promise<WebSocket>
+  readonly preloadRuntime: (workspaceId: string, path: string, sessionId?: string) => boolean
   readonly json: (path: string, init?: RequestInit) => Promise<unknown>
   readonly runtimeJson: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<unknown>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
@@ -192,8 +193,9 @@ function sessionRowHost(json: Transport["json"], account: HostedAccount | undefi
   }
 }
 
-function runtimeRoutes(serverUrl: string, request: Transport["request"], relay: Relay, daemonProxy: boolean): Pick<Transport, "runtime" | "runtimeSocket"> {
+function runtimeRoutes(serverUrl: string, request: Transport["request"], relay: Relay, daemonProxy: boolean): Pick<Transport, "runtime" | "runtimeSocket" | "preloadRuntime"> {
   return {
+    preloadRuntime: (workspaceId, path, sessionId) => !daemonProxy && relay.preload(workspaceId, withoutRouteQuery(path), sessionId),
     runtime: (route, path, init) => {
       if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
       const session = sessionScope(route)
@@ -220,7 +222,7 @@ export function createTransport(config: ServerConfig): Transport {
   const read = connectionReader(connections, hosts, image)
   const relay = createRelay(read, config.relayLinks, config.relayUrl)
   const daemonProxy = loopback && config.account === undefined
-  const { runtime, runtimeSocket } = runtimeRoutes(serverUrl, request, relay, daemonProxy)
+  const { runtime, runtimeSocket, preloadRuntime } = runtimeRoutes(serverUrl, request, relay, daemonProxy)
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
   const json: Transport["json"] = async (path, init) => readJsonResponse(await request(path, init), label(path, init))
   return {
@@ -229,6 +231,7 @@ export function createTransport(config: ServerConfig): Transport {
     request,
     runtime,
     runtimeSocket,
+    preloadRuntime,
     json,
     runtimeJson: async (route, path, init) => readJsonResponse(await runtime(route, path, init), label(path, init)),
     startRuntime: async (workspaceId, options) => {

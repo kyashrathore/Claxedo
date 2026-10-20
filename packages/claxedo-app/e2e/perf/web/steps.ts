@@ -8,7 +8,7 @@ import { profileSelfByUrl, summarizeMainThread, type MainThreadSummary } from ".
 import { installWebProbe, type ProbeCensus, type ProbeState } from "./probe"
 import type { Profile } from "./profiles"
 import { startRecorder, type Recorder, type Recording } from "./recorder"
-import type { Target } from "./target"
+import type { Cookie, Target } from "./target"
 import { buildWaterfall, describeProtocols, type Waterfall, type WaterfallRow } from "./waterfall"
 import { round } from "./numbers"
 
@@ -24,6 +24,7 @@ export type StepResult = {
   readonly primary: { readonly name: string; readonly ms: number }
   readonly marks: Readonly<Record<string, number>>
   readonly lcp: ProbeState["lcp"]
+  readonly layoutShift: number | undefined
   readonly railRows: number
   readonly keys: { readonly p50: number; readonly p95: number; readonly max: number; readonly n: number } | undefined
   readonly waterfall: Waterfall
@@ -48,6 +49,7 @@ export type RunInput = {
   readonly label: string
   readonly stacks: boolean
   readonly census: boolean
+  readonly onboardingOnly: boolean
   readonly log: (line: string) => void
 }
 
@@ -67,9 +69,9 @@ function quantile(values: readonly number[], q: number) {
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0
 }
 
-export async function openSession(input: RunInput, signedIn: boolean): Promise<Session> {
+export async function openSession(input: RunInput, cookies: readonly Cookie[] | undefined): Promise<Session> {
   const context = await input.browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: "light", locale: "en-US", timezoneId: "UTC", ignoreHTTPSErrors: true })
-  if (signedIn) await context.addCookies(input.target.cookies)
+  if (cookies) await context.addCookies(cookies)
   await context.addInitScript("globalThis.__name = (target) => target")
   await context.addInitScript(installPaintedFrames)
   if (input.census) await context.addInitScript("window.__webPerfCensus = true")
@@ -169,7 +171,7 @@ export async function summarizeStep(input: RunInput, session: Session, spec: Mea
   const result: StepResult = {
     scenario: spec.scenario, step: spec.step, profile: input.profile.name, cache: spec.cache, rep: input.rep, reference: spec.reference,
     primary: first ? { name: first, ms: marks[first] ?? Number.NaN } : span ? { name: "end", ms: round(span.endMs) } : { name: "key p50", ms: round(quantile(keys, 0.5)) },
-    marks, lcp: spec.reference === "navigation" ? state.lcp : undefined, railRows: state.railRows,
+    marks, lcp: spec.reference === "navigation" ? state.lcp : undefined, layoutShift: spec.reference === "navigation" ? state.layoutShift : undefined, railRows: state.railRows,
     keys: keys.length > 0 ? { p50: round(quantile(keys, 0.5)), p95: round(quantile(keys, 0.95)), max: round(Math.max(...keys)), n: keys.length } : undefined,
     waterfall, lazyChunks, mainThread, cpu,
     probeLongTasks: { count: longTasks.length, tbtMs: round(longTasks.reduce((sum, task) => sum + Math.max(0, task.duration - 50), 0)) },

@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { sessionEndpoint } from "./session-context"
 import { createSessionQueue } from "./session-queue"
-import { startSessionReads } from "./session-reads"
+import { preloadSessionReads, startSessionReads } from "./session-reads"
 import { createSnapshotCoverage } from "./snapshot-coverage"
 import type { RuntimeRoute } from "./transport"
 import { readTurnPageBefore } from "./transcript-reads"
@@ -192,4 +192,14 @@ test("session reads: a cold open of a cloud session its workspace serves asks on
   expect(server.hostedCalls).toEqual([])
   await startSessionReads(server.context, ref, shape).first
   expect(server.hostReads, "the workspace's answer is remembered too").toEqual(["ses_1"])
+})
+
+test("session reads: preloading a session sends its first read and open view ahead of the reader through the runtime preload, under the shape the reader will ask with", async () => {
+  const server = fakeServer({ reachable: () => true, machine: true })
+  const preloaded: Array<[string, string, string | undefined]> = []
+  const transport = { ...server.context.transport, preloadRuntime: (workspaceId: string, path: string, sessionId?: string) => (preloaded.push([workspaceId, path, sessionId]), true) }
+  expect(preloadSessionReads({ transport }, ref, shape)).toBe(true)
+  expect(preloaded).toEqual([["ws_cloud", firstPath, "ses_1"], ["ws_cloud", openPath, "ses_1"]])
+  expect(preloadSessionReads(server.context, ref, shape), "a tab without a kept link preloads nothing").toBe(false)
+  expect(server.runtimeCalls).toEqual([])
 })

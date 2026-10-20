@@ -99,6 +99,7 @@ function fakeTransport(options: FakeServerOptions, calls: FakeCalls): Transport 
     runtimeSocket: async () => {
       throw new Error("no sockets")
     },
+    preloadRuntime: () => false,
     json: async (path: string) => readJson(await request(path)),
     runtimeJson: async (route: RuntimeRoute, path: string) => {
       const response = await runtime(route, path)

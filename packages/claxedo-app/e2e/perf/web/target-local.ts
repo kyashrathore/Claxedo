@@ -1,7 +1,8 @@
 import path from "node:path"
 import { ensureAppBuilt } from "../../harness/app"
 import { prepareHarness } from "../../harness/global-setup"
-import { sessionCookie, startSignedStack } from "../../harness/signed-stack"
+import { sessionCookie, startSignedStack, type SignedStack } from "../../harness/signed-stack"
+import { hostedFetch, inviteHostedPerson } from "../../../../harness/e2e/harness/hosted-auth"
 import { sessionRoute } from "../../harness/ui-names"
 import { releasePort, reservePort } from "../../../../harness/e2e/harness/ports"
 import type { AcpScript } from "../../../../harness/e2e/harness/acp/script"
@@ -15,6 +16,19 @@ const DIST_DIR = path.resolve(import.meta.dirname, "../../../dist-e2e-web-perf")
 
 const UNLIMITED = 1_000_000
 const UNLIMITED_REQUESTS = { CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: String(UNLIMITED), CLAXEDO_CONTROL_PLANE_RATE_LIMIT: String(UNLIMITED), CLAXEDO_CONNECTION_RATE_LIMIT: String(UNLIMITED) }
+
+async function joinedAsAdmin(signed: SignedStack, name: string) {
+  const person = await signed.signUp(name)
+  const orgs = await hostedFetch(signed.hosted, "/api/control/orgs", {}, signed.owner.person)
+  const [org] = await orgs.json() as Array<{ org_id: string }>
+  if (!org) throw new Error("the signed stack's owner belongs to no organization")
+  const token = await inviteHostedPerson(signed.hosted, signed.owner.person, person.person, org.org_id, "admin")
+  const accepted = await hostedFetch(signed.hosted, "/api/control/invitations/accept", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
+  }, person.person)
+  if (!accepted.ok) throw new Error(`${name} could not accept the invitation: ${accepted.status} ${await accepted.text()}`)
+  return { cookies: [sessionCookie(signed.url, person)], repositoryUrl: signed.hosted.gitUrl }
+}
 
 export type LocalTargetInput = { readonly seedTurns: number; readonly railSessions: number; readonly longMiB: readonly number[]; readonly streamSessions: number; readonly log: (line: string) => void }
 
@@ -55,6 +69,7 @@ export async function localTarget(input: LocalTargetInput): Promise<Target> {
       sessions: [first, second].map((id) => ({ id, url: `${signed.url}${sessionRoute(workspace.id, id)}` })),
       long,
       stream,
+      newcomer: (label) => joinedAsAdmin(signed, `Perf Newcomer ${label}`),
       distDir: build.distDir,
       bytes,
       description: `the signed e2e stack at ${signed.url}, ${build.distDir}`,

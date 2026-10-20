@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import type { ConfigEnv, UserConfig } from "vite"
 import type { PluginOption } from "vite"
 import { cloudConfig } from "../claxedo-app/vite.cloud.config"
-import { WEB_DOCUMENT_PLUGIN } from "../claxedo-app/vite.web-document"
+import { WEB_DOCUMENT_PLUGINS } from "../claxedo-app/vite.web-document"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
@@ -23,7 +23,7 @@ function appAliases(config: UserConfig) {
 }
 
 function isWebDocument(plugin: PluginOption) {
-  return typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === WEB_DOCUMENT_PLUGIN
+  return typeof plugin === "object" && plugin !== null && "name" in plugin && (WEB_DOCUMENT_PLUGINS as readonly string[]).includes(plugin.name)
 }
 
 function localServerUrl() {

@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
 import { placementId, projectId, sessionId } from "./ids"
+import type { HostedAccount } from "./account"
 import type { Transport } from "./transport"
 import { cloudCatalog as listedCloudCatalog } from "./test-support/cloud-catalog"
 import { createWorkspaces } from "./workspaces"
@@ -143,5 +144,32 @@ test("a hosted deployment's bootstrap published into the shell is the catalog's 
       Reflect.deleteProperty(globalThis, "document")
       dispose()
     }
+  })
+})
+
+test("a refresh on a signed plane reads the account catalog and the shared sessions at once, not one after the other", async () => {
+  await createRoot(async (dispose) => {
+    const requested: string[] = []
+    const answers = new Map<string, () => void>()
+    const account = {
+      run: (operation: string) =>
+        new Promise<unknown>((resolve) => {
+          requested.push(operation)
+          answers.set(operation, () => resolve(operation === "session.shared.list" ? { sessions: [] } : { workspaces: [] }))
+        }),
+    } as HostedAccount
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const workspaces = createWorkspaces(transport([]), queryClient, account)
+    await Bun.sleep(5)
+    expect(requested).toEqual(["session.shared.list"])
+    answers.get("session.shared.list")?.()
+    await Bun.sleep(5)
+    const refreshed = workspaces.refresh()
+    await Bun.sleep(5)
+    expect(requested).toEqual(["session.shared.list", "workspace.list.provisioner", "session.shared.list"])
+    for (const answer of answers.values()) answer()
+    await refreshed
+    workspaces.dispose()
+    dispose()
   })
 })

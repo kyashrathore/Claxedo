@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
 import { createRelay, type RelayLinkSiblings } from "./relay"
+import { connectionReads, link, tab } from "./test-relay-links"
 import { createWorkspaceConnections } from "./transport"
 import { WORKSPACE_STOPPED } from "./wire/connection"
 
@@ -14,19 +15,8 @@ afterAll(() => {
   runtimeFetch.mockRestore()
 })
 
-function control(body: unknown) {
-  const calls: { path: string; method: string | undefined }[] = []
-  const request = async (path: string, init?: RequestInit) => {
-    calls.push({ path, method: init?.method })
-    return Response.json(body)
-  }
-  return { read: createWorkspaceConnections(request).read, calls }
-}
-
-const link = { workspaceId: "ws_1", relayUrl: "https://relay.test", runtimeAccessToken: "rat", tokenExpiresAt: Date.now() + 3_600_000 }
-
 test("relay: a read takes its connection from the read-only GET and never from the connect that starts compute", async () => {
-  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockResolvedValue(Response.json([]))
 
   await createRelay(server.read).fetch("ws_1", "/api/wr/health")
@@ -36,7 +26,7 @@ test("relay: a read takes its connection from the read-only GET and never from t
 })
 
 test("relay: a cloud workspace's requests and sockets tell the relay the region its machine runs in, so a first touch from anywhere places the room there", async () => {
-  const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockResolvedValue(Response.json([]))
   const opened: string[] = []
   const BrowserWebSocket = globalThis.WebSocket
@@ -60,7 +50,7 @@ test("relay: a cloud workspace's requests and sockets tell the relay the region 
 })
 
 test("relay: a workspace a person's machine serves declares no region, so its room stays near that machine", async () => {
-  const server = control({ backing: "local-worktree", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ backing: "local-worktree", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockResolvedValue(Response.json([]))
 
   await createRelay(server.read).fetch("ws_1", "/api/wr/health")
@@ -69,7 +59,7 @@ test("relay: a workspace a person's machine serves declares no region, so its ro
 })
 
 test("relay: a session its own Durable Object serves declares no region; the relay places its room beside the object from the token", async () => {
-  const server = control({ backing: "durable-object", sessionId: "ses_pi", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ backing: "durable-object", sessionId: "ses_pi", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockResolvedValue(Response.json([]))
 
   await createRelay(server.read).fetch("ws_1", "/session/ses_pi/outline", undefined, "ses_pi")
@@ -78,7 +68,7 @@ test("relay: a session its own Durable Object serves declares no region; the rel
 })
 
 test("relay: a kept cloud link keeps its region across a reload", async () => {
-  const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
   const storage = tab()
   await createRelay(server.read, { scope: "usr_ada", storage }).fetch("ws_1", "/api/wr/health")
@@ -92,14 +82,14 @@ test("relay: a kept cloud link keeps its region across a reload", async () => {
 })
 
 test("relay: a stopped workspace answers the read with workspace_stopped and nothing reaches the relay", async () => {
-  const server = control({ status: "stopped", workspaceId: "ws_1" })
+  const server = connectionReads({ status: "stopped", workspaceId: "ws_1" })
 
   await expect(createRelay(server.read).fetch("ws_1", "/api/wr/health")).rejects.toMatchObject({ class: "conflict", code: WORKSPACE_STOPPED })
   expect(runtimeFetch).not.toHaveBeenCalled()
 })
 
 test("relay: a started workspace's link is adopted, so the next read asks the control plane nothing", async () => {
-  const server = control({ status: "stopped", workspaceId: "ws_1" })
+  const server = connectionReads({ status: "stopped", workspaceId: "ws_1" })
   runtimeFetch.mockResolvedValue(Response.json([]))
   const relay = createRelay(server.read)
 
@@ -111,7 +101,7 @@ test("relay: a started workspace's link is adopted, so the next read asks the co
 })
 
 test("relay: a fenced token renews once through a read-only connection and adopts the result", async () => {
-  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "fresh", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ relayUrl: link.relayUrl, runtimeAccessToken: "fresh", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockResolvedValueOnce(Response.json({ code: "runtime_access_token_invalid" }, { status: 401 }))
   runtimeFetch.mockResolvedValueOnce(Response.json({ code: "runtime_access_token_invalid" }, { status: 401 }))
   const relay = createRelay(server.read)
@@ -123,7 +113,7 @@ test("relay: a fenced token renews once through a read-only connection and adopt
 })
 
 test("relay: upstream failures do not renew or resend", async () => {
-  const server = control({})
+  const server = connectionReads({})
   runtimeFetch.mockResolvedValue(Response.json({}, { status: 502 }))
   const relay = createRelay(server.read)
   relay.adopt(link)
@@ -133,7 +123,7 @@ test("relay: upstream failures do not renew or resend", async () => {
 })
 
 test("relay: expiry refresh remains a read and cannot wake a stopped workspace", async () => {
-  const server = control({ status: "stopped", workspaceId: "ws_1" })
+  const server = connectionReads({ status: "stopped", workspaceId: "ws_1" })
   const relay = createRelay(server.read)
   relay.adopt({ ...link, tokenExpiresAt: Date.now() })
   await expect(relay.fetch("ws_1", "/api/wr/health")).rejects.toMatchObject({ code: WORKSPACE_STOPPED })
@@ -159,13 +149,8 @@ test("relay: session links are isolated from siblings and owned links, including
   expect(new Headers(runtimeFetch.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer ses_b:5")
 })
 
-function tab() {
-  const items = new Map<string, string>()
-  return { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), items }
-}
-
 test("relay: a signed-in person's link outlives a reload of the page, so reloads within its life mint nothing more", async () => {
-  const server = control({ sessionId: "ses_pi", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ sessionId: "ses_pi", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
   const storage = tab()
   for (let reload = 0; reload < 5; reload++) {
@@ -195,7 +180,7 @@ function siblings() {
 }
 
 test("relay: a new tab takes the links its signed-in siblings hold, so opening tabs mints nothing for a workspace or session another tab reached", async () => {
-  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
   const join = siblings()
   const first = createRelay(server.read, { scope: "usr_ada", storage: tab(), siblings: join() })
@@ -229,7 +214,7 @@ test("relay: a link one tab mints reaches the tabs already open, and a sibling's
 })
 
 test("relay: a kept link near its expiry is minted again on the next reload and kept in its place", async () => {
-  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "renewed", tokenExpiresAt: Date.now() + 3_600_000 })
+  const server = connectionReads({ relayUrl: link.relayUrl, runtimeAccessToken: "renewed", tokenExpiresAt: Date.now() + 3_600_000 })
   runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
   const storage = tab()
   storage.setItem(`claxedo:relay-link:usr_ada:${JSON.stringify(["ws_1", null])}`, JSON.stringify({ ...link, runtimeAccessToken: "expiring", tokenExpiresAt: Date.now() + 30_000 }))
@@ -241,7 +226,7 @@ test("relay: a kept link near its expiry is minted again on the next reload and 
 })
 
 test("relay: a hop's error page instead of the runtime's answer is a machine that didn't answer, and none of the page reaches the message", async () => {
-  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   const page = "<!DOCTYPE html><html><title>Worker threw exception | claxedo-sandbox-proxy</title><body>Error 1101</body></html>"
   runtimeFetch.mockResolvedValue(new Response(page, { status: 500, headers: { "content-type": "text/html; charset=UTF-8" } }))
 
@@ -254,7 +239,7 @@ test("relay: a hop's error page instead of the runtime's answer is a machine tha
 })
 
 test("relay: the runtime's own JSON failure passes back to its caller unchanged", async () => {
-  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockResolvedValue(Response.json({ error: { code: "session_not_found", message: "Session not found" } }, { status: 500 }))
 
   expect((await createRelay(server.read).fetch("ws_1", "/session/ses_1")).status).toBe(500)
@@ -268,7 +253,7 @@ test("relay: a runtime the control plane couldn't reach for its settings fails t
 })
 
 test("relay: a client whose origin fronts the relay sends every room request and socket there, whatever URL the link names", async () => {
-  const server = control({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  const server = connectionReads({ backing: "cloud-vm", homeRegion: "us-east", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
   runtimeFetch.mockResolvedValue(Response.json([]))
   const relay = createRelay(server.read, undefined, "https://app.test/relay")
   await relay.fetch("ws_1", "/api/wr/health")

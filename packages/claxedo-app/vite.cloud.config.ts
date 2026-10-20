@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 import { readFileSync } from "node:fs"
 import { resolveAccountBindingSelection, type AccountBindingBuildSelection, type AccountBindingId } from "./vite.account-binding"
 import { claxedoPluginBundles, workspaceSourceExport } from "./vite.plugin-bundles"
-import { webDocumentPlugin } from "./vite.web-document"
+import { webDocumentPlugins } from "./vite.web-document"
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
 const shikiThemesDist = normalizePath(
@@ -108,7 +108,7 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
   // (src/deployments/local/port.ts) the desktop's local server listens on.
   const backendTarget = process.env.CLAXEDO_DEV_PROXY_TARGET || "http://127.0.0.1:2593"
   return {
-    plugins: [claxedoPluginBundles(), claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), webDocumentPlugin()],
+    plugins: [claxedoPluginBundles(), claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), ...webDocumentPlugins()],
     publicDir: "public",
     server: {
       host: "0.0.0.0",

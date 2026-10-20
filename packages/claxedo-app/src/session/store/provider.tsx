@@ -2,11 +2,11 @@ import { createContext, useContext, type ParentProps } from "solid-js"
 import { useServer } from "@/server"
 import { usePreferences } from "@/settings"
 import type { SessionStores } from "@/session"
-import { createSessionStores } from "./stores"
+import { createSessionStores, type RoutedSession } from "./stores"
 
 const SessionStoresContext = createContext<SessionStores>()
 
-export function SessionStoresProvider(props: ParentProps) {
+export function SessionStoresProvider(props: ParentProps<{ readonly routed?: RoutedSession }>) {
   const preferences = usePreferences()
   const stores = createSessionStores(
     useServer(),
@@ -16,6 +16,7 @@ export function SessionStoresProvider(props: ParentProps) {
       edit: preferences.transcript.editToolPartsExpanded,
     }),
     { showSettled: () => preferences.sidebar.showSettled, activityShown: () => preferences.sidebar.view === "activity" },
+    props.routed,
   )
   return <SessionStoresContext.Provider value={stores}>{props.children}</SessionStoresContext.Provider>
 }

@@ -16,6 +16,7 @@ export type Options = {
   readonly stream: boolean
   readonly census: boolean
   readonly stacks: boolean
+  readonly onboardingOnly: boolean
 }
 
 const LOCAL_PROFILES: readonly ProfileName[] = ["fast", "india-staging"]
@@ -47,5 +48,6 @@ export function readOptions(argv: readonly string[]): Options {
     stream: argv.includes("--stream"),
     census: argv.includes("--census"),
     stacks: argv.includes("--stacks"),
+    onboardingOnly: argv.includes("--onboarding-only"),
   }
 }

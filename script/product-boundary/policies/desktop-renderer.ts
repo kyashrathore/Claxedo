@@ -529,8 +529,16 @@ export const desktopRenderer: Policy = {
   // The session hosts a cloud workspace's sessions are served by, split from
   // the workspace catalog (owner: the app's server adapter,
   // `server/session-hosts.ts`). It adds no package edge.
-  // 1546/37, no headroom.
-  ceilings: { modules: 1546, packages: 37 },
+  // The onboarding route's prefetch, the reads the wizard's steps make
+  // started as the route matches, which the route entry in the shell's chunk
+  // reaches before the wizard's own chunk (owner: the app's onboarding
+  // domain, `onboarding/prefetch.ts`). It adds no package edge.
+  // The shell's startup frame, its own sheet so the web shell document can
+  // carry it inline and paint it before the bundle's stylesheets arrive; the
+  // renderer still takes it from the bundle (owner: the app's shell,
+  // `shell/styles/startup.css`). It adds no package edge.
+  // 1548/37, no headroom.
+  ceilings: { modules: 1548, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
