@@ -782,7 +782,10 @@ export const desktopRenderer: Policy = {
   // ships as a second `@claxedo/<plugin>/app?claxedo-plugin-bundle` chunk; the
   // transcript's two document cases left for that entry's card templates.
   // 1473/37, no headroom.
-  ceilings: { modules: 1473, packages: 37 },
+  // +1 module (owner: the app's shared lib): `lib/route-params.ts`, the one
+  // route-params equality the shell's route memos and a plugin page's params
+  // memo both compare with. 1474/37, no headroom.
+  ceilings: { modules: 1474, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

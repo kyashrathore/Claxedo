@@ -3,7 +3,7 @@ import { createContext, createMemo, createSignal, useContext, type Accessor, typ
 import type { PlacementId, SessionId } from "@/server"
 import { useShellRegistries } from "./registries"
 import { HistoryRouter } from "./history-router"
-import { parseRoute, placementOf, type ShellRoute } from "./routes"
+import { parseRoute, placementOf, sameRoute, type ShellRoute } from "./routes"
 
 export type SessionPlacementResolver = (session: SessionId) => PlacementId | undefined
 
@@ -22,7 +22,7 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
   const location = useLocation()
   const navigate = useNavigate()
   const registries = useShellRegistries()
-  const parsed = createMemo(() => parseRoute(location.pathname, registries.pages.list(), registries.routes.list()))
+  const parsed = createMemo(() => parseRoute(location.pathname, registries.pages.list(), registries.routes.list()), undefined, { equals: sameRoute })
   const [resolver, setResolver] = createSignal<SessionPlacementResolver>()
   const [chosen, setChosen] = createSignal(0)
   const localPlacement = createMemo(() => {
@@ -34,7 +34,7 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
     const placement = localPlacement()
     if (current.kind !== "localSession" || !placement) return current
     return { kind: "session", placementId: placement, sessionId: current.sessionId }
-  })
+  }, undefined, { equals: sameRoute })
   const routing: ShellRouting = {
     route,
     placementId: createMemo(() => placementOf(route())),
