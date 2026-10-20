@@ -8,7 +8,7 @@ function manifest(id: string, version: string, extra: Partial<PluginManifest> = 
 }
 
 function listing(id: string, versions: readonly string[], available = true): AppPluginListing {
-  return { id, name: manifest(id, versions[0]!).name, description: `${id} things`, latest: versions[0]!, versions, manifest: manifest(id, versions[0]!), available }
+  return { id, name: manifest(id, versions[0]).name, description: `${id} things`, latest: versions[0], versions, manifest: manifest(id, versions[0]), available }
 }
 
 function install(id: string, version: string, state: Partial<Pick<AppPluginInstall, "active" | "enabledForMe" | "orgDefault">> = {}): AppPluginInstall {
@@ -30,24 +30,25 @@ describe("the App plugins directory", () => {
 
   test("offers an admin the install of an available plugin, a member none, and each member their own switch", () => {
     const [counter, notes, relay] = appPluginEntries([install("counter", "0.1.0")], catalog)
-    expect([appPluginMainAction(notes!, true), appPluginMainAction(notes!, false), appPluginMainAction(relay!, true)]).toEqual(["install", undefined, undefined])
-    expect(appPluginMainAction(counter!, false)).toBe("turnOn")
+    expect([appPluginMainAction(notes, true), appPluginMainAction(notes, false), appPluginMainAction(relay, true)]).toEqual(["install", undefined, undefined])
+    expect(appPluginMainAction(counter, false)).toBe("turnOn")
     const [enabled] = appPluginEntries([install("counter", "0.2.0", { enabledForMe: true })], catalog)
-    expect(appPluginMainAction(enabled!, false)).toBe("turnOff")
+    expect(appPluginMainAction(enabled, false)).toBe("turnOff")
     const [off] = appPluginEntries([install("counter", "0.2.0", { active: false })], catalog)
-    expect([appPluginMainAction(off!, true), appPluginMainAction(off!, false)]).toEqual(["turnOnForOrganization", undefined])
+    expect([appPluginMainAction(off, true), appPluginMainAction(off, false)]).toEqual(["turnOnForOrganization", undefined])
   })
 })
 
 describe("an App plugin's status and access", () => {
   test("says what state an install is in, and that an update exists only for a version older than the registry's latest", () => {
     const [older] = appPluginEntries([install("counter", "0.1.0", { enabledForMe: true })], catalog)
-    expect([appPluginUpdate(older!), appPluginStatus(older!)?.key]).toEqual(["0.2.0", "marketplace.status.updateAvailable"])
+    expect([appPluginUpdate(older), appPluginStatus(older)?.key]).toEqual(["0.2.0", "marketplace.status.updateAvailable"])
     const [current] = appPluginEntries([install("counter", "0.2.0", { enabledForMe: true })], catalog)
-    expect([appPluginUpdate(current!), appPluginStatus(current!)?.key]).toEqual([undefined, "marketplace.app.status.on"])
+    expect([appPluginUpdate(current), appPluginStatus(current)?.key]).toEqual([undefined, "marketplace.app.status.on"])
     const [off] = appPluginEntries([install("counter", "0.2.0", { active: false })], catalog)
-    expect(appPluginStatus(off!)?.key).toBe("marketplace.app.status.organizationOff")
-    expect(appPluginStatus(appPluginEntries([], catalog).find((entry) => entry.id === "relay")!)?.key).toBe("marketplace.app.status.unavailable")
+    expect(appPluginStatus(off)?.key).toBe("marketplace.app.status.organizationOff")
+    const [, , relay] = appPluginEntries([], catalog)
+    expect(appPluginStatus(relay)?.key).toBe("marketplace.app.status.unavailable")
   })
 
   test("names everything the manifest lets the plugin do: its frame, its backend, each platform permission, and each host, route and operation", () => {

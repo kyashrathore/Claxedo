@@ -24,7 +24,7 @@ async function publishedIndex(file: string): Promise<PluginIndex | undefined> {
   try {
     text = await fs.readFile(file, "utf8")
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined
     throw error
   }
   return pluginIndexSchema.parse(signedPluginIndexSchema.parse(JSON.parse(text)).index)

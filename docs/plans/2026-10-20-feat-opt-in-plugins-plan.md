@@ -555,7 +555,7 @@ Every ceiling change is the exact measured number, with its owner named in the a
     - 34 and 37's desktop test sign in first (`signedCloud`, `signedDesktop`). Not run here: the desktop project.
     - 40 ends asserting the unsigned web app lists no app plugin. Not run here: it needs the real Claude CLI.
   - **Test composition.** `fixtures/full-hosted.fixture.cf.ts` is the full-hosted Worker over `registryKeysWithTestKey`; `composeBetterAuthD1AgentPlugins` takes `registryKeys`. The e2e harness runs it only when a flow asks for `signedAppPluginRegistry`.
-  - **Closures.** Agent Plugins is 236 modules and 27 packages, full-hosted 248 and 28 (the catalog). The desktop renderer is 1,587 modules and 44 packages: the walk follows `virtual:claxedo-frame-runtime` to the runtime's entry. The app's line budget is 117,432.
+  - **Closures.** Agent Plugins is 236 modules and 27 packages, full-hosted 248 and 28 (the catalog). The desktop renderer is 1,587 modules and 44 packages: the walk follows `virtual:claxedo-frame-runtime` to the runtime's entry. The app's line budget is 117,433.
 - [x] **P5. Local runtime.** Removed by owner ruling (plugins only when signed in). Instead, P4 removes or gates the daemon's live-plugin registry, and flows 34 and 35 move to a signed account.
 - [ ] **P6. Platform API v2 on both hosts:**
 - sessions (§3.3), with `plugin_session_origins` in D1 and `claxedo.db`;

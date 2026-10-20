@@ -16,7 +16,7 @@ export function createInstalledReconciler(host: Pick<PluginHost, "plugins" | "pu
   return {
     reconcile: (plugins) => {
       const listed = new Set(plugins.map((plugin) => plugin.id))
-      for (const pluginId of [...requested.keys()]) if (!listed.has(pluginId)) requested.delete(pluginId)
+      for (const pluginId of requested.keys()) if (!listed.has(pluginId)) requested.delete(pluginId)
       for (const plugin of host.plugins()) {
         if (!installedOriginOf(plugin) || listed.has(plugin.id)) continue
         requested.delete(plugin.id)

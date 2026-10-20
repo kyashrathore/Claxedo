@@ -15,7 +15,7 @@ async function sha256Of(text: string) {
 }
 
 function served(text: string) {
-  return { installedBundle: async () => new TextEncoder().encode(text) as Uint8Array<ArrayBuffer> }
+  return { installedBundle: async () => new TextEncoder().encode(text) }
 }
 
 async function activation(plugin: EnabledAppPlugin, text: string) {

@@ -22,7 +22,7 @@ export type TestRegistry = {
 }
 
 export async function createTestRegistry(): Promise<TestRegistry> {
-  const pair = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair
+  const pair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])
   const signingKey = Buffer.from(await crypto.subtle.exportKey("pkcs8", pair.privateKey)).toString("base64")
   const testKey = Buffer.from(await crypto.subtle.exportKey("raw", pair.publicKey)).toString("base64")
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-app-plugin-registry-"))
