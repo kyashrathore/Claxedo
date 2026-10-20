@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { Disposer } from "./contributions"
-import { SURFACE_ICON_NAMES } from "./surface/catalog"
+import { SURFACE_ICON_NAMES } from "./surface/icon-names"
 
 /**
  * A card template is data the host evaluates against `{ args, result }`, the

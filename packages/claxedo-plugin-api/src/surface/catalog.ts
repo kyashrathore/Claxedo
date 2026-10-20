@@ -1,15 +1,7 @@
 import { z } from "zod"
+import { SURFACE_ICON_NAMES } from "./icon-names"
 
 export const SURFACE_CATALOG_ID = "https://claxedo.dev/a2ui/v0.9/catalog.json"
-
-export const SURFACE_ICON_NAMES = [
-  "accountCircle", "add", "alertCircle", "arrowBack", "arrowForward", "calendarToday", "check", "checkCircle", "circle",
-  "circleDashed", "circleHalf", "close", "delete", "download", "edit",
-  "event", "error", "fastForward", "favorite", "favoriteOff", "folder", "help", "home", "info", "locationOn", "lock",
-  "lockOpen", "mail", "menu", "moreVert", "moreHoriz", "notificationsOff", "notifications", "pause", "payment", "person",
-  "photo", "play", "refresh", "rewind", "search", "send", "settings", "share", "shoppingCart", "skipNext", "skipPrevious",
-  "star", "starOff", "stop", "upload", "visibility", "visibilityOff", "warning",
-] as const
 
 const MAX_TEXT = 100_000
 

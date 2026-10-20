@@ -537,8 +537,14 @@ export const desktopRenderer: Policy = {
   // carry it inline and paint it before the bundle's stylesheets arrive; the
   // renderer still takes it from the bundle (owner: the app's shell,
   // `shell/styles/startup.css`). It adds no package edge.
-  // 1548/37, no headroom.
-  ceilings: { modules: 1548, packages: 37 },
+  // The seams that keep zod and the surface renderer out of the web boot,
+  // each the lazy entry to code already in the closure: the tool card intake
+  // that checks a live plugin's templates in a chunk of its own (owner: the
+  // app's plugin host, `plugins/bindings/tool-card-intake.ts`,
+  // `tool-card-check.ts`) and the plugin surface pages' lazy views
+  // (`plugins/surface-page/view-lazy.ts`). They add no package edge.
+  // 1551/37, no headroom.
+  ceilings: { modules: 1551, packages: 37 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

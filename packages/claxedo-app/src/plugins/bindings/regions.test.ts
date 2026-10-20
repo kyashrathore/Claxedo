@@ -8,7 +8,7 @@ import { shellRoutes } from "./test-support/shell-routes"
 const drawn: string[] = []
 await mock.module("@/shell", () => shellRoutes)
 await mock.module("../boundary", () => ({ boundedView: (_name: string, view: unknown) => view }))
-await mock.module("../surface-page/view", () => ({
+await mock.module("../surface-page/view-lazy", () => ({
   PluginSurfacePage: (props: { readonly page: { readonly id: string } }) => void drawn.push(`page ${props.page.id}`),
   PluginSurfaceSettings: (props: { readonly section: { readonly id: string } }) => void drawn.push(`settings ${props.section.id}`),
 }))

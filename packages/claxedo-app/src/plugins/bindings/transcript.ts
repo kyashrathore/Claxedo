@@ -1,15 +1,7 @@
-import { readToolCardTemplates, ToolCardTemplateError, type PluginApi, type ToolCardTemplate } from "@claxedo/plugin-api"
+import type { PluginApi, ToolCardTemplate } from "@claxedo/plugin-api"
 import { fillPattern, type ToolCardEntry } from "@/shell"
 import { entryId, pageEntryFor, PluginEntryError, type BindingScope } from "./services"
-
-function templatesOf(scope: BindingScope, value: unknown): readonly ToolCardTemplate[] {
-  try {
-    return readToolCardTemplates(value)
-  } catch (error) {
-    if (error instanceof ToolCardTemplateError) throw new PluginEntryError(scope.manifest.id, error.message)
-    throw error
-  }
-}
+import type { ToolCardIntake } from "./tool-card-intake"
 
 function refuseTakenTools(scope: BindingScope, templates: readonly ToolCardTemplate[]): void {
   const taken = new Set(scope.services.registries.toolCards.list().map((entry) => entry.template.tool))
@@ -30,10 +22,10 @@ function toolCardEntry(scope: BindingScope, template: ToolCardTemplate): ToolCar
   }
 }
 
-export function transcriptBinding(scope: BindingScope): PluginApi["transcript"] {
+export function transcriptBinding(scope: BindingScope, intake: ToolCardIntake): PluginApi["transcript"] {
   return {
     toolCards: (value) => {
-      const templates = templatesOf(scope, value)
+      const templates = intake(scope.manifest.id, value)
       refuseTakenTools(scope, templates)
       const disposers = templates.map((template) => scope.sink.add(scope.services.registries.toolCards, toolCardEntry(scope, template)))
       return () => {

@@ -2,7 +2,7 @@ import type { Component } from "solid-js"
 import type { PageDefinition, PluginApi, SettingsSectionDefinition } from "@claxedo/plugin-api"
 import { fillPattern, settingsPath, type PageEntry, type PageProps, type SettingsSection } from "@/shell"
 import { boundedView } from "../boundary"
-import { PluginSurfacePage, PluginSurfaceSettings } from "../surface-page/view"
+import { PluginSurfacePage, PluginSurfaceSettings } from "../surface-page/view-lazy"
 import { entryId, pageEntryFor, PluginEntryError, type BindingScope } from "./services"
 
 export const PLUGIN_ICON = "grid-plus"
