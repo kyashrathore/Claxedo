@@ -771,8 +771,12 @@ export const desktopRenderer: Policy = {
   // the app's auth domain, `auth/view/login-page.tsx`), and the Codex theme's
   // tokens, extracted from the shell's overrides so that document shares them
   // (owner: the app's kit, `ui/codex-tokens.css`). Neither adds a package edge.
-  // 1472/36, no headroom.
-  ceilings: { modules: 1472, packages: 36 },
+  // The onboarding route's prefetch, the reads the wizard's steps make
+  // started as the route matches, which the route entry in the shell's chunk
+  // reaches before the wizard's own chunk (owner: the app's onboarding
+  // domain, `onboarding/prefetch.ts`). It adds no package edge.
+  // 1473/36, no headroom.
+  ceilings: { modules: 1473, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

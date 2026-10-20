@@ -42,7 +42,7 @@ declare global {
 
 export function installWebProbe() {
   const SCROLLER = '[data-slot="session-timeline-scroll"] > [data-scrollable]'
-  const INTERACTION_SCOPED = /^(session-|settings$|marketplace$|composer:)/
+  const INTERACTION_SCOPED = /^(session-|settings$|marketplace$|composer:|onboarding:|draft$)/
   const state = {
     marks: [] as { name: string; at: number }[],
     lcp: undefined as { at: number; size: number; element: string } | undefined,
@@ -76,6 +76,14 @@ export function installWebProbe() {
     return undefined
   }
   const composer = () => displayedSession()?.querySelector<HTMLElement>('[data-component="prompt-input"][contenteditable="true"]') ?? undefined
+  const STEP_CONTENT: Record<string, string> = { execution: '[role="radiogroup"], [role="alert"], p', project: 'input, [role="radiogroup"]', ai: '[data-slot="account-row"], [data-action="agent-add-account"]' }
+  const onboarding = () => {
+    const wizard = document.querySelector<HTMLElement>('[data-testid="onboarding-wizard"]')
+    const step = wizard?.dataset.step
+    const panel = step ? wizard?.querySelector<HTMLElement>(`[data-step-panel="${step}"]`) : undefined
+    if (!step || !panel || !visible(panel) || panel.querySelector('[data-component="spinner"]')) return undefined
+    return panel.querySelector(STEP_CONTENT[step] ?? "p") ? step : undefined
+  }
   const sample = () => {
     const root = document.getElementById("root")
     const shell = !!root && [...root.children].some((child) => child instanceof HTMLElement && child.offsetHeight > 0)
@@ -91,8 +99,10 @@ export function installWebProbe() {
     const textLength = rows.reduce((sum, row) => sum + (row.textContent ?? "").trim().length, 0)
     const editable = !!composer()
     const composerLength = composer()?.textContent?.length ?? 0
+    const onboardingStep = onboarding()
+    const draft = visible(document.querySelector('section[data-component="session-screen"][data-variant="draft"] [data-component="prompt-input"][contenteditable="true"]'))
     return {
-      shell, railRows, login, settings, marketplace, sessionId, loading, textLength, editable, composerLength,
+      shell, railRows, login, settings, marketplace, sessionId, loading, textLength, editable, composerLength, onboardingStep, draft,
       rows: rows.length,
       scrollHeight: scroller?.scrollHeight ?? 0,
       clientHeight: scroller?.clientHeight ?? 0,
@@ -108,6 +118,8 @@ export function installWebProbe() {
     if (value.login) mark("login", at)
     if (value.settings) mark("settings", at)
     if (value.marketplace) mark("marketplace", at)
+    if (value.onboardingStep) mark(`onboarding:${value.onboardingStep}`, at)
+    if (value.draft) mark("draft", at)
     if (value.sessionId) {
       const id = value.sessionId
       if (value.editable) mark(`composer:${id}`, at)

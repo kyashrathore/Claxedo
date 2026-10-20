@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test"
 import path from "node:path"
 import { runLongSteps, runStreamStep } from "./long-scenarios"
+import { runOnboardingSteps } from "./onboarding-scenario"
 import { MARK_TIMEOUT_MS, measure, openSession, pressByRole, railPress, sessionMarks, type RunInput, type StepResult } from "./steps"
 
 const TYPED = "Measuring how the composer keeps up"
@@ -26,7 +27,7 @@ export async function runScenarios(input: RunInput, streamIndex: number): Promis
     }
   }
   const coldStep = async (scenario: string, url: string, signedIn: boolean, until: { required: readonly string[]; settle?: string }) => {
-    const session = await openSession(input, signedIn)
+    const session = await openSession(input, signedIn ? target.cookies : undefined)
     try {
       await attempt(`${scenario}/boot`, session.page, () => measure(input, session, { scenario, step: "boot", cache: "cold", reference: "navigation", required: until.required, settle: until.settle, act: () => session.page.goto(url, { waitUntil: "commit" }).then(() => undefined) }))
       return session
@@ -34,6 +35,10 @@ export async function runScenarios(input: RunInput, streamIndex: number): Promis
       await session.context.close()
       throw error
     }
+  }
+  if (input.onboardingOnly) {
+    await runOnboardingSteps(input, attempt)
+    return { results, failures }
   }
   const root = await coldStep("cold-root", `${target.url}/`, true, { required: ["rail"] })
   try {
@@ -71,5 +76,6 @@ export async function runScenarios(input: RunInput, streamIndex: number): Promis
 
   const signedOut = await coldStep("signed-out-login", `${target.url}/`, false, { required: ["login"] })
   await signedOut.context.close()
+  await runOnboardingSteps(input, attempt)
   return { results, failures }
 }

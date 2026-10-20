@@ -17,7 +17,7 @@ export type RunMeta = {
   readonly failures: readonly string[]
 }
 
-const MARK_COLUMNS = ["fcp", "shell", "rail", "session-text", "session-fold", "session-two-screens", "session-settled", "composer", "login", "marketplace", "settings"] as const
+const MARK_COLUMNS = ["fcp", "shell", "rail", "session-text", "session-fold", "session-two-screens", "session-settled", "composer", "login", "marketplace", "settings", "onboarding", "draft"] as const
 
 function fmt(value: number | undefined, digits = 0) {
   return value === undefined || !Number.isFinite(value) ? "—" : value.toFixed(digits)
@@ -139,7 +139,7 @@ export function renderMarkdown(meta: RunMeta, results: readonly StepResult[], by
     "## Readiness", "", readinessTable(results), "",
     "## Lazy chunks by step (representative run)", "", lazyChunkSection(results), "",
   ]
-  for (const group of groups(results).filter((group) => group[0].reference === "navigation" || group[0].reference === "prompt" || group[0].scenario === "open-session" && group[0].step === "press" || group[0].scenario === "open-long")) {
+  for (const group of groups(results).filter((group) => group[0].reference === "navigation" || group[0].reference === "prompt" || group[0].scenario === "open-session" && group[0].step === "press" || group[0].scenario === "open-long" || group[0].scenario === "onboarding")) {
     const rep = representative(group)
     sections.push(`## Waterfall: ${rep.scenario}/${rep.step}, ${rep.profile}, rep ${rep.rep}`, "", `${rep.waterfall.requests} requests (${describeProtocols(rep.waterfall.protocols)}), ${kb(rep.waterfall.transferBytes)} kB transferred for ${kb(rep.waterfall.decodedBytes)} kB decoded, ${rep.waterfall.waves} dependency waves, last response at ${fmt(rep.waterfall.lastEndMs)} ms.`, "", waterfallRows(rep.waterfall.rows), "", `### Main thread: ${rep.scenario}/${rep.step}, ${rep.profile}`, "", mainThreadSection(rep), "")
   }

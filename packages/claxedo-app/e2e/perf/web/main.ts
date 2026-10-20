@@ -36,7 +36,7 @@ async function main() {
       for (const [profileIndex, name] of options.profiles.entries()) {
         const profile = PROFILES[name]
         target.useProfile(profile)
-        const run = await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, stacks: options.stacks, census: options.census, log }, rep * options.profiles.length + profileIndex)
+        const run = await runScenarios({ browser, target, profile, cpu: options.cpu, rep, out: options.out, label: options.label, stacks: options.stacks, census: options.census, onboardingOnly: options.onboardingOnly, log }, rep * options.profiles.length + profileIndex)
         results.push(...run.results)
         failures.push(...run.failures)
       }

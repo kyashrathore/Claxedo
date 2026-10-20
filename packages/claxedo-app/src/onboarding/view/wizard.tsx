@@ -1,6 +1,5 @@
 import { For, onCleanup, onMount, Show } from "solid-js"
 import { ProjectCreateForm } from "@/projects"
-import { useServer, type Server } from "@/server"
 import { animateHeightChanges, ScrollView } from "@/ui"
 import { useOnboardingText } from "../i18n"
 import type { ExecutionFacts } from "../model"
@@ -8,14 +7,6 @@ import { createOnboardingWizard, draftName, type OnboardingWizard as Wizard } fr
 import { AiStep } from "./ai-step"
 import { ExecutionStep } from "./execution-step"
 import { WizardFooter } from "./wizard-footer"
-
-function prefetchLaterSteps(server: Server, localExecution: boolean) {
-  const { accounts, integrations } = server.queries
-  void server.queryClient.prefetchQuery(accounts.list())
-  void server.queryClient.prefetchQuery(accounts.effective())
-  void server.queryClient.prefetchQuery(accounts.sources())
-  if (!localExecution) void server.queryClient.prefetchQuery(integrations.catalog())
-}
 
 function WizardSteps(props: { readonly wizard: Wizard }) {
   const t = useOnboardingText()
@@ -86,14 +77,10 @@ function StepPanels(props: { readonly wizard: Wizard; readonly facts: ExecutionF
 
 export function OnboardingWizard(props: { readonly facts: ExecutionFacts; readonly pickFolder: () => Promise<string | undefined> }) {
   const t = useOnboardingText()
-  const server = useServer()
   const wizard = createOnboardingWizard(() => props.facts)
   let card!: HTMLDivElement
   let steps!: HTMLDivElement
-  onMount(() => {
-    prefetchLaterSteps(server, props.facts.localExecution)
-    onCleanup(animateHeightChanges(card, [steps]))
-  })
+  onMount(() => onCleanup(animateHeightChanges(card, [steps])))
   return (
     <div class="flex min-h-0 flex-col" data-testid="onboarding-wizard" data-step={wizard.step()}>
       <WizardSteps wizard={wizard} />

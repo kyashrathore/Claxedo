@@ -18,6 +18,8 @@ export type StreamTarget = {
   readonly prompt: (sessionId: string, scriptName: string, script: AcpScript) => Promise<void>
 }
 
+export type Newcomer = { readonly cookies: readonly Cookie[]; readonly repositoryUrl: string }
+
 export type Target = {
   readonly kind: "local" | "url"
   readonly url: string
@@ -25,6 +27,7 @@ export type Target = {
   readonly sessions: readonly SessionTarget[]
   readonly long: readonly LongSession[]
   readonly stream: StreamTarget | undefined
+  readonly newcomer: ((label: string) => Promise<Newcomer>) | undefined
   readonly distDir: string | undefined
   readonly bytes: DistBytes | undefined
   readonly description: string
@@ -90,6 +93,7 @@ export async function urlTarget(input: { url: string; cookieFile: string }): Pro
     cookies,
     long: [],
     stream: undefined,
+    newcomer: undefined,
     distDir: undefined,
     bytes: undefined,
     description: `${url} with cookies ${describeCookies(cookies)} from ${input.cookieFile}`,

@@ -8,7 +8,7 @@ import { profileSelfByUrl, summarizeMainThread, type MainThreadSummary } from ".
 import { installWebProbe, type ProbeCensus, type ProbeState } from "./probe"
 import type { Profile } from "./profiles"
 import { startRecorder, type Recorder, type Recording } from "./recorder"
-import type { Target } from "./target"
+import type { Cookie, Target } from "./target"
 import { buildWaterfall, describeProtocols, type Waterfall, type WaterfallRow } from "./waterfall"
 import { round } from "./numbers"
 
@@ -48,6 +48,7 @@ export type RunInput = {
   readonly label: string
   readonly stacks: boolean
   readonly census: boolean
+  readonly onboardingOnly: boolean
   readonly log: (line: string) => void
 }
 
@@ -67,9 +68,9 @@ function quantile(values: readonly number[], q: number) {
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0
 }
 
-export async function openSession(input: RunInput, signedIn: boolean): Promise<Session> {
+export async function openSession(input: RunInput, cookies: readonly Cookie[] | undefined): Promise<Session> {
   const context = await input.browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, colorScheme: "light", locale: "en-US", timezoneId: "UTC", ignoreHTTPSErrors: true })
-  if (signedIn) await context.addCookies(input.target.cookies)
+  if (cookies) await context.addCookies(cookies)
   await context.addInitScript("globalThis.__name = (target) => target")
   await context.addInitScript(installPaintedFrames)
   if (input.census) await context.addInitScript("window.__webPerfCensus = true")

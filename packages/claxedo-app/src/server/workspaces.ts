@@ -274,9 +274,8 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     boot,
     refresh: async () => {
       relearned.clear()
-      await rereadBoth()
+      await Promise.all([rereadBoth(), shared.refresh()])
       await invalidatePlacementReads(queryClient, transport.serverUrl)
-      await shared.refresh()
     },
     ...accountReads(merged.linked, accountPlacements !== undefined, load),
     dispose: () => { forgetSessionHosts(); shared.dispose(); merged.dispose() },
