@@ -35,4 +35,4 @@ The app entry is not an export: `src/app/index.ts` is named by the `claxedo` man
 
 ## Tests
 
-`bun run test` runs the kit, store, host, route, tool and app-entry tests under Bun. Tests that drive a real host stay with that host: `claxedo-local-server/src/app/tasks-plugin.test.ts` and `tasks-session-bridge.test.ts`, and the workerd and composition tests in `claxedo-server/src/deployments/hosted-workerd/tasks-plugin/`. Flows 12, 36, `63-tasks-board` and `63-tasks-presets` cover the app entry end to end.
+`bun run test` runs the kit, store, host, route, tool and app-entry tests under Bun. Tests that drive a real host stay with that host: `claxedo-local-server/src/app/tasks-plugin.test.ts` and `tasks-session-bridge.test.ts`, and the workerd and composition tests in `claxedo-server/src/deployments/hosted-workerd/tasks-plugin/`. Flows 12, 18, 36, `63-tasks-board` and `63-tasks-presets` cover the app entry end to end.

@@ -1,6 +1,6 @@
-import type { JSX } from "solid-js"
+import { Show, type JSX } from "solid-js"
 import { gridColumns } from "../grid-columns"
-import type { SurfaceNodeProps } from "../model"
+import type { DataPath, SurfaceNodeProps } from "../model"
 import { SurfaceChildren } from "./surface-children"
 
 type Justify = NonNullable<SurfaceNodeProps<"Row">["def"]["justify"]>
@@ -56,13 +56,45 @@ export function SurfaceListView(props: SurfaceNodeProps<"List">) {
   )
 }
 
-export function GridView(props: SurfaceNodeProps<"Grid">) {
+function SidebarGridView(props: { readonly ids: readonly string[]; readonly scope: DataPath; readonly gap: string }) {
+  const lead = () => props.ids.slice(0, 1)
+  const body = () => props.ids.slice(1, -1)
+  const aside = () => props.ids.slice(-1)
   return (
     <div data-slot="surface-grid-frame">
-      <div data-slot="surface-grid" data-columns={gridColumns(props.def.columns)} data-gap={props.def.gap ?? "medium"}>
-        <SurfaceChildren list={props.def.children} scope={props.scope} weighted={false} />
+      <div data-slot="surface-grid" data-layout="sidebar" data-gap={props.gap}>
+        <div data-slot="surface-grid-lead">
+          <SurfaceChildren list={lead()} scope={props.scope} weighted={false} />
+        </div>
+        <aside data-slot="surface-grid-aside">
+          <SurfaceChildren list={aside()} scope={props.scope} weighted={false} />
+        </aside>
+        <div data-slot="surface-grid-body">
+          <SurfaceChildren list={body()} scope={props.scope} weighted={false} />
+        </div>
       </div>
     </div>
+  )
+}
+
+function sidebarIds(def: SurfaceNodeProps<"Grid">["def"]): readonly string[] | undefined {
+  return def.layout === "sidebar" && Array.isArray(def.children) && def.children.length >= 2 ? def.children : undefined
+}
+
+export function GridView(props: SurfaceNodeProps<"Grid">) {
+  return (
+    <Show
+      when={sidebarIds(props.def)}
+      fallback={
+        <div data-slot="surface-grid-frame">
+          <div data-slot="surface-grid" data-columns={gridColumns(props.def.columns)} data-gap={props.def.gap ?? "medium"}>
+            <SurfaceChildren list={props.def.children} scope={props.scope} weighted={false} />
+          </div>
+        </div>
+      }
+    >
+      {(ids) => <SidebarGridView ids={ids()} scope={props.scope} gap={props.def.gap ?? "large"} />}
+    </Show>
   )
 }
 

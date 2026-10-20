@@ -187,3 +187,10 @@
     }
   }
 }
+
+[data-slot="surface-file-picker"][data-variant="button"] {
+  display: inline-flex;
+  flex-direction: row;
+  align-self: center;
+  width: auto;
+}

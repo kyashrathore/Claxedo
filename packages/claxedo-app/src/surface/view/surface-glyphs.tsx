@@ -131,6 +131,12 @@ export const SURFACE_GLYPHS: Readonly<Record<GlyphIconName, () => JSX.Element>> 
   skipPrevious: () => <path d="M15.42 4.17v11.66L7.5 10zM4.58 4.17v11.66" />,
   star: () => <path d={STAR} fill="currentColor" />,
   starOff: () => <path d={STAR} />,
+  viewBoard: () => (
+    <>
+      <rect x="2.92" y="3.75" width="14.17" height="12.5" rx="1.25" />
+      <path d="M7.64 3.75v12.5M12.36 3.75v12.5" />
+    </>
+  ),
   visibilityOff: () => (
     <>
       <path d={EYE} />

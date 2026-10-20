@@ -42,9 +42,18 @@ export function openForm(key: number, status: TaskCreateStatus): OpenForm {
 
 export type CreateInput = { readonly title: string; readonly description: string; readonly status: unknown; readonly projectId: string }
 
+function firstOf(value: unknown): unknown {
+  return Array.isArray(value) ? value[0] : value
+}
+
 function createStatusOf(value: unknown): TaskCreateStatus {
-  const first: unknown = Array.isArray(value) ? value[0] : value
+  const first = firstOf(value)
   return isTaskCreateStatus(first) ? first : "todo"
+}
+
+export function createProjectOf(value: unknown): string {
+  const first = firstOf(value)
+  return typeof first === "string" ? first : ""
 }
 
 function formOf(model: PageModel): OpenForm | undefined {

@@ -36,7 +36,6 @@ export function createTaskCommands(model: PageModel, reloads: TaskReloads) {
     try {
       await send({ type: "task.edit", input: { taskId: task.id, revision, title: title.replace(/[\r\n]+/g, " "), description, workspaceId: task.workspaceId } })
       patchOpenDetail(model, () => ({ saving: false, conflictTitle: undefined, edit: { title, description } }))
-      deps.ui.toast({ kind: "success", title: deps.t("claxedo-tasks.detail.saved") })
       await refresh()
     } catch (error) {
       const refusal = tasksRefusalOf(error, deps.t)
@@ -44,12 +43,13 @@ export function createTaskCommands(model: PageModel, reloads: TaskReloads) {
       patchOpenDetail(model, () => (current ? { saving: false, revision: current.revision, conflictTitle: current.title, edit: { title, description } } : { saving: false, error: refusal.message, edit: { title, description } }))
     }
   }
-  const archive = async (task: Task, restore: boolean) => {
+  const archive = async (task: Pick<Task, "id" | "title" | "revision">, restore: boolean) => {
     if (!restore) {
       const confirmed = await deps.ui.confirm({ title: deps.t("claxedo-tasks.detail.archiveConfirm", { title: task.title }), description: deps.t("claxedo-tasks.detail.archiveConfirmText"), confirmLabel: deps.t("claxedo-tasks.detail.archive") })
       if (!confirmed) return
     }
-    const revision = model.state().detail?.revision ?? task.revision
+    const detail = model.state().detail
+    const revision = detail?.taskId === task.id ? (detail.revision ?? task.revision) : task.revision
     try {
       await send({ type: restore ? "task.restore" : "task.archive", input: { taskId: task.id, revision } })
     } catch (error) {

@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { createSearchDebounce, COMBOBOX_SEARCH_DEBOUNCE_MS, type DebounceTimer } from "./search-debounce"
+import { createInputDebounce, INPUT_DEBOUNCE_MS, type DebounceTimer } from "./input-debounce"
 
 function fakeClock() {
   let now = 0
@@ -24,11 +24,11 @@ function fakeClock() {
 test("searches once, 250 ms after the last keystroke, with the latest query", () => {
   const clock = fakeClock()
   const searched: string[] = []
-  const debounce = createSearchDebounce((query) => searched.push(query), clock.timer)
+  const debounce = createInputDebounce<string>((query) => searched.push(query), clock.timer)
   debounce.schedule("c")
   clock.advance(100)
   debounce.schedule("cl")
-  clock.advance(COMBOBOX_SEARCH_DEBOUNCE_MS - 1)
+  clock.advance(INPUT_DEBOUNCE_MS - 1)
   expect(searched).toEqual([])
   clock.advance(1)
   expect(searched).toEqual(["cl"])
@@ -38,9 +38,20 @@ test("searches once, 250 ms after the last keystroke, with the latest query", ()
 test("a cancelled search never runs and leaves no timer behind", () => {
   const clock = fakeClock()
   const searched: string[] = []
-  const debounce = createSearchDebounce((query) => searched.push(query), clock.timer)
+  const debounce = createInputDebounce<string>((query) => searched.push(query), clock.timer)
   debounce.schedule("claxedo")
   debounce.cancel()
   clock.advance(1000)
   expect([searched, clock.live()]).toEqual([[], 0])
+})
+
+test("a flush settles the pending value at once and the timer never fires it again", () => {
+  const clock = fakeClock()
+  const settled: string[] = []
+  const debounce = createInputDebounce<string>((value) => settled.push(value), clock.timer)
+  debounce.schedule("# Plan")
+  debounce.flush()
+  clock.advance(1000)
+  debounce.flush()
+  expect([settled, clock.live()]).toEqual([["# Plan"], 0])
 })

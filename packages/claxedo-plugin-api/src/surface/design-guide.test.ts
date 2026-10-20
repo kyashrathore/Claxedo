@@ -50,6 +50,32 @@ function drawnBindings(spec: SurfaceSpec) {
   return { unresolved, undrawn: spec.components.map((component) => component.id).filter((id) => !drawn.has(id)) }
 }
 
+type View = { readonly start: string; readonly components: readonly SurfaceComponent[] }
+
+function viewsOf(spec: SurfaceSpec): View[] {
+  const byId = new Map(spec.components.map((component) => [component.id, component]))
+  const views: View[] = []
+  const collect = (start: string) => {
+    const seen = new Set<string>()
+    const pending = [start]
+    for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+      const component = byId.get(id)
+      if (!component || seen.has(id)) continue
+      seen.add(id)
+      if (component.component === "Dialog") collect(component.child)
+      else pending.push(...componentReferences(component).map((reference) => reference.id))
+    }
+    views.push({ start, components: [...seen].flatMap((id) => byId.get(id) ?? []) })
+  }
+  collect(SURFACE_ROOT_ID)
+  return views
+}
+
+function isFormInput(component: SurfaceComponent): boolean {
+  if (component.component === "ChoicePicker") return !(component.displayStyle === "menu" || component.iconOnly === true) || component.change === undefined
+  return ["TextField", "RichTextEditor", "CheckBox", "Switch", "Slider", "DateTimeInput"].includes(component.component)
+}
+
 function checkedRecipes(): SurfaceSpec[] {
   return recipes.map((recipe) => {
     const check = checkSurfaceSpec(recipe)
@@ -60,7 +86,7 @@ function checkedRecipes(): SurfaceSpec[] {
 
 describe("SURFACE_DESIGN_GUIDE", () => {
   test("every json block is a surface spec the check accepts", () => {
-    expect(recipes.length).toBe(6)
+    expect(recipes.length).toBe(7)
     for (const recipe of recipes) {
       const check = checkSurfaceSpec(recipe)
       expect({ title: isRecord(recipe) ? recipe.title : undefined, issues: check.ok ? [] : check.issues }).toEqual({ title: expect.any(String), issues: [] })
@@ -68,7 +94,7 @@ describe("SURFACE_DESIGN_GUIDE", () => {
   })
 
   test("tells authors that each plugin-only component is for app plugin pages and what its value is", () => {
-    for (const name of SURFACE_PLUGIN_ONLY_COMPONENTS) expect(SURFACE_DESIGN_GUIDE).toContain(`An ${name} is for app plugin pages only.`)
+    for (const name of SURFACE_PLUGIN_ONLY_COMPONENTS) expect(SURFACE_DESIGN_GUIDE).toMatch(new RegExp(`An? ${name} is for app plugin pages only\\.`))
     expect(SURFACE_DESIGN_GUIDE).toContain('`{"harness": {"id", "access"} | null, "model": {"providerID", "modelID"} | null, "effort": string | null}`')
   })
 
@@ -76,12 +102,12 @@ describe("SURFACE_DESIGN_GUIDE", () => {
     for (const spec of checkedRecipes()) expect({ title: spec.title, ...drawnBindings(spec) }).toEqual({ title: spec.title, unresolved: [], undrawn: [] })
   })
 
-  test("every recipe keeps to one primary action and at most 7 blocks under the root", () => {
+  test("every recipe keeps to one primary action per view, a Dialog being its own, and at most 7 blocks under the root", () => {
     for (const spec of checkedRecipes()) {
-      const primaries = spec.components.filter((component) => component.component === "Button" && component.variant === "primary").length
+      const primaries = viewsOf(spec).map((view) => view.components.filter((component) => component.component === "Button" && component.variant === "primary").length)
       const root = spec.components.find((component) => component.id === SURFACE_ROOT_ID)
       const blocks = root ? componentReferences(root).length : 0
-      expect({ title: spec.title, primaries: primaries <= 1, blocks: blocks <= 7 }).toEqual({ title: spec.title, primaries: true, blocks: true })
+      expect({ title: spec.title, primaries: primaries.every((count) => count <= 1), blocks: blocks <= 7 }).toEqual({ title: spec.title, primaries: true, blocks: true })
     }
   })
 
@@ -113,15 +139,15 @@ describe("SURFACE_DESIGN_GUIDE", () => {
     }
   })
 
-  test("every recipe with inputs ends with a Footer", () => {
-    const inputs = new Set<SurfaceComponent["component"]>(["TextField", "CheckBox", "Switch", "ChoicePicker", "Slider", "DateTimeInput"])
-    const withInputs = checkedRecipes().filter((spec) => spec.components.some((component) => inputs.has(component.component)))
-    expect(withInputs.length).toBeGreaterThan(0)
-    for (const spec of withInputs) {
+  test("every view with form inputs ends with a Footer; a chip changed in place is not a form input", () => {
+    const views = checkedRecipes().flatMap((spec) => viewsOf(spec).map((view) => ({ spec, view })))
+    const withInputs = views.filter(({ view }) => view.components.some(isFormInput))
+    expect(withInputs.length).toBeGreaterThan(1)
+    for (const { spec, view } of withInputs) {
       const byId = new Map(spec.components.map((component) => [component.id, component]))
-      const root = byId.get(SURFACE_ROOT_ID)
-      const last = root ? componentReferences(root).at(-1) : undefined
-      expect({ title: spec.title, last: last ? byId.get(last.id)?.component : undefined }).toEqual({ title: spec.title, last: "Footer" })
+      const start = byId.get(view.start)
+      const last = start ? componentReferences(start).at(-1) : undefined
+      expect({ title: spec.title, view: view.start, last: last ? byId.get(last.id)?.component : undefined }).toEqual({ title: spec.title, view: view.start, last: "Footer" })
     }
   })
 

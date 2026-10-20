@@ -81,7 +81,7 @@ export function filePickFields(pick: FilePick): Readonly<Record<string, JsonValu
   return { files: pick.files.map((file) => ({ ...file })), refused: pick.refused.map((file) => ({ ...file })) }
 }
 
-export const FILE_PASTE_SCOPE = '[data-slot="surface-section"], [data-slot="surface-card"]'
+export const FILE_PASTE_SCOPE = '[data-slot="surface-section"], [data-slot="surface-card"], [data-slot="surface-dialog"]'
 
 export type PasteScope = "self" | "section" | undefined
 

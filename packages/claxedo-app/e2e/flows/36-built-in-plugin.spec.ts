@@ -68,7 +68,7 @@ test("36 the built-in Tasks plugin runs without a daemon registry or an approval
   await expect(card.locator('[data-slot="claxedo-tool-status"]')).toHaveText("In progress")
   await link.click()
   await expect(app).toHaveURL(new RegExp(`/tasks/${task.id}$`))
-  await expect(app.getByText(task.title).first(), "the task the link opened").toBeVisible()
+  await expect(app.getByRole("textbox", { name: "Task title" }), "the task the link opened").toHaveValue(task.title)
 
   await switchTasks(app, stack, false)
   const generic = await openTaskRow(app, url)

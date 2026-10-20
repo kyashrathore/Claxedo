@@ -50,7 +50,7 @@ describe("Settings → Presets as a surface", () => {
     await actionsSettled()
     expect(surface.check()).toMatchObject({ ok: true })
     expect(surface.component("presets-content")).toMatchObject({ component: "EmptyState", title: "No presets yet" })
-    expect(surface.component("presets")).toMatchObject({ component: "Section", title: "Your presets", actions: ["presets-new"] })
+    expect(surface.component("presets-header")).toMatchObject({ component: "Header", title: "Your presets", actions: ["presets-new"] })
   })
 
   test("a capabilities answer that lands after the list keeps the list it loaded", async () => {
@@ -85,6 +85,7 @@ describe("Settings → Presets as a surface", () => {
     expect(saved.items).toMatchObject([{ name: "Careful reviewer", execution: { placement: "local" }, configurations: { primary: CLAUDE } }])
     expect(toasts).toEqual([{ kind: "success", title: "Preset created" }])
     expect(surface.read("/presets")).toMatchObject([{ name: "Careful reviewer", summary: "Local · Claude Code · claude-opus-4-8 · high · updated just now" }])
+    expect(surface.component("preset-row")).toMatchObject({ action: { event: { name: "editPreset", context: { presetId: { path: "id" } } } }, actions: ["preset-toggle"] })
     expect(surface.read("/draft")).toBeUndefined()
     expect(surface.check()).toMatchObject({ ok: true })
   })
@@ -139,9 +140,9 @@ describe("Settings → Presets as a surface", () => {
     expect(surface.read("/presets")).toEqual([])
     surface.write("/showArchived", true)
     await fire("showArchivedPresets", { value: true })
-    expect(surface.read("/presets")).toMatchObject([{ name: "Short-lived", toggleIcon: "visibility", toggleLabel: "Restore Short-lived", badges: [{ text: "Archived" }] }])
+    expect(surface.read("/presets")).toMatchObject([{ name: "Short-lived", toggleIcon: "refresh", toggleLabel: "Restore Short-lived", badges: [{ text: "Archived" }] }])
     await fire("togglePresetArchive", { presetId: preset?.id })
-    expect(surface.read("/presets")).toMatchObject([{ name: "Short-lived", toggleIcon: "visibilityOff", badges: [] }])
+    expect(surface.read("/presets")).toMatchObject([{ name: "Short-lived", toggleIcon: "archive", badges: [] }])
   })
 
   test("an edit refused for a stale revision keeps the edits and asks to save again", async () => {
@@ -152,6 +153,7 @@ describe("Settings → Presets as a surface", () => {
     const [preset] = (await server.client.listPresets()).items
     if (!preset) throw new Error("no preset was saved")
     await fire("editPreset", { presetId: preset.id })
+    expect(surface.component("draft-instructions")).toMatchObject({ component: "RichTextEditor", value: { path: "/draft/instructions" }, submit: { event: { name: "savePreset" } } })
     const { id: _, revision: __, scopeId: ___, ownerId: ____, createdAt: _____, updatedAt: ______, archivedAt: _______, ...draft } = preset
     await server.client.command({ clientRequestId: "elsewhere", command: { type: "preset.edit", input: { ...draft, name: "Renamed elsewhere", presetId: preset.id, revision: preset.revision } } })
     surface.write("/draft/name", "Mine")

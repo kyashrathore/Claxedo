@@ -1,7 +1,8 @@
 import type { SurfaceActionDefinition, SurfaceComponent, SurfaceComponentName } from "./catalog"
 
 export const SURFACE_EVENT_FIELDS = {
-  TextField: { submit: ["value"] },
+  TextField: { submit: ["value"], change: ["value"] },
+  RichTextEditor: { submit: ["value"], change: ["value"] },
   ChoicePicker: { change: ["value"] },
   CheckBox: { change: ["value"] },
   Switch: { change: ["value"] },
@@ -16,9 +17,11 @@ export const SURFACE_PLUGIN_ONLY_EVENTS = {
   Board: ["move"],
   FilePicker: ["pick"],
   Combobox: ["search"],
+  TextField: ["change"],
+  RichTextEditor: ["change"],
 } as const satisfies Partial<Record<keyof typeof SURFACE_EVENT_FIELDS, readonly string[]>>
 
-export const SURFACE_PLUGIN_ONLY_COMPONENTS = ["AgentConfigurationPicker"] as const satisfies readonly SurfaceComponentName[]
+export const SURFACE_PLUGIN_ONLY_COMPONENTS = ["AgentConfigurationPicker", "Dialog"] as const satisfies readonly SurfaceComponentName[]
 
 export type SurfaceProducer = "agent" | "plugin"
 

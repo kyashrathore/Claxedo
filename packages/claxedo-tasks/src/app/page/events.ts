@@ -5,14 +5,10 @@ export const PAGE_EVENTS = {
   loadMore: "loadMoreTasks",
   collection: "collectionChanged",
   project: "projectChanged",
-  startWith: "startWithChanged",
   view: "viewChanged",
-  statusFilter: "statusFilterChanged",
-  dateField: "dateFieldChanged",
-  showChildren: "showSubtasksChanged",
-  grouped: "groupedChanged",
   openTask: "openTask",
   taskTool: "taskTool",
+  rowStatus: "rowStatusChanged",
   moveTask: "moveTask",
   boardCreate: "createInColumn",
   dismissStart: "dismissStartRefusal",
@@ -23,6 +19,7 @@ export const PAGE_EVENTS = {
   back: "backToTasks",
   archive: "archiveTask",
   restore: "restoreTask",
+  edited: "taskEdited",
   save: "saveTask",
   discard: "discardTaskEdits",
   status: "taskStatusChanged",
@@ -38,4 +35,4 @@ export const PAGE_EVENTS = {
   retryDetail: "retryTask",
 } as const
 
-export type TaskTool = "start" | "session" | "next" | "previous"
+export type TaskTool = "start" | "session" | "archive" | "restore"

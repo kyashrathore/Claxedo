@@ -2,45 +2,56 @@ import { createMemo, Match, Switch as Branch } from "solid-js"
 import { Checkbox, Field, Switch, Textarea, TextField } from "@/ui"
 import { boundBoolean, boundText, createBoundValue } from "../binding"
 import type { SurfaceNodeProps } from "../model"
-import { isSubmitKey } from "../submit-key"
+import type { SubmitKeys } from "../submit-key"
 import { validationPattern } from "../validation"
+import { InlineFieldView, TitleFieldView } from "./borderless-field-views"
+import { createTextFieldEvents } from "./text-field-events"
 import { useSurfaceReader, useSurfaceRuntime } from "./surface-runtime"
 
 type TextVariant = NonNullable<SurfaceNodeProps<"TextField">["def"]["variant"]>
 
-const INPUT_TYPES: Record<TextVariant, "number" | "password" | "text"> = { number: "number", obscured: "password", shortText: "text", longText: "text" }
+const INPUT_TYPES: Record<TextVariant, "number" | "password" | "text"> = { number: "number", obscured: "password", shortText: "text", longText: "text", title: "text", inline: "text" }
+
+const SUBMIT_KEYS: Record<TextVariant, SubmitKeys> = { number: "line", obscured: "line", shortText: "line", longText: "text", title: "title", inline: "line" }
 
 export function TextFieldView(props: SurfaceNodeProps<"TextField">) {
   const runtime = useSurfaceRuntime()
   const read = useSurfaceReader()
   const field = createBoundValue(() => props.def.value, () => props.scope, runtime.state.data, boundText)
+  const variant = () => props.def.variant ?? "shortText"
+  const events = createTextFieldEvents(runtime, field, () => ({ id: props.def.id, scope: props.scope, submit: props.def.submit, change: props.def.change, keys: SUBMIT_KEYS[variant()] }))
   const pattern = createMemo(() => validationPattern(props.def.validationRegexp))
   const invalid = () => {
     const current = pattern()
     return current !== undefined && field.value() !== "" && !current.test(field.value())
   }
   const label = () => read.text(props.def.label, props.scope)
-  const submitOnKey = (event: KeyboardEvent) => {
-    if (props.def.submit === undefined || !isSubmitKey(event, props.def.variant === "longText")) return
-    event.preventDefault()
-    runtime.fire(props.def.submit, props.def.id, props.scope, { value: field.value() })
-  }
+  const placeholder = () => (props.def.placeholder === undefined ? undefined : read.text(props.def.placeholder, props.scope))
+  const borderless = { label, placeholder, value: field.value, events }
   return (
     <Branch>
-      <Match when={props.def.variant === "longText"}>
+      <Match when={variant() === "title"}>
+        <TitleFieldView {...borderless} />
+      </Match>
+      <Match when={variant() === "inline"}>
+        <InlineFieldView {...borderless} />
+      </Match>
+      <Match when={variant() === "longText"}>
         <Field data-slot="surface-long-text" invalid={invalid()}>
           <Field.Label>{label()}</Field.Label>
-          <Textarea invalid={invalid()} value={field.value()} onInput={(event) => field.set(event.currentTarget.value)} onKeyDown={submitOnKey} />
+          <Textarea invalid={invalid()} value={field.value()} placeholder={placeholder()} onInput={(event) => events.input(event.currentTarget.value)} onKeyDown={events.keyDown} onBlur={events.blur} />
         </Field>
       </Match>
-      <Match when={props.def.variant !== "longText"}>
+      <Match when={true}>
         <TextField
           label={label()}
-          type={INPUT_TYPES[props.def.variant ?? "shortText"]}
+          type={INPUT_TYPES[variant()]}
           invalid={invalid()}
           value={field.value()}
-          onChange={field.set}
-          onKeyDown={submitOnKey}
+          placeholder={placeholder()}
+          onChange={events.input}
+          onKeyDown={events.keyDown}
+          onBlur={events.blur}
         />
       </Match>
     </Branch>

@@ -464,3 +464,83 @@ describe("AgentConfigurationPicker", () => {
     expect(isPluginOnlyComponent("FilePicker")).toBe(false)
   })
 })
+
+const page = (components: readonly Record<string, unknown>[], data: Record<string, unknown> = {}) => ({ title: "Tasks", components: [...components], data })
+const label = (id: string, text: string) => ({ id, component: "Text", text })
+
+describe("Dialog", () => {
+  const dialog = (props: Record<string, unknown> = {}) =>
+    page([{ id: "root", component: "Dialog", title: "New task", open: { path: "/open" }, child: "body", close: { event: { name: "closeNewTask" } }, ...props }, label("body", "Draft")], { open: true })
+
+  test("binds open, draws its child and refuses a literal open", () => {
+    expect(checkSurfaceSpec(dialog()).ok).toBe(true)
+    expect(checkSurfaceSpec(dialog({ open: true })).ok).toBe(false)
+    expect(checkSurfaceSpec(dialog({ child: "missing" })).ok).toBe(false)
+  })
+
+  test("is plugin-only as a whole: an agent's spec is refused at the component", () => {
+    const agent = checkSurfaceSpec(dialog(), { producer: "agent" })
+    expect(agent.ok ? [] : agent.issues).toEqual([{ path: "/components/0/component", message: "the Dialog is for app plugin pages; an agent reply leaves it out" }])
+    expect(isPluginOnlyComponent("Dialog")).toBe(true)
+  })
+})
+
+describe("TextField and RichTextEditor writing events", () => {
+  const writing = (component: Record<string, unknown>) => page([{ id: "root", ...component }], { body: "" })
+  const editor = { component: "RichTextEditor", label: "Description", value: { path: "/body" }, placeholder: "Add description…", submit: { event: { name: "save" } }, change: { event: { name: "edited" } } }
+
+  test("a RichTextEditor binds its Markdown and refuses a literal value", () => {
+    expect(checkSurfaceSpec(writing(editor)).ok).toBe(true)
+    expect(checkSurfaceSpec(writing({ ...editor, value: "# Plan" })).ok).toBe(false)
+  })
+
+  test("change is plugin-only on both, submit stays open to agents, and neither may name value in its context", () => {
+    const title = { component: "TextField", variant: "title", label: "Task title", placeholder: "Task title", value: { path: "/body" }, change: { event: { name: "edited" } } }
+    for (const component of [editor, title]) {
+      const agent = checkSurfaceSpec(writing(component), { producer: "agent" })
+      expect(agent.ok ? [] : agent.issues.map((issue) => issue.path)).toEqual(["/components/0/change"])
+    }
+    expect(checkSurfaceSpec(writing({ ...editor, change: undefined }), { producer: "agent" }).ok).toBe(true)
+    const clash = checkSurfaceSpec(writing({ ...editor, submit: { event: { name: "save", context: { value: "x" } } } }))
+    expect(clash.ok ? [] : clash.issues.map((issue) => issue.path)).toEqual(["/components/0/submit/event/context/value"])
+    expect([isPluginOnlyEvent("TextField", "change"), isPluginOnlyEvent("RichTextEditor", "change"), isPluginOnlyEvent("TextField", "submit")]).toEqual([true, true, false])
+  })
+})
+
+describe("ChoicePicker menus and icon chips", () => {
+  const options = [{ label: "To do", value: "todo", icon: "circle" }, { label: "Done", value: "done", icon: "checkCircle" }]
+  const picker = (props: Record<string, unknown>) => page([{ id: "root", component: "ChoicePicker", label: "Status", options, value: { path: "/status" }, ...props }], { status: ["todo"] })
+  const paths = (spec: unknown) => {
+    const check = checkSurfaceSpec(spec)
+    return check.ok ? [] : check.issues.map((issue) => issue.path)
+  }
+
+  test("accepts a menu, an icon-only menu and icon-only chips whose options all carry icons", () => {
+    for (const props of [{ displayStyle: "menu" }, { displayStyle: "menu", iconOnly: true }, { displayStyle: "chips", iconOnly: true }]) expect(paths(picker(props))).toEqual([])
+  })
+
+  test("refuses a multiple-choice menu, iconOnly outside chips and menus, an iconOnly option with no icon and an iconOnly picker with no label", () => {
+    expect(paths(picker({ displayStyle: "menu", variant: "multipleSelection" }))).toEqual(["/components/0/displayStyle"])
+    expect(paths(picker({ displayStyle: "dropdown", iconOnly: true }))).toEqual(["/components/0/iconOnly"])
+    expect(paths(picker({ displayStyle: "chips", iconOnly: true, options: [{ label: "To do", value: "todo" }] }))).toEqual(["/components/0/options/0/icon"])
+    expect(paths(picker({ displayStyle: "menu", iconOnly: true, label: undefined }))).toEqual(["/components/0/label"])
+  })
+})
+
+describe("ListItem, Image, KeyValue and Grid references", () => {
+  test("a ListItem references its leading control, an Image its actions and a literal KeyValue item its child", () => {
+    const row = surfaceComponentSchema.parse({ id: "row", component: "ListItem", title: "Ship", identifier: "CHK-1", layout: "inline", leading: "status", action: { event: { name: "open" } }, actions: ["archive"] })
+    const image = surfaceComponentSchema.parse({ id: "shot", component: "Image", url: { path: "url" }, variant: "thumbnail", accessibility: { label: "Shot" }, actions: ["remove"] })
+    const facts = surfaceComponentSchema.parse({ id: "facts", component: "KeyValue", items: [{ label: "Status", child: "chip" }, { label: "Created", value: "Oct 19" }] })
+    expect([row, image, facts].map((component) => componentReferences(component).map((reference) => `${reference.path}=${reference.id}`))).toEqual([["/leading=status", "/actions/0=archive"], ["/actions/0=remove"], ["/items/0/child=chip"]])
+  })
+
+  test("a sidebar Grid lists at least two blocks by id", () => {
+    const grid = (children: unknown) => page([{ id: "root", component: "Grid", layout: "sidebar", children }, label("main", "Main"), label("side", "Side")], { blocks: [] })
+    expect(checkSurfaceSpec(grid(["main", "side"])).ok).toBe(true)
+    for (const children of [["main"], { componentId: "main", path: "/blocks" }]) {
+      const check = checkSurfaceSpec(grid(children))
+      expect(check.ok ? [] : check.issues.map((issue) => issue.path)).toEqual(["/components/0/children"])
+    }
+  })
+})
