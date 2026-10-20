@@ -32,8 +32,11 @@ test("sessions created through the API without a prompt, naming their harness in
     const created = await Promise.all(titles.map((title) => request("/session", "POST", { title, harness: { id: "idle", access: "connection" } })))
     expect(created.map((response) => response.status)).toEqual(titles.map(() => 201))
     const log = (await readFile(logFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { pid: number; method?: string })
+    // Each agent process is initialized exactly once. Its pid cannot count agents:
+    // Windows can give an exited process's id to the next process it creates, and
+    // the first agents exit while the last are still being spawned.
+    expect(log.filter((row) => row.method === "initialize"), "one agent per creation").toHaveLength(titles.length)
     const pids = [...new Set(log.map((row) => row.pid))]
-    expect(pids, "one agent per creation").toHaveLength(titles.length)
     for (let n = 0; n < 400 && pids.some(alive); n++) await Bun.sleep(5)
     expect(pids.filter(alive), "agent processes still alive after their sessions' creation answered").toEqual([])
     expect((await request("/session")).status).toBe(200)

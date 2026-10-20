@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 // The engine directly: these tests exercise the boot pipeline (migrations,
 // repair gate) against both the real journal and synthetic ones.
 import { ClaxedoDB, configureClaxedoSchema, queryRows, textColumns } from "./db"
@@ -253,5 +255,32 @@ describe("migrations", () => {
     configureClaxedoSchema({ journals: [journal] })
 
     expect(() => boot()).toThrow(/EISDIR/)
+  })
+})
+
+describe("close", () => {
+  // The suite runs under Node, whose better-sqlite3 finalizes its statements on
+  // close; the products that run under Bun open bun:sqlite, which does not.
+  test("under Bun, closes the file even while a statement prepared on it is still reachable", () => {
+    const script = `
+      const { ClaxedoDB, configureClaxedoSchema } = await import(${JSON.stringify(fileURLToPath(new URL("./db.ts", import.meta.url)))})
+      configureClaxedoSchema({ journals: [${JSON.stringify(CLAXEDO_MIGRATION_JOURNAL)}] })
+      const kept = ClaxedoDB.raw().prepare("SELECT 1")
+      kept.get()
+      ClaxedoDB.close()
+      let ranAfterClose = true
+      try { kept.get() } catch { ranAfterClose = false }
+      require("node:fs").rmSync(process.env.CLAXEDO_DATA_DIR, { recursive: true })
+      console.log("close-result " + JSON.stringify({ ranAfterClose }))
+    `
+    const child = spawnSync("bun", ["--eval", script], {
+      cwd: fileURLToPath(new URL(".", import.meta.url)),
+      env: { ...process.env, CLAXEDO_DATA_DIR: path.join(root, "bun-data") },
+      encoding: "utf8",
+    })
+
+    expect(child.status, child.stderr).toBe(0)
+    const result = child.stdout.split("\n").find((line) => line.startsWith("close-result "))
+    expect(JSON.parse(result?.slice("close-result ".length) ?? "null")).toEqual({ ranAfterClose: false })
   })
 })
