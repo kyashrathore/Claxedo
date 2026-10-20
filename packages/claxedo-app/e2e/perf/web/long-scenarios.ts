@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { STREAM_END, streamScript } from "../stream-script"
+import { STREAM_END, longReplyScript, streamScript } from "../stream-script"
 import { MARK_TIMEOUT_MS, measure, railPress, readProbe, sessionMarks, summarizeStep, waitForMark, type Measure, type RunInput, type Session, type Span, type StepResult } from "./steps"
 import type { Recording } from "./recorder"
 
@@ -41,9 +41,10 @@ async function streamEnd(page: Page, sessionId: string) {
 export async function runStreamStep(input: RunInput, chain: Session, attempt: Attempt, streamIndex: number) {
   const stream = input.target.stream
   const session = stream?.sessions[streamIndex]
-  if (!stream || !session) return
+  const reply = input.streamReply
+  if (!stream || !session || !reply) return
   const { page, recorder } = chain
-  await attempt("stream-turn/report", page, async () => {
+  await attempt(`stream-turn/${reply}`, page, async () => {
     await showSession(page, session.id)
     await recorder.begin({ trace: true, profile: true })
     await page.evaluate(() => window.__webPerf?.pause())
@@ -51,14 +52,14 @@ export async function runStreamStep(input: RunInput, chain: Session, attempt: At
     let span: Span
     try {
       const referenceMs = await page.evaluate(() => performance.now())
-      await stream.prompt(session.id, `stream-${input.profile.name}-${input.rep}`, streamScript(stream.directory))
+      await stream.prompt(session.id, `stream-${input.profile.name}-${input.rep}`, (reply === "long-reply" ? longReplyScript : streamScript)(stream.directory))
       await streamEnd(page, session.id)
       span = { referenceMs, endMs: (await page.evaluate(() => performance.now())) - referenceMs }
     } finally {
       recording = await recorder.end()
       await page.evaluate(() => window.__webPerf?.resume())
     }
-    const spec: Measure = { scenario: "stream-turn", step: "report", cache: "warm", reference: "prompt", required: [], settle: undefined, act: async () => undefined }
+    const spec: Measure = { scenario: "stream-turn", step: reply, cache: "warm", reference: "prompt", required: [], settle: undefined, act: async () => undefined }
     return summarizeStep(input, chain, spec, recording, await readProbe(page), span)
   })
 }

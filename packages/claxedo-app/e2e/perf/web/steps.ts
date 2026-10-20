@@ -6,6 +6,7 @@ import { installPaintedFrames } from "../../harness/painted-frames"
 import { createSourceMapper, summarizeProfile } from "../panel/trace"
 import { profileSelfByUrl, summarizeMainThread, type MainThreadSummary } from "./main-thread"
 import { installWebProbe, type ProbeCensus, type ProbeState } from "./probe"
+import type { StreamReply } from "./options"
 import type { Profile } from "./profiles"
 import { startRecorder, type Recorder, type Recording } from "./recorder"
 import type { Cookie, Target } from "./target"
@@ -49,6 +50,7 @@ export type RunInput = {
   readonly label: string
   readonly stacks: boolean
   readonly census: boolean
+  readonly streamReply: StreamReply | undefined
   readonly onboardingOnly: boolean
   readonly log: (line: string) => void
 }
