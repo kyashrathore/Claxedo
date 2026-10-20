@@ -218,6 +218,61 @@ describe("durable session turn lease controller", () => {
     }
   })
 
+  test("a renewal the authority could not answer keeps the lease to its confirmed deadline and asks again", async () => {
+    const started = Date.now()
+    const renewals: number[] = []
+    let losses = 0
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_away", leaseId: "proof_1", fencingToken: 4,
+          acquiredAt: started, expiresAt: started + 300 }),
+        renewTurn: () => {
+          renewals.push(Date.now() - started)
+          if (renewals.length === 1) return { allowed: false, status: 503, code: "session_authority_unavailable", message: "The authority did not answer" }
+          return { allowed: true, turnId: "msg_away", leaseId: "proof_2", fencingToken: 4, acquiredAt: Date.now(), expiresAt: Date.now() + 300 }
+        },
+        releaseTurn: async () => ({ released: true }),
+      }), access, turnId: "msg_away", onLost: () => { losses += 1; return contained() },
+    })
+    if (!acquisition.acquired) throw new Error("the fixture admits the turn")
+    try {
+      await Bun.sleep(200)
+      expect(renewals).toHaveLength(1)
+      expect(acquisition.lease.lost()).toBe(false)
+      expect(acquisition.lease.valid()).toBe(true)
+      await Bun.sleep(200)
+      expect(renewals.length).toBeGreaterThanOrEqual(2)
+      expect(acquisition.lease.proof()).toBe("proof_2")
+      expect(acquisition.lease.valid()).toBe(true)
+      expect(losses).toBe(0)
+    } finally {
+      await acquisition.lease.release()
+    }
+  })
+
+  test("an authority that stays unavailable loses the lease at its confirmed deadline, not before", async () => {
+    const started = Date.now()
+    let renewals = 0
+    let lostAt: number | undefined
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_gone", leaseId: "proof_1", fencingToken: 1,
+          acquiredAt: started, expiresAt: started + 200 }),
+        renewTurn: () => {
+          renewals += 1
+          return { allowed: false, status: 503, code: "session_authority_unavailable", message: "The authority did not answer" }
+        },
+        releaseTurn: async () => ({ released: true }),
+      }), access, turnId: "msg_gone", onLost: () => { lostAt = Date.now() - started; return contained() },
+    })
+    if (!acquisition.acquired) throw new Error("the fixture admits the turn")
+    await Bun.sleep(300)
+    expect(renewals).toBeGreaterThan(1)
+    expect(acquisition.lease.lost()).toBe(true)
+    expect(lostAt).toBeGreaterThanOrEqual(195)
+    expect(await acquisition.lease.release()).toEqual({ released: false })
+  })
+
   test("caps a control-plane clock-ahead lease at the local authority TTL", async () => {
     const started = Date.now()
     let localNow = started

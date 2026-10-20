@@ -86,8 +86,12 @@ export function createHeldTurnLeases() {
 /**
  * Owns renewal and the local half of the durable fence. Expiry is scheduled
  * independently from the renewal request, so a stalled oracle cannot extend
- * execution past the last authority-confirmed deadline. `valid()` also checks
- * the wall clock synchronously before every runtime producer publication.
+ * execution past the last authority-confirmed deadline. Only the authority's
+ * refusal ends the lease before that deadline: an unanswered renewal (503,
+ * including the remote policy's 5 s request deadline) is asked again at half
+ * the time left, so one slow answer at the first renewal, 30 s into a turn,
+ * does not stop the turn mid-reply. `valid()` also checks the wall clock
+ * synchronously before every runtime producer publication.
  */
 export async function acquireSessionTurnLease(input: HeldSessionTurnLease & {
   turnId: string
@@ -205,6 +209,10 @@ function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSession
         fencingToken: current.fencingToken,
       })).then((renewed) => {
         if (!stillValid()) return
+        if (!renewed.allowed && renewed.status === 503) {
+          schedule()
+          return
+        }
         if (
           !renewed.allowed
           || !validLease(renewed, current.turnId, now())
