@@ -221,10 +221,35 @@ async function startGatewayForwarder(controlPlaneUrl: string) {
 
 const LOCALHOST_RESOLVER = pathToFileURL(path.join(import.meta.dirname, "localhost-resolver.mjs")).href
 
+type SandboxDriverHandles = Required<Pick<ReturnType<typeof createLocalBrokeringSandboxDriver>, "ensureHost" | "destroy" | "touch" | "stop">>
+
+/**
+ * The local brokering driver needs macOS's `sandbox-exec`, so it is created
+ * when the first sandbox starts: a stack whose flows start none boots on
+ * Linux, and a flow that starts one fails there with the driver's own reason.
+ */
+function lazySandboxDriver(create: () => ReturnType<typeof createLocalBrokeringSandboxDriver>): SandboxDriverHandles {
+  let created: SandboxDriverHandles | undefined
+  const driver = () => {
+    if (created) return created
+    const made = create()
+    const { destroy, touch, stop } = made
+    if (!destroy || !touch || !stop) throw new Error("local brokering driver must support destroy, touch and stop")
+    created = { ensureHost: made.ensureHost.bind(made), destroy, touch, stop }
+    return created
+  }
+  return {
+    ensureHost: (request) => driver().ensureHost(request),
+    destroy: (target) => driver().destroy(target),
+    touch: (target) => driver().touch(target),
+    stop: (target) => driver().stop(target),
+  }
+}
+
 export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) {
   const textImports = pathToFileURL(path.join(REPO_ROOT, "packages/workspace-runtime/src/text-imports.mjs")).href
   const gateway = await startGatewayForwarder(input.controlPlaneUrl)
-  const driver = createLocalBrokeringSandboxDriver({
+  const driver = lazySandboxDriver(() => createLocalBrokeringSandboxDriver({
     root: input.root,
     executable: process.env.CLAXEDO_E2E_NODE ?? process.execPath,
     // The VM image's own entry: the Claxedo runtime composition with the Agent Plugins apply route mounted.
@@ -238,13 +263,8 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       ...(process.env.CI ? { CI: process.env.CI } : {}),
       NODE_EXTRA_CA_CERTS: input.certificate,
     },
-  })
-  const destroy = driver.destroy
-  if (!destroy) throw new Error("local brokering driver must support destroy")
-  const touch = driver.touch
-  if (!touch) throw new Error("local brokering driver must support touch")
-  const stop = driver.stop
-  if (!stop) throw new Error("local brokering driver must support stop")
+  }))
+  const { destroy, touch, stop } = driver
   const sandboxes = new Map<string, RunningSandbox>()
   const ensuring = new Set<Promise<unknown>>()
   const server = createServer({ key: await readFile(input.key), cert: await readFile(input.certificate) }, async (request, res) => {

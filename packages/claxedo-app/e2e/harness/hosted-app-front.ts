@@ -6,7 +6,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { appBundleFile } from "../../../harness/e2e/harness/local-app-bundle"
 import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
-import { listenOnLoopback } from "../../../harness/e2e/harness/ports"
+import { listenOnIpv6Loopback, listenOnLoopback } from "../../../harness/e2e/harness/ports"
 import type { HostedStack } from "../../../harness/e2e/harness/hosted-flow"
 import { publishDeployment, readPublishedDeployment } from "../../published-deployment"
 import type { PublishedDeployment } from "../../src/server/published-deployment"
@@ -86,10 +86,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     })
   }
   await listenOnLoopback(servers[0], input.port)
-  await new Promise<void>((resolve, reject) => {
-    servers[1].once("error", reject)
-    servers[1].listen(input.port, "::1", resolve)
-  })
+  await listenOnIpv6Loopback(servers[1], input.port)
   deployment = await readPublishedDeployment(input.hosted.workerUrl, (url) => hostedFetch(input.hosted, new URL(url).pathname))
   const spki = new X509Certificate(certificate).publicKey.export({ type: "spki", format: "der" })
   return {

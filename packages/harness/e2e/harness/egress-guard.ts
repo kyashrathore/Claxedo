@@ -22,7 +22,13 @@ export type EgressGuard = {
 
 const REFUSAL = "HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
 
-export const LOOPBACK_HOSTS = "127.0.0.1,localhost,::1"
+/**
+ * `.localhost` covers the signed stack's public `*.localhost` origin. Every
+ * such name is loopback (RFC 6761); on Linux the enrolled daemon sent its
+ * requests to that origin through the guard while only a bare `localhost`
+ * entry excluded it.
+ */
+export const LOOPBACK_HOSTS = "127.0.0.1,localhost,::1,.localhost"
 
 function refuseTunnel(socket: Duplex) {
   socket.once("error", () => socket.destroy())

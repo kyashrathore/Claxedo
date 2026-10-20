@@ -152,3 +152,15 @@ export function listenOnLoopback(server: Server, port: number) {
     server.listen(port, "127.0.0.1", resolve)
   })
 }
+
+/**
+ * Listens on ::1 where the host has IPv6. A host without it (a Linux container
+ * whose kernel has no IPv6) answers EAFNOSUPPORT, and its resolver hands
+ * `*.localhost` only 127.0.0.1, so nothing would connect to ::1 there anyway.
+ */
+export function listenOnIpv6Loopback(server: Server, port: number) {
+  return new Promise<void>((resolve, reject) => {
+    server.once("error", (error: NodeJS.ErrnoException) => (error.code === "EAFNOSUPPORT" ? resolve() : reject(error)))
+    server.listen(port, "::1", resolve)
+  })
+}
