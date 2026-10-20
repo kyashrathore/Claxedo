@@ -13,19 +13,25 @@ import { resolveHostedOperation } from "@claxedo/account-contract"
  * human turn first, settled sessions hidden. The e2e flow 12-boot-reads holds
  * this list against the app's real boot, so a read the app drops or reshapes
  * fails there.
+ *
+ * A workspace route's relay connection is not among them. That read mints a
+ * token against the person's sixty-a-minute budget for the workspace, and the
+ * app mints none when the tab's own last load or a sibling tab already holds
+ * a usable link (the app's relay.ts heldLinks: sessionStorage and a
+ * BroadcastChannel per principal). The edge sees only the cookie, so a preload
+ * would spend a mint on every reload and every new tab, and the browser issues
+ * it whether or not the app ever fetches; flows 13 and 51 forbid both.
  */
 const SESSION_READ = "/api/auth/get-session"
 const AGENT_CONNECTIONS_READ = "/api/claxedo/agent-config/connections"
 const RAIL_SESSION_PAGE = { limit: 5, sort: "human_turn_desc", settled: "active" }
-
-const WORKSPACE_ROUTE = /^\/w\/([^/]+)(?:\/|$)/
 
 function hostedRead(operation: string, input?: Record<string, unknown>) {
   return resolveHostedOperation(operation, input).path
 }
 
 /** The reads every signed route makes, in the order the app issues them. */
-function signedReads(): string[] {
+export function shellPreloadPaths(): string[] {
   return [
     SESSION_READ,
     hostedRead("session.shared.list"),
@@ -36,14 +42,7 @@ function signedReads(): string[] {
   ]
 }
 
-/** The reads the shell at `pathname` makes once signed in: a workspace route also reads its relay connection. */
-export function shellPreloadPaths(pathname: string): string[] {
-  const workspace = WORKSPACE_ROUTE.exec(pathname)?.[1]
-  if (workspace === undefined) return signedReads()
-  return [...signedReads(), hostedRead("workspace.connection.read", { id: decodeURIComponent(workspace) })]
-}
-
 /** The `Link` header value that preloads the shell's reads as the app's fetches will ask for them. */
-export function shellPreloadLinks(pathname: string): string {
-  return shellPreloadPaths(pathname).map((path) => `<${path}>; rel=preload; as=fetch; crossorigin=use-credentials`).join(", ")
+export function shellPreloadLinks(): string {
+  return shellPreloadPaths().map((path) => `<${path}>; rel=preload; as=fetch; crossorigin=use-credentials`).join(", ")
 }

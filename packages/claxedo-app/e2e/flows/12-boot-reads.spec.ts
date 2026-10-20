@@ -36,7 +36,7 @@ test("12 boot reads: a signed-out boot reads only the session; a signed-in boot'
   await page.goto(`${signed.url}${route}`)
   await expect(page.getByText("Preloaded hello")).toBeVisible()
   const signedIn = await bootReads(page)
-  const preloaded = shellPreloadPaths(route)
+  const preloaded = shellPreloadPaths()
   for (const path of preloaded) {
     const reads = signedIn.api.filter((read) => read.path === path)
     expect(reads, path).toHaveLength(1)
@@ -44,6 +44,9 @@ test("12 boot reads: a signed-out boot reads only the session; a signed-in boot'
     expect(reads[0]?.startMs, path).toBeLessThan(signedIn.main.endMs)
   }
   expect(signedIn.api.filter((read) => read.initiator === "link").map((read) => read.path).sort()).toEqual([...preloaded].sort())
+  const connection = signedIn.api.filter((read) => read.path === `/api/workspace/${workspace.id}/connection`)
+  expect(connection.map((read) => read.initiator), "the app mints the workspace's connection itself, once, after the main chunk ran").toEqual(["fetch"])
+  expect(connection[0]?.startMs).toBeGreaterThan(signedIn.main.endMs)
   const forwarded = signed.controlPlaneRequests().slice(signedInMark)
   expect(forwarded.filter((request) => request === "GET /api/auth/get-session")).toHaveLength(1)
   expect(forwarded.filter((request) => request === `GET /api/workspace/${workspace.id}/connection`)).toHaveLength(1)

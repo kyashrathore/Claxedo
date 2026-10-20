@@ -31,7 +31,7 @@ export async function startHostedAppFront(input: { port: number; distDir: string
     if (path.extname(pathname) && pathname !== "/index.html") return asset
     if (!deployment) throw new Error("the app front served its shell before it read the deployment")
     const shell = new Response(publishDeployment(await asset.text(), deployment), { status: asset.status, headers: asset.headers })
-    if (carriesSessionCookie(cookie)) shell.headers.set("link", shellPreloadLinks(pathname))
+    if (carriesSessionCookie(cookie)) shell.headers.set("link", shellPreloadLinks())
     return shell
   }
   const held = (run: () => void) => {

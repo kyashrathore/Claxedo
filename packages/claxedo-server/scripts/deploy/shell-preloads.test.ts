@@ -12,21 +12,14 @@ const SIGNED_READS = [
 
 describe("the shell's preloads", () => {
   test("every signed route reads the session, the rail's catalog and its first session page", () => {
-    for (const pathname of ["/", "/login", "/settings", "/s/ses_1", "/nowhere/in/particular"]) expect(shellPreloadPaths(pathname)).toEqual(SIGNED_READS)
+    expect(shellPreloadPaths()).toEqual(SIGNED_READS)
   })
 
-  test("a workspace route also reads that workspace's connection, encoded as the app encodes it", () => {
-    expect(shellPreloadPaths("/w/ws_1/session/ses_1")).toEqual([...SIGNED_READS, "/api/workspace/ws_1/connection"])
-    expect(shellPreloadPaths("/w/ws_1/session")).toEqual([...SIGNED_READS, "/api/workspace/ws_1/connection"])
-    expect(shellPreloadPaths("/w/ws_1")).toEqual([...SIGNED_READS, "/api/workspace/ws_1/connection"])
-    expect(shellPreloadPaths("/w/ws%3A1/terminal/t_1")).toEqual([...SIGNED_READS, "/api/workspace/ws%3A1/connection"])
-    expect(shellPreloadPaths("/w/")).toEqual(SIGNED_READS)
-    expect(shellPreloadPaths("/wide/open")).toEqual(SIGNED_READS)
+  test("no preload mints a workspace connection: a tab that holds a link never reads one, and the edge cannot tell", () => {
+    expect(shellPreloadPaths().filter((path) => /^\/api\/workspace\/[^/]+\/connection/.test(path))).toEqual([])
   })
 
   test("the Link header preloads each read as a credentialed fetch", () => {
-    expect(shellPreloadLinks("/w/ws_1/session/ses_1")).toBe(
-      [...SIGNED_READS, "/api/workspace/ws_1/connection"].map((path) => `<${path}>; rel=preload; as=fetch; crossorigin=use-credentials`).join(", "),
-    )
+    expect(shellPreloadLinks()).toBe(SIGNED_READS.map((path) => `<${path}>; rel=preload; as=fetch; crossorigin=use-credentials`).join(", "))
   })
 })

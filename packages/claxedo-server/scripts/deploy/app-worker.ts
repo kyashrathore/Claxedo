@@ -80,7 +80,7 @@ async function shellForRoute(request: EdgeRequest, env: AppWorkerEnv, url: URL):
   const response = await env.ASSETS.fetch(request)
   if (!carriesSessionCookie(request.headers.get("cookie")) || !await isShell(response, env.ASSETS, url.origin)) return response
   const preloaded = new Response(response.body, response)
-  preloaded.headers.set("link", shellPreloadLinks(url.pathname))
+  preloaded.headers.set("link", shellPreloadLinks())
   return preloaded
 }
 
