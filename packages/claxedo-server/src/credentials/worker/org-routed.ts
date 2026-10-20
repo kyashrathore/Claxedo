@@ -15,7 +15,10 @@ export const UNDELIVERED_CREDENTIAL_CHANGE: CredentialChange = async () => async
  * contract the shared credential routes are written against. An operation
  * that names no organization is refused: there is no store for "no
  * organization". Every write goes through `change`, so the running workspaces
- * whose accounts it changed take them.
+ * whose accounts it changed take them, except saving a sandbox provider key:
+ * the sandbox manager spends that row and no workspace is ever delivered it
+ * (`deliverableRows`), so reading every running workspace's delivery before and
+ * after it could only find them equal.
  */
 export function orgRoutedCredentials(
   storeFor: (orgId: string) => ControlPlaneCredentials,
@@ -52,7 +55,7 @@ export function orgRoutedCredentials(
       if (!store.openSealedCredentialSecret) throw new Error("A hosted credential store opens its own sealed secrets")
       return await store.openSealedCredentialSecret(sealed, org)
     },
-    putCredential: (input, org) => write(org, (store) => store.putCredential(input, org)),
+    putCredential: (input, org) => input.kind === "sandbox_driver" ? at(org).putCredential(input, org) : write(org, (store) => store.putCredential(input, org)),
     deleteCredential: (id, org, administeredBy) => write(org, (store) => store.deleteCredential(id, org, administeredBy)),
     deleteCredentialsByProvider: (providerId, kind, org) => write(org, (store) => store.deleteCredentialsByProvider(providerId, kind, org)),
     updateCredentialStatus: (id, status, error, org) => write(org, (store) => store.updateCredentialStatus(id, status, error, org)),

@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { toAppError, type AccountCheck } from "@/server"
+import { toAppError, type AccountCheck, type SavedSandboxKey } from "@/server"
 import { showToast } from "@/ui"
 import { useAccountsText } from "./i18n"
 import type { LiveCheck } from "./model"
@@ -22,9 +22,10 @@ export function createKeyActions<Kind extends string>(check: (id: string) => Pro
       setActivity(undefined)
     }
   }
-  const verify = async (id: string) => {
-    const checked = await check(id).catch((error: unknown) => ({ verdict: "unknown" as const, reason: toAppError(error).message }))
-    setLiveChecks((previous) => ({ ...previous, [id]: { at: Date.now(), ...checked } }))
+  const record = (id: string, checked: SavedSandboxKey["check"]) => {
+    const shown = "error" in checked ? { verdict: "unknown" as const, reason: toAppError(checked.error).message } : checked
+    setLiveChecks((previous) => ({ ...previous, [id]: { at: Date.now(), ...shown } }))
   }
-  return { activity, liveChecks, run, verify }
+  const verify = async (id: string) => record(id, await check(id).then((checked) => checked, (error: unknown) => ({ error })))
+  return { activity, liveChecks, run, verify, record }
 }

@@ -297,14 +297,20 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   const managesSandboxKeys = async (request: Request) => !!sandboxKeys && await sandboxKeys.canManage(request, keyContext(request))
   const managedSandboxKey = async (request: Request, row: CredentialMetadata | undefined) =>
     !!row && !!sandboxKeys && isSandboxKey(sandboxKeys, row, keyContext(request)) && await managesSandboxKeys(request)
-  const sandboxListing = async (request: Request, keys: SandboxDriverKeys) =>
-    sandboxKeyListing(keys, await credentials.listCredentials(org(request)), keyContext(request), {
-      canManage: await managesSandboxKeys(request),
-      redact: (row) => redact(row),
-    })
+  const sandboxListing = async (request: Request, keys: SandboxDriverKeys) => {
+    const [rows, canManage, chosen] = await Promise.all([
+      credentials.listCredentials(org(request)),
+      managesSandboxKeys(request),
+      keys.chosenDriver(keyContext(request)),
+    ])
+    return sandboxKeyListing(keys, rows, keyContext(request), { canManage, chosen, redact: (row) => redact(row) })
+  }
   const accountRows = async (request: Request, keep: (row: CredentialMetadata) => boolean) => {
-    const rows = await credentials.listCredentials(org(request))
-    const brokering = sandboxKeys ? await newWorkspaceBrokering(sandboxKeys, rows, keyContext(request)) : undefined
+    const [rows, chosen] = await Promise.all([
+      credentials.listCredentials(org(request)),
+      sandboxKeys?.chosenDriver(keyContext(request)),
+    ])
+    const brokering = sandboxKeys ? newWorkspaceBrokering(sandboxKeys, rows, keyContext(request), chosen) : undefined
     return rows.filter(keep).map((row) => redact(row, brokering))
   }
   const sandboxKeysUnavailable = () => errorBody("sandbox_driver_keys_unavailable", "This host keeps no sandbox provider keys")
@@ -446,8 +452,9 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       const scope = c.req.query("scope") === "shared" ? "shared" : "local"
       const orgId = org(c.req.raw)
       const person = actor(c.req.raw)
-      const sources = (await credentials.accountSelections(orgId))[person] ?? {}
-      const rows = (await credentials.effectiveCredentials(scope, orgId)).filter((row) => spendsAccount(row, person, sources, LOCAL_USER_ID))
+      const [selections, effective] = await Promise.all([credentials.accountSelections(orgId), credentials.effectiveCredentials(scope, orgId)])
+      const sources = selections[person] ?? {}
+      const rows = effective.filter((row) => spendsAccount(row, person, sources, LOCAL_USER_ID))
       const manages = rows.some(isOrgAccount) && await managesOrgAccounts(c.req.raw)
       return c.json({ scope, credentials: rows.map((row) => isOrgAccount(row) && !manages ? withoutVendorError(redact(row)) : redact(row)) })
     })
@@ -512,12 +519,13 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     })
     .put("/sandbox-drivers/default", async (c) => {
       if (!sandboxKeys) return c.json(sandboxKeysUnavailable(), 501)
-      if (!await managesSandboxKeys(c.req.raw)) return c.json(sandboxKeysForbidden(), 403)
       const body = sandboxDefaultBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
+      const [manages, rows] = await Promise.all([managesSandboxKeys(c.req.raw), credentials.listCredentials(org(c.req.raw))])
+      if (!manages) return c.json(sandboxKeysForbidden(), 403)
       const chosen = body.data.driver === null
         ? undefined
-        : chosenSandboxKey(sandboxKeys, await credentials.listCredentials(org(c.req.raw)), keyContext(c.req.raw), body.data.driver)
+        : chosenSandboxKey(sandboxKeys, rows, keyContext(c.req.raw), body.data.driver)
       if (body.data.driver !== null && !chosen) {
         return c.json(errorBody("sandbox_driver_key_missing", "Add a key for this sandbox provider before choosing it"), 400)
       }

@@ -259,8 +259,13 @@ export const serverWorkerd: Policy = {
   // repository's destination, its connection and the organization's driver
   // read together and judged in order, split from the create route. It adds
   // no package edge.
-  // 176/23, no headroom.
-  ceilings: { modules: 176, packages: 23 },
+  // +1 module (owner: the Better Auth D1 foundation): a GitHub sign-in reads
+  // the person's profile and address list together
+  // (`platform/auth/github-user-info.ts`) instead of Better Auth's own provider
+  // reading one after the other. It adds no package edge: Better Auth and the
+  // helpers were already in the Worker.
+  // 177/23, no headroom.
+  ceilings: { modules: 177, packages: 23 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -100,7 +100,7 @@ function plane() {
     change: UNDELIVERED_CREDENTIAL_CHANGE,
     administers: hostedOrgAdministers(fixture.database),
     keys: envelopeKeyProviderFromEnv(env),
-    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, authority: fixture.authority, drivers: ["cloudflare", "boat"], hostedBroker: false, leaseStore }),
+    sandboxDriverKeys: hostedSandboxDriverKeys({ database: fixture.database, drivers: ["cloudflare", "boat"], hostedBroker: false, leaseStore }),
   })
   const workspaceApp = HostedWorkspaceRoutes(
     { authority: fixture.authority, sandbox: { sandboxManager: sandboxes.manager }, telemetry: { capture: () => {} } } as unknown as ControlPlaneServices,

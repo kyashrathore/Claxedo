@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { timedD1, timedResponse } from "../../platform/http/server-timing"
+import { timedD1, timedFetch, timedResponse } from "../../platform/http/server-timing"
 import type { ExecutionContext } from "hono"
 import {
   requestIsHttps,
@@ -16,6 +16,7 @@ import {
 import type { HostedWorkerEnv } from "../../authority/provider-neutral-hosted-services"
 import { cloudflareAuthEmailSender, type CloudflareEmailBinding } from "../../platform/auth/auth-email-delivery"
 import { resolveBetterAuthConfiguration } from "../../platform/auth/better-auth-configuration"
+import { retireExpiredVerifications } from "../../platform/auth/better-auth-d1-foundation"
 import {
   cloudflareRateLimitStore,
   createFixedWindowConnectionRateLimiter,
@@ -64,6 +65,7 @@ export function betterAuthD1CompositionInput(env: BetterAuthD1WorkerEnv): Better
     emailSender: cloudflareAuthEmailSender(env),
     authDatabase: timedD1(env.AUTH_DB),
     controlPlaneDatabase: timedD1(env.CONTROL_PLANE_DB),
+    fetch: timedFetch(),
     descriptorExpiresAt: Date.now() + AUTH_DESCRIPTOR_TTL_MS,
     product: {
       kind: "user-deployed",
@@ -91,6 +93,14 @@ function authRoute(pathname: string) {
     pathname === "/api/auth" ||
     pathname.startsWith("/api/auth/")
   )
+}
+
+/**
+ * The auth routes that consume a single-use verification row in this
+ * deployment: the OAuth callback's state and the password reset's token.
+ */
+function consumesVerification(pathname: string) {
+  return pathname.startsWith("/api/auth/callback/") || pathname.startsWith("/api/auth/reset-password")
 }
 
 function requestSecurityHeaderEntries(request: Request) {
@@ -215,7 +225,9 @@ export function createBetterAuthD1Worker(input: {
       // well built every cold core request's control plane twice, since the
       // first instance is not reusable until its readiness reads settle.
       if (authRoute(url.pathname)) {
-        return withApiResponseHeaders(await composition(env, context).authHandler(request), {
+        const response = await composition(env, context).authHandler(request)
+        if (consumesVerification(url.pathname)) context?.waitUntil(retireExpiredVerifications(env.AUTH_DB))
+        return withApiResponseHeaders(response, {
           url: request.url,
           header: (name) => request.headers.get(name) ?? undefined,
         })

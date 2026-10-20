@@ -137,7 +137,8 @@ export function createConnectionsService(deps: {
     integrationId: string
     owner?: string
     fields: ConnectionFields
-    accountLabel?: string
+    /** The account's name, or the read that will name it, which the writes before the row do not wait for. */
+    accountLabel?: string | Promise<string | undefined>
     kind: "api_key" | "oauth_token"
     secret: string
     expiresAt?: number
@@ -164,11 +165,12 @@ export function createConnectionsService(deps: {
     if ((await deps.credentials.get(providerId)) === undefined) {
       throw new Error(`connection credential ${providerId} was not stored`)
     }
+    const accountLabel = await input.accountLabel
     await deps.connections.upsert({
       id,
       integrationId: input.integrationId,
       ...(input.owner !== undefined ? { owner: input.owner } : {}),
-      ...(input.accountLabel !== undefined ? { accountLabel: input.accountLabel } : {}),
+      ...(accountLabel !== undefined ? { accountLabel } : {}),
       grantedCapabilities: [...decl.capabilities],
       fields: input.fields,
       createdAt: existing?.createdAt ?? now(),
@@ -190,13 +192,13 @@ export function createConnectionsService(deps: {
     oauthTokens: { accessToken: string; refreshToken?: string; expiresAt?: number },
   ) {
     const entry = deps.registry.byId(pending.integrationId)!
-    const verified = await entry.impl.auth?.verify?.({}, oauthTokens.accessToken).catch(() => undefined)
-    const accountLabel = verified?.ok ? verified.accountLabel : undefined
+    const accountLabel = Promise.resolve(entry.impl.auth?.verify?.({}, oauthTokens.accessToken))
+      .then((verified) => (verified?.ok ? verified.accountLabel : undefined), () => undefined)
     await storeConnection({
       integrationId: pending.integrationId,
       ...(pending.owner !== undefined ? { owner: pending.owner } : {}),
       fields: {},
-      ...(accountLabel !== undefined ? { accountLabel } : {}),
+      accountLabel,
       kind: "oauth_token",
       secret: JSON.stringify({
         access: oauthTokens.accessToken,
@@ -384,15 +386,21 @@ export function createConnectionsService(deps: {
       if (!entry || !entry.decl.methods.includes("oauth") || (!redirect && !device)) {
         return { ok: false, code: "unknown_integration" }
       }
-      const existing = await deps.connections.get(input.integrationId, input.owner)
+      // Device grants win where an integration offers both: they need nothing
+      // to be able to reach a callback URL, which is the deployment the
+      // desktop app and every self-hoster behind NAT actually run in. The
+      // grant is asked beside the existing row's read; one the row then
+      // refuses is never shown and lapses with its device code.
+      const [existing, started] = await Promise.all([
+        deps.connections.get(input.integrationId, input.owner),
+        device?.start().then((grant) => ({ grant }), (error: unknown) => ({ error })),
+      ])
       if (existing && input.confirmReplace !== true) return { ok: false, code: "connection_exists" }
       const scope = connectionScopeOf(input.owner, input.orgOwner)
 
-      // Device grants win where an integration offers both: they need nothing
-      // to be able to reach a callback URL, which is the deployment the
-      // desktop app and every self-hoster behind NAT actually run in.
-      if (device) {
-        const grant = await device.start()
+      if (started) {
+        if ("error" in started) throw started.error
+        const { grant } = started
         const attempt = await attempts.create({
           integrationId: input.integrationId,
           ...(input.owner !== undefined ? { owner: input.owner } : {}),

@@ -38,7 +38,7 @@ describe("Better Auth D1 foundation configuration", () => {
       emailSender: { async send() {} },
     }))
     try {
-      expect(configured.value.account).toEqual({ storeStateStrategy: "database" })
+      expect(configured.value.account).toEqual({ storeStateStrategy: "database", updateAccountOnSignIn: false })
     } finally {
       configured.database.close()
     }

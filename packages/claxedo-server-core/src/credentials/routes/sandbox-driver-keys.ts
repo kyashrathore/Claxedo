@@ -83,28 +83,29 @@ export function storedSandboxKeys(keys: SandboxDriverKeys, rows: readonly Creden
   return rows.filter((row) => isSandboxKey(keys, row, context)).sort((left, right) => left.created_at - right.created_at)
 }
 
-async function newWorkspaceDriver(keys: SandboxDriverKeys, rows: readonly CredentialMetadata[], context: SandboxDriverKeyContext) {
+/** `chosen` is `keys.chosenDriver`'s answer, which a caller reads beside the rows. */
+function newWorkspaceDriver(keys: SandboxDriverKeys, rows: readonly CredentialMetadata[], context: SandboxDriverKeyContext, chosen: string | undefined) {
   const keyed = storedSandboxKeys(keys, rows, context).flatMap((row) => {
     const id = usableSandboxKey(row) ? keyDriver(keys, row.provider_id) : undefined
     return id ? [id] : []
   })
-  return effectiveSandboxDriver({ chosen: await keys.chosenDriver(context), keyed })
+  return effectiveSandboxDriver({ chosen, keyed })
 }
 
 /** How the driver new cloud workspaces get treats a delivered secret. */
-export async function newWorkspaceBrokering(keys: SandboxDriverKeys, rows: readonly CredentialMetadata[], context: SandboxDriverKeyContext) {
-  const driver = await newWorkspaceDriver(keys, rows, context)
+export function newWorkspaceBrokering(keys: SandboxDriverKeys, rows: readonly CredentialMetadata[], context: SandboxDriverKeyContext, chosen: string | undefined) {
+  const driver = newWorkspaceDriver(keys, rows, context, chosen)
   return driver ? keys.brokering?.(driver) : undefined
 }
 
-export async function sandboxKeyListing<Row>(
+export function sandboxKeyListing<Row>(
   keys: SandboxDriverKeys,
   rows: readonly CredentialMetadata[],
   context: SandboxDriverKeyContext,
-  options: { canManage: boolean; redact: (row: CredentialMetadata) => Row },
+  options: { canManage: boolean; chosen: string | undefined; redact: (row: CredentialMetadata) => Row },
 ) {
   const stored = storedSandboxKeys(keys, rows, context)
-  const driver = await newWorkspaceDriver(keys, rows, context)
+  const driver = newWorkspaceDriver(keys, rows, context, options.chosen)
   return {
     drivers: keys.drivers.map((id) => ({ id, label: sandboxDriverLabels[id], fields: sandboxDriverCredentialFields[id] })),
     default_driver: driver ?? null,

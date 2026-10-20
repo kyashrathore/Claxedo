@@ -29,12 +29,16 @@ function descriptor(methods: readonly string[]) {
 
 function fakeServer(methods: readonly string[] = ["email-password", "github"], status = 200, signOutRefusal?: string) {
   const calls: string[] = []
+  const left: string[] = []
   let signedIn: { id: string; email: string } | null = null
   const ok = <T>(data: T) => Promise.resolve({ data, error: null })
   const client = {
     getSession: () => ok(signedIn ? { user: signedIn } : null),
     signIn: {
-      social: (input: { provider: string; callbackURL: string }) => (calls.push(`social ${input.provider} ${input.callbackURL}`), ok({})),
+      social: (input: { provider: string; callbackURL: string; disableRedirect: true }) => {
+        calls.push(`social ${input.provider} ${input.callbackURL}`)
+        return ok({ url: `https://github.com/login/oauth/authorize?state=${calls.length}`, redirect: false })
+      },
       email: (input: { email: string; callbackURL: string }) => {
         calls.push(`email ${input.email} ${input.callbackURL}`)
         signedIn = { id: "user-1", email: input.email }
@@ -50,7 +54,7 @@ function fakeServer(methods: readonly string[] = ["email-password", "github"], s
     },
   }
   const request = () => (calls.push("descriptor"), Promise.resolve(Response.json(descriptor(methods), { status })))
-  return { calls, adapter: createBetterAuthBrowserAdapter({ request, createClient: () => client }) }
+  return { calls, left, adapter: createBetterAuthBrowserAdapter({ request, createClient: () => client, leave: (url) => void left.push(url) }) }
 }
 
 const restores: Array<() => void> = []
@@ -155,4 +159,41 @@ test("better auth: an expired published descriptor is never used; initialize rea
   await adapter.initialize(deployment)
   expect(adapter.useAuth().methods()).toEqual(["github"])
   expect(calls).toEqual(["descriptor"])
+})
+
+test("better auth: a social sign-in asks for the provider's address while the live descriptor is read, and leaves for it only once that descriptor agrees", async () => {
+  const order: string[] = []
+  const left: string[] = []
+  let live = descriptor(["github"])
+  let answer: () => void = () => undefined
+  const request = () => {
+    order.push("descriptor asked")
+    return new Promise<Response>((resolve) => (answer = () => (order.push("descriptor answered"), resolve(Response.json(live)))))
+  }
+  const client = {
+    getSession: () => Promise.resolve({ data: null, error: null }),
+    signIn: {
+      social: (input: { provider: string }) => (order.push(`social ${input.provider}`), Promise.resolve({ data: { url: "https://github.com/login/oauth/authorize?state=s", redirect: false }, error: null })),
+      email: () => Promise.resolve({ data: null, error: null }),
+    },
+    signUp: { email: () => Promise.resolve({ data: null, error: null }) },
+    signOut: () => Promise.resolve({ data: null, error: null }),
+  }
+  publish({ server: app, bootstrap: {}, authDescriptor: descriptor(["github"]) })
+  const adapter = createBetterAuthBrowserAdapter({ request, createClient: () => client, leave: (url) => void left.push(url) })
+  await adapter.initialize(deployment)
+  const signingIn = adapter.useAuth().signIn({ method: "github" })
+  await Promise.resolve()
+  expect(order, "the provider's address is asked before the descriptor answers").toEqual(["descriptor asked", "social github"])
+  expect(left).toEqual([])
+  answer()
+  await signingIn
+  expect(left).toEqual(["https://github.com/login/oauth/authorize?state=s"])
+
+  live = { ...descriptor(["github"]), configurationVersion: "2" }
+  const refused = adapter.useAuth().signIn({ method: "github" })
+  await Promise.resolve()
+  answer()
+  await expect(refused).rejects.toThrow()
+  expect(left, "a deployment whose configuration changed under the page is never left for").toHaveLength(1)
 })

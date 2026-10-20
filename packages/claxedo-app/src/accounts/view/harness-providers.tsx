@@ -77,7 +77,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
   const catalog = () => props.providers.catalog
   onMount(() => {
     if (harness() !== "opencode") return
-    props.onAddCustomRef?.(() => void dialog.show(() => <DialogCustomProvider existing={new Set(catalog().all().keys())} onSaved={() => catalog().refresh()} />))
+    props.onAddCustomRef?.(() => void dialog.show(() => <DialogCustomProvider existing={new Set(catalog().all().keys())} />))
   })
   const [search, setSearch] = createSignal("")
   const items = createMemo(() => [...catalog().all().values()])
@@ -110,7 +110,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
               <Show
                 when={connectedIds().has(item.id)}
                 fallback={
-                  <ProviderSetupRow id={item.id} name={item.name} harness={harness()} note={note(item.id)} onConnected={() => catalog().refresh()}>
+                  <ProviderSetupRow id={item.id} name={item.name} harness={harness()} note={note(item.id)}>
                     {choice()}
                   </ProviderSetupRow>
                 }

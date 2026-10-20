@@ -7,11 +7,13 @@ import { observedD1 } from "../db/observed-d1"
 /**
  * Where a request's time went besides its own code: verifying the caller
  * (`auth`, which includes the database reads that verification makes), the
- * shared rate-limit binding, the databases, and the Durable Objects it called.
+ * shared rate-limit binding, the databases, the Durable Objects it called, and
+ * the requests it sent out over the internet (`upstream`: vendors, GitHub,
+ * OAuth token endpoints), each until its response headers arrived.
  */
-export type TimedResource = "auth" | "limit" | "d1" | "do"
+export type TimedResource = "auth" | "limit" | "d1" | "do" | "upstream"
 
-const RESOURCES: readonly TimedResource[] = ["auth", "limit", "d1", "do"]
+const RESOURCES: readonly TimedResource[] = ["auth", "limit", "d1", "do", "upstream"]
 
 /**
  * A fact about the request rather than a duration: `cold` on the first request
@@ -22,7 +24,7 @@ export type TimingMark = "cold" | "compose"
 
 /** Busy time per resource: concurrent calls share their overlap, so no resource can read more than the total. */
 type Busy = { ms: number; active: number; since: number }
-type Ledger = { busy: Record<TimedResource, Busy>; marks: Set<TimingMark> }
+type Ledger = { busy: Record<TimedResource, Busy>; hosts: Map<string, Busy>; marks: Set<TimingMark> }
 
 /** A request slower than this is written to the Worker's log with its breakdown, so `wrangler tail` shows where it went. */
 export const SLOW_REQUEST_MS = 1_000
@@ -30,17 +32,42 @@ export const SLOW_REQUEST_MS = 1_000
 const requests = new AsyncLocalStorage<Ledger>()
 let served = 0
 
-/** Adds the time `run` keeps `resource` busy to the current request's ledger; outside a request it only runs. */
-export async function timed<T>(resource: TimedResource, run: () => Promise<T>): Promise<T> {
-  const ledger = requests.getStore()
-  if (!ledger) return run()
-  const busy = ledger.busy[resource]
+const idle = (): Busy => ({ ms: 0, active: 0, since: 0 })
+
+async function charged<T>(busy: Busy, run: () => Promise<T>): Promise<T> {
   if (busy.active++ === 0) busy.since = performance.now()
   try {
     return await run()
   } finally {
     if (--busy.active === 0) busy.ms += performance.now() - busy.since
   }
+}
+
+/** Adds the time `run` keeps `resource` busy to the current request's ledger; outside a request it only runs. */
+export async function timed<T>(resource: TimedResource, run: () => Promise<T>): Promise<T> {
+  const ledger = requests.getStore()
+  if (!ledger) return run()
+  return charged(ledger.busy[resource], run)
+}
+
+/**
+ * `fetch` with every call charged to the request as `upstream` and to the host
+ * it went to, so a slow answer names the vendor it waited on. Pass the fetch
+ * to wrap when the caller has its own (an edge cache, an address check);
+ * otherwise the global one is read at call time.
+ */
+export function timedFetch(request?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): typeof fetch {
+  const send = request ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init))
+  const sent = (input: RequestInfo | URL, init?: RequestInit) => {
+    const ledger = requests.getStore()
+    if (!ledger) return send(input, init)
+    const host = new URL(input instanceof Request ? input.url : input).host
+    let busy = ledger.hosts.get(host)
+    if (!busy) ledger.hosts.set(host, (busy = idle()))
+    const counted = busy
+    return charged(ledger.busy.upstream, () => charged(counted, () => send(input, init)))
+  }
+  return Object.assign(sent, { preconnect: fetch.preconnect })
 }
 
 /** Records `fact` on the current request; outside a request it records nothing. */
@@ -62,6 +89,7 @@ function header(ledger: Ledger, total: number): string {
   return [
     ...ledger.marks,
     ...RESOURCES.map((resource) => `${resource};dur=${ledger.busy[resource].ms.toFixed(1)}`),
+    ...[...ledger.hosts].map(([host, busy]) => `upstream-host;desc="${host}";dur=${busy.ms.toFixed(1)}`),
     `total;dur=${total.toFixed(1)}`,
   ].join(", ")
 }
@@ -78,9 +106,9 @@ function header(ledger: Ledger, total: number): string {
  * control-plane composition.
  */
 export async function timedResponse(request: Request, respond: () => Promise<Response>): Promise<Response> {
-  const idle = (): Busy => ({ ms: 0, active: 0, since: 0 })
   const ledger: Ledger = {
-    busy: { auth: idle(), limit: idle(), d1: idle(), do: idle() },
+    busy: { auth: idle(), limit: idle(), d1: idle(), do: idle(), upstream: idle() },
+    hosts: new Map(),
     marks: new Set(served++ === 0 ? ["cold"] : []),
   }
   const started = performance.now()

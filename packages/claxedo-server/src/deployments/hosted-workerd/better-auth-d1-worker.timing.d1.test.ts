@@ -106,7 +106,7 @@ test("every Worker response carries Server-Timing, with the cold and compose mar
   })
   const health = await worker.fetch(new Request(`${API}/health`), env, context)
   expect(health.status).toBe(200)
-  expect(timing(health)).toEqual({ marks: ["cold"], durations: ["auth", "limit", "d1", "do", "total"] })
+  expect(timing(health)).toEqual({ marks: ["cold"], durations: ["auth", "limit", "d1", "do", "upstream", "total"] })
   expect(readiness).toHaveLength(0)
 
   const bootstrap = await worker.fetch(new Request(`${API}/api/claxedo/bootstrap`, { headers: { origin: API } }), env, context)
@@ -116,7 +116,7 @@ test("every Worker response carries Server-Timing, with the cold and compose mar
 
   const session = await worker.fetch(new Request(`${API}/api/auth/get-session`, { headers: { origin: API } }), env, context)
   expect(session.status).toBe(200)
-  expect(timing(session).durations).toEqual(["auth", "limit", "d1", "do", "total"])
+  expect(timing(session).durations).toEqual(["auth", "limit", "d1", "do", "upstream", "total"])
 
   // Until a composition's readiness reads settle, every request builds its own
   // (settled-composition-cache.ts) and says so; a settled one is reused silently.

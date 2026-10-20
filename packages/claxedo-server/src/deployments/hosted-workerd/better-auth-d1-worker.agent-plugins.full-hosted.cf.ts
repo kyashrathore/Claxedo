@@ -14,6 +14,7 @@ import {
 import { createBetterAuthD1Worker } from "./better-auth-d1-worker.cf"
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
+import { timedD1 } from "../../platform/http/server-timing"
 
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
@@ -44,7 +45,7 @@ const composition = settledCompositionCache(
     }
     return composeWithCloudSandbox(
       {
-        database: env.CONTROL_PLANE_DB,
+        database: timedD1(env.CONTROL_PLANE_DB),
         signingEnv: stringEnvironment(env),
         provisioner: env.SANDBOX_PROVISIONER,
         keyDrivers: hostedSandboxKeyDrivers(stringEnvironment(env)),

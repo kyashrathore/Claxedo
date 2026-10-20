@@ -20,7 +20,7 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
     if (unsourced.length > 0) void Promise.allSettled(unsourced.map((provider) => catalog.load(provider.id)))
   })
   const t = useAccountsText()
-  const sources = createCatalogAccountSources(harness, () => catalog.refresh())
+  const sources = createCatalogAccountSources(harness)
   const stored = useQuery(() => server.queries.accounts.list())
   const { activity, liveChecks, run, verify } = createKeyActions<"checking">(server.accounts.check)
   const keys: KeyRowStore = { activity, liveChecks, check: (id) => void run("checking", id, () => verify(id)) }
@@ -43,7 +43,6 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
         title: t("provider.disconnect.toast.disconnected.title", { provider: provider.name }),
         description: t("provider.disconnect.toast.disconnected.description", { provider: provider.name }),
       })
-      await catalog.refresh()
     } catch (error) {
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     }

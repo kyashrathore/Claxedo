@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import { accountCheckAnswer, accountRemovalAnswer } from "./account-answers"
 import type { Account, AccountCheck, AccountsApi, EffectiveAccounts, MachineLogin } from "./account-types"
-import { accountSourceQueries, createAccountSourceWrites } from "./account-sources"
+import { accountSourceQueries, createAccountSourceWrites, SOURCES_PATH } from "./account-sources"
 import { accountWrites } from "./account-writes"
 import { contractMismatch, responseError } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -47,12 +47,17 @@ export function accountQueries(transport: Transport, account: HostedAccount | un
 export function createAccountsApi(transport: Transport, queryClient: QueryClient, account: HostedAccount | undefined): AccountsApi {
   const { refresh, write } = accountWrites(queryClient, transport.serverUrl)
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
+  const useOwn = (providerIds: readonly string[], activation: unknown) =>
+    write(async () => {
+      await transport.json(SOURCES_PATH, jsonInit("PUT", { provider_ids: providerIds, source: "own" }))
+      await post("/activate", activation)
+    })
   return {
     ...createAccountSourceWrites(transport, write),
     ...createSandboxKeyWrites(sandboxKeyPlane(transport, account), write),
     ...createMachineLoginScans(transport, queryClient),
-    select: (ids) => write(async () => void (await post("/activate", { ids }))),
-    selectMachineLogin: (providerIds) => write(async () => void (await post("/activate", { machine_login: { provider_ids: providerIds } }))),
+    select: (providerIds, ids) => useOwn(providerIds, { ids }),
+    selectMachineLogin: (providerIds) => useOwn(providerIds, { machine_login: { provider_ids: providerIds } }),
     remove: (ids) =>
       write(async () => {
         for (const id of ids) accountRemovalAnswer(await transport.json(`${CREDENTIALS_PATH}/${encodeURIComponent(id)}`, { method: "DELETE" }))

@@ -9,7 +9,7 @@ import type { FetchQuery } from "./types"
 import { accountFromWire, accountScopeFromWire, accountSourcesFromWire } from "./wire/accounts"
 
 const CREDENTIALS_PATH = "/api/claxedo/credentials"
-const SOURCES_PATH = `${CREDENTIALS_PATH}/account-sources`
+export const SOURCES_PATH = `${CREDENTIALS_PATH}/account-sources`
 
 export function accountSourceQueries(transport: Transport) {
   const server = transport.serverUrl

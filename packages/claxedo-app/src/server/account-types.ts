@@ -67,8 +67,10 @@ export type SandboxKeys =
   }
   | { readonly kind: "unsupported" }
 
+export type SavedSandboxKey = { readonly key: Account; readonly check: AccountCheck | { readonly error: unknown } }
+
 export type AccountsApi = {
-  readonly select: (ids: readonly string[]) => Promise<void>
+  readonly select: (providerIds: readonly string[], ids: readonly string[]) => Promise<void>
   readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
   readonly setSource: (providerIds: readonly string[], source: AccountSource) => Promise<void>
   readonly setScope: (ids: readonly string[], scope: AccountScope) => Promise<void>
@@ -77,7 +79,7 @@ export type AccountsApi = {
   readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
   readonly rescan: () => Promise<void>
   readonly refresh: () => Promise<void>
-  readonly saveSandboxKey: (driver: string, fields: Readonly<Record<string, string>>) => Promise<Account>
+  readonly saveSandboxKey: (driver: string, fields: Readonly<Record<string, string>>) => Promise<SavedSandboxKey>
   readonly saveOrgAccount: (providerId: string, secret: string, label: string) => Promise<Account>
   readonly chooseSandboxDriver: (driver: string | null) => Promise<void>
   readonly checkSandboxKey: (id: string) => Promise<AccountCheck>

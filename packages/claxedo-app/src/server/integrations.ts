@@ -179,11 +179,34 @@ async function readAttempt(transport: Transport, attemptId: string): Promise<Att
   return { state: status === "expired" ? "expired" : "denied" }
 }
 
-async function awaitGrant(transport: Transport, grant: IntegrationGrant, alive: () => boolean): Promise<IntegrationGrantOutcome> {
+export type ReturnSignals = Pick<Window, "addEventListener" | "removeEventListener"> & {
+  readonly document: Pick<Document, "addEventListener" | "removeEventListener" | "visibilityState">
+}
+
+function untilNextRead(ms: number, wake: ReturnSignals | undefined): Promise<void> {
+  if (!wake) return sleep(ms)
+  return new Promise((resolve) => {
+    const returned = () => {
+      if (wake.document.visibilityState === "visible") settle()
+    }
+    const settle = () => {
+      clearTimeout(timer)
+      wake.document.removeEventListener("visibilitychange", returned)
+      wake.removeEventListener("focus", returned)
+      resolve()
+    }
+    const timer = setTimeout(settle, ms)
+    wake.document.addEventListener("visibilitychange", returned)
+    wake.addEventListener("focus", returned)
+  })
+}
+
+async function awaitGrant(transport: Transport, grant: IntegrationGrant, alive: () => boolean, view: ReturnSignals | undefined): Promise<IntegrationGrantOutcome> {
   const deadline = Date.now() + GRANT_LIFETIME_MS
   let interval = grant.intervalMs
+  const wake = grant.userCode === undefined ? view : undefined
   while (Date.now() < deadline) {
-    await sleep(interval)
+    await untilNextRead(interval, wake)
     if (!alive()) return { kind: "abandoned" }
     const answer = await readAttempt(transport, grant.attemptId)
     if (!alive()) return { kind: "abandoned" }
@@ -208,7 +231,7 @@ async function disconnect(transport: Transport, connectionId: string) {
   if (!response.ok && response.status !== 404) throw await responseError(response, "Disconnect")
 }
 
-export function createIntegrationsApi(transport: Transport, queryClient: QueryClient): IntegrationsApi {
+export function createIntegrationsApi(transport: Transport, queryClient: QueryClient, view: ReturnSignals | undefined = typeof window === "undefined" ? undefined : window): IntegrationsApi {
   const refresh = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.integrations(transport.serverUrl) }),
@@ -220,7 +243,7 @@ export function createIntegrationsApi(transport: Transport, queryClient: QueryCl
   }
   return {
     connect: async (integrationId, input) => settled(await connectIntegration(transport, integrationId, input)),
-    awaitGrant: async (grant, alive) => settled(await awaitGrant(transport, grant, alive)),
+    awaitGrant: async (grant, alive) => settled(await awaitGrant(transport, grant, alive, view)),
     disconnect: async (connectionId) => {
       await disconnect(transport, connectionId)
       await refresh()

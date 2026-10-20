@@ -79,7 +79,7 @@ function ProviderFields(props: { readonly form: FormState; readonly setForm: Set
   )
 }
 
-function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSaved: () => Promise<void> }, form: FormState, setForm: SetStoreFunction<FormState>) {
+function useSave(props: { readonly existing: ReadonlySet<string> }, form: FormState, setForm: SetStoreFunction<FormState>) {
   const t = useAccountsText()
   const server = useServer()
   const dialog = useDialog()
@@ -96,7 +96,6 @@ function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSav
     setSaving(true)
     try {
       await server.providerConnect.saveCustomProvider(output.result)
-      await props.onSaved()
       dialog.close()
       showToast({ variant: "success", icon: <Icon name="circle-check" />, title: t("provider.connect.toast.connected.title", { vendor: output.result.config.name }) })
     } catch (error) {
@@ -108,7 +107,7 @@ function useSave(props: { readonly existing: ReadonlySet<string>; readonly onSav
   return { saving, save }
 }
 
-export function DialogCustomProvider(props: { readonly existing: ReadonlySet<string>; readonly onSaved: () => Promise<void> }) {
+export function DialogCustomProvider(props: { readonly existing: ReadonlySet<string> }) {
   const t = useAccountsText()
   const dialog = useDialog()
   const [form, setForm] = createStore<FormState>({ providerId: "", name: "", baseURL: "", apiKey: "", keyHeader: "Authorization", models: [modelRow()], headers: [headerRow()], err: {} })

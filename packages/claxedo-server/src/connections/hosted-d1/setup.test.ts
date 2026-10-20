@@ -17,6 +17,7 @@ import {
 } from "./attempts"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
+import { countD1Rounds } from "../../test-support/d1-rounds"
 import {
   createHostedCapabilityAuthFailureReporter,
   createHostedCapabilityConnectionResolver,
@@ -193,7 +194,8 @@ type RigOptions = {
 }
 
 async function rig(options: RigOptions = {}) {
-  const target = await database()
+  const rounds = countD1Rounds(await database(), 5)
+  const target = rounds.database
   const ownerIdentity = identity("owner")
   let sequence = 0
   const product = {
@@ -248,6 +250,7 @@ async function rig(options: RigOptions = {}) {
     advance(ms: number) {
       clock += ms
     },
+    rounds,
   }
 }
 
@@ -275,6 +278,27 @@ describe("hosted D1 Connections setup", () => {
     expect((await app.request("/?capability=code-host")).status).toBe(200)
     expect((await app.request("/")).status).toBe(200)
     expect(asked).toEqual(["code-host", undefined])
+  })
+
+  test("a poll resolves no feature-owned integration and reads the caller and the attempt's owner once each", async () => {
+    const test = await rig()
+    const asked: Array<string | undefined> = []
+    const app = createHostedD1ConnectionsSetup({
+      ...test.input,
+      dynamicIntegrations: async (context) => {
+        asked.push(context.integrationId)
+        return []
+      },
+    })
+    const { attemptId } = (await (await connect(app, "composio", { method: "oauth", scope: "personal" })).json()) as { attemptId: string }
+    asked.length = 0
+    test.rounds.reset()
+    expect((await app.request(`/attempts/${attemptId}`)).status).toBe(200)
+    expect(asked, "a poll advances only built-in device grants").toEqual([])
+    const trace = test.rounds.trace()
+    expect(trace.filter((entry) => entry.sql.startsWith("select owner, routing_json from hosted_connection_attempts")), "the org check and the kit's owner check share one read").toHaveLength(1)
+    expect(new Set(trace.filter((entry) => entry.sql.startsWith("select o.org_id")).map((entry) => entry.round)).size, "the person and their organizations are read together").toBe(1)
+    expect(test.rounds.rounds()).toBe(4)
   })
 
   test("a personal connection belongs to the user who made it and to no one else", async () => {

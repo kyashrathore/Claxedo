@@ -98,8 +98,7 @@ function usePendingChecks() {
 
 async function selectAccount(server: Server, harness: Harness, key: string, ids: readonly string[]) {
   if (key === ORG_ACCOUNT_KEY) return server.accounts.setSource(harness.providerIds, "org")
-  await server.accounts.setSource(harness.providerIds, "own")
-  return key === MACHINE_LOGIN_KEY ? server.accounts.selectMachineLogin(harness.providerIds) : server.accounts.select(ids)
+  return key === MACHINE_LOGIN_KEY ? server.accounts.selectMachineLogin(harness.providerIds) : server.accounts.select(harness.providerIds, ids)
 }
 
 function useCloudConsent(server: Server, activity: Accessor<AccountActivity | undefined>, setActivity: (activity: AccountActivity | undefined) => void) {

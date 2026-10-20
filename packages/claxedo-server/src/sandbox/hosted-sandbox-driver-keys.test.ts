@@ -70,7 +70,6 @@ function app() {
     sandboxDriverKeys: hostedSandboxDriverKeys({
       hostedBroker: false,
       database: fixture.database,
-      authority: fixture.authority,
       drivers: hostedSandboxKeyDrivers(workerEnv).drivers,
       leaseStore: createD1SandboxLeaseStore({ database: fixture.database }),
     }),

@@ -108,6 +108,8 @@ export type BetterAuthD1UserDeployedCompositionInput = {
   product: Extract<D1AuthorityProductPolicy, { kind: "user-deployed" }>
   emailSender?: AuthEmailSender
   now?: () => number
+  /** What calls to vendors, GitHub and OAuth endpoints go out through; the global fetch when absent. */
+  fetch?: typeof fetch
   /**
    * The full-hosted entry's organization key drivers and durable lease store.
    * Present exactly when `CLAXEDO_SANDBOX_POSTURE=full-hosted`; the composition
@@ -188,6 +190,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     database: requiredDatabase(input.authDatabase),
     configuration: configured,
     resource: betterAuthNativeResource(configured.public.origin),
+    ...(input.fetch ? { fetch: input.fetch } : {}),
   })
   const authProtocol = new Hono()
   authProtocol.use(browserAuthHttpSecurity(descriptor.browser))
@@ -311,10 +314,10 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         draftCredentials: delivery.credentialSnapshot,
         accountSetup: {
           change: delivery.credentialChange,
+          ...(input.fetch ? { fetch: input.fetch } : {}),
           administers: hostedOrgAdministers(input.controlPlaneDatabase),
           sandboxDriverKeys: hostedSandboxDriverKeys({
             database: input.controlPlaneDatabase,
-            authority,
             drivers: sandbox.keys.drivers,
             hostedBroker: broker !== undefined,
             leaseStore: sandbox.leaseStore,
