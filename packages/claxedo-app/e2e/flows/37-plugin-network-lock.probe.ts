@@ -115,13 +115,14 @@ export function expectOutsideImage(violations: readonly string[], imagePolicy: I
   expect(refused, `${OUTSIDE_IMAGE} refused by img-src`).toBe(imagePolicy === "no outside image")
 }
 
-export function probePlugin(targets: readonly Target[], leave: string) {
+export function probePlugin(targets: readonly Target[], leave: string, serverRoute: string) {
   return `import { createSignal, For } from "solid-js"
 import { definePlugin, type PluginApi } from "@claxedo/plugin-api"
 
 const TARGETS = ${JSON.stringify(targets)}
 const OUTSIDE_IMAGE = ${JSON.stringify(OUTSIDE_IMAGE)}
 const LEAVE = ${JSON.stringify(leave)}
+const SERVER_ROUTE = ${JSON.stringify(serverRoute)}
 const probe: (targets: typeof TARGETS) => Promise<string[]> = ${PROBE}
 const [violations, setViolations] = createSignal<string[]>([])
 document.addEventListener("securitypolicyviolation", (event) => setViolations((lines) => [...lines, event.effectiveDirective + " " + event.blockedURI]))
@@ -129,7 +130,7 @@ document.addEventListener("securitypolicyviolation", (event) => setViolations((l
 function Probe(props: { readonly api: PluginApi }) {
   const [outcomes, setOutcomes] = createSignal<string[]>([])
   const add = (line: string) => setOutcomes((lines) => [...lines, line])
-  void props.api.server.fetch("/api/claxedo/projects").then((response) => add("server " + response.status), (error) => add("server failed " + String(error)))
+  void props.api.server.fetch(SERVER_ROUTE).then((response) => add("server " + response.status), (error) => add("server failed " + String(error)))
   void probe(TARGETS).then((lines) => lines.forEach(add))
   return (
     <section>

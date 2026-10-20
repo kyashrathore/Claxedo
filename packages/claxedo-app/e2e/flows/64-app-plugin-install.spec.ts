@@ -1,13 +1,7 @@
 import type { Page, TestInfo } from "@playwright/test"
-import { COUNTER_PLUGIN, expect, ownersColleague, sessionCookie, test, UI, type Account, type SignedStack } from "../harness"
-import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
+import { COUNTER_PLUGIN, expect, ownersColleague, readAs, sessionCookie, test, UI, type Account, type SignedStack } from "../harness"
 
 test.use({ signedAppPluginRegistry: true })
-
-async function readAs(signed: SignedStack, account: Account, path: string) {
-  const response = await hostedFetch(signed.hosted, path, {}, account.person)
-  return { status: response.status, body: await response.json() as unknown }
-}
 
 async function openRail(page: Page, isMobile: boolean) {
   if (!isMobile) return

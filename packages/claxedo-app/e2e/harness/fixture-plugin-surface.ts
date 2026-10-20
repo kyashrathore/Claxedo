@@ -239,8 +239,8 @@ export async function writeSurfaceFixturePlugin(root: string) {
   return writeLivePlugin(path.join(root, "plugins", SURFACE_FIXTURE_ID), surfaceFixtureFolder())
 }
 
-export async function storeSurfaceFixtureImage(serverUrl: string, projectId: string) {
-  const client = createTasksClient({ baseUrl: new URL(TASKS_ROUTE_PATH, serverUrl).href, request: (url, init) => fetch(url, init) })
+export async function storeSurfaceFixtureImage(serverUrl: string, projectId: string, request: (url: string, init?: RequestInit) => Promise<Response>) {
+  const client = createTasksClient({ baseUrl: new URL(TASKS_ROUTE_PATH, serverUrl).href, request })
   const data = encodeAttachmentData(SURFACE_FIXTURE_IMAGE)
   const input = { projectId, title: "Fixture image", description: "", workspaceId: null, parentTaskId: null, attachments: [{ filename: "fixture.png", mime: "image/png" as const, data }] }
   const created = await client.command({ clientRequestId: randomUUID(), command: { type: "task.create", input } })

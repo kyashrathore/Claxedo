@@ -30,3 +30,8 @@ export async function installAndEnable(signed: SignedStack, plugin: { readonly i
   const enabled = await hostedFetch(signed.hosted, `/api/claxedo/app-plugins/${plugin.id}/enable`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }, account.person)
   expect(enabled.status).toBe(204)
 }
+
+export async function readAs(signed: SignedStack, account: Account, path: string) {
+  const response = await hostedFetch(signed.hosted, path, {}, account.person)
+  return { status: response.status, body: await response.json() as unknown }
+}
